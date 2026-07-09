@@ -1,0 +1,304 @@
+.background_color{
+    background-color: #1A2530;
+
+}
+
+.text_color{
+    color: white;
+}
+
+.navigation_style{
+    margin-top: 10px;
+    border: #ffffff 1px solid;
+    border-radius: 100px;
+}
+
+.expand-center {
+    display: inline-block;
+    position: relative;
+    text-decoration: none;
+    color: #ffffff;
+    }
+
+.expand-center::after {
+    content: '';
+    position: absolute;
+    width: 100%;
+    height: 2px;
+    bottom: 0;
+    left: 0;
+    background-color: #ffffff;
+    transform: scaleX(0); 
+    transform-origin: center; 
+    transition: transform 0.5s ease-in-out;
+}
+
+.expand-center:hover::after {
+    transform: scaleX(1);
+}
+
+.profile-offcanvas {
+    height: 100vh;
+    width: 320px;
+    background-color: #1A2530;
+    color: #ffffff;
+}
+
+.profile-offcanvas .offcanvas-header,
+.profile-offcanvas .offcanvas-body {
+    border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.profile-offcanvas .nav-link:hover {
+    color: #dce6f3 !important;
+}
+
+/* staff dashboard */
+.action-card {
+    background-color: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 16px;
+    transition: all 0.3s ease-in-out;
+    cursor: pointer;
+}
+.action-card:hover {
+    transform: translateY(-5px);
+    background-color: rgba(255, 255, 255, 0.1);
+    border-color: #ffffff;
+    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.3);
+}
+.icon-box {
+    font-size: 3rem;
+    color: #ffffff;
+    margin-bottom: 15px;
+}
+
+.clickable-profile {
+    text-decoration: none;
+    color: inherit;
+    display: flex;
+    align-items: center;
+    padding: 10px;
+    border-radius: 8px;
+    transition: background 0.2s ease-in-out;
+}
+.clickable-profile:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+    color: #dce6f3;
+}
+
+/* Feedback */
+.feedback-card {
+    background-color: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 16px;
+    transition: border-color 0.2s ease-in-out;
+}
+.feedback-card:hover {
+    border-color: rgba(255, 255, 255, 0.3);
+}
+/* Meta Badges */
+.badge-resolved {
+    background-color: rgba(25, 135, 84, 0.2);
+    color: #198754;
+    border: 1px solid rgba(25, 135, 84, 0.3);
+}
+.badge-pending {
+    background-color: rgba(255, 193, 7, 0.15);
+    color: #ffc107;
+    border: 1px solid rgba(255, 193, 7, 0.3);
+}
+
+/* user manage */
+.account-card {
+    background-color: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 16px;
+    transition: all 0.2s ease-in-out;
+}
+.account-card:hover {
+    border-color: rgba(255, 255, 255, 0.25);
+    background-color: rgba(255, 255, 255, 0.07);
+}
+.avatar-placeholder {
+    width: 48px;
+    height: 48px;
+    background-color: rgba(255, 255, 255, 0.1);
+    color: #ffffff;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.25rem;
+}
+/* Status Badges */
+.status-active {
+    background-color: rgba(25, 135, 84, 0.15);
+    color: #198754;
+    border: 1px solid rgba(25, 135, 84, 0.3);
+}
+.status-suspended {
+    background-color: rgba(220, 53, 69, 0.15);
+    color: #dc3545;
+    border: 1px solid rgba(220, 53, 69, 0.3);
+}
+/* Search Bar input styling */
+.search-input {
+    background-color: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    color: #ffffff !important;
+}
+.search-input:focus {
+    background-color: rgba(255, 255, 255, 0.12);
+    border-color: #ffffff;
+    box-shadow: none;
+}
+
+/* QR */
+.qr-card {
+    background-color: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 20px;
+    backdrop-filter: blur(10px);
+}
+
+/* Simulated Camera Scan Window Container */
+.scanner-window {
+    position: relative;
+    width: 100%;
+    max-width: 320px;
+    height: 320px;
+    background: #0d141b;
+    border-radius: 16px;
+    overflow: hidden;
+    border: 2px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Animated Green laser line across the viewfinder */
+.scanner-laser {
+    position: absolute;
+    width: 100%;
+    height: 3px;
+    background-color: #00ff66;
+    box-shadow: 0 0 12px #00ff66;
+    top: 0;
+    animation: scanAnimation 2.5s infinite linear;
+}
+
+@keyframes scanAnimation {
+    0% { top: 0%; }
+    50% { top: 100%; }
+    100% { top: 0%; }
+}
+
+/* Viewfinder targeting corner brackets */
+.target-box {
+    position: absolute;
+    top: 15%;
+    left: 15%;
+    right: 15%;
+    bottom: 15%;
+    border: 2px dashed rgba(255, 255, 255, 0.3);
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* Form input style overrides */
+.custom-input {
+    background-color: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: #ffffff !important;
+    border-radius: 8px;
+}
+.custom-input:focus {
+    background-color: rgba(255, 255, 255, 0.12);
+    border-color: #ffffff;
+    box-shadow: none;
+}
+
+/* responsive */
+.profile-offcanvas {
+    width: 100%;
+    max-width: 320px;
+}
+.icon-box {
+    font-size: clamp(2rem, 3vw, 3rem);
+}
+
+@media (max-width: 991.98px) {
+    .navigation_style {
+        margin-top: 8px;
+        border-radius: 80px;
+    }
+
+    .scanner-window {
+        max-width: 100%;
+        height: 300px;
+    }
+
+    .qr-card,
+    .feedback-card,
+    .account-card {
+        padding: 1.5rem;
+    }
+}
+
+@media (max-width: 767.98px) {
+    .navigation_style {
+        border-radius: 60px;
+        padding: 0.7rem 1rem;
+    }
+
+    .expand-center {
+        font-size: 0.95rem;
+    }
+
+    .scanner-window {
+        height: 280px;
+    }
+
+    .avatar-placeholder {
+        width: 42px;
+        height: 42px;
+        font-size: 1rem;
+    }
+
+    .search-input,
+    .custom-input {
+        font-size: 0.95rem;
+    }
+}
+
+@media (max-width: 575.98px) {
+    .navigation_style {
+        margin-top: 6px;
+        border-radius: 48px;
+    }
+
+    .expand-center {
+        display: block;
+        width: 100%;
+        text-align: center;
+        padding: 0.35rem 0;
+    }
+
+    .scanner-window {
+        height: 260px;
+    }
+
+    .target-box {
+        top: 16%;
+        left: 12%;
+        right: 12%;
+        bottom: 16%;
+    }
+
+    .profile-offcanvas {
+        max-width: 100%;
+        width: 100%;
+    }
+}
+
+
