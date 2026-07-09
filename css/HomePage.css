@@ -1,0 +1,186 @@
+body {
+    background-color: #0b111e;
+    color: #ffffff;
+}
+
+.bg-dark-custom {
+    background-color: #0b111e;
+}
+
+.main-navbar {
+    border-bottom: 1px solid rgba(255, 255, 255, 0.15); /* Adds a bright edge line */
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+}
+
+.backdrop-blur {
+    backdrop-filter: blur(5px);
+    background-color: rgba(15, 23, 42, 0.9); 
+}
+
+.navbar-nav .nav-link {
+    color: #e2e8f0; /* Brighter link color */
+    font-weight: 500;
+    transition: color 0.2s ease-in-out;
+}
+
+.navbar-nav .nav-link:hover {
+    color: #38bdf8 !important; /* Highlights clear sky-blue on hover */
+}
+
+/* Hero Adjustments */
+.hero-section {
+    min-height: 100vh;
+    padding-top: 150px; /* More padding to prevent header overlay */
+    padding-bottom: 60px;
+}
+
+.text-gradient {
+    background: linear-gradient(to right, #ffffff, #94a3b8);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+.fw-extrabold { font-weight: 800; }
+.text-muted-custom { color: #94a3b8; }
+
+/* Status Live Dot Animation */
+.badge-status {
+    background-color: rgba(16, 185, 129, 0.1);
+    color: #10b981;
+    padding: 6px 16px;
+    border-radius: 50px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    border: 1px solid rgba(16, 185, 129, 0.2);
+}
+
+.pulse-dot {
+    width: 8px;
+    height: 8px;
+    background-color: #10b981;
+    border-radius: 50%;
+    animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+    0% { transform: scale(0.9); opacity: 1; }
+    50% { transform: scale(1.2); opacity: 0.5; }
+    100% { transform: scale(0.9); opacity: 1; }
+}
+
+/* Phone Mockup Elements */
+.phone-container {
+    background-color: #111827;
+    border: 8px solid #1f2937;
+    border-radius: 36px;
+}
+
+.bg-gradient-token {
+    background: linear-gradient(135deg, #1e293b, #0f172a);
+}
+
+/* Features Block Styles */
+.bg-features { background-color: #0f172a; }
+.bg-card { background-color: #1e293b !important; }
+
+/* Fixed icon container formatting for FontAwesome alignment */
+.icon-shape {
+    width: 54px;
+    height: 54px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: rgba(56, 189, 248, 0.15);
+    border: 1px solid rgba(56, 189, 248, 0.25);
+}
+/* Forces the missing icons to be visible and colored correctly */
+.icon-shape i {
+    color: #38bdf8 !important;   /* Bright sky blue */
+    font-size: 1.5rem;          /* Perfect icon sizing */
+}
+
+/* B2B Segment */
+.bg-gradient-business {
+    background: linear-gradient(135deg, #1e3a8a, #0f172a);
+}
+
+.max-width-md {
+    max-width: 720px;
+}
+
+/* Utility to override small buttons layout on tiny devices */
+@media (max-width: 575.98px) {
+    .w-sm-auto {
+        width: 100% !important;
+    }
+}
+/* Custom Logo Image Adjustments */
+.navbar-logo-img {
+    height: 40px;          /* Matches the larger navbar size nicely */
+    width: auto;            /* Keeps the logo aspect ratio perfect so it doesn't stretch */
+    object-fit: contain;
+    margin-right: 4px;      /* Slight breathing room before the text starts */
+}
+/* ==========================================================================
+   CUSTOM SYSTEM SCROLLBAR
+   ========================================================================== */
+/* 1. Width of the scrollbar */
+::-webkit-scrollbar {
+    width: 10px;
+}
+
+/* 2. Track (the background area behind the scrollbar) */
+::-webkit-scrollbar-track {
+    background: #0b111e; 
+}
+ 
+/* 3. Thumb (the actual draggable handle) */
+::-webkit-scrollbar-thumb {
+    background: #1e293b; 
+    border-radius: 50px;    /* Makes the edges round and smooth */
+    border: 2px solid #0b111e; /* Creates a clean gap effect around the handle */
+}
+
+/* 4. Thumb on hover (brightens up when user interacts with it) */
+::-webkit-scrollbar-thumb:hover {
+    background: #38bdf8; /* Changes to your bright accent sky blue */
+}
+/* Custom sizing to make the phone mockup longer */
+.expanded-phone {
+    max-width: 340px;
+    min-height: 520px; /* Forces a longer vertical appearance */
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+}
+
+/* Container design for the internal QR code box */
+.qr-wrapper {
+    background-color: #ffffff;
+    padding: 16px;
+    border-radius: 12px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+/* Styling for the embedded FontAwesome QR icon */
+.qr-wrapper i {
+    color: #0f172a; /* Dark color contrasting the white background box */
+    font-size: 6.5rem; /* Large and clear structure */
+}
+
+/* Spacing layout correction inside the long token area */
+.token-qr-card {
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+
+.tracking-wider {
+    letter-spacing: 0.05em;
+}
