@@ -110,7 +110,7 @@
         <div class="offcanvas-body">
             <ul class="list-unstyled">
                 <li class="mb-4">
-                    <a href="user_manage.php" class="clickable-profile">
+                    <a href="staff_account.php" class="clickable-profile">
                         <i class="bi bi-person-gear fs-3 me-3 text-info"></i>
                         <div>
                             <div class="fw-bold text-white">Staff Session (Manage Users)</div>

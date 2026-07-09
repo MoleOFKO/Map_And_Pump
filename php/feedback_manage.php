@@ -121,7 +121,7 @@
         <div class="offcanvas-body">
             <ul class="list-unstyled">
                 <li class="mb-4">
-                    <a href="user_manage.php" class="text-decoration-none text-white d-flex align-items-center p-2 rounded" style="background: rgba(255,255,255,0.05)">
+                    <a href="staff_account.php" class="text-decoration-none text-white d-flex align-items-center p-2 rounded" style="background: rgba(255,255,255,0.05)">
                         <i class="bi bi-person-gear fs-3 me-3 text-info"></i>
                         <div><div class="fw-bold">Staff Session (Manage Users)</div><small class="text-white-50">Click to configure accounts</small></div>
                     </a>
