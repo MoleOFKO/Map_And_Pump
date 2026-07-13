@@ -1,0 +1,116 @@
+// Use DBML to define your database structure
+// Docs: https://dbml.dbdiagram.io/docs
+
+
+Table sessions {
+  session_id varchar [pk]
+  user_id integer 
+  ip_address varchar
+  user_agent varchar // Browser/Device info
+  is_active boolean [default: true]
+  created_at timestamp
+  expires_at timestamp
+}
+
+Table roles{
+    roles_id integer [pk]
+    roles_name varchar
+}
+
+Table user_license{
+    license_id integer [pk]
+    license_image varchar
+    license_number integer
+    license_name varchar
+    phone_number int
+    nrc_number varchar
+    date_of_birth varchar
+    blood_type varchar
+    license_least_valid_date varchar
+    update_date timestamp
+    create_at timestamp
+}
+
+Table car_license{
+    car_license_id integer [pk]
+    car_plate_number varchar
+    model_year year
+    vehicle_type varchar
+    location varchar
+
+}
+
+Table booking {
+    booking_id integer [pk]
+    users_id integer
+    station_id integer
+    qr_code varchar
+    filled boolean
+    expire_at timestamp
+    created_at timestamp
+}
+
+Table users {
+  user_id integer [primary key]
+  email varchar
+  hashed_password varchar
+  license_id integer
+  car_license_id integer
+  session_id integer
+  roles_id varchar
+  created_at timestamp
+}
+
+Table users_log{
+    users_log_id integer
+    action varchar
+    created_at timestamp
+}   
+
+Table lwk_license{
+    lwk_license_id integer
+    plate_number varchar
+}
+
+Table stations {
+  station_id integer [pk]
+  station_name varchar
+  location varchar
+}
+
+Table oil_types {
+  oil_type_id integer [pk]
+  name varchar
+  price_per_liter decimal
+  is_active boolean
+}
+
+Table station_oil_inventory {
+  inventory_id integer [pk]
+  station_id integer
+  oil_type_id integer
+  current_amount_liters decimal
+}
+
+Table companies {
+  company_id integer [pk]
+  company_name varchar
+  status varchar
+}
+
+Ref: station_oil_inventory.station_id > stations.station_id
+
+Ref: station_oil_inventory.oil_type_id > oil_types.oil_type_id
+
+Ref: booking.station_id > stations.station_id
+
+Ref: users.roles_id < roles.roles_id 
+
+Ref: users.license_id < user_license.license_id 
+
+Ref: booking.users_id < users.user_id
+
+ref: sessions.user_id > users.user_id
+
+Ref: users.car_license_id < car_license.car_license_id
+

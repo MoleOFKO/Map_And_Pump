@@ -56,9 +56,9 @@
 
     /* Logo Container with Zoom & Blend Fix */
     .brand-logo-container {
-      width: 38px;
-      height: 38px;
-      border-radius: 10px;
+      width: 30px;
+      height: 30px;
+      border-radius: 8px;
       overflow: hidden;
       display: flex;
       align-items: center;
@@ -72,7 +72,7 @@
       height: 100%;
       object-fit: cover;
       /* Scales image past extra black padding & blends background */
-      transform: scale(1.85);
+      transform: scale(1);
       mix-blend-mode: screen;
     }
 
@@ -306,8 +306,8 @@
   <aside class="sidebar d-flex flex-column p-3 sticky-top">
     <!-- Brand Header -->
     <div class="d-flex align-items-center gap-2 px-1 pt-1">
-      <div class="brand-logo-container">
-        <img src="photo1.jpg" alt="MAP & PUMP Logo" class="brand-logo-img">
+      <div class=" brand-logo-container">
+        <img src="../images/Logo.png" alt="MAP & PUMP Logo" class="brand-logo-img">
       </div>
       <span class="brand-title">MAP & PUMP</span>
     </div>
