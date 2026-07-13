@@ -1,0 +1,298 @@
+{
+  "version": "2.0.0",
+  "darkMode": true,
+  "gridEnabling": false,
+  "currentViewName": null,
+  "defaultView": {
+    "detailLevel": "All",
+    "tablePositions": [
+      {
+        "name": "users",
+        "schemaName": "public",
+        "x": -80.3304231795235,
+        "y": -26.461707612768535
+      },
+      {
+        "name": "roles",
+        "schemaName": "public",
+        "x": -41.25679713854011,
+        "y": 347.74843753993036
+      },
+      {
+        "name": "user_license",
+        "schemaName": "public",
+        "x": 577.7481280699761,
+        "y": -51.669765108567745
+      },
+      {
+        "name": "car_license",
+        "schemaName": "public",
+        "x": 617.7697233614194,
+        "y": 374.51118406971966
+      },
+      {
+        "name": "booking",
+        "schemaName": "public",
+        "x": 447.2983241511347,
+        "y": -336.4425127058275
+      },
+      {
+        "name": "users_log",
+        "schemaName": "public",
+        "x": 0.11527749308941182,
+        "y": 1011.952437646145
+      },
+      {
+        "name": "lwk_license",
+        "schemaName": "public",
+        "x": 248.34772528286652,
+        "y": 1017.5687933476889
+      },
+      {
+        "name": "stations",
+        "schemaName": "public",
+        "x": -41.25679713854011,
+        "y": 515.4062907854934
+      },
+      {
+        "name": "oil_types",
+        "schemaName": "public",
+        "x": 626.3106288652549,
+        "y": 586.6581970955219
+      },
+      {
+        "name": "station_oil_inventory",
+        "schemaName": "public",
+        "x": 304.72511917869195,
+        "y": 792.93521495256
+      },
+      {
+        "name": "companies",
+        "schemaName": "public",
+        "x": 573.4653492345625,
+        "y": 1009.5727377744015
+      },
+      {
+        "name": "sessions",
+        "schemaName": "public",
+        "x": -22.869208413371368,
+        "y": 687.7414205899757
+      }
+    ],
+    "tableGroupCollapseStates": [],
+    "stickyNoteLayouts": [],
+    "referencePaths": [
+      {
+        "firstFieldNames": [
+          "user_id"
+        ],
+        "firstTableName": "posts",
+        "firstSchemaName": "public",
+        "firstRelation": "*",
+        "secondFieldNames": [
+          "id"
+        ],
+        "secondTableName": "users",
+        "secondSchemaName": "public",
+        "secondRelation": "1",
+        "checkPoints": []
+      },
+      {
+        "firstFieldNames": [
+          "id"
+        ],
+        "firstTableName": "users",
+        "firstSchemaName": "public",
+        "firstRelation": "1",
+        "secondFieldNames": [
+          "following_user_id"
+        ],
+        "secondTableName": "follows",
+        "secondSchemaName": "public",
+        "secondRelation": "*",
+        "checkPoints": []
+      },
+      {
+        "firstFieldNames": [
+          "id"
+        ],
+        "firstTableName": "users",
+        "firstSchemaName": "public",
+        "firstRelation": "1",
+        "secondFieldNames": [
+          "followed_user_id"
+        ],
+        "secondTableName": "follows",
+        "secondSchemaName": "public",
+        "secondRelation": "*",
+        "checkPoints": []
+      },
+      {
+        "firstFieldNames": [
+          "roles_id"
+        ],
+        "firstTableName": "users",
+        "firstSchemaName": "public",
+        "firstRelation": "1",
+        "secondFieldNames": [
+          "roles_id"
+        ],
+        "secondTableName": "roles",
+        "secondSchemaName": "public",
+        "secondRelation": "*",
+        "checkPoints": []
+      },
+      {
+        "firstFieldNames": [
+          "license_id"
+        ],
+        "firstTableName": "users",
+        "firstSchemaName": "public",
+        "firstRelation": "1",
+        "secondFieldNames": [
+          "license_id"
+        ],
+        "secondTableName": "user_license",
+        "secondSchemaName": "public",
+        "secondRelation": "*",
+        "checkPoints": []
+      },
+      {
+        "firstFieldNames": [
+          "users_id"
+        ],
+        "firstTableName": "booking",
+        "firstSchemaName": "public",
+        "firstRelation": "1",
+        "secondFieldNames": [
+          "user_id"
+        ],
+        "secondTableName": "users",
+        "secondSchemaName": "public",
+        "secondRelation": "*",
+        "checkPoints": []
+      },
+      {
+        "firstFieldNames": [
+          "session_id"
+        ],
+        "firstTableName": "session",
+        "firstSchemaName": "public",
+        "firstRelation": "1",
+        "secondFieldNames": [
+          "session_id"
+        ],
+        "secondTableName": "users",
+        "secondSchemaName": "public",
+        "secondRelation": "*",
+        "checkPoints": []
+      },
+      {
+        "firstFieldNames": [
+          "car_license_id"
+        ],
+        "firstTableName": "users",
+        "firstSchemaName": "public",
+        "firstRelation": "1",
+        "secondFieldNames": [
+          "car_license_id"
+        ],
+        "secondTableName": "car_license",
+        "secondSchemaName": "public",
+        "secondRelation": "*",
+        "checkPoints": []
+      },
+      {
+        "firstFieldNames": [
+          "station_id"
+        ],
+        "firstTableName": "station_oil_inventory",
+        "firstSchemaName": "public",
+        "firstRelation": "*",
+        "secondFieldNames": [
+          "station_id"
+        ],
+        "secondTableName": "stations",
+        "secondSchemaName": "public",
+        "secondRelation": "1",
+        "checkPoints": []
+      },
+      {
+        "firstFieldNames": [
+          "oil_type_id"
+        ],
+        "firstTableName": "station_oil_inventory",
+        "firstSchemaName": "public",
+        "firstRelation": "*",
+        "secondFieldNames": [
+          "oil_type_id"
+        ],
+        "secondTableName": "oil_types",
+        "secondSchemaName": "public",
+        "secondRelation": "1",
+        "checkPoints": []
+      },
+      {
+        "firstFieldNames": [
+          "station_id"
+        ],
+        "firstTableName": "booking",
+        "firstSchemaName": "public",
+        "firstRelation": "*",
+        "secondFieldNames": [
+          "station_id"
+        ],
+        "secondTableName": "stations",
+        "secondSchemaName": "public",
+        "secondRelation": "1",
+        "checkPoints": []
+      },
+      {
+        "firstFieldNames": [
+          "user_id"
+        ],
+        "firstTableName": "users",
+        "firstSchemaName": "public",
+        "firstRelation": "1",
+        "secondFieldNames": [
+          "user_id"
+        ],
+        "secondTableName": "sessions",
+        "secondSchemaName": "public",
+        "secondRelation": "*",
+        "checkPoints": []
+      },
+      {
+        "firstFieldNames": [
+          "session_id"
+        ],
+        "firstTableName": "sessions",
+        "firstSchemaName": "public",
+        "firstRelation": "1",
+        "secondFieldNames": [
+          "session_id"
+        ],
+        "secondTableName": "users",
+        "secondSchemaName": "public",
+        "secondRelation": "*",
+        "checkPoints": []
+      },
+      {
+        "firstFieldNames": [
+          "user_id"
+        ],
+        "firstTableName": "sessions",
+        "firstSchemaName": "public",
+        "firstRelation": "*",
+        "secondFieldNames": [
+          "user_id"
+        ],
+        "secondTableName": "users",
+        "secondSchemaName": "public",
+        "secondRelation": "1",
+        "checkPoints": []
+      }
+    ]
+  },
+  "views": {}
+}
