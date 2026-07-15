@@ -230,7 +230,7 @@
             <ul class="list-unstyled d-flex flex-column gap-3">
                 <li>
                     <a href="view_company.php" class="menu-btn-nav">
-                        <i class="bi bi-building-gear fs-5 me-3 txt-neon-cyan"></i> View Company[cite: 1]
+                        <i class="bi bi-building-gear fs-5 me-3 txt-neon-cyan"></i> View HQ & User Accounts[cite: 1]
                     </a>
                 </li>
                 <li>
