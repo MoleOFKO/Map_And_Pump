@@ -22,7 +22,7 @@
                 <mxCell id="9" style="edgeStyle=none;html=1;entryX=1;entryY=0.5;entryDx=0;entryDy=0;exitX=0;exitY=0.5;exitDx=0;exitDy=0;" edge="1" parent="2" source="8" target="6">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
-                <mxCell id="8" value="Change to&amp;nbsp;&lt;div&gt;user account&lt;/div&gt;" style="ellipse;whiteSpace=wrap;html=1;" vertex="1" parent="2">
+                <mxCell id="8" value="Change to&amp;nbsp;&lt;div&gt;Customer account&lt;/div&gt;" style="ellipse;whiteSpace=wrap;html=1;" vertex="1" parent="2">
                     <mxGeometry x="225" y="270" width="105" height="40" as="geometry"/>
                 </mxCell>
                 <mxCell id="10" value="Logout" style="ellipse;whiteSpace=wrap;html=1;" vertex="1" parent="2">
