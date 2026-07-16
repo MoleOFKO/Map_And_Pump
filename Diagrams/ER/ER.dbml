@@ -1,116 +1,151 @@
-// Use DBML to define your database structure
-// Docs: https://dbml.dbdiagram.io/docs
 
+  // Clean DBML for dbdiagram.io
+  // Docs: https://dbml.dbdiagram.io/docs
 
-Table sessions {
-  session_id varchar [pk]
-  user_id integer 
-  ip_address varchar
-  user_agent varchar // Browser/Device info
-  is_active boolean [default: true]
-  created_at timestamp
-  expires_at timestamp
-}
+  Table users {
+    user_id int [pk, increment]
+    email varchar(255) [not null, unique]
+    hashed_password varchar(255) [not null]
+    license_id int
+    car_license_id int
+    session_id int
+    headquarter_id int
+    role_id int
+    status varchar(50)
+    created_at timestamp
+    updated_at timestamp
+  }
 
-Table roles{
-    roles_id integer [pk]
-    roles_name varchar
-}
+  Table roles {
+    role_id int [pk, increment]
+    role_name varchar(100) [not null]
+  }
 
-Table user_license{
-    license_id integer [pk]
-    license_image varchar
-    license_number integer
-    license_name varchar
-    phone_number int
-    nrc_number varchar
-    date_of_birth varchar
-    blood_type varchar
-    license_least_valid_date varchar
-    update_date timestamp
-    create_at timestamp
-}
+  Table user_license {
+    license_id int [pk, increment]
+    license_image varchar(255)
+    license_number varchar(100)
+    license_name varchar(255)
+    phone_number varchar(50)
+    nrc_number varchar(100)
+    date_of_birth date
+    blood_type varchar(10)
+    license_last_valid_date date
+    created_at timestamp
+    updated_at timestamp
+  }
 
-Table car_license{
-    car_license_id integer [pk]
-    car_plate_number varchar
-    model_year year
-    vehicle_type varchar
-    location varchar
+  Table car_license {
+    car_license_id int [pk, increment]
+    car_plate_number varchar(50)
+    model_year int
+    vehicle_type varchar(100)
+    location varchar(255)
+    filled_gas int
+    created_at timestamp
+    updated_at timestamp
+  }
 
-}
+  Table sessions {
+    session_id int [pk, increment]
+    user_id int
+    ip_address varchar(45)
+    user_agent varchar(255)
+    is_active boolean [default: true]
+    created_at timestamp
+    expires_at timestamp
+  }
 
-Table booking {
-    booking_id integer [pk]
-    users_id integer
-    station_id integer
-    qr_code varchar
+  Table headquarter {
+    headquarter_id int [pk, increment]
+    role_id int
+    company_name varchar(255)
+    company_logo varchar(255)
+    contact_number varchar(50)
+    location varchar(255)
+    business_license varchar(255)
+    created_at timestamp
+    expire_at timestamp
+  }
+
+  Table stations {
+    station_id int [pk, increment]
+    station_name varchar(255)
+    location varchar(255)
+    created_at timestamp
+    updated_at timestamp
+  }
+
+  Table oil_types {
+    oil_type_id int [pk, increment]
+    oil_name varchar(255)
+    price_per_liter decimal(10,2)
+    is_active boolean
+    created_at timestamp
+    updated_at timestamp
+  }
+
+  Table station_oil_inventory {
+    inventory_id int [pk, increment]
+    station_id int
+    oil_type_id int
+    current_amount_liters decimal(12,3)
+    updated_at timestamp
+  }
+
+  Table booking {
+    booking_id int [pk, increment]
+    user_id int
+    station_id int
+    oil_type_id int
+    qr_code varchar(255)
+    status varchar(50)
     filled boolean
     expire_at timestamp
     created_at timestamp
-}
+  }
 
-Table users {
-  user_id integer [primary key]
-  email varchar
-  hashed_password varchar
-  license_id integer
-  car_license_id integer
-  session_id integer
-  roles_id varchar
-  created_at timestamp
-}
-
-Table users_log{
-    users_log_id integer
-    action varchar
+  Table feedback {
+    feedback_id int [pk, increment]
+    user_id int
+    feedback text
     created_at timestamp
-}   
+  }
 
-Table lwk_license{
-    lwk_license_id integer
-    plate_number varchar
-}
+  Table report {
+    report_id int [pk, increment]
+    user_id int
+    role_id int
+    report text
+    created_at timestamp
+  }
 
-Table stations {
-  station_id integer [pk]
-  station_name varchar
-  location varchar
-}
+  Table users_log {
+    users_log_id int [pk, increment]
+    user_id int
+    action varchar(255)
+    created_at timestamp
+  }
 
-Table oil_types {
-  oil_type_id integer [pk]
-  name varchar
-  price_per_liter decimal
-  is_active boolean
-}
+  Table lwk_license {
+    lwk_license_id int [pk, increment]
+    plate_number varchar(100)
+    created_at timestamp
+  }
 
-Table station_oil_inventory {
-  inventory_id integer [pk]
-  station_id integer
-  oil_type_id integer
-  current_amount_liters decimal
-}
-
-Table companies {
-  company_id integer [pk]
-  company_name varchar
-  status varchar
-}
-
-Ref: station_oil_inventory.station_id > stations.station_id
-
-Ref: station_oil_inventory.oil_type_id > oil_types.oil_type_id
-
-Ref: booking.station_id > stations.station_id
-
-Ref: users.roles_id < roles.roles_id 
-
-Ref: users.license_id < user_license.license_id 
-
-Ref: booking.users_id < users.user_id
-
-ref: sessions.user_id > users.user_id
-
-Ref: users.car_license_id < car_license.car_license_id
-
+  // Foreign key references (child > parent)
+  Ref: users.role_id > roles.role_id
+  Ref: users.license_id > user_license.license_id
+  Ref: users.car_license_id > car_license.car_license_id
+  Ref: users.session_id > sessions.session_id
+  Ref: users.headquarter_id > headquarter.headquarter_id
+  Ref: sessions.user_id > users.user_id
+  Ref: booking.user_id > users.user_id
+  Ref: booking.station_id > stations.station_id
+  Ref: booking.oil_type_id > oil_types.oil_type_id
+  Ref: report.user_id > users.user_id
+  Ref: report.role_id > roles.role_id
+  Ref: users_log.user_id > users.user_id
+  Ref: feedback.user_id > users.user_id
+  Ref: station_oil_inventory.station_id > stations.station_id
+  Ref: station_oil_inventory.oil_type_id > oil_types.oil_type_id

@@ -9,38 +9,38 @@
       {
         "name": "users",
         "schemaName": "public",
-        "x": -80.3304231795235,
-        "y": -26.461707612768535
+        "x": -141.7923180192467,
+        "y": -134.02002358228418
       },
       {
         "name": "roles",
         "schemaName": "public",
-        "x": -41.25679713854011,
-        "y": 347.74843753993036
+        "x": -287.1043764974329,
+        "y": 366.1870059918472
       },
       {
         "name": "user_license",
         "schemaName": "public",
-        "x": 577.7481280699761,
-        "y": -51.669765108567745
+        "x": 476.33600158443255,
+        "y": -48.59667036658158
       },
       {
         "name": "car_license",
         "schemaName": "public",
-        "x": 617.7697233614194,
-        "y": 374.51118406971966
+        "x": 522.5037863598487,
+        "y": 389.8766577796504
       },
       {
         "name": "booking",
         "schemaName": "public",
-        "x": 447.2983241511347,
-        "y": -336.4425127058275
+        "x": 505.6871242488719,
+        "y": -364.1003653837029
       },
       {
         "name": "users_log",
         "schemaName": "public",
-        "x": 0.11527749308941182,
-        "y": 1011.952437646145
+        "x": 548.2612945531826,
+        "y": 1211.7035958752454
       },
       {
         "name": "lwk_license",
@@ -51,8 +51,8 @@
       {
         "name": "stations",
         "schemaName": "public",
-        "x": -41.25679713854011,
-        "y": 515.4062907854934
+        "x": 929.8411413290861,
+        "y": -204.10036538370292
       },
       {
         "name": "oil_types",
@@ -63,20 +63,32 @@
       {
         "name": "station_oil_inventory",
         "schemaName": "public",
-        "x": 304.72511917869195,
-        "y": 792.93521495256
-      },
-      {
-        "name": "companies",
-        "schemaName": "public",
-        "x": 573.4653492345625,
-        "y": 1009.5727377744015
+        "x": 1008.4638150935225,
+        "y": 92.2696137797156
       },
       {
         "name": "sessions",
         "schemaName": "public",
-        "x": -22.869208413371368,
-        "y": 687.7414205899757
+        "x": -250.27821932034718,
+        "y": 721.5454627518236
+      },
+      {
+        "name": "headquarter",
+        "schemaName": "public",
+        "x": 568.092567379556,
+        "y": 827.3272580917783
+      },
+      {
+        "name": "report",
+        "schemaName": "public",
+        "x": -34.234002049731146,
+        "y": 1185.569868705543
+      },
+      {
+        "name": "feedback",
+        "schemaName": "public",
+        "x": -287.1043764974329,
+        "y": 1421.7035958752454
       }
     ],
     "tableGroupCollapseStates": [],
@@ -290,6 +302,201 @@
         "secondTableName": "users",
         "secondSchemaName": "public",
         "secondRelation": "1",
+        "checkPoints": []
+      },
+      {
+        "firstFieldNames": [
+          "business_role"
+        ],
+        "firstTableName": "users",
+        "firstSchemaName": "public",
+        "firstRelation": "1",
+        "secondFieldNames": [
+          "roles_id"
+        ],
+        "secondTableName": "roles",
+        "secondSchemaName": "public",
+        "secondRelation": "*",
+        "checkPoints": []
+      },
+      {
+        "firstFieldNames": [
+          "headquarter_id"
+        ],
+        "firstTableName": "users",
+        "firstSchemaName": "public",
+        "firstRelation": "1",
+        "secondFieldNames": [
+          "headquarter_id"
+        ],
+        "secondTableName": "headquarter",
+        "secondSchemaName": "public",
+        "secondRelation": "*",
+        "checkPoints": []
+      },
+      {
+        "firstFieldNames": [
+          "report_id"
+        ],
+        "firstTableName": "users",
+        "firstSchemaName": "public",
+        "firstRelation": "1",
+        "secondFieldNames": [
+          "report_id"
+        ],
+        "secondTableName": "report",
+        "secondSchemaName": "public",
+        "secondRelation": "*",
+        "checkPoints": []
+      },
+      {
+        "firstFieldNames": [
+          "roles_id"
+        ],
+        "firstTableName": "roles",
+        "firstSchemaName": "public",
+        "firstRelation": "1",
+        "secondFieldNames": [
+          "role_id"
+        ],
+        "secondTableName": "report",
+        "secondSchemaName": "public",
+        "secondRelation": "*",
+        "checkPoints": []
+      },
+      {
+        "firstFieldNames": [
+          "user_id"
+        ],
+        "firstTableName": "users",
+        "firstSchemaName": "public",
+        "firstRelation": "1",
+        "secondFieldNames": [
+          "users_log_id"
+        ],
+        "secondTableName": "users_log",
+        "secondSchemaName": "public",
+        "secondRelation": "*",
+        "checkPoints": []
+      },
+      {
+        "firstFieldNames": [
+          "oil_type_id"
+        ],
+        "firstTableName": "booking",
+        "firstSchemaName": "public",
+        "firstRelation": "1",
+        "secondFieldNames": [
+          "oil_type_id"
+        ],
+        "secondTableName": "oil_types",
+        "secondSchemaName": "public",
+        "secondRelation": "*",
+        "checkPoints": []
+      },
+      {
+        "firstFieldNames": [
+          "inventory_id"
+        ],
+        "firstTableName": "stations",
+        "firstSchemaName": "public",
+        "firstRelation": "1",
+        "secondFieldNames": [
+          "inventory_id"
+        ],
+        "secondTableName": "station_oil_inventory",
+        "secondSchemaName": "public",
+        "secondRelation": "*",
+        "checkPoints": []
+      },
+      {
+        "firstFieldNames": [
+          "user_id"
+        ],
+        "firstTableName": "users",
+        "firstSchemaName": "public",
+        "firstRelation": "1",
+        "secondFieldNames": [
+          "report_id"
+        ],
+        "secondTableName": "report",
+        "secondSchemaName": "public",
+        "secondRelation": "*",
+        "checkPoints": []
+      },
+      {
+        "firstFieldNames": [
+          "role_id"
+        ],
+        "firstTableName": "users",
+        "firstSchemaName": "public",
+        "firstRelation": "1",
+        "secondFieldNames": [
+          "role_id"
+        ],
+        "secondTableName": "roles",
+        "secondSchemaName": "public",
+        "secondRelation": "*",
+        "checkPoints": []
+      },
+      {
+        "firstFieldNames": [
+          "user_id"
+        ],
+        "firstTableName": "booking",
+        "firstSchemaName": "public",
+        "firstRelation": "1",
+        "secondFieldNames": [
+          "user_id"
+        ],
+        "secondTableName": "users",
+        "secondSchemaName": "public",
+        "secondRelation": "*",
+        "checkPoints": []
+      },
+      {
+        "firstFieldNames": [
+          "role_id"
+        ],
+        "firstTableName": "roles",
+        "firstSchemaName": "public",
+        "firstRelation": "1",
+        "secondFieldNames": [
+          "role_id"
+        ],
+        "secondTableName": "report",
+        "secondSchemaName": "public",
+        "secondRelation": "*",
+        "checkPoints": []
+      },
+      {
+        "firstFieldNames": [
+          "user_id"
+        ],
+        "firstTableName": "feedback",
+        "firstSchemaName": "public",
+        "firstRelation": "1",
+        "secondFieldNames": [
+          "user_id"
+        ],
+        "secondTableName": "users",
+        "secondSchemaName": "public",
+        "secondRelation": "*",
+        "checkPoints": []
+      },
+      {
+        "firstFieldNames": [
+          "inventory_id"
+        ],
+        "firstTableName": "station_oil_inventory",
+        "firstSchemaName": "public",
+        "firstRelation": "1",
+        "secondFieldNames": [
+          "inventory_id"
+        ],
+        "secondTableName": "oil_types",
+        "secondSchemaName": "public",
+        "secondRelation": "*",
         "checkPoints": []
       }
     ]
