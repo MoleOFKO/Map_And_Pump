@@ -44,13 +44,13 @@
                     <label>Company Address</label>
                     <input type="text" placeholder="456 Power Blvd, Houston, TX" required style="margin-bottom: 8px;">
                     <label>Contact Number</label>
-                    <input type="tel" placeholder="+1 (555) 019-2834" required>
+                    <input type="text" placeholder="+1 (555) 019-2834" required style="margin-bottom: 8px;">
                 </div>
                 
                 <button type="submit" class="btn" style="width: 100%;">Submit Request for Approval</button>
             </form>
             <p style="text-align: center; margin-top: 15px; font-size: 0.9rem; color: var(--text-muted);">
-                Already registered? <a href="login.html" style="color: var(--primary);">Go to Login</a>
+                Already registered? <a href="../login/login.php" style="color: var(--primary);">Go to Login</a>
             </p>
         </div>
 

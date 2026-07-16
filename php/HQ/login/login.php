@@ -32,7 +32,7 @@
             </form>
             
             <p style="text-align: center; margin-top: 20px; font-size: 0.9rem; color: var(--text-muted);">
-                New Account? <a href="register.html" style="color: var(--primary);">Register Now</a>
+                New Account? <a href="../register/register.php" style="color: var(--primary);">Register Now</a>
             </p>
         </div>
     </div>
@@ -44,15 +44,15 @@
             
             if (!registered) {
                 alert("No active registration found. Directing to Registration Flow.");
-                window.location.href = 'register.html';
+                window.location.href = '../register/register.php';
                 return;
             }
 
             const firstTime = localStorage.getItem('first_time_login') === 'true';
             if (firstTime) {
-                window.location.href = 'change-password.html';
+                window.location.href = '../change_password/change_password.php';
             } else {
-                window.location.href = '../dashboard/index.html';
+                window.location.href = '../dashboard/index.php';
             }
         }
     </script>
