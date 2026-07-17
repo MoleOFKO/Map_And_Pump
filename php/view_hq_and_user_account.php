@@ -286,11 +286,11 @@
                     <button class="navbar-toggler me-2 border-0" type="button" data-bs-toggle="collapse" data-bs-target="#collapsibleNavbar">
                         <span class="navbar-toggler-icon"></span>
                     </button>
-                    <a class="navbar-brand d-sm-block d-none fw-semibold txt-neon-cyan" href="owner_dashboard.php" style="font-size: 0.95rem;">Owner Portal</a>
+                    <a class="navbar-brand d-sm-block d-none fw-semibold txt-neon-cyan" href="admin_dashboard.php" style="font-size: 0.95rem;">admin Portal</a>
                 </div>
 
                 <div class="text-center">
-                    <a href="owner_dashboard.php" class="text-decoration-none d-flex align-items-center justify-content-center gap-2 text-white fw-bold">
+                    <a href="admin_dashboard.php" class="text-decoration-none d-flex align-items-center justify-content-center gap-2 text-white fw-bold">
                         <img src="../images/Logo.png" alt="Logo" class="nav-logo">
                         <span style="font-size: 1rem; letter-spacing: 0.5px; color: #ffffff;">Map & Pump</span>
                     </a>
