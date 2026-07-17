@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Moderator Dashboard - Map & Pump</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+    <!-- Browser Tab Logo (Favicon) -->
+    <link rel="icon" type="image/png" href="../images/Logo.png">
     <link rel="stylesheet" href="../css/user_css.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
     <style>
@@ -229,39 +231,39 @@
         <div class="offcanvas-body">
             <ul class="list-unstyled d-flex flex-column gap-3">
                 <li>
-                    <a href="view_company.php" class="menu-btn-nav">
-                        <i class="bi bi-building-gear fs-5 me-3 txt-neon-cyan"></i> View Company[cite: 1]
+                    <a href="admin_dashboard.php" class="menu-btn-nav">
+                        <i class="bi bi-building-gear fs-5 me-3 txt-neon-cyan"></i> View Company
                     </a>
                 </li>
                 <li>
                     <a href="view_requests.php" class="menu-btn-nav">
-                        <i class="bi bi-file-earmark-check fs-5 me-3 txt-neon-cyan"></i> View Company Requests[cite: 1]
+                        <i class="bi bi-file-earmark-check fs-5 me-3 txt-neon-cyan"></i> View Company Requests
                     </a>
                 </li>
                 <li>
                     <a href="view_report.php" class="menu-btn-nav">
-                        <i class="bi bi-graph-up-arrow fs-5 me-3 txt-neon-cyan"></i> View Report[cite: 1]
+                        <i class="bi bi-graph-up-arrow fs-5 me-3 txt-neon-cyan"></i> View Report
                     </a>
                 </li>
                 <li>
                     <a href="edit_profile.php" class="menu-btn-nav">
-                        <i class="bi bi-person-bounding-box fs-5 me-3 txt-neon-blue"></i> Edit Profile[cite: 1]
+                        <i class="bi bi-person-bounding-box fs-5 me-3 txt-neon-blue"></i> Edit Profile
                     </a>
                 </li>
                 <li>
                     <a href="manage_admin.php" class="menu-btn-nav">
-                        <i class="bi bi-people-fill fs-5 me-3 txt-neon-blue"></i> Manage Admins[cite: 1]
+                        <i class="bi bi-people-fill fs-5 me-3 txt-neon-blue"></i> Manage Admins
                     </a>
                 </li>
                 <li>
                     <a href="view_logs.php" class="menu-btn-nav">
-                        <i class="bi bi-terminal-split fs-5 me-3 text-danger"></i> View Log Files[cite: 1]
+                        <i class="bi bi-terminal-split fs-5 me-3 text-danger"></i> View Log Files
                     </a>
                 </li>
                 <hr style="border-color: rgba(0, 114, 255, 0.25);">
                 <li>
                     <a class="nav-link text-danger d-flex align-items-center px-4 py-2 rounded-pill" href="logout.php" style="transition: background 0.2s;" onmouseover="this.style.background='rgba(220,53,69,0.1)'" onmouseout="this.style.background='transparent'">
-                        <i class="bi bi-box-arrow-right me-3 fs-5"></i> Logout[cite: 1]
+                        <i class="bi bi-box-arrow-right me-3 fs-5"></i> Logout
                     </a>
                 </li>
             </ul>

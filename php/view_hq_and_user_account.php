@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>HQ & User Accounts - Map & Pump</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+    <!-- Browser Tab Logo (Favicon) -->
+    <link rel="icon" type="image/png" href="../images/Logo.png">
     <link rel="stylesheet" href="../css/user_css.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
     <style>
@@ -286,7 +288,8 @@
                     <button class="navbar-toggler me-2 border-0" type="button" data-bs-toggle="collapse" data-bs-target="#collapsibleNavbar">
                         <span class="navbar-toggler-icon"></span>
                     </button>
-                    <a class="navbar-brand d-sm-block d-none fw-semibold txt-neon-cyan" href="admin_dashboard.php" style="font-size: 0.95rem;">admin Portal</a>
+                    <a class="navbar-brand d-sm-block d-none fw-semibold txt-neon-cyan" href="admin_dashboard.php" style="font-size: 0.95rem;">Admin Portal</a>
+
                 </div>
 
                 <div class="text-center">
@@ -514,32 +517,32 @@
             <ul class="list-unstyled d-flex flex-column gap-3">
                 <li>
                     <a href="view_hq_and_user_account.php" class="menu-btn-nav">
-                        <i class="bi bi-building-gear me-3 txt-neon-cyan"></i> View HQ & User Accounts[cite: 1]
+                        <i class="bi bi-building-gear me-3 txt-neon-cyan"></i> View HQ & User Accounts
                     </a>
                 </li>
                 <li>
                     <a href="view_requests.php" class="menu-btn-nav">
-                        <i class="bi bi-file-earmark-check me-3 txt-neon-cyan"></i> View Requests[cite: 1]
+                        <i class="bi bi-file-earmark-check me-3 txt-neon-cyan"></i> View Requests
                     </a>
                 </li>
                 <li>
                     <a href="view_report.php" class="menu-btn-nav">
-                        <i class="bi bi-graph-up-arrow me-3 txt-neon-cyan"></i> View Report[cite: 1]
+                        <i class="bi bi-graph-up-arrow me-3 txt-neon-cyan"></i> View Report
                     </a>
                 </li>
                 <li>
                     <a href="edit_profile.php" class="menu-btn-nav">
-                        <i class="bi bi-person-bounding-box me-3 txt-neon-blue"></i> Edit Profile[cite: 1]
+                        <i class="bi bi-person-bounding-box me-3 txt-neon-blue"></i> Edit Profile
                     </a>
                 </li>
                 <li>
                     <a href="manage_admin.php" class="menu-btn-nav">
-                        <i class="bi bi-people-fill me-3 txt-neon-blue"></i> Manage Admins[cite: 1]
+                        <i class="bi bi-people-fill me-3 txt-neon-blue"></i> Manage Admins
                     </a>
                 </li>
                 <li>
                     <a href="view_logs.php" class="menu-btn-nav">
-                        <i class="bi bi-terminal-split me-3 text-danger"></i> View Log Files[cite: 1]
+                        <i class="bi bi-terminal-split me-3 text-danger"></i> View Log Files
                     </a>
                 </li>
                 <hr style="border-color: rgba(255, 255, 255, 0.1);">
