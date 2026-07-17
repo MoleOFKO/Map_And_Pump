@@ -6,7 +6,7 @@
     <title>Moderator Dashboard - Map & Pump</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
     <!-- Browser Tab Logo (Favicon) -->
-    <link rel="icon" type="image/png" href="../images/Logo.png">
+    <link rel="icon" type="image/png" href="../../images/Logo.png">
     <link rel="stylesheet" href="../css/user_css.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
     <style>
@@ -118,7 +118,7 @@
 
                 <div class="text-center">
                     <a href="moderator_dashboard.php" class="text-decoration-none d-flex align-items-center justify-content-center gap-2 text-white fw-bold">
-                        <img src="../images/Logo.png" alt="Logo" class="nav-logo">
+                        <img src="../../images/Logo.png" alt="Logo" class="nav-logo">
                         <span style="font-size: 1rem; letter-spacing: 0.5px; color: #ffffff;">Map & Pump</span>
                     </a>
                 </div>
@@ -180,9 +180,9 @@
                         <table class="table table-dark-custom align-middle m-0 small">
                             <thead>
                                 <tr>
-                                    <th>Category</th>
-                                    <th>Volume Metric Bar</th>
-                                    <th class="text-end">Total</th>
+                                    <th class="text-light">Category</th>
+                                    <th class="text-light">Volume Metric Bar</th>
+                                    <th class="text-light text-end">Total</th>
                                 </tr>
                             </thead>
                             <tbody>

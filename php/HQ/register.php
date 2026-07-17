@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>HQ Registration Portal</title>
-    <link rel="stylesheet" href="../css/Style.css">
+    <link rel="stylesheet" href="../../css/HQstyle.css">
     <style>
         body {
             display: flex;
@@ -50,7 +50,7 @@
                 <button type="submit" class="btn" style="width: 100%;">Submit Request for Approval</button>
             </form>
             <p style="text-align: center; margin-top: 15px; font-size: 0.9rem; color: var(--text-muted);">
-                Already registered? <a href="../login/login.php" style="color: var(--primary);">Go to Login</a>
+                Already registered? <a href="login.php" style="color: var(--primary);">Go to Login</a>
             </p>
         </div>
 

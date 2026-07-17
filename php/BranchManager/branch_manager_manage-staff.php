@@ -9,7 +9,7 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
 <!-- Browser Tab Logo (Favicon) -->
-<link rel="icon" type="image/png" href="../images/Logo.png">
+<link rel="icon" type="image/png" href="../../images/Logo.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Noto+Sans+Myanmar:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -22,6 +22,11 @@
     --red-400:#f87171;
     --slate-50:#f8fafc; --slate-300:#c9d2e3; --slate-400:#8b96ad;
   }
+  .nav-logo {
+            height: 24px;
+            width: auto;
+            object-fit: contain;
+        }
   *{box-sizing:border-box; margin:0; padding:0;}
   body{background:var(--navy-950); color:var(--slate-50); font-family:'Inter','Space Grotesk',sans-serif; overflow-x:hidden;}
   .disp{font-family:'Space Grotesk','Noto Sans Myanmar',sans-serif;}
@@ -265,7 +270,7 @@
 
 <div class="app-shell">
   <aside class="sidebar">
-    <div class="side-brand">
+    <!-- <div class="side-brand">
       <svg viewBox="0 0 100 120" fill="none">
         <defs><linearGradient id="g1" x1="0" y1="0" x2="100" y2="120">
           <stop offset="0" stop-color="#38bdf8"/><stop offset="1" stop-color="#1d4ed8"/>
@@ -275,7 +280,11 @@
         <path d="M36 52 L45 62 L64 40" stroke="white" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
       </svg>
       MAP & PUMP
-    </div>
+    </div> -->
+    <a href="admin_dashboard.php" class="text-decoration-none d-flex align-items-center justify-content-center gap-2 text-white fw-bold">
+        <img src="../../images/Logo.png" alt="Logo" class="nav-logo">
+        <span style="font-size: 1rem; letter-spacing: 0.5px; color: #ffffff;">Map & Pump</span>
+    </a>
     <div class="side-role">Branch Manager Console</div>
 
     <div class="side-branch">

@@ -6,8 +6,8 @@
     <title>Staff Dashboard - Map & Pump</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
     <!-- Browser Tab Logo (Favicon) -->
-    <link rel="icon" type="image/png" href="../images/Logo.png">
-    <link rel="stylesheet" href="../css/user_css.css">
+    <link rel="icon" type="image/png" href="../../images/Logo.png">
+    <link rel="stylesheet" href="../../css/user_css.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
     <style>
         .action-card {
@@ -52,7 +52,7 @@
                 <!-- Center Section: Logo + Name -->
                 <div class="position-sm-absolute start-50 translate-middle-sm text-center my-2 my-sm-0">
                     <a href="staff_dashboard.php" class="text-decoration-none d-flex align-items-center justify-content-center gap-2 text-white fw-bold">
-                        <img src="../images/Logo.png" alt="Map & Pump Logo" class="nav-logo">
+                        <img src="../../images/Logo.png" alt="Map & Pump Logo" class="nav-logo">
                         <span style="letter-spacing: 1px;">Map & Pump</span>
                     </a>
                 </div>

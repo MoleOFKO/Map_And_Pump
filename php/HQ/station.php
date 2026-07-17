@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <link rel="stylesheet" href="../css/Style.css">
+    <link rel="stylesheet" href="../../css/HQstyle.css">
 </head>
 <body>
     <h2 class="title">Station Network</h2>

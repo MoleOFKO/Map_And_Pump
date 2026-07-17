@@ -9,7 +9,7 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
 <!-- Browser Tab Logo (Favicon) -->
-<link rel="icon" type="image/png" href="../images/Logo.png">
+<link rel="icon" type="image/png" href="../../images/Logo.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2 family=Space+Grotesk:wght@400;500;600;700&family=Noto+Sans+Myanmar:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -199,6 +199,11 @@
   .foot-note a:hover{color:var(--sky-300);}
   .foot-note a i { transition: transform 0.2s; display: inline-block; }
   .foot-note a:hover i { transform: translateX(-3px); }
+  .nav-logo {
+    height: 24px;
+    width: auto;
+    object-fit: contain;
+        }
 </style>
 </head>
 <body>
@@ -209,7 +214,7 @@
 <div class="gauge-needle"></div>
 
 <div class="wrap">
-  <div class="brand">
+  <!-- <div class="brand">
     <svg class="brand-mark" viewBox="0 0 100 120" fill="none">
       <defs>
         <linearGradient id="g1" x1="0" y1="0" x2="100" y2="120">
@@ -222,7 +227,12 @@
       <path d="M36 52 L45 62 L64 40" stroke="white" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
     </svg>
     MAP & PUMP
-  </div>
+  </div> -->
+  <a href="branch_manager_dashboard.php" class="text-decoration-none d-flex align-items-center justify-content-center gap-2 text-white fw-bold">
+      <img src="../
+      " alt="Logo" class="nav-logo">
+      <span style="font-size: 1rem; letter-spacing: 0.5px; color: #ffffff;">Map & Pump</span>
+    </a>
 
   <div class="card">
     <div class="eyebrow"><span class="dot"></span> Branch Manager Portal</div>

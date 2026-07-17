@@ -11,7 +11,8 @@
     <!-- Custom Theme Colors Over Bootstrap -->
     <link rel="stylesheet" href="/css/HomePage.css">
     <!-- Browser Tab Logo (Favicon) -->
-    <link rel="icon" type="image/png" href="../images/Logo.png">
+    <link rel="icon" type="image/png" href="../
+    ../images/Logo.png">
 </head>
 <body>
 
