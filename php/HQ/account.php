@@ -3,7 +3,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <link rel="stylesheet" href="../css/Style.css">
+    <link rel="stylesheet" href="../../css/HQstyle.css">
 </head>
 <body>
     <div class="container">

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>HQ Management System</title>
-    <link rel="stylesheet" href="../css/Style.css">
+    <link rel="stylesheet" href="../../css/HQstyle.css">
     <style>
         body {
             padding: 0;
@@ -58,14 +58,14 @@
             <div>
                 <h3 style="margin-bottom: 24px; padding-left: 16px; color: var(--primary);">HQ Dashboard</h3>
                 <ul class="sidebar-menu">
-                    <li onclick="routeTo('../brand/brand.php')" class="active">Brand Config</li>
-                    <li onclick="routeTo('../price/pricing.php')">Oil Types & Pricing</li>
-                    <li onclick="routeTo('../station/station.php')">Manage Stations</li>
-                    <li onclick="routeTo('../report/report.php')">Manager Reports</li>
-                    <li onclick="routeTo('../report/report_to_admin.php')">Report to Admin</li>
-                    <li onclick="routeTo('../account/account.php')">Manager Accounts</li>
-                    <li onclick="routeTo('../profile/profile.php')">Edit Profile</li>
-                    <li onclick="routeTo('../switch_account/switch_account.php')" style="border-top: 1px solid var(--border); padding-top: 12px; margin-top: 12px;">Switch to Customer</li>
+                    <li onclick="routeTo('brand.php')" class="active">Brand Config</li>
+                    <li onclick="routeTo('pricing.php')">Oil Types & Pricing</li>
+                    <li onclick="routeTo('station.php')">Manage Stations</li>
+                    <li onclick="routeTo('report_from_manager.php')">Manager Reports</li>
+                    <li onclick="routeTo('report_to_admin.php')">Report to Admin</li>
+                    <li onclick="routeTo('account.php')">Manager Accounts</li>
+                    <li onclick="routeTo('profile.php')">Edit Profile</li>
+                    <li onclick="routeTo(' switch_account.php')" style="border-top: 1px solid var(--border); padding-top: 12px; margin-top: 12px;">Switch to Customer</li>
                 </ul>
             </div>
             
@@ -76,7 +76,7 @@
 
         <!-- Main Dynamic Viewport -->
         <main style="height: 100%; width: 100%;">
-            <iframe id="viewport" class="content-frame" src="../brand/brand.php"></iframe>
+            <iframe id="viewport" class="content-frame" src="brand.php"></iframe>
         </main>
     </div>
 
@@ -94,7 +94,7 @@
 
         function handleLogout() {
             if(confirm("Are you sure you want to log out?")) {
-                window.location.href = '../auth/login.php';
+                window.location.href = 'login.php';
             }
         }
     </script>
