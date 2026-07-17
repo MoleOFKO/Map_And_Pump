@@ -25,8 +25,26 @@
             flex-direction: column;
             justify-content: space-between;
         }
+        .sidebar-brand {
+            padding: 12px;
+            margin-bottom: 12px;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            background: rgba(255,255,255,0.03);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        }
+        .sidebar-section-title {
+            font-size: 0.75rem;
+            font-weight: 700;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            color: var(--text-muted);
+            margin: 8px 0 8px 6px;
+        }
         .sidebar-menu {
             list-style: none;
+            padding: 0;
+            margin: 0;
         }
         .sidebar-menu li {
             padding: 12px 16px;
@@ -42,6 +60,11 @@
             color: var(--primary);
             font-weight: 600;
         }
+        .nav-logo {
+            height: 24px;
+            width: auto;
+            object-fit: contain;
+        }
         .content-frame {
             width: 100%;
             height: 100%;
@@ -56,9 +79,16 @@
         <!-- Sidebar Navigation -->
         <aside class="sidebar">
             <div>
-                <h3 style="margin-bottom: 24px; padding-left: 16px; color: var(--primary);">HQ Dashboard</h3>
+                <div class="sidebar-brand text-center">
+                    <a href="#" class="text-decoration-none d-flex align-items-center justify-content-center gap-2 text-white fw-bold">
+                        <img src="../../images/Logo.png" alt="Logo" class="nav-logo">
+                        <span style="font-size: 1rem; letter-spacing: 0.5px; color: #ffffff;">Map & Pump</span>
+                    </a>
+                </div>
+                <div class="sidebar-section-title">Features</div>
                 <ul class="sidebar-menu">
-                    <li onclick="routeTo('brand.php')" class="active">Brand Config</li>
+                    <li onclick="routeTo('dashboard.php')" class="active">HQ DashBoard</li>
+                    <li onclick="routeTo('brand.php')">Brand Config</li>
                     <li onclick="routeTo('pricing.php')">Oil Types & Pricing</li>
                     <li onclick="routeTo('station.php')">Manage Stations</li>
                     <li onclick="routeTo('report_from_manager.php')">Manager Reports</li>
@@ -76,7 +106,7 @@
 
         <!-- Main Dynamic Viewport -->
         <main style="height: 100%; width: 100%;">
-            <iframe id="viewport" class="content-frame" src="brand.php"></iframe>
+            <iframe id="viewport" class="content-frame" src="dashboard.php"></iframe>
         </main>
     </div>
 
