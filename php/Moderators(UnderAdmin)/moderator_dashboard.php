@@ -251,8 +251,8 @@
                     </a>
                 </li>
                 <li>
-                    <a href="manage_admin.php" class="menu-btn-nav">
-                        <i class="bi bi-people-fill fs-5 me-3 txt-neon-blue"></i> Manage Admins
+                    <a href="manage_moderators.php" class="menu-btn-nav">
+                        <i class="bi bi-people-fill fs-5 me-3 txt-neon-blue"></i> Manage Moderators
                     </a>
                 </li>
                 <li>
