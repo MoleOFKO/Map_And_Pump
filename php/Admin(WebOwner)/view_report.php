@@ -307,7 +307,7 @@
                     </a>
                 </li>
                 <li>
-                    <a href="view_company.php" class="menu-btn-nav">
+                    <a href="view_hq_and_user_account.php" class="menu-btn-nav">
                         <i class="bi bi-building-gear me-3 txt-neon-cyan"></i> View HQ & User Accounts
                     </a>
                 </li>
