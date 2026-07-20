@@ -197,7 +197,7 @@
   
   .pstat{font-size:10.5px; font-weight:700; padding:4px 10px; border-radius:999px; display:inline-flex; align-items:center; gap:6px; transition: all 0.3s;}
   .pstat.
-  active{background:rgba(52,211,153,0.14); color:var(--mint-400);}
+  .pstat.active{background:rgba(52,211,153,0.14); color:var(--mint-400);}
   .pstat.idle{background:rgba(139,150,173,0.14); color:var(--slate-400);}
   .pstat.maint{background:rgba(248,113,113,0.14); color:var(--red-400);}
   .pstat .d{width:6px; height:6px; border-radius:50%; background:currentColor;}
@@ -475,7 +475,7 @@
       const options = { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' };
       const dateString = now.toLocaleDateString('en-US', options);
       const timeString = now.toLocaleTimeString('en-US', { hour12: true, hour: '2-digit', minute: '2-digit', second: '2-digit' });
-      document.getElementById('live-clock').textContent = ${dateString} · ${timeString};
+      document.getElementById('live-clock').textContent = `${dateString} · ${timeString}`;
     }
     setInterval(updateClock, 1000);
     updateClock();

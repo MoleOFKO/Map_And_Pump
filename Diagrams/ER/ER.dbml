@@ -8,7 +8,6 @@
     hashed_password varchar(255) [not null]
     license_id int
     car_license_id int
-    session_id int
     headquarter_id int
     role_id int
     status varchar(50)
@@ -112,6 +111,11 @@
     created_at timestamp
   }
 
+  Table user_log{
+    user_id int
+    log_id int
+  }
+
   Table report {
     report_id int [pk, increment]
     user_id int
@@ -120,9 +124,8 @@
     created_at timestamp
   }
 
-  Table users_log {
-    users_log_id int [pk, increment]
-    user_id int
+  Table log {
+    log_id int [pk, increment]
     action varchar(255)
     created_at timestamp
   }
@@ -137,7 +140,6 @@
   Ref: users.role_id > roles.role_id
   Ref: users.license_id > user_license.license_id
   Ref: users.car_license_id > car_license.car_license_id
-  Ref: users.session_id > sessions.session_id
   Ref: users.headquarter_id > headquarter.headquarter_id
   Ref: sessions.user_id > users.user_id
   Ref: booking.user_id > users.user_id
@@ -145,7 +147,8 @@
   Ref: booking.oil_type_id > oil_types.oil_type_id
   Ref: report.user_id > users.user_id
   Ref: report.role_id > roles.role_id
-  Ref: users_log.user_id > users.user_id
+  Ref: users.user_id > user_log.user_id
+  Ref: log.log_id > user_log.user_id
   Ref: feedback.user_id > users.user_id
   Ref: station_oil_inventory.station_id > stations.station_id
   Ref: station_oil_inventory.oil_type_id > oil_types.oil_type_id
