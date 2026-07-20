@@ -34,6 +34,11 @@
     width:252px; flex-shrink:0; background:var(--navy-900); border-right:1px solid rgba(255,255,255,0.06);
     display:flex; flex-direction:column; padding:22px 16px; position:sticky; top:0; height:100vh; z-index:60;
   }
+  .nav-logo {
+    width: 32px;        
+    height: auto;
+    object-fit: contain;
+  }
   .side-role{font-size:11px; color:var(--slate-400); font-weight:500; margin:2px 0 0 46px;}
   .side-branch{
     margin:20px 8px 0; padding:10px 12px; background:var(--navy-800); border-radius:12px;
@@ -184,9 +189,9 @@
 
 <div class="app-shell">
   <aside class="sidebar">
-    <a href="dashboard.php" class="text-decoration-none d-flex align-items-center justify-content-center gap-2 text-white fw-bold">
-    <img src="../../images/Logo.png" alt="Logo" class="nav-logo">
-     <span style="font-size: 1rem; letter-spacing: 0.5px; color: #ffffff;">Map & Pump</span>
+    <a href="dashboard.php" class="text-decoration-none d-flex align-items-center gap-2 text-white fw-bold padding" style="padding: 6px 8px 0;">
+      <img src="../../images/Logo.png" alt="Logo" class="nav-logo">
+          <span class="disp" style="font-size: 17px; letter-spacing: 0.5px; color: #ffffff; font-weight: 700;">Map & Pump</span>
     </a>
     <div class="side-role">Branch Manager Console</div>
 
@@ -234,7 +239,7 @@
           <div class="avatar-big">Fe
             <div class="avatar-edit-btn"><i class="fa-solid fa-camera"></i></div>
           </div>
-          <h4>Felix Aung</h4>
+          <h4>Felix </h4>
           <span>Branch Manager</span>
           <div class="profile-tag"><i class="fa-solid fa-shield-halved"></i> Verified Manager Account</div>
 
@@ -265,7 +270,7 @@
               </div>
               <div class="form-group">
                 <label for="pf-nrc">NRC / National ID</label>
-                <input type="text" id="pf-nrc" class="form-control-custom" value="12/SACHANA(N)123456">
+                <input type="text" id="pf-nrc" class="form-control-custom" value="12/SAKHANA(N)123456">
               </div>
             </div>
             <div class="form-row">
