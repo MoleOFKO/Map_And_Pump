@@ -8,7 +8,6 @@
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
-<!-- Browser Tab Logo (Favicon) -->
 <link rel="icon" type="image/png" href="../../images/Logo.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -21,11 +20,6 @@
     --amber-400:#fbbf24; --amber-300:#fcd34d; --mint-400:#34d399;
     --red-400:#f87171;
     --slate-50:#f8fafc; --slate-300:#c9d2e3; --slate-400:#8b96ad;
-  }
-  .nav-logo {
-    height: 24px;
-    width: auto;
-    object-fit: contain;
   }
   *{box-sizing:border-box; margin:0; padding:0;}
   body{background:var(--navy-950); color:var(--slate-50); font-family:'Inter','Space Grotesk',sans-serif; overflow-x:hidden;}
@@ -109,6 +103,12 @@
     opacity: 0;
     transform: translateY(10px);
     animation: layoutFadeIn 0.5s ease forwards;
+  }
+
+  .page-foot{
+    text-align:center; margin-top:34px; padding-top:18px;
+    border-top:1px solid rgba(255,255,255,0.06);
+    font-size:12px; color:var(--slate-400);
   }
   @keyframes layoutFadeIn {
     to { opacity: 1; transform: translateY(0); }
@@ -288,7 +288,7 @@
 
 <div class="app-shell">
   <aside class="sidebar">
-    <!-- <div class="side-brand">
+  <!--  <div class="side-brand">
       <svg viewBox="0 0 100 120" fill="none">
         <defs><linearGradient id="g1" x1="0" y1="0" x2="100" y2="120">
           <stop offset="0" stop-color="#38bdf8"/><stop offset="1" stop-color="#1d4ed8"/>
@@ -299,9 +299,9 @@
       </svg>
         MAP & PUMP
     </div> -->
-    <a href="branch_manager_dashboard.php" class="text-decoration-none d-flex align-items-center justify-content-center gap-2 text-white fw-bold">
-      <img src="../../images/Logo.png" alt="Logo" class="nav-logo">
-      <span style="font-size: 1rem; letter-spacing: 0.5px; color: #ffffff;">Map & Pump</span>
+    <a href="dashboard.php" class="text-decoration-none d-flex align-items-center justify-content-center gap-2 text-white fw-bold">
+    <img src="../../images/Logo.png" alt="Logo" class="nav-logo">
+     <span style="font-size: 1rem; letter-spacing: 0.5px; color: #ffffff;">Map & Pump</span>
     </a>
     <div class="side-role">Branch Manager Console</div>
 
@@ -311,14 +311,16 @@
     </div>
 
     <nav class="side-nav">
-      <a href="branch_manager_dashboard.php" class="side-link"><span class="ic"><i class="fa-solid fa-house"></i></span> Dashboard</a>
-      <a href="branch_manager_manage-staff.php" class="side-link"><span class="ic"><i class="fa-solid fa-users"></i></span> Manage Staff</a>
-      <a href="branch_manager_manage-oil.php" class="side-link active"><span class="ic"><i class="fa-solid fa-gas-pump"></i></span> Manage Oil Stock</a>
+      <a href="dashboard.php" class="side-link"><span class="ic"><i class="fa-solid fa-house"></i></span> Dashboard</a>
+      <a href="manage-staff.php" class="side-link"><span class="ic"><i class="fa-solid fa-users"></i></span> Manage Staff</a>
+      <a href="manage-oil.php" class="side-link active"><span class="ic"><i class="fa-solid fa-gas-pump"></i></span> Manage Oil Stock</a>
       <a href="booking-slot.php" class="side-link"><span class="ic"><i class="fa-solid fa-ticket"></i></span> Monitor Booking Slot</a>
+      <a href="view-customers.php" class="side-link"><span class="ic"><i class="fa-solid fa-address-book"></i></span> View Customers</a>
+      <a href="report-hq.php" class="side-link"><span class="ic"><i class="fa-solid fa-paper-plane"></i></span> Report to HQ</a>
       <a href="edit-profile.php" class="side-link"><span class="ic"><i class="fa-solid fa-gear"></i></span> Edit Profile</a>
     </nav>
 
-    <a href="branch_manager_login.php" class="side-logout"><span class="ic"><i class="fa-solid fa-right-from-bracket"></i></span> Log Out</a>
+    <a href="login.php" class="side-logout"><span class="ic"><i class="fa-solid fa-right-from-bracket"></i></span> Log Out</a>
   </aside>
 
   <div class="main">
@@ -330,8 +332,8 @@
       <div class="topbar-right">
         <div class="bell" id="notif-bell"><i class="fa-regular fa-bell"></i><span class="ping"></span></div>
         <div class="avatar-chip">
-          <div class="avatar-circle">Fe</div>
-          <div><b>Felix</b></div>
+          <div class="avatar-circle"><a href="edit-profile.php">Fe</a></div>
+          <div><b><a href="edit-profile.php">Felix</a></b></div>
         </div>
       </div>
     </div>
@@ -342,7 +344,10 @@
           <h2>Fuel Stock</h2>
           <p>Manage stock levels and sales availability by fuel type</p>
         </div>
-        <button class="btn-primary" id="open-delivery-modal"><i class="fa-solid fa-plus"></i> Add Delivery Record</button>
+        <div style="display:flex; gap:10px; flex-wrap:wrap;">
+          <button class="btn-secondary-custom" id="open-limit-modal"><i class="fa-solid fa-gauge-high"></i> Manage Oil Limit</button>
+          <button class="btn-primary" id="open-delivery-modal"><i class="fa-solid fa-plus"></i> Add Delivery Record</button>
+        </div>
       </div>
 
       <div class="tabs">
@@ -456,7 +461,40 @@
           </div>
         </div>
       </div>
+
+      <div class="page-foot">© 2026 MAP & PUMP | All Right Reserved</div>
     </div>
+  </div>
+</div>
+
+<!-- ---------- Manage Oil Limit Modal (extends Manage Oil) ---------- -->
+<div class="modal-overlay" id="limit-modal">
+  <div class="modal-card-custom">
+    <div class="modal-header-custom">
+      <h3>Manage Oil Limit</h3>
+      <button class="modal-close" id="limit-modal-close-btn">&times;</button>
+    </div>
+    <p style="font-size:12.5px; color:var(--slate-400); margin:-8px 0 18px; line-height:1.6;">
+      Set the low-stock alert threshold for each fuel type. A tank flags "Low Stock" once its level falls below this percentage.
+    </p>
+    <form id="limit-form">
+      <div class="form-group">
+        <label for="limit-p92">Petrol 92 — Alert Threshold (%)</label>
+        <input type="number" id="limit-p92" class="form-control-custom" min="5" max="80" value="25" required>
+      </div>
+      <div class="form-group">
+        <label for="limit-p95">Petrol 95 — Alert Threshold (%)</label>
+        <input type="number" id="limit-p95" class="form-control-custom" min="5" max="80" value="25" required>
+      </div>
+      <div class="form-group">
+        <label for="limit-dsl">Diesel — Alert Threshold (%)</label>
+        <input type="number" id="limit-dsl" class="form-control-custom" min="5" max="80" value="30" required>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn-secondary-custom" id="limit-modal-cancel-btn">Cancel</button>
+        <button type="submit" class="btn-primary" style="box-shadow: none; padding: 10px 18px;">Save Limits</button>
+      </div>
+    </form>
   </div>
 </div>
 
@@ -536,6 +574,9 @@
       dsl: { capacity: 12000, remaining: 2640 }
     };
 
+    // Manage Oil Limit — per-fuel low-stock alert thresholds (%)
+    let oilLimits = { p92: 25, p95: 25, dsl: 30 };
+
     // Reflect database stats visually in layout elements
     function syncTanksUI() {
       ['p92', 'p95', 'dsl'].forEach(key => {
@@ -558,24 +599,55 @@
         const gaugeEl = document.getElementById(`gauge-${key}`);
         const pctEl = document.getElementById(`pct-${key}`);
 
-        if (percent > 60) {
+        const lowLimit = oilLimits[key];
+        const midLimit = lowLimit + 30;
+        if (percent > midLimit) {
           flagEl.className = "tank-flag ok";
           flagEl.innerHTML = `<i class="fa-solid fa-check"></i> Stock sufficient`;
           gaugeEl.style.backgroundColor = "var(--mint-400)";
           pctEl.style.color = "var(--mint-400)";
-        } else if (percent > 30) {
+        } else if (percent > lowLimit) {
           flagEl.className = "tank-flag mid";
           flagEl.innerHTML = `<i class="fa-solid fa-circle-half-stroke"></i> ~${Math.ceil((item.remaining / 1200))} days remaining`;
           gaugeEl.style.backgroundColor = "var(--amber-400)";
           pctEl.style.color = "var(--amber-300)";
         } else {
           flagEl.className = "tank-flag low";
-          flagEl.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i> Stock low — delivery needed`;
+          flagEl.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i> Stock low (below ${lowLimit}% limit) — delivery needed`;
           gaugeEl.style.backgroundColor = "var(--red-400)";
           pctEl.style.color = "var(--red-400)";
         }
       });
     }
+
+    // 2b. Manage Oil Limit Modal (extends Manage Oil)
+    const limitModal = document.getElementById('limit-modal');
+    const limitForm = document.getElementById('limit-form');
+    const openLimitBtn = document.getElementById('open-limit-modal');
+    const limitCloseBtn = document.getElementById('limit-modal-close-btn');
+    const limitCancelBtn = document.getElementById('limit-modal-cancel-btn');
+
+    openLimitBtn.addEventListener('click', () => {
+      document.getElementById('limit-p92').value = oilLimits.p92;
+      document.getElementById('limit-p95').value = oilLimits.p95;
+      document.getElementById('limit-dsl').value = oilLimits.dsl;
+      limitModal.classList.add('active');
+    });
+    const closeLimitModal = () => limitModal.classList.remove('active');
+    limitCloseBtn.addEventListener('click', closeLimitModal);
+    limitCancelBtn.addEventListener('click', closeLimitModal);
+    limitModal.addEventListener('click', (e) => { if (e.target === limitModal) closeLimitModal(); });
+
+    limitForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      oilLimits = {
+        p92: parseInt(document.getElementById('limit-p92').value),
+        p95: parseInt(document.getElementById('limit-p95').value),
+        dsl: parseInt(document.getElementById('limit-dsl').value)
+      };
+      syncTanksUI();
+      closeLimitModal();
+    });
 
     // 3. Modal Overlay Dialog Management
     const modal = document.getElementById('delivery-modal');

@@ -8,12 +8,10 @@
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
-<!-- Browser Tab Logo (Favicon) -->
 <link rel="icon" type="image/png" href="../../images/Logo.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Noto+Sans+Myanmar:wght@400;500;600;700&display=swap" rel="stylesheet">
-<!-- <link href="../../css/user_css.css" rel="stylesheet"> -->
 
 <style>
   :root{
@@ -23,11 +21,6 @@
     --red-400:#f87171;
     --slate-50:#f8fafc; --slate-300:#c9d2e3; --slate-400:#8b96ad;
   }
-  .nav-logo {
-            height: 24px;
-            width: auto;
-            object-fit: contain;
-        }
   *{box-sizing:border-box; margin:0; padding:0;}
   body{background:var(--navy-950); color:var(--slate-50); font-family:'Inter','Space Grotesk',sans-serif; overflow-x:hidden;}
   .disp{font-family:'Space Grotesk','Noto Sans Myanmar',sans-serif;}
@@ -111,6 +104,12 @@
     opacity: 0;
     transform: translateY(10px);
     animation: layoutFadeIn 0.5s ease forwards;
+  }
+
+  .page-foot{
+    text-align:center; margin-top:34px; padding-top:18px;
+    border-top:1px solid rgba(255,255,255,0.06);
+    font-size:12px; color:var(--slate-400);
   }
   @keyframes layoutFadeIn {
     to { opacity: 1; transform: translateY(0); }
@@ -228,7 +227,7 @@
 
 <div class="app-shell">
   <aside class="sidebar">
-    <!-- <div class="side-brand">
+   <!-- <div class="side-brand">
       <svg viewBox="0 0 100 120" fill="none">
         <defs><linearGradient id="g1" x1="0" y1="0" x2="100" y2="120">
           <stop offset="0" stop-color="#38bdf8"/><stop offset="1" stop-color="#1d4ed8"/>
@@ -239,9 +238,9 @@
       </svg>
       MAP & PUMP
     </div> -->
-    <a href="branch_manager_dashboard.php" class="text-decoration-none d-flex align-items-center justify-content-center gap-2 text-white fw-bold">
-      <img src="../../images/Logo.png" alt="Logo" class="nav-logo">
-      <span style="font-size: 1rem; letter-spacing: 0.5px; color: #ffffff;">Map & Pump</span>
+    <a href="dashboard.php" class="text-decoration-none d-flex align-items-center justify-content-center gap-2 text-white fw-bold">
+    <img src="../../images/Logo.png" alt="Logo" class="nav-logo">
+     <span style="font-size: 1rem; letter-spacing: 0.5px; color: #ffffff;">Map & Pump</span>
     </a>
     <div class="side-role">Branch Manager Console</div>
 
@@ -251,14 +250,16 @@
     </div>
 
     <nav class="side-nav">
-      <a href="branch_manager_dashboard.php" class="side-link active"><span class="ic"><i class="fa-solid fa-house"></i></span> Dashboard</a>
-      <a href="branch_manager_manage-staff.php" class="side-link"><span class="ic"><i class="fa-solid fa-users"></i></span> Manage Staff</a>
-      <a href="branch_manager_manage-oil.php" class="side-link"><span class="ic"><i class="fa-solid fa-gas-pump"></i></span> Manage Oil Stock</a>
+      <a href="dashboard.php" class="side-link active"><span class="ic"><i class="fa-solid fa-house"></i></span> Dashboard</a>
+      <a href="manage-staff.php" class="side-link"><span class="ic"><i class="fa-solid fa-users"></i></span> Manage Staff</a>
+      <a href="manage-oil.php" class="side-link"><span class="ic"><i class="fa-solid fa-gas-pump"></i></span> Manage Oil Stock</a>
       <a href="booking-slot.php" class="side-link"><span class="ic"><i class="fa-solid fa-ticket"></i></span> Monitor Booking Slot</a>
+      <a href="view-customers.php" class="side-link"><span class="ic"><i class="fa-solid fa-address-book"></i></span> View Customers</a>
+      <a href="report-hq.php" class="side-link"><span class="ic"><i class="fa-solid fa-paper-plane"></i></span> Report to HQ</a>
       <a href="edit-profile.php" class="side-link"><span class="ic"><i class="fa-solid fa-gear"></i></span> Edit Profile</a>
     </nav>
 
-    <a href="branch_manager_login.php" class="side-logout"><span class="ic"><i class="fa-solid fa-right-from-bracket"></i></span> Log Out</a>
+    <a href="login.php" class="side-logout"><span class="ic"><i class="fa-solid fa-right-from-bracket"></i></span> Log Out</a>
   </aside>
 
   <div class="main">
@@ -270,8 +271,8 @@
       <div class="topbar-right">
         <div class="bell" id="notif-bell"><i class="fa-regular fa-bell"></i><span class="ping"></span></div>
         <div class="avatar-chip">
-          <div class="avatar-circle">F</div>
-          <div><b>Felix</b></div>
+          <div class="avatar-circle"><a href="edit-profile.php">Fe</a></div>
+          <div><b><a href="edit-profile.php">Felix</a></b></div>
         </div>
       </div>
     </div>
@@ -305,13 +306,13 @@
 
       <div class="section-title"><h2>Modules</h2></div>
       <div class="module-grid">
-        <a href="branch_manager_manage-staff.php" class="module-card staff">
+        <a href="manage-staff.php" class="module-card staff">
           <div class="ic-badge"><i class="fa-solid fa-users"></i></div>
           <h3>Manage Staff</h3>
           <p>Manage shift schedules, duty status, and add new staff members.</p>
           <span class="go">Open <i class="fa-solid fa-arrow-right"></i></span>
         </a>
-        <a href="branch_manager_manage-oil.php" class="module-card oil">
+        <a href="manage-oil.php" class="module-card oil">
           <div class="ic-badge"><i class="fa-solid fa-gas-pump"></i></div>
           <h3>Manage Oil Stock</h3>
           <p>View tank levels, delivery records, and low-stock alerts.</p>
@@ -321,6 +322,18 @@
           <div class="ic-badge"><i class="fa-solid fa-ticket"></i></div>
           <h3>Monitor Booking Slot</h3>
           <p>Track the live queue, pump status, and every token in real time.</p>
+          <span class="go">Open <i class="fa-solid fa-arrow-right"></i></span>
+        </a>
+        <a href="view-customers.php" class="module-card slot">
+          <div class="ic-badge"><i class="fa-solid fa-address-book"></i></div>
+          <h3>View Customers</h3>
+          <p>Browse customer records and read feedback left at your branch.</p>
+          <span class="go">Open <i class="fa-solid fa-arrow-right"></i></span>
+        </a>
+        <a href="report-hq.php" class="module-card oil">
+          <div class="ic-badge"><i class="fa-solid fa-paper-plane"></i></div>
+          <h3>Report to HQ</h3>
+          <p>Send incident, stock, or maintenance reports to head office.</p>
           <span class="go">Open <i class="fa-solid fa-arrow-right"></i></span>
         </a>
         <a href="edit-profile.php" class="module-card profile">
@@ -352,6 +365,8 @@
           </div>
         </div>
       </div>
+
+      <div class="page-foot">© 2026 MAP & PUMP | All Right Reserved</div>
     </div>
   </div>
 </div>
