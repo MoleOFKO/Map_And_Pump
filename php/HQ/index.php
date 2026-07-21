@@ -61,7 +61,7 @@
             font-weight: 600;
         }
         .nav-logo {
-            height: 24px;
+            height: 30px;
             width: auto;
             object-fit: contain;
         }
@@ -80,26 +80,26 @@
         <aside class="sidebar">
             <div>
                 <div class="sidebar-brand text-center">
-                    <a href="#" class="text-decoration-none d-flex align-items-center justify-content-center gap-2 text-white fw-bold">
+                    <a href="index.php" class="text-decoration-none d-flex align-items-center justify-content-center gap-2 text-white fw-bold">
                         <img src="../../images/Logo.png" alt="Logo" class="nav-logo">
-                        <span style="font-size: 1rem; letter-spacing: 0.5px; color: #ffffff;">Map & Pump</span>
+                        <span style="font-size: 1.5rem; letter-spacing: 0.5px; color: #ffffff;">Map & Pump</span>
                     </a>
                 </div>
                 <div class="sidebar-section-title">Features</div>
                 <ul class="sidebar-menu">
                     <li onclick="routeTo('dashboard.php')" class="active">HQ DashBoard</li>
-                    <li onclick="routeTo('brand.php')">Brand Config</li>
+                    <li onclick="routeTo('brand.php')">Brand Configuration</li>
                     <li onclick="routeTo('pricing.php')">Oil Types & Pricing</li>
                     <li onclick="routeTo('station.php')">Manage Stations</li>
                     <li onclick="routeTo('report_from_manager.php')">Manager Reports</li>
                     <li onclick="routeTo('report_to_admin.php')">Report to Admin</li>
                     <li onclick="routeTo('account.php')">Manager Accounts</li>
                     <li onclick="routeTo('profile.php')">Edit Profile</li>
-                    <li onclick="routeTo(' switch_account.php')" style="border-top: 1px solid var(--border); padding-top: 12px; margin-top: 12px;">Switch to Customer</li>
                 </ul>
             </div>
             
             <ul class="sidebar-menu">
+                <li onclick="routeTo(' switch_account.php')" style="border-top: 1px solid var(--border); padding-top: 12px; margin-top: 12px;">Switch to Customer Account</li>
                 <li onclick="handleLogout()" style="color: var(--danger); font-weight: bold;">Logout</li>
             </ul>
         </aside>
