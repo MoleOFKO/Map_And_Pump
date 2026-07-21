@@ -278,7 +278,7 @@
       MAP & PUMP
     </div> -->
    <a href="dashboard.php" class="text-decoration-none d-flex align-items-center gap-2 text-white fw-bold padding" style="padding: 6px 8px 0;">
-      <img src="../../images/Logo.png" alt="Logo" class="nav-logo">
+      <img src="/images/Logo.png" alt="Logo" class="nav-logo">
           <span class="disp" style="font-size: 17px; letter-spacing: 0.5px; color: #ffffff; font-weight: 700;">Map & Pump</span>
     </a>
     <div class="side-role">Branch Manager Console</div>
