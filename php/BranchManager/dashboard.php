@@ -36,6 +36,11 @@
     display:flex; flex-direction:column; padding:22px 16px;
     position:sticky; top:0; height:100vh; z-index:60;
   }
+  .nav-logo {
+    width: 32px;        
+    height: auto;
+    object-fit: contain;
+  }
   .side-brand{display:flex; align-items:center; gap:10px; font-weight:700; font-size:17px; padding:6px 8px 0;}
   .side-brand svg{width:28px; height:28px; transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);}
   .side-brand:hover svg{transform: rotate(-10deg) scale(1.1);}
@@ -238,9 +243,9 @@
       </svg>
       MAP & PUMP
     </div> -->
-    <a href="dashboard.php" class="text-decoration-none d-flex align-items-center justify-content-center gap-2 text-white fw-bold">
-    <img src="../../images/Logo.png" alt="Logo" class="nav-logo">
-     <span style="font-size: 1rem; letter-spacing: 0.5px; color: #ffffff;">Map & Pump</span>
+    <a href="dashboard.php" class="text-decoration-none d-flex align-items-center gap-2 text-white fw-bold padding" style="padding: 6px 8px 0;">
+      <img src="../../images/Logo.png" alt="Logo" class="nav-logo">
+          <span class="disp" style="font-size: 17px; letter-spacing: 0.5px; color: #ffffff; font-weight: 700;">Map & Pump</span>
     </a>
     <div class="side-role">Branch Manager Console</div>
 
