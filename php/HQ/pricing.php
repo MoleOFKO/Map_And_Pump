@@ -30,8 +30,8 @@
             </select>
         </div>
         <div class="form-group">
-            <label>Active Base Pump Rate ($/L)</label>
-            <input type="number" step="0.01" value="1.48">
+            <label>Active Base Pump Rate (Kyats/L)</label>
+            <input type="number" step="100" value="3500">
         </div>
         <button class="btn btn-success" onclick="alert('Pricing modified globally.')">Publish Base Price</button>
     </div>
