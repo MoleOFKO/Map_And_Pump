@@ -6,8 +6,8 @@
     <title>My Account - Map & Pump</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
     <!-- Browser Tab Logo (Favicon) -->
-    <link rel="icon" type="image/png" href="../../images/Logo.png">
-    <link rel="stylesheet" href="../../css/user_css.css">
+    <link rel="icon" type="image/png" href="/images/Logo.png">
+    <link rel="stylesheet" href="/css/user_css.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
     <style>
         .profile-card { 
@@ -74,7 +74,7 @@
 
                 <div class="position-absolute start-50 top-50 translate-middle" style="z-index: 1030;">
                     <a href="staff_dashboard.php" class="text-decoration-none d-flex align-items-center gap-2 text-white fw-bold m-0" style="white-space: nowrap;">
-                        <img src="../../images/Logo.png" alt="Map & Pump Logo" class="nav-logo">
+                        <img src="/images/Logo.png" alt="Map & Pump Logo" class="nav-logo">
                         <span style="letter-spacing: 0.5px; font-size: 1.1rem;">Map & Pump</span>
                     </a>
                 </div>

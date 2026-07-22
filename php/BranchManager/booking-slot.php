@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Noto+Sans+Myanmar:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="icon" type="image/png" href="../../images/Logo.png">
+<link rel="icon" type="image/png" href="/images/Logo.png">
 <!-- Bootstrap 5.3.3 CSS -->
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
 
@@ -119,7 +119,7 @@
 
   .live-tag{
     display:inline-flex; align-items:center; gap:6px; font-size:11px; color:var(--mint-400);
-    background:rgba(52,211,153,0.12); padding:4px 10px; border-radius999px; font-weight:700;
+    background:rgba(52,211,153,0.12); padding:4px 10px; border-radius :999px; font-weight:700;
     border-radius: 999px;
   }
   .live-tag .dot{width:6px; height:6px; border-radius:50%; background:var(--mint-400); animation:pulse 1.6s infinite;}
@@ -201,7 +201,6 @@
   .pump-card.maint .tok{color:var(--red-400); font-size:16px;}
   
   .pstat{font-size:10.5px; font-weight:700; padding:4px 10px; border-radius:999px; display:inline-flex; align-items:center; gap:6px; transition: all 0.3s;}
-  .pstat.
   .pstat.active{background:rgba(52,211,153,0.14); color:var(--mint-400);}
   .pstat.idle{background:rgba(139,150,173,0.14); color:var(--slate-400);}
   .pstat.maint{background:rgba(248,113,113,0.14); color:var(--red-400);}
@@ -527,14 +526,14 @@
           
           const pstat = pump3Card.querySelector('.pstat');
           pstat.className = "pstat active";
-          pstat.innerHTML = <span class="d"></span> Active;
+          pstat.innerHTML = <span class="d">Active</span> ;
           
           // Update Row Data Cells in Table
           if (row) {
             row.querySelector('.pump-cell').textContent = '#3';
             const statusCell = row.querySelector('.status-pill');
             statusCell.className = "status-pill serving";
-            statusCell.innerHTML = <span class="d"></span> Serving;
+            statusCell.innerHTML = <span class="d">Serving</span> ;
             
             // Remove Call Next option, leave only Cancel
             const actionCell = target.parentElement;
@@ -565,7 +564,7 @@
               
               const pstat = card.querySelector('.pstat');
               pstat.className = "pstat idle";
-              pstat.innerHTML = <span class="d"></span> Idle;
+              pstat.innerHTML = <span class="d">Idle</span> ;
             }
           }
           
