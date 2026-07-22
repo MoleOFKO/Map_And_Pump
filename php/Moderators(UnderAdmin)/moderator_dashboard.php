@@ -6,8 +6,8 @@
     <title>Map & Pump</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
     <!-- Browser Tab Logo (Favicon) -->
-    <link rel="icon" type="image/png" href="../../images/Logo.png">
-    <link rel="stylesheet" href="../../css/Admin.css">
+    <link rel="icon" type="image/png" href="/images/Logo.png">
+    <link rel="stylesheet" href="/css/Admin.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
     
 </head>
@@ -27,7 +27,7 @@
 
                 <div class="text-center">
                     <a href="admin_dashboard.php" class="text-decoration-none d-flex align-items-center justify-content-center gap-2 text-white fw-bold">
-                        <img src="../../images/Logo.png" alt="Logo" class="nav-logo">
+                        <img src="/images/Logo.png" alt="Logo" class="nav-logo">
                         <span style="font-size: 1rem; letter-spacing: 0.5px; color: #ffffff;">Map & Pump</span>
                     </a>
                 </div>

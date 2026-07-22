@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>HQ Management System</title>
-    <link rel="stylesheet" href="../../css/HQstyle.css">
+    <link rel="stylesheet" href="/css/HQstyle.css">
     <style>
         body {
             padding: 0;
@@ -81,7 +81,7 @@
             <div>
                 <div class="sidebar-brand text-center">
                     <a href="index.php" class="text-decoration-none d-flex align-items-center justify-content-center gap-2 text-white fw-bold">
-                        <img src="../../images/Logo.png" alt="Logo" class="nav-logo">
+                        <img src="/images/Logo.png" alt="Logo" class="nav-logo">
                         <span style="font-size: 1.5rem; letter-spacing: 0.5px; color: #ffffff;">Map & Pump</span>
                     </a>
                 </div>
