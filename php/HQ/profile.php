@@ -22,7 +22,7 @@
                         <div class="col-md-4 text-center border-end-md mb-4 mb-md-0">
                             <img id="profilePreview" src="https://via.placeholder.com/150" alt="Profile Picture" class="rounded-circle img-thumbnail mb-3" style="width: 150px; height: 150px; object-fit: cover; background-color: #fff;">
                             <div>
-                                <label for="profilePictureInput" class="btn btn-sm btn-outline-secondary w-75">Change Picture</label>
+                                <label for="profilePictureInput" class="btn btn-sm btn-outline-secondary w-75 text-white">Change Profile Picture</label>
                                 <input type="file" id="profilePictureInput" accept="image/*" style="display: none;" onchange="previewImage(event)">
                             </div>
                         </div>

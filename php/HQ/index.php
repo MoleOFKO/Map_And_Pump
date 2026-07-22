@@ -38,7 +38,7 @@
             font-weight: 700;
             letter-spacing: 0.12em;
             text-transform: uppercase;
-            color: var(--text-muted);
+            color: var(--slate-400);
             margin: 8px 0 8px 6px;
         }
         .sidebar-menu {
@@ -48,17 +48,25 @@
         }
         .sidebar-menu li {
             padding: 12px 16px;
-            border-radius: 6px;
+            border-radius: 8px;
             cursor: pointer;
             margin-bottom: 6px;
             font-weight: 500;
-            transition: all 0.2s;
-            color: var(--text-muted);
+            color: var(--slate-300);
+            transition: all 0.25s ease;
         }
-        .sidebar-menu li:hover, .sidebar-menu li.active {
-            background: var(--bg);
-            color: var(--primary);
+        /* Hover and Active states styled with theme variables */
+        .sidebar-menu li:hover {
+            background: rgba(56, 189, 248, 0.08);
+            color: var(--sky-400);
+            transform: translateX(4px);
+        }
+        .sidebar-menu li.active {
+            background: linear-gradient(135deg, rgba(56, 189, 248, 0.15), rgba(29, 78, 216, 0.2));
+            color: var(--sky-400);
             font-weight: 600;
+            border-left: 4px solid var(--sky-400);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
         }
         .nav-logo {
             height: 30px;
@@ -99,7 +107,7 @@
             </div>
             
             <ul class="sidebar-menu">
-                <li onclick="routeTo(' switch_account.php')" style="border-top: 1px solid var(--border); padding-top: 12px; margin-top: 12px;">Switch to Customer Account</li>
+                <li onclick="routeTo('switch_account.php')" style="border-top: 1px solid rgba(255, 255, 255, 0.06); padding-top: 12px; margin-top: 12px;">Switch to Customer Account</li>
                 <li onclick="handleLogout()" style="color: var(--danger); font-weight: bold;">Logout</li>
             </ul>
         </aside>
@@ -113,13 +121,13 @@
     <script>
         // Module Router Injection
         function routeTo(path) {
-            document.getElementById('viewport').src = path;
+            document.getElementById('viewport').src = path.trim();
             
             // Handle Navigation Highlights
             document.querySelectorAll('.sidebar-menu li').forEach(item => {
                 item.classList.remove('active');
             });
-            event.target.classList.add('active');
+            event.currentTarget.classList.add('active');
         }
 
         function handleLogout() {
