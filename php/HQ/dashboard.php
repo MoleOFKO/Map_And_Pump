@@ -180,7 +180,7 @@
   <!-- Bootstrap JS Bundle (Required for Modals) -->
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 
-  <script>
+  <!-- <script>
     function navigateTo(page) {
       if (window.parent && typeof window.parent.routeTo === 'function') {
         window.parent.routeTo(page);
@@ -191,6 +191,39 @@
             item.classList.add('active');
           }
         });
+      } else {
+        window.location.href = page;
+      }
+    }
+
+    function openEditModal(event, fuelType, currentPrice) {
+      event.stopPropagation(); // Prevents card's main click event from triggering navigation
+      
+      document.getElementById('modalFuelType').value = fuelType;
+      document.getElementById('modalFuelPrice').value = currentPrice;
+
+      const editModal = new bootstrap.Modal(document.getElementById('editPricingModal'));
+      editModal.show();
+    }
+
+    function saveQuickPrice(event) {
+      event.preventDefault();
+      const fuelType = document.getElementById('modalFuelType').value;
+      const newPrice = document.getElementById('modalFuelPrice').value;
+
+      alert(`Successfully updated price for ${fuelType} to ${newPrice} MMK`);
+      
+      // Close the modal programmatically
+      const modalElement = document.getElementById('editPricingModal');
+      const modalInstance = bootstrap.Modal.getInstance(modalElement);
+      modalInstance.hide();
+    }
+  </script> -->
+  <script>
+    function navigateTo(page) {
+      if (window.parent && typeof window.parent.routeTo === 'function') {
+        // Call the parent frame's routeTo function directly to maintain consistent behavior and active states
+        window.parent.routeTo(page);
       } else {
         window.location.href = page;
       }

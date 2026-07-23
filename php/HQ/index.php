@@ -88,14 +88,15 @@
         <aside class="sidebar">
             <div>
                 <div class="sidebar-brand text-center">
-                    <a href="index.php" class="text-decoration-none d-flex align-items-center justify-content-center gap-2 text-white fw-bold">
+                    <a href="index.php" class="text-decoration-none d-flex align-items-center justify-content-center gap-1 text-white fw-bold">
                         <img src="/images/Logo.png" alt="Logo" class="nav-logo">
                         <span style="font-size: 1.5rem; letter-spacing: 0.5px; color: #ffffff;">Map & Pump</span>
+                        <span style="font-size: 0.75rem; letter-spacing: 0.5px; color: #ffffff;">Headquarter Control Panel</span>
                     </a>
                 </div>
                 <div class="sidebar-section-title">Features</div>
                 <ul class="sidebar-menu">
-                    <li onclick="routeTo('dashboard.php')" class="active">HQ DashBoard</li>
+                    <li onclick="routeTo('dashboard.php')" class="active">DashBoard</li>
                     <li onclick="routeTo('brand.php')">Brand Configuration</li>
                     <li onclick="routeTo('pricing.php')">Oil Types & Pricing</li>
                     <li onclick="routeTo('station.php')">Manage Stations</li>
@@ -119,22 +120,18 @@
     </div>
 
     <script>
-        // Module Router Injection
-        function routeTo(path) {
-            document.getElementById('viewport').src = path.trim();
-            
-            // Handle Navigation Highlights
-            document.querySelectorAll('.sidebar-menu li').forEach(item => {
-                item.classList.remove('active');
-            });
-            event.currentTarget.classList.add('active');
+    function routeTo(path) {
+        document.getElementById('viewport').src = path.trim();
+    
+    // Handle Navigation Highlights cleanly by checking the onclick attribute content
+        document.querySelectorAll('.sidebar-menu li').forEach(item => {
+        item.classList.remove('active');
+        const onclickAttr = item.getAttribute('onclick') || ''; 
+        if (onclickAttr.includes(path.trim())) {
+            item.classList.add('active');
         }
-
-        function handleLogout() {
-            if(confirm("Are you sure you want to log out?")) {
-                window.location.href = 'login.php';
-            }
-        }
+    });
+}
     </script>
 </body>
 </html>
