@@ -28,7 +28,7 @@
                 <div class="col-md-8 ps-md-4">
                     <div class="form-group mb-3">
                         <label class="form-label">Brand Display Title</label>
-                        <input type="text" class="form-control" id="brandTitle" value="Apex Fuel & Gas" placeholder="Company Display Name">[cite: 2]
+                        <input type="text" class="form-control" id="brandTitle" value="Apex Fuel & Gas" placeholder="Company Display Name">
                     </div>
 
                     <div class="form-group mb-3">
