@@ -1,6 +1,6 @@
 <mxfile host="65bd71144e">
     <diagram id="dAkUaWMO8djO-9G3rbkk" name="Page-1">
-        <mxGraphModel dx="710" dy="513" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" background="#ffffff" math="0" shadow="0">
+        <mxGraphModel dx="1730" dy="942" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" background="#ffffff" math="0" shadow="0">
             <root>
                 <mxCell id="0"/>
                 <mxCell id="1" parent="0"/>
@@ -120,8 +120,8 @@
                         <mxPoint as="offset"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="KZkRxAz7rj8GkNQC38x6-34" value="Already&amp;nbsp;&lt;div&gt;connect Customer&lt;div&gt;account?&lt;/div&gt;&lt;/div&gt;" style="shape=rhombus;html=1;dashed=0;whiteSpace=wrap;perimeter=rhombusPerimeter;fontSize=15;fontStyle=1;strokeWidth=2;" parent="1" vertex="1">
-                    <mxGeometry x="1230.0030061349694" y="522.5" width="112.88343558282209" height="105" as="geometry"/>
+                <mxCell id="KZkRxAz7rj8GkNQC38x6-34" parent="1" style="shape=rhombus;html=1;dashed=0;whiteSpace=wrap;perimeter=rhombusPerimeter;fontSize=15;fontStyle=1;strokeWidth=2;" value="Already&amp;nbsp;&lt;div&gt;connect Customer&lt;div&gt;account?&lt;/div&gt;&lt;/div&gt;" vertex="1">
+                    <mxGeometry height="105" width="112.88343558282209" x="1227.1830061349694" y="522.5" as="geometry"/>
                 </mxCell>
                 <mxCell id="KZkRxAz7rj8GkNQC38x6-35" value="" style="verticalLabelPosition=bottom;verticalAlign=top;html=1;shape=offPageConnector;rounded=0;size=0.4444444444444419;fontStyle=1;strokeWidth=2;fontSize=15;" parent="1" vertex="1">
                     <mxGeometry x="1251.1686503067485" y="676.25" width="70.5521472392638" height="67.5" as="geometry"/>
