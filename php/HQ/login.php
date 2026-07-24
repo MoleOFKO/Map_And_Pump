@@ -4,7 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>HQ Authentication Portal</title>
-    <link rel="stylesheet" href="../css/Style.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="/css/HQstyle.css">
     <style>
         body {
             display: flex;
@@ -32,7 +33,7 @@
             </form>
             
             <p style="text-align: center; margin-top: 20px; font-size: 0.9rem; color: var(--text-muted);">
-                New Account? <a href="../register/register.php" style="color: var(--primary);">Register Now</a>
+                New Account? <a href="register.php" style="color: var(--primary);">Register Now</a>
             </p>
         </div>
     </div>
@@ -44,17 +45,18 @@
             
             if (!registered) {
                 alert("No active registration found. Directing to Registration Flow.");
-                window.location.href = '../register/register.php';
+                window.location.href = 'register.php';
                 return;
             }
 
             const firstTime = localStorage.getItem('first_time_login') === 'true';
             if (firstTime) {
-                window.location.href = '../change_password/change_password.php';
+                window.location.href = 'change_password.php';
             } else {
-                window.location.href = '../dashboard/index.php';
+                window.location.href = 'index.php';
             }
         }
     </script>
 </body>
+<footer class="text-white-50 text-center py-4 mt-5 small">&copy; 2026 Map & Pump | All Rights Reserved</footer>
 </html>

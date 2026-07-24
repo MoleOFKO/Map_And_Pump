@@ -302,3 +302,89 @@
 }
 
 
+/* --- RESPONSIVE TYPOGRAPHY & SPACING --- */
+html {
+    font-size: 14px; /* Default base for mobile */
+}
+
+@media (min-width: 768px) {
+    html {
+        font-size: 16px; /* Scales up for desktop */
+    }
+}
+
+/* Fluid headers so text never overflows or wraps awkwardly on mobile */
+h1.h4 {
+    font-size: calc(1.15rem + 0.5vw) !important;
+}
+
+/* --- FLEXIBLE GLASS CARDS --- */
+.dashboard-card {
+    padding: 16px !important; /* Cozy padding on mobile */
+}
+
+@media (min-width: 768px) {
+    .dashboard-card {
+        padding: 28px !important; /* Premium spacious padding on desktop */
+    }
+}
+
+/* --- THE CAPSULE NAVBAR MOBILE OPTIMIZATION --- */
+@media (max-width: 576px) {
+    .sticky-nav-wrapper {
+        top: 8px;
+        padding: 0 10px;
+    }
+    
+    .navigation_style {
+        border-radius: 20px !important; /* Less aggressive curve on tiny screens */
+        padding: 8px 14px !important;
+    }
+    
+    .nav-logo {
+        height: 18px; /* Slightly smaller logo to make room */
+    }
+
+    .navigation_style .navbar-brand {
+        font-size: 0.85rem !important;
+    }
+}
+
+/* --- OFF-CANVAS SIDEBAR MOBILE BUG FIX --- */
+@media (max-width: 360px) {
+    .profile-offcanvas {
+        width: 100% !important; /* Prevents sidebar from clipping off screen edges */
+    }
+}
+
+/* --- RESPONSIVE DATA TABLES --- */
+.table-responsive {
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+/* Custom modern scrollbar for touch-scrolling tables on mobile */
+.table-responsive::-webkit-scrollbar {
+    height: 6px;
+}
+.table-responsive::-webkit-scrollbar-thumb {
+    background: rgba(0, 244, 255, 0.2);
+    border-radius: 10px;
+}
+
+/* --- MOBILE STAT CHIPS --- */
+@media (max-width: 576px) {
+    .stat-chip {
+        padding: 0.35rem 0.75rem;
+        font-size: 0.65rem;
+    }
+}
+
+/* --- TERMINAL CONSOLE RESPONSIVE SCROLLING --- */
+@media (max-width: 768px) {
+    .terminal-panel {
+        max-height: 350px; /* Shorter terminal height on mobile screens */
+        font-size: 0.78rem;
+        padding: 14px;
+    }
+}

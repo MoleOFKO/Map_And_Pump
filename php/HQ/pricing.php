@@ -2,7 +2,8 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <link rel="stylesheet" href="../css/Style.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="/css/HQstyle.css">
 </head>
 <body>
     <h2 class="title">Oil Types & Pricing Matrix</h2>
@@ -29,8 +30,8 @@
             </select>
         </div>
         <div class="form-group">
-            <label>Active Base Pump Rate ($/L)</label>
-            <input type="number" step="0.01" value="1.48">
+            <label>Active Base Pump Rate (Kyats/L)</label>
+            <input type="number" step="100" value="3500">
         </div>
         <button class="btn btn-success" onclick="alert('Pricing modified globally.')">Publish Base Price</button>
     </div>
@@ -45,4 +46,5 @@
         }
     </script>
 </body>
+<footer class="text-white-50 text-center py-4 mt-5 small">&copy; 2026 Map & Pump | All Rights Reserved</footer>
 </html>

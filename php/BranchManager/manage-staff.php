@@ -3,13 +3,12 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PetroQ — Manage Staff</title>
+<title>MAP & PUMP — Manage Staff</title>
 
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
-<!-- Browser Tab Logo (Favicon) -->
-<link rel="icon" type="image/png" href="../images/Logo.png">
+<link rel="icon" type="image/png" href="/images/Logo.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Noto+Sans+Myanmar:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -35,6 +34,11 @@
   .sidebar{
     width:252px; flex-shrink:0; background:var(--navy-900); border-right:1px solid rgba(255,255,255,0.06);
     display:flex; flex-direction:column; padding:22px 16px; position:sticky; top:0; height:100vh; z-index:60;
+  }
+  .nav-logo {
+    width: 32px;        
+    height: auto;
+    object-fit: contain;
   }
   .side-brand{display:flex; align-items:center; gap:10px; font-weight:700; font-size:17px; padding:6px 8px 0;}
   .side-brand svg{width:28px; height:28px; transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);}
@@ -104,6 +108,12 @@
     opacity: 0;
     transform: translateY(10px);
     animation: layoutFadeIn 0.5s ease forwards;
+  }
+
+  .page-foot{
+    text-align:center; margin-top:34px; padding-top:18px;
+    border-top:1px solid rgba(255,255,255,0.06);
+    font-size:12px; color:var(--slate-400);
   }
   @keyframes layoutFadeIn {
     to { opacity: 1; transform: translateY(0); }
@@ -265,7 +275,7 @@
 
 <div class="app-shell">
   <aside class="sidebar">
-    <div class="side-brand">
+  <!--  <div class="side-brand">
       <svg viewBox="0 0 100 120" fill="none">
         <defs><linearGradient id="g1" x1="0" y1="0" x2="100" y2="120">
           <stop offset="0" stop-color="#38bdf8"/><stop offset="1" stop-color="#1d4ed8"/>
@@ -275,7 +285,11 @@
         <path d="M36 52 L45 62 L64 40" stroke="white" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
       </svg>
       MAP & PUMP
-    </div>
+    </div> -->
+    <a href="dashboard.php" class="text-decoration-none d-flex align-items-center gap-2 text-white fw-bold padding" style="padding: 6px 8px 0;">
+      <img src="/images/Logo.png" alt="Logo" class="nav-logo">
+          <span class="disp" style="font-size: 17px; letter-spacing: 0.5px; color: #ffffff; font-weight: 700;">Map & Pump</span>
+    </a>
     <div class="side-role">Branch Manager Console</div>
 
     <div class="side-branch">
@@ -284,14 +298,16 @@
     </div>
 
     <nav class="side-nav">
-      <a href="branch_manager_dashboard.php" class="side-link"><span class="ic"><i class="fa-solid fa-house"></i></span> Dashboard</a>
-      <a href="branch_manager_manage-staff.php" class="side-link active"><span class="ic"><i class="fa-solid fa-users"></i></span> Manage Staff</a>
-      <a href="branch_manager_manage-oil.php" class="side-link"><span class="ic"><i class="fa-solid fa-gas-pump"></i></span> Manage Oil Stock</a>
+      <a href="dashboard.php" class="side-link"><span class="ic"><i class="fa-solid fa-house"></i></span> Dashboard</a>
+      <a href="manage-staff.php" class="side-link active"><span class="ic"><i class="fa-solid fa-users"></i></span> Manage Staff</a>
+      <a href="manage-oil.php" class="side-link"><span class="ic"><i class="fa-solid fa-gas-pump"></i></span> Manage Oil Stock</a>
       <a href="booking-slot.php" class="side-link"><span class="ic"><i class="fa-solid fa-ticket"></i></span> Monitor Booking Slot</a>
+      <a href="view-customers.php" class="side-link"><span class="ic"><i class="fa-solid fa-address-book"></i></span> View Customers</a>
+      <a href="report-hq.php" class="side-link"><span class="ic"><i class="fa-solid fa-paper-plane"></i></span> Report to HQ</a>
       <a href="edit-profile.php" class="side-link"><span class="ic"><i class="fa-solid fa-gear"></i></span> Edit Profile</a>
     </nav>
 
-    <a href="branch_manager_login.php" class="side-logout"><span class="ic"><i class="fa-solid fa-right-from-bracket"></i></span> Log Out</a>
+    <a href="login.php" class="side-logout"><span class="ic"><i class="fa-solid fa-right-from-bracket"></i></span> Log Out</a>
   </aside>
 
   <div class="main">
@@ -303,8 +319,8 @@
       <div class="topbar-right">
         <div class="bell" id="notif-bell"><i class="fa-regular fa-bell"></i><span class="ping"></span></div>
         <div class="avatar-chip">
-          <div class="avatar-circle">Fe</div>
-          <div><b>Felix</b></div>
+          <div class="avatar-circle"><a href="edit-profile.php">Fe</a></div>
+          <div><b><a href="edit-profile.php">Felix</a></b></div>
         </div>
       </div>
     </div>
@@ -384,6 +400,8 @@
           <div class="activity-row"><span class="t">08:40 AM</span><span><b>Felix</b> — Disabled Lu's account</span></div>
         </div>
       </div>
+
+      <div class="page-foot">© 2026 MAP & PUMP | All Right Reserved</div>
     </div>
   </div>
 </div>

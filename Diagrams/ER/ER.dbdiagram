@@ -37,12 +37,6 @@
         "y": -364.1003653837029
       },
       {
-        "name": "users_log",
-        "schemaName": "public",
-        "x": 548.2612945531826,
-        "y": 1211.7035958752454
-      },
-      {
         "name": "lwk_license",
         "schemaName": "public",
         "x": 248.34772528286652,
@@ -89,6 +83,18 @@
         "schemaName": "public",
         "x": -287.1043764974329,
         "y": 1421.7035958752454
+      },
+      {
+        "name": "user_log",
+        "schemaName": "public",
+        "x": 449.7052610817974,
+        "y": 1512.2996625126032
+      },
+      {
+        "name": "log",
+        "schemaName": "public",
+        "x": 326.63082694225335,
+        "y": 1736.5460739497603
       }
     ],
     "tableGroupCollapseStates": [],
@@ -555,6 +561,36 @@
           "user_id"
         ],
         "secondTableName": "users",
+        "secondSchemaName": "public",
+        "secondRelation": "1",
+        "checkPoints": []
+      },
+      {
+        "firstFieldNames": [
+          "user_id"
+        ],
+        "firstTableName": "users",
+        "firstSchemaName": "public",
+        "firstRelation": "*",
+        "secondFieldNames": [
+          "user_id"
+        ],
+        "secondTableName": "user_log",
+        "secondSchemaName": "public",
+        "secondRelation": "1",
+        "checkPoints": []
+      },
+      {
+        "firstFieldNames": [
+          "log_id"
+        ],
+        "firstTableName": "log",
+        "firstSchemaName": "public",
+        "firstRelation": "*",
+        "secondFieldNames": [
+          "user_id"
+        ],
+        "secondTableName": "user_log",
         "secondSchemaName": "public",
         "secondRelation": "1",
         "checkPoints": []
