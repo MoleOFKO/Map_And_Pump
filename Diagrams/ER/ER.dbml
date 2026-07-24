@@ -58,6 +58,7 @@
   Table headquarter {
     headquarter_id int [pk, increment]
     role_id int
+    station_id int
     company_name varchar(255)
     company_logo varchar(255)
     contact_number varchar(50)
@@ -152,3 +153,4 @@
   Ref: feedback.user_id > users.user_id
   Ref: station_oil_inventory.station_id > stations.station_id
   Ref: station_oil_inventory.oil_type_id > oil_types.oil_type_id
+  Ref: headquarter.station_id > stations.station_id
