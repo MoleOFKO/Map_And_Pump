@@ -35,3 +35,41 @@
         }
     }, { passive: true });
 })();
+
+/**
+ * Admin theme toggle.
+ * Adds light-mode hooks to the document and remembers the user's choice.
+ */
+(function () {
+    const THEME_KEY = 'mapPumpAdminTheme';
+    const toggles = document.querySelectorAll('.js-theme-toggle');
+    const savedTheme = localStorage.getItem(THEME_KEY);
+    const initialTheme = savedTheme || 'dark';
+
+    function applyTheme(theme) {
+        const isLight = theme === 'light';
+
+        document.documentElement.classList.toggle('light-mode', isLight);
+        document.documentElement.dataset.theme = theme;
+
+        if (document.body) {
+            document.body.classList.toggle('light-mode', isLight);
+            document.body.dataset.theme = theme;
+        }
+
+        toggles.forEach((toggle) => {
+            toggle.checked = isLight;
+            toggle.setAttribute('aria-checked', String(isLight));
+        });
+
+        localStorage.setItem(THEME_KEY, theme);
+    }
+
+    applyTheme(initialTheme);
+
+    toggles.forEach((toggle) => {
+        toggle.addEventListener('change', () => {
+            applyTheme(toggle.checked ? 'light' : 'dark');
+        });
+    });
+})();

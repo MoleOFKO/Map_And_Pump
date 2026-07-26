@@ -26,9 +26,34 @@
                     <span class="d-none d-sm-inline">Admin Portal</span>
                 </a>
 
-                <button class="btn btn-sm menu-pill-btn" type="button" data-bs-toggle="offcanvas" data-bs-target="#mainMenuOffcanvas">
-                    <i class="bi bi-grid-fill me-1 txt-neon-cyan"></i> Menu
-                </button>
+                <div class="admin-nav-actions">
+                    <label class="cosmic-toggle nav-theme-toggle" title="Toggle light mode">
+                        <input class="toggle js-theme-toggle" type="checkbox" aria-label="Toggle light mode" />
+                        <div class="slider">
+                            <span class="theme-icon theme-icon-dark"><i class="bi bi-moon-stars-fill"></i></span>
+                            <span class="theme-icon theme-icon-light"><i class="bi bi-sun-fill"></i></span>
+                            <div class="cosmos"></div>
+                            <div class="energy-line"></div>
+                            <div class="energy-line"></div>
+                            <div class="energy-line"></div>
+                            <div class="toggle-orb">
+                                <div class="inner-orb"></div>
+                                <div class="ring"></div>
+                            </div>
+                            <div class="particles">
+                                <div style="--angle: 30deg" class="particle"></div>
+                                <div style="--angle: 60deg" class="particle"></div>
+                                <div style="--angle: 90deg" class="particle"></div>
+                                <div style="--angle: 120deg" class="particle"></div>
+                                <div style="--angle: 150deg" class="particle"></div>
+                                <div style="--angle: 180deg" class="particle"></div>
+                            </div>
+                        </div>
+                    </label>
+                    <button class="btn btn-sm menu-pill-btn" type="button" data-bs-toggle="offcanvas" data-bs-target="#mainMenuOffcanvas">
+                        <i class="bi bi-grid-fill me-1 txt-neon-cyan"></i> Menu
+                    </button>
+                </div>
             </div>
         </nav>
     </div>
@@ -109,13 +134,11 @@
                             <h2 class="fw-bold h5 text-white mb-1">Operational Snapshot</h2>
                             <p class="text-white-50 mb-0 small">The most active admin queues and their current status distribution.</p>
                         </div>
-                        <span class="badge rounded-pill bg-success bg-opacity-15 text-success border border-success border-opacity-25 px-3 py-2">
-                            <i class="bi bi-circle-fill me-1" style="font-size:0.5rem;"></i>Live
-                        </span>
+                        
                     </div>
 
                     <div class="row g-4">
-                        <div class="col-12 col-lg-6">
+                        <div class="col-12 col-lg-6 ">
                             <div class="pie-panel">
                                 <div class="pie-chart request-pie" role="img" aria-label="Request status chart: 35 pending, 18 approved, 3 declined">
                                     <span>56</span>
@@ -248,6 +271,30 @@
                 <h5 class="offcanvas-title text-white fw-bold mb-0">Main Menu</h5>
                 <p class="text-white-50 small mb-0" style="font-size:0.78rem;">Admin Portal</p>
             </div>
+            <label class="cosmic-toggle float-end" title="Toggle light mode">
+                <input class="toggle js-theme-toggle" id="themeToggle" type="checkbox" aria-label="Toggle light mode" />
+                <div class="slider">
+                    <span class="theme-icon theme-icon-dark"><i class="bi bi-moon-stars-fill"></i></span>
+                    <span class="theme-icon theme-icon-light"><i class="bi bi-sun-fill"></i></span>
+                    <div class="cosmos"></div>
+                    <div class="energy-line"></div>
+                    <div class="energy-line"></div>
+                    <div class="energy-line"></div>
+                    <div class="toggle-orb">
+                    <div class="inner-orb"></div>
+                    <div class="ring"></div>
+                    </div>
+                    <div class="particles">
+                    <div style="--angle: 30deg" class="particle"></div>
+                    <div style="--angle: 60deg" class="particle"></div>
+                    <div style="--angle: 90deg" class="particle"></div>
+                    <div style="--angle: 120deg" class="particle"></div>
+                    <div style="--angle: 150deg" class="particle"></div>
+                    <div style="--angle: 180deg" class="particle"></div>
+                    </div>
+                </div>
+            </label>
+
             <button type="button" class="btn-close btn-close-white" data-bs-dismiss="offcanvas"></button>
         </div>
         <div class="offcanvas-body pt-3">

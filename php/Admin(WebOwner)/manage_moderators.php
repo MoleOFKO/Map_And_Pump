@@ -26,9 +26,34 @@
                     <span class="d-none d-sm-inline">Admin Portal</span>
                 </a>
 
-                <button class="btn btn-sm menu-pill-btn" type="button" data-bs-toggle="offcanvas" data-bs-target="#mainMenuOffcanvas">
-                    <i class="bi bi-grid-fill me-1 txt-neon-cyan"></i> Menu
-                </button>
+                <div class="admin-nav-actions">
+                    <label class="cosmic-toggle nav-theme-toggle" title="Toggle light mode">
+                        <input class="toggle js-theme-toggle" type="checkbox" aria-label="Toggle light mode" />
+                        <div class="slider">
+                            <span class="theme-icon theme-icon-dark"><i class="bi bi-moon-stars-fill"></i></span>
+                            <span class="theme-icon theme-icon-light"><i class="bi bi-sun-fill"></i></span>
+                            <div class="cosmos"></div>
+                            <div class="energy-line"></div>
+                            <div class="energy-line"></div>
+                            <div class="energy-line"></div>
+                            <div class="toggle-orb">
+                                <div class="inner-orb"></div>
+                                <div class="ring"></div>
+                            </div>
+                            <div class="particles">
+                                <div style="--angle: 30deg" class="particle"></div>
+                                <div style="--angle: 60deg" class="particle"></div>
+                                <div style="--angle: 90deg" class="particle"></div>
+                                <div style="--angle: 120deg" class="particle"></div>
+                                <div style="--angle: 150deg" class="particle"></div>
+                                <div style="--angle: 180deg" class="particle"></div>
+                            </div>
+                        </div>
+                    </label>
+                    <button class="btn btn-sm menu-pill-btn" type="button" data-bs-toggle="offcanvas" data-bs-target="#mainMenuOffcanvas">
+                        <i class="bi bi-grid-fill me-1 txt-neon-cyan"></i> Menu
+                    </button>
+                </div>
             </div>
         </nav>
     </div>
@@ -235,6 +260,29 @@
                 <h5 class="offcanvas-title text-white fw-bold mb-0">Main Menu</h5>
                 <p class="text-white-50 small mb-0" style="font-size:0.78rem;">Admin Portal</p>
             </div>
+            <label class="cosmic-toggle float-end" title="Toggle light mode">
+                <input class="toggle js-theme-toggle" type="checkbox" aria-label="Toggle light mode" />
+                <div class="slider">
+                    <span class="theme-icon theme-icon-dark"><i class="bi bi-moon-stars-fill"></i></span>
+                    <span class="theme-icon theme-icon-light"><i class="bi bi-sun-fill"></i></span>
+                    <div class="cosmos"></div>
+                    <div class="energy-line"></div>
+                    <div class="energy-line"></div>
+                    <div class="energy-line"></div>
+                    <div class="toggle-orb">
+                        <div class="inner-orb"></div>
+                        <div class="ring"></div>
+                    </div>
+                    <div class="particles">
+                        <div style="--angle: 30deg" class="particle"></div>
+                        <div style="--angle: 60deg" class="particle"></div>
+                        <div style="--angle: 90deg" class="particle"></div>
+                        <div style="--angle: 120deg" class="particle"></div>
+                        <div style="--angle: 150deg" class="particle"></div>
+                        <div style="--angle: 180deg" class="particle"></div>
+                    </div>
+                </div>
+            </label>
             <button type="button" class="btn-close btn-close-white" data-bs-dismiss="offcanvas"></button>
         </div>
         <div class="offcanvas-body pt-3">

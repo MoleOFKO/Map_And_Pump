@@ -95,6 +95,12 @@
         "schemaName": "public",
         "x": 326.63082694225335,
         "y": 1736.5460739497603
+      },
+      {
+        "name": "user_car",
+        "schemaName": "public",
+        "x": -287.1043764974329,
+        "y": 1946.5460739497603
       }
     ],
     "tableGroupCollapseStates": [],
@@ -608,6 +614,66 @@
         "secondTableName": "stations",
         "secondSchemaName": "public",
         "secondRelation": "1",
+        "checkPoints": []
+      },
+      {
+        "firstFieldNames": [
+          "user_id"
+        ],
+        "firstTableName": "users",
+        "firstSchemaName": "public",
+        "firstRelation": "*",
+        "secondFieldNames": [
+          "user_id"
+        ],
+        "secondTableName": "log",
+        "secondSchemaName": "public",
+        "secondRelation": "1",
+        "checkPoints": []
+      },
+      {
+        "firstFieldNames": [
+          "user_id"
+        ],
+        "firstTableName": "users",
+        "firstSchemaName": "public",
+        "firstRelation": "*",
+        "secondFieldNames": [
+          "car_license_id"
+        ],
+        "secondTableName": "car_license",
+        "secondSchemaName": "public",
+        "secondRelation": "1",
+        "checkPoints": []
+      },
+      {
+        "firstFieldNames": [
+          "user_id"
+        ],
+        "firstTableName": "users",
+        "firstSchemaName": "public",
+        "firstRelation": "1",
+        "secondFieldNames": [
+          "user_id"
+        ],
+        "secondTableName": "user_car",
+        "secondSchemaName": "public",
+        "secondRelation": "*",
+        "checkPoints": []
+      },
+      {
+        "firstFieldNames": [
+          "car_license_id"
+        ],
+        "firstTableName": "car_license",
+        "firstSchemaName": "public",
+        "firstRelation": "1",
+        "secondFieldNames": [
+          "car_id"
+        ],
+        "secondTableName": "user_car",
+        "secondSchemaName": "public",
+        "secondRelation": "*",
         "checkPoints": []
       }
     ]
