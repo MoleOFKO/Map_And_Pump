@@ -73,3 +73,18 @@
         });
     });
 })();
+
+/**
+ * Main Menu offcanvas — always open from the top so Home stays visible after page scroll.
+ */
+(function () {
+    const menu = document.getElementById('mainMenuOffcanvas');
+    if (!menu) return;
+
+    menu.addEventListener('show.bs.offcanvas', () => {
+        const body = menu.querySelector('.offcanvas-body');
+        if (body) {
+            body.scrollTop = 0;
+        }
+    });
+})();

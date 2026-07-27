@@ -72,7 +72,7 @@
                 <p class="text-white-50 m-0 small mt-1">Provision new admin profiles, alter privilege permissions, or revoke staff accounts.</p>
             </div>
             <button class="btn btn-neon d-flex align-items-center gap-2" data-bs-toggle="modal" data-bs-target="#addAdminModal">
-                <i class="bi bi-person-plus-fill"></i> Add New Admin
+                <i class="bi bi-person-plus-fill"></i> Add New Moderator
             </button>
         </div>
 
