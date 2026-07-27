@@ -240,6 +240,7 @@
                 left: 0;
                 width: var(--sidebar-width);
                 height: calc(100vh - var(--header-height));
+                overflow-y: auto;
                 transform: translateX(-100%);
             }
             .sidebar.mobile-open {
