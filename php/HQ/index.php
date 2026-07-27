@@ -160,6 +160,68 @@
             z-index: 1000;
         }
 
+        .logout-modal-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.55);
+            z-index: 2000;
+            align-items: center;
+            justify-content: center;
+            padding: 16px;
+        }
+
+        .logout-modal-overlay.active {
+            display: flex;
+        }
+
+        .logout-modal {
+            width: min(100%, 420px);
+            background: var(--card-bg, #1e293b);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 18px;
+            padding: 28px 24px;
+            box-shadow: 0 24px 80px rgba(0, 0, 0, 0.35);
+        }
+
+        .logout-modal h2 {
+            margin: 0 0 12px;
+            font-size: 1.25rem;
+            color: #fff;
+        }
+
+        .logout-modal p {
+            margin: 0 0 20px;
+            color: var(--slate-300, #cbd5e1);
+            line-height: 1.6;
+        }
+
+        .logout-modal-actions {
+            display: flex;
+            gap: 12px;
+            justify-content: flex-end;
+            flex-wrap: wrap;
+        }
+
+        .logout-modal-actions button {
+            min-width: 120px;
+            border: none;
+            border-radius: 10px;
+            padding: 10px 16px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        .logout-modal-actions .cancel-button {
+            background: rgba(148, 163, 184, 0.12);
+            color: #cbd5e1;
+        }
+
+        .logout-modal-actions .confirm-button {
+            background: #ef4444;
+            color: #fff;
+        }
+
         /* Responsive Breakpoints */
         @media (max-width: 992px) {
             body {
@@ -203,6 +265,17 @@
 
     <!-- Background Overlay for Mobile Menu -->
     <div class="sidebar-overlay" id="sidebarOverlay" onclick="toggleSidebar()"></div>
+
+    <div class="logout-modal-overlay" id="logoutModalOverlay" onclick="cancelLogout()">
+        <div class="logout-modal" onclick="event.stopPropagation()">
+            <h2>Confirm Logout</h2>
+            <p>Are you sure you want to log out?</p>
+            <div class="logout-modal-actions">
+                <button type="button" class="cancel-button" onclick="cancelLogout()">Cancel</button>
+                <button type="button" class="confirm-button" onclick="confirmLogout()">Logout</button>
+            </div>
+        </div>
+    </div>
 
     <div class="dashboard-layout">
         <!-- Sidebar Navigation -->
@@ -266,6 +339,18 @@
         const overlay = document.getElementById('sidebarOverlay');
         sidebar.classList.toggle('mobile-open');
         overlay.classList.toggle('active');
+    }
+
+    function handleLogout() {
+        document.getElementById('logoutModalOverlay').classList.add('active');
+    }
+
+    function cancelLogout() {
+        document.getElementById('logoutModalOverlay').classList.remove('active');
+    }
+
+    function confirmLogout() {
+        window.location.href = 'login.php';
     }
     </script>
 </body>
