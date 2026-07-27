@@ -9,7 +9,7 @@ RUN a2enmod rewrite
 RUN a2enmod headers
 
 # Set HomePage.php as the default landing page
-RUN sed -i 's/DirectoryIndex index.php index.html/DirectoryIndex HomePage.php index.php index.html/' /etc/apache2/mods-enabled/dir.conf
+RUN sed -i 's|^DirectoryIndex .*|DirectoryIndex php/HomePage.php index.php index.html|' /etc/apache2/mods-enabled/dir.conf
 
 # Copy PHP production configuration
 COPY --from=php:8.2-apache /usr/local/etc/php/php.ini-production /usr/local/etc/php/php.ini
