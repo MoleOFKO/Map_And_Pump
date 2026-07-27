@@ -1,16 +1,23 @@
 # Use the official PHP image with Apache
 FROM php:8.2-apache
 
-# Install PDO MySQL extension for database access
-RUN docker-php-ext-install pdo pdo_mysql
+# Install required extensions
+RUN docker-php-ext-install pdo pdo_mysql mysqli
 
-# Enable Apache mod_rewrite for custom routing (e.g., frameworks or clean URLs)
+# Enable Apache modules
 RUN a2enmod rewrite
+RUN a2enmod headers
 
-# Change Apache document root if your index.php is inside a public/ folder:
-# ENV APACHE_DOCUMENT_ROOT /var/www/html/public
-# RUN sed -ri -e 's!/var/www/html!${APACHE_DOCUMENT_ROOT}!g' /etc/apache2/sites-available/*.conf
-# RUN sed -ri -e 's!/var/www/html!${APACHE_DOCUMENT_ROOT}!g' /etc/apache2/conf-available/*.conf
+# Set HomePage.php as the default landing page
+RUN sed -i 's/DirectoryIndex index.php index.html/DirectoryIndex HomePage.php index.php index.html/' /etc/apache2/mods-enabled/dir.conf
+
+# Copy PHP production configuration
+COPY --from=php:8.2-apache /usr/local/etc/php/php.ini-production /usr/local/etc/php/php.ini
+
+# Configure PHP for production
+RUN echo "display_errors = Off" >> /usr/local/etc/php/php.ini && \
+    echo "log_errors = On" >> /usr/local/etc/php/php.ini && \
+    echo "error_log = /var/log/php_errors.log" >> /usr/local/etc/php/php.ini
 
 # Set working directory
 WORKDIR /var/www/html
@@ -18,8 +25,17 @@ WORKDIR /var/www/html
 # Copy application files into the container
 COPY . /var/www/html/
 
-# Set proper permissions for the web server
-RUN chown -R www-data:www-data /var/www/html
+# Set proper permissions
+RUN chown -R www-data:www-data /var/www/html && \
+    chmod -R 755 /var/www/html
 
-# Expose port 80 (Render automatically detects and routes traffic to this port)
+# Create log file
+RUN touch /var/log/php_errors.log && \
+    chown www-data:www-data /var/log/php_errors.log
+
+# Expose port 80
 EXPOSE 80
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost/ || exit 1
