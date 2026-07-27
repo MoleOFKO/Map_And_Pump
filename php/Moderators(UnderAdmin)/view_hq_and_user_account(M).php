@@ -4,6 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>HQ & User Accounts - Map & Pump</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
     <!-- Browser Tab Logo (Favicon) -->
     <link rel="icon" type="image/png" href="/images/Logo.png">
@@ -12,40 +15,8 @@
     
 </head>
 <body class="background_color" id="background_color">
-    
-    <!-- IPHONE CAPSULE NAVBAR -->
-    <div class="container sticky-nav-wrapper">
-        <nav class="navbar navbar-dark text-white navbar-expand-sm navigation_style">
-            <div class="container-fluid d-flex justify-content-between align-items-center p-0">
-                
-                <div class="d-flex align-items-center">
-                    <button class="navbar-toggler me-2 border-0" type="button" data-bs-toggle="collapse" data-bs-target="#collapsibleNavbar">
-                        <span class="navbar-toggler-icon"></span>
-                    </button>
-                    <a class="navbar-brand d-sm-block d-none fw-semibold txt-neon-cyan" href="admin_dashboard.php" style="font-size: 0.95rem;">Admin Portal</a>
 
-                </div>
-
-                <div class="text-center">
-                    <a href="admin_dashboard.php" class="text-decoration-none d-flex align-items-center justify-content-center gap-2 text-white fw-bold">
-                        <img src="/images/Logo.png" alt="Logo" class="nav-logo">
-                        <span style="font-size: 1rem; letter-spacing: 0.5px; color: #ffffff;">Map & Pump</span>
-                    </a>
-                </div>
-                    
-                <div class="collapse navbar-collapse flex-grow-0" id="collapsibleNavbar">
-                    <ul class="navbar-nav ms-auto gap-2 text-center text-sm-start">
-                        <li class="nav-item">
-                            <a class="nav-link fw-semibold px-3 py-1 text-white-50" href="#" role="button" data-bs-toggle="offcanvas" data-bs-target="#mainMenuOffcanvas" style="font-size: 0.9rem;">
-                                <i class="bi bi-grid-fill me-1 txt-neon-cyan"></i> Menu
-                            </a>
-                        </li>
-                    </ul>
-                </div>
-
-            </div>
-        </nav>
-    </div>
+<?php include __DIR__ . '/includes/moderator_navbar.php'; ?>
 
     <!-- MAIN MANAGE CONTENT -->
     <div class="container my-5">
@@ -241,62 +212,9 @@
         </div>
     </div>
 
-    <!-- SIDEBAR MAIN MENU -->
-    <div class="offcanvas offcanvas-end profile-offcanvas" tabindex="-1" id="mainMenuOffcanvas" style="width: 320px; background: rgba(8, 15, 28, 0.98); backdrop-filter: blur(25px); border-left: 1px solid rgba(0, 114, 255, 0.2);">
-        <div class="offcanvas-header pb-2">
-            <h5 class="offcanvas-title text-white fw-bold">Main Menu</h5>
-            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="offcanvas"></button>
-        </div>
-        <div class="offcanvas-body">
-            <ul class="list-unstyled d-flex flex-column gap-3">
-                <li>
-                    <a href="moderator_dashboard.php" class="menu-btn-nav">
-                        <i class="bi bi-house me-3 txt-neon-cyan"></i> Home
-                    </a>
-                </li>
-                <li>
-                    <a href="view_hq_and_user_account(M).php" class="menu-btn-nav">
-                        <i class="bi bi-building-gear me-3 txt-neon-cyan"></i> View HQ & User Accounts
-                    </a>
-                </li>
-                <li>
-                    <a href="view_requests(M).php" class="menu-btn-nav">
-                        <i class="bi bi-file-earmark-check me-3 txt-neon-cyan"></i> View Requests
-                    </a>
-                </li>
-                <li>
-                    <a href="view_report(M).php" class="menu-btn-nav">
-                        <i class="bi bi-graph-up-arrow me-3 txt-neon-cyan"></i> View Report
-                    </a>
-                </li>
-                <li>
-                    <a href="edit_profile(M).php" class="menu-btn-nav">
-                        <i class="bi bi-person-bounding-box me-3 txt-neon-blue"></i> Edit Profile
-                    </a>
-                </li>
-                <!-- <li>
-                    <a href="manage_moderators(M).php" class="menu-btn-nav">
-                        <i class="bi bi-people-fill me-3 txt-neon-blue"></i> Manage Moderators
-                    </a>
-                </li> -->
-                <li>
-                    <a href="view_logs(M).php" class="menu-btn-nav">
-                        <i class="bi bi-terminal-split me-3 text-danger"></i> View Log Files
-                    </a>
-                </li>
-                <hr style="border-color: rgba(255, 255, 255, 0.1);">
-                <li>
-                    <form action="logout.php" method="post" class="m-0"> <!--Need to create logout.php that is not existing in those folder-->
-                        <button type="submit" class="logout-btn-nav btn border-0 w-100">
-                            <i class="bi bi-box-arrow-right me-2"></i> Logout
-                        </button>
-                    </form>
-                </li>
-            </ul>
-        </div>
-    </div>
+<?php $moderatorActiveNav = 'hq'; include __DIR__ . '/includes/moderator_offcanvas.php'; ?>
 
     <footer class="text-white-50 text-center py-4 mt-5 small">&copy; 2026 Map & Pump | All Rights Reserved</footer>
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<?php include __DIR__ . '/includes/moderator_footer_scripts.php'; ?>
 </body>
 </html>
