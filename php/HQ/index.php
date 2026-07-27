@@ -68,18 +68,19 @@
         .sidebar {
             background: var(--card-bg, #1e293b);
             border-right: 1px solid var(--border, #334155);
-            padding: 24px 16px;
+            padding: 24px 10px;
             display: flex;
             flex-direction: column;
             justify-content: space-between;
             height: 100%;
-            overflow-y: auto;
+            overflow-y: hidden;
             transition: transform 0.3s ease;
             z-index: 1002;
         }
 
         .sidebar-brand {
             padding: 12px;
+            margin-top: -5px;
             margin-bottom: 12px;
             border: 1px solid var(--border, #334155);
             border-radius: 10px;
@@ -103,10 +104,10 @@
         }
 
         .sidebar-menu li {
-            padding: 12px 16px;
+            padding: 12px 10px;
             border-radius: 8px;
             cursor: pointer;
-            margin-bottom: 6px;
+            margin-bottom: 4px;
             font-weight: 500;
             color: var(--slate-300, #cbd5e1);
             transition: all 0.25s ease;
@@ -209,7 +210,7 @@
             <div>
                 <div class="sidebar-brand text-center">
                     <a href="index.php" class="text-decoration-none d-flex align-items-center justify-content-center gap-1 text-white fw-bold">
-                        <img src="/images/Logo.png" alt="Logo" class="nav-logo">
+                        <img src="../../images/Logo.png" alt="Logo" class="nav-logo">
                         <span style="font-size: 1.3rem; letter-spacing: 0.5px; color: #ffffff;">Map & Pump</span>
                     </a>
                     <div style="font-size: 0.7rem; letter-spacing: 0.5px; color: var(--slate-400, #94a3b8); margin-top: 4px;">Headquarter Control Panel</div>
