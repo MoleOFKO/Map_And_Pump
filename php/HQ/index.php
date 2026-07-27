@@ -68,18 +68,19 @@
         .sidebar {
             background: var(--card-bg, #1e293b);
             border-right: 1px solid var(--border, #334155);
-            padding: 24px 16px;
+            padding: 24px 10px;
             display: flex;
             flex-direction: column;
             justify-content: space-between;
             height: 100%;
-            overflow-y: auto;
+            overflow-y: hidden;
             transition: transform 0.3s ease;
             z-index: 1002;
         }
 
         .sidebar-brand {
             padding: 12px;
+            margin-top: -5px;
             margin-bottom: 12px;
             border: 1px solid var(--border, #334155);
             border-radius: 10px;
@@ -103,10 +104,10 @@
         }
 
         .sidebar-menu li {
-            padding: 12px 16px;
+            padding: 12px 10px;
             border-radius: 8px;
             cursor: pointer;
-            margin-bottom: 6px;
+            margin-bottom: 4px;
             font-weight: 500;
             color: var(--slate-300, #cbd5e1);
             transition: all 0.25s ease;
@@ -159,6 +160,68 @@
             z-index: 1000;
         }
 
+        .logout-modal-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.55);
+            z-index: 2000;
+            align-items: center;
+            justify-content: center;
+            padding: 16px;
+        }
+
+        .logout-modal-overlay.active {
+            display: flex;
+        }
+
+        .logout-modal {
+            width: min(100%, 420px);
+            background: var(--card-bg, #1e293b);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 18px;
+            padding: 28px 24px;
+            box-shadow: 0 24px 80px rgba(0, 0, 0, 0.35);
+        }
+
+        .logout-modal h2 {
+            margin: 0 0 12px;
+            font-size: 1.25rem;
+            color: #fff;
+        }
+
+        .logout-modal p {
+            margin: 0 0 20px;
+            color: var(--slate-300, #cbd5e1);
+            line-height: 1.6;
+        }
+
+        .logout-modal-actions {
+            display: flex;
+            gap: 12px;
+            justify-content: flex-end;
+            flex-wrap: wrap;
+        }
+
+        .logout-modal-actions button {
+            min-width: 120px;
+            border: none;
+            border-radius: 10px;
+            padding: 10px 16px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        .logout-modal-actions .cancel-button {
+            background: rgba(148, 163, 184, 0.12);
+            color: #cbd5e1;
+        }
+
+        .logout-modal-actions .confirm-button {
+            background: #ef4444;
+            color: #fff;
+        }
+
         /* Responsive Breakpoints */
         @media (max-width: 992px) {
             body {
@@ -203,13 +266,24 @@
     <!-- Background Overlay for Mobile Menu -->
     <div class="sidebar-overlay" id="sidebarOverlay" onclick="toggleSidebar()"></div>
 
+    <div class="logout-modal-overlay" id="logoutModalOverlay" onclick="cancelLogout()">
+        <div class="logout-modal" onclick="event.stopPropagation()">
+            <h2>Confirm Logout</h2>
+            <p>Are you sure you want to log out?</p>
+            <div class="logout-modal-actions">
+                <button type="button" class="cancel-button" onclick="cancelLogout()">Cancel</button>
+                <button type="button" class="confirm-button" onclick="confirmLogout()">Logout</button>
+            </div>
+        </div>
+    </div>
+
     <div class="dashboard-layout">
         <!-- Sidebar Navigation -->
         <aside class="sidebar" id="sidebar">
             <div>
                 <div class="sidebar-brand text-center">
                     <a href="index.php" class="text-decoration-none d-flex align-items-center justify-content-center gap-1 text-white fw-bold">
-                        <img src="/images/Logo.png" alt="Logo" class="nav-logo">
+                        <img src="../../images/Logo.png" alt="Logo" class="nav-logo">
                         <span style="font-size: 1.3rem; letter-spacing: 0.5px; color: #ffffff;">Map & Pump</span>
                     </a>
                     <div style="font-size: 0.7rem; letter-spacing: 0.5px; color: var(--slate-400, #94a3b8); margin-top: 4px;">Headquarter Control Panel</div>
@@ -241,13 +315,15 @@
 
     <script>
     function routeTo(path) {
-        document.getElementById('viewport').src = path.trim();
+        path = path.trim();
+        document.getElementById('viewport').src = path;
     
-        // Handle Navigation Highlights cleanly
+        // Handle navigation highlights with exact route matching
         document.querySelectorAll('.sidebar-menu li').forEach(item => {
             item.classList.remove('active');
-            const onclickAttr = item.getAttribute('onclick') || ''; 
-            if (onclickAttr.includes(path.trim())) {
+            const onclickAttr = item.getAttribute('onclick') || '';
+            const match = onclickAttr.match(/routeTo\(['"]([^'"]+)['"]\)/);
+            if (match && match[1] === path) {
                 item.classList.add('active');
             }
         });
@@ -263,6 +339,18 @@
         const overlay = document.getElementById('sidebarOverlay');
         sidebar.classList.toggle('mobile-open');
         overlay.classList.toggle('active');
+    }
+
+    function handleLogout() {
+        document.getElementById('logoutModalOverlay').classList.add('active');
+    }
+
+    function cancelLogout() {
+        document.getElementById('logoutModalOverlay').classList.remove('active');
+    }
+
+    function confirmLogout() {
+        window.location.href = 'login.php';
     }
     </script>
 </body>
