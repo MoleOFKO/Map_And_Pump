@@ -242,13 +242,15 @@
 
     <script>
     function routeTo(path) {
-        document.getElementById('viewport').src = path.trim();
+        path = path.trim();
+        document.getElementById('viewport').src = path;
     
-        // Handle Navigation Highlights cleanly
+        // Handle navigation highlights with exact route matching
         document.querySelectorAll('.sidebar-menu li').forEach(item => {
             item.classList.remove('active');
-            const onclickAttr = item.getAttribute('onclick') || ''; 
-            if (onclickAttr.includes(path.trim())) {
+            const onclickAttr = item.getAttribute('onclick') || '';
+            const match = onclickAttr.match(/routeTo\(['"]([^'"]+)['"]\)/);
+            if (match && match[1] === path) {
                 item.classList.add('active');
             }
         });
