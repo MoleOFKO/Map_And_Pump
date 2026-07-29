@@ -11,8 +11,7 @@
     <!-- Custom Theme Colors Over Bootstrap -->
     <link rel="stylesheet" href="/css/HomePage.css">
     <!-- Browser Tab Logo (Favicon) -->
-    <link rel="icon" type="image/png" href="../
-    ../images/Logo.png">
+    <link rel="icon" type="image/png" href="/images/Logo.png">
 </head>
 <body>
 
@@ -41,7 +40,7 @@
                 
                 <!-- Action Button Replaced at the Right -->
                 <div class="d-flex justify-content-center mt-2 mt-lg-0">
-                    <a class="btn btn-primary rounded-pill px-4 py-2 fs-5 fw-semibold shadow-sm" href="/login">Sign In</a>
+                    <a class="btn btn-primary rounded-pill px-4 py-2 fs-5 fw-semibold shadow-sm" href="/php/Login/login.php">Sign In</a>
                 </div>
             </div>
         </div>
@@ -153,7 +152,7 @@
             <div class="max-width-md mx-auto">
                 <h2 class="fw-bold mb-3">Are you a Station Owner or Fuel Company?</h2>
                 <p class="text-light opacity-75 mb-4 px-md-5">Digitize your queue, manage your local station branches seamlessly, protect your staff from chaotic traffic control, and optimize your inventory metrics with our cloud framework.</p>
-                <a href="/register?type=company" class="btn btn-success btn-lg px-5 py-3 fw-bold">Register Your Company</a>
+                <a href="/php/Login/login.php" class="btn btn-success btn-lg px-5 py-3 fw-bold">Register Your Company</a>
             </div>
         </div>
     </section>
