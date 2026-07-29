@@ -1,0 +1,639 @@
+/* ==========================================================================
+   1. Global Resets & Body Layout
+   ========================================================================== */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  font-family: 'Plus Jakarta Sans', sans-serif;
+}
+
+body {
+  min-height: 100vh;
+  background: #080d1a;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  overflow: hidden;
+  position: relative;
+  color: #ffffff;
+}
+
+/* Background Ambient Glows */
+.bg-blur {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(140px);
+  z-index: 0;
+  pointer-events: none;
+}
+
+.bg-blur-1 {
+  width: 500px;
+  height: 500px;
+  background: rgba(14, 165, 233, 0.15);
+  top: -100px;
+  right: -50px;
+}
+
+.bg-blur-2 {
+  width: 450px;
+  height: 450px;
+  background: rgba(30, 58, 138, 0.25);
+  bottom: -100px;
+  left: -50px;
+}
+
+/* ==========================================================================
+   2. Main Outer Container
+   ========================================================================== */
+.main-card {
+  position: relative;
+  z-index: 1;
+  width: 980px;
+  min-height: 640px;
+  background: rgba(15, 23, 42, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 24px;
+  backdrop-filter: blur(20px);
+  display: flex;
+  align-items: center;
+  padding: 30px 45px;
+  gap: 50px;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+}
+
+/* ==========================================================================
+   3. Modern Back Button
+   ========================================================================== */
+.back-nav-link {
+  position: absolute;
+  top: 26px;
+  left: 32px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  text-decoration: none;
+  text-transform: uppercase;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  z-index: 10;
+  transition: color 0.25s ease;
+}
+
+.back-nav-link .back-arrow-icon {
+  width: 18px;
+  height: 18px;
+  stroke: rgba(255, 255, 255, 0.7);
+  transition: transform 0.25s ease, stroke 0.25s ease;
+}
+
+.back-nav-link:hover {
+  color: #38bdf8;
+}
+
+.back-nav-link:hover .back-arrow-icon {
+  stroke: #38bdf8;
+  transform: translateX(-3px);
+}
+
+/* ==========================================================================
+   4. Form Section (Left Side)
+   ========================================================================== */
+.form-container {
+  width: 420px;
+  background: rgba(15, 23, 42, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 20px;
+  padding: 32px 30px;
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.1);
+  margin-top: 15px;
+}
+
+.auth-step {
+  display: none;
+}
+
+.auth-step.active {
+  display: block;
+}
+
+.text-center {
+  text-align: center;
+}
+
+.header {
+  margin-bottom: 20px;
+}
+
+.welcome-text {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.7);
+  font-weight: 500;
+}
+
+.title {
+  font-size: 26px;
+  font-weight: 800;
+  color: #38bdf8;
+  letter-spacing: 0.5px;
+  margin-top: 2px;
+}
+
+.step-subtitle {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.6);
+  margin-top: 4px;
+  line-height: 1.4;
+}
+
+/* Inputs */
+.input-group {
+  margin-bottom: 16px;
+}
+
+.input-group label {
+  display: block;
+  font-size: 11px;
+  font-weight: 500;
+  color: #ffffff;
+  margin-bottom: 6px;
+  letter-spacing: 0.5px;
+}
+
+.input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.input-wrapper input {
+  width: 100%;
+  height: 42px;
+  background: rgba(7, 11, 20, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  padding: 0 38px 0 14px;
+  color: #ffffff;
+  font-size: 13px;
+  outline: none;
+  transition: all 0.25s ease-in-out;
+}
+
+.input-wrapper input:hover {
+  border-color: rgba(56, 189, 248, 0.5);
+  background: rgba(7, 11, 20, 0.95);
+  box-shadow: 0 0 12px rgba(56, 189, 248, 0.15);
+}
+
+.input-wrapper input:focus {
+  border-color: #38bdf8;
+  background: rgba(7, 11, 20, 1);
+  box-shadow: 0 0 16px rgba(56, 189, 248, 0.3);
+}
+
+.input-wrapper input::placeholder {
+  color: rgba(255, 255, 255, 0.35);
+}
+
+.eye-btn {
+  position: absolute;
+  right: 12px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+}
+
+.eye-icon {
+  width: 16px;
+  height: 16px;
+  stroke: rgba(255, 255, 255, 0.5);
+  transition: stroke 0.2s;
+}
+
+.eye-btn:hover .eye-icon {
+  stroke: #38bdf8;
+}
+
+/* Form Options (Remember Me & Forgot Password) */
+.form-options {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 6px;
+  margin-bottom: 20px;
+}
+
+.checkbox-container {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.8);
+  user-select: none;
+}
+
+.checkbox-container input[type="checkbox"] {
+  accent-color: #38bdf8;
+  width: 15px;
+  height: 15px;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.forgot-link {
+  color: #38bdf8;
+  font-size: 12px;
+  text-decoration: none;
+  font-weight: 500;
+  transition: color 0.2s ease;
+}
+
+.forgot-link:hover {
+  color: #7dd3fc;
+  text-decoration: underline;
+}
+
+/* Divider Line */
+.divider {
+  display: flex;
+  align-items: center;
+  margin: 18px 0 16px 0;
+  gap: 12px;
+}
+
+.divider .line {
+  flex: 1;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.divider-text {
+  font-size: 10px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.4);
+  letter-spacing: 0.8px;
+  white-space: nowrap;
+}
+
+/* Social Buttons */
+.social-options {
+  display: flex;
+  justify-content: center;
+  gap: 14px;
+  margin-bottom: 20px;
+}
+
+.social-btn {
+  width: 48px;
+  height: 42px;
+  background: rgba(7, 11, 20, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.social-btn:hover {
+  background: rgba(15, 23, 42, 0.95);
+  border-color: #38bdf8;
+  box-shadow: 0 0 12px rgba(56, 189, 248, 0.2);
+  transform: translateY(-2px);
+}
+
+/* Press Down Effect */
+.social-btn:active {
+  transform: translateY(2px);
+  box-shadow: 0 0 4px rgba(56, 189, 248, 0.1);
+  background: rgba(7, 11, 20, 0.95);
+}
+
+.social-btn svg {
+  width: 18px;
+  height: 18px;
+}
+
+/* Buttons & 3D Mechanical FX */
+.login-btn-wrapper {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+  margin-top: 14px;
+  margin-bottom: 12px;
+}
+
+.submit-btn {
+  position: relative;
+  width: 110px;
+  height: 44px;
+  background: transparent; 
+  border: none;
+  color: #ffffff;
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  font-weight: 700;
+  font-size: 14px;
+  cursor: pointer;
+  outline: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1; 
+  transition: transform 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.submit-btn::before {
+  content: "";
+  position: absolute;
+  top: 4px;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: 8px;
+  background: linear-gradient(
+    90deg,
+    rgba(8, 45, 66, 1) 0%,
+    rgba(13, 75, 110, 1) 8%,
+    rgba(8, 45, 66, 1) 92%,
+    rgba(4, 26, 40, 1) 100%
+  );
+  z-index: -2;
+  box-shadow: 0 4px 10px rgba(56, 189, 248, 0.25);
+  transition: top 0.15s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.15s ease;
+}
+
+.submit-btn::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: 8px;
+  background-color: #38bdf8;
+  z-index: -1;
+  transition: background-color 0.15s ease;
+}
+
+.submit-btn:hover {
+  transform: translateY(-2px);
+}
+.submit-btn:hover::before {
+  top: 6px; 
+  box-shadow: 0 6px 14px rgba(56, 189, 248, 0.35);
+}
+.submit-btn:hover::after {
+  background-color: #4ac6ff;
+}
+
+.submit-btn:active {
+  transform: translateY(4px);
+}
+.submit-btn:active::before {
+  top: 0;
+  box-shadow: 0 1px 2px rgba(56, 189, 248, 0.15);
+}
+
+.register-prompt {
+  text-align: center;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.5);
+  letter-spacing: 0.5px;
+}
+
+.register-link {
+  color: #38bdf8;
+  font-weight: 600;
+  text-decoration: underline;
+  margin-left: 4px;
+}
+
+.register-link:hover {
+  color: #7dd3fc;
+}
+
+/* ==========================================================================
+   5. Branding Section (Right Side)
+   ========================================================================== */
+.branding-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.logo-img {
+  width: 150px;
+  height: auto;
+  margin-bottom: 20px;
+}
+
+.brand-title {
+  font-family: 'Prata', serif;
+  font-size: 34px;
+  color: #ffffff;
+  border-bottom: 2px solid #ffffff;
+  padding-bottom: 6px;
+  margin-bottom: 12px;
+  letter-spacing: 6px;
+}
+
+.brand-subtitle {
+  font-family: 'Poppins', sans-serif;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.6);
+  letter-spacing: 2px;
+  line-height: 1.6;
+}
+
+/* ==========================================================================
+   6. Forgot Password Specific Styles
+   ========================================================================== */
+
+/* Step Header Icon Badges */
+.step-icon-badge {
+  width: 56px;
+  height: 56px;
+  margin: 0 auto 16px auto;
+  background: rgba(56, 189, 248, 0.1);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.step-icon-badge svg {
+  width: 26px;
+  height: 26px;
+  stroke: #38bdf8;
+}
+
+.step-icon-badge.success-badge {
+  background: rgba(34, 197, 94, 0.1);
+  border-color: rgba(34, 197, 94, 0.3);
+}
+
+.step-icon-badge.success-badge svg {
+  stroke: #22c55e;
+}
+
+/* Full Width Button Modifier */
+.submit-btn.full-width-btn {
+  width: 100%;
+}
+
+/* OTP Digits Grid (Step 2) */
+.otp-digit-container {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  margin: 10px 0 16px 0;
+}
+
+.otp-digit {
+  width: 50px;
+  height: 52px;
+  background: rgba(7, 11, 20, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  text-align: center;
+  font-size: 20px;
+  font-weight: 700;
+  color: #ffffff;
+  outline: none;
+  transition: all 0.25s ease;
+}
+
+.otp-digit:focus {
+  border-color: #38bdf8;
+  background: rgba(7, 11, 20, 1);
+  box-shadow: 0 0 16px rgba(56, 189, 248, 0.3);
+}
+
+.resend-prompt {
+  text-align: center;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.5);
+  margin-bottom: 16px;
+}
+
+.resend-link {
+  color: #38bdf8;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.resend-link:hover {
+  text-decoration: underline;
+}
+
+/* Password Strength Indicator & Popover Rules (Step 3) */
+.relative-group {
+  position: relative;
+}
+
+.strength-container {
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.password-bars {
+  display: flex;
+  gap: 6px;
+  flex: 1;
+}
+
+.pbar {
+  height: 4px;
+  flex: 1;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 2px;
+  transition: background-color 0.3s ease;
+}
+
+.pbar.lvl-1 { background-color: #ef4444; }
+.pbar.lvl-2 { background-color: #f97316; }
+.pbar.lvl-3 { background-color: #eab308; }
+.pbar.lvl-4 { background-color: #22c55e; }
+
+.strength-label {
+  font-size: 11px;
+  font-weight: 600;
+  min-width: 40px;
+  text-align: right;
+  display: none;
+}
+
+.strength-label.visible {
+  display: block;
+}
+
+.pw-popover {
+  display: none;
+  margin-top: 10px;
+  padding: 12px 14px;
+  background: rgba(7, 11, 20, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+}
+
+.pw-popover.visible {
+  display: block;
+}
+
+.popover-title {
+  font-size: 10px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.6);
+  margin-bottom: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.req-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.req-list li {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.4);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.req-list li.valid {
+  color: #22c55e;
+}
+
+.req-list .bullet {
+  font-weight: bold;
+}
+
+.error-msg {
+  display: block;
+  color: #ef4444;
+  font-size: 11px;
+  margin-top: 6px;
+}
