@@ -40,7 +40,7 @@
                 
                 <!-- Action Button Replaced at the Right -->
                 <div class="d-flex justify-content-center mt-2 mt-lg-0">
-                    <a class="btn btn-primary rounded-pill px-4 py-2 fs-5 fw-semibold shadow-sm" href="/php/Login/login.php">Sign In</a>
+                    <a class="btn btn-primary rounded-pill px-4 py-2 fs-5 fw-semibold shadow-sm" href="/php/link_button.php">Sign In</a>
                 </div>
             </div>
         </div>

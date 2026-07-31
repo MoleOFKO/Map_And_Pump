@@ -96,15 +96,14 @@
   <h2 class="nav-title">System Quick Access</h2>
   
   <div class="nav-grid">
-    <a href="/php/HomePage.php" class="nav-btn">Home Page</a>
-    <a href="/php/Login/login.php" class="nav-btn">Login Page</a>
-    <a href="/php/Admin(WebOwner)/admin_dashboard.php" class="nav-btn">Admin Dashboard</a>
-    <a href="/php/Moderators(UnderAdmin)/moderator_dashboard.php" class="nav-btn">Moderator Dashboard</a>
-    <a href="/php/HQ/dashboard.php?role=hq" class="nav-btn">HQ Dashboard</a>
-    <a href="/php/BranchManager/dashboard.php?role=branch_manager" class="nav-btn">Branch Manager Dashboard</a>
-    <a href="/php/Customer/dashboard.php?role=customer" class="nav-btn">Customer Dashboard</a>
+    <a href="/php/HomePage.php" class="nav-btn" target="_blank" rel="noopener noreferrer">Home Page</a>
+    <a href="/php/Login/login.php" class="nav-btn" target="_blank" rel="noopener noreferrer">Login Page</a>
+    <a href="/php/Admin(WebOwner)/admin_dashboard.php" class="nav-btn" target="_blank" rel="noopener noreferrer">Admin Dashboard</a>
+    <a href="/php/Moderators(UnderAdmin)/moderator_dashboard.php" class="nav-btn" target="_blank" rel="noopener noreferrer">Moderator Dashboard</a>
+    <a href="/php/HQ/dashboard.php?role=hq" class="nav-btn" target="_blank" rel="noopener noreferrer">HQ Dashboard</a>
+    <a href="/php/BranchManager/dashboard.php?role=branch_manager" class="nav-btn" target="_blank" rel="noopener noreferrer">Branch Manager Dashboard</a>
+    <a href="/php/Customer/dashboard.php?role=customer" class="nav-btn" target="_blank" rel="noopener noreferrer">Customer Dashboard</a>
   </div>
 </div>
 </body>
 </html>
-
