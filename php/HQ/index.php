@@ -427,7 +427,36 @@
         <main class="main-viewport">
             <!-- Sticky Top Right User Profile Button & Popup -->
             <div class="top-nav-bar">
-                <div style="position: relative;">
+                <div style="display: flex; align-items: center; gap: 12px; position: relative;">
+                    <!-- Notification Bell & Popup -->
+                    <div style="position: relative;">
+                        <button class="user-menu-button" onclick="toggleNotificationDropdown(event)" type="button" style="padding: 8px 10px;">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: #cbd5e1;">
+                                <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+                                <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+                            </svg>
+                            <!-- Optional Notification Badge Dot -->
+                            <span style="position: absolute; top: 6px; right: 8px; width: 8px; height: 8px; background: #ef4444; border-radius: 50%;"></span>
+                        </button>
+
+                        <!-- Notification Dropdown Pop up -->
+                        <div class="user-dropdown-popup" id="notificationDropdownPopup" style="width: 300px;">
+                            <div class="dropdown-header" style="justify-content: space-between;">
+                                <p class="user-title" style="margin: 0;">Notifications</p>
+                                <span style="font-size: 0.755rem; color: var(--sky-400, #38bdf8); cursor: pointer;">Mark all read</span>
+                            </div>
+                            <div style="display: flex; flex-direction: column; gap: 8px; max-height: 240px; overflow-y: auto;">
+                                <div style="padding: 8px; background: rgba(255,255,255,0.02); border-radius: 6px; font-size: 0.85rem; color: var(--slate-300, #cbd5e1);">
+                                    <strong>New Manager Report</strong><br>
+                                    <span style="font-size: 0.75rem; color: var(--slate-400, #94a3b8);">Station #4 submitted a daily sales report.</span>
+                                </div>
+                                <div style="padding: 8px; background: rgba(255,255,255,0.02); border-radius: 6px; font-size: 0.85rem; color: var(--slate-300, #cbd5e1);">
+                                    <strong>System Alert</strong><br>
+                                    <span style="font-size: 0.75rem; color: var(--slate-400, #94a3b8);">Oil price configurations updated successfully.</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                     <button class="user-menu-button" onclick="toggleUserDropdown(event)" type="button">
                         <img src="../../images/default-avatar.png" alt="User Logo" class="user-avatar-small" id="headerUserAvatar">
                         <span class="user-menu-name" id="headerUserName">HQ Admin</span>
@@ -505,6 +534,31 @@
 
     function confirmLogout() {
         window.location.href = 'login.php';
+    }
+    function toggleNotificationDropdown(event) {
+        event.stopPropagation();
+        closeUserDropdown(); // Close profile dropdown if open
+        const popup = document.getElementById('notificationDropdownPopup');
+        popup.classList.toggle('active');
+    }
+
+    function closeNotificationDropdown() {
+        const popup = document.getElementById('notificationDropdownPopup');
+        if (popup) popup.classList.remove('active');
+    }
+
+    // Modify your existing global click listener to close both dropdowns cleanly
+    window.addEventListener('click', function() {
+        closeUserDropdown();
+        closeNotificationDropdown();
+    });
+
+    // Also update your toggleUserDropdown function to close the notification dropdown
+    function toggleUserDropdown(event) {
+        event.stopPropagation();
+        closeNotificationDropdown(); // Close notification dropdown if open
+        const popup = document.getElementById('userDropdownPopup');
+        popup.classList.toggle('active');
     }
     </script>
 </body>
