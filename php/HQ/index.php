@@ -23,6 +23,7 @@
             display: flex;
             height: 100vh;
             background: var(--bg, #0f172a);
+            font-family: system-ui, -apple-system, sans-serif;
         }
 
         .dashboard-layout {
@@ -139,6 +140,115 @@
             width: 100%;
             display: flex;
             flex-direction: column;
+            position: relative;
+        }
+
+        /* Sticky Top Right User Profile Menu Container */
+        .top-nav-bar {
+            position: absolute;
+            top: 16px;
+            right: 24px;
+            z-index: 1005;
+            display: flex;
+            align-items: center;
+        }
+
+        .user-menu-button {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: var(--card-bg, #1e293b);
+            border: 1px solid var(--border, #334155);
+            padding: 6px 14px 6px 6px;
+            border-radius: 30px;
+            cursor: pointer;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            transition: all 0.2s ease;
+        }
+
+        .user-menu-button:hover {
+            border-color: var(--sky-400, #38bdf8);
+        }
+
+        .user-avatar-small {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            object-fit: cover;
+            background: #334155;
+        }
+
+        .user-menu-name {
+            color: #fff;
+            font-size: 0.9rem;
+            font-weight: 500;
+        }
+
+        /* Dropdown Pop up */
+        .user-dropdown-popup {
+            display: none;
+            position: absolute;
+            top: calc(100% + 8px);
+            right: 0;
+            width: 260px;
+            background: var(--card-bg, #1e293b);
+            border: 1px solid var(--border, #334155);
+            border-radius: 14px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+            padding: 16px;
+            z-index: 1006;
+        }
+
+        .user-dropdown-popup.active {
+            display: block;
+        }
+
+        .dropdown-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid var(--border, #334155);
+            margin-bottom: 12px;
+        }
+
+        .user-avatar-large {
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            object-fit: cover;
+            background: #334155;
+        }
+
+        .dropdown-user-info .user-title {
+            color: #fff;
+            font-weight: 600;
+            font-size: 0.95rem;
+            margin: 0;
+        }
+
+        .dropdown-user-info .user-email {
+            color: var(--slate-400, #94a3b8);
+            font-size: 0.8rem;
+            margin: 2px 0 0 0;
+        }
+
+        .edit-profile-btn {
+            width: 100%;
+            background: rgba(56, 189, 248, 0.1);
+            color: var(--sky-400, #38bdf8);
+            border: 1px solid rgba(56, 189, 248, 0.2);
+            padding: 8px 12px;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 0.85rem;
+            cursor: pointer;
+            text-align: center;
+            transition: background 0.2s ease;
+        }
+
+        .edit-profile-btn:hover {
+            background: rgba(56, 189, 248, 0.2);
         }
 
         .content-frame {
@@ -252,6 +362,11 @@
             .main-viewport {
                 height: calc(100vh - var(--header-height));
             }
+            .top-nav-bar {
+                top: calc(var(--header-height) + 12px);
+                right: 16px;
+                display: none;
+            }
         }
     </style>
 </head>
@@ -298,18 +413,40 @@
                     <li onclick="routeTo('report_from_manager.php')">Manager Reports</li>
                     <li onclick="routeTo('report_to_admin.php')">Report to Admin</li>
                     <li onclick="routeTo('account.php')">Manager Accounts</li>
-                    <li onclick="routeTo('profile.php')">Edit Profile</li>
+                    <!-- <li onclick="routeTo('profile.php')">Edit Profile</li> -->
                 </ul>
             </div>
             
             <ul class="sidebar-menu">
-                <li onclick="routeTo('switch_account.php')" style="border-top: 1px solid rgba(255, 255, 255, 0.06); padding-top: 12px; margin-top: 12px;">Switch to Customer Account</li>
+                <!-- <li onclick="routeTo('switch_account.php')" style="border-top: 1px solid rgba(255, 255, 255, 0.06); padding-top: 12px; margin-top: 12px;">Switch to Customer Account</li> -->
                 <li onclick="handleLogout()" style="color: var(--danger, #ef4444); font-weight: bold;">Logout</li>
             </ul>
         </aside>
 
         <!-- Main Dynamic Viewport -->
         <main class="main-viewport">
+            <!-- Sticky Top Right User Profile Button & Popup -->
+            <div class="top-nav-bar">
+                <div style="position: relative;">
+                    <button class="user-menu-button" onclick="toggleUserDropdown(event)" type="button">
+                        <img src="../../images/default-avatar.png" alt="User Logo" class="user-avatar-small" id="headerUserAvatar">
+                        <span class="user-menu-name" id="headerUserName">HQ Admin</span>
+                    </button>
+
+                    <!-- Dropdown Pop up -->
+                    <div class="user-dropdown-popup" id="userDropdownPopup">
+                        <div class="dropdown-header">
+                            <img src="/images/Logo.png" alt="User Logo" class="user-avatar-large" id="dropdownUserAvatar">
+                            <div class="dropdown-user-info">
+                                <p class="user-title" id="dropdownUserName">HQ Admin</p>
+                                <p class="user-email" id="dropdownUserEmail">hq_admin@mapandpump.com</p>
+                            </div>
+                        </div>
+                        <button type="button" class="edit-profile-btn" onclick="routeTo('profile.php'); closeUserDropdown();">Edit Profile</button>
+                    </div>
+                </div>
+            </div>
+
             <iframe id="viewport" class="content-frame" src="dashboard.php"></iframe>
         </main>
     </div>
@@ -341,6 +478,22 @@
         sidebar.classList.toggle('mobile-open');
         overlay.classList.toggle('active');
     }
+
+    function toggleUserDropdown(event) {
+        event.stopPropagation();
+        const popup = document.getElementById('userDropdownPopup');
+        popup.classList.toggle('active');
+    }
+
+    function closeUserDropdown() {
+        const popup = document.getElementById('userDropdownPopup');
+        popup.classList.remove('active');
+    }
+
+    // Close dropdown when clicking outside
+    window.addEventListener('click', function() {
+        closeUserDropdown();
+    });
 
     function handleLogout() {
         document.getElementById('logoutModalOverlay').classList.add('active');
