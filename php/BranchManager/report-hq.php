@@ -30,6 +30,7 @@
 
   .app-shell{display:flex; min-height:100vh;}
 
+  /* ---------- sidebar ---------- */
   .sidebar{
     width:252px; flex-shrink:0; background:var(--navy-900); border-right:1px solid rgba(255,255,255,0.06);
     display:flex; flex-direction:column; padding:22px 16px; position:sticky; top:0; height:100vh; z-index:60;
@@ -69,6 +70,7 @@
   }
   .side-logout:hover{background:rgba(248,113,113,0.08); padding-left: 16px;}
 
+  /* ---------- main ---------- */
   .main{flex:1; min-width:0;}
   .topbar{
     position:sticky; top:0; z-index:50; display:flex; align-items:center; justify-content:space-between;
@@ -76,7 +78,7 @@
   }
   .topbar h1{font-size:18px; font-weight:700;}
   .topbar .date{font-size:12.5px; color:var(--slate-400); margin-top:2px; font-variant-numeric: tabular-nums;}
-  .topbar-right{display:flex; align-items:center; gap:16px;}
+  .topbar-right{display:flex; align-items:center; gap:16px; position: relative;}
   .bell{
     width:36px; height:36px; border-radius:50%; background:var(--navy-800); display:flex; align-items:center;
     justify-content:center; border:1px solid rgba(255,255,255,0.08); position:relative; font-size:15px; cursor:pointer;
@@ -84,6 +86,76 @@
   }
   .bell:hover{ background: var(--navy-700); transform: scale(1.05); }
   .bell .ping{position:absolute; top:6px; right:7px; width:7px; height:7px; border-radius:50%; background:var(--amber-400); box-shadow:0 0 0 2px var(--navy-800);}
+  
+  /* ---------- Notifications Dropdown ---------- */
+  .notif-popup {
+    position: absolute;
+    top: 48px;
+    right: 60px;
+    width: 320px;
+    background: var(--navy-800);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 14px;
+    box-shadow: 0 16px 32px rgba(0, 0, 0, 0.4);
+    padding: 16px;
+    z-index: 100;
+    display: none;
+    animation: fadeInDown 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .notif-popup.show {
+    display: block;
+  }
+  .notif-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    padding-bottom: 10px;
+    margin-bottom: 10px;
+  }
+  .notif-header h4 {
+    font-size: 14px;
+    font-weight: 700;
+    margin: 0;
+  }
+  .notif-header span {
+    font-size: 11px;
+    color: var(--sky-400);
+    cursor: pointer;
+  }
+  .notif-item {
+    padding: 10px;
+    border-radius: 8px;
+    font-size: 12.5px;
+    transition: background-color 0.2s;
+    display: flex;
+    gap: 10px;
+  }
+  .notif-item:hover {
+    background-color: rgba(255, 255, 255, 0.04);
+  }
+  .notif-item .ic {
+    font-size: 14px;
+    margin-top: 2px;
+  }
+  .notif-item-body b {
+    display: block;
+    font-size: 13px;
+  }
+  .notif-item-body span {
+    color: var(--slate-400);
+    font-size: 11.5px;
+  }
+  .notif-time {
+    font-size: 10px;
+    color: var(--slate-400);
+    margin-top: 4px;
+  }
+  @keyframes fadeInDown {
+    from { opacity: 0; transform: translateY(-8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
   .avatar-chip{display:flex; align-items:center; gap:10px; font-size:13px; cursor: pointer; padding: 4px 8px; border-radius: 99px; transition: background 0.2s;}
   .avatar-chip:hover{background: rgba(255,255,255,0.05);}
   .avatar-circle{width:36px; height:36px; border-radius:50%; background:linear-gradient(135deg,var(--sky-400),var(--blue-700)); display:flex; align-items:center; justify-content:center; font-weight:700; font-size:13px; font-family:'Space Grotesk';}
@@ -187,6 +259,41 @@
       </div>
       <div class="topbar-right">
         <div class="bell" id="notif-bell"><i class="fa-regular fa-bell"></i><span class="ping"></span></div>
+
+        <!-- Notification Dropdown Menu -->
+        <div class="notif-popup" id="notif-popup">
+          <div class="notif-header">
+            <h4>Notifications</h4>
+            <span id="mark-all-read">Clear All</span>
+          </div>
+          <div id="notif-list">
+            <div class="notif-item">
+              <i class="fa-solid fa-triangle-exclamation text-warning ic"></i>
+              <div class="notif-item-body">
+                <b>Diesel Stock Warning</b>
+                <span>Diesel running low (22%).</span>
+                <div class="notif-time">10 mins ago</div>
+              </div>
+            </div>
+            <div class="notif-item">
+              <i class="fa-solid fa-wrench text-danger ic"></i>
+              <div class="notif-item-body">
+                <b>Pump #4 Down</b>
+                <span>Pump requires immediate inspection.</span>
+                <div class="notif-time">1 hour ago</div>
+              </div>
+            </div>
+            <div class="notif-item">
+              <i class="fa-solid fa-truck-ramp-box text-success ic"></i>
+              <div class="notif-item-body">
+                <b>Petrol 92 Received</b>
+                <span>8,000 liters added to storage.</span>
+                <div class="notif-time">3 hours ago</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <div class="avatar-chip">
           <div class="avatar-circle"><a href="edit-profile.php">Fe</a></div>
           <div><b><a href="edit-profile.php">Felix</a></b></div>
@@ -332,11 +439,35 @@
       selectedPriority = 'low';
     });
 
+    // Notifications Popup Toggle, Clear Badge, & Clear All Handler
     const bellBtn = document.getElementById('notif-bell');
-    bellBtn.addEventListener('click', () => {
+    const notifPopup = document.getElementById('notif-popup');
+    const markAllBtn = document.getElementById('mark-all-read');
+    const notifList = document.getElementById('notif-list');
+
+    bellBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      
       const ping = bellBtn.querySelector('.ping');
-      if (ping) { ping.style.transform = 'scale(0)'; setTimeout(() => ping.remove(), 200); }
+      if (ping) {
+        ping.style.transform = 'scale(0)';
+        setTimeout(() => ping.remove(), 200);
+      }
+
+      notifPopup.classList.toggle('show');
     });
+
+    document.addEventListener('click', (e) => {
+      if (!notifPopup.contains(e.target) && !bellBtn.contains(e.target)) {
+        notifPopup.classList.remove('show');
+      }
+    });
+
+    if (markAllBtn) {
+      markAllBtn.addEventListener('click', () => {
+        notifList.innerHTML = `<div style="text-align: center; padding: 12px 0; color: var(--slate-400); font-size: 12px;">No new notifications</div>`;
+      });
+    }
   });
 </script>
 </body>
