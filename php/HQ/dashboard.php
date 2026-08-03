@@ -1,3 +1,65 @@
+<?php
+$hostname = "mysql-19032a73-bhonen94-b057.a.aivencloud.com";
+$port = 27909;
+$username = "avnadmin";
+$password = "AVNS_D_5WaEsuc_hdxjtXj1J";
+$database = "map_and_pump"; // Change this to your database name if different
+
+// Create connection
+$conn = new mysqli($hostname, $username, $password, $database, $port);
+// include ('../conn.php');
+// Check connection
+if ($conn->connect_error) {
+    $db_error = "Database connection failed.";
+}
+
+// Handle quick price update submission if posted
+$updateMessage = "";
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'update_price') {
+    $fuelType = $_POST['fuel_type'] ?? '';
+    $newPrice = $_POST['fuel_price'] ?? '';
+
+    if (!empty($fuelType) && !empty($newPrice)) {
+        $stmt = $conn->prepare("UPDATE oil_types SET price_per_liter = ? WHERE oil_name = ?");
+        if ($stmt) {
+            $stmt->bind_param("is", $newPrice, $fuelType);
+            if ($stmt->execute()) {
+                $updateMessage = "Successfully updated price for " . htmlspecialchars($fuelType) . " to " . htmlspecialchars($newPrice) . " MMK";
+            } else {
+                $updateMessage = "Error updating price: " . $conn->error;
+            }
+            $stmt->close();
+        }
+    }
+}
+
+// Fetch National Fuel Pricing dynamically
+$fuelPrices = [];
+$pricingResult = $conn->query("SELECT oil_name, price_per_liter FROM oil_types");
+if ($pricingResult) {
+    while ($row = $pricingResult->fetch_assoc()) {
+        $fuelPrices[] = $row;
+    }
+}
+
+// Fetch Recent Manager Reports dynamically
+$recentReports = [];
+$reportsResult = $conn->query("SELECT * FROM report WHERE role_id = 1 ORDER BY created_at DESC LIMIT 5");
+if ($reportsResult) {
+    while ($row = $reportsResult->fetch_assoc()) {
+        $recentReports[] = $row;
+    }
+}
+
+// Fetch Live Stations dynamically
+$stations = [];
+$stationsResult = $conn->query("SELECT station_id, station_name, location FROM stations");
+if ($stationsResult) {
+    while ($row = $stationsResult->fetch_assoc()) {
+        $stations[] = $row;
+    }
+}
+?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -93,6 +155,13 @@
   <h2 class="title">Headquarters Dashboard</h2>
   <p class="subtitle">Monitor national pricing, reporting activity, and station health in one place.</p>
 
+  <?php if (!empty($updateMessage)): ?>
+    <div class="alert alert-info alert-dismissible fade show" role="alert">
+      <?php echo $updateMessage; ?>
+      <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>
+  <?php endif; ?>
+
   <div class="dashboard-grid">
     <!-- National Fuel Pricing Card -->
     <div class="card card-clickable" onclick="navigateTo('pricing.php')">
@@ -103,21 +172,17 @@
       <table>
         <thead><tr><th>Type</th><th>Price (MMK)</th><th>Action</th></tr></thead>
         <tbody>
-          <tr>
-            <td>Octane 92</td>
-            <td>2,850</td>
-            <td><button class="btn" onclick="openEditModal(event, 'Octane 92', '2,850')">Edit</button></td>
-          </tr>
-          <tr>
-            <td>Octane 95</td>
-            <td>2,970</td>
-            <td><button class="btn" onclick="openEditModal(event, 'Octane 95', '2,970')">Edit</button></td>
-          </tr>
-          <tr>
-            <td>Diesel</td>
-            <td>2,450</td>
-            <td><button class="btn" onclick="openEditModal(event, 'Diesel', '2,450')">Edit</button></td>
-          </tr>
+          <?php if (!empty($fuelPrices)): ?>
+            <?php foreach ($fuelPrices as $fuel): ?>
+              <tr>
+                <td><?php echo htmlspecialchars($fuel['oil_name']); ?></td>
+                <td><?php echo number_format($fuel['price_per_liter']); ?></td>
+                <td><button class="btn" onclick="openEditModal(event, '<?php echo htmlspecialchars($fuel['oil_name'], ENT_QUOTES); ?>', '<?php echo htmlspecialchars($fuel['price_per_liter'], ENT_QUOTES); ?>')">Edit</button></td>
+              </tr>
+            <?php endforeach; ?>
+          <?php else: ?>
+            <tr><td colspan="3">No pricing records found.</td></tr>
+          <?php endif; ?>
         </tbody>
       </table>
     </div>
@@ -128,7 +193,22 @@
         <h3 class="mb-0">Recent Manager Reports</h3>
         <span class="small text-info">View All <i class="fa-solid fa-arrow-right ms-1"></i></span>
       </div>
-      <p class="subtitle" style="margin-bottom: 0;">No urgent pending reports. Click to review logs.</p>
+      <?php if (!empty($recentReports)): ?>
+        <table>
+          <thead><tr><th>Branch</th><th>Summary</th><th>Date</th></tr></thead>
+          <tbody>
+            <?php foreach ($recentReports as $report): ?>
+              <tr>
+                <td><?php echo htmlspecialchars($report['branch_id']); ?></td>
+                <td><?php echo htmlspecialchars(substr($report['summary'], 0, 40)); ?>...</td>
+                <td><?php echo htmlspecialchars($report['created_at']); ?></td>
+              </tr>
+            <?php endforeach; ?>
+          </tbody>
+        </table>
+      <?php else: ?>
+        <p class="subtitle" style="margin-bottom: 0;">No urgent pending reports. Click to review logs.</p>
+      <?php endif; ?>
     </div>
 
     <!-- Live Station Monitor Card -->
@@ -138,10 +218,20 @@
         <span class="small text-info">Manage Stations <i class="fa-solid fa-arrow-right ms-1"></i></span>
       </div>
       <table>
-        <thead><tr><th>Branch ID</th><th>Location</th><th>Status</th></tr></thead>
+        <thead><tr><th>Branch ID</th><th>Branch Name</th><th>Location</th><th>Status</th></tr></thead>
         <tbody>
-          <tr><td>YGN-014</td><td>Sanchaung</td><td><span class="badge">Operational</span></td></tr>
-          <tr><td>MDY-002</td><td>Chan Aye Tharzan</td><td><span class="badge">Operational</span></td></tr>
+          <?php if (!empty($stations)): ?>
+            <?php foreach ($stations as $station): ?>
+              <tr>
+                <td><?php echo htmlspecialchars($station['station_id']); ?></td>
+                <td><?php echo htmlspecialchars($station['station_name']); ?></td>
+                <td><?php echo htmlspecialchars($station['location']); ?></td>
+                <!-- <td><span class="badge"><?php echo htmlspecialchars($station['status']); ?></span></td> -->
+              </tr>
+            <?php endforeach; ?>
+          <?php else: ?>
+            <tr><td colspan="3">No stations monitored.</td></tr>
+          <?php endif; ?>
         </tbody>
       </table>
     </div>
@@ -156,14 +246,15 @@
           <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
         </div>
         <div class="modal-body">
-          <form id="quickEditForm" onsubmit="saveQuickPrice(event)">
+          <form id="quickEditForm" method="POST" action="">
+            <input type="hidden" name="action" value="update_price">
             <div class="mb-3">
               <label for="modalFuelType" class="form-label text-muted">Fuel Type</label>
-              <input type="text" class="form-control" id="modalFuelType" readonly>
+              <input type="text" class="form-control" id="modalFuelType" name="fuel_type" readonly>
             </div>
             <div class="mb-3">
               <label for="modalFuelPrice" class="form-label text-muted">New Price (MMK)</label>
-              <input type="text" class="form-control" id="modalFuelPrice" required>
+              <input type="text" class="form-control" id="modalFuelPrice" name="fuel_price" required>
             </div>
             <div class="d-flex justify-content-end gap-2 mt-4">
               <button type="button" class="btn btn-outline-secondary text-white" data-bs-dismiss="modal">Cancel</button>
@@ -180,49 +271,9 @@
   <!-- Bootstrap JS Bundle (Required for Modals) -->
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 
-  <!-- <script>
-    function navigateTo(page) {
-      if (window.parent && typeof window.parent.routeTo === 'function') {
-        window.parent.routeTo(page);
-        const sidebarItems = window.parent.document.querySelectorAll('.sidebar-menu li');
-        sidebarItems.forEach(item => {
-          if (item.getAttribute('onclick') && item.getAttribute('onclick').includes(page)) {
-            sidebarItems.forEach(i => i.classList.remove('active'));
-            item.classList.add('active');
-          }
-        });
-      } else {
-        window.location.href = page;
-      }
-    }
-
-    function openEditModal(event, fuelType, currentPrice) {
-      event.stopPropagation(); // Prevents card's main click event from triggering navigation
-      
-      document.getElementById('modalFuelType').value = fuelType;
-      document.getElementById('modalFuelPrice').value = currentPrice;
-
-      const editModal = new bootstrap.Modal(document.getElementById('editPricingModal'));
-      editModal.show();
-    }
-
-    function saveQuickPrice(event) {
-      event.preventDefault();
-      const fuelType = document.getElementById('modalFuelType').value;
-      const newPrice = document.getElementById('modalFuelPrice').value;
-
-      alert(`Successfully updated price for ${fuelType} to ${newPrice} MMK`);
-      
-      // Close the modal programmatically
-      const modalElement = document.getElementById('editPricingModal');
-      const modalInstance = bootstrap.Modal.getInstance(modalElement);
-      modalInstance.hide();
-    }
-  </script> -->
   <script>
     function navigateTo(page) {
       if (window.parent && typeof window.parent.routeTo === 'function') {
-        // Call the parent frame's routeTo function directly to maintain consistent behavior and active states
         window.parent.routeTo(page);
       } else {
         window.location.href = page;
@@ -230,26 +281,13 @@
     }
 
     function openEditModal(event, fuelType, currentPrice) {
-      event.stopPropagation(); // Prevents card's main click event from triggering navigation
+      event.stopPropagation();
       
       document.getElementById('modalFuelType').value = fuelType;
       document.getElementById('modalFuelPrice').value = currentPrice;
 
       const editModal = new bootstrap.Modal(document.getElementById('editPricingModal'));
       editModal.show();
-    }
-
-    function saveQuickPrice(event) {
-      event.preventDefault();
-      const fuelType = document.getElementById('modalFuelType').value;
-      const newPrice = document.getElementById('modalFuelPrice').value;
-
-      alert(`Successfully updated price for ${fuelType} to ${newPrice} MMK`);
-      
-      // Close the modal programmatically
-      const modalElement = document.getElementById('editPricingModal');
-      const modalInstance = bootstrap.Modal.getInstance(modalElement);
-      modalInstance.hide();
     }
   </script>
 </body>
