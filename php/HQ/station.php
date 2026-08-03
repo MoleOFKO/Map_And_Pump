@@ -54,7 +54,7 @@
                 <h3>Manage Deployed Stations</h3>
                 <p class="subtitle mb-0">Monitor active nodes, update operational status, or remove configurations.</p>
             </div>
-            <button type="button" class="badge bg-success" data-bs-toggle="modal" data-bs-target="#registerModal">+Add Station</button>
+            <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#registerModal">ADD</button>
         </div>
         <div class="table-responsive">
             <table class="table table-custom align-middle">
@@ -112,19 +112,30 @@
                         <h3>Register Station Node</h3>
                         <p class="subtitle" style="margin-bottom: 12px;">Establish unique location tags for network reporting[cite: 3].</p>
                         <div class="row">
-                            <div class="col-md-4 mb-3">
+                            <div class="col-md-3 mb-3">
                                 <div class="form-group">
                                     <label class="form-label text-light">Branch ID</label>
                                     <input type="text" class="form-control bg-dark text-light border-secondary" placeholder="e.g. #014">
                                 </div>
                             </div>
-                            <div class="col-md-4 mb-3">
+                            <div class="col-md-3 mb-3">
                                 <div class="form-group">
                                     <label class="form-label text-light">Station Name</label>
                                     <input type="text" class="form-control bg-dark text-light border-secondary" placeholder="e.g. Downtown Metro">
                                 </div>
                             </div>
-                            <div class="col-md-4 mb-3">
+                            <div class="col-md-3 mb-3">
+                                <div class="form-group">
+                                    <label class="form-label text-light">Region</label>
+                                    <select class="form-control bg-dark text-light border-secondary">
+                                        <option value="" disabled selected>Select Region</option>
+                                        <option value="Ygn">Yangon</option>
+                                        <option value="Mdy">Mandalay</option>
+                                        <option value="NPT">Nay Pyi Taw</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="col-md-3 mb-3">
                                 <div class="form-group">
                                     <label class="form-label text-light">Location</label>
                                     <input type="text" class="form-control bg-dark text-light border-secondary" placeholder="e.g. New York">
