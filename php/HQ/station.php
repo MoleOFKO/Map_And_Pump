@@ -54,7 +54,7 @@
                 <h3>Manage Deployed Stations</h3>
                 <p class="subtitle mb-0">Monitor active nodes, update operational status, or remove configurations.</p>
             </div>
-            <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#registerModal">ADD</button>
+            <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#registerModal">+Add Station</button>
         </div>
         <div class="table-responsive">
             <table class="table table-custom align-middle">
