@@ -19,7 +19,6 @@
                 <select id="issue-topic" required>
                     <option value="">-- Select Category --</option>
                     <option value="pricing">Pricing Sync Error</option>
-                    <option value="hardware">Terminal / Pump Hardware Fault</option>
                     <option value="access">Access Control & Credentials</option>
                     <option value="dispute">Transaction / Settlement Dispute</option>
                     <option value="other">Other Technical Request</option>
