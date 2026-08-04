@@ -75,7 +75,7 @@ try {
     $headquarterId = (int) $hqInsert->insert_id;
     $hqInsert->close();
 
-    $userInsert = $conn->prepare('INSERT INTO users (username, email, hashed_password, headquarter_id, role_id, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, \'pending\', NOW(), NOW())');
+    $userInsert = $conn->prepare('INSERT INTO users (user_name, email, hashed_password, headquarter_id, role_id, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, \'pending\', NOW(), NOW())');
     if (!$userInsert) {
         throw new RuntimeException('Could not prepare the HQ account insert.');
     }

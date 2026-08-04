@@ -46,7 +46,7 @@ if (!$hq) {
 }
 
 $accountQuery = $conn->prepare(
-    'SELECT user_id, username, email, status, created_at, updated_at
+    'SELECT user_id, user_name AS username, email, status, created_at, updated_at
      FROM users
      WHERE headquarter_id = ?
      ORDER BY user_id ASC'

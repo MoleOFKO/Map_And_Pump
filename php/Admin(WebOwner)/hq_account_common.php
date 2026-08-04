@@ -184,7 +184,7 @@ function hq_registry_schema_ready(): bool
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
         "CREATE TABLE IF NOT EXISTS users (
             user_id INT UNSIGNED NOT NULL AUTO_INCREMENT,
-            username VARCHAR(255) NOT NULL,
+            user_name VARCHAR(225) NOT NULL,
             email VARCHAR(255) NOT NULL,
             hashed_password VARCHAR(255) NOT NULL,
             license_id INT UNSIGNED NULL,
@@ -205,6 +205,56 @@ function hq_registry_schema_ready(): bool
             error_log('[HQ registry] Schema bootstrap failed: ' . $conn->error);
             return false;
         }
+    }
+
+    // The deployed map_and_pump schema predates the HQ registry UI and does
+    // not have a nullable station link yet. Add only this non-destructive
+    // column when it is missing.
+    $columnCheck = $conn->prepare(
+        "SELECT COUNT(*) AS column_count
+         FROM information_schema.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'headquarter' AND COLUMN_NAME = 'station_id'"
+    );
+    if (!$columnCheck || !$columnCheck->execute()) {
+        $columnCheck?->close();
+        return false;
+    }
+
+    $columnExists = (int) ($columnCheck->get_result()?->fetch_assoc()['column_count'] ?? 0) > 0;
+    $columnCheck->close();
+
+    if (!$columnExists && !$conn->query('ALTER TABLE headquarter ADD COLUMN station_id INT NULL AFTER role_id')) {
+        error_log('[HQ registry] Could not add the optional headquarter.station_id column: ' . $conn->error);
+        return false;
+    }
+
+    // HQ accounts do not have a driver/car license at creation time. Older
+    // map_and_pump deployments declared these relationship columns NOT NULL,
+    // which made a legitimate HQ account insert fail before it could be used.
+    $requiredUserColumns = ['license_id', 'car_license_id', 'headquarter_id', 'role_id'];
+    $columnList = "'" . implode("','", $requiredUserColumns) . "'";
+    $nullableCheck = $conn->query(
+        "SELECT COLUMN_NAME
+         FROM information_schema.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = 'users'
+           AND COLUMN_NAME IN ($columnList)
+           AND IS_NULLABLE = 'NO'"
+    );
+    $nonNullableColumns = [];
+    while ($nullableCheck && ($column = $nullableCheck->fetch_assoc())) {
+        $nonNullableColumns[] = $column['COLUMN_NAME'];
+    }
+
+    if ($nonNullableColumns && !$conn->query(
+        'ALTER TABLE users
+            MODIFY COLUMN license_id INT NULL,
+            MODIFY COLUMN car_license_id INT NULL,
+            MODIFY COLUMN headquarter_id INT NULL,
+            MODIFY COLUMN role_id INT NULL'
+    )) {
+        error_log('[HQ registry] Could not make optional user relationship columns nullable: ' . $conn->error);
+        return false;
     }
 
     return true;
@@ -297,7 +347,7 @@ function hq_unique_username(string $ownerName, string $email): string
     $candidate = $base;
     $suffix = 1;
 
-    $statement = $conn->prepare('SELECT user_id FROM users WHERE username = ? LIMIT 1');
+    $statement = $conn->prepare('SELECT user_id FROM users WHERE user_name = ? LIMIT 1');
     if (!$statement) {
         return $candidate;
     }

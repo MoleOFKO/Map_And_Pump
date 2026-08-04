@@ -32,7 +32,7 @@ if (hq_db_available() && hq_registry_schema_ready()) {
     $types = '';
 
     if ($search !== '') {
-        $where[] = '(h.company_name LIKE ? OR h.location LIKE ? OR owner.username LIKE ? OR owner.email LIKE ?)';
+        $where[] = '(h.company_name LIKE ? OR h.location LIKE ? OR owner.user_name LIKE ? OR owner.email LIKE ?)';
         $searchLike = '%' . $search . '%';
         array_push($params, $searchLike, $searchLike, $searchLike, $searchLike);
         $types .= 'ssss';
@@ -57,7 +57,7 @@ SELECT
     h.location,
     h.station_id,
     h.created_at,
-    owner.username AS owner_name,
+    owner.user_name AS owner_name,
     owner.email AS owner_email,
     COALESCE(owner.status, 'pending') AS account_status,
     COALESCE(user_counts.user_count, 0) AS user_count,

@@ -10,7 +10,7 @@ $hostname = getenv('DB_HOST') ?: "mysql-19032a73-bhonen94-b057.a.aivencloud.com"
 $port = (int) (getenv('DB_PORT') ?: 27909);
 $username = getenv('DB_USERNAME') ?: "avnadmin";
 $password = getenv('DB_PASSWORD') ?: "AVNS_D_5WaEsuc_hdxjtXj1J";
-$database = getenv('DB_DATABASE') ?: "defaultdb";
+$database = getenv('DB_DATABASE') ?: "map_and_pump";
 
 mysqli_report(MYSQLI_REPORT_OFF);
 $conn = @new mysqli($hostname, $username, $password, $database, $port);
