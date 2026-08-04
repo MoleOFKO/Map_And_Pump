@@ -1,12 +1,13 @@
 <?php
 // Database configuration (Update these credentials to match your environment)
-$host = 'localhost';
-$db   = 'brand_db';
-$user = 'root';
-$pass = '';
+// $host = 'localhost';
+// $db   = 'brand_db';
+// $user = 'root';
+// $pass = '';
+// $charset = 'utf8mb4';
+include '../conn.php';
 $charset = 'utf8mb4';
-
-$dsn = "mysql:host=$host;dbname=$db;charset=$charset";
+$dsn = "mysql:host=$hostname;dbname=$database;charset=$charset";
 $options = [
     PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
     PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
@@ -26,7 +27,7 @@ $brandColor = "#2563eb";
 $brandLogo = "https://via.placeholder.com/150";
 
 try {
-    $pdo = new PDO($dsn, $user, $pass, $options);
+    $pdo = new PDO($dsn, $username, $password, $options);
 
     // Create table if it doesn't exist with location and business license columns
     // $pdo->exec("CREATE TABLE IF NOT EXISTS brand_configurations (
