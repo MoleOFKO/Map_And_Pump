@@ -306,27 +306,75 @@ $flashContext = $flash['context'] ?? [];
     </main>
 
     <div class="modal fade glass-modal" id="addHQModal" tabindex="-1" aria-labelledby="addHQModalLabel" aria-hidden="true">
-        <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable hq-registration-dialog">
             <div class="modal-content">
-                <div class="modal-header"><h5 class="modal-title fw-bold" id="addHQModalLabel"><i class="bi bi-building-add txt-neon-cyan me-2"></i> Register New Headquarter</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button></div>
-                <form action="hq_register_action.php" method="POST">
+                <div class="modal-header">
+                    <div>
+                        <h5 class="modal-title fw-bold" id="addHQModalLabel"><i class="bi bi-building-add txt-neon-cyan me-2"></i> Register New Headquarter</h5>
+                        <p class="hq-modal-subtitle mb-0 mt-1">Enter the HQ, owner, contact, address, and license information below.</p>
+                    </div>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <form action="hq_register_action.php" method="POST" class="hq-registration-form">
                     <div class="modal-body d-flex flex-column gap-3">
-                        <div><label class="form-label text-white-50 small" for="hqName">Company / HQ Name</label><input id="hqName" type="text" name="hq_name" class="form-control glass-input" placeholder="e.g. Apex Fueling Group" maxlength="255" required></div>
-                        <div class="row g-2">
-                            <div class="col-7"><label class="form-label text-white-50 small" for="companyLogo">Company Logo URL / Storage Path</label><input id="companyLogo" type="text" name="company_logo" class="form-control glass-input" placeholder="https://... or uploads/logo.png" maxlength="255" required></div>
-                            <div class="col-5"><label class="form-label text-white-50 small" for="contactNumber">Contact Number</label><input id="contactNumber" type="tel" name="contact_number" class="form-control glass-input" placeholder="09..." maxlength="50" required></div>
+                        <div class="hq-registration-note"><i class="bi bi-info-circle-fill txt-neon-cyan me-2"></i><span>All fields marked <strong>*</strong> are required. Use a unique owner email and company logo path.</span></div>
+
+                        <div>
+                            <label class="form-label text-white-50 small" for="hqName">Company / HQ Name <span class="hq-required">*</span></label>
+                            <input id="hqName" type="text" name="hq_name" class="form-control glass-input" placeholder="e.g. Apex Fueling Group" maxlength="255" required>
+                            <div class="hq-field-hint">The official name that will appear in the admin HQ list.</div>
                         </div>
-                        <div class="row g-2">
-                            <div class="col-6"><label class="form-label text-white-50 small" for="ownerName">Owner Name</label><input id="ownerName" type="text" name="owner_name" class="form-control glass-input" placeholder="Owner Full Name" maxlength="225" required></div>
-                            <div class="col-6"><label class="form-label text-white-50 small" for="ownerEmail">Owner Email</label><input id="ownerEmail" type="email" name="owner_email" class="form-control glass-input" placeholder="owner@domain.com" maxlength="255" required></div>
+
+                        <div class="row g-3">
+                            <div class="col-12 col-sm-7">
+                                <label class="form-label text-white-50 small" for="companyLogo">Company Logo URL / Storage Path <span class="hq-required">*</span></label>
+                                <input id="companyLogo" type="text" name="company_logo" class="form-control glass-input" placeholder="https://... or uploads/logo.png" maxlength="255" required>
+                                <div class="hq-field-hint">Enter the stored image path or URL. This value must be unique.</div>
+                            </div>
+                            <div class="col-12 col-sm-5">
+                                <label class="form-label text-white-50 small" for="contactNumber">Contact Number <span class="hq-required">*</span></label>
+                                <input id="contactNumber" type="tel" name="contact_number" class="form-control glass-input" placeholder="09..." maxlength="50" required>
+                                <div class="hq-field-hint">HQ phone or contact number.</div>
+                            </div>
                         </div>
-                        <div><label class="form-label text-white-50 small" for="hqRegion">Regional Headquarters Office</label><select id="hqRegion" class="form-select glass-select" name="region" required><option value="yangon" selected>Yangon Region</option><option value="mandalay">Mandalay Region</option><option value="naypyidaw">Naypyidaw</option></select></div>
-                        <div><label class="form-label text-white-50 small" for="hqAddress">Physical Address Details</label><textarea id="hqAddress" name="address" rows="2" class="form-control glass-input" placeholder="Street name, Township, Postal..." maxlength="2000" required style="resize:none;"></textarea></div>
-                        <div class="row g-2">
-                            <div class="col-8"><label class="form-label text-white-50 small" for="businessLicense">Business License Number / Path</label><input id="businessLicense" type="text" name="business_license" class="form-control glass-input" placeholder="License number or stored document path" maxlength="255" required></div>
-                            <div class="col-4"><label class="form-label text-white-50 small" for="expireAt">License Expiry</label><input id="expireAt" type="date" name="expire_at" class="form-control glass-input" min="<?= hq_escape(date('Y-m-d')) ?>" required></div>
+
+                        <div class="row g-3">
+                            <div class="col-12 col-sm-6">
+                                <label class="form-label text-white-50 small" for="ownerName">Owner / Authorized Person <span class="hq-required">*</span></label>
+                                <input id="ownerName" type="text" name="owner_name" class="form-control glass-input" placeholder="Owner Full Name" maxlength="225" required>
+                            </div>
+                            <div class="col-12 col-sm-6">
+                                <label class="form-label text-white-50 small" for="ownerEmail">Owner Email <span class="hq-required">*</span></label>
+                                <input id="ownerEmail" type="email" name="owner_email" class="form-control glass-input" placeholder="owner@domain.com" maxlength="225" required>
+                                <div class="hq-field-hint">Used for the HQ account and must not already exist.</div>
+                            </div>
                         </div>
-                        <div class="small text-white-50"><i class="bi bi-info-circle me-1 txt-neon-cyan"></i>Role, account status, IDs, timestamps, and the password hash are generated by the system. A temporary password is shown once after registration.</div>
+
+                        <div>
+                            <label class="form-label text-white-50 small" for="hqRegion">Regional Headquarters Office <span class="hq-required">*</span></label>
+                            <select id="hqRegion" class="form-select glass-select" name="region" required><option value="yangon" selected>Yangon Region</option><option value="mandalay">Mandalay Region</option><option value="naypyidaw">Naypyidaw</option></select>
+                            <div class="hq-field-hint">Select the region where this HQ operates.</div>
+                        </div>
+
+                        <div>
+                            <label class="form-label text-white-50 small" for="hqAddress">Physical Address Details <span class="hq-required">*</span></label>
+                            <textarea id="hqAddress" name="address" rows="3" class="form-control glass-input" placeholder="Street name, Township, Postal..." maxlength="2000" required></textarea>
+                            <div class="hq-field-hint">Include street, township, city, and any useful postal details.</div>
+                        </div>
+
+                        <div class="row g-3">
+                            <div class="col-12 col-sm-8">
+                                <label class="form-label text-white-50 small" for="businessLicense">Business License Number / Path <span class="hq-required">*</span></label>
+                                <input id="businessLicense" type="text" name="business_license" class="form-control glass-input" placeholder="License number or stored document path" maxlength="255" required>
+                                <div class="hq-field-hint">Enter the license number or stored document path.</div>
+                            </div>
+                            <div class="col-12 col-sm-4">
+                                <label class="form-label text-white-50 small" for="expireAt">License Expiry <span class="hq-required">*</span></label>
+                                <input id="expireAt" type="date" name="expire_at" class="form-control glass-input" min="<?= hq_escape(date('Y-m-d')) ?>" required>
+                            </div>
+                        </div>
+
+                        <div class="hq-registration-note"><i class="bi bi-shield-check txt-neon-cyan me-2"></i><span>Role, account status, IDs, timestamps, and the password hash are generated automatically. The temporary password is shown once after registration.</span></div>
                     </div>
                     <div class="modal-footer"><button type="button" class="btn btn-outline-secondary rounded-3 text-white-50 border-secondary border-opacity-20" data-bs-dismiss="modal">Cancel</button><button type="submit" class="btn btn-neon">Register Account</button></div>
                 </form>

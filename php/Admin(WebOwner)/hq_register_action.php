@@ -1,5 +1,5 @@
 <?php
-require_once __DIR__ . '/hq_account_common.php';
+require_once __DIR__ . '/request_common.php';
 
 if (session_status() !== PHP_SESSION_ACTIVE) {
     session_start();
@@ -44,6 +44,11 @@ if (strlen($hqName) > 255 || strlen($companyLogo) > 255 || strlen($contactNumber
 
 if (!hq_db_available() || !hq_registry_schema_ready()) {
     hq_flash('danger', hq_db_error_message());
+    hq_redirect();
+}
+
+if (!request_schema_ready()) {
+    hq_flash('danger', 'The HQ account could not be registered because the admin request registry is unavailable.');
     hq_redirect();
 }
 
@@ -137,7 +142,48 @@ try {
     if (!$userInsert->execute()) {
         throw new RuntimeException('Could not create the HQ user account: ' . $userInsert->error);
     }
+    $submitterUserId = (int) $userInsert->insert_id;
     $userInsert->close();
+
+    $requestReference = 'HQ-REG-' . $headquarterId;
+    $requestType = 'hq_registration';
+    $requestDetails = sprintf(
+        'New HQ registration submitted from the admin Register New Headquarter panel. Contact: %s. Company logo: %s. License expiry: %s.',
+        $contactNumber,
+        $companyLogo,
+        $expiryDate
+    );
+    $documentName = 'Business license';
+
+    $requestInsert = $conn->prepare(
+        'INSERT INTO system_requests
+            (reference_code, request_type, status, submitter_user_id, headquarter_id,
+             sender_entity, sender_name, sender_email, location, request_details,
+             document_name, document_path, created_at, updated_at)
+         VALUES (?, ?, \'pending\', ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())'
+    );
+    if (!$requestInsert) {
+        throw new RuntimeException('Could not prepare the HQ registration request: ' . $conn->error);
+    }
+
+    $requestInsert->bind_param(
+        'ssiisssssss',
+        $requestReference,
+        $requestType,
+        $submitterUserId,
+        $headquarterId,
+        $hqName,
+        $ownerName,
+        $ownerEmail,
+        $location,
+        $requestDetails,
+        $documentName,
+        $businessLicense
+    );
+    if (!$requestInsert->execute()) {
+        throw new RuntimeException('Could not create the HQ registration request: ' . $requestInsert->error);
+    }
+    $requestInsert->close();
 
     if (!$conn->commit()) {
         throw new RuntimeException('Could not commit the HQ registration: ' . $conn->error);
@@ -145,7 +191,7 @@ try {
 
     hq_flash(
         'success',
-        'HQ and user account created successfully. The account is pending verification.',
+        'HQ and user account created successfully. A pending HQ registration request was added to View Requests.',
         [
             'username' => $username,
             'temporary_password' => $temporaryPassword,
