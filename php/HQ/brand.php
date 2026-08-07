@@ -1,3 +1,80 @@
+<?php
+// // Database connection configuration
+// $servername = "localhost";
+// $username = "root";
+// $password = "";
+// $dbname = "your_database_name";
+
+// // Create database connection
+// $conn = new mysqli($servername, $username, $password, $dbname);
+
+// // Check connection
+// if ($conn->connect_error) {
+//     die("Connection failed: " . $conn->connect_error);
+// }
+include '../conn.php';
+$message = "";
+$id = isset($_GET['headquarter_id']) ? intval($_GET['headquarter_id']) : 1; // Default to 1 if not provided
+// Handle form submission to update brand configurations directly in the database
+if ($_SERVER["REQUEST_METHOD"] == "POST") {
+    $id = $conn->real_escape_string($_POST['headquarter_id']); // Assuming you have a hidden input for headquarter_id in your form
+    $title = $conn->real_escape_string($_POST['company_name']);
+    $license = $conn->real_escape_string($_POST['business_license']);
+    $location = $conn->real_escape_string($_POST['location']); // Location input
+    $info = $conn->real_escape_string($_POST['headquarter_bio']);
+    $email = $conn->real_escape_string($_POST['brandEmail']);
+    $phone = $conn->real_escape_string($_POST['brandPhone']);
+
+    // $color = $conn->real_escape_string($_POST['brandColor']);
+    
+    $logoSqlPart = "";
+
+    // Check if a new logo file was uploaded and convert it to Base64 to store in the database
+    if (isset($_FILES['brandLogoInput']) && $_FILES['brandLogoInput']['error'] == 0) {
+        $fileTmpPath = $_FILES['brandLogoInput']['tmp_name'];
+        $fileType = mime_content_type($fileTmpPath);
+        
+        // Ensure it's an image
+        if (strpos($fileType, 'image/') === 0) {
+            $imageData = file_get_contents($fileTmpPath);
+            $base64Logo = 'data:' . $fileType . ';base64,' . base64_encode($imageData);
+            $base64LogoEscaped = $conn->real_escape_string($base64Logo);
+            $logoSqlPart = "company_logo";
+        }
+    }
+
+    // Update query storing everything (including image data string and location) directly in database columns
+    $sql = "UPDATE headquarter SET 
+            company_name='$title', 
+            business_license='$license',
+            location='$location',
+            headquarter_bio='$info', 
+            brand_email='$email', 
+            contact_number='$phone', 
+            $logoSqlPart 
+            WHERE headquarter_id = $id";
+
+    if ($conn->query($sql) === TRUE) {
+        $message = "Brand details, location, and logo updated successfully in the database!";
+    } else {
+        $message = "Error updating record: " . $conn->error;
+    }
+}
+
+// Fetch current brand details strictly from the database
+$result = $conn->query("SELECT * FROM headquarter WHERE headquarter_id =$id");
+$brand = ($result && $result->num_rows > 0) ? $result->fetch_assoc() : [
+    'headquarter_id' => $id,
+    'company_name' => '',
+    'company_logo' => '',
+    'business_license' => '',
+    'location' => '',
+    'headquarter_bio' => '',
+    'brand_email' => '',
+    'brand_phone' => '',
+    'brand_color' => '#000000'
+];
+?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -10,17 +87,18 @@
     <p class="subtitle">Set global brand styles, logos, and configurations.</p>
     
     <div class="card p-4">
-        <!-- <h3 class="mb-4">Corporate Asset Branding</h3>
-        <p class="subtitle" style="margin-bottom:15px;">Modify central details distributed downstream to individual terminals.</p>[cite: 2] -->
-        
-        <form onsubmit="saveBrandConfig(event)">
+        <?php if (!empty($message)): ?>
+            <div class="alert alert-info"><?php echo $message; ?></div>
+        <?php endif; ?>
+
+        <form method="POST" enctype="multipart/form-data">
             <div class="row align-items-center">
-                <!-- Logo Preview & Upload -->
+                <!-- Logo Preview & File Upload Button -->
                 <div class="col-md-4 text-center border-end-md mb-4 mb-md-0">
-                    <img id="logoPreview" src="https://via.placeholder.com/150" alt="Brand Logo" class="rounded-circle img-thumbnail mb-3" style="width: 150px; height: 150px; object-fit: cover; background-color: #fff;">
+                    <img id="logoPreview" src="<?php echo htmlspecialchars($brand['company_logo']); ?>" alt="Brand Logo" class="rounded-circle img-thumbnail mb-3" style="width: 150px; height: 150px; object-fit: cover; background-color: #fff;" onerror="this.src='https://via.placeholder.com/150?text=No+Logo'">
                     <div>
-                        <input type="file" id="brandLogoInput" accept="image/*" style="display: none;" onchange="previewLogo(event)">
-                        <label for="brandLogoInput" class="btn btn-sm btn-outline-secondary text-white">Change Logo</label>
+                        <input type="file" name="brandLogoInput" id="brandLogoInput" accept="image/*" style="display: none;" onchange="previewLogo(event)">
+                        <label for="brandLogoInput" class="btn btn-sm btn-outline-secondary text-white cursor-pointer">Change Logo</label>
                     </div>
                 </div>
 
@@ -28,31 +106,42 @@
                 <div class="col-md-8 ps-md-4">
                     <div class="form-group mb-3">
                         <label class="form-label">Brand Display Title</label>
-                        <input type="text" class="form-control" id="brandTitle" value="Apex Fuel & Gas" placeholder="Company Display Name">
+                        <input type="text" class="form-control" name="company_name" id="company_name" value="<?php echo htmlspecialchars($brand['company_name']); ?>" placeholder="Company Display Name" required>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Business License Number</label>
+                            <input type="text" class="form-control" name="business_license" id="business_license" value="<?php echo htmlspecialchars($brand['business_license']); ?>" placeholder="Enter official business license" required>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Corporate Location / Address</label>
+                            <input type="text" class="form-control" name="location" id="location" value="<?php echo htmlspecialchars($brand['location']); ?>" placeholder="Enter office address or location" required>
+                        </div>
                     </div>
 
                     <div class="form-group mb-3">
                         <label class="form-label">Company Information & Details</label>
-                        <textarea class="form-control custom-input" id="brandInfo" rows="3" placeholder="Enter corporate background, address, or details...">Apex Fuel & Gas - Global Headquarters, Operations, and Terminal Management Systems.</textarea>
+                        <textarea class="form-control custom-input" name="headquarter_bio" id="headquarter_bio" rows="3" placeholder="Enter corporate background, address, or details..."><?php echo htmlspecialchars($brand['headquarter_bio']); ?></textarea>
                     </div>
 
                     <div class="row">
                         <div class="col-md-6 mb-3">
                             <label class="form-label">Corporate Email</label>
-                            <input type="email" class="form-control" id="brandEmail" value="hq@apexfuelgas.com" placeholder="corp@example.com">
+                            <input type="email" class="form-control" name="brandEmail" id="brandEmail" value="<?php echo htmlspecialchars($brand['brand_email']); ?>" placeholder="corp@example.com" required>
                         </div>
                         <div class="col-md-6 mb-3">
                             <label class="form-label">Support / Contact Phone</label>
-                            <input type="text" class="form-control" id="brandPhone" value="+1 (800) 555-APEX" placeholder="+1 (xxx) xxx-xxxx">
+                            <input type="text" class="form-control" name="brandPhone" id="brandPhone" value="<?php echo htmlspecialchars($brand['brand_phone']); ?>" placeholder="+95 xxx-xxx-xxxx" required>
                         </div>
                     </div>
 
-                    <div class="form-group mb-4">
+                    <!-- <div class="form-group mb-4">
                         <label class="form-label">Interface Primary Accent</label>
                         <div>
-                            <input type="color" class="form-control" id="brandColor" value="#2563eb" style="width: 80px; height: 38px; padding: 2px; cursor: pointer;">
+                            <input type="color" class="form-control" name="brandColor" id="brandColor" value="<?php echo htmlspecialchars(!empty($brand['brand_color']) ? $brand['brand_color'] : '#000000'); ?>" style="width: 80px; height: 38px; padding: 2px; cursor: pointer;">
                         </div>
-                    </div>
+                    </div> -->
 
                     <div class="text-center">
                         <button type="submit" class="btn btn-primary px-4">Apply Brand Config</button>
@@ -63,52 +152,18 @@
     </div>
 
     <script>
-        // Load saved brand data, logo, and settings on startup
-        window.addEventListener('DOMContentLoaded', () => {
-            const savedTitle = localStorage.getItem('brand_title');
-            const savedInfo = localStorage.getItem('brand_info');
-            const savedEmail = localStorage.getItem('brand_email');
-            const savedPhone = localStorage.getItem('brand_phone');
-            const savedColor = localStorage.getItem('brand_color');
-            const savedLogo = localStorage.getItem('brand_logo');
-
-            if (savedTitle) document.getElementById('brandTitle').value = savedTitle;
-            if (savedInfo) document.getElementById('brandInfo').value = savedInfo;
-            if (savedEmail) document.getElementById('brandEmail').value = savedEmail;
-            if (savedPhone) document.getElementById('brandPhone').value = savedPhone;
-            if (savedColor) document.getElementById('brandColor').value = savedColor;
-            if (savedLogo) document.getElementById('logoPreview').src = savedLogo;
-        });
-
         function previewLogo(event) {
             const file = event.target.files[0];
             if (file) {
                 const reader = new FileReader();
                 reader.onload = function(e) {
                     document.getElementById('logoPreview').src = e.target.result;
-                    localStorage.setItem('brand_logo', e.target.result);
                 }
                 reader.readAsDataURL(file);
             }
-        }
-
-        function saveBrandConfig(event) {
-            event.preventDefault();
-            const title = document.getElementById('brandTitle').value;
-            const info = document.getElementById('brandInfo').value;
-            const email = document.getElementById('brandEmail').value;
-            const phone = document.getElementById('brandPhone').value;
-            const color = document.getElementById('brandColor').value;
-
-            localStorage.setItem('brand_title', title);
-            localStorage.setItem('brand_info', info);
-            localStorage.setItem('brand_email', email);
-            localStorage.setItem('brand_phone', phone);
-            localStorage.setItem('brand_color', color);
-
-            alert('Corporate parameters stored successfully!');
         }
     </script>
 </body>
 <footer class="text-white-50 text-center py-4 mt-5 small">&copy; 2026 Map & Pump | All Rights Reserved</footer>
 </html>
+<?php $conn->close(); ?>
