@@ -263,3 +263,28 @@ select option:focus {
   background-color: var(--navy-700);
   color: var(--sky-400);
 }
+/* Custom Scrollbar Styles */
+  /* For Webkit browsers (Chrome, Edge, Safari) */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+    }
+
+        ::-webkit-scrollbar-track {
+            background: #0f172a; /* Matches your background variable */
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #334155; /* Matches your border/slate color */
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #38bdf8; /* Matches your --sky-400 theme color on hover */
+        }
+
+        /* For Firefox */
+        * {
+            scrollbar-width: thin;
+            scrollbar-color: #334155 #0f172a;
+        }

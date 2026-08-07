@@ -11,9 +11,6 @@
             color: #dee2e6;
         }
         .table-custom th {
-            /* background-color: transparent !important;
-            color: #ffffff !important;
-            border-bottom: 2px solid #373b3e; */
             text-transform: uppercase;
             font-size: 0.74rem;
             letter-spacing: 0.05em;
@@ -50,57 +47,15 @@
 <body>
     <h2 class="title">Station Network</h2>
     <p class="subtitle">Onboard physical station nodes and set up terminal operating profiles.</p>
-
-    <!-- Register Station Node with separate Node ID, Station Name, and Location -->
-    <div class="card">
-        <h3>Register Station Node</h3>
-        <p class="subtitle" style="margin-bottom: 12px;">Establish unique location tags for network reporting.</p>
-        <div class="row">
-            <div class="col-md-4 mb-3">
-                <div class="form-group">
-                    <label>Branch ID</label>
-                    <input type="text" class="form-control bg-dark text-light border-secondary" placeholder="e.g. #014">
-                </div>
-            </div>
-            <div class="col-md-4 mb-3">
-                <div class="form-group">
-                    <label>Station Name</label>
-                    <input type="text" class="form-control bg-dark text-light border-secondary" placeholder="e.g. Downtown Metro">
-                </div>
-            </div>
-            <div class="col-md-4 mb-3">
-                <div class="form-group">
-                    <label>Location</label>
-                    <input type="text" class="form-control bg-dark text-light border-secondary" placeholder="e.g. New York">
-                </div>
-            </div>
-        </div>
-        <button class="btn" onclick="alert('Terminal Node created successfully.')">Register Node</button>
-    </div>
-
-    <div class="card">
-        <h3>Onboard Site Manager Account</h3>
-        <p class="subtitle" style="margin-bottom: 12px;">Provision manager profiles responsible for log and inventory oversight.</p>
-        <form onsubmit="event.preventDefault(); alert('Manager setup completed. Access keys generated.');">
-            <div class="form-group">
-                <label>Assigned Node</label>
-                <select class="form-control bg-dark text-light border-secondary">
-                    <option>BR-HQ-01 - Downtown Metro</option>
-                    <option>BR-HQ-02 - Highway Bypass</option>
-                </select>
-            </div>
-            <div class="form-group">
-                <label>Operator Professional Email</label>
-                <input type="email" placeholder="manager.name@apex.com" required>
-            </div>
-            <button class="btn btn-success" type="submit">Deploy Manager Profile</button>
-        </form>
-    </div>
-
     <!-- Managed Stations Section with Location instead of Location Code -->
     <div class="card">
-        <h3>Manage Deployed Stations</h3>
-        <p class="subtitle" style="margin-bottom: 12px;">Monitor active nodes, update operational status, or remove configurations.</p>
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <div>
+                <h3>Manage Deployed Stations</h3>
+                <p class="subtitle mb-0">Monitor active nodes, update operational status, or remove configurations.</p>
+            </div>
+            <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#registerModal">+Add Station</button>
+        </div>
         <div class="table-responsive">
             <table class="table table-custom align-middle">
                 <thead>
@@ -140,6 +95,79 @@
                     </tr>
                 </tbody>
             </table>
+        </div>
+    </div>
+
+    <!-- Register Station & Onboard Manager Modal -->
+    <div class="modal fade" id="registerModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content modal-content-custom text-light">
+                <div class="modal-header border-secondary">
+                    <h5 class="modal-title">Register Station Node & Manager</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <!-- Register Station Node Section -->
+                    <div class="card bg-transparent border-0 mb-4 p-0">
+                        <h3>Register Station Node</h3>
+                        <p class="subtitle" style="margin-bottom: 12px;">Establish unique location tags for network reporting[cite: 3].</p>
+                        <div class="row">
+                            <div class="col-md-3 mb-3">
+                                <div class="form-group">
+                                    <label class="form-label text-light">Branch ID</label>
+                                    <input type="text" class="form-control bg-dark text-light border-secondary" placeholder="e.g. #014">
+                                </div>
+                            </div>
+                            <div class="col-md-3 mb-3">
+                                <div class="form-group">
+                                    <label class="form-label text-light">Station Name</label>
+                                    <input type="text" class="form-control bg-dark text-light border-secondary" placeholder="e.g. Downtown Metro">
+                                </div>
+                            </div>
+                            <div class="col-md-3 mb-3">
+                                <div class="form-group">
+                                    <label class="form-label text-light">Region</label>
+                                    <select class="form-control bg-dark text-light border-secondary">
+                                        <option value="" disabled selected>Select Region</option>
+                                        <option value="Ygn">Yangon</option>
+                                        <option value="Mdy">Mandalay</option>
+                                        <option value="NPT">Nay Pyi Taw</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="col-md-3 mb-3">
+                                <div class="form-group">
+                                    <label class="form-label text-light">Location</label>
+                                    <input type="text" class="form-control bg-dark text-light border-secondary" placeholder="e.g. New York">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <hr class="border-secondary my-4">
+
+                    <!-- Onboard Site Manager Account Section -->
+                    <div class="card bg-transparent border-0 p-0">
+                        <h3>Onboard Site Manager Account</h3>
+                        <p class="subtitle" style="margin-bottom: 12px;">Provision manager profiles responsible for log and inventory oversight[cite: 3].</p>
+                        <div class="form-group mb-3">
+                            <label class="form-label text-light">Assigned Node</label>
+                            <select class="form-control bg-dark text-light border-secondary">
+                                <option>BR-HQ-01 - Downtown Metro</option>
+                                <option>BR-HQ-02 - Highway Bypass</option>
+                            </select>
+                        </div>
+                        <div class="form-group mb-3">
+                            <label class="form-label text-light">Operator Professional Email</label>
+                            <input type="email" class="form-control bg-dark text-light border-secondary" placeholder="manager.name@apex.com">
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer border-secondary">
+                    <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Close</button>
+                    <button type="button" class="btn btn-success" data-bs-dismiss="modal" onclick="alert('Terminal Node and Manager profile created successfully.')">Register Station</button>
+                </div>
+            </div>
         </div>
     </div>
 

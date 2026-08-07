@@ -41,8 +41,6 @@
     object-fit: contain;
   }
   .side-brand{display:flex; align-items:center; gap:10px; font-weight:700; font-size:17px; padding:6px 8px 0;}
-  .side-brand svg{width:28px; height:28px; transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);}
-  .side-brand:hover svg{transform: rotate(-10deg) scale(1.1);}
   .side-role{font-size:11px; color:var(--slate-400); font-weight:500; margin:2px 0 0 46px;}
   .side-branch{
     margin:20px 8px 0; padding:10px 12px; background:var(--navy-800); border-radius:12px; 
@@ -87,7 +85,8 @@
   }
   .topbar h1{font-size:18px; font-weight:700;}
   .topbar .date{font-size:12.5px; color:var(--slate-400); margin-top:2px; font-variant-numeric: tabular-nums;}
-  .topbar-right{display:flex; align-items:center; gap:16px;}
+  .topbar-right{display:flex; align-items:center; gap:16px; position:relative;}
+  
   .bell{
     width:36px; height:36px; border-radius:50%; background:var(--navy-800); display:flex; align-items:center; 
     justify-content:center; border:1px solid rgba(255,255,255,0.08); position:relative; font-size:15px; cursor:pointer;
@@ -98,9 +97,41 @@
     transform: scale(1.05);
   }
   .bell .ping{position:absolute; top:6px; right:7px; width:7px; height:7px; border-radius:50%; background:var(--amber-400); box-shadow:0 0 0 2px var(--navy-800);}
+  
   .avatar-chip{display:flex; align-items:center; gap:10px; font-size:13px; cursor: pointer; padding: 4px 8px; border-radius: 99px; transition: background 0.2s;}
   .avatar-chip:hover{background: rgba(255,255,255,0.05);}
   .avatar-circle{width:36px; height:36px; border-radius:50%; background:linear-gradient(135deg,var(--sky-400),var(--blue-700)); display:flex; align-items:center; justify-content:center; font-weight:700; font-size:13px; font-family:'Space Grotesk';}
+
+  /* ---------- Notification Popup Dropdown (dashboard.php style) ---------- */
+  .notif-popup {
+    position: absolute; top: 48px; right: 80px; width: 320px;
+    background: var(--navy-800); border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 14px; box-shadow: 0 12px 30px rgba(0,0,0,0.5);
+    z-index: 100; opacity: 0; pointer-events: none; transform: translateY(-10px);
+    transition: opacity 0.25s ease, transform 0.25s ease;
+  }
+  .notif-popup.active { opacity: 1; pointer-events: auto; transform: translateY(0); }
+  .notif-header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 12px 16px; border-bottom: 1px solid rgba(255,255,255,0.06);
+  }
+  .notif-header h4 { font-size: 13.5px; font-weight: 700; margin: 0; }
+  .notif-header button { background: none; border: none; color: var(--amber-400); font-size: 11px; cursor: pointer; font-weight: 600; }
+  .notif-header button:hover { text-decoration: underline; }
+  .notif-list { max-height: 260px; overflow-y: auto; }
+  .notif-item {
+    display: flex; gap: 12px; padding: 12px 16px; border-bottom: 1px solid rgba(255,255,255,0.04);
+    font-size: 12px; transition: background 0.2s; cursor: pointer;
+  }
+  .notif-item:last-child { border-bottom: none; }
+  .notif-item:hover { background: rgba(255,255,255,0.03); }
+  .notif-item .icon { width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 12px; }
+  .notif-item.warning .icon { background: rgba(248,113,113,0.15); color: var(--red-400); }
+  .notif-item.info .icon { background: rgba(56,189,248,0.15); color: var(--sky-400); }
+  .notif-item.success .icon { background: rgba(52,211,153,0.15); color: var(--mint-400); }
+  .notif-item .text b { display: block; color: var(--slate-50); margin-bottom: 2px; }
+  .notif-item .text span { color: var(--slate-400); line-height: 1.3; display: block; }
+  .notif-item .time { font-size: 10px; color: var(--slate-400); margin-top: 4px; }
 
   /* Content Entrance Fade */
   .content{
@@ -250,7 +281,7 @@
   .toggle.on{background:rgba(52,211,153,0.28);}
   .toggle.on::after{left:23px; background:var(--mint-400);}
 
-  /* ---------- Dynamic Overlay Modal CSS ---------- */
+  /* ---------- Modals ---------- */
   .modal-overlay {
     position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(7, 11, 20, 0.85);
     backdrop-filter: blur(8px); z-index: 100; display: flex; align-items: center; justify-content: center;
@@ -293,20 +324,9 @@
 
 <div class="app-shell">
   <aside class="sidebar">
-  <!--  <div class="side-brand">
-      <svg viewBox="0 0 100 120" fill="none">
-        <defs><linearGradient id="g1" x1="0" y1="0" x2="100" y2="120">
-          <stop offset="0" stop-color="#38bdf8"/><stop offset="1" stop-color="#1d4ed8"/>
-        </linearGradient></defs>
-        <path d="M50 4 L92 18 L92 54 C92 82 74 100 50 116 C26 100 8 82 8 54 L8 18 Z" fill="url(#g1)"/>
-        <circle cx="48" cy="52" r="24" stroke="white" stroke-width="5" fill="none"/>
-        <path d="M36 52 L45 62 L64 40" stroke="white" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-      </svg>
-        MAP & PUMP
-    </div> -->
-    <a href="dashboard.php" class="text-decoration-none d-flex align-items-center gap-2 text-white fw-bold padding" style="padding: 6px 8px 0;">
+    <a href="dashboard.php" class="text-decoration-none d-flex align-items-center gap-2 text-white fw-bold" style="padding: 6px 8px 0;">
       <img src="/images/Logo.png" alt="Logo" class="nav-logo">
-          <span class="disp" style="font-size: 17px; letter-spacing: 0.5px; color: #ffffff; font-weight: 700;">Map & Pump</span>
+      <span class="disp" style="font-size: 17px; letter-spacing: 0.5px; color: #ffffff; font-weight: 700;">Map & Pump</span>
     </a>
     <div class="side-role">Branch Manager Console</div>
 
@@ -335,7 +355,43 @@
         <div class="date" id="live-clock">Wednesday · July 9, 2026</div>
       </div>
       <div class="topbar-right">
-        <div class="bell" id="notif-bell"><i class="fa-regular fa-bell"></i><span class="ping"></span></div>
+        <!-- Bell Trigger Button -->
+        <div class="bell" id="notif-bell"><i class="fa-regular fa-bell"></i><span class="ping" id="notif-ping"></span></div>
+        
+        <!-- Notification Dropdown Popup (Dashboard Style) -->
+        <div class="notif-popup" id="notif-popup">
+          <div class="notif-header">
+            <h4>Notifications</h4>
+            <button id="clear-notifs-btn">Mark all read</button>
+          </div>
+          <div class="notif-list" id="notif-list">
+            <div class="notif-item warning">
+              <div class="icon"><i class="fa-solid fa-triangle-exclamation"></i></div>
+              <div class="text">
+                <b>Low Stock Alert</b>
+                <span>Diesel level is at 22% (below limit).</span>
+                <div class="time">10 mins ago</div>
+              </div>
+            </div>
+            <div class="notif-item success">
+              <div class="icon"><i class="fa-solid fa-truck-field"></i></div>
+              <div class="text">
+                <b>Delivery Received</b>
+                <span>8,000 L of Petrol 92 added to Tank 1.</span>
+                <div class="time">2 hours ago</div>
+              </div>
+            </div>
+            <div class="notif-item info">
+              <div class="icon"><i class="fa-solid fa-info-circle"></i></div>
+              <div class="text">
+                <b>Price Sync</b>
+                <span>HQ updated fuel prices for today.</span>
+                <div class="time">Yesterday</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <div class="avatar-chip">
           <div class="avatar-circle"><a href="edit-profile.php">Fe</a></div>
           <div><b><a href="edit-profile.php">Felix</a></b></div>
@@ -406,7 +462,7 @@
           </div>
         </div>
 
-        <div class="section-title"><h3></h3></div>
+        <div class="section-title"><h3>Recent Delivery Log</h3></div>
         <div class="panel">
           <table id="delivery-table">
             <thead><tr><th>Date</th><th>Fuel</th><th>Quantity (Liters)</th><th>Supplier</th><th>Received By</th></tr></thead>
@@ -467,12 +523,12 @@
         </div>
       </div>
 
-      <div class="page-foot">© 2026 MAP & PUMP | All Right Reserved</div>
+      <div class="page-foot">© 2026 MAP & PUMP | All Rights Reserved</div>
     </div>
   </div>
 </div>
 
-<!-- ---------- Manage Oil Limit Modal (extends Manage Oil) ---------- -->
+<!-- ---------- Manage Oil Limit Modal ---------- -->
 <div class="modal-overlay" id="limit-modal">
   <div class="modal-card-custom">
     <div class="modal-header-custom">
@@ -562,44 +618,61 @@
     setInterval(updateClock, 1000);
     updateClock();
 
-    // Notification bell close out micro-interaction
+    // 2. Notification Popup Controller (dashboard.php matching)
     const bellBtn = document.getElementById('notif-bell');
-    bellBtn.addEventListener('click', () => {
-      const ping = bellBtn.querySelector('.ping');
-      if (ping) {
-        ping.style.transform = 'scale(0)';
-        setTimeout(() => ping.remove(), 200);
+    const notifPopup = document.getElementById('notif-popup');
+    const notifPing = document.getElementById('notif-ping');
+    const clearNotifsBtn = document.getElementById('clear-notifs-btn');
+
+    bellBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      notifPopup.classList.toggle('active');
+      if (notifPing) {
+        notifPing.style.opacity = '0';
       }
     });
 
-    // 2. Local App Database Simulation (Tracks absolute levels)
+    // Close popup on outside click
+    document.addEventListener('click', (e) => {
+      if (!notifPopup.contains(e.target) && !bellBtn.contains(e.target)) {
+        notifPopup.classList.remove('active');
+      }
+    });
+
+    // Clear notifications
+    clearNotifsBtn.addEventListener('click', () => {
+      const notifList = document.getElementById('notif-list');
+      notifList.innerHTML = `
+        <div style="padding: 20px; text-align: center; color: var(--slate-400); font-size: 12px;">
+          No unread notifications
+        </div>`;
+      if (notifPing) notifPing.remove();
+    });
+
+    // 3. Local State Management
     const stockDB = {
       p92: { capacity: 15000, remaining: 11100 },
       p95: { capacity: 10000, remaining: 4800 },
       dsl: { capacity: 12000, remaining: 2640 }
     };
 
-    // Manage Oil Limit — per-fuel low-stock alert thresholds (%)
     let oilLimits = { p92: 25, p95: 25, dsl: 30 };
 
-    // Reflect database stats visually in layout elements
+    // Synchronize visual state across tanks
     function syncTanksUI() {
       ['p92', 'p95', 'dsl'].forEach(key => {
         const item = stockDB[key];
         const used = item.capacity - item.remaining;
         const percent = Math.min(100, Math.round((item.remaining / item.capacity) * 100));
 
-        // Sync main dials and text
         document.getElementById(`pct-${key}`).textContent = `${percent}%`;
         document.getElementById(`gauge-${key}`).style.width = `${percent}%`;
         document.getElementById(`rem-${key}`).textContent = `${item.remaining.toLocaleString()} L remaining`;
         document.getElementById(`used-${key}`).textContent = `${used.toLocaleString()} L used`;
 
-        // Sync Second Tab Description Subtext
         const typeRow = document.querySelector(`.type-row[data-tank-id="tank-${key}"] .rem-type-lbl`);
         if(typeRow) typeRow.textContent = `Current stock — ${item.remaining.toLocaleString()} L`;
 
-        // Style updates dynamically based on threshold flags
         const flagEl = document.getElementById(`flag-${key}`);
         const gaugeEl = document.getElementById(`gauge-${key}`);
         const pctEl = document.getElementById(`pct-${key}`);
@@ -625,7 +698,7 @@
       });
     }
 
-    // 2b. Manage Oil Limit Modal (extends Manage Oil)
+    // Modal Control: Threshold Limits
     const limitModal = document.getElementById('limit-modal');
     const limitForm = document.getElementById('limit-form');
     const openLimitBtn = document.getElementById('open-limit-modal');
@@ -654,7 +727,7 @@
       closeLimitModal();
     });
 
-    // 3. Modal Overlay Dialog Management
+    // Modal Control: Delivery Records
     const modal = document.getElementById('delivery-modal');
     const form = document.getElementById('delivery-form');
     const openBtn = document.getElementById('open-delivery-modal');
@@ -670,7 +743,7 @@
     closeBtn.addEventListener('click', closeModal);
     cancelBtn.addEventListener('click', closeModal);
 
-    // 4. Record Submission Handling
+    // Form Handler: Add Delivery Record
     form.addEventListener('submit', (e) => {
       e.preventDefault();
 
@@ -679,17 +752,14 @@
       const supplierVal = document.getElementById('supplier-input').value;
       const handlerVal = document.getElementById('handler-input').value;
 
-      // Restrict delivery spillages beyond maximum tank capacities
       const spec = stockDB[fuelKey];
       if (spec.remaining + quantityVal > spec.capacity) {
         alert(`Warning: This delivery of ${quantityVal} L exceeds the maximum capacity limits of this tank. Current available space is only ${spec.capacity - spec.remaining} L.`);
         return;
       }
 
-      // Add to simulated Database
       spec.remaining += quantityVal;
 
-      // Add record dynamically to the directory table
       const fuelLabels = {
         p92: { title: "Petrol 92", badge: "p92" },
         p95: { title: "Petrol 95", badge: "p95" },
@@ -714,12 +784,11 @@
 
       tableBody.insertBefore(newRow, tableBody.firstChild);
 
-      // Trigger recalculation logic with visuals
       syncTanksUI();
       closeModal();
     });
 
-    // 5. Dynamic active/disable switch controls on fuel profiles
+    // Dynamic Switch Controls
     const toggleButtons = document.querySelectorAll('.toggle:not([disabled])');
     toggleButtons.forEach(btn => {
       btn.addEventListener('click', () => {
@@ -735,7 +804,7 @@
             flag.innerHTML = `<i class="fa-solid fa-ban"></i> Out of Service`;
           } else {
             tankCard.classList.remove('disabled-tank');
-            syncTanksUI(); // recalculate true stats
+            syncTanksUI();
           }
         }
       });

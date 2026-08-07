@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: map-and-pump
+    runtime: docker
+    plan: free
+    healthCheckPath: /
+    envVars:
+      - key: RENDER
+        value: true
