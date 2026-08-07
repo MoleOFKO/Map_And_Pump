@@ -117,10 +117,85 @@
     font-weight: 700;
     white-space: nowrap;
 }
+
+/* Light mode: station name / address must stay readable on pale glass cards */
+body.customer-light-mode .top5-station-row {
+    border-bottom-color: rgba(11, 94, 215, 0.12);
+    color: #102033;
+}
+body.customer-light-mode .top5-station-row:hover {
+    background: rgba(11, 94, 215, 0.07);
+}
+body.customer-light-mode .top5-station-row .row-rank {
+    color: #0b5ed7;
+    background: rgba(11, 94, 215, 0.1);
+}
+body.customer-light-mode .top5-station-row img {
+    background: rgba(11, 94, 215, 0.06);
+}
+body.customer-light-mode .top5-station-row .row-name {
+    color: #102033;
+}
+body.customer-light-mode .top5-station-row .row-address {
+    color: rgba(51, 65, 85, 0.72);
+}
+body.customer-light-mode .top5-station-row .row-dist {
+    color: #0b5ed7;
+}
+
+.customer-map-back-btn {
+    position: absolute;
+    z-index: 900;
+    top: 16px;
+    right: 16px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    border-radius: 999px;
+    font-weight: 700;
+    font-size: 13px;
+    padding: 8px 14px;
+    color: #e8f3ff;
+    background: rgba(4, 10, 20, 0.82);
+    border: 1px solid rgba(13, 110, 253, 0.28);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.28);
+    transition: background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.customer-map-back-btn:hover {
+    background: rgba(13, 110, 253, 0.18);
+    border-color: rgba(13, 110, 253, 0.45);
+    color: #fff;
+    box-shadow: 0 10px 24px rgba(13, 110, 253, 0.15);
+}
+body.customer-light-mode .customer-map-back-btn {
+    color: #102033;
+    background: rgba(255, 255, 255, 0.92);
+    border-color: rgba(11, 94, 215, 0.2);
+    box-shadow: 0 8px 18px rgba(15, 23, 42, 0.12);
+}
+body.customer-light-mode .customer-map-back-btn:hover {
+    background: rgba(11, 94, 215, 0.1);
+    border-color: rgba(11, 94, 215, 0.35);
+    color: #0b5ed7;
+}
+@media (max-width: 575.98px) {
+    .customer-map-back-btn {
+        top: 12px;
+        right: 12px;
+        padding: 7px 12px;
+        font-size: 12px;
+    }
+}
 </style>
 
 
 <section id="map-experience" class="customer-map-experience d-none" aria-live="polite">
+
+    <button id="map-back-btn" type="button" class="btn btn-sm customer-map-back-btn" onclick="closeMapExperience()" aria-label="Back to station cards">
+        <i class="bi bi-arrow-left me-1"></i> Back
+    </button>
 
     <div id="station-map" class="customer-station-map"></div>
 
@@ -203,6 +278,18 @@
             }
         }
         setTimeout(() => mapInstance.invalidateSize(), 50);
+    }
+
+    function closeMapExperience() {
+        document.getElementById('map-experience').classList.add('d-none');
+        document.getElementById('station-booking-card').classList.add('d-none');
+        document.getElementById('show-station-card').classList.add('d-none');
+        document.getElementById('station-launch-card').classList.remove('d-none');
+        document.getElementById('quick-mapping-card').classList.remove('d-none');
+        document.getElementById('top5-stations-card').classList.remove('d-none');
+        document.getElementById('booking-pass').classList.add('d-none');
+        document.getElementById('station-booking-form').classList.remove('d-none');
+        selectedStation = null;
     }
 
     function distanceKm(lat1, lng1, lat2, lng2) {
