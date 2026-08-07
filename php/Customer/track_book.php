@@ -14,7 +14,114 @@
     </div>
 </section>
 
+<section id="quick-mapping-card" class="dashboard-panel-card customer-map-launch-card mt-3">
+    <div class="d-flex align-items-center justify-content-between flex-wrap gap-3">
+        <div>
+            <h3 class="text-white mb-1">Quick Mapping</h3>
+            <p class="text-secondary mb-0" style="font-size:13px;">Automatically choose nearest station on the map</p>
+        </div>
+        <button id="auto-connect-btn" class="btn btn-info px-4 py-3 fw-bold rounded-4" type="button" onclick="autoConnectNearestStation()" style="font-size:13px; font-family:'Space Grotesk';">
+            Auto connect <i class="bi bi-geo-alt-fill ms-2"></i>
+        </button>
+    </div>
+</section>
+
+<section id="top5-stations-card" class="dashboard-panel-card customer-map-launch-card mt-3 top5-stations-panel">
+    <h3 class="text-white mb-2">Top 5 nearest stations</h3>
+    <div id="top5-stations-list" class="top5-stations-list">
+        <div class="text-secondary" style="font-size:13px;">Locating nearest stations…</div>
+    </div>
+</section>
+
+<style>
+.top5-stations-panel {
+    overflow: hidden;
+}
+.top5-stations-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+}
+.top5-station-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    padding: 10px 4px;
+    border: 0;
+    border-bottom: 1px solid rgba(255,255,255,.08);
+    background: transparent;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+    transition: background .15s;
+}
+.top5-station-row:last-child {
+    border-bottom: 0;
+    padding-bottom: 2px;
+}
+.top5-station-row:first-of-type {
+    padding-top: 4px;
+}
+.top5-station-row:hover {
+    background: rgba(0, 244, 255, .07);
+}
+.top5-station-row .row-rank {
+    flex: 0 0 22px;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 700;
+    color: #00a8ff;
+    background: rgba(0, 168, 255, .12);
+}
+.top5-station-row img {
+    flex: 0 0 28px;
+    width: 28px;
+    height: 28px;
+    object-fit: contain;
+    border-radius: 8px;
+    background: rgba(255,255,255,.06);
+    padding: 3px;
+}
+.top5-station-row .row-body {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+.top5-station-row .row-name {
+    display: block;
+    color: #fff;
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1.3;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.top5-station-row .row-address {
+    display: block;
+    color: rgba(255,255,255,.45);
+    font-size: 11px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.top5-station-row .row-dist {
+    flex: 0 0 auto;
+    color: #00a8ff;
+    font-size: 12px;
+    font-weight: 700;
+    white-space: nowrap;
+}
+</style>
+
+
 <section id="map-experience" class="customer-map-experience d-none" aria-live="polite">
+
     <div id="station-map" class="customer-station-map"></div>
 
     <button id="show-station-card" type="button" class="btn btn-info customer-map-reopen d-none" onclick="showStationCard()">
@@ -63,13 +170,21 @@
     let mapInstance, customerMarker, routeLine, selectedStation;
     let customerLocation = [16.8409, 96.1735]; // Yangon fallback when location permission is unavailable.
     const availableOilQuota = <?php echo ($_SESSION['oil_limit'] - $_SESSION['oil_used']); ?>;
+    const stationLogoUrl = '../../images/Logo.png';
     const stationsData = [
-        { id: 1, name: 'Yangon Terminal Center', address: 'Pyay Road, Mayangone Township', lat: 16.8661, lng: 96.1349, fuels: ['Octane 95', 'Diesel'] },
-        { id: 2, name: 'Insein Branch Station 04', address: 'Baho Road, Insein Township', lat: 16.8961, lng: 96.0891, fuels: ['Octane 92'] }
+        { id: 1, name: 'Yangon Terminal Center', address: 'Pyay Road, Mayangone Township', lat: 16.8661, lng: 96.1349, fuels: ['Octane 95', 'Diesel'], logo: stationLogoUrl },
+        { id: 2, name: 'Insein Branch Station 04', address: 'Baho Road, Insein Township', lat: 16.8961, lng: 96.0891, fuels: ['Octane 92'], logo: stationLogoUrl },
+        { id: 3, name: 'Sanchaung Fuel Hub', address: 'Bargayar Road, Sanchaung', lat: 16.8055, lng: 96.1330, fuels: ['Octane 95', 'Octane 92'], logo: stationLogoUrl },
+        { id: 4, name: 'Tamwe Express Station', address: 'Kyaikkasan Road, Tamwe', lat: 16.8120, lng: 96.1755, fuels: ['Diesel', 'Octane 92'], logo: stationLogoUrl },
+        { id: 5, name: 'Hlaing Tharyar Depot', address: 'No.3 Main Road, Hlaing Tharyar', lat: 16.8700, lng: 96.0650, fuels: ['Octane 95', 'Diesel'], logo: stationLogoUrl },
+        { id: 6, name: 'Thingangyun Station 02', address: 'Waizayantar Road, Thingangyun', lat: 16.8305, lng: 96.1950, fuels: ['Octane 92'], logo: stationLogoUrl },
+        { id: 7, name: 'Kamayut Central Pump', address: 'University Avenue, Kamayut', lat: 16.8250, lng: 96.1355, fuels: ['Octane 95', 'Octane 92', 'Diesel'], logo: stationLogoUrl }
     ];
 
-    function openMapExperience() {
+    function openMapExperience(autoSelectNearest, preselectStationId) {
         document.getElementById('station-launch-card').classList.add('d-none');
+        document.getElementById('quick-mapping-card').classList.add('d-none');
+        document.getElementById('top5-stations-card').classList.add('d-none');
         document.getElementById('map-experience').classList.remove('d-none');
         if (!mapInstance) {
             mapInstance = L.map('station-map', { scrollWheelZoom: false }).setView(customerLocation, 12);
@@ -79,25 +194,118 @@
                 marker.bindTooltip(station.name, { direction: 'top' });
                 marker.on('click', () => selectStation(station.id));
             });
-            locateCustomer();
+            locateCustomer(autoSelectNearest, preselectStationId);
+        } else {
+            if (preselectStationId) {
+                selectStation(preselectStationId);
+            } else if (autoSelectNearest) {
+                locateCustomer(true);
+            }
         }
         setTimeout(() => mapInstance.invalidateSize(), 50);
     }
 
-    function locateCustomer() {
-        if (!navigator.geolocation) { drawCustomerLocation(); return; }
-        navigator.geolocation.getCurrentPosition(position => {
-            customerLocation = [position.coords.latitude, position.coords.longitude];
-            drawCustomerLocation();
-        }, drawCustomerLocation, { enableHighAccuracy: true, timeout: 8000 });
+    function distanceKm(lat1, lng1, lat2, lng2) {
+        const toRad = deg => deg * Math.PI / 180;
+        const R = 6371;
+        const dLat = toRad(lat2 - lat1);
+        const dLng = toRad(lng2 - lng1);
+        const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+        return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     }
 
-    function drawCustomerLocation() {
+    function findNearestStation() {
+        let nearest = null;
+        let minDist = Infinity;
+        stationsData.forEach(station => {
+            const d = distanceKm(customerLocation[0], customerLocation[1], station.lat, station.lng);
+            if (d < minDist) {
+                minDist = d;
+                nearest = station;
+            }
+        });
+        return nearest;
+    }
+
+    function getTopNearestStations(limit) {
+        return stationsData
+            .map(station => ({
+                ...station,
+                distance: distanceKm(customerLocation[0], customerLocation[1], station.lat, station.lng)
+            }))
+            .sort((a, b) => a.distance - b.distance)
+            .slice(0, limit);
+    }
+
+    function renderTop5Stations() {
+        const list = document.getElementById('top5-stations-list');
+        if (!list) return;
+        const top5 = getTopNearestStations(5);
+        list.innerHTML = top5.map((station, index) => `
+            <button type="button" class="top5-station-row" onclick="bookFromTop5(${station.id})" title="${station.name}">
+                <span class="row-rank">${index + 1}</span>
+                <img src="${station.logo}" alt="${station.name} logo" onerror="this.src='../../images/Logo.png'">
+                <span class="row-body">
+                    <span class="row-name">${station.name}</span>
+                    <span class="row-address">${station.address}</span>
+                </span>
+                <span class="row-dist">${station.distance.toFixed(1)} km</span>
+            </button>
+        `).join('');
+    }
+
+
+    function bookFromTop5(stationId) {
+        openMapExperience(false, stationId);
+    }
+
+    function autoConnectNearestStation() {
+        openMapExperience(true);
+    }
+
+    function locateCustomer(autoSelectNearest, preselectStationId) {
+        const afterLocate = () => {
+            drawCustomerLocation(autoSelectNearest, preselectStationId);
+            renderTop5Stations();
+        };
+        if (!navigator.geolocation) {
+            afterLocate();
+            return;
+        }
+        navigator.geolocation.getCurrentPosition(position => {
+            customerLocation = [position.coords.latitude, position.coords.longitude];
+            afterLocate();
+        }, afterLocate, { enableHighAccuracy: true, timeout: 8000 });
+    }
+
+    function drawCustomerLocation(autoSelectNearest, preselectStationId) {
+        if (!mapInstance) return;
         if (customerMarker) mapInstance.removeLayer(customerMarker);
         customerMarker = L.circleMarker(customerLocation, { radius: 9, color: '#fff', weight: 2, fillColor: '#00a8ff', fillOpacity: 1 }).addTo(mapInstance).bindTooltip('Your location');
-        if (!selectedStation) mapInstance.setView(customerLocation, 12);
-        if (selectedStation) showRoute();
+        if (preselectStationId) {
+            selectStation(preselectStationId);
+        } else if (autoSelectNearest) {
+            const nearest = findNearestStation();
+            if (nearest) selectStation(nearest.id);
+        } else {
+            if (!selectedStation) mapInstance.setView(customerLocation, 12);
+            if (selectedStation) showRoute();
+        }
     }
+
+    // Populate Top 5 list as soon as the page loads (uses geolocation when allowed).
+    (function initTop5List() {
+        if (!navigator.geolocation) {
+            renderTop5Stations();
+            return;
+        }
+        navigator.geolocation.getCurrentPosition(position => {
+            customerLocation = [position.coords.latitude, position.coords.longitude];
+            renderTop5Stations();
+        }, () => renderTop5Stations(), { enableHighAccuracy: true, timeout: 8000 });
+    })();
+
+
 
     function selectStation(stationId) {
         selectedStation = stationsData.find(station => station.id === stationId);
