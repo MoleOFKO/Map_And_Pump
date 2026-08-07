@@ -25,6 +25,7 @@ if ($currentPage == 'profile_page.php') $viewTitle = "Portal Profile Settings";
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Map & Pump — <?php echo $viewTitle; ?></title>
+    <link rel="icon" type="image/png" href="/images/Logo.png">
 
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
@@ -33,6 +34,7 @@ if ($currentPage == 'profile_page.php') $viewTitle = "Portal Profile Settings";
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Noto+Sans+Myanmar:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/css/customer-admin-theme.css">
 
     <style>
         :root {
@@ -87,7 +89,7 @@ if ($currentPage == 'profile_page.php') $viewTitle = "Portal Profile Settings";
     <aside class="sidebar-nav">
         <div>
             <div class="p-4 d-flex align-items-center gap-3 border-bottom border-secondary border-opacity-10">
-                <div class="bg-primary bg-opacity-10 p-2 rounded-3 text-sky-400 d-flex align-items-center justify-content-center" style="width: 42px; height: 42px;">
+                <div class="text-sky-400 d-flex align-items-center justify-content-center" style="width: 42px; height: 42px;">
                     <img src="/images/Logo.png" alt="Map & Pump Logo" style="max-width: 100%; max-height: 100%; object-fit: contain;">
                 </div>
                 <div>
@@ -137,6 +139,16 @@ if ($currentPage == 'profile_page.php') $viewTitle = "Portal Profile Settings";
         </div>
 
         <div class="d-flex align-items-center gap-4">
+            <label class="customer-theme-toggle mb-0" title="Toggle day/night mode">
+                <input class="js-customer-theme-toggle" type="checkbox" aria-label="Toggle day/night mode" role="switch">
+                <span class="slider">
+                    <span class="theme-icon moon"><i class="bi bi-moon-stars-fill"></i></span>
+                    <span class="theme-icon sun"><i class="bi bi-sun-fill"></i></span>
+                    <span class="toggle-spark spark-one"></span>
+                    <span class="toggle-spark spark-two"></span>
+                    <span class="orb"></span>
+                </span>
+            </label>
             <div class="position-relative cursor-pointer" id="notif-hub" onclick="toggleAlertBox()" style="cursor: pointer;">
                 <i class="bi bi-bell-fill fs-5 text-secondary hover:text-white"></i>
                 <span id="notif-pulse-dot" class="position-absolute top-0 start-100 translate-middle p-1.5 bg-danger border border-light rounded-circle d-none"></span>

@@ -10,11 +10,31 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <!-- Custom Theme Colors Over Bootstrap -->
     <link rel="stylesheet" href="/css/HomePage.css">
+    <style>
+        #mouse-follower {
+            position: fixed;
+            left: 0;
+            top: 0;
+            width: 120px;
+            height: 120px;
+            pointer-events: none;
+            border-radius: 50%;
+            background: rgba(150, 230, 255, 0.18);
+            box-shadow: 0 0 40px rgba(150, 230, 255, 0.35),
+                        0 0 110px rgba(150, 230, 255, 0.12),
+                        inset 0 0 20px rgba(255, 255, 255, 0.15);
+            transform: translate(-50%, -50%);
+            will-change: transform;
+            z-index: 9999;
+            mix-blend-mode: screen;
+        }
+    </style>
     <!-- Browser Tab Logo (Favicon) -->
     <link rel="icon" type="image/png" href="../
     ../images/Logo.png">
 </head>
 <body>
+    <div id="mouse-follower"></div>
 
     <!-- NAVIGATION HEADER -->
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark-custom fixed-top backdrop-blur main-navbar py-3">
@@ -164,6 +184,30 @@
             <p class="mb-0">&copy; 2026 MAP & PUMP. Built for public safety and smarter distribution.</p>
         </div>
     </footer>
+
+    <!-- Mouse follower animation -->
+    <script>
+        const follower = document.getElementById('mouse-follower');
+        let targetX = window.innerWidth / 2;
+        let targetY = window.innerHeight / 2;
+        let currentX = targetX;
+        let currentY = targetY;
+        const ease = 0.14;
+
+        window.addEventListener('mousemove', (event) => {
+            targetX = event.clientX;
+            targetY = event.clientY;
+        });
+
+        function animateFollower() {
+            currentX += (targetX - currentX) * ease;
+            currentY += (targetY - currentY) * ease;
+            follower.style.transform = `translate3d(${currentX}px, ${currentY}px, 0) translate(-50%, -50%)`;
+            requestAnimationFrame(animateFollower);
+        }
+
+        requestAnimationFrame(animateFollower);
+    </script>
 
     <!-- Bootstrap Bundle JS with Popper -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
