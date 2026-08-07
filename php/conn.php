@@ -6,7 +6,7 @@
  * deployment. Callers decide how to present a connection failure so that a
  * database outage does not corrupt a page with an unsolicited success.
  */
-$hostname = getenv('DB_HOST') ?: "mysql-19032a73-bhonen94-b057.a.aivencloud.com";
+$hostname = getenv('DB_HOST') ?: "gateway01.ap-southeast-1.prod.aws.tidbcloud.com";
 $port = (int) (getenv('DB_PORT') ?: 4000);
 $username = getenv('DB_USERNAME') ?: "3sdV1BWxtCzY7YS.root";
 $password = getenv('DB_PASSWORD') ?: "GNfDltJeN7paYMLq";
