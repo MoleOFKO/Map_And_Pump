@@ -140,9 +140,10 @@ function hq_prepare(string $sql, string $types = '', array $params = []): mysqli
 }
 
 /**
- * The repository contains the ER diagram but no executable migration. These
- * idempotent DDL statements make the HQ registry usable on a fresh database
- * while leaving existing tables and rows untouched.
+ * Confirm that the live map_and_pump schema contains the columns used by the
+ * admin registry. This check is intentionally read-only: the current TiDB
+ * schema has foreign-key definitions owned by other modules, so running
+ * generic CREATE/ALTER statements on every page load is unsafe.
  */
 function hq_registry_schema_ready(): bool
 {
@@ -152,109 +153,43 @@ function hq_registry_schema_ready(): bool
         return false;
     }
 
-    $queries = [
-        "CREATE TABLE IF NOT EXISTS roles (
-            role_id INT UNSIGNED NOT NULL AUTO_INCREMENT,
-            role_name VARCHAR(100) NOT NULL,
-            PRIMARY KEY (role_id),
-            KEY idx_roles_name (role_name)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
-        "CREATE TABLE IF NOT EXISTS stations (
-            station_id INT UNSIGNED NOT NULL AUTO_INCREMENT,
-            station_name VARCHAR(255) NOT NULL,
-            location VARCHAR(255) NULL,
-            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-            PRIMARY KEY (station_id)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
-        "CREATE TABLE IF NOT EXISTS headquarter (
-            headquarter_id INT UNSIGNED NOT NULL AUTO_INCREMENT,
-            role_id INT UNSIGNED NULL,
-            station_id INT UNSIGNED NULL,
-            company_name VARCHAR(255) NOT NULL,
-            company_logo VARCHAR(255) NULL,
-            contact_number VARCHAR(50) NULL,
-            location VARCHAR(255) NULL,
-            business_license VARCHAR(255) NULL,
-            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            expire_at TIMESTAMP NULL DEFAULT NULL,
-            PRIMARY KEY (headquarter_id),
-            KEY idx_headquarter_company (company_name),
-            KEY idx_headquarter_station (station_id)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
-        "CREATE TABLE IF NOT EXISTS users (
-            user_id INT UNSIGNED NOT NULL AUTO_INCREMENT,
-            user_name VARCHAR(225) NOT NULL,
-            email VARCHAR(255) NOT NULL,
-            hashed_password VARCHAR(255) NOT NULL,
-            license_id INT UNSIGNED NULL,
-            headquarter_id INT UNSIGNED NULL,
-            role_id INT UNSIGNED NULL,
-            status VARCHAR(50) NOT NULL DEFAULT 'pending',
-            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-            PRIMARY KEY (user_id),
-            UNIQUE KEY uq_users_email (email),
-            KEY idx_users_hq (headquarter_id),
-            KEY idx_users_role (role_id)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+    $requiredColumns = [
+        'roles' => ['role_id', 'role_name'],
+        'headquarter' => [
+            'headquarter_id', 'company_name', 'company_logo', 'contact_number',
+            'headquarter_email', 'location', 'business_license', 'created_at', 'expire_at',
+        ],
+        'users' => [
+            'user_id', 'user_name', 'email', 'hashed_password', 'headquarter_id',
+            'role_id', 'status', 'created_at', 'updated_at',
+        ],
     ];
 
-    foreach ($queries as $query) {
-        if (!$conn->query($query)) {
-            error_log('[HQ registry] Schema bootstrap failed: ' . $conn->error);
-            return false;
+    $tables = array_keys($requiredColumns);
+    $tableSql = "'" . implode("','", $tables) . "'";
+    $result = $conn->query(
+        "SELECT TABLE_NAME, COLUMN_NAME
+         FROM information_schema.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN ($tableSql)"
+    );
+
+    if (!$result) {
+        error_log('[HQ registry] Schema check failed: ' . $conn->error);
+        return false;
+    }
+
+    $available = [];
+    while ($column = $result->fetch_assoc()) {
+        $available[$column['TABLE_NAME']][$column['COLUMN_NAME']] = true;
+    }
+
+    foreach ($requiredColumns as $table => $columns) {
+        foreach ($columns as $column) {
+            if (empty($available[$table][$column])) {
+                error_log(sprintf('[HQ registry] Required schema column is missing: %s.%s', $table, $column));
+                return false;
+            }
         }
-    }
-
-    // The deployed map_and_pump schema predates the HQ registry UI and does
-    // not have a nullable station link yet. Add only this non-destructive
-    // column when it is missing.
-    $columnCheck = $conn->prepare(
-        "SELECT COUNT(*) AS column_count
-         FROM information_schema.COLUMNS
-         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'headquarter' AND COLUMN_NAME = 'station_id'"
-    );
-    if (!$columnCheck || !$columnCheck->execute()) {
-        $columnCheck?->close();
-        return false;
-    }
-
-    $columnExists = (int) ($columnCheck->get_result()?->fetch_assoc()['column_count'] ?? 0) > 0;
-    $columnCheck->close();
-
-    if (!$columnExists && !$conn->query('ALTER TABLE headquarter ADD COLUMN station_id INT NULL AFTER role_id')) {
-        error_log('[HQ registry] Could not add the optional headquarter.station_id column: ' . $conn->error);
-        return false;
-    }
-
-    // HQ accounts do not have a driver/car license at creation time. Older
-    // map_and_pump deployments declared these relationship columns NOT NULL,
-    // which made a legitimate HQ account insert fail before it could be used.
-    $requiredUserColumns = ['license_id', 'car_license_id', 'headquarter_id', 'role_id'];
-    $columnList = "'" . implode("','", $requiredUserColumns) . "'";
-    $nullableCheck = $conn->query(
-        "SELECT COLUMN_NAME
-         FROM information_schema.COLUMNS
-         WHERE TABLE_SCHEMA = DATABASE()
-           AND TABLE_NAME = 'users'
-           AND COLUMN_NAME IN ($columnList)
-           AND IS_NULLABLE = 'NO'"
-    );
-    $nonNullableColumns = [];
-    while ($nullableCheck && ($column = $nullableCheck->fetch_assoc())) {
-        $nonNullableColumns[] = $column['COLUMN_NAME'];
-    }
-
-    if ($nonNullableColumns && !$conn->query(
-        'ALTER TABLE users
-            MODIFY COLUMN license_id INT NULL,
-            MODIFY COLUMN car_license_id INT NULL,
-            MODIFY COLUMN headquarter_id INT NULL,
-            MODIFY COLUMN role_id INT NULL'
-    )) {
-        error_log('[HQ registry] Could not make optional user relationship columns nullable: ' . $conn->error);
-        return false;
     }
 
     return true;

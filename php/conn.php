@@ -13,7 +13,18 @@ $password = getenv('DB_PASSWORD') ?: "GNfDltJeN7paYMLq";
 $database = getenv('DB_DATABASE') ?: "map_and_pump";
 
 mysqli_report(MYSQLI_REPORT_OFF);
-$conn = @new mysqli($hostname, $username, $password, $database, $port);
+$conn = mysqli_init();
+$sslCa = getenv('DB_SSL_CA') ?: null;
+
+// TiDB Cloud requires an encrypted client connection.  Keep the CA path
+// configurable for deployments that provide certificate verification, while
+// allowing the bundled local setup to use the provider's TLS endpoint.
+mysqli_ssl_set($conn, null, null, $sslCa, null, null);
+if (defined('MYSQLI_OPT_SSL_VERIFY_SERVER_CERT') && $sslCa !== null) {
+    mysqli_options($conn, MYSQLI_OPT_SSL_VERIFY_SERVER_CERT, true);
+}
+
+@mysqli_real_connect($conn, $hostname, $username, $password, $database, $port, null, MYSQLI_CLIENT_SSL);
 $conn_error = null;
 
 if ($conn && $conn->connect_error) {

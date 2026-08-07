@@ -983,6 +983,28 @@ body.background_color > .container:not(.sticky-nav-wrapper) {
 /* ===================================================
    GLASS MODAL
    =================================================== */
+.glass-modal {
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+
+.glass-modal .modal-dialog {
+    width: auto;
+    max-width: min(680px, calc(100% - 1rem));
+    max-height: 90dvh;
+    margin: 5vh auto;
+    display: flex;
+    align-items: center;
+}
+
+.glass-modal .modal-dialog.modal-lg {
+    max-width: min(760px, calc(100% - 1rem));
+}
+
+.glass-modal .modal-dialog.modal-xl {
+    max-width: min(980px, calc(100% - 1rem));
+}
+
 .glass-modal .modal-content {
     background: rgba(6, 12, 24, 0.97) !important;
     backdrop-filter: blur(28px);
@@ -990,11 +1012,50 @@ body.background_color > .container:not(.sticky-nav-wrapper) {
     border-radius: 22px;
     color: var(--text-primary);
     box-shadow: 0 30px 70px rgba(0, 0, 0, 0.6), 0 0 30px rgba(13, 110, 253, 0.04);
+    width: 100%;
+    max-height: 90dvh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.glass-modal .modal-header,
+.glass-modal .modal-footer {
+    flex: 0 0 auto;
 }
 
 .glass-modal .modal-header,
 .glass-modal .modal-footer {
     border-color: rgba(255, 255, 255, 0.07);
+}
+
+.glass-modal .modal-body {
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+}
+
+/* Bootstrap normally locks the page while a modal is open. Keep the page
+   scrollable so opening a popup does not freeze the dashboard. */
+body.modal-open {
+    overflow: auto !important;
+    padding-right: 0 !important;
+}
+
+@media (max-width: 575.98px) {
+    .glass-modal .modal-dialog,
+    .glass-modal .modal-dialog.modal-lg,
+    .glass-modal .modal-dialog.modal-xl {
+        max-width: calc(100% - 0.75rem);
+        max-height: calc(100dvh - 0.75rem);
+        margin: 0.375rem auto;
+    }
+
+    .glass-modal .modal-content {
+        max-height: calc(100dvh - 0.75rem);
+        border-radius: 16px;
+    }
 }
 
 /* ===================================================

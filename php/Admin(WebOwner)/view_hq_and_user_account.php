@@ -32,10 +32,10 @@ if (hq_db_available() && hq_registry_schema_ready()) {
     $types = '';
 
     if ($search !== '') {
-        $where[] = '(h.company_name LIKE ? OR h.location LIKE ? OR owner.user_name LIKE ? OR owner.email LIKE ?)';
+        $where[] = '(h.company_name LIKE ? OR h.location LIKE ? OR h.headquarter_email LIKE ? OR owner.user_name LIKE ? OR owner.email LIKE ?)';
         $searchLike = '%' . $search . '%';
-        array_push($params, $searchLike, $searchLike, $searchLike, $searchLike);
-        $types .= 'ssss';
+        array_push($params, $searchLike, $searchLike, $searchLike, $searchLike, $searchLike);
+        $types .= 'sssss';
     }
 
     if ($region !== '') {
@@ -55,13 +55,13 @@ SELECT
     h.headquarter_id,
     h.company_name,
     h.location,
-    h.station_id,
+    h.headquarter_email,
     h.created_at,
     owner.user_name AS owner_name,
     owner.email AS owner_email,
     COALESCE(owner.status, 'pending') AS account_status,
     COALESCE(user_counts.user_count, 0) AS user_count,
-    CASE WHEN h.station_id IS NULL THEN 0 ELSE 1 END AS station_count
+    0 AS station_count
 FROM headquarter h
 LEFT JOIN (
     SELECT headquarter_id, MIN(user_id) AS owner_user_id, COUNT(*) AS user_count
@@ -306,7 +306,7 @@ $flashContext = $flash['context'] ?? [];
     </main>
 
     <div class="modal fade glass-modal" id="addHQModal" tabindex="-1" aria-labelledby="addHQModalLabel" aria-hidden="true">
-        <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
             <div class="modal-content">
                 <div class="modal-header"><h5 class="modal-title fw-bold" id="addHQModalLabel"><i class="bi bi-building-add txt-neon-cyan me-2"></i> Register New Headquarter</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button></div>
                 <form action="hq_register_action.php" method="POST">
@@ -335,7 +335,7 @@ $flashContext = $flash['context'] ?? [];
     </div>
 
     <div class="modal fade glass-modal" id="accountActionModal" tabindex="-1" aria-labelledby="accountActionModalLabel" aria-hidden="true">
-        <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
             <div class="modal-content">
                 <div class="modal-header"><h5 class="modal-title fw-bold" id="accountActionModalLabel"><i class="bi bi-shield-exclamation text-danger me-2"></i> Suspend or Remove HQ</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button></div>
                 <form action="hq_account_action.php" method="POST">
