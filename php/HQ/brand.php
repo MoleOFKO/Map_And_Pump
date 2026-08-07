@@ -74,7 +74,7 @@ $stmt = $pdo->query("SELECT * FROM headquarter LIMIT 1");
 $currentConfig = $stmt->fetch(PDO::FETCH_ASSOC);
 
 $brandTitle = $currentConfig['company_name'] ?? 'Apex Fuel & Gas';
-$brandInfo = $currentConfig['headquarter_bio'] ?? 'Apex Fuel & Gas - Global Headquarters, Operations, and Terminal Management Systems.';
+$brandInfo = $currentConfig['headquarter_bio'] ?? '';
 $brandEmail = $currentConfig['headquarter_email'] ?? 'hq@apexfuelgas.com';
 $brandPhone = $currentConfig['contact_number'] ?? '+1 (800) 555-APEX';
 $businessLicense = $currentConfig['business_license'] ?? '';
