@@ -34,53 +34,39 @@ if ($currentPage == 'profile_page.php') $viewTitle = "Portal Profile Settings";
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Noto+Sans+Myanmar:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/css/customer-admin-theme.css">
+    <link rel="stylesheet" href="/css/customer.css">
 
     <style>
+        /* Layout + structure only. Colors come from customer.css (admin parity theme). */
         :root {
-            --navy-950: #070b14; --navy-900: #0b1220; --navy-800: #101a30; --navy-700: #16213f;
-            --blue-700: #1d4ed8; --blue-500: #2f6feb; --sky-400:  #38bdf8; --mint-400: #34d399; 
-            --amber-400: #fbbf24; --red-400:  #f87171; --slate-50:  #f8fafc; --slate-300: #c9d2e3; 
+            --navy-950: #040a18; --navy-900: #0a162c; --navy-800: #101a30; --navy-700: #16213f;
+            --blue-700: #0a58ca; --blue-500: #0d6efd; --sky-400: #0d6efd; --mint-400: #1be494;
+            --amber-400: #ffc107; --red-400: #ff4d6a; --slate-50: #e8f3ff; --slate-300: #a3b8cc;
             --slate-400: #8b96ad;
         }
         body { background-color: var(--navy-950); color: var(--slate-50); font-family: 'Inter', system-ui, -apple-system, sans-serif; min-height: 100vh; overflow-x: hidden; }
-        h1, h2, h3, h4, h5, .disp-brand, .token-no { font-family: 'Space Grotesk', 'Noto Sans Myanmar', sans-serif; font-weight: 700; letter-spacing: -0.02em; }
-        
-        ::-webkit-scrollbar { width: 8px; height: 8px; }
-        ::-webkit-scrollbar-track { background: var(--navy-950); }
-        ::-webkit-scrollbar-thumb { background: var(--navy-800); border-radius: 99px; border: 2px solid var(--navy-950); }
-        ::-webkit-scrollbar-thumb:hover { background: var(--sky-400); }
+        h1, h2, h3, h4, h5, .disp-brand, .token-no { font-family: 'Space Grotesk', 'Noto Sans Myanmar', 'Inter', sans-serif; font-weight: 700; letter-spacing: -0.02em; }
 
-        .sidebar-nav { background-color: var(--navy-900); border-right: 1px solid rgba(255, 255, 255, 0.05); width: 280px; height: 100vh; position: fixed; top: 0; left: 0; display: flex; flex-direction: column; justify-content: space-between; z-index: 100; }
-        .nav-item-link { display: flex; align-items: center; gap: 12px; padding: 14px 20px; color: var(--slate-300); text-decoration: none; border-radius: 12px; font-weight: 500; transition: all 0.2s ease; margin: 4px 16px; }
-        .nav-item-link:hover, .nav-item-link.active { background-color: var(--navy-800); color: var(--sky-400); border-left: 3px solid var(--sky-400); }
-        
-        .dashboard-header { background: rgba(7, 11, 20, 0.75); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border-bottom: 1px solid rgba(255, 255, 255, 0.05); height: 75px; position: sticky; top: 0; z-index: 90; margin-left: 280px; }
+        .sidebar-nav { width: 280px; height: 100vh; position: fixed; top: 0; left: 0; display: flex; flex-direction: column; justify-content: space-between; z-index: 100; }
+        .nav-item-link { display: flex; align-items: center; gap: 12px; padding: 14px 20px; text-decoration: none; border-radius: 12px; font-weight: 500; margin: 4px 16px; }
+
+        .dashboard-header { height: 75px; position: sticky; top: 0; z-index: 90; margin-left: 280px; }
         .main-frame { margin-left: 280px; padding: 40px; min-height: calc(100vh - 75px); }
-        
-        .dashboard-panel-card { background: linear-gradient(145deg, var(--navy-900), var(--navy-800)); border: 1px solid rgba(255, 255, 255, 0.06); border-radius: 20px; padding: 28px; transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1), border-color 0.3s ease; }
-        .dashboard-panel-card:hover { transform: translateY(-4px); border-color: rgba(56, 189, 248, 0.25); box-shadow: 0 12px 30px rgba(0, 0, 0, 0.4); }
-        
-        .station-selector-card { background-color: var(--navy-800); border: 1px solid rgba(255, 255, 255, 0.06); border-radius: 16px; padding: 20px; cursor: pointer; transition: all 0.2s ease; }
-        .station-selector-card:hover, .station-selector-card.selected { border-color: var(--sky-400); background-color: var(--navy-700); box-shadow: 0 0 15px rgba(56, 189, 248, 0.15); }
-        
+
+        .dashboard-panel-card { border-radius: 20px; padding: 28px; }
+        .station-selector-card { border-radius: 16px; padding: 20px; cursor: pointer; }
+
         .status-pill { padding: 6px 14px; border-radius: 99px; font-size: 12px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; text-transform: uppercase; letter-spacing: 0.03em; }
-        .status-pill.active { background: rgba(52, 211, 153, 0.1); color: var(--mint-400); border: 1px solid rgba(52, 211, 153, 0.2); }
-        .status-pill.pending { background: rgba(251, 191, 36, 0.1); color: var(--amber-400); border: 1px solid rgba(251, 191, 36, 0.2); }
-        .status-pill.danger { background: rgba(248, 113, 113, 0.1); color: var(--red-400); border: 1px solid rgba(248, 113, 113, 0.2); }
-        
+
         .step-circle { width: 38px; height: 38px; border-radius: 50%; border: 2px solid var(--navy-700); background-color: var(--navy-900); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; color: var(--slate-400); transition: all 0.3s ease; }
-        .step-circle.active { border-color: var(--sky-400); color: var(--sky-400); background-color: var(--navy-800); box-shadow: 0 0 10px rgba(56, 189, 248, 0.3); }
-        .step-circle.completed { border-color: var(--mint-400); color: var(--mint-400); background-color: rgba(52, 211, 153, 0.15); }
-        
-        .custom-form-field { background-color: var(--navy-950) !important; border: 1px solid rgba(255, 255, 255, 0.08) !important; color: var(--slate-50) !important; border-radius: 12px !important; padding: 12px 16px !important; transition: border-color 0.2s ease; }
-        .custom-form-field:focus { border-color: var(--sky-400) !important; box-shadow: none !important; }
-        
+
+        .custom-form-field { border-radius: 12px !important; padding: 12px 16px !important; }
+
         .fuel-tag { padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 700; display: inline-block; }
         .fuel-92 { background-color: #2e1065; color: #d8b4fe; }
         .fuel-95 { background-color: #064e3b; color: #6ee7b7; }
         .fuel-diesel { background-color: #7c2d12; color: #ffedd5; }
-        
+
         @media (max-width: 991px) { .sidebar-nav { display: none; } .dashboard-header, .main-frame { margin-left: 0; } }
     </style>
 </head>

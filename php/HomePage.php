@@ -15,20 +15,42 @@
             position: fixed;
             left: 0;
             top: 0;
-            width: 120px;
-            height: 120px;
+            width: 280px;
+            height: 280px;
             pointer-events: none;
             border-radius: 50%;
-            background: rgba(150, 230, 255, 0.18);
-            box-shadow: 0 0 40px rgba(150, 230, 255, 0.35),
-                        0 0 110px rgba(150, 230, 255, 0.12),
-                        inset 0 0 20px rgba(255, 255, 255, 0.15);
+            background: radial-gradient(
+                circle,
+                rgba(0, 200, 255, 0.12) 0%,
+                rgba(0, 168, 255, 0.06) 35%,
+                transparent 70%
+            );
             transform: translate(-50%, -50%);
-            will-change: transform;
+            will-change: transform, opacity;
             z-index: 9999;
-            mix-blend-mode: screen;
+            opacity: 0;
+            transition: opacity 0.35s ease;
+        }
+        #mouse-follower.is-active {
+            opacity: 1;
+        }
+        #mouse-follower::after {
+            content: '';
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            width: 10px;
+            height: 10px;
+            margin: -5px 0 0 -5px;
+            border-radius: 50%;
+            background: rgba(0, 220, 255, 0.55);
+            box-shadow: 0 0 12px 3px rgba(0, 200, 255, 0.35);
+        }
+        @media (hover: none), (pointer: coarse) {
+            #mouse-follower { display: none; }
         }
     </style>
+
     <!-- Browser Tab Logo (Favicon) -->
     <link rel="icon" type="image/png" href="/images/Logo.png">
 </head>
@@ -184,18 +206,28 @@
         </div>
     </footer>
 
-    <!-- Mouse follower animation -->
+    <!-- Soft cyan spotlight that follows the cursor -->
     <script>
         const follower = document.getElementById('mouse-follower');
         let targetX = window.innerWidth / 2;
         let targetY = window.innerHeight / 2;
         let currentX = targetX;
         let currentY = targetY;
-        const ease = 0.14;
+        const ease = 0.08;
+        let visible = false;
 
         window.addEventListener('mousemove', (event) => {
             targetX = event.clientX;
             targetY = event.clientY;
+            if (!visible) {
+                visible = true;
+                follower.classList.add('is-active');
+            }
+        });
+
+        window.addEventListener('mouseleave', () => {
+            visible = false;
+            follower.classList.remove('is-active');
         });
 
         function animateFollower() {
@@ -207,6 +239,7 @@
 
         requestAnimationFrame(animateFollower);
     </script>
+
 
     <!-- Bootstrap Bundle JS with Popper -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>

@@ -51,7 +51,7 @@ $reward_points = 1250;
         <div class="col-lg-10 col-xl-8">
             <span class="status-pill active mb-2 inline-block"><span class="spinner-grow spinner-grow-sm me-1" role="status"></span> Live Queue Verification active</span>
             <h2 class="text-white mb-2 fs-2">Track Stations & Book Tokens</h2>
-            <p class="text-secondary mb-3 max-width-md" style="font-size:13px; line-height: 1.5;">Verify vehicle license registries, compute remaining allocations, generate token barcodes, and queue dynamically at localized stations.</p>
+            <p class="text-secondary mb-3 max-width-md" style="font-size:13px; line-height: 1.5;">Generate token barcodes, and queue dynamically at localized stations.</p>
             <a href="track_book.php" class="btn btn-info px-4 py-2 fw-bold rounded-3 shadow" style="font-size:13px; font-family:'Space Grotesk';">
                 Begin Reservation Hub <i class="fa-solid fa-arrow-right ms-2"></i>
             </a>
