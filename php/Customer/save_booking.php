@@ -1,0 +1,63 @@
+<?php
+session_start();
+require __DIR__ . '/../conn.php';
+
+header('Content-Type: application/json');
+
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    http_response_code(405);
+    echo json_encode(['success' => false, 'message' => 'Method not allowed.']);
+    exit;
+}
+
+$bookingCode = isset($_POST['booking_code']) ? trim($_POST['booking_code']) : '';
+$stationId = isset($_POST['station_id']) ? (int)$_POST['station_id'] : 0;
+$fuelType = isset($_POST['fuel_type']) ? trim($_POST['fuel_type']) : '';
+$quantity = isset($_POST['quantity_liters']) ? (float)$_POST['quantity_liters'] : 0;
+$userId = isset($_SESSION['user_id']) ? (int)$_SESSION['user_id'] : (isset($_POST['customer_id']) ? (int)$_POST['customer_id'] : 0);
+
+if ($bookingCode === '' || $stationId <= 0 || $fuelType === '' || $quantity <= 0) {
+    http_response_code(422);
+    echo json_encode(['success' => false, 'message' => 'Missing booking details.']);
+    exit;
+}
+
+$displayPayload = isset($_POST['display_payload']) ? trim($_POST['display_payload']) : '';
+if ($displayPayload === '') {
+    $displayPayload = $bookingCode . '|' . $stationId . '|' . $fuelType . '|' . number_format($quantity, 1, '.', '') . 'L';
+}
+
+try {
+    $lookup = $pdo->prepare('SELECT booking_id FROM booking WHERE qr_refrence_code = :code LIMIT 1');
+    $lookup->execute([':code' => $bookingCode]);
+
+    if ($lookup->fetch()) {
+        echo json_encode(['success' => false, 'message' => 'Booking code already exists.']);
+        exit;
+    }
+
+    $oilTypeId = 1;
+    if (stripos($fuelType, 'diesel') !== false) {
+        $oilTypeId = 2;
+    } elseif (stripos($fuelType, 'octane 95') !== false) {
+        $oilTypeId = 3;
+    } elseif (stripos($fuelType, 'octane 92') !== false) {
+        $oilTypeId = 4;
+    }
+
+    $insert = $pdo->prepare('INSERT INTO booking (user_id, station_id, oil_type_id, qr_code, qr_refrence_code, status, filled, expire_at, created_at) VALUES (:user_id, :station_id, :oil_type_id, :qr_code, :qr_refrence_code, :status, :filled, DATE_ADD(NOW(), INTERVAL 1 HOUR), NOW())');
+    $insert->execute([
+        ':user_id' => $userId,
+        ':station_id' => $stationId,
+        ':oil_type_id' => $oilTypeId,
+        ':qr_code' => $displayPayload,
+        ':qr_refrence_code' => $bookingCode,
+        ':status' => 'notfilled',
+        ':filled' => 0
+    ]);
+
+    echo json_encode(['success' => true, 'message' => 'Booking saved.', 'booking_code' => $bookingCode, 'payload' => $displayPayload]);
+} catch (Throwable $e) {
+    http_response_code(500);
+    echo json_encode(['success' => false, 'message' => 'Unable to save booking: ' . $e->getMessage()]);
+}

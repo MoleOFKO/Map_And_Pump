@@ -435,14 +435,40 @@ body.customer-light-mode .customer-map-back-btn:hover {
         } catch (error) { /* The cyan fallback line remains visible. */ }
     }
 
-    function confirmBooking() {
+    async function confirmBooking() {
         const quantity = Number(document.getElementById('station-volume-input').value);
         if (!selectedStation || !quantity || quantity <= 0 || quantity > availableOilQuota) { alert(`Enter an amount between 0.1 and ${availableOilQuota} liters.`); return; }
         const fuel = document.getElementById('station-fuel-select').value;
         const code = `MP-${Math.floor(100 + Math.random() * 900)}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+        const displayPayload = `${code}|${selectedStation.name}|${fuel}|${quantity}L`;
+
+        const formData = new FormData();
+        formData.append('booking_code', code);
+        formData.append('station_id', String(selectedStation.id));
+        formData.append('fuel_type', fuel);
+        formData.append('quantity_liters', String(quantity));
+        formData.append('display_payload', displayPayload);
+        formData.append('customer_id', '<?php echo isset($_SESSION['user_id']) ? (int)$_SESSION['user_id'] : 0; ?>');
+
+        try {
+            const response = await fetch('save_booking.php', {
+                method: 'POST',
+                body: formData
+            });
+            const result = await response.json();
+            if (!response.ok || !result.success) {
+                alert(result.message || 'Booking could not be saved.');
+                return;
+            }
+        } catch (error) {
+            alert('Unable to connect to the booking API.');
+            return;
+        }
+
         document.getElementById('qr-token-code').textContent = code;
         document.getElementById('booking-summary').textContent = `${selectedStation.name} / ${fuel} / ${quantity} L`;
-        document.getElementById('qr-image').src = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(`${code}|${selectedStation.name}|${fuel}|${quantity}L`)}`;
+        const qrPayload = result.payload || displayPayload;
+        document.getElementById('qr-image').src = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(qrPayload)}`;
         document.getElementById('station-booking-form').classList.add('d-none');
         document.getElementById('booking-pass').classList.remove('d-none');
         showStationCard();
