@@ -1,5 +1,5 @@
 <?php
-require_once __DIR__ . '/hq_account_common.php';
+require_once __DIR__ . '/request_common.php';
 
 if (session_status() !== PHP_SESSION_ACTIVE) {
     session_start();
@@ -37,13 +37,18 @@ if (!$expiry || ($expiryErrors !== false && ($expiryErrors['warning_count'] > 0 
     hq_redirect();
 }
 
-if (strlen($hqName) > 255 || strlen($companyLogo) > 255 || strlen($contactNumber) > 50 || strlen($businessLicense) > 255 || strlen($ownerName) > 225) {
+if (strlen($hqName) > 255 || strlen($companyLogo) > 255 || strlen($contactNumber) > 50 || strlen($businessLicense) > 255 || strlen($ownerName) > 225 || strlen($ownerEmail) > 225) {
     hq_flash('danger', 'One or more registration fields are longer than the database allows.');
     hq_redirect();
 }
 
 if (!hq_db_available() || !hq_registry_schema_ready()) {
     hq_flash('danger', hq_db_error_message());
+    hq_redirect();
+}
+
+if (!request_schema_ready()) {
+    hq_flash('danger', 'The HQ account could not be registered because the admin request registry is unavailable.');
     hq_redirect();
 }
 
@@ -56,19 +61,51 @@ if ($roleId === false) {
     hq_redirect();
 }
 
-$emailCheck = $conn->prepare('SELECT user_id FROM users WHERE email = ? LIMIT 1');
+$emailCheck = $conn->prepare(
+    'SELECT user_id AS existing_id FROM users WHERE email = ?
+     UNION ALL
+     SELECT headquarter_id AS existing_id FROM headquarter WHERE headquarter_email = ?
+     LIMIT 1'
+);
 if (!$emailCheck) {
     hq_flash('danger', hq_db_error_message());
     hq_redirect();
 }
 
-$emailCheck->bind_param('s', $ownerEmail);
-$emailCheck->execute();
+$emailCheck->bind_param('ss', $ownerEmail, $ownerEmail);
+if (!$emailCheck->execute()) {
+    $error = $emailCheck->error;
+    $emailCheck->close();
+    error_log('[HQ registry] Owner email check failed: ' . $error);
+    hq_flash('danger', 'The owner email could not be checked against the database.');
+    hq_redirect();
+}
 $existingUser = $emailCheck->get_result()?->fetch_assoc();
 $emailCheck->close();
 
 if ($existingUser) {
     hq_flash('danger', 'That owner email is already registered. Use a different email address.');
+    hq_redirect();
+}
+
+$logoCheck = $conn->prepare('SELECT headquarter_id FROM headquarter WHERE company_logo = ? LIMIT 1');
+if (!$logoCheck) {
+    hq_flash('danger', hq_db_error_message());
+    hq_redirect();
+}
+$logoCheck->bind_param('s', $companyLogo);
+if (!$logoCheck->execute()) {
+    $error = $logoCheck->error;
+    $logoCheck->close();
+    error_log('[HQ registry] Company logo check failed: ' . $error);
+    hq_flash('danger', 'The company logo path could not be checked against the database.');
+    hq_redirect();
+}
+$existingLogo = $logoCheck->get_result()?->fetch_assoc();
+$logoCheck->close();
+
+if ($existingLogo) {
+    hq_flash('danger', 'That company logo URL or storage path is already registered. Use a different value.');
     hq_redirect();
 }
 
@@ -84,34 +121,77 @@ $hashedPassword = password_hash($temporaryPassword, PASSWORD_DEFAULT);
 try {
     $conn->begin_transaction();
 
-    $hqInsert = $conn->prepare('INSERT INTO headquarter (role_id, company_name, company_logo, contact_number, location, business_license, created_at, expire_at) VALUES (?, ?, ?, ?, ?, ?, NOW(), ?)');
+    $hqInsert = $conn->prepare('INSERT INTO headquarter (company_name, company_logo, contact_number, headquarter_email, location, business_license, created_at, expire_at) VALUES (?, ?, ?, ?, ?, ?, NOW(), ?)');
     if (!$hqInsert) {
-        throw new RuntimeException('Could not prepare the HQ insert.');
+        throw new RuntimeException('Could not prepare the HQ insert: ' . $conn->error);
     }
 
-    $hqInsert->bind_param('issssss', $roleId, $hqName, $companyLogo, $contactNumber, $location, $businessLicense, $expireAt);
+    $hqInsert->bind_param('sssssss', $hqName, $companyLogo, $contactNumber, $ownerEmail, $location, $businessLicense, $expireAt);
     if (!$hqInsert->execute()) {
-        throw new RuntimeException('Could not create the HQ record.');
+        throw new RuntimeException('Could not create the HQ record: ' . $hqInsert->error);
     }
     $headquarterId = (int) $hqInsert->insert_id;
     $hqInsert->close();
 
     $userInsert = $conn->prepare('INSERT INTO users (user_name, email, hashed_password, headquarter_id, role_id, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, \'pending\', NOW(), NOW())');
     if (!$userInsert) {
-        throw new RuntimeException('Could not prepare the HQ account insert.');
+        throw new RuntimeException('Could not prepare the HQ account insert: ' . $conn->error);
     }
 
     $userInsert->bind_param('sssii', $username, $ownerEmail, $hashedPassword, $headquarterId, $roleId);
     if (!$userInsert->execute()) {
-        throw new RuntimeException('Could not create the HQ user account.');
+        throw new RuntimeException('Could not create the HQ user account: ' . $userInsert->error);
     }
+    $submitterUserId = (int) $userInsert->insert_id;
     $userInsert->close();
 
-    $conn->commit();
+    $requestReference = 'HQ-REG-' . $headquarterId;
+    $requestType = 'hq_registration';
+    $requestDetails = sprintf(
+        'New HQ registration submitted from the admin Register New Headquarter panel. Contact: %s. Company logo: %s. License expiry: %s.',
+        $contactNumber,
+        $companyLogo,
+        $expiryDate
+    );
+    $documentName = 'Business license';
+
+    $requestInsert = $conn->prepare(
+        'INSERT INTO system_requests
+            (reference_code, request_type, status, submitter_user_id, headquarter_id,
+             sender_entity, sender_name, sender_email, location, request_details,
+             document_name, document_path, created_at, updated_at)
+         VALUES (?, ?, \'pending\', ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())'
+    );
+    if (!$requestInsert) {
+        throw new RuntimeException('Could not prepare the HQ registration request: ' . $conn->error);
+    }
+
+    $requestInsert->bind_param(
+        'ssiisssssss',
+        $requestReference,
+        $requestType,
+        $submitterUserId,
+        $headquarterId,
+        $hqName,
+        $ownerName,
+        $ownerEmail,
+        $location,
+        $requestDetails,
+        $documentName,
+        $businessLicense
+    );
+    if (!$requestInsert->execute()) {
+        throw new RuntimeException('Could not create the HQ registration request: ' . $requestInsert->error);
+    }
+    $requestInsert->close();
+
+    if (!$conn->commit()) {
+        throw new RuntimeException('Could not commit the HQ registration: ' . $conn->error);
+    }
 
     hq_flash(
         'success',
-        'HQ and user account created successfully. The account is pending verification.',
+        'HQ and user account created successfully. A pending HQ registration request was added to View Requests.',
         [
             'username' => $username,
             'temporary_password' => $temporaryPassword,

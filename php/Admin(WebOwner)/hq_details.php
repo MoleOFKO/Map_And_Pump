@@ -20,10 +20,9 @@ if (!hq_db_available() || !hq_registry_schema_ready()) {
 global $conn;
 $hqQuery = $conn->prepare(
     'SELECT h.headquarter_id, h.company_name, h.location, h.contact_number,
-            h.business_license, h.station_id, h.created_at, h.expire_at,
-            s.station_name, s.location AS station_location, s.created_at AS station_created_at
+            h.headquarter_email, h.company_logo, h.business_license,
+            h.created_at, h.expire_at
      FROM headquarter h
-     LEFT JOIN stations s ON s.station_id = h.station_id
      WHERE h.headquarter_id = ?
      LIMIT 1'
 );
@@ -84,14 +83,6 @@ if (hq_action_table_ready()) {
 }
 
 $stations = [];
-if (!empty($hq['station_id'])) {
-    $stations[] = [
-        'station_id' => (int) $hq['station_id'],
-        'station_name' => $hq['station_name'] ?: 'Linked station',
-        'location' => $hq['station_location'] ?: 'Location not available',
-        'created_at' => $hq['station_created_at'],
-    ];
-}
 
 echo json_encode([
     'success' => true,
@@ -100,6 +91,8 @@ echo json_encode([
         'company_name' => $hq['company_name'],
         'location' => $hq['location'],
         'contact_number' => $hq['contact_number'],
+        'headquarter_email' => $hq['headquarter_email'],
+        'company_logo' => $hq['company_logo'],
         'business_license' => $hq['business_license'],
         'created_at' => $hq['created_at'],
         'expire_at' => $hq['expire_at'],

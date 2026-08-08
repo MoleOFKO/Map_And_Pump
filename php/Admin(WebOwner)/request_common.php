@@ -10,6 +10,7 @@ function request_type_label(?string $type): string
         'station', 'new_station', 'new_station_registration' => 'New Station Registration',
         'license', 'license_modification' => 'License Modification',
         'deactivation', 'account_deactivation' => 'Account Deactivation',
+        'hq_registration', 'headquarter_registration' => 'HQ Registration',
         default => $type !== null && trim($type) !== '' ? ucwords(str_replace('_', ' ', $type)) : 'System Request',
     };
 }
@@ -20,6 +21,7 @@ function request_type_short_label(?string $type): string
         'station', 'new_station', 'new_station_registration' => 'New Station Reg',
         'license', 'license_modification' => 'License Mod',
         'deactivation', 'account_deactivation' => 'Account Deactivation',
+        'hq_registration', 'headquarter_registration' => 'HQ Registration',
         default => request_type_label($type),
     };
 }
@@ -138,6 +140,70 @@ function request_schema_ready(): bool
             error_log('[Request registry] Schema bootstrap failed: ' . $conn->error);
             return false;
         }
+    }
+
+    return true;
+}
+
+/**
+ * Older HQ registrations created a pending user but did not create the
+ * matching request row. Backfill those records before the request list is
+ * loaded, without duplicating an existing HQ registration request.
+ */
+function request_backfill_pending_hq_registrations(): bool
+{
+    global $conn;
+
+    if (!hq_db_available()) {
+        return false;
+    }
+
+    $sql = <<<'SQL'
+INSERT INTO system_requests
+    (reference_code, request_type, status, submitter_user_id, headquarter_id,
+     sender_entity, sender_name, sender_email, location, request_details,
+     document_name, document_path, created_at, updated_at)
+SELECT
+    CONCAT('HQ-REG-', h.headquarter_id),
+    'hq_registration',
+    'pending',
+    u.user_id,
+    h.headquarter_id,
+    COALESCE(h.company_name, 'Unnamed HQ'),
+    u.user_name,
+    u.email,
+    h.location,
+    CONCAT(
+        'HQ account registered through Register New Headquarter. ',
+        'Contact: ', COALESCE(h.contact_number, 'Not provided'),
+        '. License expiry: ', DATE_FORMAT(h.expire_at, '%Y-%m-%d'), '.'
+    ),
+    'Business license',
+    h.business_license,
+    NOW(),
+    NOW()
+FROM headquarter h
+JOIN (
+    SELECT u1.user_id, u1.headquarter_id, u1.user_name, u1.email, u1.status
+    FROM users u1
+    JOIN (
+        SELECT headquarter_id, MIN(user_id) AS owner_user_id
+        FROM users
+        GROUP BY headquarter_id
+    ) first_user ON first_user.owner_user_id = u1.user_id
+) u ON u.headquarter_id = h.headquarter_id
+LEFT JOIN (
+    SELECT DISTINCT headquarter_id
+    FROM system_requests
+    WHERE request_type IN ('hq_registration', 'headquarter_registration')
+) existing_request ON existing_request.headquarter_id = h.headquarter_id
+WHERE LOWER(u.status) IN ('pending', 'pending_verification')
+  AND existing_request.headquarter_id IS NULL
+SQL;
+
+    if (!$conn->query($sql)) {
+        error_log('[Request registry] HQ registration backfill failed: ' . $conn->error);
+        return false;
     }
 
     return true;

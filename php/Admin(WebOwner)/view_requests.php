@@ -9,7 +9,7 @@ $flash = request_pull_flash();
 $search = trim((string) ($_GET['search'] ?? ''));
 $requestType = strtolower(trim((string) ($_GET['type'] ?? '')));
 $status = strtolower(trim((string) ($_GET['status'] ?? '')));
-$allowedTypes = ['station', 'license', 'deactivation'];
+$allowedTypes = ['station', 'license', 'deactivation', 'hq_registration'];
 $allowedStatuses = ['pending', 'approved', 'rejected', 'flagged'];
 
 if (!in_array($requestType, $allowedTypes, true)) {
@@ -28,6 +28,8 @@ $requestRows = [];
 $dbError = null;
 
 if (hq_db_available() && request_schema_ready()) {
+    request_backfill_pending_hq_registrations();
+
     $summaryQuery = $conn->query(
         "SELECT
             COALESCE(SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END), 0) AS pending,
@@ -57,6 +59,7 @@ if (hq_db_available() && request_schema_ready()) {
             'station' => ['station', 'new_station', 'new_station_registration'],
             'license' => ['license', 'license_modification'],
             'deactivation' => ['deactivation', 'account_deactivation'],
+            'hq_registration' => ['hq_registration', 'headquarter_registration'],
         };
         $where[] = 'LOWER(r.request_type) IN (' . implode(',', array_fill(0, count($typeValues), '?')) . ')';
         foreach ($typeValues as $typeValue) {
@@ -190,7 +193,7 @@ $flashType = $flash['type'] ?? '';
         <div class="row g-4">
             <div class="col-12"><div class="dashboard-card py-3 px-4"><form class="row g-3 align-items-center" method="GET" action="view_requests.php">
                 <div class="col-12 col-md-5"><div class="input-group"><span class="input-group-text bg-transparent border-end-0" style="border-color:var(--glass-border);color:var(--neon-cyan);border-radius:12px 0 0 12px;"><i class="bi bi-funnel-fill"></i></span><input type="text" class="form-control glass-input border-start-0" placeholder="Filter by company, name or reference ID..." name="search" value="<?= hq_escape($search) ?>"></div></div>
-                <div class="col-12 col-md-3"><select class="form-select glass-select" name="type"><option value="" <?= $requestType === '' ? 'selected' : '' ?>>All Request Types</option><option value="station" <?= $requestType === 'station' ? 'selected' : '' ?>>New Station Registration</option><option value="license" <?= $requestType === 'license' ? 'selected' : '' ?>>License Modification</option><option value="deactivation" <?= $requestType === 'deactivation' ? 'selected' : '' ?>>Account Deactivation</option></select></div>
+                <div class="col-12 col-md-3"><select class="form-select glass-select" name="type"><option value="" <?= $requestType === '' ? 'selected' : '' ?>>All Request Types</option><option value="station" <?= $requestType === 'station' ? 'selected' : '' ?>>New Station Registration</option><option value="license" <?= $requestType === 'license' ? 'selected' : '' ?>>License Modification</option><option value="deactivation" <?= $requestType === 'deactivation' ? 'selected' : '' ?>>Account Deactivation</option><option value="hq_registration" <?= $requestType === 'hq_registration' ? 'selected' : '' ?>>HQ Registration</option></select></div>
                 <div class="col-12 col-md-2"><select class="form-select glass-select" name="status"><option value="" <?= $status === '' ? 'selected' : '' ?>>All Statuses</option><option value="pending" <?= $status === 'pending' ? 'selected' : '' ?>>Pending</option><option value="approved" <?= $status === 'approved' ? 'selected' : '' ?>>Approved</option><option value="rejected" <?= $status === 'rejected' ? 'selected' : '' ?>>Rejected</option><option value="flagged" <?= $status === 'flagged' ? 'selected' : '' ?>>Flagged</option></select></div>
                 <div class="col-12 col-md-2 d-grid"><button type="submit" class="btn btn-neon">Apply Filter</button></div>
             </form></div></div>
