@@ -1,3 +1,35 @@
+<?php
+session_start();
+require_once __DIR__ . '/../conn.php';
+
+function redirect_to_login(string $message = 'Please sign in to continue.')
+{
+    $_SESSION['login_error'] = $message;
+    header('Location: ../Login/login.php');
+    exit;
+}
+
+if (empty($_SESSION['is_logged_in']) || empty($_SESSION['user_id'])) {
+    redirect_to_login();
+}
+$roleName = strtolower((string)($_SESSION['role_name'] ?? ''));
+if ($roleName !== 'staff') {
+    redirect_to_login('This page is only available to staff accounts.');
+}
+
+$displayName = '';
+try {
+    if (isset($pdo)) {
+        $stmt = $pdo->prepare('SELECT user_name FROM users WHERE user_id = ? LIMIT 1');
+        $stmt->execute([(int)$_SESSION['user_id']]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        $displayName = trim((string)($row['user_name'] ?? ''));
+    }
+} catch (Throwable $e) {
+    // ignore
+}
+
+?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -12,7 +44,7 @@
     <link rel="stylesheet" href="/css/Admin.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
     <style>
-        .icon-box { font-size: calc(2.5rem + 1vw); color: #ffffff; margin-bottom: 15px; }
+        .icon-box { font-size: calc(2.5rem + 1vw); color: var(--icon-color); margin-bottom: 15px; }
         .dashboard-card { cursor: pointer; }
     </style>
 </head>
@@ -70,7 +102,7 @@
                     <i class="bi bi-person-workspace txt-neon-cyan"></i>
                     Staff Dashboard
                 </span>
-                <h1 class="fw-bold m-0 h4 text-white mt-2">Welcome Back, Staff</h1>
+                <h1 class="fw-bold m-0 h4 text-white mt-2">Welcome Back, <?= htmlspecialchars($displayName ?: 'Staff') ?></h1>
                 <p class="text-white-50 m-0 small mt-1">Select an action below to manage active operations.</p>
             </div>
         </div>
