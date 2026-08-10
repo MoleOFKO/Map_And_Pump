@@ -80,7 +80,7 @@ if ((int)$row['filled'] === 1 || in_array(strtolower((string)$row['status']), $c
 }
 
 if (!empty($row['expire_at']) && strtotime((string)$row['expire_at']) < time()) {
-    $expireUpdate = $pdo->prepare('UPDATE booking SET status = :status WHERE booking_id = :booking_id');
+    $expireUpdate = $pdo->prepare('UPDATE booking SET status = :status, expire_at = expire_at, created_at = created_at WHERE booking_id = :booking_id');
     $expireUpdate->execute([':status' => 'expired', ':booking_id' => $row['booking_id']]);
     $row['status'] = 'expired';
     respond([
@@ -90,7 +90,7 @@ if (!empty($row['expire_at']) && strtotime((string)$row['expire_at']) < time()) 
     ], $ajax);
 }
 
-$update = $pdo->prepare('UPDATE booking SET status = :status, filled = :filled, time_of_filled = NOW() WHERE booking_id = :booking_id');
+$update = $pdo->prepare('UPDATE booking SET status = :status, filled = :filled, time_of_filled = NOW(), expire_at = expire_at, created_at = created_at WHERE booking_id = :booking_id');
 $update->execute([
     ':status' => 'filled',
     ':filled' => 1,

@@ -56,16 +56,10 @@ try {
     $dashboardMap = [
         'admin' => '/php/Admin(WebOwner)/admin_dashboard.php',
         'moderator' => '/php/Moderators(UnderAdmin)/moderator_dashboard.php',
-        'hq' => '/php/HQ/dashboard.php',
-        'headquarter' => '/php/HQ/dashboard.php',
-        'headquarters' => '/php/HQ/dashboard.php',
+        'hq' => '/php/HQ/index.php',
         'manager' => '/php/BranchManager/dashboard.php',
-        'branch manager' => '/php/BranchManager/dashboard.php',
-        'branch_manager' => '/php/BranchManager/dashboard.php',
         'staff' => '/php/Staff/staff_dashboard.php',
-        'station staff' => '/php/Staff/staff_dashboard.php',
         'customer' => '/php/Customer/dashboard.php',
-        'user' => '/php/Customer/dashboard.php',
     ];
 
     $destination = $dashboardMap[$roleName] ?? '/php/Customer/dashboard.php';
