@@ -69,7 +69,7 @@
 }
 .icon-box {
     font-size: 3rem;
-    color: #ffffff;
+    color: var(--icon-color);
     margin-bottom: 15px;
 }
 

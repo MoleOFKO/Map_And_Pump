@@ -1,3 +1,52 @@
+<?php
+session_start();
+require_once __DIR__ . '/../conn.php';
+
+function redirect_to_login(string $message = 'Please sign in to continue.')
+{
+    $_SESSION['login_error'] = $message;
+    header('Location: ../Login/login.php');
+    exit;
+}
+
+// Require staff session
+if (empty($_SESSION['is_logged_in']) || empty($_SESSION['user_id'])) {
+    redirect_to_login();
+}
+$roleName = strtolower((string)($_SESSION['role_name'] ?? ''));
+if ($roleName !== 'staff') {
+    redirect_to_login('This page is only available to staff accounts.');
+}
+
+// Load current staff user name
+$displayName = '';
+try {
+    if (isset($pdo)) {
+        $stmtUser = $pdo->prepare('SELECT user_name FROM users WHERE user_id = ? LIMIT 1');
+        $stmtUser->execute([(int)$_SESSION['user_id']]);
+        $uRow = $stmtUser->fetch(PDO::FETCH_ASSOC);
+        $displayName = trim((string)($uRow['user_name'] ?? ''));
+    }
+} catch (Throwable $e) {
+    // ignore — displayName remains empty
+}
+
+// Load recent feedback (most recent 5)
+$recentFeedback = [];
+if (isset($conn)) {
+    $stmt = $conn->prepare('SELECT f.feedback_id, f.feedback, f.created_at, u.user_name FROM feedback f LEFT JOIN users u ON u.user_id = f.user_id ORDER BY f.created_at DESC LIMIT 5');
+    if ($stmt) {
+        $stmt->execute();
+        $res = $stmt->get_result();
+        while ($row = $res->fetch_assoc()) {
+            $recentFeedback[] = $row;
+        }
+        $stmt->close();
+    }
+}
+$showSuccess = isset($_GET['report_created']) && $_GET['report_created'] === '1';
+$showReplySuccess = isset($_GET['reply_sent']) && $_GET['reply_sent'] === '1';
+?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -75,29 +124,47 @@
                     <div>
                         <h2 class="fw-bold m-0 text-white">User Feedback Log</h2>
                         <p class="text-white-50 m-0 small mt-1">Review, address, and close support messages.</p>
+                        <?php if ($displayName !== ''): ?>
+                            <p class="text-white-50 m-0 small mt-1">Signed in as: <strong class="text-white"><?= htmlspecialchars($displayName) ?></strong></p>
+                        <?php endif; ?>
                     </div>
-                    <span class="stat-chip" style="color:#ffc107; border-color: rgba(255,193,7,0.3); background: rgba(255,193,7,0.05);"><i class="bi bi-exclamation-circle me-1"></i> Total Unresolved: 1</span>
+                    <div class="d-flex gap-2 align-items-center">
+                        <button class="btn menu-pill-btn" type="button" data-bs-toggle="modal" data-bs-target="#createReportModal"><i class="bi bi-file-earmark-plus-fill me-1"></i> Create Report</button>
+                        <span class="stat-chip" style="color:#ffc107; border-color: rgba(255,193,7,0.3); background: rgba(255,193,7,0.05);"><i class="bi bi-exclamation-circle me-1"></i> Total Unresolved: 1</span>
+                    </div>
                 </div>
             </div>
         </div>
+        <?php if ($showSuccess): ?>
+            <div class="alert alert-success border-0">Report was created and sent to Branch Manager.</div>
+        <?php endif; ?>
+        <?php if ($showReplySuccess): ?>
+            <div class="alert alert-success border-0">Reply was saved and delivered to the user (internal record).</div>
+        <?php endif; ?>
 
         <div class="row g-4 px-2">
-            <div class="col-12">
-                <div class="dashboard-card">
-                    <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
-                        <div>
-                            <h5 class="mb-1 text-white fw-semibold">Issue with QR Scanner App</h5>
-                            <small class="text-white-50">By: <strong class="text-white">Alex Johnson</strong> • 2 hours ago</small>
+            <?php if (empty($recentFeedback)): ?>
+                <div class="col-12"><div class="dashboard-card text-center text-white-50 py-5">No recent feedback available.</div></div>
+            <?php else: ?>
+                <?php foreach ($recentFeedback as $fb): ?>
+                    <div class="col-12">
+                        <div class="dashboard-card">
+                            <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
+                                <div>
+                                    <h5 class="mb-1 text-white fw-semibold"><?= htmlspecialchars(substr($fb['feedback'], 0, 80)) ?><?= strlen($fb['feedback']) > 80 ? '…' : '' ?></h5>
+                                    <small class="text-white-50">By: <strong class="text-white"><?= htmlspecialchars($fb['user_name'] ?: 'Anonymous') ?></strong> • <?= htmlspecialchars((new DateTime($fb['created_at']))->format('M j, Y \\a\\t H:i')) ?></small>
+                                </div>
+                                <span class="badge <?= 'badge-pending' ?> px-3 py-2 rounded-pill small fw-medium">Recent</span>
+                            </div>
+                            <p class="text-white-70 mb-4 small" style="opacity: 0.85;"><?= nl2br(htmlspecialchars(substr($fb['feedback'], 0, 240))) ?><?= strlen($fb['feedback']) > 240 ? '…' : '' ?></p>
+                            <div class="d-flex justify-content-end gap-2 flex-wrap">
+                                <button class="btn menu-pill-btn px-4" data-bs-toggle="modal" data-bs-target="#replyModal" data-feedback-id="<?= (int)$fb['feedback_id'] ?>" data-staff-id="<?= (int)($_SESSION['user_id'] ?? 0) ?>"><i class="bi bi-reply-fill me-1"></i> Reply</button>
+                                <button class="btn btn-outline-light px-4" data-feedback-id="<?= (int)$fb['feedback_id'] ?>" onclick="attachToReport(<?= (int)$fb['feedback_id'] ?>)"><i class="bi bi-pin-angle me-1"></i> Attach to Report</button>
+                            </div>
                         </div>
-                        <span class="badge badge-pending px-3 py-2 rounded-pill small fw-medium">Pending</span>
                     </div>
-                    <p class="text-white-70 mb-4 small" style="opacity: 0.85;">"The ticket scanner didn't seem to recognize my generated QR code on my profile dashboard during check-in earlier today."</p>
-                    <div class="d-flex justify-content-end gap-2 flex-wrap">
-                        <button class="btn menu-pill-btn px-4" data-bs-toggle="modal" data-bs-target="#replyModal"><i class="bi bi-reply-fill me-1"></i> Reply</button>
-                        <button class="btn btn-success px-4" style="border-radius: 999px; font-weight: 600; font-size: 0.85rem;"><i class="bi bi-check-lg me-1"></i> Resolve</button>
-                    </div>
-                </div>
-            </div>
+                <?php endforeach; ?>
+            <?php endif; ?>
         </div>
     </div>
 
@@ -134,6 +201,54 @@
             </div>
         </div>
     </div>
+
+            <!-- CREATE REPORT MODAL -->
+            <div class="modal fade" id="createReportModal" tabindex="-1" aria-labelledby="createReportModalLabel" aria-hidden="true">
+                <div class="modal-dialog modal-dialog-centered modal-lg">
+                    <div class="modal-content text_color" style="background: var(--glass-bg); backdrop-filter: blur(18px); border: 1px solid var(--glass-border); border-radius: var(--card-radius);">
+                        <div class="modal-header">
+                            <h5 class="modal-title text-white fw-bold" id="createReportModalLabel">Create Report for Branch Manager</h5>
+                            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                        </div>
+                        <form action="report_action.php" method="POST">
+                            <div class="modal-body">
+                                <input type="hidden" name="staff_id" value="<?= (int)($_SESSION['user_id'] ?? 0) ?>">
+                                <div class="row g-3">
+                                    <div class="col-12 col-md-6">
+                                        <label class="form-label text-white-50 small">Importance</label>
+                                        <select name="importance" class="form-select glass-select" required>
+                                            <option value="low">Low</option>
+                                            <option value="normal" selected>Normal</option>
+                                            <option value="high">High</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-12 col-md-6">
+                                        <label class="form-label text-white-50 small">Attach Recent Feedback (optional)</label>
+                                        <select id="attachFeedbackSelect" name="attach_feedback_id" class="form-select glass-select">
+                                            <option value="">-- None --</option>
+                                            <?php foreach ($recentFeedback as $fbOpt): ?>
+                                                <option value="<?= (int)$fbOpt['feedback_id'] ?>"><?= htmlspecialchars(substr($fbOpt['feedback'], 0, 80)) ?><?= strlen($fbOpt['feedback']) > 80 ? '…' : '' ?> — <?= htmlspecialchars($fbOpt['user_name'] ?: 'Anonymous') ?></option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                    </div>
+                                    <div class="col-12">
+                                        <label class="form-label text-white-50 small">Reason / Short Summary</label>
+                                        <input type="text" name="short_summary" class="form-control glass-input" maxlength="255" placeholder="Short title for the report" required>
+                                    </div>
+                                    <div class="col-12">
+                                        <label class="form-label text-white-50 small">Why it happened (optional)</label>
+                                        <textarea name="why_happened" class="form-control glass-input" rows="3" placeholder="Optional: analysis or suspected cause"></textarea>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-outline-light rounded-pill px-4" data-bs-dismiss="modal">Cancel</button>
+                                <button type="submit" name="submit_staff_report" class="btn btn-primary rounded-pill px-4" style="background: var(--neon-cyan); border:none; color:#000; font-weight:600;"><i class="bi bi-send-fill me-2"></i>Send to Branch Manager</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
 
     <!-- SIDEBAR MAIN MENU -->
     <div class="offcanvas offcanvas-end" tabindex="-1" id="mainMenuOffcanvas" style="width: 320px; background: rgba(6, 12, 24, 0.98); backdrop-filter: blur(28px); border-left: 1px solid rgba(0, 180, 255, 0.18);">
@@ -194,6 +309,29 @@
             document.body.style.setProperty('--bg-x', `${(event.clientX / window.innerWidth) * 100}%`);
             document.body.style.setProperty('--bg-y', `${(event.clientY / window.innerHeight) * 100}%`);
         });
+        // Attach a recent feedback to the Create Report modal and open it
+        function attachToReport(feedbackId) {
+            const sel = document.getElementById('attachFeedbackSelect');
+            if (!sel) return;
+            sel.value = feedbackId;
+            const modalEl = document.getElementById('createReportModal');
+            const modal = new bootstrap.Modal(modalEl);
+            modal.show();
+        }
+
+        // Populate reply modal hidden fields when opened from a feedback card
+        var replyModalEl = document.getElementById('replyModal');
+        if (replyModalEl) {
+            replyModalEl.addEventListener('show.bs.modal', function (event) {
+                var button = event.relatedTarget;
+                var feedbackId = button.getAttribute('data-feedback-id');
+                var staffId = button.getAttribute('data-staff-id');
+                var inputFb = document.getElementById('modalFeedbackId');
+                var inputStaff = document.getElementById('modalStaffId');
+                if (inputFb && feedbackId) inputFb.value = feedbackId;
+                if (inputStaff && staffId) inputStaff.value = staffId;
+            });
+        }
     </script>
 </body>
 </html>
