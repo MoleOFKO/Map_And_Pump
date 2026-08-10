@@ -48,10 +48,10 @@ if (hq_db_available() && request_schema_ready()) {
     $types = '';
 
     if ($search !== '') {
-        $where[] = '(r.reference_code LIKE ? OR r.sender_entity LIKE ? OR r.sender_name LIKE ? OR r.sender_email LIKE ? OR r.location LIKE ? OR h.company_name LIKE ?)';
-        $searchLike = '%' . $search . '%';
-        array_push($params, $searchLike, $searchLike, $searchLike, $searchLike, $searchLike, $searchLike);
-        $types .= 'ssssss';
+        $where[] = '(LOWER(r.reference_code) LIKE ? OR LOWER(r.sender_entity) LIKE ? OR LOWER(r.sender_name) LIKE ? OR LOWER(h.company_name) LIKE ?)';
+        $searchLike = '%' . strtolower($search) . '%';
+        array_push($params, $searchLike, $searchLike, $searchLike, $searchLike);
+        $types .= 'ssss';
     }
 
     if ($requestType !== '') {
@@ -192,7 +192,7 @@ $flashType = $flash['type'] ?? '';
 
         <div class="row g-4">
             <div class="col-12"><div class="dashboard-card py-3 px-4"><form class="row g-3 align-items-center" method="GET" action="view_requests.php">
-                <div class="col-12 col-md-5"><div class="input-group"><span class="input-group-text bg-transparent border-end-0" style="border-color:var(--glass-border);color:var(--neon-cyan);border-radius:12px 0 0 12px;"><i class="bi bi-funnel-fill"></i></span><input type="text" class="form-control glass-input border-start-0" placeholder="Filter by company, name or reference ID..." name="search" value="<?= hq_escape($search) ?>"></div></div>
+                <div class="col-12 col-md-5"><div class="input-group"><span class="input-group-text bg-transparent border-end-0" style="border-color:var(--glass-border);color:var(--neon-cyan);border-radius:12px 0 0 12px;"><i class="bi bi-funnel-fill"></i></span><input type="text" class="form-control glass-input border-start-0" placeholder="Filter by company, sender name, or reference ID..." name="search" value="<?= hq_escape($search) ?>"></div></div>
                 <div class="col-12 col-md-3"><select class="form-select glass-select" name="type"><option value="" <?= $requestType === '' ? 'selected' : '' ?>>All Request Types</option><option value="station" <?= $requestType === 'station' ? 'selected' : '' ?>>New Station Registration</option><option value="license" <?= $requestType === 'license' ? 'selected' : '' ?>>License Modification</option><option value="deactivation" <?= $requestType === 'deactivation' ? 'selected' : '' ?>>Account Deactivation</option><option value="hq_registration" <?= $requestType === 'hq_registration' ? 'selected' : '' ?>>HQ Registration</option></select></div>
                 <div class="col-12 col-md-2"><select class="form-select glass-select" name="status"><option value="" <?= $status === '' ? 'selected' : '' ?>>All Statuses</option><option value="pending" <?= $status === 'pending' ? 'selected' : '' ?>>Pending</option><option value="approved" <?= $status === 'approved' ? 'selected' : '' ?>>Approved</option><option value="rejected" <?= $status === 'rejected' ? 'selected' : '' ?>>Rejected</option><option value="flagged" <?= $status === 'flagged' ? 'selected' : '' ?>>Flagged</option></select></div>
                 <div class="col-12 col-md-2 d-grid"><button type="submit" class="btn btn-neon">Apply Filter</button></div>

@@ -32,10 +32,10 @@ if (hq_db_available() && hq_registry_schema_ready()) {
     $types = '';
 
     if ($search !== '') {
-        $where[] = '(h.company_name LIKE ? OR h.location LIKE ? OR h.headquarter_email LIKE ? OR owner.user_name LIKE ? OR owner.email LIKE ?)';
-        $searchLike = '%' . $search . '%';
-        array_push($params, $searchLike, $searchLike, $searchLike, $searchLike, $searchLike);
-        $types .= 'sssss';
+        $where[] = '(LOWER(h.company_name) LIKE ? OR LOWER(owner.user_name) LIKE ?)';
+        $searchLike = '%' . strtolower($search) . '%';
+        array_push($params, $searchLike, $searchLike);
+        $types .= 'ss';
     }
 
     if ($region !== '') {
@@ -228,7 +228,7 @@ $flashContext = $flash['context'] ?? [];
                         <div class="col-12 col-md-5">
                             <div class="input-group">
                                 <span class="input-group-text bg-transparent border-end-0" style="border-color: var(--glass-border); color: var(--neon-cyan); border-radius: 12px 0 0 12px;"><i class="bi bi-search"></i></span>
-                                <input type="text" class="form-control glass-input border-start-0" placeholder="Search by HQ, owner or city name..." name="search" value="<?= hq_escape($search) ?>">
+                                <input type="text" class="form-control glass-input border-start-0" placeholder="Search by HQ or owner name..." name="search" value="<?= hq_escape($search) ?>">
                             </div>
                         </div>
                         <div class="col-12 col-md-3">
