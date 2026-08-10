@@ -34,11 +34,10 @@ if (moderator_schema_ready()) {
     $types = '';
 
     if ($search !== '') {
-        $where[] = '(u.user_name LIKE ? OR u.email LIKE ?)';
-        $searchLike = '%' . $search . '%';
+        $where[] = 'LOWER(u.user_name) LIKE ?';
+        $searchLike = '%' . strtolower($search) . '%';
         $params[] = $searchLike;
-        $params[] = $searchLike;
-        $types .= 'ss';
+        $types .= 's';
     }
 
     if ($roleFilter > 0) {
@@ -189,7 +188,7 @@ $flashType = (string) ($flash['type'] ?? '');
 
         <div class="row g-4">
             <div class="col-12"><div class="dashboard-card py-3 px-4"><form class="row g-3 align-items-center" method="GET" action="manage_moderators.php">
-                <div class="col-12 col-md-5"><div class="input-group"><span class="input-group-text bg-transparent border-end-0" style="border-color:var(--glass-border);color:var(--neon-cyan);border-radius:12px 0 0 12px;"><i class="bi bi-search"></i></span><input type="text" class="form-control glass-input border-start-0" placeholder="Search username or email..." name="search" value="<?= hq_escape($search) ?>"></div></div>
+                <div class="col-12 col-md-5"><div class="input-group"><span class="input-group-text bg-transparent border-end-0" style="border-color:var(--glass-border);color:var(--neon-cyan);border-radius:12px 0 0 12px;"><i class="bi bi-search"></i></span><input type="text" class="form-control glass-input border-start-0" placeholder="Search username or display name..." name="search" value="<?= hq_escape($search) ?>"></div></div>
                 <div class="col-12 col-md-3"><select class="form-select glass-select" name="role_id"><option value="0">All Roles</option><?php foreach ($roles as $role): ?><option value="<?= (int) $role['role_id'] ?>" <?= $roleFilter === (int) $role['role_id'] ? 'selected' : '' ?>><?= hq_escape(moderator_role_label($role['role_name'])) ?></option><?php endforeach; ?></select></div>
                 <div class="col-12 col-md-2"><select class="form-select glass-select" name="status"><option value="">All Statuses</option><?php foreach ($allowedStatuses as $option): ?><option value="<?= hq_escape($option) ?>" <?= $statusFilter === $option ? 'selected' : '' ?>><?= hq_escape(moderator_status_label($option)) ?></option><?php endforeach; ?></select></div>
                 <div class="col-12 col-md-2 d-grid"><button type="submit" class="btn btn-neon">Apply Filter</button></div>

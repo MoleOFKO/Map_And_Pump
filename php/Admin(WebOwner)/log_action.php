@@ -16,14 +16,14 @@ function admin_load_logs(string $search = '', string $level = 'all'): array
         'SELECT l.log_id, l.user_id, l.action, l.created_at, u.user_name, u.email
          FROM log l
          LEFT JOIN users u ON u.user_id = l.user_id
-         WHERE l.action LIKE ? OR u.user_name LIKE ? OR u.email LIKE ?
+         WHERE LOWER(l.action) LIKE ? OR LOWER(u.user_name) LIKE ?
          ORDER BY l.created_at DESC, l.log_id DESC'
     );
     if (!$statement) {
         return [];
     }
-    $like = '%' . $search . '%';
-    $statement->bind_param('sss', $like, $like, $like);
+    $like = '%' . strtolower($search) . '%';
+    $statement->bind_param('ss', $like, $like);
     $statement->execute();
     $result = $statement->get_result();
     while ($result && ($row = $result->fetch_assoc())) {
