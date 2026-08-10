@@ -450,12 +450,13 @@ body.customer-light-mode .customer-map-back-btn:hover {
         formData.append('display_payload', displayPayload);
         formData.append('customer_id', '<?php echo isset($_SESSION['user_id']) ? (int)$_SESSION['user_id'] : 0; ?>');
 
+        let result;
         try {
             const response = await fetch('save_booking.php', {
                 method: 'POST',
                 body: formData
             });
-            const result = await response.json();
+            result = await response.json();
             if (!response.ok || !result.success) {
                 alert(result.message || 'Booking could not be saved.');
                 return;

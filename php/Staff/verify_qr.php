@@ -182,7 +182,7 @@
                 <li><a href="staff_account.php" class="menu-btn-nav"><i class="bi bi-person-gear me-3 txt-neon-blue"></i> Account</a></li>
                 <hr style="border-color: rgba(255, 255, 255, 0.08); margin: 4px 0;">
                 <li>
-                    <form action="logout.php" method="post" class="m-0">
+                    <form action="../Login/logout.php" method="post" class="m-0">
                         <button type="submit" class="logout-btn-nav btn border-0 w-100">
                             <i class="bi bi-box-arrow-right me-2"></i> Logout
                         </button>
@@ -194,7 +194,7 @@
 
     <footer class="text-white-50 text-center py-4 mt-5 small">&copy; 2026 Map & Pump | All Rights Reserved</footer>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/minified/html5-qrcode.min.js"></script>
+    <script src="/js/html5-qrcode.min.js"></script>
     <script src="/js/Admin.js"></script>
     <script>
         document.addEventListener('pointermove', (event) => {
@@ -286,53 +286,73 @@
                 }
 
                 const rearCamera = cameras.find((camera) => /back|rear|environment/i.test(camera.label));
-                const cameraId = rearCamera ? rearCamera.id : cameras[cameras.length - 1].id;
+                const cameraList = rearCamera ? [rearCamera, ...cameras.filter((camera) => camera.id !== rearCamera.id)] : cameras;
                 const scanner = new Html5Qrcode('qr-reader');
                 window.qrScanner = scanner;
 
-                await scanner.start(
-                    cameraId,
-                    { fps: 10, qrbox: { width: 230, height: 230 }, aspectRatio: 1.0 },
-                    async (decodedText) => {
-                        if (scanCooldown) return;
+                const startScanner = async (cameraId) => {
+                    await scanner.start(
+                        cameraId,
+                        { fps: 10, qrbox: { width: 230, height: 230 }, aspectRatio: 1.0 },
+                        async (decodedText) => {
+                            if (scanCooldown) return;
 
-                        const raw = decodedText.trim();
-                        const bookingCode = raw.includes('|') ? raw.split('|')[0].trim() : raw;
-                        if (!bookingCode || bookingCode === lastScannedCode) return;
+                            const raw = decodedText.trim();
+                            const bookingCode = raw.includes('|') ? raw.split('|')[0].trim() : raw;
+                            if (!bookingCode || bookingCode === lastScannedCode) return;
 
-                        scanCooldown = true;
-                        lastScannedCode = bookingCode;
+                            scanCooldown = true;
+                            lastScannedCode = bookingCode;
 
-                        const codeField = document.getElementById('bookingCode');
-                        if (codeField) codeField.value = bookingCode;
+                            const codeField = document.getElementById('bookingCode');
+                            if (codeField) codeField.value = bookingCode;
 
-                        const payload = new URLSearchParams();
-                        payload.append('booking_code', bookingCode);
-                        payload.append('qr_payload', raw);
+                            const payload = new URLSearchParams();
+                            payload.append('booking_code', bookingCode);
+                            payload.append('qr_payload', raw);
 
-                        try {
-                            await scanner.pause(true);
-                            await submitVerification(payload);
-                        } catch (error) {
-                            renderVerifyResult({ success: false, message: 'Scan succeeded but verification failed.' });
-                        }
-
-                        setTimeout(async () => {
-                            scanCooldown = false;
                             try {
-                                await scanner.resume();
+                                await scanner.pause(true);
+                                await submitVerification(payload);
                             } catch (error) {
-                                // Scanner may already be running again.
+                                renderVerifyResult({ success: false, message: 'Scan succeeded but verification failed.' });
                             }
-                        }, 2500);
-                    },
-                    () => {}
-                );
+
+                            setTimeout(async () => {
+                                scanCooldown = false;
+                                try {
+                                    await scanner.resume();
+                                } catch (error) {
+                                    // Scanner may already be running again.
+                                }
+                            }, 2500);
+                        },
+                        () => {}
+                    );
+                };
+
+                let started = false;
+                let lastError = null;
+                for (const camera of cameraList) {
+                    try {
+                        await startScanner(camera.id);
+                        started = true;
+                        break;
+                    } catch (error) {
+                        lastError = error;
+                        console.warn('QR scanner failed to start for camera:', camera.label, error);
+                    }
+                }
+
+                if (!started) {
+                    document.getElementById('scanStatus').textContent = `Camera unavailable${lastError?.message ? ': ' + lastError.message : ''}`;
+                    return;
+                }
 
                 scannerWindow?.classList.add('is-live');
                 document.getElementById('scanStatus').textContent = 'Camera online — scan QR';
             } catch (error) {
-                document.getElementById('scanStatus').textContent = 'Camera unavailable';
+                document.getElementById('scanStatus').textContent = `Camera unavailable${error?.message ? ': ' + error.message : ''}`;
             }
         });
     </script>

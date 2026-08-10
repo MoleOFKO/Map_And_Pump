@@ -47,7 +47,7 @@ $modMenuClass = static function (string $key) use ($moderatorActiveNav): string 
                 <li><a href="view_logs(M).php" class="<?= $modMenuClass('logs') ?>"><i class="bi bi-terminal-split me-3 text-danger"></i> View Log Files</a></li>
                 <hr style="border-color: rgba(255, 255, 255, 0.08); margin: 4px 0;">
                 <li>
-                    <form action="logout(M).php" method="post" class="m-0">
+                    <form action="../Login/logout.php" method="post" class="m-0">
                         <button type="submit" class="logout-btn-nav btn border-0 w-100">
                             <i class="bi bi-box-arrow-right me-2"></i> Logout
                         </button>

@@ -1,3 +1,55 @@
+<?php
+session_start();
+
+require_once __DIR__ . '/../conn.php';
+
+function redirect_to_login(string $message = 'Please sign in to continue.')
+{
+    $_SESSION['login_error'] = $message;
+    header('Location: ../Login/login.php');
+    exit;
+}
+
+$flashMessage = $_SESSION['flash_message'] ?? null;
+$flashType = $_SESSION['flash_type'] ?? 'success';
+unset($_SESSION['flash_message'], $_SESSION['flash_type']);
+
+if (empty($_SESSION['is_logged_in']) || empty($_SESSION['user_id'])) {
+    redirect_to_login();
+}
+
+$userId = (int) $_SESSION['user_id'];
+$roleName = strtolower((string) ($_SESSION['role_name'] ?? ''));
+
+if ($roleName !== 'staff') {
+    redirect_to_login('This page is only available to staff accounts.');
+}
+
+try {
+    $stmt = $pdo->prepare(
+        'SELECT user_id, user_name, email, status, role_id, created_at
+         FROM users
+         WHERE user_id = ?
+         LIMIT 1'
+    );
+    $stmt->execute([$userId]);
+    $user = $stmt->fetch(PDO::FETCH_ASSOC);
+} catch (Throwable $e) {
+    error_log('Failed to load staff account: ' . $e->getMessage());
+    $user = null;
+}
+
+if (!$user) {
+    redirect_to_login('Your staff session could not be found. Please sign in again.');
+}
+
+$displayName = trim((string) ($user['user_name'] ?? ''));
+$displayEmail = trim((string) ($user['email'] ?? ''));
+$staffId = 'EMP-' . str_pad((string) $user['user_id'], 4, '0', STR_PAD_LEFT);
+$cleanName = preg_replace('/[^A-Za-z0-9]/', '', $displayName) ?: 'S';
+$initial = strtoupper(substr($cleanName, 0, 1));
+$accountRole = 'System Operator';
+?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -90,21 +142,21 @@
                     <div class="col-12 col-md-5">
                         <div class="analytics-card p-4 text-center h-100 d-flex flex-column align-items-center justify-content-center">
                             <div class="avatar-large mb-3">
-                                <span>S</span>
+                                <span><?= htmlspecialchars($initial) ?></span>
                             </div>
                             <!-- Dynamic values can be swapped here via PHP backend -->
                             <h4 class="fw-bold mb-1 text-white">Staff Account</h4>
-                            <span class="stat-chip mb-4" style="color: var(--neon-cyan); border-color: rgba(0, 244, 255, 0.3);">System Operator</span>
+                            <span class="stat-chip mb-4" style="color: var(--neon-cyan); border-color: rgba(0, 244, 255, 0.3);"><?= htmlspecialchars($accountRole) ?></span>
                             
                             <div class="w-100 text-start border-top border-secondary border-opacity-25 pt-3 mt-2">
                                 <label class="form-label text-white-50 small mb-0">Staff ID</label>
-                                <p class="fw-mono text-white mb-3" style="font-family: monospace;">#EMP-2026</p>
+                                <p class="fw-mono text-white mb-3" style="font-family: monospace;">#<?= htmlspecialchars($staffId) ?></p>
 
                                 <label class="form-label text-white-50 small mb-0">Username</label>
-                                <p class="text-white mb-3">staff_pump01</p>
+                                <p class="text-white mb-3"><?= htmlspecialchars($displayName ?: 'Staff Member') ?></p>
 
-                                <label class="form-label text-white-50 small mb-0">Full Name</label>
-                                <p class="text-white mb-0">Jane Doe</p>
+                                <label class="form-label text-white-50 small mb-0">Email Address</label>
+                                <p class="text-white mb-0"><?= htmlspecialchars($displayEmail ?: 'Not available') ?></p>
                             </div>
                         </div>
                     </div>
@@ -114,6 +166,12 @@
                         <div class="dashboard-card h-100">
                             <h3 class="fw-bold mb-2 text-white"><i class="bi bi-shield-lock me-2 text-warning"></i>Security Settings</h3>
                             <p class="text-white-50 small mb-4">Keep your portal access protected by modifying your master passcode credentials regularly.</p>
+
+                            <?php if ($flashMessage): ?>
+                                <div class="alert alert-<?= htmlspecialchars($flashType === 'error' ? 'danger' : 'success') ?> rounded-3 border-0 mb-4" role="alert">
+                                    <?= htmlspecialchars($flashMessage) ?>
+                                </div>
+                            <?php endif; ?>
                             
                             <form action="change_password_process.php" method="POST">
                                 <div class="mb-3">
@@ -150,7 +208,7 @@
 
                 <!-- Safe Logout Option below -->
                 <div class="text-center mt-4">
-                    <a href="logout.php" class="text-danger small text-decoration-none fw-semibold">
+                    <a href="../Login/logout.php" class="text-danger small text-decoration-none fw-semibold">
                         <i class="bi bi-box-arrow-right me-1"></i> Securely Log Out of This Session
                     </a>
                 </div>
@@ -200,7 +258,7 @@
                 <li><a href="staff_account.php" class="menu-btn-nav active-nav"><i class="bi bi-person-gear me-3 txt-neon-blue"></i> Account</a></li>
                 <hr style="border-color: rgba(255, 255, 255, 0.08); margin: 4px 0;">
                 <li>
-                    <form action="logout.php" method="post" class="m-0">
+                    <form action="../Login/logout.php" method="post" class="m-0">
                         <button type="submit" class="logout-btn-nav btn border-0 w-100">
                             <i class="bi bi-box-arrow-right me-2"></i> Logout
                         </button>
