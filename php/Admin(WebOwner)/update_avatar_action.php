@@ -22,8 +22,8 @@ if ((int) ($upload['size'] ?? 0) > 2 * 1024 * 1024) {
 }
 
 $temporaryPath = (string) ($upload['tmp_name'] ?? '');
-$finfo = new finfo(FILEINFO_MIME_TYPE);
-$mime = $finfo->file($temporaryPath);
+$imageInfo = @getimagesize($temporaryPath);
+$mime = is_array($imageInfo) ? (string) ($imageInfo['mime'] ?? '') : '';
 $extensions = [
     'image/jpeg' => 'jpg',
     'image/png' => 'png',
@@ -35,7 +35,7 @@ if (!isset($extensions[$mime])) {
     admin_redirect('edit_profile.php');
 }
 
-$directory = __DIR__ . '/uploads/avatars';
+$directory = __DIR__ . '/uploads';
 if (!is_dir($directory) && !mkdir($directory, 0755, true) && !is_dir($directory)) {
     admin_flash('danger', 'The profile image directory could not be created.');
     admin_redirect('edit_profile.php');
@@ -49,7 +49,7 @@ if (!move_uploaded_file($temporaryPath, $destination)) {
 }
 
 global $conn;
-$avatarUrl = '/php/Admin(WebOwner)/uploads/avatars/' . $fileName;
+$avatarUrl = '/php/Admin(WebOwner)/uploads/' . $fileName;
 $statement = $conn->prepare('UPDATE users SET oauth_avatar_url = ?, updated_at = NOW() WHERE user_id = ?');
 if (!$statement) {
     @unlink($destination);
@@ -67,9 +67,21 @@ if (!$statement->execute()) {
 $statement->close();
 
 $oldAvatar = (string) ($user['oauth_avatar_url'] ?? '');
-$oldPath = __DIR__ . str_replace('/php/Admin(WebOwner)', '', $oldAvatar);
-if (str_starts_with($oldAvatar, '/php/Admin(WebOwner)/uploads/avatars/') && is_file($oldPath)) {
-    @unlink($oldPath);
+$oldPrefixes = [
+    '/php/Admin(WebOwner)/uploads/avatars/' => __DIR__ . '/uploads/avatars',
+    '/php/Admin(WebOwner)/uploads/' => $directory,
+];
+foreach ($oldPrefixes as $prefix => $oldDirectory) {
+    if (!str_starts_with($oldAvatar, $prefix)) {
+        continue;
+    }
+
+    $oldFileName = basename(substr($oldAvatar, strlen($prefix)));
+    $oldPath = $oldDirectory . DIRECTORY_SEPARATOR . $oldFileName;
+    if ($oldFileName !== '' && is_file($oldPath)) {
+        @unlink($oldPath);
+    }
+    break;
 }
 
 admin_record_log($userId, 'Updated admin profile avatar.');
