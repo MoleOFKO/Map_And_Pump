@@ -26,8 +26,8 @@ try {
     // directory the web server or CLI process started from.
     $options = [
         PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-        PDO::MYSQL_ATTR_SSL_VERIFY_SERVER_CERT => true,
-        PDO::MYSQL_ATTR_SSL_CA => $certPath,
+        Pdo\Mysql::ATTR_SSL_VERIFY_SERVER_CERT => true,
+        Pdo\Mysql::ATTR_SSL_CA => $certPath,
     ];
 
     $pdo = new PDO($dsn, $username, $password, $options);
