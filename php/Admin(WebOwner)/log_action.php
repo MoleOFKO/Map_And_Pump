@@ -1,0 +1,83 @@
+<?php
+require_once __DIR__ . '/admin_common.php';
+
+if (session_status() !== PHP_SESSION_ACTIVE) {
+    session_start();
+}
+
+global $conn;
+$action = strtolower(trim((string) ($_POST['action'] ?? $_GET['action'] ?? '')));
+
+function admin_load_logs(string $search = '', string $level = 'all'): array
+{
+    global $conn;
+    $logs = [];
+    $statement = $conn->prepare(
+        'SELECT l.log_id, l.user_id, l.action, l.created_at, u.user_name, u.email
+         FROM log l
+         LEFT JOIN users u ON u.user_id = l.user_id
+         WHERE l.action LIKE ? OR u.user_name LIKE ? OR u.email LIKE ?
+         ORDER BY l.created_at DESC, l.log_id DESC'
+    );
+    if (!$statement) {
+        return [];
+    }
+    $like = '%' . $search . '%';
+    $statement->bind_param('sss', $like, $like, $like);
+    $statement->execute();
+    $result = $statement->get_result();
+    while ($result && ($row = $result->fetch_assoc())) {
+        $row['level'] = admin_log_level((string) $row['action']);
+        if ($level === 'all' || $row['level'] === $level) {
+            $logs[] = $row;
+        }
+    }
+    $statement->close();
+    return $logs;
+}
+
+if ($action === 'export') {
+    if (!hq_db_available()) {
+        http_response_code(503);
+        exit('The log database is unavailable.');
+    }
+    $search = trim((string) ($_GET['search'] ?? $_POST['search'] ?? ''));
+    $level = strtolower(trim((string) ($_GET['log_level'] ?? $_POST['log_level'] ?? 'all')));
+    if (!in_array($level, ['all', 'info', 'warn', 'error', 'security'], true)) {
+        $level = 'all';
+    }
+    $logs = admin_load_logs($search, $level);
+    header('Content-Type: text/csv; charset=UTF-8');
+    header('Content-Disposition: attachment; filename="map-and-pump-audit-' . date('Ymd-His') . '.csv"');
+    $output = fopen('php://output', 'w');
+    fputcsv($output, ['Log ID', 'Level', 'User ID', 'User', 'Email', 'Action', 'Created At'], ',', '"', '\\');
+    foreach ($logs as $log) {
+        fputcsv($output, [$log['log_id'], strtoupper($log['level']), $log['user_id'], $log['user_name'] ?: 'Unknown', $log['email'] ?: '', $log['action'], $log['created_at']], ',', '"', '\\');
+    }
+    fclose($output);
+    exit;
+}
+
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    admin_redirect('view_logs.php');
+}
+
+if ($action === 'clear') {
+    if (!hq_db_available()) {
+        admin_flash('danger', 'The log database is unavailable.');
+        admin_redirect('view_logs.php');
+    }
+    $statement = $conn->prepare('DELETE FROM log');
+    if (!$statement || !$statement->execute()) {
+        $statement?->close();
+        admin_flash('danger', 'The audit log could not be cleared.');
+        admin_redirect('view_logs.php');
+    }
+    $deleted = $statement->affected_rows;
+    $statement->close();
+    admin_flash('success', $deleted . ' audit log entries were cleared.');
+    admin_redirect('view_logs.php');
+}
+
+admin_flash('danger', 'The requested log action is not supported.');
+admin_redirect('view_logs.php');

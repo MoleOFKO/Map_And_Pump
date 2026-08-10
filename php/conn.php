@@ -24,13 +24,37 @@ try {
     // Required SSL options for cloud databases requiring secure transport.
     // The CA should resolve from the PHP source directory, not from whichever shell
     // directory the web server or CLI process started from.
+    // PHP 8.5 moved the MySQL PDO constants from PDO::MYSQL_ATTR_* to
+    // Pdo\Mysql::*. Resolve the modern names without evaluating the
+    // deprecated constants on PHP 8.5+, while retaining older-PHP support.
+    $sslVerifyAttribute = defined('Pdo\\Mysql::ATTR_SSL_VERIFY_SERVER_CERT')
+        ? constant('Pdo\\Mysql::ATTR_SSL_VERIFY_SERVER_CERT')
+        : PDO::MYSQL_ATTR_SSL_VERIFY_SERVER_CERT;
+    $sslCaAttribute = defined('Pdo\\Mysql::ATTR_SSL_CA')
+        ? constant('Pdo\\Mysql::ATTR_SSL_CA')
+        : PDO::MYSQL_ATTR_SSL_CA;
+
     $options = [
         PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-        PDO::MYSQL_ATTR_SSL_VERIFY_SERVER_CERT => true,
-        PDO::MYSQL_ATTR_SSL_CA => $certPath,
+        $sslVerifyAttribute => true,
+        $sslCaAttribute => $certPath,
     ];
 
     $pdo = new PDO($dsn, $username, $password, $options);
+
+    // The admin registry uses mysqli prepared statements, while the older
+    // customer/auth pages use the PDO handle above. Keep both handles backed
+    // by the same map_and_pump SSL connection so loading the shared file does
+    // not leave the admin pages without their expected $conn variable.
+    $conn = mysqli_init();
+    if ($conn === false) {
+        error_log('MySQLi initialization failed; PDO remains available.');
+    } else {
+        $conn->ssl_set(null, null, $certPath, null, null);
+        if (!@$conn->real_connect($host, $username, $password, $dbname, $port, null, MYSQLI_CLIENT_SSL)) {
+            error_log('MySQLi connection failed; PDO remains available: ' . $conn->connect_error);
+        }
+    }
 } catch (PDOException $e) {
     if (defined('MAP_PUMP_JSON_RESPONSE') && MAP_PUMP_JSON_RESPONSE) {
         http_response_code(500);
