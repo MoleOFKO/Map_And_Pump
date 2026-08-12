@@ -1,7 +1,7 @@
 <?php
 session_start();
 define('MAP_PUMP_JSON_RESPONSE', true);
-require __DIR__ . '/../conn.php';
+require __DIR__ . '/../localconn.php';
 
 header('Content-Type: application/json');
 
