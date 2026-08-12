@@ -47,13 +47,17 @@ try {
     // customer/auth pages use the PDO handle above. Keep both handles backed
     // by the same map_and_pump SSL connection so loading the shared file does
     // not leave the admin pages without their expected $conn variable.
-    $conn = mysqli_init();
-    if ($conn === false) {
-        error_log('MySQLi initialization failed; PDO remains available.');
+    if (!function_exists('mysqli_init')) {
+        error_log('MySQLi extension is unavailable; PDO remains available.');
     } else {
-        $conn->ssl_set(null, null, $certPath, null, null);
-        if (!@$conn->real_connect($host, $username, $password, $dbname, $port, null, MYSQLI_CLIENT_SSL)) {
-            error_log('MySQLi connection failed; PDO remains available: ' . $conn->connect_error);
+        $conn = mysqli_init();
+        if ($conn === false) {
+            error_log('MySQLi initialization failed; PDO remains available.');
+        } else {
+            $conn->ssl_set(null, null, $certPath, null, null);
+            if (!@$conn->real_connect($host, $username, $password, $dbname, $port, null, MYSQLI_CLIENT_SSL)) {
+                error_log('MySQLi connection failed; PDO remains available: ' . $conn->connect_error);
+            }
         }
     }
 } catch (PDOException $e) {
