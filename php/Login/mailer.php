@@ -33,9 +33,23 @@ function smtp_send_mail(string $to, string $subject, string $htmlBody, string $t
         $mail->SMTPAuth = true;
         $mail->Username = $username;
         $mail->Password = str_replace([' ', '\t', '\r', '\n'], '', $password);
-        $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
-        $mail->Port = $port;
+        $mail->Timeout = 10;
+        $mail->SMTPKeepAlive = false;
         $mail->SMTPAutoTLS = true;
+        $mail->SMTPOptions = [
+            'ssl' => [
+                'verify_peer' => true,
+                'verify_peer_name' => true,
+                'allow_self_signed' => false,
+            ],
+        ];
+
+        if ($port === 465) {
+            $mail->SMTPSecure = PHPMailer::ENCRYPTION_SMTPS;
+        } else {
+            $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
+        }
+        $mail->Port = $port;
         $mail->CharSet = 'UTF-8';
 
         $mail->setFrom($fromEmail, $fromName);

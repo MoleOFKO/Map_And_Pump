@@ -36,6 +36,7 @@ try {
 
     $options = [
         PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+        PDO::ATTR_TIMEOUT => 10,
         $sslVerifyAttribute => true,
         $sslCaAttribute => $certPath,
     ];
