@@ -60,6 +60,7 @@ function moderator_return_target(string $default): string
     $target = trim((string) ($_POST['return_to'] ?? $_GET['return_to'] ?? ''));
     $allowed = [
         'moderator_dashboard.php',
+        'manage_hq(M).php',
         'view_hq_and_user_account(M).php',
         'view_requests(M).php',
         'view_report(M).php',
@@ -110,7 +111,7 @@ function moderator_hq_rows(string $search, string $region, string $status): arra
     }
 
     $sql = <<<'SQL'
-SELECT h.headquarter_id, h.company_name, h.location, h.headquarter_email,
+SELECT h.headquarter_id, h.company_name, h.company_logo, h.location, h.headquarter_email,
        h.contact_number, h.business_license, h.created_at, h.expire_at,
        owner.user_name AS owner_name, owner.email AS owner_email,
        COALESCE(owner.status, 'pending') AS account_status,
