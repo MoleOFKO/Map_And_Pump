@@ -1,14 +1,11 @@
 <?php
 session_start();
 
-require_once __DIR__ . '/../conn.php';
+require_once __DIR__ . '/moderator_common.php';
 
-if (empty($_SESSION['is_logged_in']) || empty($_SESSION['user_id'])) {
-    header('Location: ../Login/login.php');
-    exit;
-}
+$moderatorUser = moderator_require_user();
 
-$userId = (int) ($_SESSION['user_id'] ?? 0);
+$userId = (int) $moderatorUser['user_id'];
 $flashMessage = '';
 $flashType = 'success';
 

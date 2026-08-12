@@ -73,6 +73,18 @@ function request_pull_flash(): ?array
 
 function request_redirect(string $location = 'view_requests.php'): never
 {
+    $returnTo = trim((string) ($_POST['return_to'] ?? $_GET['return_to'] ?? ''));
+    $allowedReturnTargets = [
+        'moderator_dashboard.php',
+        'view_hq_and_user_account(M).php',
+        'view_requests(M).php',
+        'view_report(M).php',
+        'edit_profile(M).php',
+        'view_logs(M).php',
+    ];
+    if (in_array($returnTo, $allowedReturnTargets, true)) {
+        $location = $returnTo;
+    }
     header('Location: ' . $location);
     exit;
 }
