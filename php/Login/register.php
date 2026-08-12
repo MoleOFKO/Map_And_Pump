@@ -232,9 +232,18 @@
         credentials: 'same-origin'
       });
       const text = await response.text();
+      const contentType = response.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        console.error('Unexpected response from', url, response.status, text);
+        return {
+          ok: false,
+          message: text.trim() || 'Server returned an invalid response.'
+        };
+      }
       try {
         return JSON.parse(text);
       } catch (error) {
+        console.error('JSON parse error from', url, text, error);
         return {
           ok: false,
           message: text.trim() || 'Server returned an invalid response.'

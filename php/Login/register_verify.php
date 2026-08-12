@@ -1,13 +1,35 @@
 <?php
 session_start();
 ini_set('display_errors', '0');
-header('Content-Type: application/json');
+header('Content-Type: application/json; charset=utf-8');
+
+ob_start();
+set_error_handler(function (int $severity, string $message, string $file, int $line) {
+    if (!(error_reporting() & $severity)) {
+        return false;
+    }
+    throw new ErrorException($message, 0, $severity, $file, $line);
+});
+register_shutdown_function(function () {
+    $error = error_get_last();
+    if ($error !== null && in_array($error['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR], true)) {
+        if (!headers_sent()) {
+            http_response_code(500);
+            header('Content-Type: application/json; charset=utf-8');
+        }
+        @ob_end_clean();
+        echo json_encode(['ok' => false, 'message' => 'Server error. Please try again later.']);
+    }
+});
 
 define('MAP_PUMP_JSON_RESPONSE', true);
 require_once __DIR__ . '/../conn.php';
 
 function verify_json(bool $ok, string $message, array $extra = []): never
 {
+    if (ob_get_length() !== false) {
+        @ob_end_clean();
+    }
     echo json_encode(['ok' => $ok, 'message' => $message] + $extra);
     exit;
 }
