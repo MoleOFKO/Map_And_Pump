@@ -1,11 +1,14 @@
 <?php
 session_start();
 
-// Simulated login session check
-if (!isset($_SESSION['user_id'])) {
-    $_SESSION['user_id'] = 'CUST-2026-88';
-    $_SESSION['user_name'] = 'Larry';
-    $_SESSION['user_email'] = 'larry@example.com';
+// Simulated login session check. Replace legacy text-based demo IDs because
+// booking.user_id is an integer foreign key.
+if (!isset($_SESSION['user_id']) || !ctype_digit((string) $_SESSION['user_id'])) {
+    // Keep the local fallback aligned with a real numeric users.user_id so
+    // booking records can satisfy the booking.user_id foreign-key constraint.
+    $_SESSION['user_id'] = 150014;
+    $_SESSION['user_name'] = 'MoleOFKO';
+    $_SESSION['user_email'] = 'shanekhant23@gmail.com';
     $_SESSION['oil_limit'] = 50.0; // Max Allowed Liters
     $_SESSION['oil_used'] = 12.5;  // Already consumed
     $_SESSION['has_business'] = false;
@@ -95,7 +98,7 @@ if ($currentPage == 'profile_page.php') $viewTitle = "Portal Profile Settings";
                     <i class="bi bi-clipboard2-pulse-fill"></i> Usage History
                 </a>
                 <a href="profile_page.php" class="nav-item-link <?php echo ($currentPage == 'profile_page.php') ? 'active' : ''; ?>">
-                    <i class="bi bi-person-fill-gear"></i> Portal Profile
+                    <i class="bi bi-person-fill-gear"></i> Edit Profile
                 </a>
             </div>
         </div>

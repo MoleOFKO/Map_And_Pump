@@ -14,7 +14,7 @@ $reward_points = 1250;
         <div class="dashboard-panel-card customer-stat-card w-100">
             <p class="text-secondary text-uppercase tracking-wider mb-2" style="font-size:11px; font-weight:600;">Remaining Fuel Quota</p>
             <h3 class="text-sky-400 fs-1 mb-1">
-                <?php echo ($_SESSION['oil_limit'] - $_SESSION['oil_used']); ?> 
+                <?php echo ($_SESSION['oil_limit'] - $_SESSION['oil_used']); ?>
                 <span class="fs-4 text-secondary fw-normal">/ <?php echo $_SESSION['oil_limit']; ?> L</span>
             </h3>
             <div class="progress bg-dark bg-opacity-50 rounded-pill mt-3" style="height: 6px;">
