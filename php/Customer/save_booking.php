@@ -1,5 +1,6 @@
 <?php
 session_start();
+define('MAP_PUMP_JSON_RESPONSE', true);
 require __DIR__ . '/../conn.php';
 
 header('Content-Type: application/json');
@@ -19,6 +20,12 @@ $userId = isset($_SESSION['user_id']) ? (int)$_SESSION['user_id'] : (isset($_POS
 if ($bookingCode === '' || $stationId <= 0 || $fuelType === '' || $quantity <= 0) {
     http_response_code(422);
     echo json_encode(['success' => false, 'message' => 'Missing booking details.']);
+    exit;
+}
+
+if ($userId <= 0) {
+    http_response_code(401);
+    echo json_encode(['success' => false, 'message' => 'Please sign in with a valid customer account before booking.']);
     exit;
 }
 
