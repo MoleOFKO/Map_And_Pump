@@ -189,6 +189,31 @@ table {
   width: 100%;
   border-collapse: collapse;
   margin-top: 10px;
+  background: rgba(9, 14, 26, 0.78);
+  color: var(--slate-50);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.table {
+  --bs-table-color: var(--slate-50);
+  --bs-table-bg: transparent;
+  --bs-table-striped-color: var(--slate-50);
+  --bs-table-striped-bg: rgba(255, 255, 255, 0.035);
+  --bs-table-active-color: var(--slate-50);
+  --bs-table-active-bg: rgba(255, 255, 255, 0.06);
+  --bs-table-hover-color: var(--slate-50);
+  --bs-table-hover-bg: rgba(255, 255, 255, 0.06);
+  --bs-table-border-color: rgba(255, 255, 255, 0.08);
+  --bs-table-striped-bg-state: rgba(255, 255, 255, 0.035);
+  border-color: var(--bs-table-border-color);
+}
+
+.table > :not(caption) > * > * {
+  border-bottom-color: var(--bs-table-border-color);
+  color: var(--slate-50);
+  background: transparent;
 }
 
 th {
@@ -208,12 +233,22 @@ td {
   vertical-align: middle;
 }
 
+.table-striped > tbody > tr:nth-of-type(odd) > * {
+  background: rgba(255, 255, 255, 0.035);
+  color: var(--slate-50);
+}
+
+.table-striped > tbody > tr:nth-of-type(even) > * {
+  background: rgba(255, 255, 255, 0.015);
+}
+
 tr:last-child td {
   border-bottom: none;
 }
 
-tr:hover td {
-  background: rgba(255, 255, 255, 0.03);
+tr:hover td,
+.table-hover > tbody > tr:hover > * {
+  background: rgba(255, 255, 255, 0.06);
 }
 
 .badge,

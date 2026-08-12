@@ -1,3 +1,127 @@
+<?php
+/**
+ * Shared database connection.
+ */
+// $host = 'gateway01.ap-southeast-1.prod.aws.tidbcloud.com';
+// $dbname = 'map_and_pump';
+// $username = '3sdV1BWxtCzY7YS.root';
+// $password = 'GNfDltJeN7paYMLq';
+// $port = 4000;
+
+// try {
+//     $dsn = "mysql:host=$host;port=$port;dbname=$dbname;charset=utf8mb4";
+
+//     $certPath = __DIR__ . '/isrgrootx1.pem';
+//     if (!file_exists($certPath)) {
+//         $certPath = dirname(__DIR__) . '/isrgrootx1.pem';
+//     }
+
+//     $sslVerifyAttribute = defined('Pdo\\Mysql::ATTR_SSL_VERIFY_SERVER_CERT')
+//         ? constant('Pdo\\Mysql::ATTR_SSL_VERIFY_SERVER_CERT')
+//         : PDO::MYSQL_ATTR_SSL_VERIFY_SERVER_CERT;
+//     $sslCaAttribute = defined('Pdo\\Mysql::ATTR_SSL_CA')
+//         ? constant('Pdo\\Mysql::ATTR_SSL_CA')
+//         : PDO::MYSQL_ATTR_SSL_CA;
+
+//     $options = [
+//         PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+//         $sslVerifyAttribute => true,
+//         $sslCaAttribute => $certPath,
+//     ];
+
+//     $pdo = new PDO($dsn, $username, $password, $options);
+
+//     $conn = mysqli_init();
+//     if ($conn !== false) {
+//         $conn->ssl_set(null, null, $certPath, null, null);
+//         @$conn->real_connect($host, $username, $password, $dbname, $port, null, MYSQLI_CLIENT_SSL);
+//     }
+// } catch (PDOException $e) {
+//     die("Database connection failed: " . $e->getMessage());
+// }
+ include_once __DIR__ . '/../conn.php';
+$message = '';
+$error = '';
+
+// Handle Form Submissions & AJAX requests via PDO
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $action = $_POST['action'] ?? '';
+
+    // Register Station
+    if ($action === 'register') {
+        $station_name = trim($_POST['station_name'] ?? '');
+        $location     = trim($_POST['location'] ?? '');
+
+        if (!empty($station_name) && !empty($location)) {
+            try {
+                $stmt = $pdo->prepare("INSERT INTO stations (station_name, location, status) VALUES (?, ?, 'Active')");
+                $stmt->execute([$station_name, $location]);
+                $message = "Station node created successfully.";
+            } catch (PDOException $e) {
+                $error = "Error registering station: " . $e->getMessage();
+            }
+        } else {
+            $error = "Station Name and Location are required.";
+        }
+    }
+
+    // Update Configuration
+    if ($action === 'configure') {
+        $station_id   = trim($_POST['station_id'] ?? '');
+        $station_name = trim($_POST['station_name'] ?? '');
+        $location     = trim($_POST['location'] ?? '');
+
+        try {
+            $stmt = $pdo->prepare("UPDATE stations SET station_name = ?, location = ? WHERE station_id = ?");
+            $stmt->execute([$station_name, $location, $station_id]);
+            $message = "Configuration saved successfully!";
+        } catch (PDOException $e) {
+            $error = "Error updating configuration: " . $e->getMessage();
+        }
+    }
+
+    // Toggle Status (AJAX Handler)
+    if ($action === 'toggle_status') {
+        $station_id = $_POST['station_id'] ?? '';
+        $new_status = $_POST['status'] ?? '';
+
+        if (!empty($station_id) && in_array($new_status, ['Active', 'Maintenance'])) {
+            try {
+                $stmt = $pdo->prepare("UPDATE stations SET status = ? WHERE station_id = ?");
+                $stmt->execute([$new_status, $station_id]);
+                echo json_encode(['success' => true]);
+            } catch (PDOException $e) {
+                echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+            }
+        } else {
+            echo json_encode(['success' => false, 'message' => 'Invalid parameters']);
+        }
+        exit;
+    }
+
+    // Decommission Station (Soft Delete: Updates status instead of removing row)
+    if ($action === 'decommission') {
+        $station_id = $_POST['station_id'] ?? '';
+
+        try {
+            $stmt = $pdo->prepare("UPDATE stations SET status = 'Decommissioned' WHERE station_id = ?");
+            $stmt->execute([$station_id]);
+            $message = "Station successfully decommissioned and hidden.";
+        } catch (PDOException $e) {
+            $error = "Error decommissioning station: " . $e->getMessage();
+        }
+    }
+}
+
+// Fetch Stations from TiDB Cloud (Excluding Decommissioned ones)
+$stations = [];
+try {
+    $stmt = $pdo->query("SELECT * FROM stations WHERE status != 'Decommissioned' OR status IS NULL ORDER BY station_id DESC");
+    $stations = $stmt->fetchAll();
+} catch (PDOException $e) {
+    $error = "Could not retrieve stations: " . $e->getMessage();
+}
+?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -5,204 +129,150 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
     <link rel="stylesheet" href="/css/HQstyle.css">
     <style>
-        /* Custom table color overrides matching dark dashboard aesthetic */
-        .table-custom {
-            background-color: transparent !important;
-            color: #dee2e6;
-        }
-        .table-custom th {
-            text-transform: uppercase;
-            font-size: 0.74rem;
-            letter-spacing: 0.05em;
-            color: var(--slate-300);
-            padding: 12px 16px;
-            background: rgba(255, 255, 255, 0.05);
-            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-        }
-        .table-custom td {
-            background-color: transparent !important;
-            color: #ced4da !important;
-            border-color: #2c3034;
-            vertical-align: middle;
-        }
-        /* Ensure buttons wrap gracefully and stay aligned inside table cells */
-        .table-actions {
-            white-space: nowrap;
-        }
-
-        /* Custom Modal Theme Colors Matching the Dark Dashboard Card Style */
-        .modal-content-custom {
-            background-color: #121A26 !important;
-            border: 1px solid #373b3e !important;
-            box-shadow: 0 1rem 3rem rgba(0, 0, 0, 0.5);
-        }
-
-        .modal-content-decommission {
-            background-color: #121A26 !important;
-            border: 1px solid #842029 !important;
-            box-shadow: 0 1rem 3rem rgba(220, 53, 69, 0.15);
-        }
+        .table-custom { background-color: transparent !important; color: #dee2e6; }
+        .table-custom th { text-transform: uppercase; font-size: 0.74rem; letter-spacing: 0.05em; color: var(--slate-300); padding: 12px 16px; background: rgba(255, 255, 255, 0.05); border-bottom: 1px solid rgba(255, 255, 255, 0.08); }
+        .table-custom td { background-color: transparent !important; color: #ced4da !important; border-color: #2c3034; vertical-align: middle; }
+        .table-actions { white-space: nowrap; }
+        .modal-content-custom { background-color: #121A26 !important; border: 1px solid #373b3e !important; box-shadow: 0 1rem 3rem rgba(0, 0, 0, 0.5); }
+        .modal-content-decommission { background-color: #121A26 !important; border: 1px solid #842029 !important; box-shadow: 0 1rem 3rem rgba(220, 53, 69, 0.15); }
     </style>
 </head>
 <body>
-    <h2 class="title">Station Network</h2>
-    <p class="subtitle">Onboard physical station nodes and set up terminal operating profiles.</p>
-    <!-- Managed Stations Section with Location instead of Location Code -->
-    <div class="card">
-        <div class="d-flex justify-content-between align-items-center mb-3">
-            <div>
-                <h3>Manage Deployed Stations</h3>
-                <p class="subtitle mb-0">Monitor active nodes, update operational status, or remove configurations.</p>
+    <div class="container py-4">
+        <h2 class="title">Station Network</h2>
+        <p class="subtitle">Onboard physical station nodes and set up terminal operating profiles.</p>
+
+        <?php if (!empty($message)): ?>
+            <div class="alert alert-success alert-dismissible fade show" role="alert">
+                <?= htmlspecialchars($message) ?>
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
             </div>
-            <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#registerModal">+Add Station</button>
-        </div>
-        <div class="table-responsive">
-            <table class="table table-custom align-middle">
-                <thead>
-                    <tr>
-                        <th>Branch ID</th>
-                        <th>Station Name</th>
-                        <th>Location</th>
-                        <th>Branch Manager</th>
-                        <th>Status</th>
-                        <th class="text-end">Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr>
-                        <td>BR-HQ-01</td>
-                        <td>Downtown Metro</td>
-                        <td>New York</td>
-                        <td>Sarah Jenkins <br><small class="text-muted">sarah.j@apex.com</small></td>
-                        <td><span id="status-badge-1" class="badge bg-success">Active</span></td>
-                        <td class="text-end table-actions">
-                            <button type="button" id="toggle-btn-1" class="btn btn-sm btn-outline-warning me-1" onclick="toggleStatus(1)">Set Maintenance</button>
-                            <button type="button" class="btn btn-sm btn-outline-light me-1" data-bs-toggle="modal" data-bs-target="#configureModal" onclick="setConfigureData('Downtown Metro', 'New York', 'Sarah Jenkins')">Configure</button>
-                            <button type="button" class="btn btn-sm btn-danger" data-bs-toggle="modal" data-bs-target="#decommissionModal" onclick="setDecommissionData('Site #014 - Downtown Metro')">Decommission</button>
-                        </td>
-                    </tr>
-                    <tr>
-                        <td>BR-HQ-02</td>
-                        <td>Highway Bypass</td>
-                        <td>Chicago</td>
-                        <td>Marcus Vance <br><small class="text-muted">marcus.v@apex.com</small></td>
-                        <td><span id="status-badge-2" class="badge bg-warning text-dark">Maintenance</span></td>
-                        <td class="text-end table-actions">
-                            <button type="button" id="toggle-btn-2" class="btn btn-sm btn-outline-success me-1" onclick="toggleStatus(2)">Set Active</button>
-                            <button type="button" class="btn btn-sm btn-outline-light me-1" data-bs-toggle="modal" data-bs-target="#configureModal" onclick="setConfigureData('Highway Bypass', 'Chicago', 'Marcus Vance')">Configure</button>
-                            <button type="button" class="btn btn-sm btn-danger" data-bs-toggle="modal" data-bs-target="#decommissionModal" onclick="setDecommissionData('Site #009 - Highway Bypass')">Decommission</button>
-                        </td>
-                    </tr>
-                </tbody>
-            </table>
+        <?php endif; ?>
+
+        <?php if (!empty($error)): ?>
+            <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                <?= htmlspecialchars($error) ?>
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        <?php endif; ?>
+
+        <div class="card p-4 bg-dark text-light border-secondary">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <div>
+                    <h3>Manage Deployed Stations</h3>
+                    <p class="subtitle mb-0">Monitor active nodes, update operational status, or remove configurations.</p>
+                </div>
+                <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#registerModal">+Add Station</button>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-custom align-middle">
+                    <thead>
+                        <tr>
+                            <th>Station ID</th>
+                            <th>Station Name</th>
+                            <th>Location</th>
+                            <th>Status</th>
+                            <th class="text-end">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php if (empty($stations)): ?>
+                            <tr><td colspan="5" class="text-center text-muted">No station nodes found.</td></tr>
+                        <?php else: ?>
+                            <?php foreach ($stations as $row): ?>
+                                <?php 
+                                    $isMaintenance = ($row['status'] === 'Maintenance');
+                                    $badgeClass = $isMaintenance ? 'badge bg-warning text-dark' : 'badge bg-success';
+                                    $statusText = $isMaintenance ? 'Maintenance' : 'Active';
+                                    $btnClass = $isMaintenance ? 'btn btn-sm btn-outline-success me-1' : 'btn btn-sm btn-outline-warning me-1';
+                                    $btnText = $isMaintenance ? 'Set Active' : 'Set Maintenance';
+                                    $targetStatus = $isMaintenance ? 'Active' : 'Maintenance';
+                                ?>
+                                <tr>
+                                    <td>#<?= htmlspecialchars($row['station_id']) ?></td>
+                                    <td><?= htmlspecialchars($row['station_name']) ?></td>
+                                    <td><?= htmlspecialchars($row['location']) ?></td>
+                                    <td>
+                                        <span id="status-badge-<?= $row['station_id'] ?>" class="<?= $badgeClass ?>">
+                                            <?= $statusText ?>
+                                        </span>
+                                    </td>
+                                    <td class="text-end table-actions">
+                                        <button type="button" id="toggle-btn-<?= $row['station_id'] ?>" class="<?= $btnClass ?>" onclick="toggleStatus(<?= $row['station_id'] ?>, '<?= $targetStatus ?>')">
+                                            <?= $btnText ?>
+                                        </button>
+                                        <button type="button" class="btn btn-sm btn-outline-light me-1" data-bs-toggle="modal" data-bs-target="#configureModal" onclick="setConfigureData('<?= htmlspecialchars($row['station_id']) ?>', '<?= htmlspecialchars($row['station_name']) ?>', '<?= htmlspecialchars($row['location']) ?>')">Configure</button>
+                                        <button type="button" class="btn btn-sm btn-danger" data-bs-toggle="modal" data-bs-target="#decommissionModal" onclick="setDecommissionData('<?= htmlspecialchars($row['station_id']) ?>', 'Station #<?= htmlspecialchars($row['station_id']) ?> - <?= htmlspecialchars($row['station_name']) ?>')">Decommission</button>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
+                        <?php endif; ?>
+                    </tbody>
+                </table>
+            </div>
         </div>
     </div>
 
-    <!-- Register Station & Onboard Manager Modal -->
+    <!-- Register Modal -->
     <div class="modal fade" id="registerModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-lg">
             <div class="modal-content modal-content-custom text-light">
-                <div class="modal-header border-secondary">
-                    <h5 class="modal-title">Register Station Node & Manager</h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body">
-                    <!-- Register Station Node Section -->
-                    <div class="card bg-transparent border-0 mb-4 p-0">
-                        <h3>Register Station Node</h3>
-                        <p class="subtitle" style="margin-bottom: 12px;">Establish unique location tags for network reporting[cite: 3].</p>
+                <form method="POST">
+                    <input type="hidden" name="action" value="register">
+                    <div class="modal-header border-secondary">
+                        <h5 class="modal-title">Register Station Node</h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
                         <div class="row">
-                            <div class="col-md-3 mb-3">
-                                <div class="form-group">
-                                    <label class="form-label text-light">Branch ID</label>
-                                    <input type="text" class="form-control bg-dark text-light border-secondary" placeholder="e.g. #014">
-                                </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label text-light">Station Name</label>
+                                <input type="text" name="station_name" class="form-control bg-dark text-light border-secondary" placeholder="e.g. Downtown Metro" required>
                             </div>
-                            <div class="col-md-3 mb-3">
-                                <div class="form-group">
-                                    <label class="form-label text-light">Station Name</label>
-                                    <input type="text" class="form-control bg-dark text-light border-secondary" placeholder="e.g. Downtown Metro">
-                                </div>
-                            </div>
-                            <div class="col-md-3 mb-3">
-                                <div class="form-group">
-                                    <label class="form-label text-light">Region</label>
-                                    <select class="form-control bg-dark text-light border-secondary">
-                                        <option value="" disabled selected>Select Region</option>
-                                        <option value="Ygn">Yangon</option>
-                                        <option value="Mdy">Mandalay</option>
-                                        <option value="NPT">Nay Pyi Taw</option>
-                                    </select>
-                                </div>
-                            </div>
-                            <div class="col-md-3 mb-3">
-                                <div class="form-group">
-                                    <label class="form-label text-light">Location</label>
-                                    <input type="text" class="form-control bg-dark text-light border-secondary" placeholder="e.g. New York">
-                                </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label text-light">Location</label>
+                                <input type="text" name="location" class="form-control bg-dark text-light border-secondary" placeholder="e.g. New York" required>
                             </div>
                         </div>
                     </div>
-
-                    <hr class="border-secondary my-4">
-
-                    <!-- Onboard Site Manager Account Section -->
-                    <div class="card bg-transparent border-0 p-0">
-                        <h3>Onboard Site Manager Account</h3>
-                        <p class="subtitle" style="margin-bottom: 12px;">Provision manager profiles responsible for log and inventory oversight[cite: 3].</p>
-                        <div class="form-group mb-3">
-                            <label class="form-label text-light">Assigned Node</label>
-                            <select class="form-control bg-dark text-light border-secondary">
-                                <option>BR-HQ-01 - Downtown Metro</option>
-                                <option>BR-HQ-02 - Highway Bypass</option>
-                            </select>
-                        </div>
-                        <div class="form-group mb-3">
-                            <label class="form-label text-light">Operator Professional Email</label>
-                            <input type="email" class="form-control bg-dark text-light border-secondary" placeholder="manager.name@apex.com">
-                        </div>
+                    <div class="modal-footer border-secondary">
+                        <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Close</button>
+                        <button type="submit" class="btn btn-success">Register Station</button>
                     </div>
-                </div>
-                <div class="modal-footer border-secondary">
-                    <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Close</button>
-                    <button type="button" class="btn btn-success" data-bs-dismiss="modal" onclick="alert('Terminal Node and Manager profile created successfully.')">Register Station</button>
-                </div>
+                </form>
             </div>
         </div>
     </div>
 
-    <!-- Configure Modal with Location Field -->
+    <!-- Configure Modal -->
     <div class="modal fade" id="configureModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog">
             <div class="modal-content modal-content-custom text-light">
-                <div class="modal-header border-secondary">
-                    <h5 class="modal-title">Configure Station Node</h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body">
-                    <form onsubmit="event.preventDefault(); alert('Configuration saved successfully!');">
+                <form method="POST">
+                    <input type="hidden" name="action" value="configure">
+                    <div class="modal-header border-secondary">
+                        <h5 class="modal-title">Configure Station Node</h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
                         <div class="mb-3">
-                            <label class="form-label text-light">Branch ID</label>
-                            <input type="text" id="configBranchId" class="form-control bg-dark text-light border-secondary" value="BR-HQ-01">
+                            <label class="form-label text-light">Station ID</label>
+                            <input type="text" id="configStationId" name="station_id" class="form-control bg-dark text-light border-secondary" readonly>
                         </div>
                         <div class="mb-3">
                             <label class="form-label text-light">Station Name</label>
-                            <input type="text" id="configStationName" class="form-control bg-dark text-light border-secondary">
+                            <input type="text" id="configStationName" name="station_name" class="form-control bg-dark text-light border-secondary" required>
                         </div>
                         <div class="mb-3">
                             <label class="form-label text-light">Location</label>
-                            <input type="text" id="configLocation" class="form-control bg-dark text-light border-secondary">
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label text-light">Assigned Branch Manager</label>
-                            <input type="text" id="configManagerName" class="form-control bg-dark text-light border-secondary">
+                            <input type="text" id="configLocation" name="location" class="form-control bg-dark text-light border-secondary" required>
                         </div>
                         <div class="text-end mt-4">
                             <button type="button" class="btn btn-outline-light me-2" data-bs-dismiss="modal">Cancel</button>
-                            <button type="submit" class="btn btn-success" data-bs-dismiss="modal">Save Changes</button>
+                            <button type="submit" class="btn btn-success">Save Changes</button>
                         </div>
-                    </form>
-                </div>
+                    </div>
+                </form>
             </div>
         </div>
     </div>
@@ -211,51 +281,76 @@
     <div class="modal fade" id="decommissionModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog">
             <div class="modal-content modal-content-decommission text-light">
-                <div class="modal-header border-danger">
-                    <h5 class="modal-title text-danger">Decommission Station Node</h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body">
-                    <p>Are you sure you want to decommission <strong id="decommissionTarget" class="text-warning"></strong>?</p>
-                    <p class="small text-muted">This action will remove terminal node configurations and revoke associated manager keys.</p>
-                    <div class="text-end mt-4">
-                        <button type="button" class="btn btn-outline-light me-2" data-bs-dismiss="modal">Cancel</button>
-                        <button type="button" class="btn btn-danger" data-bs-dismiss="modal" onclick="alert('Station successfully decommissioned.')">Confirm Decommission</button>
+                <form method="POST">
+                    <input type="hidden" name="action" value="decommission">
+                    <input type="hidden" id="decommissionStationId" name="station_id">
+                    <div class="modal-header border-danger">
+                        <h5 class="modal-title text-danger">Decommission Station Node</h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
                     </div>
-                </div>
+                    <div class="modal-body">
+                        <p>Are you sure you want to decommission <strong id="decommissionTarget" class="text-warning"></strong>?</p>
+                        <p class="small text-muted">This action will hide the station from the active table without deleting its record from the database.</p>
+                        <div class="text-end mt-4">
+                            <button type="button" class="btn btn-outline-light me-2" data-bs-dismiss="modal">Cancel</button>
+                            <button type="submit" class="btn btn-danger">Confirm Decommission</button>
+                        </div>
+                    </div>
+                </form>
             </div>
         </div>
     </div>
 
-    <!-- Bootstrap JS Bundle (Required for Modals) -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-
     <script>
-        function toggleStatus(rowId) {
-            const badge = document.getElementById('status-badge-' + rowId);
-            const btn = document.getElementById('toggle-btn-' + rowId);
+        function toggleStatus(id, newStatus) {
+            const formData = new URLSearchParams();
+            formData.append('action', 'toggle_status');
+            formData.append('station_id', id);
+            formData.append('status', newStatus);
 
-            if (badge.classList.contains('bg-success')) {
-                badge.className = 'badge bg-warning text-dark';
-                badge.textContent = 'Maintenance';
-                btn.className = 'btn btn-sm btn-outline-success me-1';
-                btn.textContent = 'Set Active';
-            } else {
-                badge.className = 'badge bg-success';
-                badge.textContent = 'Active';
-                btn.className = 'btn btn-sm btn-outline-warning me-1';
-                btn.textContent = 'Set Maintenance';
-            }
+            fetch('', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    const badge = document.getElementById('status-badge-' + id);
+                    const btn = document.getElementById('toggle-btn-' + id);
+
+                    if (newStatus === 'Maintenance') {
+                        badge.className = 'badge bg-warning text-dark';
+                        badge.textContent = 'Maintenance';
+                        btn.className = 'btn btn-sm btn-outline-success me-1';
+                        btn.textContent = 'Set Active';
+                        btn.setAttribute('onclick', `toggleStatus(${id}, 'Active')`);
+                    } else {
+                        badge.className = 'badge bg-success';
+                        badge.textContent = 'Active';
+                        btn.className = 'btn btn-sm btn-outline-warning me-1';
+                        btn.textContent = 'Set Maintenance';
+                        btn.setAttribute('onclick', `toggleStatus(${id}, 'Maintenance')`);
+                    }
+                } else {
+                    alert('Failed to update status: ' + (data.message || 'Unknown error'));
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('An error occurred while updating the status.');
+            });
         }
 
-        function setConfigureData(stationName, location, manager) {
+        function setConfigureData(stationId, stationName, location) {
+            document.getElementById('configStationId').value = stationId;
             document.getElementById('configStationName').value = stationName;
             document.getElementById('configLocation').value = location;
-            document.getElementById('configManagerName').value = manager;
         }
 
-        function setDecommissionData(station) {
-            document.getElementById('decommissionTarget').textContent = station;
+        function setDecommissionData(stationId, stationText) {
+            document.getElementById('decommissionStationId').value = stationId;
+            document.getElementById('decommissionTarget').textContent = stationText;
         }
     </script>
 </body>
