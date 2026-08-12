@@ -77,7 +77,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $grades = [];
-$result = $conn->query('SELECT oil_name, price_per_liter FROM oil_types ORDER BY oil_name');
+$result = $conn->query('SELECT ot.oil_name, MAX(soi.price_per_litre) AS price_per_liter FROM oil_types ot 
+                        LEFT JOIN station_oil_inventory soi ON ot.oil_type_id = soi.oil_type_id
+                        GROUP BY ot.oil_type_id, ot.oil_name ORDER BY ot.oil_name');
 if ($result) {
     while ($row = $result->fetch_assoc()) {
         $grades[] = $row;
