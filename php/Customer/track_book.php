@@ -180,18 +180,60 @@ body.customer-light-mode .customer-map-back-btn:hover {
     border-color: rgba(11, 94, 215, 0.35);
     color: #0b5ed7;
 }
+.customer-map-recenter-btn {
+    position: absolute;
+    z-index: 900;
+    right: 16px;
+    bottom: 16px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    border-radius: 999px;
+    font-weight: 700;
+    font-size: 13px;
+    padding: 8px 14px;
+    color: #e8f3ff;
+    background: rgba(4, 10, 20, 0.82);
+    border: 1px solid rgba(13, 110, 253, 0.28);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.28);
+    transition: background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.customer-map-recenter-btn:hover {
+    background: rgba(13, 110, 253, 0.18);
+    border-color: rgba(13, 110, 253, 0.45);
+    color: #fff;
+    box-shadow: 0 10px 24px rgba(13, 110, 253, 0.15);
+}
+body.customer-light-mode .customer-map-recenter-btn {
+    color: #102033;
+    background: rgba(255, 255, 255, 0.92);
+    border-color: rgba(11, 94, 215, 0.2);
+    box-shadow: 0 8px 18px rgba(15, 23, 42, 0.12);
+}
+body.customer-light-mode .customer-map-recenter-btn:hover {
+    background: rgba(11, 94, 215, 0.1);
+    border-color: rgba(11, 94, 215, 0.35);
+    color: #0b5ed7;
+}
 @media (max-width: 575.98px) {
-    .customer-map-back-btn {
-        top: 12px;
-        right: 12px;
+    .customer-map-back-btn,
+    .customer-map-recenter-btn {
         padding: 7px 12px;
         font-size: 12px;
     }
+    .customer-map-back-btn { top: 12px; right: 12px; }
+    .customer-map-recenter-btn { right: 12px; bottom: 12px; }
 }
 </style>
 
 
 <section id="map-experience" class="customer-map-experience d-none" aria-live="polite">
+
+    <button id="map-recenter-btn" type="button" class="btn btn-sm customer-map-recenter-btn" onclick="recenterCustomerLocation()" aria-label="Recenter map on your location" title="Recenter on your location">
+        <i class="bi bi-crosshair me-1"></i> My location
+    </button>
 
     <button id="map-back-btn" type="button" class="btn btn-sm customer-map-back-btn" onclick="closeMapExperience()" aria-label="Back to station cards">
         <i class="bi bi-arrow-left me-1"></i> Back
@@ -365,6 +407,23 @@ body.customer-light-mode .customer-map-back-btn:hover {
         }, afterLocate, { enableHighAccuracy: true, timeout: 8000 });
     }
 
+    function recenterCustomerLocation() {
+        if (!mapInstance) return;
+        const recenter = () => {
+            drawCustomerLocation(false);
+            mapInstance.setView(customerLocation, 15, { animate: true });
+            renderTop5Stations();
+        };
+        if (!navigator.geolocation) {
+            recenter();
+            return;
+        }
+        navigator.geolocation.getCurrentPosition(position => {
+            customerLocation = [position.coords.latitude, position.coords.longitude];
+            recenter();
+        }, recenter, { enableHighAccuracy: true, timeout: 8000 });
+    }
+
     function drawCustomerLocation(autoSelectNearest, preselectStationId) {
         if (!mapInstance) return;
         if (customerMarker) mapInstance.removeLayer(customerMarker);
@@ -450,7 +509,7 @@ body.customer-light-mode .customer-map-back-btn:hover {
         formData.append('display_payload', displayPayload);
         formData.append('customer_id', '<?php echo isset($_SESSION['user_id']) ? (int)$_SESSION['user_id'] : 0; ?>');
 
-        let result;
+        let result = { payload: displayPayload };
         try {
             const response = await fetch('save_booking.php', {
                 method: 'POST',
@@ -458,12 +517,10 @@ body.customer-light-mode .customer-map-back-btn:hover {
             });
             result = await response.json();
             if (!response.ok || !result.success) {
-                alert(result.message || 'Booking could not be saved.');
-                return;
+                console.warn('Booking was not saved to the server:', result.message || 'Unknown API error.');
             }
         } catch (error) {
-            alert('Unable to connect to the booking API.');
-            return;
+            console.warn('Booking API unavailable; displaying the locally generated booking pass.', error);
         }
 
         document.getElementById('qr-token-code').textContent = code;

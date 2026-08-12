@@ -1,220 +1,65 @@
+<?php
+require_once __DIR__ . '/moderator_common.php';
+
+$moderatorUser = moderator_require_user();
+$flash = hq_pull_flash();
+$search = trim((string) ($_GET['search'] ?? ''));
+$region = strtolower(trim((string) ($_GET['region'] ?? '')));
+$status = strtolower(trim((string) ($_GET['status'] ?? '')));
+$allowedRegions = ['yangon', 'mandalay', 'naypyidaw'];
+$allowedStatuses = ['active', 'pending', 'suspended', 'removed'];
+$region = in_array($region, $allowedRegions, true) ? $region : '';
+$status = in_array($status, $allowedStatuses, true) ? $status : '';
+$hqRows = moderator_hq_rows($search, $region, $status);
+$dbError = hq_db_available() ? null : hq_db_error_message();
+$regionLabel = static fn (string $value): string => match ($value) {
+    'yangon' => 'Yangon Region',
+    'mandalay' => 'Mandalay Region',
+    'naypyidaw' => 'Naypyidaw',
+    default => 'All Regions',
+};
+$flashType = (string) ($flash['type'] ?? '');
+?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>HQ & User Accounts - Map & Pump</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
-    <!-- Browser Tab Logo (Favicon) -->
-    <link rel="icon" type="image/png" href="/images/Logo.png">
-    <link rel="stylesheet" href="/css/Admin.css">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
-    
+    <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HQ &amp; User Accounts — Map &amp; Pump</title>
+    <link rel="icon" type="image/png" href="/images/Logo.png"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&amp;display=swap" rel="stylesheet"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"><link rel="stylesheet" href="/css/Admin.css"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    <style>.mod-flash{border-radius:14px;background:rgba(10,22,44,.82);border:1px solid var(--glass-border)}.mod-detail-label{color:var(--text-muted);font-size:.72rem;text-transform:uppercase;letter-spacing:.07em}.mod-detail-value{color:var(--text-primary);word-break:break-word}.mod-modal-table{--bs-table-bg:transparent;--bs-table-color:var(--text-primary);--bs-table-border-color:var(--glass-border)}.mod-modal-table th{color:var(--text-muted);font-size:.72rem;text-transform:uppercase}.hq-status{display:inline-flex;align-items:center;gap:.45rem;color:rgba(255,255,255,.68);font-size:.8rem;white-space:nowrap}.hq-status:before{content:'';width:8px;height:8px;border-radius:50%;display:inline-block}.hq-status-active:before{background:#1be494;box-shadow:0 0 8px #1be494}.hq-status-pending:before{background:#ffc107;box-shadow:0 0 8px #ffc107}.hq-status-suspended:before{background:#ff9f43;box-shadow:0 0 8px #ff9f43}.hq-status-removed:before{background:#ff4d6a;box-shadow:0 0 8px #ff4d6a}</style>
 </head>
 <body class="background_color" id="background_color">
-
 <?php include __DIR__ . '/includes/moderator_navbar.php'; ?>
+<main class="container my-5">
+    <?php if ($flash && $flashType): ?><div class="alert mod-flash alert-<?= moderator_escape($flashType) ?> alert-dismissible fade show mb-4" role="alert"><i class="bi <?= $flashType === 'success' ? 'bi-check-circle-fill text-success' : 'bi-exclamation-triangle-fill text-danger' ?> me-2"></i><?= moderator_escape((string) ($flash['message'] ?? '')) ?><?php if (!empty($flash['context']['temporary_password'])): ?><div class="mt-2 small">Username: <code><?= moderator_escape((string) $flash['context']['username']) ?></code> · Temporary password: <code><?= moderator_escape((string) $flash['context']['temporary_password']) ?></code></div><?php endif; ?><button type="button" class="btn-close btn-close-white" data-bs-dismiss="alert"></button></div><?php endif; ?>
+    <?php if ($dbError): ?><div class="alert mod-flash alert-danger mb-4"><i class="bi bi-database-exclamation me-2"></i><?= moderator_escape($dbError) ?></div><?php endif; ?>
+    <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3"><div><span class="stat-chip mb-2"><i class="bi bi-building-fill txt-neon-cyan"></i> Registry Control</span><h1 class="fw-bold m-0 h4 text-white mt-2">HQ Stations &amp; User Accounts</h1><p class="text-white-50 m-0 small mt-1">View HQ records, linked users, and account status from the live database.</p></div><button class="btn btn-neon d-flex align-items-center gap-2" data-bs-toggle="modal" data-bs-target="#addHQModal"><i class="bi bi-plus-circle-fill"></i> Register New HQ</button></div>
 
-    <!-- MAIN MANAGE CONTENT -->
-    <div class="container my-5">
-        
-        <!-- Header & Action Row -->
-        <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3">
-            <div>
-                <span class="stat-chip mb-2">
-                    <i class="bi bi-building-fill txt-neon-cyan"></i>
-                    Registry Control
-                </span>
-                <h1 class="fw-bold m-0 h4 text-white">HQ Stations & User Accounts</h1>
-                <p class="text-white-50 m-0 small">Manage corporate headquarter structures, linked stations, and associated system user accounts.</p>
-            </div>
-            <button class="btn btn-neon d-flex align-items-center gap-2" data-bs-toggle="modal" data-bs-target="#addHQModal">
-                <i class="bi bi-plus-circle-fill"></i> Register New HQ
-            </button>
-        </div>
+    <div class="dashboard-card py-3 px-4 mb-4"><form class="row g-3 align-items-center" method="GET" action="view_hq_and_user_account(M).php"><div class="col-12 col-md-5"><div class="input-group"><span class="input-group-text bg-transparent border-end-0" style="border-color:var(--glass-border);color:var(--neon-cyan);border-radius:12px 0 0 12px"><i class="bi bi-search"></i></span><input type="text" class="form-control glass-input border-start-0" placeholder="Search by HQ or owner name..." name="search" value="<?= moderator_escape($search) ?>"></div></div><div class="col-12 col-md-3"><select class="form-select glass-select" name="region"><option value="">All Regions</option><?php foreach ($allowedRegions as $option): ?><option value="<?= $option ?>" <?= $region === $option ? 'selected' : '' ?>><?= moderator_escape($regionLabel($option)) ?></option><?php endforeach; ?></select></div><div class="col-12 col-md-2"><select class="form-select glass-select" name="status"><option value="">All Status</option><?php foreach ($allowedStatuses as $option): ?><option value="<?= $option ?>" <?= $status === $option ? 'selected' : '' ?>><?= moderator_escape(hq_status_label($option)) ?></option><?php endforeach; ?></select></div><div class="col-12 col-md-2 d-grid"><button type="submit" class="btn btn-neon">Apply Filter</button></div></form></div>
 
-        <div class="row g-4">
-            <!-- Search and Filter Panel -->
-            <div class="col-12">
-                <div class="dashboard-card py-3 px-4">
-                    <form class="row g-3 align-items-center" method="GET" action="">
-                        <div class="col-12 col-md-5">
-                            <div class="input-group">
-                                <span class="input-group-text bg-transparent border-end-0" style="border-color: var(--glass-border); color: var(--neon-cyan);">
-                                    <i class="bi bi-search"></i>
-                                </span>
-                                <input type="text" class="form-control glass-input border-start-0" placeholder="Search by HQ, owner or city name..." name="search">
-                            </div>
-                        </div>
-                        <div class="col-12 col-md-3">
-                            <select class="form-select glass-select" name="region">
-                                <option value="" selected>All Regions</option>
-                                <option value="yangon">Yangon Region</option>
-                                <option value="mandalay">Mandalay Region</option>
-                                <option value="naypyidaw">Naypyidaw</option>
-                            </select>
-                        </div>
-                        <div class="col-12 col-md-2">
-                            <select class="form-select glass-select" name="status">
-                                <option value="" selected>All Status</option>
-                                <option value="active">Active</option>
-                                <option value="pending">Pending Verification</option>
-                                <option value="suspended">Suspended</option>
-                            </select>
-                        </div>
-                        <div class="col-12 col-md-2 d-grid">
-                            <button type="submit" class="btn btn-outline-info rounded-3 text-white border-info border-opacity-20" style="background: rgba(0, 244, 255, 0.05); padding: 10px;">
-                                Apply Filter
-                            </button>
-                        </div>
-                    </form>
-                </div>
-            </div>
+    <div class="analytics-card"><div class="table-responsive"><table class="table table-dark-custom align-middle m-0"><thead><tr><th>HQ Entity &amp; Owner</th><th>Headquarters Location</th><th>Linked Pumps/Users</th><th>Status</th><th class="text-end">Command</th></tr></thead><tbody><?php if (!$hqRows): ?><tr><td colspan="5" class="text-center text-white-50 py-5"><i class="bi bi-building-x fs-3 d-block mb-2"></i>No HQ accounts match the current filter.</td></tr><?php else: ?><?php foreach ($hqRows as $row): ?><?php $company = (string) ($row['company_name'] ?? 'Unnamed HQ');$location = explode(' — ', (string) ($row['location'] ?? ''), 2);$rowStatus=(string)($row['account_status']??'pending');$stations=(int)($row['station_count']??0);$users=(int)($row['user_count']??0); ?><tr><td><div class="d-flex align-items-center gap-3"><div class="rounded-3 d-flex align-items-center justify-content-center fw-bold" style="width:44px;height:44px;background:rgba(0,244,255,.1);border:1px solid rgba(0,244,255,.28);color:var(--neon-cyan)"><?= moderator_escape(hq_initials($company)) ?></div><div><div class="fw-semibold text-white"><?= moderator_escape($company) ?></div><div class="text-white-50 small">Owner: <?= moderator_escape((string)($row['owner_name']??'No owner account')) ?> (<?= moderator_escape((string)($row['owner_email']??'No email available')) ?>)</div></div></div></td><td><div class="text-white"><?= moderator_escape($location[0] ?? 'Location not available') ?></div><div class="text-white-50 small"><?= moderator_escape($location[1] ?? ($location[0] ?? 'Location not available')) ?></div></td><td><span class="badge rounded-pill bg-info bg-opacity-10 text-info border border-info border-opacity-25 px-2 py-1"><?= $stations ?> Station<?= $stations === 1 ? '' : 's' ?> · <?= $users ?> User<?= $users === 1 ? '' : 's' ?></span></td><td><span class="hq-status <?= moderator_escape(hq_status_class($rowStatus)) ?>"><?= moderator_escape(hq_status_label($rowStatus)) ?></span></td><td class="text-end"><div class="d-flex gap-2 justify-content-end"><a href="#" class="btn-action js-view-hq" title="View Stations &amp; Users" data-hq-id="<?= (int)$row['headquarter_id'] ?>"><i class="bi bi-eye-fill"></i></a><a href="#" class="btn-action btn-action-danger js-account-action" title="Suspend/Remove" data-hq-id="<?= (int)$row['headquarter_id'] ?>" data-hq-name="<?= moderator_escape($company) ?>"><i class="bi bi-trash3-fill"></i></a></div></td></tr><?php endforeach; ?><?php endif; ?></tbody></table></div></div>
+</main>
 
-            <!-- Main Table Panel -->
-            <div class="col-12">
-                <div class="analytics-card">
-                    <div class="table-responsive">
-                        <table class="table table-dark-custom align-middle m-0">
-                            <thead>
-                                <tr>
-                                    <th>HQ Entity & Owner</th>
-                                    <th>Headquarters Location</th>
-                                    <th>Linked Pumps/Users</th>
-                                    <th>Status</th>
-                                    <th class="text-end">Command</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <!-- Example Row 1 -->
-                                <tr>
-                                    <td>
-                                        <div class="d-flex align-items-center gap-3">
-                                            <div class="rounded-3 d-flex align-items-center justify-content-center text-white fw-bold" style="width: 44px; height: 44px; background: rgba(0, 244, 255, 0.1); border: 1px solid var(--neon-cyan);">
-                                                AF
-                                            </div>
-                                            <div>
-                                                <div class="fw-semibold text-white">Apex Fueling Group</div>
-                                                <div class="text-white-50 small" style="font-size: 0.8rem;">Owner: John Doe (john.doe@apex.com)</div>
-                                            </div>
-                                        </div>
-                                    </td>
-                                    <td>
-                                        <div class="text-white">Yangon Sector 4</div>
-                                        <div class="text-white-50 small" style="font-size: 0.8rem;">No. 124, Pyay Road, Kamayut Tsp</div>
-                                    </td>
-                                    <td>
-                                        <span class="badge rounded-pill bg-info bg-opacity-10 text-info border border-info border-opacity-25 px-2.5 py-1.5">14 Stations Active</span>
-                                    </td>
-                                    <td>
-                                        <div class="d-flex align-items-center gap-2">
-                                            <span class="d-inline-block rounded-circle bg-success" style="width: 8px; height: 8px; box-shadow: 0 0 8px #198754;"></span>
-                                            <span class="text-white-50 small">Active</span>
-                                        </div>
-                                    </td>
-                                    <td class="text-end">
-                                        <div class="d-flex gap-2 justify-content-end">
-                                            <a href="#" class="btn-action" title="View Stations & Users"><i class="bi bi-eye-fill"></i></a>
-                                            <a href="#" class="btn-action" title="Edit HQ Account"><i class="bi bi-pencil-square"></i></a>
-                                            <a href="#" class="btn-action btn-action-danger" title="Suspend/Remove"><i class="bi bi-trash3-fill"></i></a>
-                                        </div>
-                                    </td>
-                                </tr>
-                                <!-- Example Row 2 -->
-                                <tr>
-                                    <td>
-                                        <div class="d-flex align-items-center gap-3">
-                                            <div class="rounded-3 d-flex align-items-center justify-content-center text-white fw-bold" style="width: 44px; height: 44px; background: rgba(122, 92, 255, 0.1); border: 1px solid var(--neon-purple);">
-                                                NL
-                                            </div>
-                                            <div>
-                                                <div class="fw-semibold text-white">Nexus Logistics Co.</div>
-                                                <div class="text-white-50 small" style="font-size: 0.8rem;">Owner: Sarah Connor (s.connor@nexus.com)</div>
-                                            </div>
-                                        </div>
-                                    </td>
-                                    <td>
-                                        <div class="text-white">Mandalay Hub</div>
-                                        <div class="text-white-50 small" style="font-size: 0.8rem;">78th Street, Between 26th & 27th</div>
-                                    </td>
-                                    <td>
-                                        <span class="badge rounded-pill bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25 px-2.5 py-1.5">8 Stations Active</span>
-                                    </td>
-                                    <td>
-                                        <div class="d-flex align-items-center gap-2">
-                                            <span class="d-inline-block rounded-circle bg-warning" style="width: 8px; height: 8px; box-shadow: 0 0 8px #ffc107;"></span>
-                                            <span class="text-white-50 small">Pending</span>
-                                        </div>
-                                    </td>
-                                    <td class="text-end">
-                                        <div class="d-flex gap-2 justify-content-end">
-                                            <a href="#" class="btn-action" title="View Stations & Users"><i class="bi bi-eye-fill"></i></a>
-                                            <a href="#" class="btn-action" title="Edit HQ Account"><i class="bi bi-pencil-square"></i></a>
-                                            <a href="#" class="btn-action btn-action-danger" title="Suspend/Remove"><i class="bi bi-trash3-fill"></i></a>
-                                        </div>
-                                    </td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
-        </div>
+<div class="modal fade glass-modal" id="addHQModal" tabindex="-1" aria-hidden="true"><div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-lg"><div class="modal-content"><div class="modal-header"><div><h5 class="modal-title fw-bold"><i class="bi bi-building-add txt-neon-cyan me-2"></i> Register New Headquarter</h5><p class="text-white-50 small mb-0 mt-1">All fields below map to the live HQ and user tables.</p></div><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div><form action="hq_register_action(M).php" method="POST"><div class="modal-body d-flex flex-column gap-3"><div class="small text-white-50"><span class="text-danger">*</span> Required. The new owner account is created as pending and a HQ registration request is recorded.</div><div><label class="form-label text-white-50 small" for="modHqName">Company / HQ Name <span class="text-danger">*</span></label><input id="modHqName" type="text" name="hq_name" class="form-control glass-input" maxlength="255" required></div><div><label class="form-label text-white-50 small" for="modLogo">Company Logo URL / Storage Path <span class="text-danger">*</span></label><input id="modLogo" type="text" name="company_logo" class="form-control glass-input" maxlength="255" placeholder="/uploads/company-logo.png" required></div><div class="row g-3"><div class="col-12 col-md-6"><label class="form-label text-white-50 small" for="modOwnerName">Owner Name <span class="text-danger">*</span></label><input id="modOwnerName" type="text" name="owner_name" class="form-control glass-input" maxlength="225" required></div><div class="col-12 col-md-6"><label class="form-label text-white-50 small" for="modOwnerEmail">Owner Email <span class="text-danger">*</span></label><input id="modOwnerEmail" type="email" name="owner_email" class="form-control glass-input" maxlength="225" required></div></div><div><label class="form-label text-white-50 small" for="modContact">Contact Number <span class="text-danger">*</span></label><input id="modContact" type="text" name="contact_number" class="form-control glass-input" maxlength="50" required></div><div><label class="form-label text-white-50 small" for="modRegion">Regional Headquarters Office <span class="text-danger">*</span></label><select id="modRegion" class="form-select glass-select" name="region" required><option value="">Select region</option><option value="yangon">Yangon Region</option><option value="mandalay">Mandalay Region</option><option value="naypyidaw">Naypyidaw</option></select></div><div><label class="form-label text-white-50 small" for="modAddress">Physical Address Details <span class="text-danger">*</span></label><textarea id="modAddress" name="address" rows="3" class="form-control glass-input" maxlength="220" required></textarea></div><div><label class="form-label text-white-50 small" for="modLicense">Business License <span class="text-danger">*</span></label><input id="modLicense" type="text" name="business_license" class="form-control glass-input" maxlength="255" required></div><div><label class="form-label text-white-50 small" for="modExpiry">License Expiry Date <span class="text-danger">*</span></label><input id="modExpiry" type="date" name="expire_at" class="form-control glass-input" min="<?= date('Y-m-d') ?>" required></div></div><div class="modal-footer"><button type="button" class="btn btn-outline-secondary rounded-3 text-white-50" data-bs-dismiss="modal">Cancel</button><button type="submit" class="btn btn-neon">Register Account</button></div></form></div></div></div>
 
-    </div>
+<div class="modal fade glass-modal" id="hqDetailsModal" tabindex="-1" aria-hidden="true"><div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-lg"><div class="modal-content"><div class="modal-header"><h5 class="modal-title fw-bold"><i class="bi bi-building-check txt-neon-cyan me-2"></i> HQ Details</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div><div class="modal-body" id="hqDetailsBody"><div class="text-center text-white-50 py-5"><span class="spinner-border spinner-border-sm me-2"></span>Loading HQ details...</div></div></div></div></div>
+<div class="modal fade glass-modal" id="accountActionModal" tabindex="-1" aria-hidden="true"><div class="modal-dialog modal-dialog-centered modal-dialog-scrollable"><div class="modal-content"><div class="modal-header"><h5 class="modal-title fw-bold"><i class="bi bi-shield-exclamation text-danger me-2"></i> Suspend or Remove HQ</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div><form action="hq_account_action(M).php" method="POST"><div class="modal-body"><input type="hidden" name="headquarter_id" id="actionHQId"><div class="small text-white-50 mb-3">Target HQ: <span class="txt-neon-cyan fw-semibold" id="actionHQName">—</span></div><label class="form-label text-white-50 small" for="actionType">Action</label><select id="actionType" name="action_type" class="form-select glass-select mb-3" required><option value="suspend">Suspend account</option><option value="remove">Remove account</option></select><label class="form-label text-white-50 small" for="actionReason">Reason <span class="text-danger">*</span></label><textarea id="actionReason" name="reason" class="form-control glass-input" rows="5" maxlength="2000" required></textarea><div class="small text-white-50 mt-3">The reason is recorded and email delivery uses the configured placeholder until SMTP is added.</div></div><div class="modal-footer"><button type="button" class="btn btn-outline-secondary rounded-3 text-white-50" data-bs-dismiss="modal">Cancel</button><button type="submit" class="btn btn-danger">Save Action</button></div></form></div></div></div>
 
-    <!-- REGISTER HQ MODAL -->
-    <div class="modal fade glass-modal" id="addHQModal" tabindex="-1" aria-labelledby="addHQModalLabel" aria-hidden="true">
-        <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title fw-bold" id="addHQModalLabel"><i class="bi bi-building-add txt-neon-cyan me-2"></i> Register New Headquarter</h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <form action="add_hq_action.php" method="POST"><!--Need to create add_HQ_action.php that is not existing in those folder-->
-                    <div class="modal-body d-flex flex-column gap-3">
-                        <div>
-                            <label class="form-label text-white-50 small">Company / HQ Name</label>
-                            <input type="text" name="hq_name" class="form-control glass-input" placeholder="e.g. Apex Fueling Group" required>
-                        </div>
-                        <div class="row g-2">
-                            <div class="col-6">
-                                <label class="form-label text-white-50 small">Owner Name</label>
-                                <input type="text" name="owner_name" class="form-control glass-input" placeholder="Owner Full Name" required>
-                            </div>
-                            <div class="col-6">
-                                <label class="form-label text-white-50 small">Owner Email</label>
-                                <input type="email" name="owner_email" class="form-control glass-input" placeholder="owner@domain.com" required>
-                            </div>
-                        </div>
-                        <div>
-                            <label class="form-label text-white-50 small">Regional Headquarters Office</label>
-                            <select class="form-select glass-select" name="region" required>
-                                <option value="yangon" selected>Yangon Division</option>
-                                <option value="mandalay">Mandalay Division</option>
-                                <option value="naypyidaw">Naypyidaw Capital</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label class="form-label text-white-50 small">Physical Address Details</label>
-                            <textarea name="address" rows="2" class="form-control glass-input" placeholder="Street name, Township, Postal..." required style="resize: none;"></textarea>
-                        </div>
-                    </div>
-                    <div class="modal-footer">
-                        <button type="button" class="btn btn-outline-secondary rounded-3 text-white-50 border-secondary border-opacity-20" data-bs-dismiss="modal">Cancel</button>
-                        <button type="submit" class="btn btn-neon">Register Account</button>
-                    </div>
-                </form>
-            </div>
-        </div>
-    </div>
-
-<?php $moderatorActiveNav = 'hq'; include __DIR__ . '/includes/moderator_offcanvas.php'; ?>
-
-    <footer class="text-white-50 text-center py-4 mt-5 small">&copy; 2026 Map & Pump | All Rights Reserved</footer>
-<?php include __DIR__ . '/includes/moderator_footer_scripts.php'; ?>
+<?php $moderatorActiveNav = 'hq'; include __DIR__ . '/includes/moderator_offcanvas.php'; ?><footer class="text-white-50 text-center py-4 mt-5 small">&copy; 2026 Map &amp; Pump | All Rights Reserved</footer><?php include __DIR__ . '/includes/moderator_footer_scripts.php'; ?>
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    const detailModal = new bootstrap.Modal(document.getElementById('hqDetailsModal'));
+    const actionModal = new bootstrap.Modal(document.getElementById('accountActionModal'));
+    const detailsBody = document.getElementById('hqDetailsBody');
+    const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
+    const date = value => value ? new Date(String(value).replace(' ', 'T')).toLocaleString() : 'Not available';
+    document.querySelectorAll('.js-view-hq').forEach(button => button.addEventListener('click', async event => {
+        event.preventDefault(); detailsBody.innerHTML = '<div class="text-center text-white-50 py-5"><span class="spinner-border spinner-border-sm me-2"></span>Loading HQ details...</div>'; detailModal.show();
+        try { const response = await fetch('hq_details(M).php?id=' + encodeURIComponent(button.dataset.hqId)); const payload = await response.json(); if (!response.ok || !payload.success) throw new Error(payload.message || 'Unable to load HQ details.'); const h = payload.hq; const accounts = payload.accounts || []; const actions = payload.actions || []; detailsBody.innerHTML = '<div class="row g-4"><div class="col-12 col-md-6"><div class="mod-detail-label">Company</div><div class="mod-detail-value mb-3">'+esc(h.company_name)+'</div><div class="mod-detail-label">Location</div><div class="mod-detail-value mb-3">'+esc(h.location)+'</div><div class="mod-detail-label">Contact / Email</div><div class="mod-detail-value mb-3">'+esc(h.contact_number)+'<br>'+esc(h.headquarter_email)+'</div><div class="mod-detail-label">License</div><div class="mod-detail-value">'+esc(h.business_license)+'<br>Expires: '+esc(date(h.expire_at))+'</div></div><div class="col-12 col-md-6"><div class="mod-detail-label">Created</div><div class="mod-detail-value mb-3">'+esc(date(h.created_at))+'</div><div class="mod-detail-label">Linked Accounts</div><div class="table-responsive"><table class="table mod-modal-table table-sm"><thead><tr><th>Username</th><th>Status</th></tr></thead><tbody>'+ (accounts.length ? accounts.map(a => '<tr><td>'+esc(a.username)+'<br><small>'+esc(a.email)+'</small></td><td>'+esc(a.status)+'</td></tr>').join('') : '<tr><td colspan="2" class="text-white-50">No linked accounts.</td></tr>') +'</tbody></table></div></div><div class="col-12"><div class="mod-detail-label mb-2">Action History</div>'+ (actions.length ? actions.map(a => '<div class="border-top border-white border-opacity-10 py-2"><span class="text-danger">'+esc(a.action_type)+'</span> · '+esc(date(a.created_at))+'<br><span class="text-white-50">'+esc(a.reason)+'</span></div>').join('') : '<div class="text-white-50">No suspend/remove history.</div>') +'</div></div>'; } catch (error) { detailsBody.innerHTML = '<div class="alert alert-danger">'+esc(error.message)+'</div>'; }
+    }));
+    document.querySelectorAll('.js-account-action').forEach(button => button.addEventListener('click', event => { event.preventDefault(); document.getElementById('actionHQId').value = button.dataset.hqId || ''; document.getElementById('actionHQName').textContent = button.dataset.hqName || 'Selected HQ'; document.getElementById('actionReason').value = ''; actionModal.show(); }));
+});
+</script>
 </body>
 </html>

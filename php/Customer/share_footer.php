@@ -20,7 +20,7 @@
                     <i class="bi bi-clipboard2-pulse-fill"></i> Usage History
                 </a>
                 <a href="profile_page.php" class="nav-item-link">
-                    <i class="bi bi-person-fill-gear"></i> Portal Profile
+                    <i class="bi bi-person-fill-gear"></i> Edit Profile
                 </a>
             </div>
             <div class="p-4 bg-black bg-opacity-20">

@@ -1,20 +1,4 @@
-<?php
-// Process profile post upgrades before rendering HTML header blocks
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'upgrade_business') {
-    session_start();
-    $_SESSION['has_business'] = true;
-    $message = "Your profile has been successfully linked and transitioned to a Business Account!";
-}
-
-include 'share_header.php';
-?>
-
-<?php if (isset($message)): ?>
-    <div class="alert alert-success border-0 bg-success bg-opacity-10 text-success rounded-4 p-4 mb-4 d-flex align-items-center gap-3" role="alert">
-        <i class="bi bi-check-circle-fill fs-4"></i>
-        <span class="fw-semibold" style="font-size:14px;"><?php echo $message; ?></span>
-    </div>
-<?php endif; ?>
+<?php include 'share_header.php'; ?>
 
 <div class="row g-4">
     <div class="col-lg-6">
@@ -37,29 +21,42 @@ include 'share_header.php';
     </div>
 
     <div class="col-lg-6">
-        <div class="dashboard-panel-card h-100">
-            <div class="d-flex align-items-start gap-3 mb-4">
-                <div class="bg-primary bg-opacity-10 p-2.5 rounded-3 text-sky-400">
-                    <i class="bi bi-buildings fs-4"></i>
+        <div class="d-flex flex-column gap-4 h-100">
+            <div class="dashboard-panel-card">
+                <div class="d-flex align-items-start justify-content-between gap-3 mb-3">
+                    <div class="d-flex align-items-start gap-3">
+                        <div class="bg-primary bg-opacity-10 p-2.5 rounded-3 text-sky-400">
+                            <i class="bi bi-person-vcard fs-4"></i>
+                        </div>
+                        <div>
+                            <h3 class="text-white mb-1">Driver License</h3>
+                            <p class="text-secondary mb-0" style="font-size:13px;">Keep the driver's license details for this user up to date.</p>
+                        </div>
+                    </div>
+                    <button type="button" class="btn btn-outline-info btn-sm px-3 rounded-3 fw-bold" style="font-size:12px;" onclick="alert('Driver license editing will open here.');">Edit</button>
                 </div>
-                <div>
-                    <h3 class="text-white mb-1">Enterprise Conversion</h3>
-                    <p class="text-secondary mb-0" style="font-size:13px;">Corporate entities and station branches can request profile transitions below.</p>
-                </div>
+                <button type="button" class="btn btn-link text-info p-0 fw-bold text-decoration-none" style="font-size:12px;" onclick="alert('Add-user setup will open here.');">
+                    <i class="bi bi-person-plus-fill me-1"></i>Add User
+                </button>
             </div>
 
-            <?php if ($_SESSION['has_business']): ?>
-                <div class="p-3 bg-success bg-opacity-10 text-success rounded-4 border border-success border-opacity-10 font-semibold" style="font-size: 13px;">
-                    <i class="bi bi-shield-fill-check me-1"></i> This account is successfully connected to a registered Enterprise Group profile.
+            <div class="dashboard-panel-card flex-grow-1">
+                <div class="d-flex align-items-start justify-content-between gap-3 mb-3">
+                    <div class="d-flex align-items-start gap-3">
+                        <div class="bg-primary bg-opacity-10 p-2.5 rounded-3 text-sky-400">
+                            <i class="bi bi-car-front-fill fs-4"></i>
+                        </div>
+                        <div>
+                            <h3 class="text-white mb-1">Car License</h3>
+                            <p class="text-secondary mb-0" style="font-size:13px;">Manage the registration and license details for the selected car.</p>
+                        </div>
+                    </div>
+                    <button type="button" class="btn btn-outline-info btn-sm px-3 rounded-3 fw-bold" style="font-size:12px;" onclick="alert('Car license editing will open here.');">Edit</button>
                 </div>
-            <?php else: ?>
-                <form method="POST" action="profile_page.php">
-                    <input type="hidden" name="action" value="upgrade_business">
-                    <button type="submit" class="btn btn-primary w-100 py-3 fw-bold rounded-4" style="font-size:12px; font-family:'Space Grotesk';">
-                        Transition profile to Station Owner / Partner
-                    </button>
-                </form>
-            <?php endif; ?>
+                <button type="button" class="btn btn-link text-info p-0 fw-bold text-decoration-none" style="font-size:12px;" onclick="alert('Car switcher will open here.');">
+                    <i class="bi bi-arrow-left-right me-1"></i>Switch Car
+                </button>
+            </div>
         </div>
     </div>
 </div>
