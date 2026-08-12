@@ -26,10 +26,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($existing > 0) {
                     $errorMessage = 'This fuel grade already exists.';
                 } else {
-                    $priceValue = is_numeric($startingPrice) ? (int) $startingPrice : 0;
-                    $insert = $conn->prepare('INSERT INTO oil_types (oil_name, price_per_liter) VALUES (?, ?)');
+                    $insert = $conn->prepare('INSERT INTO oil_types (oil_name) VALUES (?)');
                     if ($insert) {
-                        $insert->bind_param('si', $gradeName, $priceValue);
+                        $insert->bind_param('s', $gradeName);
                         if ($insert->execute()) {
                             $addMessage = 'Fuel grade "' . htmlspecialchars($gradeName, ENT_QUOTES) . '" added successfully.';
                         } else {
@@ -56,7 +55,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $errorMessage = 'Please enter a valid non-negative price.';
         } else {
             $priceValue = (int) $newPrice;
-            $stmt = $conn->prepare('UPDATE oil_types SET price_per_liter = ? WHERE oil_name = ?');
+            $stmt = $conn->prepare('UPDATE station_oil_inventory soi JOIN oil_types ot ON soi.oil_type_id = ot.oil_type_id SET soi.price_per_litre = ? WHERE ot.oil_name = ?');
             if ($stmt) {
                 $stmt->bind_param('is', $priceValue, $fuelType);
                 if ($stmt->execute()) {
@@ -77,7 +76,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $grades = [];
-$result = $conn->query('SELECT oil_name, price_per_liter FROM oil_types ORDER BY oil_name');
+$result = $conn->query('SELECT ot.oil_name, MAX(soi.price_per_litre) AS price_per_liter FROM oil_types ot 
+                        LEFT JOIN station_oil_inventory soi ON ot.oil_type_id = soi.oil_type_id
+                        GROUP BY ot.oil_type_id, ot.oil_name ORDER BY ot.oil_name');
 if ($result) {
     while ($row = $result->fetch_assoc()) {
         $grades[] = $row;
@@ -91,6 +92,121 @@ if ($result) {
     <meta charset="UTF-8">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
     <link rel="stylesheet" href="../../css/HQstyle.css">
+    <style>
+        .pricing-cards {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 24px;
+            margin-bottom: 24px;
+        }
+
+        .pricing-cards .card {
+            margin-bottom: 0;
+        }
+
+        .form-select {
+            background-color: rgba(255, 255, 255, 0.04);
+            color: var(--slate-50);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 10px 12px;
+            box-shadow: none;
+        }
+
+        .form-select:focus {
+            outline: none;
+            border-color: rgba(56, 189, 248, 0.4);
+            background-color: rgba(255, 255, 255, 0.06);
+            box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.16);
+            color: var(--slate-50);
+        }
+
+        .form-select option {
+            background-color: var(--navy-900);
+            color: var(--slate-50);
+        }
+
+        .pricing-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 16px;
+            background: transparent;
+            color: var(--slate-50);
+            border-radius: 0;
+            border: none;
+        }
+
+        .pricing-table thead th,
+        .pricing-table tbody td {
+            border-left: none;
+            border-right: none;
+        }
+
+        .pricing-table th {
+            text-align: left;
+            font-size: 12px;
+            padding: 0 0 12px;
+            color: var(--slate-300);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .pricing-table td {
+            padding: 12px 0;
+            border-top: 1px solid rgba(255, 255, 255, 0.08);
+            font-size: 14px;
+            color: var(--slate-50);
+            vertical-align: middle;
+        }
+
+        .pricing-table tbody tr:first-child td {
+            border-top: none;
+        }
+
+        .pricing-table tbody tr:hover td {
+            background: rgba(255, 255, 255, 0.03);
+        }
+
+        .price-input-wrap {
+            position: relative;
+        }
+
+        .price-input-wrap .form-control {
+            padding-right: 110px;
+        }
+
+        .price-input-wrap .form-control::placeholder {
+            color: var(--slate-400);
+            opacity: 1;
+        }
+
+        .price-input-wrap .form-control:focus {
+            background-color: rgba(255, 255, 255, 0.04);
+            color: var(--slate-50);
+            border-color: rgba(56, 189, 248, 0.4);
+            box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.16);
+        }
+
+        .price-input-wrap .input-suffix {
+            position: absolute;
+            right: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--slate-400);
+            font-size: 0.8rem;
+            pointer-events: none;
+            white-space: nowrap;
+            background: rgba(15, 23, 42, 0.35);
+            padding-left: 8px;
+        }
+
+        @media (max-width: 900px) {
+            .pricing-cards {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
 </head>
 <body>
     <h2 class="title">Oil Types & Pricing Matrix</h2>
@@ -102,7 +218,7 @@ if ($result) {
         </div>
     <?php endif; ?>
 
-    <div class="card mb-4 p-4">
+    <!-- <div class="card mb-4 p-4">
         <h3>Define Standard Oil Grade</h3>
         <p class="subtitle" style="margin-bottom:12px;">Declare a new standard fuel class in the system directory.</p>
         <form method="POST">
@@ -121,59 +237,64 @@ if ($result) {
                 <button type="submit" class="btn btn-primary">Save Fuel Grade</button>
             </div>
         </form>
-    </div>
+    </div> -->
 
-    <div class="card mb-4 p-4">
-        <h3>Active Live Base Price</h3>
-        <p class="subtitle" style="margin-bottom:12px;">Push direct modifications down to electronic station nodes.</p>
-        <form method="POST">
-            <input type="hidden" name="action" value="update_price">
-            <div class="row g-3">
-                <div class="col-md-6">
-                    <label class="form-label">Select Product Grade</label>
-                    <select name="fuel_type" class="form-select" required>
-                        <option value="">Select grade</option>
-                        <?php foreach ($grades as $grade): ?>
-                            <option value="<?php echo htmlspecialchars($grade['oil_name'], ENT_QUOTES); ?>"><?php echo htmlspecialchars($grade['oil_name']); ?></option>
-                        <?php endforeach; ?>
-                    </select>
+    <div class="pricing-cards">
+        <div class="card mb-4 p-4">
+            <h3>Active Live Base Price</h3>
+            <p class="subtitle" style="margin-bottom:12px;">Push direct modifications down to electronic station nodes.</p>
+            <form method="POST">
+                <input type="hidden" name="action" value="update_price">
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label">Select Product Grade</label>
+                        <select name="fuel_type" class="form-select" required>
+                            <option value="">Select grade</option>
+                            <?php foreach ($grades as $grade): ?>
+                                <option value="<?php echo htmlspecialchars($grade['oil_name'], ENT_QUOTES); ?>"><?php echo htmlspecialchars($grade['oil_name']); ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Active Base Pump Rate</label>
+                        <div class="price-input-wrap">
+                            <input type="number" name="fuel_price" class="form-control" step="1" min="0" placeholder="e.g., 3500" required>
+                            <span class="input-suffix">(Kyats/L)</span>
+                        </div>
+                    </div>
                 </div>
-                <div class="col-md-6">
-                    <label class="form-label">Active Base Pump Rate (Kyats/L)</label>
-                    <input type="number" name="fuel_price" class="form-control" step="100" min="0" placeholder="e.g., 3500" required>
+                <div class="mt-3">
+                    <button type="submit" class="btn btn-success">Publish Base Price</button>
                 </div>
-            </div>
-            <div class="mt-3">
-                <button type="submit" class="btn btn-success">Publish Base Price</button>
-            </div>
-        </form>
-    </div>
+            </form>
+        </div>
 
-    <div class="card p-4">
-        <h3>Current Fuel Grades</h3>
-        <div class="table-responsive">
-            <table class="table table-striped table-borderless align-middle">
-                <thead>
-                    <tr>
-                        <th>Fuel Grade</th>
-                        <th>Price / L</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <?php if (count($grades) > 0): ?>
-                        <?php foreach ($grades as $grade): ?>
-                            <tr>
-                                <td><?php echo htmlspecialchars($grade['oil_name']); ?></td>
-                                <td><?php echo number_format((int) $grade['price_per_liter']); ?> MMK</td>
-                            </tr>
-                        <?php endforeach; ?>
-                    <?php else: ?>
+        <div class="card p-4">
+            <h3>Current Fuel Grades</h3>
+            <div class="table-responsive">
+                <table class="pricing-table table-borderless align-middle">
+                    <thead>
                         <tr>
-                            <td colspan="2">No fuel grades defined yet.</td>
+                            <th>Fuel Grade</th>
+                            <th>Price / L</th>
                         </tr>
-                    <?php endif; ?>
-                </tbody>
-            </table>
+                    </thead>
+                    <tbody>
+                        <?php if (count($grades) > 0): ?>
+                            <?php foreach ($grades as $grade): ?>
+                                <tr>
+                                    <td><?php echo htmlspecialchars($grade['oil_name']); ?></td>
+                                    <td><?php echo number_format((int) $grade['price_per_liter']); ?> MMK</td>
+                                </tr>
+                            <?php endforeach; ?>
+                        <?php else: ?>
+                            <tr>
+                                <td colspan="2">No fuel grades defined yet.</td>
+                            </tr>
+                        <?php endif; ?>
+                    </tbody>
+                </table>
+            </div>
         </div>
     </div>
 </body>
