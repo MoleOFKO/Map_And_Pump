@@ -34,6 +34,13 @@ if (!hq_db_available() || !request_schema_ready()) {
 }
 
 global $conn;
+$reviewer = admin_current_user(false);
+if (!$reviewer) {
+    request_flash('danger', 'A signed-in administrator or moderator account is required to review requests.');
+    request_redirect();
+}
+$reviewerId = (int) $reviewer['user_id'];
+
 $targetQuery = $conn->prepare(
     'SELECT r.request_id, r.reference_code, r.sender_entity,
             r.sender_email, r.status, u.user_id, u.email AS user_email
@@ -78,14 +85,14 @@ try {
 
     $requestUpdate = $conn->prepare(
         'UPDATE system_requests
-         SET status = ?, review_reason = ?, reviewed_at = NOW(), reviewed_by = NULL, updated_at = NOW()
+         SET status = ?, review_reason = ?, reviewed_at = NOW(), reviewed_by = ?, updated_at = NOW()
          WHERE request_id = ? AND status = \'pending\''
     );
     if (!$requestUpdate) {
         throw new RuntimeException('Could not prepare the request update.');
     }
 
-    $requestUpdate->bind_param('ssi', $newStatus, $reviewReason, $requestId);
+    $requestUpdate->bind_param('ssii', $newStatus, $reviewReason, $reviewerId, $requestId);
     if (!$requestUpdate->execute() || $requestUpdate->affected_rows !== 1) {
         throw new RuntimeException('The request was already changed or could not be updated.');
     }
