@@ -11,7 +11,7 @@ Dockerfile
 .dockerignore
 
 # Dependencies (if installing via Composer inside Docker)
-/vendor
+# /vendor
 
 # Logs and temporary files
 *.log
