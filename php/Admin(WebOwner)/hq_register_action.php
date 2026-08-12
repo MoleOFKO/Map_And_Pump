@@ -148,7 +148,7 @@ try {
     $requestReference = 'HQ-REG-' . $headquarterId;
     $requestType = 'hq_registration';
     $requestDetails = sprintf(
-        'New HQ registration submitted from the admin Register New Headquarter panel. Contact: %s. Company logo: %s. License expiry: %s.',
+        'New HQ registration submitted from the Register New Headquarter panel. Contact: %s. Company logo: %s. License expiry: %s.',
         $contactNumber,
         $companyLogo,
         $expiryDate

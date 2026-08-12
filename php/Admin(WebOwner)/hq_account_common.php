@@ -57,6 +57,7 @@ function hq_redirect(string $location = 'view_hq_and_user_account.php'): never
     $returnTo = trim((string) ($_POST['return_to'] ?? $_GET['return_to'] ?? ''));
     $allowedReturnTargets = [
         'moderator_dashboard.php',
+        'manage_hq(M).php',
         'view_hq_and_user_account(M).php',
         'view_requests(M).php',
         'view_report(M).php',

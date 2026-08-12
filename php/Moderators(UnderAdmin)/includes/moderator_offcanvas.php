@@ -1,5 +1,5 @@
 <?php
-/** @var string $moderatorActiveNav home|hq|requests|report|profile|logs */
+/** @var string $moderatorActiveNav home|manage_hq|hq|requests|report|profile|logs */
 $moderatorActiveNav = $moderatorActiveNav ?? '';
 $modMenuClass = static function (string $key) use ($moderatorActiveNav): string {
     return $moderatorActiveNav === $key ? 'menu-btn-nav active-nav' : 'menu-btn-nav';
@@ -41,6 +41,7 @@ $modMenuClass = static function (string $key) use ($moderatorActiveNav): string 
             <ul class="list-unstyled d-flex flex-column gap-2">
                 <li><a href="moderator_dashboard.php" class="<?= $modMenuClass('home') ?>"><i class="bi bi-house me-3 txt-neon-cyan"></i> Home</a></li>
                 <li><a href="view_hq_and_user_account(M).php" class="<?= $modMenuClass('hq') ?>"><i class="bi bi-building-gear me-3 txt-neon-cyan"></i> View HQ &amp; User Accounts</a></li>
+                <li><a href="manage_hq(M).php" class="<?= $modMenuClass('manage_hq') ?>"><i class="bi bi-buildings me-3 txt-neon-cyan"></i> Manage HQ</a></li>
                 <li><a href="view_requests(M).php" class="<?= $modMenuClass('requests') ?>"><i class="bi bi-file-earmark-check me-3 txt-neon-cyan"></i> View Requests</a></li>
                 <li><a href="view_report(M).php" class="<?= $modMenuClass('report') ?>"><i class="bi bi-graph-up-arrow me-3 txt-neon-cyan"></i> View Report</a></li>
                 <li><a href="edit_profile(M).php" class="<?= $modMenuClass('profile') ?>"><i class="bi bi-person-bounding-box me-3 txt-neon-blue"></i> Edit Profile</a></li>
