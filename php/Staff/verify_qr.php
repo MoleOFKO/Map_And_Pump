@@ -125,6 +125,7 @@
                     </div>
                     
                     <form id="manualVerifyForm" action="verify_process.php" method="POST" class="text-start">
+                        <input type="hidden" name="action" value="verify">
                         <div class="mb-4">
                             <label for="bookingCode" class="form-label text-white-50 small">Booking Reference Code</label>
                             <div class="input-group">
@@ -245,6 +246,10 @@
                 body: payload
             });
             const result = await response.json().catch(() => ({ success: false, message: 'Unexpected server response.' }));
+            if (result.success && result.booking && result.booking.booking_id) {
+                window.location.href = `verify_detail.php?booking_id=${encodeURIComponent(result.booking.booking_id)}`;
+                return result;
+            }
             renderVerifyResult(result);
             document.getElementById('scanStatus').textContent = result.success ? 'Checked in' : (result.message || 'Invalid booking');
             return result;
@@ -255,6 +260,7 @@
             const button = document.getElementById('manualVerifyBtn');
             const codeField = document.getElementById('bookingCode');
             const payload = new URLSearchParams();
+            payload.append('action', 'verify');
             payload.append('booking_code', codeField.value.trim());
             button.disabled = true;
             try {
@@ -308,6 +314,7 @@
                             if (codeField) codeField.value = bookingCode;
 
                             const payload = new URLSearchParams();
+                            payload.append('action', 'verify');
                             payload.append('booking_code', bookingCode);
                             payload.append('qr_payload', raw);
 

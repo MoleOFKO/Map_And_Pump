@@ -85,6 +85,6 @@ try {
     send_registration_code($email, $code);
     register_json(true, 'We sent a verification code to your email.');
 } catch (Throwable $e) {
-    error_log('Registration code failed: ' . $e->getMessage());
+    error_log('Registration code failed: ' . $e->getMessage() . ' [' . get_class($e) . ']');
     register_json(false, 'Could not send the verification email. Please check mail settings and try again.');
 }

@@ -9,6 +9,11 @@ use PHPMailer\PHPMailer\Exception;
 function mail_config_value(string $key, string $default = ''): string
 {
     $value = getenv($key);
+
+    if ($value === false) {
+        $value = $_ENV[$key] ?? $_SERVER[$key] ?? '';
+    }
+
     return is_string($value) && trim($value) !== '' ? trim($value) : $default;
 }
 
@@ -16,10 +21,11 @@ function smtp_send_mail(string $to, string $subject, string $htmlBody, string $t
 {
     $host = mail_config_value('SMTP_HOST', 'smtp.gmail.com');
     $port = (int) mail_config_value('SMTP_PORT', '587');
-    $username = mail_config_value('SMTP_USERNAME', 'mapa.and.pump@gmail.com');
-    $password = mail_config_value('SMTP_PASSWORD', 'ndvtisdcscvfynum');
-    $fromEmail = mail_config_value('SMTP_FROM_EMAIL', 'mapa.and.pump@gmail.com');
+    $username = mail_config_value('SMTP_USERNAME');
+    $password = mail_config_value('SMTP_PASSWORD');
+    $fromEmail = mail_config_value('SMTP_FROM_EMAIL');
     $fromName = mail_config_value('SMTP_FROM_NAME', 'Map & Pump');
+    $debugLevel = min(max((int) mail_config_value('SMTP_DEBUG', '0'), 0), 3);
 
     if ($username === '' || $password === '' || $fromEmail === '') {
         throw new RuntimeException('Email is not configured. Set SMTP_USERNAME, SMTP_PASSWORD, and SMTP_FROM_EMAIL.');
@@ -29,11 +35,15 @@ function smtp_send_mail(string $to, string $subject, string $htmlBody, string $t
 
     try {
         $mail->isSMTP();
+        $mail->SMTPDebug = $debugLevel;
+        $mail->Debugoutput = function (string $str, int $level) {
+            error_log(sprintf('[PHPMailer][%d] %s', $level, $str));
+        };
         $mail->Host = $host;
         $mail->SMTPAuth = true;
         $mail->Username = $username;
         $mail->Password = str_replace([' ', '\t', '\r', '\n'], '', $password);
-        $mail->Timeout = 10;
+        $mail->Timeout = 30;
         $mail->SMTPKeepAlive = false;
         $mail->SMTPAutoTLS = true;
         $mail->SMTPOptions = [
@@ -49,6 +59,7 @@ function smtp_send_mail(string $to, string $subject, string $htmlBody, string $t
         } else {
             $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
         }
+
         $mail->Port = $port;
         $mail->CharSet = 'UTF-8';
 
@@ -62,6 +73,7 @@ function smtp_send_mail(string $to, string $subject, string $htmlBody, string $t
 
         $mail->send();
     } catch (Exception $e) {
+        error_log('PHPMailer exception: ' . $e->getMessage());
         throw new RuntimeException('Could not send email via PHPMailer: ' . $mail->ErrorInfo, 0, $e);
     }
 }
