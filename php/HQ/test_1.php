@@ -4,258 +4,112 @@
     <meta charset="UTF-8">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
     <link rel="stylesheet" href="/css/HQstyle.css">
-    <style>
-        /* Custom table color overrides matching dark dashboard aesthetic */
-        .table-custom {
-            background-color: transparent !important;
-            color: #dee2e6;
-        }
-        .table-custom th {
-            text-transform: uppercase;
-            font-size: 0.74rem;
-            letter-spacing: 0.05em;
-            color: var(--slate-300);
-            padding: 12px 16px;
-            background: rgba(255, 255, 255, 0.05);
-            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-        }
-        .table-custom td {
-            background-color: transparent !important;
-            color: #ced4da !important;
-            border-color: #2c3034;
-            vertical-align: middle;
-        }
-        /* Ensure buttons wrap gracefully and stay aligned inside table cells */
-        .table-actions {
-            white-space: nowrap;
-        }
-
-        /* Custom Modal Theme Colors Matching the Dark Dashboard Card Style */
-        .modal-content-custom {
-            background-color: #121A26 !important;
-            border: 1px solid #373b3e !important;
-            box-shadow: 0 1rem 3rem rgba(0, 0, 0, 0.5);
-        }
-
-        .modal-content-decommission {
-            background-color: #121A26 !important;
-            border: 1px solid #842029 !important;
-            box-shadow: 0 1rem 3rem rgba(220, 53, 69, 0.15);
-        }
-    </style>
 </head>
 <body>
-    <h2 class="title">Station Network</h2>
-    <p class="subtitle">Onboard physical station nodes and set up terminal operating profiles.</p>
-    <!-- Managed Stations Section with Location instead of Location Code -->
+    <h2 class="title">Report to Admin</h2>
+    <p class="subtitle">Submit incident files, request technical help, or escalate critical terminal operational issues directly to global system administrators.</p>
+
     <div class="card">
-        <div class="d-flex justify-content-between align-items-center mb-3">
-            <div>
-                <h3>Manage Deployed Stations</h3>
-                <p class="subtitle mb-0">Monitor active nodes, update operational status, or remove configurations.</p>
+        <h3>Submit a Support Ticket / Operational Escalation</h3>
+        <p class="subtitle" style="margin-bottom: 15px;">Provide detailed information regarding system bugs, regional hardware malfunctions, or merchant disputes.</p>
+        
+        <form onsubmit="handleSubmitReport(event)">
+            <div class="form-group">
+                <label>Issue Classification / Topic</label>
+                <select id="issue-topic" required>
+                    <option value="">-- Select Category --</option>
+                    <option value="pricing">Pricing Sync Error</option>
+                    <option value="access">Access Control & Credentials</option>
+                    <option value="dispute">Transaction / Settlement Dispute</option>
+                    <option value="other">Other Technical Request</option>
+                </select>
             </div>
-            <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#registerModal">+Add Station</button>
-        </div>
-        <div class="table-responsive">
-            <table class="table table-custom align-middle">
-                <thead>
-                    <tr>
-                        <th>Branch ID</th>
-                        <th>Station Name</th>
-                        <th>Location</th>
-                        <th>Branch Manager</th>
-                        <th>Status</th>
-                        <th class="text-end">Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr>
-                        <td>BR-HQ-01</td>
-                        <td>Downtown Metro</td>
-                        <td>New York</td>
-                        <td>Sarah Jenkins <br><small class="text-muted">sarah.j@apex.com</small></td>
-                        <td><span id="status-badge-1" class="badge bg-success">Active</span></td>
-                        <td class="text-end table-actions">
-                            <button type="button" id="toggle-btn-1" class="btn btn-sm btn-outline-warning me-1" onclick="toggleStatus(1)">Set Maintenance</button>
-                            <button type="button" class="btn btn-sm btn-outline-light me-1" data-bs-toggle="modal" data-bs-target="#configureModal" onclick="setConfigureData('Downtown Metro', 'New York', 'Sarah Jenkins')">Configure</button>
-                            <button type="button" class="btn btn-sm btn-danger" data-bs-toggle="modal" data-bs-target="#decommissionModal" onclick="setDecommissionData('Site #014 - Downtown Metro')">Decommission</button>
-                        </td>
-                    </tr>
-                    <tr>
-                        <td>BR-HQ-02</td>
-                        <td>Highway Bypass</td>
-                        <td>Chicago</td>
-                        <td>Marcus Vance <br><small class="text-muted">marcus.v@apex.com</small></td>
-                        <td><span id="status-badge-2" class="badge bg-warning text-dark">Maintenance</span></td>
-                        <td class="text-end table-actions">
-                            <button type="button" id="toggle-btn-2" class="btn btn-sm btn-outline-success me-1" onclick="toggleStatus(2)">Set Active</button>
-                            <button type="button" class="btn btn-sm btn-outline-light me-1" data-bs-toggle="modal" data-bs-target="#configureModal" onclick="setConfigureData('Highway Bypass', 'Chicago', 'Marcus Vance')">Configure</button>
-                            <button type="button" class="btn btn-sm btn-danger" data-bs-toggle="modal" data-bs-target="#decommissionModal" onclick="setDecommissionData('Site #009 - Highway Bypass')">Decommission</button>
-                        </td>
-                    </tr>
-                </tbody>
-            </table>
-        </div>
+
+            <div class="form-group">
+                <label>Impact Urgency Level</label>
+                <select id="issue-urgency" required>
+                    <option value="low">Low - General Question / Routine Update</option>
+                    <option value="medium">Medium - System anomaly but business operational</option>
+                    <option value="high">High - Business Critical / Station Outage</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label>Detailed Description</label>
+                <textarea id="issue-description" rows="6" placeholder="Please describe the exact issue, steps to reproduce, or key terminal details..." style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; font-family: inherit; font-size: 0.95rem;" required></textarea>
+            </div>
+
+            <div class="form-group">
+                <label>Attach Evidence / Screen Capture (Optional)</label>
+                <input type="file" accept="image/*,application/pdf">
+            </div>
+
+            <button type="submit" class="btn btn-danger">Dispatch Report to Admin</button>
+        </form>
     </div>
 
-    <!-- Register Station & Onboard Manager Modal -->
-    <div class="modal fade" id="registerModal" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog modal-lg">
-            <div class="modal-content modal-content-custom text-light">
-                <div class="modal-header border-secondary">
-                    <h5 class="modal-title">Register Station Node & Manager</h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body">
-                    <!-- Register Station Node Section -->
-                    <div class="card bg-transparent border-0 mb-4 p-0">
-                        <h3>Register Station Node</h3>
-                        <p class="subtitle" style="margin-bottom: 12px;">Establish unique location tags for network reporting[cite: 3].</p>
-                        <div class="row">
-                            <div class="col-md-3 mb-3">
-                                <div class="form-group">
-                                    <label class="form-label text-light">Branch ID</label>
-                                    <input type="text" class="form-control bg-dark text-light border-secondary" placeholder="e.g. #014">
-                                </div>
-                            </div>
-                            <div class="col-md-3 mb-3">
-                                <div class="form-group">
-                                    <label class="form-label text-light">Station Name</label>
-                                    <input type="text" class="form-control bg-dark text-light border-secondary" placeholder="e.g. Downtown Metro">
-                                </div>
-                            </div>
-                            <div class="col-md-3 mb-3">
-                                <div class="form-group">
-                                    <label class="form-label text-light">Region</label>
-                                    <select class="form-control bg-dark text-light border-secondary">
-                                        <option value="" disabled selected>Select Region</option>
-                                        <option value="Ygn">Yangon</option>
-                                        <option value="Mdy">Mandalay</option>
-                                        <option value="NPT">Nay Pyi Taw</option>
-                                    </select>
-                                </div>
-                            </div>
-                            <div class="col-md-3 mb-3">
-                                <div class="form-group">
-                                    <label class="form-label text-light">Location</label>
-                                    <input type="text" class="form-control bg-dark text-light border-secondary" placeholder="e.g. New York">
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <hr class="border-secondary my-4">
-
-                    <!-- Onboard Site Manager Account Section -->
-                    <div class="card bg-transparent border-0 p-0">
-                        <h3>Onboard Site Manager Account</h3>
-                        <p class="subtitle" style="margin-bottom: 12px;">Provision manager profiles responsible for log and inventory oversight[cite: 3].</p>
-                        <div class="form-group mb-3">
-                            <label class="form-label text-light">Assigned Node</label>
-                            <select class="form-control bg-dark text-light border-secondary">
-                                <option>BR-HQ-01 - Downtown Metro</option>
-                                <option>BR-HQ-02 - Highway Bypass</option>
-                            </select>
-                        </div>
-                        <div class="form-group mb-3">
-                            <label class="form-label text-light">Operator Professional Email</label>
-                            <input type="email" class="form-control bg-dark text-light border-secondary" placeholder="manager.name@apex.com">
-                        </div>
-                    </div>
-                </div>
-                <div class="modal-footer border-secondary">
-                    <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Close</button>
-                    <button type="button" class="btn btn-success" data-bs-dismiss="modal" onclick="alert('Terminal Node and Manager profile created successfully.')">Register Station</button>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Configure Modal with Location Field -->
-    <div class="modal fade" id="configureModal" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog">
-            <div class="modal-content modal-content-custom text-light">
-                <div class="modal-header border-secondary">
-                    <h5 class="modal-title">Configure Station Node</h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body">
-                    <form onsubmit="event.preventDefault(); alert('Configuration saved successfully!');">
-                        <div class="mb-3">
-                            <label class="form-label text-light">Branch ID</label>
-                            <input type="text" id="configBranchId" class="form-control bg-dark text-light border-secondary" value="BR-HQ-01">
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label text-light">Station Name</label>
-                            <input type="text" id="configStationName" class="form-control bg-dark text-light border-secondary">
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label text-light">Location</label>
-                            <input type="text" id="configLocation" class="form-control bg-dark text-light border-secondary">
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label text-light">Assigned Branch Manager</label>
-                            <input type="text" id="configManagerName" class="form-control bg-dark text-light border-secondary">
-                        </div>
-                        <div class="text-end mt-4">
-                            <button type="button" class="btn btn-outline-light me-2" data-bs-dismiss="modal">Cancel</button>
-                            <button type="submit" class="btn btn-success" data-bs-dismiss="modal">Save Changes</button>
-                        </div>
-                    </form>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Decommission Modal -->
-    <div class="modal fade" id="decommissionModal" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog">
-            <div class="modal-content modal-content-decommission text-light">
-                <div class="modal-header border-danger">
-                    <h5 class="modal-title text-danger">Decommission Station Node</h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body">
-                    <p>Are you sure you want to decommission <strong id="decommissionTarget" class="text-warning"></strong>?</p>
-                    <p class="small text-muted">This action will remove terminal node configurations and revoke associated manager keys.</p>
-                    <div class="text-end mt-4">
-                        <button type="button" class="btn btn-outline-light me-2" data-bs-dismiss="modal">Cancel</button>
-                        <button type="button" class="btn btn-danger" data-bs-dismiss="modal" onclick="alert('Station successfully decommissioned.')">Confirm Decommission</button>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Bootstrap JS Bundle (Required for Modals) -->
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <!-- Ticket History Log -->
+    <!-- <div class="card">
+        <h3>My Submitted Tickets</h3>
+        <p class="subtitle" style="margin-bottom: 12px;">Track current resolution progress of previously submitted admin escalations.</p>
+        
+        <table style="width: 100%; border-collapse: collapse;">
+            <thead>
+                <tr style="border-bottom: 2px solid var(--border); text-align: left; font-size: 0.9rem;">
+                    <th style="padding: 10px 8px;">Ticket ID</th>
+                    <th style="padding: 10px 8px;">Topic</th>
+                    <th style="padding: 10px 8px;">Urgency</th>
+                    <th style="padding: 10px 8px;">Status</th>
+                </tr>
+            </thead>
+            <tbody id="ticket-history">
+                <tr style="border-bottom: 1px solid var(--border); font-size: 0.9rem;">
+                    <td style="padding: 10px 8px; font-family: monospace;">#TKT-8902</td>
+                    <td style="padding: 10px 8px;">Pricing Sync Error</td>
+                    <td style="padding: 10px 8px;"><span style="color: var(--danger); font-weight: bold;">High</span></td>
+                    <td style="padding: 10px 8px;"><span style="color: var(--success); font-weight: bold;">Resolved</span></td>
+                </tr>
+            </tbody>
+        </table>
+    </div> -->
 
     <script>
-        function toggleStatus(rowId) {
-            const badge = document.getElementById('status-badge-' + rowId);
-            const btn = document.getElementById('toggle-btn-' + rowId);
+        function handleSubmitReport(e) {
+            e.preventDefault();
+            
+            const topic = document.getElementById('issue-topic').value;
+            const urgency = document.getElementById('issue-urgency').value;
+            const description = document.getElementById('issue-description').value;
 
-            if (badge.classList.contains('bg-success')) {
-                badge.className = 'badge bg-warning text-dark';
-                badge.textContent = 'Maintenance';
-                btn.className = 'btn btn-sm btn-outline-success me-1';
-                btn.textContent = 'Set Active';
-            } else {
-                badge.className = 'badge bg-success';
-                badge.textContent = 'Active';
-                btn.className = 'btn btn-sm btn-outline-warning me-1';
-                btn.textContent = 'Set Maintenance';
-            }
-        }
+            // Generate a random ticket ID
+            const ticketId = 'TKT-' + Math.floor(1000 + Math.random() * 9000);
 
-        function setConfigureData(stationName, location, manager) {
-            document.getElementById('configStationName').value = stationName;
-            document.getElementById('configLocation').value = location;
-            document.getElementById('configManagerName').value = manager;
-        }
+            // Add the new row to our UI table safely
+            const tbody = document.getElementById('ticket-history');
+            const newRow = document.createElement('tr');
+            newRow.style.borderBottom = '1px solid var(--border)';
+            newRow.style.fontSize = '0.9rem';
 
-        function setDecommissionData(station) {
-            document.getElementById('decommissionTarget').textContent = station;
+            // Set color based on urgency selection
+            let urgencyColor = 'var(--text)';
+            if(urgency === 'high') urgencyColor = 'var(--danger)';
+            else if(urgency === 'medium') urgencyColor = '#f59e0b'; // Amber
+
+            newRow.innerHTML = `
+                <td style="padding: 10px 8px; font-family: monospace;">#${ticketId}</td>
+                <td style="padding: 10px 8px;">${topic.charAt(0).toUpperCase() + topic.slice(1)}</td>
+                <td style="padding: 10px 8px;"><span style="color: ${urgencyColor}; font-weight: bold;">${urgency.toUpperCase()}</span></td>
+                <td style="padding: 10px 8px;"><span style="color: #3b82f6; font-weight: bold;">Pending Admin Review</span></td>
+            `;
+
+            tbody.prepend(newRow);
+
+            alert(`Your escalation has been dispatched! Track your ticket reference: #${ticketId}`);
+            
+            // Clear inputs
+            document.getElementById('issue-topic').value = '';
+            document.getElementById('issue-urgency').value = 'low';
+            document.getElementById('issue-description').value = '';
         }
     </script>
 </body>
