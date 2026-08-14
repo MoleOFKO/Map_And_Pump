@@ -30,13 +30,17 @@ if (!hq_db_available() || !hq_registry_schema_ready() || !hq_action_table_ready(
 
 global $conn;
 $targetQuery = $conn->prepare(
-    'SELECT h.company_name, u.user_id, u.email
+    "SELECT h.company_name, u.user_id, u.email
      FROM headquarter h
      LEFT JOIN users u ON u.user_id = (
-         SELECT MIN(u2.user_id) FROM users u2 WHERE u2.headquarter_id = h.headquarter_id
+         SELECT MIN(u2.user_id)
+         FROM users u2
+         INNER JOIN roles r2 ON r2.role_id = u2.role_id
+         WHERE u2.headquarter_id = h.headquarter_id
+           AND r2.role_id = 3 AND LOWER(TRIM(r2.role_name)) = 'hq'
      )
      WHERE h.headquarter_id = ?
-     LIMIT 1'
+     LIMIT 1"
 );
 
 if (!$targetQuery) {
@@ -73,7 +77,7 @@ $notification = !empty($target['email'])
 try {
     $conn->begin_transaction();
 
-    $statusUpdate = $conn->prepare('UPDATE users SET status = ?, updated_at = NOW() WHERE headquarter_id = ?');
+    $statusUpdate = $conn->prepare('UPDATE users SET status = ?, updated_at = NOW() WHERE headquarter_id = ? AND role_id = 3');
     if (!$statusUpdate) {
         throw new RuntimeException('Could not prepare the HQ status update.');
     }
