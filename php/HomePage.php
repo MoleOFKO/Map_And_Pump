@@ -85,7 +85,7 @@
                 </p>
 
                 <div class="d-sm-flex gap-3 justify-content-center justify-content-lg-start" data-reveal style="--reveal-delay:240ms">
-                    <a href="/register" class="btn btn-primary btn-lg px-4 py-3 mb-3 mb-sm-0 w-100 w-sm-auto">
+                    <a href="/php/Customer/track_book.php" class="btn btn-primary btn-lg px-4 py-3 mb-3 mb-sm-0 w-100 w-sm-auto">
                         <i class="fa-solid fa-location-crosshairs me-2"></i>Find fuel near me
                     </a>
                     <a href="#how" class="btn btn-outline-light btn-lg px-4 py-3 w-100 w-sm-auto">
@@ -576,7 +576,7 @@
             <h2 class="text-gradient">Your next fill-up<br class="d-none d-md-block"> shouldn't cost you a morning.</h2>
             <p class="section-lead mx-auto mb-4">Join 52,000+ drivers who stopped queuing and started booking.</p>
             <div class="d-sm-flex gap-3 justify-content-center">
-                <a href="/register" class="btn btn-primary btn-lg px-4 py-3 mb-3 mb-sm-0 w-100 w-sm-auto">Find fuel near me</a>
+                <a href="/php/Customer/track_book.php" class="btn btn-primary btn-lg px-4 py-3 mb-3 mb-sm-0 w-100 w-sm-auto">Find fuel near me</a>
                 <a href="/php/Login/login.php" class="btn btn-outline-light btn-lg px-4 py-3 w-100 w-sm-auto">I run a station</a>
             </div>
         </div>
