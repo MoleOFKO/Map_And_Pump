@@ -22,15 +22,20 @@ unset($_SESSION['verify_flash']);
 
 $bookingId = isset($_GET['booking_id']) ? (int)$_GET['booking_id'] : 0;
 $booking = null;
+$weeklyLimitLiters = 35.0;
+$weeklyFilledLiters = 0.0;
+$fillableLiters = $weeklyLimitLiters;
 if ($bookingId > 0) {
     $stmt = $pdo->prepare(
         'SELECT b.booking_id, b.user_id, b.station_id, b.oil_type_id, b.qr_code, b.qr_refrence_code,
                 b.status, b.filled_gas, b.time_of_filled, b.expire_at, b.created_at,
-                s.station_name, o.oil_name, u.user_name, u.car_license_id
+                s.station_name, o.oil_name, u.user_name, u.car_license_id,
+                c.filled_gas AS weekly_filled_gas, c.updated_at AS car_license_updated_at
          FROM booking b
          LEFT JOIN stations s ON s.station_id = b.station_id
          LEFT JOIN oil_types o ON o.oil_type_id = b.oil_type_id
          LEFT JOIN users u ON u.user_id = b.user_id
+         LEFT JOIN car_license c ON c.car_license_id = u.car_license_id
          WHERE b.booking_id = :booking_id
          LIMIT 1'
     );
@@ -40,6 +45,19 @@ if ($bookingId > 0) {
 
 if (!$booking) {
     $errorMessage = 'Booking detail not found. Please return to the scanner and try again.';
+} else {
+    $carLicenseId = isset($booking['car_license_id']) ? (int)$booking['car_license_id'] : 0;
+    $carLicenseUpdatedAt = $booking['car_license_updated_at'] ?? null;
+
+    if ($carLicenseId > 0 && $carLicenseUpdatedAt && strtotime((string)$carLicenseUpdatedAt) < strtotime('-7 days')) {
+        $resetStmt = $pdo->prepare('UPDATE car_license SET filled_gas = 0, updated_at = NOW() WHERE car_license_id = :car_license_id');
+        $resetStmt->execute([':car_license_id' => $carLicenseId]);
+        $weeklyFilledLiters = 0.0;
+    } else {
+        $weeklyFilledLiters = max(0.0, (float)($booking['weekly_filled_gas'] ?? 0));
+    }
+
+    $fillableLiters = max(0.0, $weeklyLimitLiters - $weeklyFilledLiters);
 }
 
 $customerUid = $booking['user_id'] ?? '';
@@ -48,6 +66,8 @@ $stationName = $booking['station_name'] ?? 'Unknown station';
 $bookingCode = $booking['qr_refrence_code'] ?? '';
 $isFilled = isset($booking['status']) && in_array(strtolower((string)$booking['status']), ['filled', 'completed', 'cancelled', 'expired'], true);
 $customerName = $booking['user_name'] ?? 'Customer';
+$weeklyFilledDisplay = rtrim(rtrim(number_format($weeklyFilledLiters, 1, '.', ''), '0'), '.');
+$fillableDisplay = rtrim(rtrim(number_format($fillableLiters, 1, '.', ''), '0'), '.');
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -165,6 +185,18 @@ $customerName = $booking['user_name'] ?? 'Customer';
                                     <div class="detail-value"><?php echo htmlspecialchars($customerName, ENT_QUOTES, 'UTF-8'); ?></div>
                                 </div>
                             </div>
+                            <div class="col-12 col-md-6">
+                                <div class="p-3 rounded-4" style="background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);">
+                                    <div class="detail-label mb-2">Filled This Week</div>
+                                    <div class="detail-value"><?php echo htmlspecialchars($weeklyFilledDisplay, ENT_QUOTES, 'UTF-8'); ?> / 35 L</div>
+                                </div>
+                            </div>
+                            <div class="col-12 col-md-6">
+                                <div class="p-3 rounded-4" style="background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);">
+                                    <div class="detail-label mb-2">Can Fill</div>
+                                    <div class="detail-value"><?php echo htmlspecialchars($fillableDisplay, ENT_QUOTES, 'UTF-8'); ?> L left</div>
+                                </div>
+                            </div>
                         </div>
 
                         <form action="verify_process.php" method="POST" class="text-start">
@@ -173,15 +205,18 @@ $customerName = $booking['user_name'] ?? 'Customer';
 
                             <div class="mb-4">
                                 <label for="amountLiters" class="form-label text-white-50">Amount (Liters)</label>
-                                <input type="number" step="0.1" min="0.1" class="form-control glass-input border-0 px-3 py-3 text-white" id="amountLiters" name="amount_liters" placeholder="Enter amount in liters" <?php echo $isFilled ? 'disabled' : 'required'; ?> <?php echo $isFilled ? 'value="0"' : ''; ?> style="color:#fff;" />
+                                <input type="number" step="0.1" min="0.1" max="<?php echo htmlspecialchars((string)$fillableLiters, ENT_QUOTES, 'UTF-8'); ?>" class="form-control glass-input border-0 px-3 py-3 text-white" id="amountLiters" name="amount_liters" placeholder="Enter amount in liters" <?php echo ($isFilled || $fillableLiters <= 0) ? 'disabled' : 'required'; ?> <?php echo $isFilled ? 'value="0"' : ''; ?> style="color:#fff;" />
+                                <div class="form-text text-white-50">Available to fill: <?php echo htmlspecialchars($fillableDisplay, ENT_QUOTES, 'UTF-8'); ?> L</div>
                             </div>
 
-                            <button type="submit" class="btn btn-neon w-100 py-2 rounded-pill" <?php echo $isFilled ? 'disabled' : ''; ?> >
+                            <button type="submit" class="btn btn-neon w-100 py-2 rounded-pill" <?php echo ($isFilled || $fillableLiters <= 0) ? 'disabled' : ''; ?> >
                                 <i class="bi bi-check-circle-fill me-2"></i> Confirm Fill
                             </button>
 
                             <?php if ($isFilled): ?>
                                 <p class="text-success small mt-3">This booking is already marked as filled.</p>
+                            <?php elseif ($fillableLiters <= 0): ?>
+                                <p class="text-warning small mt-3">This customer has reached the 35-liter weekly limit.</p>
                             <?php endif; ?>
                         </form>
                     <?php endif; ?>

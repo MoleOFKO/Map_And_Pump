@@ -1,5 +1,10 @@
 <?php
-session_start();
+if (session_status() !== PHP_SESSION_ACTIVE) {
+    session_start();
+}
+
+require_once __DIR__ . '/../conn.php';
+require_once __DIR__ . '/license_access.php';
 
 // Simulated login session check. Replace legacy text-based demo IDs because
 // booking.user_id is an integer foreign key.
@@ -15,12 +20,21 @@ if (!isset($_SESSION['user_id']) || !ctype_digit((string) $_SESSION['user_id']))
 }
 
 $currentPage = basename($_SERVER['PHP_SELF']);
+$customerLicenseAccess = customer_license_access($pdo, (int) $_SESSION['user_id']);
+$_SESSION['license_id'] = $customerLicenseAccess['license_id'] ?: ($_SESSION['license_id'] ?? null);
+$_SESSION['license_status'] = $customerLicenseAccess['status'];
+
+if ($currentPage !== 'license.php' && !$customerLicenseAccess['is_approved']) {
+    header('Location: license.php');
+    exit;
+}
 
 // Dynamic title matching your flat file structure
 $viewTitle = "Dashboard Overview";
 if ($currentPage == 'track_book.php') $viewTitle = "Active Reservation Hub";
 if ($currentPage == 'usage_history.php') $viewTitle = "Usage Reports Log";
 if ($currentPage == 'profile_page.php') $viewTitle = "Portal Profile Settings";
+if ($currentPage == 'license.php') $viewTitle = "Driver License Setup";
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -88,18 +102,25 @@ if ($currentPage == 'profile_page.php') $viewTitle = "Portal Profile Settings";
             </div>
 
             <div class="mt-4">
-                <a href="dashboard.php" class="nav-item-link <?php echo ($currentPage == 'dashboard.php') ? 'active' : ''; ?>">
-                    <i class="bi bi-grid-1x2-fill"></i> Dashboard
-                </a>
-                <a href="track_book.php" class="nav-item-link <?php echo ($currentPage == 'track_book.php') ? 'active' : ''; ?>">
-                    <i class="bi bi-geo-alt-fill"></i> Track & Book
-                </a>
-                <a href="usage_history.php" class="nav-item-link <?php echo ($currentPage == 'usage_history.php') ? 'active' : ''; ?>">
-                    <i class="bi bi-clipboard2-pulse-fill"></i> Usage History
-                </a>
-                <a href="profile_page.php" class="nav-item-link <?php echo ($currentPage == 'profile_page.php') ? 'active' : ''; ?>">
-                    <i class="bi bi-person-fill-gear"></i> Edit Profile
-                </a>
+                <?php if ($customerLicenseAccess['is_approved']): ?>
+                    <a href="dashboard.php" class="nav-item-link <?php echo ($currentPage == 'dashboard.php') ? 'active' : ''; ?>">
+                        <i class="bi bi-grid-1x2-fill"></i> Dashboard
+                    </a>
+                    <a href="track_book.php" class="nav-item-link <?php echo ($currentPage == 'track_book.php') ? 'active' : ''; ?>">
+                        <i class="bi bi-geo-alt-fill"></i> Track & Book
+                    </a>
+                    <a href="usage_history.php" class="nav-item-link <?php echo ($currentPage == 'usage_history.php') ? 'active' : ''; ?>">
+                        <i class="bi bi-clipboard2-pulse-fill"></i> Usage History
+                    </a>
+                    <a href="profile_page.php" class="nav-item-link <?php echo ($currentPage == 'profile_page.php') ? 'active' : ''; ?>">
+                        <i class="bi bi-person-fill-gear"></i> Edit Profile
+                    </a>
+                <?php endif; ?>
+                <?php if (!$customerLicenseAccess['is_approved']): ?>
+                    <a href="license.php" class="nav-item-link <?php echo ($currentPage == 'license.php') ? 'active' : ''; ?>">
+                        <i class="bi bi-person-vcard-fill"></i> Driver License
+                    </a>
+                <?php endif; ?>
             </div>
         </div>
 
@@ -113,7 +134,7 @@ if ($currentPage == 'profile_page.php') $viewTitle = "Portal Profile Settings";
                     <small class="text-secondary" style="font-size: 11px;"><?php echo htmlspecialchars($_SESSION['user_id']); ?></small>
                 </div>
             </div>
-            <a href="logout.php" class="btn btn-outline-danger btn-sm w-100 py-2 border-opacity-10" style="border-radius:10px;">
+            <a href="/php/Login/logout.php" class="btn btn-outline-danger btn-sm w-100 py-2 border-opacity-10" style="border-radius:10px;">
                 <i class="bi bi-box-arrow-right me-1"></i> Sign Out Session
             </a>
         </div>
