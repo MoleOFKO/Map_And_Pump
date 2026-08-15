@@ -735,7 +735,7 @@ a { text-decoration: none; }
 .steps-row::before {
     content: '';
     position: absolute;
-    top: 40px;
+    top: 0;
     left: 12%;
     right: 12%;
     height: 1px;
