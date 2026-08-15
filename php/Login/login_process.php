@@ -2,6 +2,7 @@
 session_start();
 
 require_once __DIR__ . '/../conn.php';
+require_once __DIR__ . '/../Customer/license_access.php';
 
 function auth_redirect_to_login(string $message = 'Please sign in to continue.')
 {
@@ -23,7 +24,7 @@ if (!filter_var($email, FILTER_VALIDATE_EMAIL) || $password === '') {
 
 try {
     $stmt = $pdo->prepare(
-        'SELECT u.user_id, u.user_name, u.email, u.hashed_password, u.status, u.role_id,
+        'SELECT u.user_id, u.user_name, u.email, u.hashed_password, u.status, u.role_id, u.license_id,
                 r.role_name
          FROM users u
          LEFT JOIN roles r ON r.role_id = u.role_id
@@ -63,6 +64,13 @@ try {
     ];
 
     $destination = $dashboardMap[$roleName] ?? '/php/Customer/dashboard.php';
+    $customerLicenseAccess = null;
+    if ($roleName === 'customer') {
+        $customerLicenseAccess = customer_license_access($pdo, (int) $user['user_id']);
+        if (!$customerLicenseAccess['is_approved']) {
+            $destination = '/php/Customer/license.php';
+        }
+    }
 
     $_SESSION['is_logged_in'] = true;
     $_SESSION['user_id'] = (int) $user['user_id'];
@@ -70,6 +78,16 @@ try {
     $_SESSION['user_email'] = (string) $user['email'];
     $_SESSION['role_id'] = (int) ($user['role_id'] ?? 0);
     $_SESSION['role_name'] = (string) ($user['role_name'] ?? 'customer');
+    if (!empty($user['license_id'])) {
+        $_SESSION['license_id'] = (int) $user['license_id'];
+    }
+    if ($roleName === 'customer') {
+        $_SESSION['license_id'] = (int) ($customerLicenseAccess['license_id'] ?? 0);
+        $_SESSION['license_status'] = (string) ($customerLicenseAccess['status'] ?? 'pending');
+        $_SESSION['oil_limit'] = $_SESSION['oil_limit'] ?? 50.0;
+        $_SESSION['oil_used'] = $_SESSION['oil_used'] ?? 0.0;
+        $_SESSION['has_business'] = $_SESSION['has_business'] ?? false;
+    }
 
     header('Location: ' . $destination);
     exit;

@@ -87,17 +87,29 @@ try {
         'INSERT INTO users (user_name, email, hashed_password, role_id, status, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, NOW(), NOW())'
     );
+    $roleId = customer_role_id($pdo);
     $insert->execute([
         (string) $pending['username'],
         $email,
         (string) $pending['password_hash'],
-        customer_role_id($pdo),
+        $roleId,
         'active',
     ]);
+    $userId = (int) $pdo->lastInsertId();
 
     unset($_SESSION['pending_registration']);
-    $_SESSION['login_success'] = 'Registration complete. You can log in now.';
-    verify_json(true, 'Registration complete.');
+    $_SESSION['is_logged_in'] = true;
+    $_SESSION['user_id'] = $userId;
+    $_SESSION['user_name'] = (string) $pending['username'];
+    $_SESSION['user_email'] = $email;
+    $_SESSION['role_id'] = $roleId;
+    $_SESSION['role_name'] = 'customer';
+    $_SESSION['oil_limit'] = 50.0;
+    $_SESSION['oil_used'] = 0.0;
+    $_SESSION['has_business'] = false;
+    verify_json(true, 'Registration complete. Please add your driver license.', [
+        'redirect' => '/php/Customer/license.php',
+    ]);
 } catch (Throwable $e) {
     error_log('Registration verify failed: ' . $e->getMessage());
     verify_json(false, 'Could not create your account. Please try again.');

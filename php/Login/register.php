@@ -408,6 +408,11 @@
           return;
         }
 
+        if (result.redirect) {
+          window.location.href = result.redirect;
+          return;
+        }
+
         step2.classList.remove('active');
         step3.classList.add('active');
       } catch (error) {

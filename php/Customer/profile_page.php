@@ -33,7 +33,7 @@
                             <p class="text-secondary mb-0" style="font-size:13px;">Keep the driver's license details for this user up to date.</p>
                         </div>
                     </div>
-                    <button type="button" class="btn btn-outline-info btn-sm px-3 rounded-3 fw-bold" style="font-size:12px;" onclick="alert('Driver license editing will open here.');">Edit</button>
+                    <a href="license.php" class="btn btn-outline-info btn-sm px-3 rounded-3 fw-bold" style="font-size:12px;">Edit</a>
                 </div>
                 <button type="button" class="btn btn-link text-info p-0 fw-bold text-decoration-none" style="font-size:12px;" onclick="alert('Add-user setup will open here.');">
                     <i class="bi bi-person-plus-fill me-1"></i>Add User

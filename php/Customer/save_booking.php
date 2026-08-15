@@ -2,6 +2,7 @@
 session_start();
 define('MAP_PUMP_JSON_RESPONSE', true);
 require __DIR__ . '/../localconn.php';
+require_once __DIR__ . '/license_access.php';
 
 header('Content-Type: application/json');
 
@@ -26,6 +27,16 @@ if ($bookingCode === '' || $stationId <= 0 || $fuelType === '' || $quantity <= 0
 if ($userId <= 0) {
     http_response_code(401);
     echo json_encode(['success' => false, 'message' => 'Please sign in with a valid customer account before booking.']);
+    exit;
+}
+
+$licenseAccess = customer_license_access($pdo, $userId);
+if (!$licenseAccess['is_approved']) {
+    http_response_code(403);
+    echo json_encode([
+        'success' => false,
+        'message' => 'Your driver license must be confirmed by a Moderator before booking.'
+    ]);
     exit;
 }
 

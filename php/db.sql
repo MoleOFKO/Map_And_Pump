@@ -459,10 +459,13 @@ CREATE TABLE `stations` (
   `station_id` int NOT NULL AUTO_INCREMENT,
   `station_name` varchar(255) COLLATE utf8mb4_0900_ai_ci NOT NULL,
   `location` varchar(255) COLLATE utf8mb4_0900_ai_ci NOT NULL,
-  `status` varchar(15) COLLATE utf8mb4_0900_ai_ci NOT NULL,
+  `business_user_id` int NOT NULL,
+  `status` varchar(15) COLLATE utf8mb4_0900_ai_ci DEFAULT NULL,
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (`station_id`) /*T![clustered_index] CLUSTERED */
+  PRIMARY KEY (`station_id`) /*T![clustered_index] CLUSTERED */,
+  KEY `fk_business_user_id_idx` (`business_user_id`),
+  CONSTRAINT `fk_business_user_id` FOREIGN KEY (`business_user_id`) REFERENCES `users` (`user_id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci AUTO_INCREMENT=240003;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
@@ -472,8 +475,61 @@ CREATE TABLE `stations` (
 
 LOCK TABLES `stations` WRITE;
 /*!40000 ALTER TABLE `stations` DISABLE KEYS */;
-INSERT INTO `stations` VALUES (1,'Danko(Mdy)','Mandalay','','2026-08-03 08:47:41','2026-08-03 08:47:41'),(2,'ADMIN TEST 20260805 Station','Mandalay Region — Test Township','','2026-08-05 06:32:35','2026-08-05 06:32:35'),(3,'Danko(TKT)','Tarkayta Yangon','','2026-08-07 06:55:41','2026-08-07 06:55:41'),(60003,'Myanko','South Dagon','','2026-08-07 08:42:07','2026-08-07 08:42:07'),(60004,'Shoko','North Dagon','','2026-08-07 08:42:07','2026-08-07 08:42:07'),(60005,'Niko','East Dagon','','2026-08-07 08:42:07','2026-08-07 08:42:07'),(60006,'Eko','Wast Dagon','Decommissioned','2026-08-12 09:25:04','2026-08-12 09:25:04');
+INSERT INTO `stations` VALUES (1,'Danko(Mdy)','Mandalay',240014,'','2026-08-15 04:48:55','2026-08-15 04:48:55'),(2,'ADMIN TEST 20260805 Station','Mandalay Region — Test Township',240014,'','2026-08-15 04:48:55','2026-08-15 04:48:55'),(3,'Danko(TKT)','Tarkayta Yangon',240014,'','2026-08-15 04:48:55','2026-08-15 04:48:55'),(60003,'Myanko','South Dagon',240014,'','2026-08-15 04:48:55','2026-08-15 04:48:55'),(60004,'Shoko','North Dagon',240014,'','2026-08-15 04:48:55','2026-08-15 04:48:55'),(60005,'Niko','East Dagon',240014,'','2026-08-15 04:48:55','2026-08-15 04:48:55'),(60006,'Eko','Wast Dagon',240014,'Decommissioned','2026-08-15 04:48:55','2026-08-15 04:48:55');
 /*!40000 ALTER TABLE `stations` ENABLE KEYS */;
+UNLOCK TABLES;
+
+--
+-- Table structure for table `system_requests`
+--
+
+DROP TABLE IF EXISTS `system_requests`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `system_requests` (
+  `request_id` int unsigned NOT NULL AUTO_INCREMENT,
+  `reference_code` varchar(40) NOT NULL,
+  `request_type` varchar(60) NOT NULL,
+  `status` varchar(20) NOT NULL DEFAULT 'pending',
+  `submitter_user_id` int unsigned DEFAULT NULL,
+  `role_id` int unsigned DEFAULT NULL,
+  `headquarter_id` int unsigned DEFAULT NULL,
+  `sender_entity` varchar(255) NOT NULL,
+  `sender_name` varchar(255) DEFAULT NULL,
+  `sender_email` varchar(255) DEFAULT NULL,
+  `location` varchar(255) DEFAULT NULL,
+  `request_details` text DEFAULT NULL,
+  `document_name` varchar(255) DEFAULT NULL,
+  `document_path` varchar(500) DEFAULT NULL,
+  `headquarter_owner_email` varchar(255) DEFAULT NULL,
+  `headquarter_email` varchar(255) DEFAULT NULL,
+  `headquarter_company_logo` varchar(255) DEFAULT NULL,
+  `headquarter_contact_number` varchar(50) DEFAULT NULL,
+  `headquarter_expire_at` datetime DEFAULT NULL,
+  `review_reason` text DEFAULT NULL,
+  `reviewed_by` int unsigned DEFAULT NULL,
+  `reviewed_at` timestamp NULL DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`request_id`) /*T![clustered_index] CLUSTERED */,
+  UNIQUE KEY `uq_system_requests_reference` (`reference_code`),
+  KEY `idx_system_requests_status` (`status`),
+  KEY `idx_system_requests_type` (`request_type`),
+  KEY `idx_system_requests_created` (`created_at`),
+  KEY `idx_system_requests_user` (`submitter_user_id`),
+  KEY `idx_system_requests_hq` (`headquarter_id`),
+  KEY `idx_system_requests_headquarter` (`headquarter_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin AUTO_INCREMENT=103697;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Dumping data for table `system_requests`
+--
+
+LOCK TABLES `system_requests` WRITE;
+/*!40000 ALTER TABLE `system_requests` DISABLE KEYS */;
+INSERT INTO `system_requests` VALUES (1,'HQ-REG-180010','hq_registration','pending',270015,3,180010,'tempany','temp_temp','temp45@gmail.com','Naypyidaw Region — Stella City, Pepper Township','Legacy HQ account registered before the approval-only workflow. Contact: 09454512708. License expiry: 2029-01-14.','Business license','BL-YGN-temp-2026-001','temp45@gmail.com','temp45@gmail.com','https://static.wikia.nocookie.net/my-three-beautiful-wives-are-vampires/images/4/46/Concepts.png/revision/latest?cb=20250104003556','09454512708','2029-01-14 23:59:59',NULL,NULL,NULL,'2026-08-14 09:20:01','2026-08-14 09:20:01');
+/*!40000 ALTER TABLE `system_requests` ENABLE KEYS */;
 UNLOCK TABLES;
 
 --
@@ -508,31 +564,32 @@ INSERT INTO `user_account_actions` VALUES (1,270014,'suspend','test','not_config
 UNLOCK TABLES;
 
 --
--- Table structure for table `user_cars`
+-- Table structure for table `user_car`
 --
 
-DROP TABLE IF EXISTS `user_cars`;
+DROP TABLE IF EXISTS `user_car`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
-CREATE TABLE `user_cars` (
-  `user_car_id` int NOT NULL,
+CREATE TABLE `user_car` (
+  `user_car_id` int NOT NULL AUTO_INCREMENT,
   `user_id` int NOT NULL,
   `car_id` int NOT NULL,
   PRIMARY KEY (`user_car_id`) /*T![clustered_index] CLUSTERED */,
-  KEY `fk_user_id_idx` (`user_id`),
-  KEY `fk_car_id_idx` (`car_id`),
-  CONSTRAINT `fk_car_id` FOREIGN KEY (`car_id`) REFERENCES `car_license` (`car_license_id`) ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT `fk_user_id` FOREIGN KEY (`user_id`) REFERENCES `users` (`user_id`) ON DELETE CASCADE ON UPDATE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+  KEY `fk_user_car_user_id_idx` (`user_id`),
+  KEY `fk_user_car_car_id_idx` (`car_id`),
+  CONSTRAINT `fk_user_car_user_id` FOREIGN KEY (`user_id`) REFERENCES `users` (`user_id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_user_car_car_id` FOREIGN KEY (`car_id`) REFERENCES `car_license` (`car_license_id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin AUTO_INCREMENT=30001;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
--- Dumping data for table `user_cars`
+-- Dumping data for table `user_car`
 --
 
-LOCK TABLES `user_cars` WRITE;
-/*!40000 ALTER TABLE `user_cars` DISABLE KEYS */;
-/*!40000 ALTER TABLE `user_cars` ENABLE KEYS */;
+LOCK TABLES `user_car` WRITE;
+/*!40000 ALTER TABLE `user_car` DISABLE KEYS */;
+INSERT INTO `user_car` VALUES (1,270014,1);
+/*!40000 ALTER TABLE `user_car` ENABLE KEYS */;
 UNLOCK TABLES;
 
 --
@@ -552,6 +609,7 @@ CREATE TABLE `user_license` (
   `date_of_birth` date NOT NULL,
   `blood_type` varchar(10) COLLATE utf8mb4_0900_ai_ci NOT NULL,
   `license_last_valid_date` date NOT NULL,
+  `status` varchar(20) COLLATE utf8mb4_0900_ai_ci NOT NULL DEFAULT 'pending',
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`license_id`) /*T![clustered_index] CLUSTERED */
@@ -564,7 +622,7 @@ CREATE TABLE `user_license` (
 
 LOCK TABLES `user_license` WRITE;
 /*!40000 ALTER TABLE `user_license` DISABLE KEYS */;
-INSERT INTO `user_license` VALUES (1,'image','1234','B','12345678','34567','2000-12-20','O','2016-09-10','2026-08-04 06:24:11','2026-08-04 06:24:11'),(2,'license_image.jpg','123456789','John Doe','555-1234','NRC123456','1990-01-01','O+','2025-12-31','2026-08-05 06:37:28','2026-08-05 06:37:28');
+INSERT INTO `user_license` VALUES (1,'image','1234','B','12345678','34567','2000-12-20','O','2016-09-10','approved','2026-08-04 06:24:11','2026-08-04 06:24:11'),(2,'license_image.jpg','123456789','John Doe','555-1234','NRC123456','1990-01-01','O+','2025-12-31','approved','2026-08-05 06:37:28','2026-08-05 06:37:28');
 /*!40000 ALTER TABLE `user_license` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -625,4 +683,4 @@ UNLOCK TABLES;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2026-08-14 15:50:00
+-- Dump completed on 2026-08-15 11:41:58
