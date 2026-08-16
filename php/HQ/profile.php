@@ -68,23 +68,10 @@
                     <h3 class="mb-3">Account Interface Switcher</h3>
                     <p class="subtitle mb-4">Interlink your account proxy with downstream customer interface metrics.</p>
 
-                    <div id="check-step">
-                        <h5 class="text-secondary">Checking Handshake Status</h5>
-                        <p class="subtitle small mt-2 mb-3">Analyzing profile links...</p>
-                        <button class="btn btn-outline-primary w-100" onclick="checkHandshake()">Scan Account Integration</button>
-                    </div>
-
-                    <div id="unconnected-step" style="display: none;">
-                        <h5 style="color: var(--danger);">No Linked Profiles</h5>
-                        <p class="subtitle small mt-2 mb-3">You must verify a secure client integration handshake first.</p>
-                        <button class="btn btn-warning w-100" onclick="connectProfile()">Connect Customer Profile</button>
-                    </div>
-
-                    <div id="connected-step" style="display: none;">
-                        <h5 style="color: var(--success);">Integration Active!</h5>
-                        <p class="subtitle small mt-2 mb-3">Proxy Key: <strong>CUST-PROX-9004</strong></p>
-                        <button class="btn btn-success w-100" onclick="alert('Redirecting execution frame to client-facing system...');">Launch Client Workspace</button>
-                    </div>
+                    <form action="../account_switch.php" method="POST">
+                        <input type="hidden" name="mode" value="customer">
+                        <button type="submit" class="btn btn-outline-primary w-100">Switch to Customer Profile</button>
+                    </form>
                 </div>
             </div>
 
@@ -102,23 +89,6 @@
             if (savedEmail) document.getElementById('profileEmail').value = savedEmail;
             if (savedImage) document.getElementById('profilePreview').src = savedImage;
         });
-
-        function checkHandshake() {
-            const connected = localStorage.getItem('cust_linked') === 'true';
-            document.getElementById('check-step').style.display = 'none';
-            if (connected) {
-                document.getElementById('connected-step').style.display = 'block';
-            } else {
-                document.getElementById('unconnected-step').style.display = 'block';
-            }
-        }
-
-        function connectProfile() {
-            localStorage.setItem('cust_linked', 'true');
-            alert("Linking accounts... Handshake parameters saved.");
-            document.getElementById('unconnected-step').style.display = 'none';
-            document.getElementById('connected-step').style.display = 'block';
-        }
 
         function previewImage(event) {
             const file = event.target.files[0];

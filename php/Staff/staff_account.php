@@ -25,11 +25,41 @@ if ($roleName !== 'staff') {
     redirect_to_login('This page is only available to staff accounts.');
 }
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'update_profile') {
+    $newName = trim((string) ($_POST['user_name'] ?? ''));
+
+    if ($newName === '') {
+        $_SESSION['flash_message'] = 'Please enter a display name.';
+        $_SESSION['flash_type'] = 'error';
+    } elseif (mb_strlen($newName) > 225) {
+        $_SESSION['flash_message'] = 'Display name must be 225 characters or fewer.';
+        $_SESSION['flash_type'] = 'error';
+    } else {
+        try {
+            $update = $pdo->prepare('UPDATE users SET user_name = ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?');
+            $update->execute([$newName, $userId]);
+            $_SESSION['user_name'] = $newName;
+            $_SESSION['flash_message'] = 'Profile name updated. This name is shared across customer and business profiles.';
+            $_SESSION['flash_type'] = 'success';
+        } catch (Throwable $e) {
+            error_log('Failed to update staff profile name: ' . $e->getMessage());
+            $_SESSION['flash_message'] = 'Profile name could not be updated right now.';
+            $_SESSION['flash_type'] = 'error';
+        }
+    }
+
+    header('Location: staff_account.php');
+    exit;
+}
+
 try {
     $stmt = $pdo->prepare(
-        'SELECT user_id, user_name, email, status, role_id, created_at
-         FROM users
-         WHERE user_id = ?
+        'SELECT u.user_id, u.user_name, u.email, u.status, u.role_id, u.business_role_id, u.created_at,
+                r.role_name, br.role_name AS business_role_name
+         FROM users u
+         LEFT JOIN roles r ON r.role_id = u.role_id
+         LEFT JOIN roles br ON br.role_id = u.business_role_id
+         WHERE u.user_id = ?
          LIMIT 1'
     );
     $stmt->execute([$userId]);
@@ -48,7 +78,7 @@ $displayEmail = trim((string) ($user['email'] ?? ''));
 $staffId = 'EMP-' . str_pad((string) $user['user_id'], 4, '0', STR_PAD_LEFT);
 $cleanName = preg_replace('/[^A-Za-z0-9]/', '', $displayName) ?: 'S';
 $initial = strtoupper(substr($cleanName, 0, 1));
-$accountRole = 'System Operator';
+$accountRole = trim((string) ($user['role_name'] ?? 'Staff')) ?: 'Staff';
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -76,6 +106,34 @@ $accountRole = 'System Operator';
             font-size: 2.2rem;
             border: 2px solid rgba(0, 244, 255, 0.25);
             box-shadow: 0 0 15px rgba(0, 244, 255, 0.1);
+        }
+        .staff-security-panel {
+            border-top: 1px solid rgba(0, 244, 255, 0.14);
+            background: linear-gradient(135deg, rgba(0, 244, 255, 0.055), rgba(0, 132, 255, 0.035));
+            border-radius: 18px;
+            padding: 18px;
+        }
+        .staff-security-modal .modal-content {
+            background: rgba(6, 12, 24, 0.98);
+            border: 1px solid rgba(0, 244, 255, 0.22);
+            box-shadow: 0 24px 70px rgba(0, 0, 0, 0.45), 0 0 28px rgba(0, 244, 255, 0.08);
+            color: #fff;
+            border-radius: 20px;
+        }
+        .staff-security-modal .modal-header,
+        .staff-security-modal .modal-footer {
+            border-color: rgba(255, 255, 255, 0.08);
+        }
+        .staff-security-icon {
+            width: 42px;
+            height: 42px;
+            border-radius: 50%;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--neon-cyan);
+            background: rgba(0, 244, 255, 0.08);
+            border: 1px solid rgba(0, 244, 255, 0.2);
         }
     </style>
 </head>
@@ -161,47 +219,55 @@ $accountRole = 'System Operator';
                         </div>
                     </div>
 
-                    <!-- Right Column: Change Password / Update Security Settings -->
+                    <!-- Right Column: Shared Profile / Change Password / Update Security Settings -->
                     <div class="col-12 col-md-7">
                         <div class="dashboard-card h-100">
-                            <h3 class="fw-bold mb-2 text-white"><i class="bi bi-shield-lock me-2 text-warning"></i>Security Settings</h3>
-                            <p class="text-white-50 small mb-4">Keep your portal access protected by modifying your master passcode credentials regularly.</p>
+                            <h3 class="fw-bold mb-2 text-white"><i class="bi bi-person-badge me-2 txt-neon-cyan"></i>Shared Profile</h3>
+                            <p class="text-white-50 small mb-4">This name is used by the staff and customer views of this same account.</p>
 
                             <?php if ($flashMessage): ?>
                                 <div class="alert alert-<?= htmlspecialchars($flashType === 'error' ? 'danger' : 'success') ?> rounded-3 border-0 mb-4" role="alert">
                                     <?= htmlspecialchars($flashMessage) ?>
                                 </div>
                             <?php endif; ?>
-                            
-                            <form action="change_password_process.php" method="POST">
+
+                            <form action="staff_account.php" method="POST" class="mb-4">
+                                <input type="hidden" name="action" value="update_profile">
                                 <div class="mb-3">
-                                    <label for="currentPassword" class="form-label text-white-50 small">Current Password</label>
+                                    <label for="profileUserName" class="form-label text-white-50 small">Display Name</label>
                                     <div class="input-group">
-                                        <span class="input-group-text glass-input text-white-50 border-end-0"><i class="bi bi-lock"></i></span>
-                                        <input type="password" class="form-control glass-input border-start-0" id="currentPassword" name="current_password" required>
+                                        <span class="input-group-text glass-input text-white-50 border-end-0"><i class="bi bi-person"></i></span>
+                                        <input type="text" class="form-control glass-input border-start-0" id="profileUserName" name="user_name" value="<?= htmlspecialchars($displayName) ?>" maxlength="225" required>
                                     </div>
                                 </div>
-
-                                <div class="mb-3">
-                                    <label for="newPassword" class="form-label text-white-50 small">New Password</label>
-                                    <div class="input-group">
-                                        <span class="input-group-text glass-input text-white-50 border-end-0"><i class="bi bi-key"></i></span>
-                                        <input type="password" class="form-control glass-input border-start-0" id="newPassword" name="new_password" required>
-                                    </div>
-                                </div>
-
-                                <div class="mb-4">
-                                    <label for="confirmPassword" class="form-label text-white-50 small">Confirm New Password</label>
-                                    <div class="input-group">
-                                        <span class="input-group-text glass-input text-white-50 border-end-0"><i class="bi bi-check2-circle"></i></span>
-                                        <input type="password" class="form-control glass-input border-start-0" id="confirmPassword" name="confirm_password" required>
-                                    </div>
-                                </div>
-
-                                <button type="submit" class="btn btn-warning w-100 py-2 fw-bold text-dark rounded-pill shadow">
-                                    <i class="bi bi-arrow-repeat me-2"></i>Save New Password
+                                <button type="submit" class="btn btn-info w-100 py-2 fw-bold rounded-pill shadow">
+                                    <i class="bi bi-save me-2"></i>Save Shared Profile
                                 </button>
                             </form>
+
+                            <div class="border-top border-secondary border-opacity-25 pt-4 mb-4">
+                                <h3 class="fw-bold mb-2 text-white"><i class="bi bi-arrow-left-right me-2 txt-neon-blue"></i>Account Profile Mode</h3>
+                                <p class="text-white-50 small mb-3">Switch to the customer profile when this staff account needs to fill gas. You can switch back to staff anytime from the customer profile page.</p>
+                                <form action="../account_switch.php" method="POST">
+                                    <input type="hidden" name="mode" value="customer">
+                                    <button type="submit" class="btn btn-outline-info w-100 py-2 fw-bold rounded-pill">
+                                        <i class="bi bi-fuel-pump me-2"></i>Switch to Customer Profile
+                                    </button>
+                                </form>
+                            </div>
+
+                            <div class="staff-security-panel">
+                                <div class="d-flex align-items-start gap-3 mb-3">
+                                    <span class="staff-security-icon"><i class="bi bi-shield-lock"></i></span>
+                                    <div>
+                                        <h3 class="fw-bold mb-1 text-white">Security Settings</h3>
+                                        <p class="text-white-50 small mb-0">Update your password in a protected floating window.</p>
+                                    </div>
+                                </div>
+                                <button type="button" class="btn btn-outline-info w-100 py-2 fw-bold rounded-pill" data-bs-toggle="modal" data-bs-target="#changePasswordModal">
+                                    <i class="bi bi-key-fill me-2"></i>Change Password
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -213,6 +279,57 @@ $accountRole = 'System Operator';
                     </a>
                 </div>
 
+            </div>
+        </div>
+    </div>
+
+    <!-- CHANGE PASSWORD FLOATING WINDOW -->
+    <div class="modal fade staff-security-modal" id="changePasswordModal" tabindex="-1" aria-labelledby="changePasswordModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <form action="change_password_process.php" method="POST">
+                    <div class="modal-header px-4 pt-4">
+                        <div class="d-flex align-items-center gap-3">
+                            <span class="staff-security-icon"><i class="bi bi-shield-lock"></i></span>
+                            <div>
+                                <h5 class="modal-title fw-bold text-white mb-0" id="changePasswordModalLabel">Change Password</h5>
+                                <p class="text-white-50 small mb-0">Confirm your current password before saving a new one.</p>
+                            </div>
+                        </div>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body px-4">
+                        <div class="mb-3">
+                            <label for="currentPassword" class="form-label text-white-50 small">Current Password</label>
+                            <div class="input-group">
+                                <span class="input-group-text glass-input text-white-50 border-end-0"><i class="bi bi-lock"></i></span>
+                                <input type="password" class="form-control glass-input border-start-0" id="currentPassword" name="current_password" required>
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="newPassword" class="form-label text-white-50 small">New Password</label>
+                            <div class="input-group">
+                                <span class="input-group-text glass-input text-white-50 border-end-0"><i class="bi bi-key"></i></span>
+                                <input type="password" class="form-control glass-input border-start-0" id="newPassword" name="new_password" required>
+                            </div>
+                        </div>
+
+                        <div class="mb-0">
+                            <label for="confirmPassword" class="form-label text-white-50 small">Confirm New Password</label>
+                            <div class="input-group">
+                                <span class="input-group-text glass-input text-white-50 border-end-0"><i class="bi bi-check2-circle"></i></span>
+                                <input type="password" class="form-control glass-input border-start-0" id="confirmPassword" name="confirm_password" required>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer px-4 pb-4">
+                        <button type="button" class="btn btn-outline-light rounded-pill px-4" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-info rounded-pill px-4 fw-bold">
+                            <i class="bi bi-save me-2"></i>Save Password
+                        </button>
+                    </div>
+                </form>
             </div>
         </div>
     </div>

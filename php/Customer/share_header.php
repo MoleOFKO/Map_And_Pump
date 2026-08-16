@@ -24,6 +24,27 @@ $customerLicenseAccess = customer_license_access($pdo, (int) $_SESSION['user_id'
 $_SESSION['license_id'] = $customerLicenseAccess['license_id'] ?: ($_SESSION['license_id'] ?? null);
 $_SESSION['license_status'] = $customerLicenseAccess['status'];
 
+$linkedBusinessRoleNameHeader = '';
+try {
+    $profileModeStmt = $pdo->prepare(
+        'SELECT u.role_id, u.business_role_id,
+                primary_role.role_name AS primary_role_name,
+                business_role.role_name AS business_role_name,
+                customer_role.role_id AS customer_role_id
+         FROM users u
+         LEFT JOIN roles primary_role ON primary_role.role_id = u.role_id
+         LEFT JOIN roles business_role ON business_role.role_id = u.business_role_id
+         LEFT JOIN roles customer_role ON LOWER(customer_role.role_name) = \'customer\'
+         WHERE u.user_id = ?
+         LIMIT 1'
+    );
+    $profileModeStmt->execute([(int) $_SESSION['user_id']]);
+    $profileModeRoles = $profileModeStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+    $linkedBusinessRoleNameHeader = trim((string) ($profileModeRoles['business_role_name'] ?? ''));
+} catch (Throwable $e) {
+    error_log('Failed to load customer account profile modes: ' . $e->getMessage());
+}
+
 if ($currentPage !== 'license.php' && !$customerLicenseAccess['is_approved']) {
     header('Location: license.php');
     exit;
@@ -134,6 +155,14 @@ if ($currentPage == 'license.php') $viewTitle = "Driver License Setup";
                     <small class="text-secondary" style="font-size: 11px;"><?php echo htmlspecialchars($_SESSION['user_id']); ?></small>
                 </div>
             </div>
+            <?php if ($customerLicenseAccess['is_approved'] && $linkedBusinessRoleNameHeader !== ''): ?>
+                <form action="/php/account_switch.php" method="POST" class="mb-3">
+                    <input type="hidden" name="mode" value="business">
+                    <button type="submit" class="btn btn-outline-info btn-sm w-100 py-2 border-opacity-25" style="border-radius:10px;">
+                        <i class="bi bi-arrow-left-right me-1"></i> Switch to <?= htmlspecialchars($linkedBusinessRoleNameHeader) ?>
+                    </button>
+                </form>
+            <?php endif; ?>
             <a href="/php/Login/logout.php" class="btn btn-outline-danger btn-sm w-100 py-2 border-opacity-10" style="border-radius:10px;">
                 <i class="bi bi-box-arrow-right me-1"></i> Sign Out Session
             </a>

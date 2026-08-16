@@ -31,6 +31,14 @@
                 <?php endif; ?>
             </div>
             <div class="p-4 bg-black bg-opacity-20">
+                <?php if (($customerLicenseAccess['is_approved'] ?? false) && ($linkedBusinessRoleNameHeader ?? '') !== ''): ?>
+                    <form action="/php/account_switch.php" method="POST" class="mb-3">
+                        <input type="hidden" name="mode" value="business">
+                        <button type="submit" class="btn btn-outline-info w-100 py-2">
+                            <i class="bi bi-arrow-left-right me-1"></i> Switch to <?php echo htmlspecialchars($linkedBusinessRoleNameHeader); ?>
+                        </button>
+                    </form>
+                <?php endif; ?>
                 <a href="/php/Login/logout.php" class="btn btn-danger w-100 py-2">Sign Out</a>
             </div>
         </div>

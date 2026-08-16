@@ -14,6 +14,34 @@ function license_json(bool $ok, string $message, array $extra = []): never
     exit;
 }
 
+function license_face_image_column_ready(PDO $pdo): bool
+{
+    static $ready = null;
+    if ($ready !== null) {
+        return $ready;
+    }
+
+    try {
+        $stmt = $pdo->prepare(
+            "SELECT COUNT(*)
+             FROM INFORMATION_SCHEMA.COLUMNS
+             WHERE TABLE_SCHEMA = DATABASE()
+               AND TABLE_NAME = 'user_license'
+               AND COLUMN_NAME = 'face_image'"
+        );
+        $stmt->execute();
+        if ((int) $stmt->fetchColumn() > 0) {
+            return $ready = true;
+        }
+
+        $pdo->exec("ALTER TABLE user_license ADD COLUMN face_image varchar(255) NULL AFTER license_image");
+        return $ready = true;
+    } catch (Throwable $e) {
+        error_log('Could not prepare user_license.face_image column: ' . $e->getMessage());
+        return $ready = false;
+    }
+}
+
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     license_json(false, 'License request is invalid.');
 }
@@ -30,6 +58,7 @@ $nrcNumber = strtoupper(trim((string) ($_POST['nrc_number'] ?? '')));
 $dateOfBirth = trim((string) ($_POST['date_of_birth'] ?? ''));
 $bloodType = strtoupper(trim((string) ($_POST['blood_type'] ?? '')));
 $validUntil = trim((string) ($_POST['license_last_valid_date'] ?? ''));
+$licenseImageData = trim((string) ($_POST['license_image_data'] ?? ''));
 
 if ($licenseNumber === '' || strlen($licenseNumber) > 100) {
     license_json(false, 'Please enter a valid license number.');
@@ -71,8 +100,13 @@ if ($bloodType === '' || strlen($bloodType) > 10) {
 
 try {
     $hasStatusColumn = customer_license_status_column_ready($pdo);
+    $hasFaceImageColumn = license_face_image_column_ready($pdo);
+    if (!$hasFaceImageColumn) {
+        license_json(false, 'Database needs the new face_image column. Please import the updated db.sql first.');
+    }
+
     $userStmt = $pdo->prepare(
-        'SELECT u.license_id, l.license_image
+        'SELECT u.license_id, l.*
          FROM users u
          LEFT JOIN user_license l ON l.license_id = u.license_id
          WHERE u.user_id = ?
@@ -85,88 +119,128 @@ try {
     }
 
     $existingLicenseId = (int) ($existingLicense['license_id'] ?? 0);
-    $publicPath = (string) ($existingLicense['license_image'] ?? '');
-    $hasUpload = isset($_FILES['license_image']) && is_uploaded_file($_FILES['license_image']['tmp_name']);
+    $licensePublicPath = (string) ($existingLicense['license_image'] ?? '');
+    $hasLicenseUpload = isset($_FILES['license_image']) && is_uploaded_file($_FILES['license_image']['tmp_name']);
 
-    if (!$existingLicenseId && !$hasUpload) {
+    if (!$existingLicenseId && !$hasLicenseUpload) {
         license_json(false, 'Please upload a driver license image.');
     }
 
-    if ($hasUpload) {
-        $image = $_FILES['license_image'];
-        if (($image['error'] ?? UPLOAD_ERR_OK) !== UPLOAD_ERR_OK) {
-            license_json(false, 'Could not read the uploaded license image.');
+    if ($hasLicenseUpload) {
+        $licenseUpload = $_FILES['license_image'];
+        if (($licenseUpload['error'] ?? UPLOAD_ERR_OK) !== UPLOAD_ERR_OK) {
+            license_json(false, 'Could not read the uploaded driver license image.');
         }
 
-        if (($image['size'] ?? 0) > 5 * 1024 * 1024) {
-            license_json(false, 'License image must be 5 MB or smaller.');
+        if (($licenseUpload['size'] ?? 0) > 5 * 1024 * 1024) {
+            license_json(false, 'Driver license image must be 5 MB or smaller.');
         }
 
-        $mime = null;
+        $licenseMime = null;
         if (class_exists('finfo')) {
             $finfo = new finfo(FILEINFO_MIME_TYPE);
-            $mime = $finfo->file($image['tmp_name']);
+            $licenseMime = $finfo->file($licenseUpload['tmp_name']);
         } elseif (function_exists('mime_content_type')) {
-            $mime = mime_content_type($image['tmp_name']);
+            $licenseMime = mime_content_type($licenseUpload['tmp_name']);
         }
 
-        if ($mime === null && function_exists('exif_imagetype')) {
-            $imageType = exif_imagetype($image['tmp_name']);
+        if ($licenseMime === null && function_exists('exif_imagetype')) {
+            $imageType = exif_imagetype($licenseUpload['tmp_name']);
             $mimeMap = [
                 IMAGETYPE_JPEG => 'image/jpeg',
                 IMAGETYPE_PNG => 'image/png',
                 IMAGETYPE_WEBP => 'image/webp',
             ];
-            $mime = $mimeMap[$imageType] ?? null;
+            $licenseMime = $mimeMap[$imageType] ?? null;
         }
 
-        if ($mime === null) {
-            $fileExt = strtolower(pathinfo((string) ($image['name'] ?? ''), PATHINFO_EXTENSION));
+        if ($licenseMime === null) {
+            $fileExt = strtolower(pathinfo((string) ($licenseUpload['name'] ?? ''), PATHINFO_EXTENSION));
             $extensionMap = [
                 'jpg' => 'image/jpeg',
                 'jpeg' => 'image/jpeg',
                 'png' => 'image/png',
                 'webp' => 'image/webp',
             ];
-            $mime = $extensionMap[$fileExt] ?? null;
+            $licenseMime = $extensionMap[$fileExt] ?? null;
         }
 
-        $extensions = [
+        $licenseExtensions = [
             'image/jpeg' => 'jpg',
             'image/png' => 'png',
             'image/webp' => 'webp',
         ];
 
-        if (!isset($extensions[$mime])) {
-            license_json(false, 'License image must be JPG, PNG, or WEBP.');
+        if (!isset($licenseExtensions[$licenseMime])) {
+            license_json(false, 'Driver license image must be JPG, PNG, or WEBP.');
         }
-
-        $uploadDir = __DIR__ . '/uploads/licenses';
-        if (!is_dir($uploadDir) && !mkdir($uploadDir, 0775, true)) {
-            license_json(false, 'Could not prepare the license upload folder.');
-        }
-
-        $fileName = 'license-' . $userId . '-' . bin2hex(random_bytes(8)) . '.' . $extensions[$mime];
-        $targetPath = $uploadDir . '/' . $fileName;
-        $publicPath = '/php/Customer/uploads/licenses/' . $fileName;
     }
+
+    if ($licenseImageData === '') {
+        license_json(false, 'Please take a real-time face photo with the camera.');
+    }
+
+    if (!preg_match('/^data:image\/(jpeg|jpg|png|webp);base64,([A-Za-z0-9+\/=]+)$/', $licenseImageData, $matches)) {
+        license_json(false, 'Face photo must come from the live camera capture.');
+    }
+
+    $imageBytes = base64_decode($matches[2], true);
+    if ($imageBytes === false || strlen($imageBytes) === 0) {
+        license_json(false, 'Could not read the captured face photo.');
+    }
+
+    if (strlen($imageBytes) > 5 * 1024 * 1024) {
+        license_json(false, 'Captured face photo must be 5 MB or smaller.');
+    }
+
+    $imageInfo = @getimagesizefromstring($imageBytes);
+    $mime = $imageInfo['mime'] ?? '';
+    $extensions = [
+        'image/jpeg' => 'jpg',
+        'image/png' => 'png',
+        'image/webp' => 'webp',
+    ];
+
+    if (!isset($extensions[$mime])) {
+        license_json(false, 'Captured face photo must be JPG, PNG, or WEBP.');
+    }
+
+    $uploadDir = __DIR__ . '/uploads/licenses';
+    if (!is_dir($uploadDir) && !mkdir($uploadDir, 0775, true)) {
+        license_json(false, 'Could not prepare the license upload folder.');
+    }
+
+    if ($hasLicenseUpload) {
+        $licenseFileName = 'license-' . $userId . '-' . bin2hex(random_bytes(8)) . '.' . $licenseExtensions[$licenseMime];
+        $licenseTargetPath = $uploadDir . '/' . $licenseFileName;
+        $licensePublicPath = '/php/Customer/uploads/licenses/' . $licenseFileName;
+    }
+
+    $faceFileName = 'license-face-' . $userId . '-' . bin2hex(random_bytes(8)) . '.' . $extensions[$mime];
+    $faceTargetPath = $uploadDir . '/' . $faceFileName;
+    $facePublicPath = '/php/Customer/uploads/licenses/' . $faceFileName;
 
     $pdo->beginTransaction();
 
-    if ($hasUpload && !move_uploaded_file($image['tmp_name'], $targetPath)) {
-        throw new RuntimeException('Could not move the uploaded license image. Check the upload folder permission.');
+    if ($hasLicenseUpload && !move_uploaded_file($licenseUpload['tmp_name'], $licenseTargetPath)) {
+        throw new RuntimeException('Could not move the uploaded driver license image. Check the upload folder permission.');
+    }
+
+    if (file_put_contents($faceTargetPath, $imageBytes) === false) {
+        throw new RuntimeException('Could not save the captured face photo. Check the upload folder permission.');
     }
 
     if ($existingLicenseId) {
         $statusSql = $hasStatusColumn ? ', status = ?' : '';
         $updateLicense = $pdo->prepare(
             "UPDATE user_license
-             SET license_image = ?, license_number = ?, license_name = ?, phone_number = ?, nrc_number = ?,
+             SET license_image = ?, face_image = ?, license_number = ?, license_name = ?, phone_number = ?, nrc_number = ?,
                  date_of_birth = ?, blood_type = ?, license_last_valid_date = ?{$statusSql}, updated_at = NOW()
              WHERE license_id = ?"
         );
         $updateParams = [
-            $publicPath,
+            $licensePublicPath,
+            $facePublicPath,
             $licenseNumber,
             $licenseName,
             $phoneNumber,
@@ -186,12 +260,13 @@ try {
         $statusValueSql = $hasStatusColumn ? ', ?' : '';
         $insert = $pdo->prepare(
             "INSERT INTO user_license
-                (license_image, license_number, license_name, phone_number, nrc_number, date_of_birth, blood_type, license_last_valid_date{$statusColumnSql}, created_at, updated_at)
+                (license_image, face_image, license_number, license_name, phone_number, nrc_number, date_of_birth, blood_type, license_last_valid_date{$statusColumnSql}, created_at, updated_at)
              VALUES
-                (?, ?, ?, ?, ?, ?, ?, ?{$statusValueSql}, NOW(), NOW())"
+                (?, ?, ?, ?, ?, ?, ?, ?, ?{$statusValueSql}, NOW(), NOW())"
         );
         $insertParams = [
-            $publicPath,
+            $licensePublicPath,
+            $facePublicPath,
             $licenseNumber,
             $licenseName,
             $phoneNumber,
@@ -208,7 +283,7 @@ try {
         $licenseId = (int) $pdo->lastInsertId();
         if ($licenseId <= 0) {
             $idLookup = $pdo->prepare('SELECT license_id FROM user_license WHERE license_image = ? ORDER BY license_id DESC LIMIT 1');
-            $idLookup->execute([$publicPath]);
+            $idLookup->execute([$licensePublicPath]);
             $licenseId = (int) $idLookup->fetchColumn();
         }
 
@@ -228,8 +303,11 @@ try {
     if ($pdo->inTransaction()) {
         $pdo->rollBack();
     }
-    if (isset($targetPath) && is_file($targetPath)) {
-        @unlink($targetPath);
+    if (isset($licenseTargetPath) && is_file($licenseTargetPath)) {
+        @unlink($licenseTargetPath);
+    }
+    if (isset($faceTargetPath) && is_file($faceTargetPath)) {
+        @unlink($faceTargetPath);
     }
     $message = $e->getMessage();
     error_log('License save failed: ' . $message);

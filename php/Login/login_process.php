@@ -24,10 +24,11 @@ if (!filter_var($email, FILTER_VALIDATE_EMAIL) || $password === '') {
 
 try {
     $stmt = $pdo->prepare(
-        'SELECT u.user_id, u.user_name, u.email, u.hashed_password, u.status, u.role_id, u.license_id,
-                r.role_name
+        'SELECT u.user_id, u.user_name, u.email, u.hashed_password, u.status, u.role_id, u.business_role_id, u.license_id,
+                r.role_name, br.role_name AS business_role_name
          FROM users u
          LEFT JOIN roles r ON r.role_id = u.role_id
+         LEFT JOIN roles br ON br.role_id = u.business_role_id
          WHERE LOWER(u.email) = LOWER(?)
          LIMIT 1'
     );
@@ -78,6 +79,10 @@ try {
     $_SESSION['user_email'] = (string) $user['email'];
     $_SESSION['role_id'] = (int) ($user['role_id'] ?? 0);
     $_SESSION['role_name'] = (string) ($user['role_name'] ?? 'customer');
+    $_SESSION['business_role_id'] = (int) ($user['business_role_id'] ?? 0);
+    $_SESSION['business_role_name'] = (string) ($user['business_role_name'] ?? '');
+    $_SESSION['has_business'] = !empty($user['business_role_id']);
+    $_SESSION['active_profile_mode'] = ($roleName === 'customer') ? 'customer' : 'business';
     if (!empty($user['license_id'])) {
         $_SESSION['license_id'] = (int) $user['license_id'];
     }
@@ -86,7 +91,6 @@ try {
         $_SESSION['license_status'] = (string) ($customerLicenseAccess['status'] ?? 'pending');
         $_SESSION['oil_limit'] = $_SESSION['oil_limit'] ?? 50.0;
         $_SESSION['oil_used'] = $_SESSION['oil_used'] ?? 0.0;
-        $_SESSION['has_business'] = $_SESSION['has_business'] ?? false;
     }
 
     header('Location: ' . $destination);
