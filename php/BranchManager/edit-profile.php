@@ -248,8 +248,8 @@
 
           <div class="danger-zone" style="text-align:left; margin-top:26px;">
             <h4><i class="fa-solid fa-triangle-exclamation"></i> Danger Zone</h4>
-            <p>Switching to a Customer Account will remove your Branch Manager access. This action requires HQ re-approval to undo.</p>
-            <button class="btn-danger-outline" id="switch-account-btn" type="button"><i class="fa-solid fa-right-left"></i> Change to Customer Account</button>
+            <p>Switch to the customer side of this same account to manage your driver license and fill your car. You can return to Branch Manager after your license is confirmed.</p>
+            <button class="btn-danger-outline" id="switch-account-btn" type="button"><i class="fa-solid fa-right-left"></i> Switch to Customer Profile</button>
           </div>
         </div>
 
@@ -300,13 +300,13 @@
 <div class="modal-overlay" id="switch-modal">
   <div class="modal-card-custom">
     <div class="modal-icon"><i class="fa-solid fa-right-left"></i></div>
-    <h3>Change to Customer Account?</h3>
-    <p>Your Branch Manager privileges (staff, oil stock, booking-slot, and report access) will be removed immediately and your login will be converted to a standard Customer Account. HQ approval is required to become a Branch Manager again.</p>
+    <h3>Switch to Customer Profile?</h3>
+    <p>This keeps your Branch Manager role linked in the database and only changes the active profile for this session.</p>
     <div class="modal-actions">
       <button type="button" class="btn-secondary-custom" id="switch-cancel-btn">Cancel</button>
-      <form action="edit-profile.php" method="POST" style="display:inline;">
-        <input type="hidden" name="action" value="switch_account">
-        <button type="submit" class="btn-confirm-danger" id="switch-confirm-btn">Yes, Change Account</button>
+      <form action="../account_switch.php" method="POST" style="display:inline;">
+        <input type="hidden" name="mode" value="customer">
+        <button type="submit" class="btn-confirm-danger" id="switch-confirm-btn">Switch Profile</button>
       </form>
     </div>
   </div>

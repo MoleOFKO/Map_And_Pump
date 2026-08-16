@@ -1,6 +1,7 @@
 <?php
 
 require_once __DIR__ . '/../conn.php';
+require_once __DIR__ . '/../Customer/license_access.php';
 
 function social_login_fail(string $message): never
 {
@@ -167,9 +168,11 @@ function social_sign_in_user(PDO $pdo, string $provider, string $providerId, str
     }
 
     $stmt = $pdo->prepare(
-        'SELECT u.user_id, u.user_name, u.email, u.status, u.role_id, r.role_name
+        'SELECT u.user_id, u.user_name, u.email, u.status, u.role_id, u.business_role_id,
+                r.role_name, br.role_name AS business_role_name
          FROM users u
          LEFT JOIN roles r ON r.role_id = u.role_id
+         LEFT JOIN roles br ON br.role_id = u.business_role_id
          WHERE (u.oauth_provider = ? AND u.oauth_provider_id = ?)
             OR LOWER(u.email) = LOWER(?)
          LIMIT 1'
@@ -199,9 +202,11 @@ function social_sign_in_user(PDO $pdo, string $provider, string $providerId, str
         $insert->execute([$displayName, $email, $randomPassword, $roleId, 'active', $provider, $providerId, $avatarUrl]);
 
         $stmt = $pdo->prepare(
-            'SELECT u.user_id, u.user_name, u.email, u.status, u.role_id, r.role_name
+            'SELECT u.user_id, u.user_name, u.email, u.status, u.role_id, u.business_role_id,
+                    r.role_name, br.role_name AS business_role_name
              FROM users u
              LEFT JOIN roles r ON r.role_id = u.role_id
+             LEFT JOIN roles br ON br.role_id = u.business_role_id
              WHERE u.user_id = ?
              LIMIT 1'
         );
@@ -224,7 +229,22 @@ function social_sign_in_user(PDO $pdo, string $provider, string $providerId, str
     $_SESSION['user_email'] = (string) $user['email'];
     $_SESSION['role_id'] = (int) ($user['role_id'] ?? 0);
     $_SESSION['role_name'] = (string) ($user['role_name'] ?? 'Customer');
+    $_SESSION['business_role_id'] = (int) ($user['business_role_id'] ?? 0);
+    $_SESSION['business_role_name'] = (string) ($user['business_role_name'] ?? '');
+    $_SESSION['has_business'] = !empty($user['business_role_id']);
+    $_SESSION['active_profile_mode'] = strtolower((string) ($user['role_name'] ?? 'Customer')) === 'customer' ? 'customer' : 'business';
 
-    header('Location: ' . social_dashboard_for_role((string) ($user['role_name'] ?? 'Customer')));
+    $roleName = strtolower((string) ($user['role_name'] ?? 'Customer'));
+    $destination = social_dashboard_for_role((string) ($user['role_name'] ?? 'Customer'));
+    if ($roleName === 'customer') {
+        $licenseAccess = customer_license_access($pdo, (int) $user['user_id']);
+        $_SESSION['license_id'] = (int) ($licenseAccess['license_id'] ?? 0);
+        $_SESSION['license_status'] = (string) ($licenseAccess['status'] ?? 'pending');
+        if (!$licenseAccess['is_approved']) {
+            $destination = '/php/Customer/license.php';
+        }
+    }
+
+    header('Location: ' . $destination);
     exit;
 }

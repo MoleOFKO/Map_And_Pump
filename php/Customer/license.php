@@ -36,6 +36,79 @@ $statusPillClass = match (strtolower($licenseStatus)) {
 include 'share_header.php';
 ?>
 
+<style>
+    .license-face-capture {
+        border: 1px solid var(--customer-border);
+        border-radius: 18px;
+        background: rgba(4, 9, 21, 0.46);
+        padding: 18px;
+    }
+    .license-face-frame {
+        position: relative;
+        width: min(100%, 360px);
+        aspect-ratio: 1;
+        margin: 0 auto;
+        border-radius: 50%;
+        overflow: hidden;
+        background: rgba(13, 110, 253, 0.08);
+        border: 2px solid rgba(13, 110, 253, 0.22);
+        box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04), 0 18px 42px rgba(0, 0, 0, 0.25);
+    }
+    .license-face-video,
+    .license-face-preview {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        transform: scaleX(-1);
+    }
+    .license-face-preview {
+        display: none;
+    }
+    .license-face-frame.has-capture .license-face-video,
+    .license-face-frame.has-capture .license-face-guide {
+        display: none;
+    }
+    .license-face-frame.has-capture .license-face-preview {
+        display: block;
+    }
+    .license-face-guide {
+        pointer-events: none;
+        position: absolute;
+        inset: 0;
+        border-radius: 50%;
+        background:
+            linear-gradient(to bottom, transparent 49%, rgba(13, 110, 253, 0.95) 49%, rgba(13, 110, 253, 0.95) 50%, transparent 50%),
+            radial-gradient(ellipse at center, transparent 54%, rgba(4, 9, 21, 0.46) 55%);
+    }
+    .license-face-guide::before,
+    .license-face-guide::after {
+        content: "";
+        position: absolute;
+        top: 47%;
+        width: 44px;
+        height: 20px;
+        border-top: 2px solid rgba(27, 228, 148, 0.95);
+        border-radius: 50%;
+    }
+    .license-face-guide::before {
+        left: 27%;
+    }
+    .license-face-guide::after {
+        right: 27%;
+    }
+    .license-face-placeholder {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--customer-muted);
+        font-size: 13px;
+        text-align: center;
+        padding: 28px;
+    }
+</style>
+
 <div class="row justify-content-center">
     <div class="col-xl-9">
         <div class="dashboard-panel-card">
@@ -73,12 +146,47 @@ include 'share_header.php';
 
             <form id="license-form" enctype="multipart/form-data" class="<?php echo $showForm ? '' : 'd-none'; ?>">
                 <div class="row g-3">
-                    <div class="col-md-6">
-                        <label class="form-label text-secondary fw-bold" style="font-size:11px;">LICENSE IMAGE</label>
+                    <div class="col-12">
+                        <label class="form-label text-secondary fw-bold" style="font-size:11px;">DRIVER LICENSE IMAGE</label>
                         <input type="file" name="license_image" class="form-control custom-form-field" accept="image/jpeg,image/png,image/webp" <?php echo $hasLicense ? '' : 'required'; ?>>
                         <?php if ($hasLicense && !empty($license['license_image'])): ?>
-                            <small class="text-secondary d-block mt-2">Current image saved. Upload a new one only if it changed.</small>
+                            <small class="text-secondary d-block mt-2">Current license image saved. Upload a new one only if the license card/document changed.</small>
                         <?php endif; ?>
+                    </div>
+                    <div class="col-12">
+                        <div class="license-face-capture">
+                            <div class="d-flex align-items-start justify-content-between gap-3 flex-wrap mb-3">
+                                <div>
+                                    <label class="form-label text-secondary fw-bold mb-1" style="font-size:11px;">LIVE FACE VERIFICATION</label>
+                                    <p class="text-secondary mb-0" style="font-size:13px;">Use the camera and align both eyes with the middle guide before taking the photo.</p>
+                                </div>
+                                <?php if ($hasLicense && !empty($license['face_image'])): ?>
+                                    <span class="status-pill pending" style="font-size:10px;"><i class="bi bi-camera-fill"></i> Current photo saved</span>
+                                <?php endif; ?>
+                            </div>
+
+                            <div class="license-face-frame" id="faceFrame">
+                                <video id="faceVideo" class="license-face-video" autoplay playsinline muted></video>
+                                <img id="facePreview" class="license-face-preview" alt="Captured face verification photo">
+                                <div id="facePlaceholder" class="license-face-placeholder">Camera preview will appear here.</div>
+                                <div class="license-face-guide"></div>
+                            </div>
+                            <canvas id="faceCanvas" class="d-none"></canvas>
+                            <input type="hidden" id="licenseImageData" name="license_image_data">
+
+                            <div class="d-flex justify-content-center gap-2 flex-wrap mt-3">
+                                <button type="button" id="startCameraBtn" class="btn btn-outline-info btn-sm rounded-3 fw-bold">
+                                    <i class="bi bi-camera-video-fill me-1"></i>Start Camera
+                                </button>
+                                <button type="button" id="captureFaceBtn" class="btn btn-info btn-sm rounded-3 fw-bold" disabled>
+                                    <i class="bi bi-camera-fill me-1"></i>Take Photo
+                                </button>
+                                <button type="button" id="retakeFaceBtn" class="btn btn-outline-secondary btn-sm rounded-3 fw-bold d-none">
+                                    <i class="bi bi-arrow-counterclockwise me-1"></i>Retake
+                                </button>
+                            </div>
+                            <small id="faceCaptureHelp" class="text-secondary d-block text-center mt-2">A real-time camera photo is required before saving.</small>
+                        </div>
                     </div>
                     <div class="col-md-6">
                         <label class="form-label text-secondary fw-bold" style="font-size:11px;">LICENSE NUMBER</label>
@@ -130,6 +238,17 @@ include 'share_header.php';
     const licenseStatus = document.getElementById('license-status');
     const licenseSubmit = document.getElementById('license-submit');
     const licenseSubmitLabel = licenseSubmit.innerHTML;
+    const faceFrame = document.getElementById('faceFrame');
+    const faceVideo = document.getElementById('faceVideo');
+    const facePreview = document.getElementById('facePreview');
+    const faceCanvas = document.getElementById('faceCanvas');
+    const facePlaceholder = document.getElementById('facePlaceholder');
+    const licenseImageData = document.getElementById('licenseImageData');
+    const startCameraBtn = document.getElementById('startCameraBtn');
+    const captureFaceBtn = document.getElementById('captureFaceBtn');
+    const retakeFaceBtn = document.getElementById('retakeFaceBtn');
+    const faceCaptureHelp = document.getElementById('faceCaptureHelp');
+    let faceStream = null;
 
     function showLicenseStatus(message, ok = false) {
         licenseStatus.textContent = message;
@@ -139,10 +258,85 @@ include 'share_header.php';
         licenseStatus.style.color = ok ? '#bfffe5' : '#ffd4dc';
     }
 
+    async function startFaceCamera() {
+        if (!navigator.mediaDevices?.getUserMedia) {
+            showLicenseStatus('Your browser does not support live camera capture.');
+            return;
+        }
+
+        try {
+            faceStream = await navigator.mediaDevices.getUserMedia({
+                audio: false,
+                video: {
+                    facingMode: 'user',
+                    width: { ideal: 720 },
+                    height: { ideal: 720 }
+                }
+            });
+            faceVideo.srcObject = faceStream;
+            await faceVideo.play();
+            facePlaceholder.classList.add('d-none');
+            faceFrame.classList.remove('has-capture');
+            captureFaceBtn.disabled = false;
+            startCameraBtn.classList.add('d-none');
+            retakeFaceBtn.classList.add('d-none');
+            faceCaptureHelp.textContent = 'Keep your face centered and place your eyes on the middle guide.';
+        } catch (error) {
+            showLicenseStatus('Camera permission is required to take the live face photo.');
+        }
+    }
+
+    function stopFaceCamera() {
+        if (faceStream) {
+            faceStream.getTracks().forEach((track) => track.stop());
+            faceStream = null;
+        }
+        faceVideo.srcObject = null;
+    }
+
+    function captureFacePhoto() {
+        if (!faceVideo.videoWidth || !faceVideo.videoHeight) {
+            showLicenseStatus('Camera is not ready yet. Please wait a moment and try again.');
+            return;
+        }
+
+        const side = Math.min(faceVideo.videoWidth, faceVideo.videoHeight);
+        const sx = (faceVideo.videoWidth - side) / 2;
+        const sy = (faceVideo.videoHeight - side) / 2;
+        faceCanvas.width = 720;
+        faceCanvas.height = 720;
+        const context = faceCanvas.getContext('2d');
+        context.translate(faceCanvas.width, 0);
+        context.scale(-1, 1);
+        context.drawImage(faceVideo, sx, sy, side, side, 0, 0, faceCanvas.width, faceCanvas.height);
+
+        const dataUrl = faceCanvas.toDataURL('image/jpeg', 0.9);
+        licenseImageData.value = dataUrl;
+        facePreview.src = dataUrl;
+        faceFrame.classList.add('has-capture');
+        captureFaceBtn.disabled = true;
+        retakeFaceBtn.classList.remove('d-none');
+        startCameraBtn.classList.add('d-none');
+        faceCaptureHelp.textContent = 'Photo captured. Retake it if the eyes are not aligned with the middle guide.';
+        stopFaceCamera();
+    }
+
+    startCameraBtn.addEventListener('click', startFaceCamera);
+    captureFaceBtn.addEventListener('click', captureFacePhoto);
+    retakeFaceBtn.addEventListener('click', () => {
+        licenseImageData.value = '';
+        facePreview.removeAttribute('src');
+        startFaceCamera();
+    });
+
     licenseForm.addEventListener('submit', async (event) => {
         event.preventDefault();
         if (!licenseForm.checkValidity()) {
             licenseForm.reportValidity();
+            return;
+        }
+        if (licenseImageData.value === '') {
+            showLicenseStatus('Please take a live face photo with the camera before saving.');
             return;
         }
 
@@ -174,6 +368,8 @@ include 'share_header.php';
             licenseSubmit.innerHTML = licenseSubmitLabel;
         }
     });
+
+    window.addEventListener('beforeunload', stopFaceCamera);
 </script>
 
 <?php include 'share_footer.php'; ?>
