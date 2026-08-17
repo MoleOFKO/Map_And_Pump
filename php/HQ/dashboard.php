@@ -16,13 +16,14 @@ require_once __DIR__ . '/../conn.php';
 // Handle quick price update submission if posted
 $updateMessage = "";
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'update_price') {
-    $fuelType = $_POST['fuel_type'] ?? '';
-    $newPrice = $_POST['fuel_price'] ?? '';
+    $fuelType = trim((string)($_POST['fuel_type'] ?? ''));
+    $newPrice = trim((string)($_POST['fuel_price'] ?? ''));
 
-    if (!empty($fuelType) && !empty($newPrice)) {
-        $stmt = $conn->prepare("UPDATE oil_types SET price_per_liter = ? WHERE oil_name = ?");
+    if ($fuelType !== '' && $newPrice !== '' && is_numeric($newPrice) && (float) $newPrice >= 0) {
+        $stmt = $conn->prepare("UPDATE station_oil_inventory soi JOIN oil_types ot ON ot.oil_type_id = soi.oil_type_id SET soi.price_per_litre = ? WHERE ot.oil_name = ?");
         if ($stmt) {
-            $stmt->bind_param("is", $newPrice, $fuelType);
+            $priceValue = (int) $newPrice;
+            $stmt->bind_param("is", $priceValue, $fuelType);
             if ($stmt->execute()) {
                 $updateMessage = "Successfully updated price for " . htmlspecialchars($fuelType) . " to " . htmlspecialchars($newPrice) . " MMK";
             } else {
@@ -30,21 +31,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             }
             $stmt->close();
         }
+    } else {
+        $updateMessage = "Please enter a valid non-negative numeric price.";
     }
 }
 
-// Fetch National Fuel Pricing dynamically
+// Fetch National Fuel Pricing dynamically from the live station inventory
 $fuelPrices = [];
-$pricingResult = $conn->query("SELECT oil_name, price_per_liter FROM oil_types");
+$pricingResult = $conn->query("SELECT ot.oil_name, MAX(soi.price_per_litre) AS price_per_liter FROM oil_types ot LEFT JOIN station_oil_inventory soi ON ot.oil_type_id = soi.oil_type_id GROUP BY ot.oil_type_id, ot.oil_name ORDER BY ot.oil_name");
 if ($pricingResult) {
     while ($row = $pricingResult->fetch_assoc()) {
         $fuelPrices[] = $row;
     }
 }
 
-// Fetch Recent Manager Reports dynamically
+// Fetch recent manager reports by the user's original business role, since role_id is normalized to the customer profile in the account-switch flow.
 $recentReports = [];
-$reportsResult = $conn->query("SELECT * FROM report WHERE role_id = 1 ORDER BY created_at DESC LIMIT 5");
+$reportsQuery = "SELECT r.report_id, r.user_id, r.short_summery, r.message, r.importance, r.created_at, u.user_name, COALESCE(u.business_role_id, u.role_id) AS source_role_id FROM report r LEFT JOIN users u ON u.user_id = r.user_id WHERE COALESCE(u.business_role_id, u.role_id) = 4 ORDER BY r.created_at DESC LIMIT 5";
+$reportsResult = $conn->query($reportsQuery);
 if ($reportsResult) {
     while ($row = $reportsResult->fetch_assoc()) {
         $recentReports[] = $row;
@@ -199,8 +203,8 @@ if ($stationsResult) {
           <tbody>
             <?php foreach ($recentReports as $report): ?>
               <tr>
-                <td><?php echo htmlspecialchars($report['branch_id']); ?></td>
-                <td><?php echo htmlspecialchars(substr($report['summary'], 0, 40)); ?>...</td>
+                <td><?php echo htmlspecialchars($report['user_name'] ?? 'Manager'); ?></td>
+                <td><?php echo htmlspecialchars(substr($report['short_summery'] ?? 'No summary provided', 0, 40)); ?>...</td>
                 <td><?php echo htmlspecialchars($report['created_at']); ?></td>
               </tr>
             <?php endforeach; ?>

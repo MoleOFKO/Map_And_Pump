@@ -1,27 +1,27 @@
 <?php
-// Database connection configuration
-$host = 'gateway01.ap-southeast-1.prod.aws.tidbcloud.com'; // e.g., gateway01.us-west-2.prod.aws.tidbcloud.com
-$dbname = 'map_and_pump';
-$username = '3sdV1BWxtCzY7YS.root';
-$password = 'GNfDltJeN7paYMLq';
-$port = 4000; // Usually 4000 for TiDB, or 3306 for standard MySQL secure ports
+// // Database connection configuration
+// $host = 'gateway01.ap-southeast-1.prod.aws.tidbcloud.com'; // e.g., gateway01.us-west-2.prod.aws.tidbcloud.com
+// $dbname = 'map_and_pump';
+// $username = '3sdV1BWxtCzY7YS.root';
+// $password = 'GNfDltJeN7paYMLq';
+// $port = 4000; // Usually 4000 for TiDB, or 3306 for standard MySQL secure ports
 
-try {
-    $dsn = "mysql:host=$host;port=$port;dbname=$dbname;charset=utf8mb4";
+// try {
+//     $dsn = "mysql:host=$host;port=$port;dbname=$dbname;charset=utf8mb4";
     
-    // Required SSL options for cloud databases requiring secure transport
-    $options = [
-        PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-        PDO::MYSQL_ATTR_SSL_VERIFY_SERVER_CERT => true, // Set to true if you are supplying a specific CA bundle
-        // If your cloud provider requires a specific CA certificate file, uncomment below:
-         PDO::MYSQL_ATTR_SSL_CA => '../isrgrootx1.pem', // Path to the CA certificate file
-    ];
+//     // Required SSL options for cloud databases requiring secure transport
+//     $options = [
+//         PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+//         PDO::MYSQL_ATTR_SSL_VERIFY_SERVER_CERT => true, // Set to true if you are supplying a specific CA bundle
+//         // If your cloud provider requires a specific CA certificate file, uncomment below:
+//          PDO::MYSQL_ATTR_SSL_CA => '../isrgrootx1.pem', // Path to the CA certificate file
+//     ];
 
-    $pdo = new PDO($dsn, $username, $password, $options);
-} catch (PDOException $e) {
-    die("Database connection failed: " . $e->getMessage());
-}
-
+//     $pdo = new PDO($dsn, $username, $password, $options);
+// } catch (PDOException $e) {
+//     die("Database connection failed: " . $e->getMessage());
+// }
+require_once __DIR__ . '/../conn.php';
 // Handle form submission
 $message = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -31,25 +31,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $phone = $_POST['contact_number'] ?? '';
     $businessLicense = $_POST['business_license'] ?? '';
     $location = $_POST['location'] ?? '';
-    
+
     // Handle Logo Upload if present
     $logoPath = null;
     if (isset($_FILES['company_logo']) && $_FILES['company_logo']['error'] === UPLOAD_ERR_OK) {
-        $uploadDir = 'uploads/';
+        $uploadDir = __DIR__ . '/uploads/';
         if (!is_dir($uploadDir)) {
             mkdir($uploadDir, 0755, true);
         }
         $fileExtension = pathinfo($_FILES['company_logo']['name'], PATHINFO_EXTENSION);
         $fileName = 'logo_' . time() . '.' . $fileExtension;
         $uploadFile = $uploadDir . $fileName;
-        
+
         if (move_uploaded_file($_FILES['company_logo']['tmp_name'], $uploadFile)) {
-            $logoPath = $uploadFile;
+            $logoPath = 'uploads/' . $fileName;
         }
     }
 
     // Check if configuration already exists in database
-    $stmt = $pdo->query("SELECT id, company_logo FROM headquarter LIMIT 1");
+    $stmt = $pdo->query("SELECT headquarter_id, company_logo FROM headquarter LIMIT 1");
     $config = $stmt->fetch(PDO::FETCH_ASSOC);
 
     if (!$logoPath && $config) {
@@ -58,14 +58,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if ($config) {
         // Update existing record
-        $updateStmt = $pdo->prepare("UPDATE headquarter SET company_name = ?, headquarter_bio = ?, headquarter_email = ?, contact_number = ?, business_license = ?, location = ?, company_logo = ? WHERE id = ?");
-        $updateStmt->execute([$title, $info, $email, $phone, $businessLicense, $location, $logoPath, $config['id']]);
+        $updateStmt = $pdo->prepare("UPDATE headquarter SET company_name = ?, headquarter_bio = ?, headquarter_email = ?, contact_number = ?, business_license = ?, location = ?, company_logo = ? WHERE headquarter_id = ?");
+        $updateStmt->execute([$title, $info, $email, $phone, $businessLicense, $location, $logoPath, $config['headquarter_id']]);
     } else {
         // Insert new record
         $insertStmt = $pdo->prepare("INSERT INTO headquarter (company_name, headquarter_bio, headquarter_email, contact_number, business_license, location, company_logo) VALUES (?, ?, ?, ?, ?, ?, ?)");
         $insertStmt->execute([$title, $info, $email, $phone, $businessLicense, $location, $logoPath]);
     }
-    
+
     $message = "Corporate parameters stored successfully!";
 }
 
@@ -105,7 +105,7 @@ $brandLogo = $currentConfig['company_logo'] ?? 'https://via.placeholder.com/150'
                 <div class="col-md-4 text-center border-end-md mb-4 mb-md-0">
                     <img id="logoPreview" src="<?= htmlspecialchars($brandLogo) ?>" alt="Brand Logo" class="rounded-circle img-thumbnail mb-3" style="width: 150px; height: 150px; object-fit: cover; background-color: #fff;">
                     <div>
-                        <input type="file" name="brandLogo" id="brandLogoInput" accept="image/*" style="display: none;" onchange="previewLogo(event)">
+                        <input type="file" name="company_logo" id="brandLogoInput" accept="image/*" style="display: none;" onchange="previewLogo(event)">
                         <label for="brandLogoInput" class="btn btn-sm btn-outline-secondary text-white bg-secondary">Change Logo</label>
                     </div>
                 </div>
