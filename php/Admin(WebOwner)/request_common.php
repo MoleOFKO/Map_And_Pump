@@ -97,6 +97,30 @@ function request_redirect(string $location = 'view_requests.php'): never
  * The request tables are bootstrapped because the repository has an ER
  * diagram but no executable migration for the request-review workflow.
  */
+function request_is_hq_registration(?string $type): bool
+{
+    return in_array(strtolower(trim((string) $type)), ['hq_registration', 'headquarter_registration'], true);
+}
+
+function request_column_exists(string $column): bool
+{
+    global $conn;
+
+    $statement = $conn->prepare(
+        'SELECT 1 FROM information_schema.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = \'system_requests\' AND COLUMN_NAME = ? LIMIT 1'
+    );
+    if (!$statement) {
+        return false;
+    }
+    $statement->bind_param('s', $column);
+    $statement->execute();
+    $exists = (bool) $statement->get_result()?->fetch_row();
+    $statement->close();
+
+    return $exists;
+}
+
 function request_schema_ready(): bool
 {
     global $conn;
@@ -112,6 +136,7 @@ function request_schema_ready(): bool
             request_type VARCHAR(60) NOT NULL,
             status VARCHAR(20) NOT NULL DEFAULT 'pending',
             submitter_user_id INT UNSIGNED NULL,
+            role_id INT UNSIGNED NULL,
             headquarter_id INT UNSIGNED NULL,
             sender_entity VARCHAR(255) NOT NULL,
             sender_name VARCHAR(255) NULL,
@@ -120,6 +145,11 @@ function request_schema_ready(): bool
             request_details TEXT NULL,
             document_name VARCHAR(255) NULL,
             document_path VARCHAR(500) NULL,
+            headquarter_owner_email VARCHAR(255) NULL,
+            headquarter_email VARCHAR(255) NULL,
+            headquarter_company_logo VARCHAR(255) NULL,
+            headquarter_contact_number VARCHAR(50) NULL,
+            headquarter_expire_at DATETIME NULL,
             review_reason TEXT NULL,
             reviewed_by INT UNSIGNED NULL,
             reviewed_at TIMESTAMP NULL DEFAULT NULL,
@@ -158,6 +188,38 @@ function request_schema_ready(): bool
         }
     }
 
+    $requiredColumns = [
+        'role_id' => 'INT UNSIGNED NULL',
+        'headquarter_id' => 'INT UNSIGNED NULL',
+        'headquarter_owner_email' => 'VARCHAR(255) NULL',
+        'headquarter_email' => 'VARCHAR(255) NULL',
+        'headquarter_company_logo' => 'VARCHAR(255) NULL',
+        'headquarter_contact_number' => 'VARCHAR(50) NULL',
+        'headquarter_expire_at' => 'DATETIME NULL',
+    ];
+    foreach ($requiredColumns as $column => $definition) {
+        if (!request_column_exists($column) && !$conn->query("ALTER TABLE system_requests ADD COLUMN $column $definition")) {
+            error_log('[Request registry] Schema migration failed for ' . $column . ': ' . $conn->error);
+            return false;
+        }
+    }
+
+    $indexCheck = $conn->query("SHOW INDEX FROM system_requests WHERE Key_name = 'idx_system_requests_headquarter'");
+    if ((!$indexCheck || $indexCheck->num_rows === 0) && !$conn->query('ALTER TABLE system_requests ADD KEY idx_system_requests_headquarter (headquarter_id)')) {
+        error_log('[Request registry] HQ request index migration failed: ' . $conn->error);
+        return false;
+    }
+
+    // Legacy rows were created before headquarter_id was replaced by role_id in
+    // the live database. Preserve their existing HQ link when one is present.
+    $conn->query(
+        "UPDATE system_requests r
+         INNER JOIN headquarter h ON h.headquarter_id = r.role_id
+         SET r.headquarter_id = h.headquarter_id
+         WHERE r.headquarter_id IS NULL
+           AND LOWER(r.request_type) IN ('hq_registration', 'headquarter_registration')"
+    );
+
     return true;
 }
 
@@ -170,32 +232,40 @@ function request_backfill_pending_hq_registrations(): bool
 {
     global $conn;
 
-    if (!hq_db_available()) {
+    if (!hq_db_available() || !request_schema_ready()) {
         return false;
     }
 
     $sql = <<<'SQL'
 INSERT INTO system_requests
-    (reference_code, request_type, status, submitter_user_id, headquarter_id,
+    (reference_code, request_type, status, submitter_user_id, role_id, headquarter_id,
      sender_entity, sender_name, sender_email, location, request_details,
-     document_name, document_path, created_at, updated_at)
+     document_name, document_path, headquarter_owner_email, headquarter_email,
+     headquarter_company_logo, headquarter_contact_number, headquarter_expire_at,
+     created_at, updated_at)
 SELECT
     CONCAT('HQ-REG-', h.headquarter_id),
     'hq_registration',
     'pending',
     u.user_id,
+    3,
     h.headquarter_id,
     COALESCE(h.company_name, 'Unnamed HQ'),
     u.user_name,
     u.email,
     h.location,
     CONCAT(
-        'HQ account registered through Register New Headquarter. ',
+        'Legacy HQ account registered before the approval-only workflow. ',
         'Contact: ', COALESCE(h.contact_number, 'Not provided'),
         '. License expiry: ', DATE_FORMAT(h.expire_at, '%Y-%m-%d'), '.'
     ),
     'Business license',
     h.business_license,
+    u.email,
+    h.headquarter_email,
+    h.company_logo,
+    h.contact_number,
+    h.expire_at,
     NOW(),
     NOW()
 FROM headquarter h
@@ -205,6 +275,7 @@ JOIN (
     JOIN (
         SELECT headquarter_id, MIN(user_id) AS owner_user_id
         FROM users
+        WHERE role_id = 3
         GROUP BY headquarter_id
     ) first_user ON first_user.owner_user_id = u1.user_id
 ) u ON u.headquarter_id = h.headquarter_id
@@ -212,6 +283,7 @@ LEFT JOIN (
     SELECT DISTINCT headquarter_id
     FROM system_requests
     WHERE request_type IN ('hq_registration', 'headquarter_registration')
+      AND headquarter_id IS NOT NULL
 ) existing_request ON existing_request.headquarter_id = h.headquarter_id
 WHERE LOWER(u.status) IN ('pending', 'pending_verification')
   AND existing_request.headquarter_id IS NULL
