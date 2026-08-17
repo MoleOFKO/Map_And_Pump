@@ -44,24 +44,6 @@ if (!$hq) {
     exit;
 }
 
-$accountQuery = $conn->prepare(
-    'SELECT user_id, user_name AS username, email, status, created_at, updated_at
-     FROM users
-     WHERE headquarter_id = ?
-     ORDER BY user_id ASC'
-);
-$accounts = [];
-
-if ($accountQuery) {
-    $accountQuery->bind_param('i', $headquarterId);
-    $accountQuery->execute();
-    $result = $accountQuery->get_result();
-    while ($result && ($account = $result->fetch_assoc())) {
-        $accounts[] = $account;
-    }
-    $accountQuery->close();
-}
-
 $actions = [];
 if (hq_action_table_ready()) {
     $actionQuery = $conn->prepare(
@@ -97,7 +79,6 @@ echo json_encode([
         'created_at' => $hq['created_at'],
         'expire_at' => $hq['expire_at'],
     ],
-    'accounts' => $accounts,
     'stations' => $stations,
     'actions' => $actions,
 ]);

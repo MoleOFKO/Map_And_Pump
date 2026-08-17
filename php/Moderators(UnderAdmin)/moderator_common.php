@@ -4,6 +4,7 @@
  */
 require_once __DIR__ . '/../Admin(WebOwner)/admin_common.php';
 require_once __DIR__ . '/../Admin(WebOwner)/request_common.php';
+require_once __DIR__ . '/../Admin(WebOwner)/user_account_common.php';
 
 function moderator_require_user(): array
 {
@@ -61,7 +62,9 @@ function moderator_return_target(string $default): string
     $allowed = [
         'moderator_dashboard.php',
         'manage_hq(M).php',
+        'manage_users(M).php',
         'view_hq_and_user_account(M).php',
+        'view_users(M).php',
         'view_requests(M).php',
         'view_report(M).php',
         'edit_profile(M).php',
@@ -118,12 +121,14 @@ SELECT h.headquarter_id, h.company_name, h.company_logo, h.location, h.headquart
        COALESCE(user_counts.user_count, 0) AS user_count,
        0 AS station_count
 FROM headquarter h
-LEFT JOIN (
-    SELECT headquarter_id, MIN(user_id) AS owner_user_id, COUNT(*) AS user_count
-    FROM users
+INNER JOIN (
+    SELECT u.headquarter_id, MIN(u.user_id) AS owner_user_id, COUNT(*) AS user_count
+    FROM users u
+    INNER JOIN roles r ON r.role_id = u.role_id
+    WHERE r.role_id = 3 AND LOWER(TRIM(r.role_name)) = 'hq'
     GROUP BY headquarter_id
 ) user_counts ON user_counts.headquarter_id = h.headquarter_id
-LEFT JOIN users owner ON owner.user_id = user_counts.owner_user_id
+INNER JOIN users owner ON owner.user_id = user_counts.owner_user_id
 SQL;
     if ($where) {
         $sql .= ' WHERE ' . implode(' AND ', $where);

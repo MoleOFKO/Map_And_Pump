@@ -63,12 +63,14 @@ SELECT
     COALESCE(user_counts.user_count, 0) AS user_count,
     0 AS station_count
 FROM headquarter h
-LEFT JOIN (
-    SELECT headquarter_id, MIN(user_id) AS owner_user_id, COUNT(*) AS user_count
-    FROM users
+INNER JOIN (
+    SELECT u.headquarter_id, MIN(u.user_id) AS owner_user_id, COUNT(*) AS user_count
+    FROM users u
+    INNER JOIN roles r ON r.role_id = u.role_id
+    WHERE r.role_id = 3 AND LOWER(TRIM(r.role_name)) = 'hq'
     GROUP BY headquarter_id
 ) user_counts ON user_counts.headquarter_id = h.headquarter_id
-LEFT JOIN users owner ON owner.user_id = user_counts.owner_user_id
+INNER JOIN users owner ON owner.user_id = user_counts.owner_user_id
 SQL;
 
     if ($where) {
@@ -114,8 +116,8 @@ $flashContext = $flash['context'] ?? [];
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Map &amp; Pump Admin — Manage corporate headquarter structures, linked stations, and associated system user accounts.">
-    <title>HQ &amp; User Accounts — Map &amp; Pump</title>
+    <meta name="description" content="Map &amp; Pump Admin — View role 3 HQ accounts and their HQ details.">
+    <title>View HQ — Map &amp; Pump</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&amp;display=swap" rel="stylesheet">
@@ -206,13 +208,10 @@ $flashContext = $flash['context'] ?? [];
 
         <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3">
             <div>
-                <span class="stat-chip mb-2"><i class="bi bi-building-fill txt-neon-cyan"></i> Registry Control</span>
-                <h1 class="fw-bold m-0 h4 text-white mt-2">HQ Stations &amp; User Accounts</h1>
-                <p class="text-white-50 m-0 small mt-1">Manage corporate headquarter structures, linked stations, and associated system user accounts.</p>
+                <span class="stat-chip mb-2"><i class="bi bi-building-fill txt-neon-cyan"></i> View Registry</span>
+                <h1 class="fw-bold m-0 h4 text-white mt-2">View HQ</h1>
+                <p class="text-white-50 m-0 small mt-1">View only role 3 HQ accounts and their HQ details from the live database.</p>
             </div>
-            <button class="btn btn-neon d-flex align-items-center gap-2" data-bs-toggle="modal" data-bs-target="#addHQModal">
-                <i class="bi bi-plus-circle-fill"></i> Register New HQ
-            </button>
         </div>
 
         <?php if ($dbError): ?>
@@ -258,7 +257,7 @@ $flashContext = $flash['context'] ?? [];
                     <div class="table-responsive">
                         <table class="table table-dark-custom align-middle m-0">
                             <thead>
-                                <tr><th>HQ Entity &amp; Owner</th><th>Headquarters Location</th><th>Linked Pumps/Users</th><th>Status</th><th class="text-end">Command</th></tr>
+                                <tr><th>HQ Entity &amp; Owner</th><th>Role</th><th>Headquarters Location</th><th>Status</th><th class="text-end">Command</th></tr>
                             </thead>
                             <tbody>
                                 <?php if (!$hqRows): ?>
@@ -286,8 +285,8 @@ $flashContext = $flash['context'] ?? [];
                                                 </div>
                                             </div>
                                         </td>
+                                        <td class="text-white-50">#3 &middot; HQ</td>
                                         <td><div class="text-white"><?= hq_escape($locationRegion) ?></div><div class="text-white-50 small" style="font-size:.8rem;"><?= hq_escape($locationAddress) ?></div></td>
-                                        <td><span class="badge rounded-pill bg-info bg-opacity-10 text-info border border-info border-opacity-25 px-2 py-1"><?= (int) ($row['station_count'] ?? 0) ?> Station<?= (int) ($row['station_count'] ?? 0) === 1 ? '' : 's' ?> · <?= (int) ($row['user_count'] ?? 0) ?> User<?= (int) ($row['user_count'] ?? 0) === 1 ? '' : 's' ?></span></td>
                                         <td><span class="hq-status <?= hq_status_class($rowStatus) ?>"><?= hq_escape(hq_status_label($rowStatus)) ?></span></td>
                                         <td class="text-end">
                                             <div class="d-flex gap-2 justify-content-end">
@@ -305,6 +304,7 @@ $flashContext = $flash['context'] ?? [];
         </div>
     </main>
 
+    <?php if (false): // Registration is intentionally rendered only on manage_hq.php. ?>
     <div class="modal fade glass-modal" id="addHQModal" tabindex="-1" aria-labelledby="addHQModalLabel" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable hq-registration-dialog">
             <div class="modal-content">
@@ -382,6 +382,8 @@ $flashContext = $flash['context'] ?? [];
         </div>
     </div>
 
+    <?php endif; ?>
+
     <div class="modal fade glass-modal" id="accountActionModal" tabindex="-1" aria-labelledby="accountActionModalLabel" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
             <div class="modal-content">
@@ -413,7 +415,10 @@ $flashContext = $flash['context'] ?? [];
         <div class="offcanvas-header pb-2 border-bottom border-white border-opacity-10"><div><h5 class="offcanvas-title text-white fw-bold mb-0">Main Menu</h5><p class="text-white-50 small mb-0" style="font-size:.78rem;">Admin Portal</p></div><button type="button" class="btn-close btn-close-white" data-bs-dismiss="offcanvas"></button></div>
         <div class="offcanvas-body pt-3"><ul class="list-unstyled d-flex flex-column gap-2">
             <li><a href="admin_dashboard.php" class="menu-btn-nav"><i class="bi bi-house me-3 txt-neon-cyan"></i> Home</a></li>
-            <li><a href="view_hq_and_user_account.php" class="menu-btn-nav active-nav"><i class="bi bi-building-gear me-3 txt-neon-cyan"></i> View HQ &amp; User Accounts</a></li>
+            <li><a href="view_hq_and_user_account.php" class="menu-btn-nav active-nav"><i class="bi bi-building-gear me-3 txt-neon-cyan"></i> View HQ</a></li>
+            <li><a href="manage_hq.php" class="menu-btn-nav"><i class="bi bi-buildings me-3 txt-neon-cyan"></i> Manage HQ</a></li>
+            <li><a href="view_users.php" class="menu-btn-nav"><i class="bi bi-people me-3 txt-neon-cyan"></i> View Users</a></li>
+            <li><a href="manage_users.php" class="menu-btn-nav"><i class="bi bi-person-gear me-3 txt-neon-cyan"></i> Manage Users</a></li>
             <li><a href="view_requests.php" class="menu-btn-nav"><i class="bi bi-file-earmark-check me-3 txt-neon-cyan"></i> View Requests</a></li>
             <li><a href="view_report.php" class="menu-btn-nav"><i class="bi bi-graph-up-arrow me-3 txt-neon-cyan"></i> View Report</a></li>
             <li><a href="edit_profile.php" class="menu-btn-nav"><i class="bi bi-person-bounding-box me-3 txt-neon-blue"></i> Edit Profile</a></li>
@@ -442,6 +447,8 @@ $flashContext = $flash['context'] ?? [];
             const formatDate = (value) => value ? new Date(String(value).replace(' ', 'T')).toLocaleString() : 'Not available';
             const statusClass = (status) => ({active:'hq-status-active', suspended:'hq-status-suspended', removed:'hq-status-removed'}[String(status || '').toLowerCase()] || 'hq-status-pending');
             const statusLabel = (status) => ({active:'Active', suspended:'Suspended', removed:'Removed', pending:'Pending Verification', pending_verification:'Pending Verification'}[String(status || '').toLowerCase()] || 'Pending Verification');
+            const removeUserSections = () => { detailsBody.querySelectorAll('h6, .hq-detail-label').forEach((heading) => { if (/linked\s+user|linked\s+account/i.test(heading.textContent || '')) { heading.nextElementSibling?.remove(); heading.remove(); } }); };
+            new MutationObserver(removeUserSections).observe(detailsBody, {childList:true, subtree:true});
 
             actionType.addEventListener('change', () => {
                 const remove = actionType.value === 'remove';
@@ -473,6 +480,14 @@ $flashContext = $flash['context'] ?? [];
                 detailsBody.innerHTML = '<div class="row g-3 mb-4"><div class="col-12 col-md-6"><div class="hq-detail-label">HQ location</div><div class="hq-detail-value">' + escapeHtml(hq.location || 'Not available') + '</div></div><div class="col-6 col-md-3"><div class="hq-detail-label">Contact</div><div class="hq-detail-value">' + escapeHtml(hq.contact_number || 'Not available') + '</div></div><div class="col-6 col-md-3"><div class="hq-detail-label">Registered</div><div class="hq-detail-value">' + escapeHtml(formatDate(hq.created_at)) + '</div></div></div><h6 class="text-white fw-semibold mb-2"><i class="bi bi-people-fill txt-neon-cyan me-2"></i>Linked user accounts</h6><div class="table-responsive mb-4"><table class="table hq-modal-table align-middle"><thead><tr><th>Username</th><th>Email</th><th>Status</th><th>Created</th></tr></thead><tbody>' + accountRows + '</tbody></table></div><h6 class="text-white fw-semibold mb-2"><i class="bi bi-fuel-pump-fill txt-neon-cyan me-2"></i>Linked stations</h6><div class="table-responsive mb-4"><table class="table hq-modal-table align-middle"><thead><tr><th>Station</th><th>Location</th><th>Created</th></tr></thead><tbody>' + stationRows + '</tbody></table></div><h6 class="text-white fw-semibold mb-2"><i class="bi bi-clock-history txt-neon-cyan me-2"></i>Account action history</h6><div class="table-responsive"><table class="table hq-modal-table align-middle"><thead><tr><th>Action</th><th>Reason</th><th>Recorded</th></tr></thead><tbody>' + actionRows + '</tbody></table></div>';
             };
 
+            const renderDetailsHQOnly = (payload) => {
+                const hq = payload.hq || {};
+                const actions = payload.actions || [];
+                const actionRows = actions.length ? actions.map((action) => '<tr><td>' + escapeHtml(String(action.action_type || '').toUpperCase()) + '</td><td>' + escapeHtml(action.reason || '—') + '</td><td>' + escapeHtml(formatDate(action.created_at)) + '</td></tr>').join('') : '<tr><td colspan="3" class="text-center text-white-50">No HQ suspend/remove history.</td></tr>';
+                detailsTitle.innerHTML = '<i class="bi bi-building txt-neon-cyan me-2"></i>' + escapeHtml(hq.company_name || 'HQ Details');
+                detailsBody.innerHTML = '<div class="row g-3 mb-4"><div class="col-12"><div class="hq-detail-label">HQ location</div><div class="hq-detail-value">' + escapeHtml(hq.location || 'Not available') + '</div></div><div class="col-6 col-md-3"><div class="hq-detail-label">Contact</div><div class="hq-detail-value">' + escapeHtml(hq.contact_number || 'Not available') + '</div></div><div class="col-6 col-md-3"><div class="hq-detail-label">Email</div><div class="hq-detail-value">' + escapeHtml(hq.headquarter_email || 'Not available') + '</div></div><div class="col-6 col-md-3"><div class="hq-detail-label">Registered</div><div class="hq-detail-value">' + escapeHtml(formatDate(hq.created_at)) + '</div></div><div class="col-6 col-md-3"><div class="hq-detail-label">License expiry</div><div class="hq-detail-value">' + escapeHtml(formatDate(hq.expire_at)) + '</div></div></div><h6 class="text-white fw-semibold mb-2"><i class="bi bi-clock-history txt-neon-cyan me-2"></i>HQ action history</h6><div class="table-responsive"><table class="table hq-modal-table align-middle"><thead><tr><th>Action</th><th>Reason</th><th>Recorded</th></tr></thead><tbody>' + actionRows + '</tbody></table></div>';
+            };
+
             document.querySelectorAll('.js-view-hq').forEach((button) => {
                 button.addEventListener('click', async (event) => {
                     event.preventDefault();
@@ -483,7 +498,7 @@ $flashContext = $flash['context'] ?? [];
                         const response = await fetch('hq_details.php?id=' + encodeURIComponent(button.dataset.hqId), {headers: {Accept: 'application/json'}});
                         const payload = await response.json();
                         if (!response.ok || !payload.success) throw new Error(payload.message || 'Could not load HQ details.');
-                        renderDetails(payload);
+                        renderDetailsHQOnly(payload);
                     } catch (error) {
                         detailsBody.innerHTML = '<div class="alert hq-flash alert-danger"><i class="bi bi-exclamation-triangle me-2"></i>' + escapeHtml(error.message) + '</div>';
                     }

@@ -1,7 +1,7 @@
 <?php
 require_once __DIR__ . '/moderator_common.php';
 
-moderator_require_user();
+$moderatorUser = moderator_require_user();
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     hq_redirect('manage_hq(M).php');
@@ -53,8 +53,10 @@ $targetQuery = $conn->prepare(
     'SELECT h.headquarter_id, owner.user_id AS owner_user_id
      FROM headquarter h
      LEFT JOIN (
-         SELECT headquarter_id, MIN(user_id) AS owner_user_id
-         FROM users
+         SELECT u.headquarter_id, MIN(u.user_id) AS owner_user_id
+         FROM users u
+         INNER JOIN roles r ON r.role_id = u.role_id
+         WHERE r.role_id = 3 AND LOWER(TRIM(r.role_name)) = \'hq\'
          GROUP BY headquarter_id
      ) first_owner ON first_owner.headquarter_id = h.headquarter_id
      LEFT JOIN users owner ON owner.user_id = first_owner.owner_user_id
@@ -143,7 +145,7 @@ try {
         $requestUpdate->close();
     }
 
-    admin_record_log((int) moderator_require_user()['user_id'], 'Updated HQ #' . $headquarterId . ' (' . $hqName . ').');
+    admin_record_log((int) $moderatorUser['user_id'], 'Updated HQ #' . $headquarterId . ' (' . $hqName . ').');
     $conn->commit();
     hq_flash('success', 'HQ details and owner account were updated successfully.');
 } catch (Throwable $exception) {

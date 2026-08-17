@@ -1,0 +1,39 @@
+<?php
+require_once __DIR__ . '/moderator_common.php';
+
+moderator_require_user();
+$flash = hq_pull_flash();
+$search = trim((string) ($_GET['search'] ?? ''));
+$status = strtolower(trim((string) ($_GET['status'] ?? '')));
+$allowedStatuses = ['active', 'approved', 'pending', 'suspended', 'removed', 'rejected'];
+$status = in_array($status, $allowedStatuses, true) ? $status : '';
+$userRows = customer_account_rows($search, $status);
+$dbError = hq_db_available() ? null : hq_db_error_message();
+$flashType = (string) ($flash['type'] ?? '');
+?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Manage role 6 Customer accounts in the Map &amp; Pump moderator portal.">
+    <title>Manage Users — Map &amp; Pump</title>
+    <link rel="icon" type="image/png" href="/images/Logo.png"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&amp;display=swap" rel="stylesheet"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"><link rel="stylesheet" href="/css/Admin.css"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+</head>
+<body class="background_color" id="background_color">
+<?php include __DIR__ . '/includes/moderator_navbar.php'; ?>
+<main class="container my-5">
+    <?php if ($flash && $flashType): ?><div class="alert mod-flash alert-<?= moderator_escape($flashType) ?> alert-dismissible fade show mb-4" role="alert"><i class="bi <?= $flashType === 'success' ? 'bi-check-circle-fill text-success' : 'bi-exclamation-triangle-fill text-danger' ?> me-2"></i><?= moderator_escape((string) ($flash['message'] ?? '')) ?><button type="button" class="btn-close btn-close-white" data-bs-dismiss="alert"></button></div><?php endif; ?>
+    <?php if ($dbError): ?><div class="alert mod-flash alert-danger mb-4"><i class="bi bi-database-exclamation me-2"></i><?= moderator_escape($dbError) ?></div><?php endif; ?>
+    <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3"><div><span class="stat-chip mb-2"><i class="bi bi-person-gear txt-neon-cyan"></i> Customer Administration</span><h1 class="fw-bold m-0 h4 text-white mt-2">Manage Users</h1><p class="text-white-50 m-0 small mt-1">Edit only role 6 accounts whose role name is Customer.</p></div></div>
+    <div class="dashboard-card py-3 px-4 mb-4"><form class="row g-3 align-items-center" method="GET" action="manage_users(M).php"><div class="col-12 col-md-7"><div class="input-group"><span class="input-group-text bg-transparent border-end-0" style="border-color:var(--glass-border);color:var(--neon-cyan);border-radius:12px 0 0 12px"><i class="bi bi-search"></i></span><input type="search" class="form-control glass-input border-start-0" placeholder="Search by user name, email, or HQ..." name="search" value="<?= moderator_escape($search) ?>"></div></div><div class="col-12 col-md-3"><select class="form-select glass-select" name="status"><option value="">All Status</option><?php foreach ($allowedStatuses as $option): ?><option value="<?= $option ?>" <?= $status === $option ? 'selected' : '' ?>><?= moderator_escape(hq_status_label($option)) ?></option><?php endforeach; ?></select></div><div class="col-12 col-md-2 d-grid"><button type="submit" class="btn btn-neon">Apply Filter</button></div></form></div>
+    <div class="analytics-card"><div class="table-responsive"><table class="table table-dark-custom align-middle m-0"><thead><tr><th>User Account</th><th>Email</th><th>HQ</th><th>Role</th><th>Status</th><th class="text-end">Command</th></tr></thead><tbody>
+    <?php if (!$userRows): ?><tr><td colspan="6" class="text-center text-white-50 py-5"><i class="bi bi-person-x fs-3 d-block mb-2"></i>No Customer accounts match the current filter.</td></tr><?php endif; ?>
+    <?php foreach ($userRows as $row): $userStatus = (string) ($row['status'] ?? 'pending'); ?><tr><td><div class="d-flex align-items-center gap-3"><div class="rounded-3 d-flex align-items-center justify-content-center fw-bold" style="width:44px;height:44px;background:rgba(0,244,255,.1);border:1px solid rgba(0,244,255,.28);color:var(--neon-cyan)"><?= moderator_escape(hq_initials((string) ($row['user_name'] ?? 'User'))) ?></div><div><div class="fw-semibold text-white"><?= moderator_escape((string) ($row['user_name'] ?? 'Unnamed User')) ?></div><div class="text-white-50 small">User ID: <?= (int) $row['user_id'] ?></div></div></div></td><td class="text-white-50"><?= moderator_escape((string) ($row['email'] ?? 'No email')) ?></td><td class="text-white-50"><?= moderator_escape((string) ($row['headquarter_name'] ?? 'No HQ linked')) ?></td><td class="text-white-50">#<?= (int) $row['role_id'] ?> · <?= moderator_escape((string) $row['role_name']) ?></td><td><span class="hq-status <?= moderator_escape(hq_status_class($userStatus)) ?>"><?= moderator_escape(hq_status_label($userStatus)) ?></span></td><td class="text-end"><button type="button" class="btn-action js-edit-user" title="Edit User" data-bs-toggle="modal" data-bs-target="#editUserModal" data-user-id="<?= (int) $row['user_id'] ?>" data-user-name="<?= moderator_escape((string) $row['user_name']) ?>" data-user-email="<?= moderator_escape((string) $row['email']) ?>"><i class="bi bi-pencil-square"></i></button></td></tr><?php endforeach; ?>
+    </tbody></table></div></div>
+</main>
+<div class="modal fade glass-modal" id="editUserModal" tabindex="-1" aria-labelledby="editUserLabel" aria-hidden="true"><div class="modal-dialog modal-dialog-centered modal-dialog-scrollable"><div class="modal-content"><div class="modal-header"><div><h5 class="modal-title fw-bold" id="editUserLabel"><i class="bi bi-person-gear txt-neon-cyan me-2"></i> Edit Customer User</h5><p class="text-white-50 small mb-0 mt-1">Update role 6 Customer details in the live database.</p></div><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div><form action="user_update_action(M).php" method="POST"><div class="modal-body d-flex flex-column gap-3"><input type="hidden" name="user_id" id="editUserId"><div><label class="form-label text-white-50 small" for="editUserName">User Name <span class="text-danger">*</span></label><input id="editUserName" type="text" name="user_name" class="form-control glass-input" maxlength="225" required></div><div><label class="form-label text-white-50 small" for="editUserEmail">Email <span class="text-danger">*</span></label><input id="editUserEmail" type="email" name="email" class="form-control glass-input" maxlength="255" required></div></div><div class="modal-footer"><button type="button" class="btn btn-outline-secondary rounded-3 text-white-50" data-bs-dismiss="modal">Cancel</button><button type="submit" class="btn btn-neon">Save User Changes</button></div></form></div></div></div>
+<?php $moderatorActiveNav = 'manage_users'; include __DIR__ . '/includes/moderator_offcanvas.php'; ?><footer class="text-white-50 text-center py-4 mt-5 small">&copy; 2026 Map &amp; Pump | All Rights Reserved</footer><?php include __DIR__ . '/includes/moderator_footer_scripts.php'; ?>
+<script>document.addEventListener('DOMContentLoaded', () => { document.querySelectorAll('.js-edit-user').forEach(button => button.addEventListener('click', () => { document.getElementById('editUserId').value = button.dataset.userId || ''; document.getElementById('editUserName').value = button.dataset.userName || ''; document.getElementById('editUserEmail').value = button.dataset.userEmail || ''; })); });</script>
+</body>
+</html>
