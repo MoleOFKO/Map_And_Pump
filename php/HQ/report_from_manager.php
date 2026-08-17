@@ -1,16 +1,36 @@
 <?php
-require_once __DIR__ . '/../conn.php'; // Include the database connection file
-// Fetch manager reports or related activities from the database if connected
+require_once __DIR__ . '/../conn.php';
+
 $reports = [];
 $logs = [];
-if (!isset($dbError)) {
-    // Fetching from report table joined with users - Manager only
-    $stmt = $pdo->query("SELECT r.*, u.user_name FROM report r JOIN users u ON r.user_id = u.user_id WHERE u.role_id = 4 ORDER BY r.created_at DESC LIMIT 5");
-    $reports = $stmt->fetchAll();
+$managerRoleId = 4;
 
-    // Fetching recent logs for activity audit trail - Manager only
-    $logStmt = $pdo->query("SELECT l.*, u.user_name FROM log l JOIN users u ON l.user_id = u.user_id WHERE u.role_id = 4 ORDER BY l.created_at DESC LIMIT 5");
-    $logs = $logStmt->fetchAll();
+try {
+    $stmt = $pdo->prepare(
+        'SELECT r.*, u.user_name
+         FROM report r
+         LEFT JOIN users u ON u.user_id = r.user_id
+         WHERE COALESCE(u.business_role_id, u.role_id) = :role_id
+         ORDER BY r.created_at DESC
+         LIMIT 5'
+    );
+    $stmt->execute([':role_id' => $managerRoleId]);
+    $reports = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    $logStmt = $pdo->prepare(
+        'SELECT l.log_id, l.user_id, l.action, l.created_at, u.user_name
+         FROM log l
+         LEFT JOIN users u ON u.user_id = l.user_id
+         WHERE COALESCE(u.business_role_id, u.role_id) = :role_id
+         ORDER BY l.created_at DESC
+         LIMIT 10'
+    );
+    $logStmt->execute([':role_id' => $managerRoleId]);
+    $logs = $logStmt->fetchAll(PDO::FETCH_ASSOC);
+} catch (Throwable $e) {
+    error_log('Failed to load manager activities: ' . $e->getMessage());
+    $reports = [];
+    $logs = [];
 }
 ?>
 <!DOCTYPE html>
@@ -94,15 +114,17 @@ if (!isset($dbError)) {
             
             <ul style="list-style: none; padding-left: 0; font-family: monospace; font-size: 0.9rem; color: #ffffff;">
                 <?php if (empty($logs)): ?>
-                    <li style="border-bottom: 1px solid var(--border); padding: 8px 0; color: #ffffff;">[10:45 AM] MANAGER John_99 (Site #009) changed local price for diesel.</li>
-                    <li style="border-bottom: 1px solid var(--border); padding: 8px 0; color: #ffffff;">[08:12 AM] MANAGER Ann_01 (Site #014) filed physical shift inventory report.</li>
+                    <li style="border-bottom: 1px solid var(--border); padding: 8px 0; color: #ffffff;">
+                        No manager activity has been recorded yet.
+                    </li>
                 <?php else: ?>
                     <?php foreach ($logs as $log): ?>
                         <li style="border-bottom: 1px solid var(--border); padding: 8px 0; color: #ffffff;">
-                            [<?= htmlspecialchars($log['created_at']) ?>] USER <?= htmlspecialchars($log['user_name']) ?>: <?= htmlspecialchars($log['action']) ?>
+                            [<?= htmlspecialchars($log['created_at']) ?>] USER <?= htmlspecialchars($log['user_name'] ?? 'Unknown Manager') ?>: <?= htmlspecialchars($log['action'] ?? 'No action detail') ?>
                         </li>
                     <?php endforeach; ?>
                 <?php endif; ?>
+            </ul>
         </div>
     </div>
 

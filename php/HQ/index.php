@@ -19,7 +19,6 @@
         body {
             margin: 0;
             padding: 0;
-            /* Allow scrolling on mobile, lock viewport on large screens if desired */
             overflow-x: hidden; 
             display: flex;
             height: 100vh;
@@ -64,6 +63,15 @@
             color: #fff;
             font-weight: bold;
             font-size: 1.1rem;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .mobile-brand img {
+            height: 24px;
+            width: auto;
+            object-fit: contain;
         }
 
         /* Sidebar Styling */
@@ -88,6 +96,7 @@
             border-radius: 10px;
             background: rgba(255,255,255,0.03);
             box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            text-align: center;
         }
 
         .sidebar-section-title {
@@ -371,16 +380,103 @@
         }
     </style>
 </head>
-<?php 
-    include("../conn.php");
+<?php
+    // if (session_status() !== PHP_SESSION_ACTIVE) {
+    //     session_start();
+    // }
+
+    require_once __DIR__ . '/../conn.php';
+
+    $loggedUserId = isset($_SESSION['user_id']) ? (int) $_SESSION['user_id'] : 0;
+    $loggedUserEmail = isset($_SESSION['user_email']) ? trim((string) $_SESSION['user_email']) : '';
+
+    // Fetch dynamic brand information from TiDB Cloud database table 'headquarter'
+    $hq_id = isset($_SESSION['headquarter_id']) ? (int) $_SESSION['headquarter_id'] : 60010;
+    $brand_title = 'Map & Pump';
+    $brand_logo = '../../images/Logo.png';
+
+    if ($loggedUserId > 0) {
+        $hqStmt = $pdo->prepare(
+            'SELECT h.company_name, h.company_logo, h.headquarter_id
+             FROM users u
+             LEFT JOIN headquarter h ON h.headquarter_id = u.headquarter_id
+             WHERE u.user_id = ?
+             LIMIT 1'
+        );
+        $hqStmt->execute([$loggedUserId]);
+        $hqRow = $hqStmt->fetch(PDO::FETCH_ASSOC);
+        if ($hqRow) {
+            if (!empty($hqRow['company_name'])) {
+                $brand_title = htmlspecialchars((string) $hqRow['company_name'], ENT_QUOTES, 'UTF-8');
+            }
+            if (!empty($hqRow['company_logo'])) {
+                $brand_logo = htmlspecialchars((string) $hqRow['company_logo'], ENT_QUOTES, 'UTF-8');
+            }
+            if (!empty($hqRow['headquarter_id'])) {
+                $hq_id = (int) $hqRow['headquarter_id'];
+            }
+        }
+    } else {
+        $brandStmt = $pdo->prepare('SELECT company_name, company_logo FROM headquarter WHERE headquarter_id = ? LIMIT 1');
+        $brandStmt->execute([$hq_id]);
+        $brandRow = $brandStmt->fetch(PDO::FETCH_ASSOC);
+        if ($brandRow) {
+            if (!empty($brandRow['company_name'])) {
+                $brand_title = htmlspecialchars((string) $brandRow['company_name'], ENT_QUOTES, 'UTF-8');
+            }
+            if (!empty($brandRow['company_logo'])) {
+                $brand_logo = htmlspecialchars((string) $brandRow['company_logo'], ENT_QUOTES, 'UTF-8');
+            }
+        }
+    }
+
+    $notifications = [];
+    if ($loggedUserId > 0 && $loggedUserEmail !== '') {
+        $notificationStmt = $pdo->prepare(
+            'SELECT notification_id, subject, message, notification_type, created_at
+             FROM notifications
+             WHERE recipient_user_id = :user_id
+                OR LOWER(recipient_email) = LOWER(:email)
+             ORDER BY created_at DESC
+             LIMIT 5'
+        );
+        $notificationStmt->execute([
+            ':user_id' => $loggedUserId,
+            ':email' => $loggedUserEmail,
+        ]);
+        $notifications = $notificationStmt->fetchAll(PDO::FETCH_ASSOC);
+    } elseif ($loggedUserId > 0) {
+        $notificationStmt = $pdo->prepare(
+            'SELECT notification_id, subject, message, notification_type, created_at
+             FROM notifications
+             WHERE recipient_user_id = :user_id
+             ORDER BY created_at DESC
+             LIMIT 5'
+        );
+        $notificationStmt->execute([':user_id' => $loggedUserId]);
+        $notifications = $notificationStmt->fetchAll(PDO::FETCH_ASSOC);
+    } elseif ($loggedUserEmail !== '') {
+        $notificationStmt = $pdo->prepare(
+            'SELECT notification_id, subject, message, notification_type, created_at
+             FROM notifications
+             WHERE LOWER(recipient_email) = LOWER(:email)
+             ORDER BY created_at DESC
+             LIMIT 5'
+        );
+        $notificationStmt->execute([':email' => $loggedUserEmail]);
+        $notifications = $notificationStmt->fetchAll(PDO::FETCH_ASSOC);
+    }
 ?>
 <body>
 
     <!-- Mobile Top Navigation Bar -->
     <div class="mobile-header">
         <button class="mobile-toggle-btn" onclick="toggleSidebar()">☰</button>
-        <div class="mobile-brand">Map & Pump HQ</div>
-        <div style="width: 24px;"></div> <!-- Spacer for balancing layout -->
+        <div class="mobile-brand">
+            <img src="<?php echo $brand_logo; ?>" alt="Logo">
+            <span><?php echo $brand_title; ?></span>
+        </div>
+        <div style="width: 24px;"></div>
     </div>
 
     <!-- Background Overlay for Mobile Menu -->
@@ -401,10 +497,10 @@
         <!-- Sidebar Navigation -->
         <aside class="sidebar" id="sidebar">
             <div>
-                <div class="sidebar-brand text-center">
-                    <a href="index.php" class="text-decoration-none d-flex align-items-center justify-content-center gap-1 text-white fw-bold">
-                        <img src="../../images/Logo.png" alt="Logo" class="nav-logo">
-                        <span style="font-size: 1.3rem; letter-spacing: 0.5px; color: #ffffff;">Map & Pump</span>
+                <div class="sidebar-brand">
+                    <a href="index.php" class="text-decoration-none d-flex align-items-center justify-content-center gap-2 text-white fw-bold" style="text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 8px;">
+                        <img src="<?php echo $brand_logo; ?>" alt="Logo" class="nav-logo">
+                        <span style="font-size: 1.1rem; letter-spacing: 0.5px; color: #ffffff;"><?php echo $brand_title; ?></span>
                     </a>
                     <div style="font-size: 0.7rem; letter-spacing: 0.5px; color: var(--slate-400, #94a3b8); margin-top: 4px;">Headquarter Control Panel</div>
                 </div>
@@ -417,19 +513,16 @@
                     <li onclick="routeTo('report_from_manager.php')">Manager Reports</li>
                     <li onclick="routeTo('report_to_admin.php')">Report to Admin</li>
                     <li onclick="routeTo('account.php')">Manager Accounts</li>
-                    <!-- <li onclick="routeTo('profile.php')">Edit Profile</li> -->
                 </ul>
             </div>
             
             <ul class="sidebar-menu">
-                <!-- <li onclick="routeTo('switch_account.php')" style="border-top: 1px solid rgba(255, 255, 255, 0.06); padding-top: 12px; margin-top: 12px;">Switch to Customer Account</li> -->
                 <li onclick="handleLogout()" style="color: var(--danger, #ef4444); font-weight: bold;">Logout</li>
             </ul>
         </aside>
 
         <!-- Main Dynamic Viewport -->
         <main class="main-viewport">
-            <!-- Sticky Top Right User Profile Button & Popup -->
             <div class="top-nav-bar">
                 <div style="display: flex; align-items: center; gap: 12px; position: relative;">
                     <!-- Notification Bell & Popup -->
@@ -439,25 +532,32 @@
                                 <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
                                 <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
                             </svg>
-                            <!-- Optional Notification Badge Dot -->
                             <span style="position: absolute; top: 6px; right: 8px; width: 8px; height: 8px; background: #ef4444; border-radius: 50%;"></span>
                         </button>
 
-                        <!-- Notification Dropdown Pop up -->
                         <div class="user-dropdown-popup" id="notificationDropdownPopup" style="width: 300px;">
                             <div class="dropdown-header" style="justify-content: space-between;">
                                 <p class="user-title" style="margin: 0;">Notifications</p>
                                 <span style="font-size: 0.755rem; color: var(--sky-400, #38bdf8); cursor: pointer;">Mark all read</span>
                             </div>
                             <div style="display: flex; flex-direction: column; gap: 8px; max-height: 240px; overflow-y: auto;">
-                                <div style="padding: 8px; background: rgba(255,255,255,0.02); border-radius: 6px; font-size: 0.85rem; color: var(--slate-300, #cbd5e1);">
-                                    <strong>New Manager Report</strong><br>
-                                    <span style="font-size: 0.75rem; color: var(--slate-400, #94a3b8);">Station #4 submitted a daily sales report.</span>
-                                </div>
-                                <div style="padding: 8px; background: rgba(255,255,255,0.02); border-radius: 6px; font-size: 0.85rem; color: var(--slate-300, #cbd5e1);">
-                                    <strong>System Alert</strong><br>
-                                    <span style="font-size: 0.75rem; color: var(--slate-400, #94a3b8);">Oil price configurations updated successfully.</span>
-                                </div>
+                                <?php if (empty($notifications)): ?>
+                                    <div style="padding: 8px; background: rgba(255,255,255,0.02); border-radius: 6px; font-size: 0.85rem; color: var(--slate-300, #cbd5e1);">
+                                        No notifications yet.
+                                    </div>
+                                <?php else: ?>
+                                    <?php foreach ($notifications as $notification): ?>
+                                        <div style="padding: 8px; background: rgba(255,255,255,0.02); border-radius: 6px; font-size: 0.85rem; color: var(--slate-300, #cbd5e1);">
+                                            <strong><?= htmlspecialchars((string) ($notification['subject'] ?? 'Notification'), ENT_QUOTES, 'UTF-8') ?></strong><br>
+                                            <span style="font-size: 0.75rem; color: var(--slate-400, #94a3b8);">
+                                                <?= htmlspecialchars((string) ($notification['message'] ?? ''), ENT_QUOTES, 'UTF-8') ?>
+                                            </span>
+                                            <div style="font-size: 0.7rem; color: var(--slate-500, #64748b); margin-top: 4px;">
+                                                <?= htmlspecialchars((string) ($notification['created_at'] ?? ''), ENT_QUOTES, 'UTF-8') ?>
+                                            </div>
+                                        </div>
+                                    <?php endforeach; ?>
+                                <?php endif; ?>
                             </div>
                         </div>
                     </div>
@@ -466,10 +566,9 @@
                         <span class="user-menu-name" id="headerUserName">HQ Admin</span>
                     </button>
 
-                    <!-- Dropdown Pop up -->
                     <div class="user-dropdown-popup" id="userDropdownPopup">
                         <div class="dropdown-header">
-                            <img src="/images/Logo.png" alt="User Logo" class="user-avatar-large" id="dropdownUserAvatar">
+                            <img src="<?php echo $brand_logo; ?>" alt="User Logo" class="user-avatar-large" id="dropdownUserAvatar">
                             <div class="dropdown-user-info">
                                 <p class="user-title" id="dropdownUserName">HQ Admin</p>
                                 <p class="user-email" id="dropdownUserEmail">hq_admin@mapandpump.com</p>
@@ -489,7 +588,6 @@
         path = path.trim();
         document.getElementById('viewport').src = path;
     
-        // Handle navigation highlights with exact route matching
         document.querySelectorAll('.sidebar-menu li').forEach(item => {
             item.classList.remove('active');
             const onclickAttr = item.getAttribute('onclick') || '';
@@ -499,7 +597,6 @@
             }
         });
 
-        // Auto-close sidebar on mobile after clicking an item
         if (window.innerWidth <= 992) {
             toggleSidebar();
         }
@@ -512,20 +609,19 @@
         overlay.classList.toggle('active');
     }
 
-    function toggleUserDropdown(event) {
-        event.stopPropagation();
-        const popup = document.getElementById('userDropdownPopup');
-        popup.classList.toggle('active');
-    }
-
     function closeUserDropdown() {
         const popup = document.getElementById('userDropdownPopup');
-        popup.classList.remove('active');
+        if (popup) popup.classList.remove('active');
     }
 
-    // Close dropdown when clicking outside
+    function closeNotificationDropdown() {
+        const popup = document.getElementById('notificationDropdownPopup');
+        if (popup) popup.classList.remove('active');
+    }
+
     window.addEventListener('click', function() {
         closeUserDropdown();
+        closeNotificationDropdown();
     });
 
     function handleLogout() {
@@ -537,30 +633,19 @@
     }
 
     function confirmLogout() {
-        window.location.href = 'login.php';
+        window.location.href = '../Login/login.php';
     }
+
     function toggleNotificationDropdown(event) {
         event.stopPropagation();
-        closeUserDropdown(); // Close profile dropdown if open
+        closeUserDropdown();
         const popup = document.getElementById('notificationDropdownPopup');
         popup.classList.toggle('active');
     }
 
-    function closeNotificationDropdown() {
-        const popup = document.getElementById('notificationDropdownPopup');
-        if (popup) popup.classList.remove('active');
-    }
-
-    // Modify your existing global click listener to close both dropdowns cleanly
-    window.addEventListener('click', function() {
-        closeUserDropdown();
-        closeNotificationDropdown();
-    });
-
-    // Also update your toggleUserDropdown function to close the notification dropdown
     function toggleUserDropdown(event) {
         event.stopPropagation();
-        closeNotificationDropdown(); // Close notification dropdown if open
+        closeNotificationDropdown();
         const popup = document.getElementById('userDropdownPopup');
         popup.classList.toggle('active');
     }
