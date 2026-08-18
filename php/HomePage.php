@@ -1,171 +1,135 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="theme-color" content="#05070e">
-    <title>MAP &amp; PUMP | Skip the Fuel Queue. Book Your Pump.</title>
-    <meta name="description" content="Find the nearest station with fuel in stock, see live availability, and lock a digital token so you arrive exactly when your pump is ready. No queues, no guessing, no black market.">
+<?php
+/* ==========================================================================
+   MAP & PUMP — HOMEPAGE
+   Company-first: fuel companies and station operators are the paying
+   customer, so they lead. Drivers get a compact section further down.
+   ========================================================================== */
 
-    <!-- Bootstrap 5.3.3 -->
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <!-- FontAwesome 6.5.1 -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-    <!-- Typography -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
-    <!-- Custom Theme -->
-    <link rel="stylesheet" href="/css/HomePage.css">
+require_once __DIR__ . '/data/fuel_prices.php';
 
-    <!-- Browser Tab Logo (Favicon) -->
-    <link rel="icon" type="image/png" href="/images/Logo.png">
-</head>
-<body>
+$page_title       = 'MAP & PUMP | Put Your Stations on the Map Drivers Actually Check';
+$page_description = 'MAP & PUMP is the availability layer for fuel retail. Show which of your stations have stock, switch a station off the moment it runs dry, and stop losing drivers to guesswork. Three stations free.';
+$active_nav       = 'home';
 
-<!-- Ambient background layer + UI chrome -->
-<div class="mp-backdrop"></div>
-<div id="scroll-progress"></div>
-<div id="mouse-follower"></div>
+require __DIR__ . '/partials/head.php';
+require __DIR__ . '/partials/nav.php';
+?>
 
 <!-- ==========================================================================
-     NAVIGATION
+     HERO — company first
      ========================================================================== -->
-<nav class="navbar navbar-expand-lg navbar-dark fixed-top main-navbar py-3">
-    <div class="container">
-        <a class="navbar-brand logo-text d-flex align-items-center gap-2 fs-4 fw-bold" href="#top">
-            <img src="/images/Logo.png" alt="MAP &amp; PUMP Logo" class="navbar-logo-img">
-            MAP &amp; PUMP
-        </a>
-
-        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-label="Toggle navigation">
-            <span class="navbar-toggler-icon"></span>
-        </button>
-
-        <div class="collapse navbar-collapse" id="navbarNav">
-            <ul class="navbar-nav mx-auto gap-lg-2 my-2 my-lg-0 text-center">
-                <li class="nav-item"><a class="nav-link px-3" href="#how">How it works</a></li>
-                <li class="nav-item"><a class="nav-link px-3" href="#features">Features</a></li>
-                <li class="nav-item"><a class="nav-link px-3" href="#map">Live map</a></li>
-                <li class="nav-item"><a class="nav-link px-3" href="#about">For stations</a></li>
-                <li class="nav-item"><a class="nav-link px-3" href="#faq">FAQ</a></li>
-            </ul>
-
-            <div class="d-flex justify-content-center mt-3 mt-lg-0">
-                <a class="btn btn-primary px-4 py-2 fw-semibold" href="/php/link_button.php">
-                    Sign In <i class="fa-solid fa-arrow-right ms-1 small"></i>
-                </a>
-            </div>
-        </div>
-    </div>
-</nav>
-
-<!-- ==========================================================================
-     HERO
-     ========================================================================== -->
-<section class="hero-section d-flex align-items-center" id="top">
+<section class="hero-section hero-compact d-flex align-items-center" id="top">
     <div class="container">
         <div class="row align-items-center g-5">
 
-            <!-- Copy -->
-            <div class="col-lg-7 text-center text-lg-start">
+            <div class="col-lg-6 text-center text-lg-start">
                 <div class="badge-status mb-4 d-inline-flex align-items-center gap-2" data-reveal>
-                    <span class="pulse-dot"></span> Live tracking across 340+ stations
+                    <span class="pulse-dot"></span> 340+ stations live &middot; 52,000+ drivers checking daily
                 </div>
 
                 <h1 class="hero-title" data-reveal style="--reveal-delay:80ms">
-                    Stop queuing for fuel.<br>
-                    <span class="text-gradient-accent">Book the pump instead.</span>
+                    Your stations.<br>
+                    <span class="text-gradient-accent">On every driver's map.</span>
                 </h1>
 
                 <p class="hero-sub mb-4" data-reveal style="--reveal-delay:160ms">
-                    See which stations actually have fuel right now, reserve a digital token in seconds,
-                    and roll up exactly when your pump is free. No idling in the heat. No wasted trips.
-                    No dealing with the black market.
+                    When a station runs dry, switch it off in one tap — drivers see it instantly
+                    and stop queuing at the wrong forecourt. When you restock, switch it back on
+                    and they come to you. Three stations free, forever.
                 </p>
 
                 <div class="d-sm-flex gap-3 justify-content-center justify-content-lg-start" data-reveal style="--reveal-delay:240ms">
-                    <a href="/php/Customer/track_book.php" class="btn btn-primary btn-lg px-4 py-3 mb-3 mb-sm-0 w-100 w-sm-auto">
-                        <i class="fa-solid fa-location-crosshairs me-2"></i>Find fuel near me
+                    <a href="/php/Login/login.php" class="btn btn-primary btn-lg px-4 py-3 mb-3 mb-sm-0 w-100 w-sm-auto">
+                        <i class="fa-solid fa-building-circle-check me-2"></i>Register your company
                     </a>
-                    <a href="#how" class="btn btn-outline-light btn-lg px-4 py-3 w-100 w-sm-auto">
-                        <i class="fa-solid fa-play me-2 small"></i>See how it works
+                    <a href="#pricing" class="btn btn-outline-light btn-lg px-4 py-3 w-100 w-sm-auto">
+                        See pricing
                     </a>
                 </div>
 
+                <p class="small text-dim mt-3 mb-0" data-reveal style="--reveal-delay:280ms">
+                    3 stations free &middot; No hardware to install &middot; Set up in an afternoon
+                </p>
+
                 <div class="hero-trust" data-reveal style="--reveal-delay:320ms">
                     <div>
-                        <div class="trust-num" data-count="52000" data-suffix="+">0</div>
-                        <div class="trust-label">Drivers served</div>
-                    </div>
-                    <div>
-                        <div class="trust-num" data-count="41" data-suffix=" min">0</div>
-                        <div class="trust-label">Avg. wait saved</div>
-                    </div>
-                    <div>
                         <div class="trust-num" data-count="340" data-suffix="+">0</div>
-                        <div class="trust-label">Stations mapped</div>
+                        <div class="trust-label">Stations listed</div>
+                    </div>
+                    <div>
+                        <div class="trust-num" data-count="52000" data-suffix="+">0</div>
+                        <div class="trust-label">Drivers reached</div>
+                    </div>
+                    <div>
+                        <div class="trust-num" data-count="34" data-suffix="%">0</div>
+                        <div class="trust-label">Fewer wasted trips</div>
                     </div>
                 </div>
             </div>
 
-            <!-- Device mockup -->
-            <div class="col-lg-5">
-                <div class="phone-stage" data-reveal style="--reveal-delay:200ms">
+            <!-- Operator console mockup -->
+            <div class="col-lg-6">
+                <div class="console-stage" data-reveal style="--reveal-delay:200ms">
 
-                    <div class="float-chip chip-a">
-                        <i class="fa-solid fa-bolt" style="color:#fbbf24"></i> Token confirmed in 4s
-                    </div>
-                    <div class="float-chip chip-b">
-                        <i class="fa-solid fa-gas-pump" style="color:#34d399"></i> 92 Octane restocked
+                    <div class="float-chip chip-console">
+                        <i class="fa-solid fa-eye" style="color:#22d3ee"></i> 1,284 drivers viewing now
                     </div>
 
-                    <div class="phone-container p-4 expanded-phone">
-                        <div>
-                            <div class="phone-notch"></div>
+                    <div class="console-panel">
+                        <div class="console-head">
+                            <div>
+                                <div class="console-title">Station control</div>
+                                <div class="console-sub">Max Energy &middot; 42 stations</div>
+                            </div>
+                            <span class="console-live"><span class="pulse-dot"></span> Live</span>
+                        </div>
 
-                            <div class="d-flex justify-content-between align-items-center small mb-4">
-                                <span class="fw-semibold text-light">MAP &amp; PUMP</span>
-                                <span class="d-inline-flex align-items-center gap-2 text-danger fw-bold">
-                                    <span class="pulse-dot" style="background:#f43f5e"></span> LIVE
+                        <div class="console-row">
+                            <div class="console-station">
+                                <span class="station-dot dot-ok"></span>
+                                <span>
+                                    <span class="station-name">TharKayTa Branch</span>
+                                    <span class="station-meta">92 &middot; 95 &middot; Diesel in stock</span>
                                 </span>
                             </div>
+                            <span class="switch is-on" aria-hidden="true"><span></span></span>
+                        </div>
 
-                            <!-- Station card -->
-                            <div class="card p-3 mb-3 text-start">
-                                <div class="d-flex justify-content-between align-items-start mb-1">
-                                    <h5 class="h6 mb-0 text-light">TharKayTa Station</h5>
-                                    <span class="badge rounded-pill" style="background:rgba(16,185,129,.15);color:#34d399;font-size:.65rem">OPEN</span>
-                                </div>
-                                <p class="small text-secondary mb-3">
-                                    <i class="fa-solid fa-location-dot me-1"></i> TharKayTa Township &middot; 2.4 km
-                                </p>
-                                <div class="d-flex justify-content-between small text-light mb-2">
-                                    <span>Octane 92</span>
-                                    <span class="text-success fw-bold">Available</span>
-                                </div>
-                                <div class="fuel-bar mb-3"><span></span></div>
-                                <div class="d-flex justify-content-between small text-light mb-2">
-                                    <span>Diesel</span>
-                                    <span class="fw-bold" style="color:#fbbf24">Running low</span>
-                                </div>
-                                <div class="fuel-bar is-low"><span></span></div>
+                        <div class="console-row">
+                            <div class="console-station">
+                                <span class="station-dot dot-low"></span>
+                                <span>
+                                    <span class="station-name">Hlaing Branch</span>
+                                    <span class="station-meta">Diesel running low</span>
+                                </span>
                             </div>
+                            <span class="switch is-on" aria-hidden="true"><span></span></span>
+                        </div>
 
-                            <!-- Token card -->
-                            <div class="card bg-gradient-token p-4 text-center token-qr-card">
-                                <span class="small text-info fw-bold tracking-wider d-block mb-3">YOUR DIGITAL TOKEN</span>
-
-                                <div class="qr-wrapper mb-3">
-                                    <i class="fa-solid fa-qrcode"></i>
-                                </div>
-
-                                <div class="small text-secondary mb-1">Token <strong class="text-white">#MP-4192</strong></div>
-                                <hr class="border-secondary my-3">
-                                <div class="text-center small text-secondary">
-                                    Arrive by <strong class="text-white">11:52 AM</strong>
-                                </div>
+                        <div class="console-row is-off">
+                            <div class="console-station">
+                                <span class="station-dot dot-out"></span>
+                                <span>
+                                    <span class="station-name">Dagon Branch</span>
+                                    <span class="station-meta">Hidden from map &middot; out of stock</span>
+                                </span>
                             </div>
+                            <span class="switch" aria-hidden="true"><span></span></span>
+                        </div>
+
+                        <div class="console-row">
+                            <div class="console-station">
+                                <span class="station-dot dot-ok"></span>
+                                <span>
+                                    <span class="station-name">Insein Branch</span>
+                                    <span class="station-meta">92 &middot; Diesel in stock</span>
+                                </span>
+                            </div>
+                            <span class="switch is-on" aria-hidden="true"><span></span></span>
+                        </div>
+
+                        <div class="console-foot">
+                            <span><i class="fa-solid fa-circle-info me-2"></i>Changes reach drivers in under 5 seconds</span>
                         </div>
                     </div>
                 </div>
@@ -180,11 +144,10 @@
      ========================================================================== -->
 <div class="ticker">
     <div class="ticker-track">
-        <!-- duplicated set for seamless loop -->
         <span class="ticker-item"><span class="dot dot-ok"></span> TharKayTa &mdash; 92 Octane in stock</span>
         <span class="ticker-item"><span class="dot dot-low"></span> Hlaing &mdash; Diesel running low</span>
         <span class="ticker-item"><span class="dot dot-ok"></span> Insein &mdash; 95 Octane in stock</span>
-        <span class="ticker-item"><span class="dot dot-out"></span> Dagon &mdash; Out of stock</span>
+        <span class="ticker-item"><span class="dot dot-out"></span> Dagon &mdash; Switched off by operator</span>
         <span class="ticker-item"><span class="dot dot-ok"></span> Mayangone &mdash; Diesel in stock</span>
         <span class="ticker-item"><span class="dot dot-low"></span> Tamwe &mdash; 92 Octane low</span>
         <span class="ticker-item"><span class="dot dot-ok"></span> South Okkalapa &mdash; Restocked 9:14 AM</span>
@@ -193,7 +156,7 @@
         <span class="ticker-item" aria-hidden="true"><span class="dot dot-ok"></span> TharKayTa &mdash; 92 Octane in stock</span>
         <span class="ticker-item" aria-hidden="true"><span class="dot dot-low"></span> Hlaing &mdash; Diesel running low</span>
         <span class="ticker-item" aria-hidden="true"><span class="dot dot-ok"></span> Insein &mdash; 95 Octane in stock</span>
-        <span class="ticker-item" aria-hidden="true"><span class="dot dot-out"></span> Dagon &mdash; Out of stock</span>
+        <span class="ticker-item" aria-hidden="true"><span class="dot dot-out"></span> Dagon &mdash; Switched off by operator</span>
         <span class="ticker-item" aria-hidden="true"><span class="dot dot-ok"></span> Mayangone &mdash; Diesel in stock</span>
         <span class="ticker-item" aria-hidden="true"><span class="dot dot-low"></span> Tamwe &mdash; 92 Octane low</span>
         <span class="ticker-item" aria-hidden="true"><span class="dot dot-ok"></span> South Okkalapa &mdash; Restocked 9:14 AM</span>
@@ -202,159 +165,101 @@
 </div>
 
 <!-- ==========================================================================
-     STATS
+     WHY COMPANIES USE IT
      ========================================================================== -->
 <section class="section-pad">
     <div class="container">
-        <div class="row g-4">
-            <div class="col-6 col-lg-3" data-reveal>
-                <div class="stat-card">
-                    <div class="stat-num" data-count="41" data-suffix=" min">0</div>
-                    <div class="stat-label">Average queue time removed from every fill-up</div>
-                </div>
-            </div>
-            <div class="col-6 col-lg-3" data-reveal style="--reveal-delay:90ms">
-                <div class="stat-card">
-                    <div class="stat-num" data-count="340" data-suffix="+">0</div>
-                    <div class="stat-label">Stations broadcasting live stock levels</div>
-                </div>
-            </div>
-            <div class="col-6 col-lg-3" data-reveal style="--reveal-delay:180ms">
-                <div class="stat-card">
-                    <div class="stat-num" data-count="98" data-suffix="%">0</div>
-                    <div class="stat-label">Tokens honoured on arrival, no re-queuing</div>
-                </div>
-            </div>
-            <div class="col-6 col-lg-3" data-reveal style="--reveal-delay:270ms">
-                <div class="stat-card">
-                    <div class="stat-num" data-count="1200" data-suffix="+">0</div>
-                    <div class="stat-label">Price-gouging reports reviewed and acted on</div>
-                </div>
-            </div>
-        </div>
-    </div>
-</section>
-
-<!-- ==========================================================================
-     HOW IT WORKS
-     ========================================================================== -->
-<section id="how" class="section-pad">
-    <div class="container">
-        <div class="text-center mb-5" data-reveal>
-            <span class="eyebrow">How it works</span>
-            <h2 class="section-title">Three taps between you and a full tank</h2>
-            <p class="section-lead mx-auto">No phone calls, no rumours, no driving across town to find an empty station.</p>
-        </div>
-
-        <div class="row g-4 steps-row">
-            <div class="col-lg-4" data-reveal>
-                <div class="step-card">
-                    <div class="step-num">01</div>
-                    <h3>Check the live map</h3>
-                    <p>Open MAP &amp; PUMP and see every nearby station colour-coded by real stock — verified by the station itself, updated by the minute.</p>
-                </div>
-            </div>
-            <div class="col-lg-4" data-reveal style="--reveal-delay:110ms">
-                <div class="step-card">
-                    <div class="step-num">02</div>
-                    <h3>Reserve your slot</h3>
-                    <p>Pick a time window that suits you and lock a digital token. Your place in line is held — you can stay home, at work, or with your family.</p>
-                </div>
-            </div>
-            <div class="col-lg-4" data-reveal style="--reveal-delay:220ms">
-                <div class="step-card">
-                    <div class="step-num">03</div>
-                    <h3>Scan and fill</h3>
-                    <p>Arrive at your window, show the QR at the gate, and pull straight up to the pump. Average time from gate to road: under six minutes.</p>
-                </div>
-            </div>
-        </div>
-    </div>
-</section>
-
-<hr class="divider-glow">
-
-<!-- ==========================================================================
-     FEATURES
-     ========================================================================== -->
-<section id="features" class="section-pad">
-    <div class="container">
-        <div class="text-center mb-5" data-reveal>
-            <span class="eyebrow">Why MAP &amp; PUMP</span>
-            <h2 class="section-title">Built for the way fuel actually moves</h2>
-            <p class="section-lead mx-auto">Every feature exists because someone lost half a day in a queue that didn't need to happen.</p>
+        <div class="text-center mb-4" data-reveal>
+            <span class="eyebrow">For fuel companies</span>
+            <h2 class="section-title">Empty forecourts and angry queues<br class="d-none d-lg-block"> are both information problems</h2>
         </div>
 
         <div class="row g-4">
             <div class="col-md-6 col-lg-4" data-reveal>
                 <div class="feature-card js-spotlight">
-                    <div class="icon-shape mb-4"><i class="fa-solid fa-map-location-dot"></i></div>
-                    <h3>Real-time stock map</h3>
-                    <p>Never drive blindly again. Instant stock levels and verified availability for every station on an interactive map before you leave the house.</p>
+                    <div class="icon-shape mb-4"><i class="fa-solid fa-user-slash"></i></div>
+                    <h3>Stop losing drivers</h3>
+                    <p>A driver who finds your station empty doesn't come back — they go to whoever they can confirm has fuel. Being visible and honest on the map keeps them yours.</p>
                 </div>
             </div>
-            <div class="col-md-6 col-lg-4" data-reveal style="--reveal-delay:80ms">
+            <div class="col-md-6 col-lg-4" data-reveal style="--reveal-delay:90ms">
                 <div class="feature-card js-spotlight">
-                    <div class="icon-shape tone-blue mb-4"><i class="fa-solid fa-hourglass-half"></i></div>
-                    <h3>Smart token slots</h3>
-                    <p>Book a guaranteed time window and wait wherever you like. Your slot is held at the station — no sitting in a hot car on the roadside.</p>
+                    <div class="icon-shape tone-amber mb-4"><i class="fa-solid fa-toggle-on"></i></div>
+                    <h3>One toggle per station</h3>
+                    <p>Out of stock? Disable the station and it drops off the map immediately. No crowd forming outside, no staff arguing with drivers who drove across town.</p>
                 </div>
             </div>
-            <div class="col-md-6 col-lg-4" data-reveal style="--reveal-delay:160ms">
+            <div class="col-md-6 col-lg-4" data-reveal style="--reveal-delay:180ms">
                 <div class="feature-card js-spotlight">
-                    <div class="icon-shape tone-green mb-4"><i class="fa-solid fa-shield-halved"></i></div>
-                    <h3>Anti-scam reporting</h3>
-                    <p>Flag fake stock listings or black-market pricing in two taps. Reports are reviewed and repeat offenders lose their listing.</p>
+                    <div class="icon-shape tone-green mb-4"><i class="fa-solid fa-chart-line"></i></div>
+                    <h3>See your real demand</h3>
+                    <p>Every search, view and token tells you where demand is building. Plan deliveries against actual driver intent instead of last month's guesswork.</p>
                 </div>
             </div>
-            <div class="col-md-6 col-lg-4" data-reveal style="--reveal-delay:40ms">
-                <div class="feature-card js-spotlight">
-                    <div class="icon-shape tone-amber mb-4"><i class="fa-solid fa-bell"></i></div>
-                    <h3>Restock alerts</h3>
-                    <p>Follow the stations you rely on and get pinged the moment a delivery lands — usually before the queue outside starts forming.</p>
+        </div>
+
+        <div id="how" class="pt-5 mt-4">
+            <div class="text-center mb-4" data-reveal>
+                <span class="eyebrow justify-content-center d-inline-flex">How it works</span>
+                <h2 class="section-title-sm">Live on the map in four steps</h2>
+            </div>
+
+        <div class="row g-4 steps-row">
+            <div class="col-md-6 col-lg-3" data-reveal>
+                <div class="step-card">
+                    <div class="step-num">01</div>
+                    <h3>Register the company</h3>
+                    <p>One account for your whole business. Registration fee covers your first three stations.</p>
                 </div>
             </div>
-            <div class="col-md-6 col-lg-4" data-reveal style="--reveal-delay:120ms">
-                <div class="feature-card js-spotlight">
-                    <div class="icon-shape mb-4"><i class="fa-solid fa-route"></i></div>
-                    <h3>Fuel-smart routing</h3>
-                    <p>We factor in distance, current queue length and stock confidence, then rank stations by which one actually gets you fuelled fastest.</p>
+            <div class="col-md-6 col-lg-3" data-reveal style="--reveal-delay:90ms">
+                <div class="step-card">
+                    <div class="step-num">02</div>
+                    <h3>Add your stations</h3>
+                    <p>Drop each branch on the map, set the grades it carries, and invite your staff.</p>
                 </div>
             </div>
-            <div class="col-md-6 col-lg-4" data-reveal style="--reveal-delay:200ms">
-                <div class="feature-card js-spotlight">
-                    <div class="icon-shape tone-blue mb-4"><i class="fa-solid fa-mobile-screen-button"></i></div>
-                    <h3>Works on any phone</h3>
-                    <p>Light enough for a slow connection and a low-end handset. Your token stays valid offline once it's issued.</p>
+            <div class="col-md-6 col-lg-3" data-reveal style="--reveal-delay:180ms">
+                <div class="step-card">
+                    <div class="step-num">03</div>
+                    <h3>Toggle availability</h3>
+                    <p>Staff flip stock on or off per grade as tankers arrive and tanks empty. Drivers see it in seconds.</p>
                 </div>
             </div>
+            <div class="col-md-6 col-lg-3" data-reveal style="--reveal-delay:270ms">
+                <div class="step-card">
+                    <div class="step-num">04</div>
+                    <h3>Take booked arrivals</h3>
+                    <p>Drivers book token slots, scan at your gate, and your forecourt moves in an orderly line.</p>
+                </div>
+            </div>
+        </div>
         </div>
     </div>
 </section>
 
 <!-- ==========================================================================
-     LIVE MAP SHOWCASE
+     DASHBOARD / MAP LISTING
      ========================================================================== -->
-<section id="map" class="section-pad">
+<section id="dashboard" class="section-pad pt-0">
     <div class="container">
-        <div class="row g-5 align-items-center">
+        <div class="row g-4 align-items-center">
 
             <div class="col-lg-5" data-reveal>
-                <span class="eyebrow">The live map</span>
-                <h2 class="section-title">Every station, honestly reported</h2>
+                <span class="eyebrow">Your listing</span>
+                <h2 class="section-title-sm">This is what drivers see</h2>
                 <p class="section-lead">
-                    Stations push their own stock updates and drivers confirm them on arrival.
-                    When the two disagree, the listing gets flagged — so what you see is what you get.
+                    Your stations appear colour-coded by the stock status you control.
+                    Turn a branch off and it greys out instantly — no phone calls, no rumours.
                 </p>
 
                 <ul class="check-list">
-                    <li><i class="fa-solid fa-circle-check"></i><span><strong>Colour-coded stock</strong> — green in stock, amber running low, red empty.</span></li>
-                    <li><i class="fa-solid fa-circle-check"></i><span><strong>Live queue length</strong> reported by drivers already on site.</span></li>
-                    <li><i class="fa-solid fa-circle-check"></i><span><strong>Confidence score</strong> based on how recently the data was verified.</span></li>
-                    <li><i class="fa-solid fa-circle-check"></i><span><strong>Per-fuel detail</strong> for 92, 95, diesel and premium diesel separately.</span></li>
+                    <li><i class="fa-solid fa-circle-check"></i><span><strong>Per-grade status</strong> for 92, 95, diesel and premium diesel separately.</span></li>
+                    <li><i class="fa-solid fa-circle-check"></i><span><strong>Instant enable / disable</strong> per station, per grade, from any phone.</span></li>
+                    <li><i class="fa-solid fa-circle-check"></i><span><strong>Staff accounts</strong> so forecourt teams update stock without dashboard access.</span></li>
                 </ul>
 
-                <a href="/register" class="btn btn-primary btn-lg px-4 py-3 mt-4">Open the live map</a>
+                <a href="/php/Login/login.php" class="btn btn-primary btn-lg px-4 py-3 mt-4">List your stations free</a>
             </div>
 
             <div class="col-lg-7" data-reveal style="--reveal-delay:140ms">
@@ -376,19 +281,160 @@
                         <span class="pin-icon pin-ok"><i class="fa-solid fa-gas-pump"></i></span>
                         Insein &middot; In stock
                     </div>
-                    <div class="map-pin pin-4">
-                        <span class="pin-icon pin-out"><i class="fa-solid fa-gas-pump"></i></span>
-                        Dagon &middot; Empty
+                    <div class="map-pin pin-4 is-disabled">
+                        <span class="pin-icon pin-out"><i class="fa-solid fa-power-off"></i></span>
+                        Dagon &middot; Switched off
                     </div>
 
                     <div class="map-legend">
                         <span><i class="fa-solid fa-circle" style="color:#10b981;font-size:.5rem"></i> In stock</span>
                         <span><i class="fa-solid fa-circle" style="color:#f59e0b;font-size:.5rem"></i> Running low</span>
-                        <span><i class="fa-solid fa-circle" style="color:#f43f5e;font-size:.5rem"></i> Out of stock</span>
+                        <span><i class="fa-solid fa-circle" style="color:#64748b;font-size:.5rem"></i> Disabled by operator</span>
                     </div>
                 </div>
             </div>
 
+        </div>
+    </div>
+</section>
+
+<!-- ==========================================================================
+     PRICING
+     ========================================================================== -->
+<section id="pricing" class="section-pad pt-0">
+    <div class="container">
+        <div class="text-center mb-4" data-reveal>
+            <span class="eyebrow">Pricing</span>
+            <h2 class="section-title">Three stations free. Scale when you're ready.</h2>
+            <p class="section-lead mx-auto">
+                Your registration fee covers your first three stations on the map. Need more visible?
+                Add them per station, per month — and the more you add, the cheaper each one gets.
+            </p>
+        </div>
+
+        <div class="row g-4 align-items-stretch mb-4">
+            <div class="col-lg-5" data-reveal>
+                <div class="plan-card h-100">
+                    <div class="plan-tag">Included with registration</div>
+                    <h3 class="plan-name">Starter</h3>
+                    <div class="plan-price">3 stations <span>free</span></div>
+                    <p class="plan-note">One-time registration fee, no monthly charge for these three.</p>
+                    <ul class="plan-list">
+                        <li><i class="fa-solid fa-check"></i> 3 stations live on the map</li>
+                        <li><i class="fa-solid fa-check"></i> Enable / disable per station</li>
+                        <li><i class="fa-solid fa-check"></i> Per-grade stock status</li>
+                        <li><i class="fa-solid fa-check"></i> Driver token bookings</li>
+                    </ul>
+                    <a href="/php/Login/login.php" class="btn btn-ghost w-100 py-3 mt-auto">Register your company</a>
+                </div>
+            </div>
+
+            <div class="col-lg-7" data-reveal style="--reveal-delay:110ms">
+                <div class="plan-card plan-card-featured h-100">
+                    <div class="plan-tag plan-tag-accent">Most companies land here</div>
+                    <h3 class="plan-name">Growth</h3>
+                    <div class="plan-price">2,000 <span>MMK / station / month</span></div>
+                    <p class="plan-note">For every station beyond your free three. Volume and multi-month discounts applied automatically.</p>
+
+                    <div class="discount-grid">
+                        <div class="discount-cell">
+                            <div class="discount-head">Volume</div>
+                            <div class="discount-row"><span>1–7 paid</span><strong>Standard</strong></div>
+                            <div class="discount-row"><span>8–22 paid</span><strong>10% off</strong></div>
+                            <div class="discount-row"><span>23+ paid</span><strong>20% off</strong></div>
+                        </div>
+                        <div class="discount-cell">
+                            <div class="discount-head">Commitment</div>
+                            <div class="discount-row"><span>Monthly</span><strong>Standard</strong></div>
+                            <div class="discount-row"><span>3 months</span><strong>5% off</strong></div>
+                            <div class="discount-row"><span>6 months</span><strong>10% off</strong></div>
+                            <div class="discount-row"><span>12 months</span><strong>20% off</strong></div>
+                        </div>
+                    </div>
+
+                    <p class="small text-dim mb-0">Discounts stack — 30 stations on a 12-month term works out well under 1,500 MMK each.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Calculator -->
+        <div class="calc-wrap" id="calc" data-free="3" data-rate="2000" data-reveal>
+            <div class="row g-4 align-items-center">
+                <div class="col-lg-7">
+                    <span class="eyebrow">Estimate</span>
+                    <h3 class="calc-title">What would your company pay?</h3>
+
+                    <label class="calc-label" for="calc-range">
+                        Stations you want visible: <strong id="calc-count">6</strong>
+                    </label>
+                    <input type="range" id="calc-range" class="calc-range" min="1" max="60" value="6" step="1">
+                    <div class="calc-scale"><span>1</span><span>30</span><span>60</span></div>
+
+                    <div class="calc-label mt-4 mb-2">Commitment</div>
+                    <div class="calc-months" id="calc-months">
+                        <button type="button" data-months="1" class="is-active">Monthly</button>
+                        <button type="button" data-months="3">3 months</button>
+                        <button type="button" data-months="6">6 months</button>
+                        <button type="button" data-months="12">12 months</button>
+                    </div>
+                </div>
+
+                <div class="col-lg-5">
+                    <div class="calc-result">
+                        <div class="calc-line"><span>Free stations</span><strong>3</strong></div>
+                        <div class="calc-line"><span>Paid stations</span><strong id="calc-paid">3</strong></div>
+                        <div class="calc-line"><span>Base cost</span><strong id="calc-base">6,000 MMK</strong></div>
+                        <div class="calc-line"><span>Volume discount</span><strong id="calc-vol">—</strong></div>
+                        <div class="calc-line"><span>Term discount</span><strong id="calc-dur">—</strong></div>
+                        <div class="calc-total">
+                            <span>You pay</span>
+                            <strong id="calc-total">6,000 MMK</strong>
+                        </div>
+                        <div class="calc-per" id="calc-per">2,000 MMK / station / month</div>
+                        <p class="calc-foot" id="calc-note">Billed monthly.</p>
+                        <a href="/php/Login/login.php" class="btn btn-primary w-100 py-3">Get started free</a>
+                    </div>
+                </div>
+            </div>
+            <p class="small text-dim mt-4 mb-0">
+                <i class="fa-solid fa-circle-info me-2"></i>Indicative pricing. Final rates confirmed at registration.
+            </p>
+        </div>
+    </div>
+</section>
+
+<!-- ==========================================================================
+     NEWS SNAPSHOT — links out to News.php
+     ========================================================================== -->
+<section class="section-pad pt-0">
+    <div class="container">
+        <div class="d-lg-flex justify-content-between align-items-end mb-4 gap-4" data-reveal>
+            <div>
+                <span class="eyebrow">Market news</span>
+                <h2 class="section-title mb-2">Today's average fuel prices</h2>
+                <p class="section-lead mb-0">National average per litre &middot; updated <?php echo htmlspecialchars($PRICE_UPDATED_AT); ?></p>
+            </div>
+            <a href="/php/News.php" class="btn btn-ghost px-4 py-2 mt-3 mt-lg-0 flex-shrink-0">
+                All prices &amp; news <i class="fa-solid fa-arrow-right ms-2 small"></i>
+            </a>
+        </div>
+
+        <div class="row g-3">
+            <?php foreach ($FUEL_GRADES as $i => $grade): $t = mp_trend($grade['avg'], $grade['prev']); ?>
+                <div class="col-6 col-lg-3" data-reveal style="--reveal-delay:<?php echo $i * 80; ?>ms">
+                    <div class="price-card">
+                        <div class="price-head">
+                            <i class="fa-solid <?php echo $grade['icon']; ?>"></i>
+                            <span><?php echo htmlspecialchars($grade['label']); ?></span>
+                        </div>
+                        <div class="price-value"><?php echo mp_money($grade['avg']); ?><small>MMK</small></div>
+                        <div class="trend-chip <?php echo $t['class']; ?>">
+                            <i class="fa-solid <?php echo $t['icon']; ?>"></i> <?php echo $t['delta']; ?>
+                            <span class="trend-period">vs last week</span>
+                        </div>
+                    </div>
+                </div>
+            <?php endforeach; ?>
         </div>
     </div>
 </section>
@@ -396,53 +442,118 @@
 <hr class="divider-glow">
 
 <!-- ==========================================================================
-     TESTIMONIALS
+     FOR DRIVERS — compact, secondary
      ========================================================================== -->
-<section class="section-pad">
+<section id="drivers" class="section-pad">
     <div class="container">
-        <div class="text-center mb-5" data-reveal>
-            <span class="eyebrow">From the road</span>
-            <h2 class="section-title">People got their mornings back</h2>
+        <div class="row g-4 align-items-center">
+
+            <div class="col-lg-5 order-lg-2" data-reveal>
+                <span class="eyebrow">For drivers</span>
+                <h2 class="section-title-sm">Never queue for fuel again</h2>
+                <p class="section-lead">
+                    Check which stations actually have your grade, book a token slot,
+                    and arrive when your pump is free. Free, and always will be.
+                </p>
+
+                <ul class="check-list">
+                    <li><i class="fa-solid fa-circle-check"></i><span><strong>Live stock map</strong> — see what's available before you leave home.</span></li>
+                    <li><i class="fa-solid fa-circle-check"></i><span><strong>Digital tokens</strong> — hold your place in line without sitting in it.</span></li>
+                    <li><i class="fa-solid fa-circle-check"></i><span><strong>Restock alerts</strong> — get pinged the moment your station refills.</span></li>
+                </ul>
+
+                <div class="d-sm-flex gap-3 mt-4">
+                    <a href="/register" class="btn btn-primary btn-lg px-4 py-3 mb-3 mb-sm-0 w-100 w-sm-auto">
+                        <i class="fa-solid fa-location-crosshairs me-2"></i>Find fuel near me
+                    </a>
+                </div>
+            </div>
+
+            <div class="col-lg-7 order-lg-1">
+                <div class="phone-stage" data-reveal style="--reveal-delay:120ms">
+                    <div class="float-chip chip-a">
+                        <i class="fa-solid fa-bolt" style="color:#fbbf24"></i> Token confirmed in 4s
+                    </div>
+                    <div class="float-chip chip-b">
+                        <i class="fa-solid fa-gas-pump" style="color:#34d399"></i> 92 Octane restocked
+                    </div>
+
+                    <div class="phone-container p-4 expanded-phone">
+                        <div>
+                            <div class="phone-notch"></div>
+
+                            <div class="d-flex justify-content-between align-items-center small mb-4">
+                                <span class="fw-semibold text-light">MAP &amp; PUMP</span>
+                                <span class="d-inline-flex align-items-center gap-2 text-danger fw-bold">
+                                    <span class="pulse-dot" style="background:#f43f5e"></span> LIVE
+                                </span>
+                            </div>
+
+                            <div class="card p-3 mb-3 text-start">
+                                <div class="d-flex justify-content-between align-items-start mb-1">
+                                    <h5 class="h6 mb-0 text-light">TharKayTa Station</h5>
+                                    <span class="badge rounded-pill" style="background:rgba(16,185,129,.15);color:#34d399;font-size:.65rem">OPEN</span>
+                                </div>
+                                <p class="small text-secondary mb-3">
+                                    <i class="fa-solid fa-location-dot me-1"></i> TharKayTa Township &middot; 2.4 km
+                                </p>
+                                <div class="d-flex justify-content-between small text-light mb-2">
+                                    <span>Octane 92</span>
+                                    <span class="text-success fw-bold">Available</span>
+                                </div>
+                                <div class="fuel-bar mb-3"><span></span></div>
+                                <div class="d-flex justify-content-between small text-light mb-2">
+                                    <span>Diesel</span>
+                                    <span class="fw-bold" style="color:#fbbf24">Running low</span>
+                                </div>
+                                <div class="fuel-bar is-low"><span></span></div>
+                            </div>
+
+                            <div class="card bg-gradient-token p-3 d-flex flex-row align-items-center justify-content-between token-qr-card">
+                                <div class="text-start">
+                                    <span class="small text-info fw-bold tracking-wider d-block">DIGITAL TOKEN</span>
+                                    <div class="small text-secondary">#MP-4192 &middot; arrive by <strong class="text-white">11:52 AM</strong></div>
+                                </div>
+                                <div class="qr-wrapper qr-sm"><i class="fa-solid fa-qrcode"></i></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
         </div>
+    </div>
+</section>
 
+<!-- ==========================================================================
+     TWO QUOTES — one operator, one driver
+     ========================================================================== -->
+<section class="section-pad pt-0">
+    <div class="container">
         <div class="row g-4">
-            <div class="col-md-6 col-lg-4" data-reveal>
+            <div class="col-lg-6" data-reveal>
                 <div class="quote-card">
                     <div class="stars"><i class="fa-solid fa-star"></i><i class="fa-solid fa-star"></i><i class="fa-solid fa-star"></i><i class="fa-solid fa-star"></i><i class="fa-solid fa-star"></i></div>
-                    <blockquote>"I used to leave the house at 5am and still lose two hours. Now I book a slot the night before and I'm in and out before work."</blockquote>
-                    <div class="quote-person">
-                        <span class="avatar">KZ</span>
-                        <span>
-                            <span class="name d-block">Ko Zaw</span>
-                            <span class="role">Ride-hailing driver, Yangon</span>
-                        </span>
-                    </div>
-                </div>
-            </div>
-
-            <div class="col-md-6 col-lg-4" data-reveal style="--reveal-delay:110ms">
-                <div class="quote-card">
-                    <div class="stars"><i class="fa-solid fa-star"></i><i class="fa-solid fa-star"></i><i class="fa-solid fa-star"></i><i class="fa-solid fa-star"></i><i class="fa-solid fa-star"></i></div>
-                    <blockquote>"The restock alert is the whole thing for me. I get the notification, book, and arrive before the street fills up. It's changed how I plan my week."</blockquote>
-                    <div class="quote-person">
-                        <span class="avatar av-2">MM</span>
-                        <span>
-                            <span class="name d-block">Ma Moe</span>
-                            <span class="role">Small business owner</span>
-                        </span>
-                    </div>
-                </div>
-            </div>
-
-            <div class="col-md-6 col-lg-4" data-reveal style="--reveal-delay:220ms">
-                <div class="quote-card">
-                    <div class="stars"><i class="fa-solid fa-star"></i><i class="fa-solid fa-star"></i><i class="fa-solid fa-star"></i><i class="fa-solid fa-star"></i><i class="fa-solid fa-star-half-stroke"></i></div>
-                    <blockquote>"On our side the traffic chaos dropped almost overnight. Staff scan tokens at the gate and the forecourt finally moves in an orderly way."</blockquote>
+                    <blockquote>"Before this, every dry day meant a hundred drivers arriving to find nothing and taking it out on my staff. Now I switch the branch off and the crowd never forms. The traffic chaos dropped almost overnight."</blockquote>
                     <div class="quote-person">
                         <span class="avatar av-3">TH</span>
                         <span>
                             <span class="name d-block">Thiha Aung</span>
-                            <span class="role">Station manager, 3 branches</span>
+                            <span class="role">Operations lead &middot; 3 branches</span>
+                        </span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-lg-6" data-reveal style="--reveal-delay:110ms">
+                <div class="quote-card">
+                    <div class="stars"><i class="fa-solid fa-star"></i><i class="fa-solid fa-star"></i><i class="fa-solid fa-star"></i><i class="fa-solid fa-star"></i><i class="fa-solid fa-star"></i></div>
+                    <blockquote>"I used to leave the house at 5am and still lose two hours. Now I check the map, book a slot the night before, and I'm filled up before work starts."</blockquote>
+                    <div class="quote-person">
+                        <span class="avatar">KZ</span>
+                        <span>
+                            <span class="name d-block">Ko Zaw</span>
+                            <span class="role">Ride-hailing driver &middot; Yangon</span>
                         </span>
                     </div>
                 </div>
@@ -452,35 +563,7 @@
 </section>
 
 <!-- ==========================================================================
-     B2B BAND
-     ========================================================================== -->
-<section id="about" class="section-pad pt-0">
-    <div class="container">
-        <div class="bg-gradient-business text-center px-3 py-5 px-md-5" data-reveal>
-            <div class="max-width-md mx-auto position-relative py-4">
-                <span class="eyebrow justify-content-center d-inline-flex">For operators</span>
-                <h2 class="section-title">Run a station or fuel company?</h2>
-                <p class="text-light opacity-75 mb-4 px-md-4">
-                    Digitise your queue, manage every branch from one dashboard, protect your staff from crowd control,
-                    and get inventory metrics you can actually plan deliveries around.
-                </p>
-
-                <div class="b2b-perks">
-                    <span class="perk-pill"><i class="fa-solid fa-gauge-high"></i> Branch dashboard</span>
-                    <span class="perk-pill"><i class="fa-solid fa-qrcode"></i> Gate-side token scanning</span>
-                    <span class="perk-pill"><i class="fa-solid fa-chart-line"></i> Demand forecasting</span>
-                    <span class="perk-pill"><i class="fa-solid fa-users-gear"></i> Staff &amp; role controls</span>
-                </div>
-
-                <a href="/php/Login/login.php" class="btn btn-success btn-lg px-5 py-3 fw-bold">Register your company</a>
-                <p class="small text-dim mt-3 mb-0">Free during onboarding &middot; No hardware required</p>
-            </div>
-        </div>
-    </div>
-</section>
-
-<!-- ==========================================================================
-     FAQ
+     FAQ — operator leaning
      ========================================================================== -->
 <section id="faq" class="section-pad pt-0">
     <div class="container">
@@ -488,8 +571,7 @@
             <div class="col-lg-4" data-reveal>
                 <span class="eyebrow">FAQ</span>
                 <h2 class="section-title">Straight answers</h2>
-                <p class="section-lead">Still stuck? Reach us any day between 8am and 8pm.</p>
-                <a href="#top" class="btn btn-ghost px-4 py-2 mt-2">Contact support</a>
+                <p class="section-lead">Still stuck? We answer every day between 8am and 8pm.</p>
             </div>
 
             <div class="col-lg-8" data-reveal style="--reveal-delay:120ms">
@@ -498,12 +580,12 @@
                     <div class="accordion-item">
                         <h2 class="accordion-header">
                             <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#faq1">
-                                Does MAP &amp; PUMP cost anything to use?
+                                What exactly is free, and what costs money?
                             </button>
                         </h2>
                         <div id="faq1" class="accordion-collapse collapse show" data-bs-parent="#faqAccordion">
                             <div class="accordion-body">
-                                It's free for drivers — checking the map, booking tokens and setting restock alerts all cost nothing. We charge stations and fuel companies for the operator dashboard.
+                                Your company registration fee covers your first three stations on the map with the full feature set. Beyond that, each additional station is 2,000 MMK per month, with volume and multi-month discounts. It's always free for drivers.
                             </div>
                         </div>
                     </div>
@@ -511,12 +593,12 @@
                     <div class="accordion-item">
                         <h2 class="accordion-header">
                             <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq2">
-                                How accurate is the stock data?
+                                Do we need special equipment at the station?
                             </button>
                         </h2>
                         <div id="faq2" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
                             <div class="accordion-body">
-                                Stations update their own levels, and drivers confirm or dispute them on arrival. Each listing carries a confidence score based on how recently it was verified, so you always know how fresh the number is.
+                                No. Any phone your forecourt staff already own is enough — they toggle stock status and scan driver tokens from the browser. No terminals, no installation, no integration with your pumps required.
                             </div>
                         </div>
                     </div>
@@ -524,12 +606,12 @@
                     <div class="accordion-item">
                         <h2 class="accordion-header">
                             <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq3">
-                                What happens if I miss my token window?
+                                Who controls whether our station shows as available?
                             </button>
                         </h2>
                         <div id="faq3" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
                             <div class="accordion-body">
-                                Your token stays valid for a 15-minute grace period. After that it's released to the next driver, and you can rebook the next open slot straight from the app.
+                                You do. Only your company account and the staff you authorise can enable or disable a station or change its stock status. Driver reports are shown to you as feedback, but they never overwrite what you set.
                             </div>
                         </div>
                     </div>
@@ -537,25 +619,12 @@
                     <div class="accordion-item">
                         <h2 class="accordion-header">
                             <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq4">
-                                Do I need a smartphone or data connection?
+                                Can we add or remove stations mid-term?
                             </button>
                         </h2>
                         <div id="faq4" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
                             <div class="accordion-body">
-                                A basic smartphone is enough — the app is built to run on slow connections. Once your token is issued it's stored on the device, so it scans fine at the gate even with no signal.
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="accordion-item">
-                        <h2 class="accordion-header">
-                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq5">
-                                How do you handle fake listings and price gouging?
-                            </button>
-                        </h2>
-                        <div id="faq5" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
-                            <div class="accordion-body">
-                                Any driver can report a station in two taps. Reports are reviewed against arrival data from other users, and stations with a pattern of false listings are suspended from the map.
+                                Yes. Add a station any time and it's prorated for the rest of the period. Remove one and the slot frees up at the end of the current cycle — useful for seasonal or temporarily closed branches.
                             </div>
                         </div>
                     </div>
@@ -567,229 +636,32 @@
 </section>
 
 <!-- ==========================================================================
-     FINAL CTA
+     CLOSING CTA
      ========================================================================== -->
 <section class="pb-5">
     <div class="container">
-        <div class="final-cta" data-reveal>
-            <span class="eyebrow justify-content-center d-inline-flex mb-2">Get started</span>
-            <h2 class="text-gradient">Your next fill-up<br class="d-none d-md-block"> shouldn't cost you a morning.</h2>
-            <p class="section-lead mx-auto mb-4">Join 52,000+ drivers who stopped queuing and started booking.</p>
-            <div class="d-sm-flex gap-3 justify-content-center">
-                <a href="/php/Customer/track_book.php" class="btn btn-primary btn-lg px-4 py-3 mb-3 mb-sm-0 w-100 w-sm-auto">Find fuel near me</a>
-                <a href="/php/Login/login.php" class="btn btn-outline-light btn-lg px-4 py-3 w-100 w-sm-auto">I run a station</a>
+        <div class="bg-gradient-business text-center px-3 py-4 px-md-5" data-reveal>
+            <div class="max-width-md mx-auto position-relative py-2">
+                <span class="eyebrow justify-content-center d-inline-flex">Get started</span>
+                <h2 class="section-title">Put your first three stations<br class="d-none d-md-block"> on the map for free</h2>
+                <p class="text-light opacity-75 mb-4 px-md-4">
+                    Set up takes an afternoon. No hardware, no integration, no long contract to sign.
+                </p>
+
+                <div class="b2b-perks">
+                    <span class="perk-pill"><i class="fa-solid fa-gauge-high"></i> Branch dashboard</span>
+                    <span class="perk-pill"><i class="fa-solid fa-qrcode"></i> Gate-side token scanning</span>
+                    <span class="perk-pill"><i class="fa-solid fa-chart-line"></i> Demand data</span>
+                    <span class="perk-pill"><i class="fa-solid fa-users-gear"></i> Staff controls</span>
+                </div>
+
+                <div class="d-sm-flex gap-3 justify-content-center">
+                    <a href="/php/Login/login.php" class="btn btn-success btn-lg px-5 py-3 fw-bold mb-3 mb-sm-0 w-100 w-sm-auto">Register your company</a>
+                    <a href="/php/News.php" class="btn btn-outline-light btn-lg px-4 py-3 w-100 w-sm-auto">Check today's prices</a>
+                </div>
             </div>
         </div>
     </div>
 </section>
 
-<!-- ==========================================================================
-     FOOTER
-     ========================================================================== -->
-<footer class="site-footer">
-    <div class="container">
-        <div class="row g-4">
-            <div class="col-lg-4">
-                <a class="navbar-brand logo-text d-flex align-items-center gap-2 fs-4 fw-bold mb-3" href="#top">
-                    <img src="/images/Logo.png" alt="MAP &amp; PUMP Logo" class="navbar-logo-img">
-                    MAP &amp; PUMP
-                </a>
-                <p class="text-muted-custom small mb-0" style="max-width:320px">
-                    Smart fuel booking and live station tracking — built for public safety and smarter distribution.
-                </p>
-                <div class="social-row">
-                    <a href="#" aria-label="Facebook"><i class="fa-brands fa-facebook-f"></i></a>
-                    <a href="#" aria-label="Telegram"><i class="fa-brands fa-telegram"></i></a>
-                    <a href="#" aria-label="Viber"><i class="fa-brands fa-viber"></i></a>
-                    <a href="#" aria-label="Email"><i class="fa-solid fa-envelope"></i></a>
-                </div>
-            </div>
-
-            <div class="col-6 col-lg-2 offset-lg-1">
-                <div class="footer-title">Product</div>
-                <ul class="footer-links">
-                    <li><a href="#how">How it works</a></li>
-                    <li><a href="#features">Features</a></li>
-                    <li><a href="#map">Live map</a></li>
-                    <li><a href="#faq">FAQ</a></li>
-                </ul>
-            </div>
-
-            <div class="col-6 col-lg-2">
-                <div class="footer-title">For business</div>
-                <ul class="footer-links">
-                    <li><a href="#about">Station owners</a></li>
-                    <li><a href="#about">Fuel companies</a></li>
-                    <li><a href="/php/Login/login.php">Operator login</a></li>
-                </ul>
-            </div>
-
-            <div class="col-6 col-lg-3">
-                <div class="footer-title">Company</div>
-                <ul class="footer-links">
-                    <li><a href="#">About us</a></li>
-                    <li><a href="#">Privacy policy</a></li>
-                    <li><a href="#">Terms of service</a></li>
-                    <li><a href="#">Report a station</a></li>
-                </ul>
-            </div>
-        </div>
-
-        <div class="footer-bottom d-md-flex justify-content-between align-items-center text-center text-md-start">
-            <p class="mb-2 mb-md-0">&copy; <?php echo date('Y'); ?> MAP &amp; PUMP. Built for public safety and smarter distribution.</p>
-            <p class="mb-0 d-inline-flex align-items-center gap-2 justify-content-center">
-                <span class="pulse-dot"></span> All systems operational
-            </p>
-        </div>
-    </div>
-</footer>
-
-<button id="back-to-top" aria-label="Back to top"><i class="fa-solid fa-arrow-up"></i></button>
-
-<!-- Bootstrap Bundle JS with Popper -->
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-
-<script>
-(function () {
-    'use strict';
-
-    var reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-
-    /* ---------- Cursor spotlight ---------- */
-    var follower = document.getElementById('mouse-follower');
-    if (follower && !reduceMotion) {
-        var tX = window.innerWidth / 2, tY = window.innerHeight / 2;
-        var cX = tX, cY = tY, ease = 0.11, visible = false;
-
-        window.addEventListener('mousemove', function (e) {
-            tX = e.clientX; tY = e.clientY;
-            if (!visible) { visible = true; follower.classList.add('is-active'); }
-        });
-        window.addEventListener('mouseleave', function () {
-            visible = false; follower.classList.remove('is-active');
-        });
-        (function loop() {
-            cX += (tX - cX) * ease;
-            cY += (tY - cY) * ease;
-            follower.style.transform = 'translate3d(' + cX + 'px,' + cY + 'px,0) translate(-50%,-50%)';
-            requestAnimationFrame(loop);
-        })();
-    }
-
-    /* ---------- Navbar state + scroll progress + back to top ---------- */
-    var nav = document.querySelector('.main-navbar');
-    var bar = document.getElementById('scroll-progress');
-    var top = document.getElementById('back-to-top');
-
-    function onScroll() {
-        var y = window.scrollY || document.documentElement.scrollTop;
-        if (nav) nav.classList.toggle('is-scrolled', y > 24);
-        if (top) top.classList.toggle('is-visible', y > 620);
-        if (bar) {
-            var h = document.documentElement.scrollHeight - window.innerHeight;
-            bar.style.width = (h > 0 ? (y / h) * 100 : 0) + '%';
-        }
-    }
-    window.addEventListener('scroll', onScroll, { passive: true });
-    onScroll();
-
-    if (top) {
-        top.addEventListener('click', function () {
-            window.scrollTo({ top: 0, behavior: reduceMotion ? 'auto' : 'smooth' });
-        });
-    }
-
-    /* ---------- Scroll reveal ---------- */
-    var revealEls = document.querySelectorAll('[data-reveal]');
-    if ('IntersectionObserver' in window && !reduceMotion) {
-        var io = new IntersectionObserver(function (entries) {
-            entries.forEach(function (entry) {
-                if (entry.isIntersecting) {
-                    entry.target.classList.add('is-visible');
-                    io.unobserve(entry.target);
-                }
-            });
-        }, { threshold: 0.12, rootMargin: '0px 0px -60px 0px' });
-        revealEls.forEach(function (el) { io.observe(el); });
-    } else {
-        revealEls.forEach(function (el) { el.classList.add('is-visible'); });
-    }
-
-    /* ---------- Animated counters ---------- */
-    function formatNum(n) {
-        return n >= 1000 ? n.toLocaleString('en-US') : String(n);
-    }
-
-    function runCounter(el) {
-        var target = parseFloat(el.getAttribute('data-count')) || 0;
-        var suffix = el.getAttribute('data-suffix') || '';
-        var dur = 1600, start = null;
-
-        function tick(ts) {
-            if (!start) start = ts;
-            var p = Math.min((ts - start) / dur, 1);
-            var eased = 1 - Math.pow(1 - p, 3);
-            el.textContent = formatNum(Math.round(target * eased)) + suffix;
-            if (p < 1) requestAnimationFrame(tick);
-        }
-        requestAnimationFrame(tick);
-    }
-
-    var counters = document.querySelectorAll('[data-count]');
-    if ('IntersectionObserver' in window && !reduceMotion) {
-        var co = new IntersectionObserver(function (entries) {
-            entries.forEach(function (entry) {
-                if (entry.isIntersecting) {
-                    runCounter(entry.target);
-                    co.unobserve(entry.target);
-                }
-            });
-        }, { threshold: 0.5 });
-        counters.forEach(function (el) { co.observe(el); });
-    } else {
-        counters.forEach(function (el) {
-            el.textContent = formatNum(parseFloat(el.getAttribute('data-count')) || 0) + (el.getAttribute('data-suffix') || '');
-        });
-    }
-
-    /* ---------- Card spotlight follows cursor ---------- */
-    document.querySelectorAll('.js-spotlight').forEach(function (card) {
-        card.addEventListener('mousemove', function (e) {
-            var r = card.getBoundingClientRect();
-            card.style.setProperty('--mx', (e.clientX - r.left) + 'px');
-            card.style.setProperty('--my', (e.clientY - r.top) + 'px');
-        });
-    });
-
-    /* ---------- Close mobile menu on link tap ---------- */
-    var collapseEl = document.getElementById('navbarNav');
-    document.querySelectorAll('#navbarNav .nav-link').forEach(function (link) {
-        link.addEventListener('click', function () {
-            if (collapseEl && collapseEl.classList.contains('show')) {
-                var inst = bootstrap.Collapse.getInstance(collapseEl) || new bootstrap.Collapse(collapseEl, { toggle: false });
-                inst.hide();
-            }
-        });
-    });
-
-    /* ---------- Scrollspy on nav links ---------- */
-    var sections = ['how', 'features', 'map', 'about', 'faq']
-        .map(function (id) { return document.getElementById(id); })
-        .filter(Boolean);
-
-    if ('IntersectionObserver' in window && sections.length) {
-        var so = new IntersectionObserver(function (entries) {
-            entries.forEach(function (entry) {
-                if (!entry.isIntersecting) return;
-                document.querySelectorAll('#navbarNav .nav-link').forEach(function (l) {
-                    l.classList.toggle('active', l.getAttribute('href') === '#' + entry.target.id);
-                });
-            });
-        }, { rootMargin: '-45% 0px -50% 0px' });
-        sections.forEach(function (s) { so.observe(s); });
-    }
-})();
-</script>
-
-</body>
-</html>
+<?php require __DIR__ . '/partials/footer.php'; ?>
