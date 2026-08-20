@@ -6,8 +6,48 @@ use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\SMTP;
 use PHPMailer\PHPMailer\Exception;
 
+function mail_load_local_env(): void
+{
+    static $loaded = false;
+    if ($loaded) {
+        return;
+    }
+    $loaded = true;
+
+    $path = dirname(__DIR__, 2) . '/.env.local';
+    if (!is_file($path) || !is_readable($path)) {
+        return;
+    }
+
+    foreach (file($path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: [] as $line) {
+        $line = trim($line);
+        if ($line === '' || str_starts_with($line, '#') || !str_contains($line, '=')) {
+            continue;
+        }
+
+        [$key, $value] = explode('=', $line, 2);
+        $key = trim($key);
+        $value = trim($value);
+        if ($key === '') {
+            continue;
+        }
+
+        if ((str_starts_with($value, '"') && str_ends_with($value, '"')) || (str_starts_with($value, "'") && str_ends_with($value, "'"))) {
+            $value = substr($value, 1, -1);
+        }
+
+        if (getenv($key) === false && !isset($_ENV[$key]) && !isset($_SERVER[$key])) {
+            putenv($key . '=' . $value);
+            $_ENV[$key] = $value;
+            $_SERVER[$key] = $value;
+        }
+    }
+}
+
 function mail_config_value(string $key, string $default = ''): string
 {
+    mail_load_local_env();
+
     $value = getenv($key);
 
     if ($value === false) {
@@ -23,12 +63,12 @@ function smtp_send_mail(string $to, string $subject, string $htmlBody, string $t
     $port = (int) mail_config_value('SMTP_PORT', '587');
     $username = mail_config_value('SMTP_USERNAME');
     $password = mail_config_value('SMTP_PASSWORD');
-    $fromEmail = mail_config_value('SMTP_FROM_EMAIL');
+    $fromEmail = mail_config_value('SMTP_FROM_EMAIL', $username);
     $fromName = mail_config_value('SMTP_FROM_NAME', 'Map & Pump');
     $debugLevel = min(max((int) mail_config_value('SMTP_DEBUG', '0'), 0), 3);
 
     if ($username === '' || $password === '' || $fromEmail === '') {
-        throw new RuntimeException('Email is not configured. Set SMTP_USERNAME, SMTP_PASSWORD, and SMTP_FROM_EMAIL.');
+        throw new RuntimeException('Email is not configured. Set SMTP_USERNAME and SMTP_PASSWORD. SMTP_FROM_EMAIL is optional and defaults to SMTP_USERNAME.');
     }
 
     $mail = new PHPMailer(true);
@@ -42,16 +82,23 @@ function smtp_send_mail(string $to, string $subject, string $htmlBody, string $t
         $mail->Host = $host;
         $mail->SMTPAuth = true;
         $mail->Username = $username;
-        $mail->Password = str_replace([' ', '\t', '\r', '\n'], '', $password);
+        $mail->Password = str_replace([' ', "\t", "\r", "\n"], '', $password);
         $mail->Timeout = 30;
         $mail->SMTPKeepAlive = false;
         $mail->SMTPAutoTLS = true;
+
+        $verifyPeer = filter_var(mail_config_value('SMTP_VERIFY_PEER', 'true'), FILTER_VALIDATE_BOOLEAN);
+        $smtpSslOptions = [
+            'verify_peer' => $verifyPeer,
+            'verify_peer_name' => $verifyPeer,
+            'allow_self_signed' => false,
+        ];
+        $caFile = mail_config_value('SMTP_CA_FILE', dirname(__DIR__) . '/isrgrootx1.pem');
+        if ($verifyPeer && is_file($caFile)) {
+            $smtpSslOptions['cafile'] = $caFile;
+        }
         $mail->SMTPOptions = [
-            'ssl' => [
-                'verify_peer' => true,
-                'verify_peer_name' => true,
-                'allow_self_signed' => false,
-            ],
+            'ssl' => $smtpSslOptions,
         ];
 
         if ($port === 465) {
