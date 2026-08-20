@@ -24,6 +24,8 @@
 require_once __DIR__ . '/../conn.php';
 // Handle form submission
 $message = '';
+$loggedUserId = isset($_SESSION['user_id']) ? (int) $_SESSION['user_id'] : 0;
+$loggedHqId = isset($_SESSION['headquarter_id']) ? (int) $_SESSION['headquarter_id'] : 0;
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $title = $_POST['company_name'] ?? '';
     $info = $_POST['headquarter_bio'] ?? '';
@@ -48,8 +50,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
-    // Check if configuration already exists in database
-    $stmt = $pdo->query("SELECT headquarter_id, company_logo FROM headquarter LIMIT 1");
+    // Load the headquarters belonging to the signed-in user.
+    if ($loggedUserId > 0) {
+        $stmt = $pdo->prepare("SELECT h.headquarter_id, h.company_logo, h.headquarter_email FROM users u JOIN headquarter h ON h.headquarter_id = u.headquarter_id WHERE u.user_id = ? LIMIT 1");
+        $stmt->execute([$loggedUserId]);
+    } elseif ($loggedHqId > 0) {
+        $stmt = $pdo->prepare("SELECT headquarter_id, company_logo, headquarter_email FROM headquarter WHERE headquarter_id = ? LIMIT 1");
+        $stmt->execute([$loggedHqId]);
+    } else {
+        $stmt = $pdo->query("SELECT headquarter_id, company_logo, headquarter_email FROM headquarter LIMIT 1");
+    }
     $config = $stmt->fetch(PDO::FETCH_ASSOC);
 
     if (!$logoPath && $config) {
@@ -57,20 +67,43 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if ($config) {
-        // Update existing record
-        $updateStmt = $pdo->prepare("UPDATE headquarter SET company_name = ?, headquarter_bio = ?, headquarter_email = ?, contact_number = ?, business_license = ?, location = ?, company_logo = ? WHERE headquarter_id = ?");
-        $updateStmt->execute([$title, $info, $email, $phone, $businessLicense, $location, $logoPath, $config['headquarter_id']]);
+        // Save the brand settings without allowing an email conflict to block a logo update.
+        $updateStmt = $pdo->prepare("UPDATE headquarter SET company_name = ?, headquarter_bio = ?, contact_number = ?, business_license = ?, location = ?, company_logo = ? WHERE headquarter_id = ?");
+        $updateStmt->execute([$title, $info, $phone, $businessLicense, $location, $logoPath, $config['headquarter_id']]);
+
+        $email = trim($email);
+        if ($email !== '' && strcasecmp($email, (string) $config['headquarter_email']) !== 0) {
+            $emailCheck = $pdo->prepare("SELECT headquarter_id FROM headquarter WHERE headquarter_email = ? AND headquarter_id <> ? LIMIT 1");
+            $emailCheck->execute([$email, $config['headquarter_id']]);
+
+            if (!$emailCheck->fetchColumn()) {
+                $emailStmt = $pdo->prepare("UPDATE headquarter SET headquarter_email = ? WHERE headquarter_id = ?");
+                $emailStmt->execute([$email, $config['headquarter_id']]);
+            } else {
+                $message = "Brand settings saved, but that email is already used by another headquarters.";
+            }
+        }
     } else {
         // Insert new record
         $insertStmt = $pdo->prepare("INSERT INTO headquarter (company_name, headquarter_bio, headquarter_email, contact_number, business_license, location, company_logo) VALUES (?, ?, ?, ?, ?, ?, ?)");
         $insertStmt->execute([$title, $info, $email, $phone, $businessLicense, $location, $logoPath]);
     }
 
-    $message = "Corporate parameters stored successfully!";
+    if ($message === '') {
+        $message = "Corporate parameters stored successfully!";
+    }
 }
 
 // Fetch current configuration to populate the form
-$stmt = $pdo->query("SELECT * FROM headquarter LIMIT 1");
+if ($loggedUserId > 0) {
+    $stmt = $pdo->prepare("SELECT h.* FROM users u JOIN headquarter h ON h.headquarter_id = u.headquarter_id WHERE u.user_id = ? LIMIT 1");
+    $stmt->execute([$loggedUserId]);
+} elseif ($loggedHqId > 0) {
+    $stmt = $pdo->prepare("SELECT * FROM headquarter WHERE headquarter_id = ? LIMIT 1");
+    $stmt->execute([$loggedHqId]);
+} else {
+    $stmt = $pdo->query("SELECT * FROM headquarter LIMIT 1");
+}
 $currentConfig = $stmt->fetch(PDO::FETCH_ASSOC);
 
 $brandTitle = $currentConfig['company_name'] ?? 'Apex Fuel & Gas';
@@ -80,13 +113,16 @@ $brandPhone = $currentConfig['contact_number'] ?? '+1 (800) 555-APEX';
 $businessLicense = $currentConfig['business_license'] ?? '';
 $location = $currentConfig['location'] ?? '';
 $brandLogo = $currentConfig['company_logo'] ?? 'https://via.placeholder.com/150';
+if ($brandLogo !== '' && !preg_match('#^(?:https?:)?//#i', $brandLogo)) {
+    $brandLogo = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? '/php/HQ/brand.php')), '/') . '/' . ltrim(preg_replace('#^/php/HQ/#', '', $brandLogo), '/');
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
-    <link rel="stylesheet" href="/css/HQstyle.css">
+    <link rel="stylesheet" href="../../css/HQstyle.css">
 </head>
 <body>
     <h2 class="title">Brand Configuration</h2>

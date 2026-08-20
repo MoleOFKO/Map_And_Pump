@@ -3,7 +3,9 @@ session_start();
 require_once __DIR__ . '/../conn.php';
 
 if (empty($_SESSION['user_id'])) {
-    header('Location: ../Login/login.php');
+    $loginUrl = '../Login/login.php';
+    echo '<script>window.top.location.replace(' . json_encode($loginUrl) . ');</script>';
+    echo '<noscript><meta http-equiv="refresh" content="0;url=' . htmlspecialchars($loginUrl, ENT_QUOTES, 'UTF-8') . '"></noscript>';
     exit;
 }
 
@@ -27,7 +29,7 @@ $profileStatus = !empty($user['status']) ? ucfirst($user['status']) : 'Active';
 <head>
     <meta charset="UTF-8">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
-    <link rel="stylesheet" href="/css/HQstyle.css">
+    <link rel="stylesheet" href="../../css/HQstyle.css">
 </head>
 <body>
     <h2 class="title">Account Management</h2>

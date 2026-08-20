@@ -29,7 +29,7 @@ unset($_SESSION['login_success']);
   <div class="main-card">
     
     <!-- Transparent Modern Back Button pointing to Homepage/Index -->
-    <a href="/php/HomePage.php" class="back-nav-link" title="Return to Homepage">
+    <a href="../php/HomePage.php" class="back-nav-link" title="Return to Homepage">
       <svg class="back-arrow-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
         <line x1="19" y1="12" x2="5" y2="12"></line>
         <polyline points="12 19 5 12 12 5"></polyline>
