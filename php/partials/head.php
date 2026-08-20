@@ -9,6 +9,7 @@
 $page_title       = $page_title       ?? 'MAP & PUMP';
 $page_description = $page_description ?? 'Smart fuel booking and live station tracking.';
 $active_nav       = $active_nav       ?? '';
+$page_styles      = $page_styles      ?? [];
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -29,6 +30,9 @@ $active_nav       = $active_nav       ?? '';
     <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
     <!-- Custom Theme -->
     <link rel="stylesheet" href="/css/HomePage.css">
+    <?php foreach ($page_styles as $page_style): ?>
+        <link rel="stylesheet" href="<?php echo htmlspecialchars($page_style); ?>">
+    <?php endforeach; ?>
 
     <link rel="icon" type="image/png" href="/images/Logo.png">
 </head>

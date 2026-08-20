@@ -38,7 +38,7 @@ $nav_items = [
 
             <div class="d-flex flex-column flex-lg-row gap-2 gap-lg-3 align-items-stretch align-items-lg-center mt-3 mt-lg-0">
                 <a class="nav-link-plain text-center" href="/php/link_button.php">Sign in</a>
-                <a class="btn btn-primary px-4 py-2 fw-semibold" href="/php/Login/login.php">
+                <a class="btn btn-primary px-4 py-2 fw-semibold" href="/php/Company/register.php">
                     Register company <i class="fa-solid fa-arrow-right ms-1 small"></i>
                 </a>
             </div>
