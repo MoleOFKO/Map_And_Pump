@@ -134,17 +134,6 @@ try {
         $ownerUpdate->close();
     }
 
-    $requestUpdate = $conn->prepare(
-        'UPDATE system_requests
-         SET sender_entity = ?, sender_name = ?, sender_email = ?, location = ?, updated_at = NOW()
-         WHERE headquarter_id = ? AND request_type IN (\'hq_registration\', \'headquarter_registration\') AND status = \'pending\''
-    );
-    if ($requestUpdate) {
-        $requestUpdate->bind_param('ssssi', $hqName, $ownerName, $ownerEmail, $location, $headquarterId);
-        $requestUpdate->execute();
-        $requestUpdate->close();
-    }
-
     admin_record_log((int) $moderatorUser['user_id'], 'Updated HQ #' . $headquarterId . ' (' . $hqName . ').');
     $conn->commit();
     hq_flash('success', 'HQ details and owner account were updated successfully.');
