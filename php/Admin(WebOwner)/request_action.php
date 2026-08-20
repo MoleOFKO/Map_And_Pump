@@ -38,7 +38,6 @@ if (!$reviewer || !in_array($reviewerRole, ['admin', 'moderator'], true)) {
     request_flash('danger', 'A signed-in administrator or moderator account is required to review requests.');
     request_redirect();
 }
-$reviewerId = (int) $reviewer['user_id'];
 
 try {
     $conn->begin_transaction();
@@ -65,147 +64,42 @@ try {
         throw new RuntimeException('Only pending requests can be approved or rejected.');
     }
 
-    $isHqRegistration = request_is_hq_registration($target['request_type'] ?? null);
     $newStatus = $action === 'approve' ? 'approved' : 'rejected';
-    $linkedHqId = !empty($target['headquarter_id']) ? (int) $target['headquarter_id'] : null;
-    $createdHq = false;
-    $createdOwnerUserId = null;
-    $createdUsername = null;
-    $temporaryPassword = null;
-    $recipientUserId = !empty($target['existing_user_id']) ? (int) $target['existing_user_id'] : null;
-    $recipientEmail = trim((string) ($target['user_email'] ?: $target['headquarter_owner_email'] ?: $target['sender_email']));
     $reviewReason = $action === 'approve' ? 'Approved by administrator.' : $reason;
-
-    if ($action === 'approve' && $isHqRegistration && $linkedHqId === null) {
-        $companyName = trim((string) ($target['sender_entity'] ?? ''));
-        $companyEmail = strtolower(trim((string) ($target['headquarter_email'] ?? '')));
-        $ownerName = trim((string) ($target['sender_name'] ?? ''));
-        $ownerEmail = strtolower(trim((string) ($target['headquarter_owner_email'] ?? $target['sender_email'] ?? '')));
-        $companyLogo = trim((string) ($target['headquarter_company_logo'] ?? ''));
-        $contactNumber = trim((string) ($target['headquarter_contact_number'] ?? ''));
-        $location = trim((string) ($target['location'] ?? ''));
-        $businessLicense = trim((string) ($target['document_path'] ?? ''));
-        $expireAt = trim((string) ($target['headquarter_expire_at'] ?? ''));
-
-        if ($companyName === '' || $companyLogo === '' || $contactNumber === '' || $location === '' || $businessLicense === '' || !filter_var($companyEmail, FILTER_VALIDATE_EMAIL) || $ownerName === '' || !filter_var($ownerEmail, FILTER_VALIDATE_EMAIL) || $expireAt === '') {
-            throw new RuntimeException('The pending HQ request is missing required registration details.');
-        }
-        if (strtotime($expireAt) === false || strtotime($expireAt) < strtotime(date('Y-m-d'))) {
-            throw new RuntimeException('The pending HQ request has an invalid or expired business license date.');
-        }
-
-        $emailCheck = $conn->prepare(
-            'SELECT 1 FROM users WHERE LOWER(email) = LOWER(?)
-             UNION ALL
-             SELECT 1 FROM headquarter WHERE LOWER(headquarter_email) = LOWER(?)
-             LIMIT 1'
-        );
-        if (!$emailCheck) {
-            throw new RuntimeException('Could not validate the HQ registration email addresses.');
-        }
-        $emailCheck->bind_param('ss', $ownerEmail, $companyEmail);
-        $emailCheck->execute();
-        $emailAlreadyExists = (bool) $emailCheck->get_result()?->fetch_row();
-        $emailCheck->close();
-        if ($emailAlreadyExists) {
-            throw new RuntimeException('The HQ owner email or company email is already registered.');
-        }
-
-        $roleId = hq_find_role_id();
-        if ($roleId === false) {
-            throw new RuntimeException('The HQ role is not available in the database.');
-        }
-
-        $temporaryPassword = bin2hex(random_bytes(5));
-        $createdUsername = hq_unique_username($ownerName, $ownerEmail);
-        $hashedPassword = password_hash($temporaryPassword, PASSWORD_DEFAULT);
-
-        $hqInsert = $conn->prepare(
-            'INSERT INTO headquarter
-                (company_name, company_logo, contact_number, headquarter_email, location, business_license, created_at, expire_at)
-             VALUES (?, ?, ?, ?, ?, ?, NOW(), ?)'
-        );
-        if (!$hqInsert) {
-            throw new RuntimeException('Could not prepare the HQ insert.');
-        }
-        $hqInsert->bind_param('sssssss', $companyName, $companyLogo, $contactNumber, $companyEmail, $location, $businessLicense, $expireAt);
-        if (!$hqInsert->execute()) {
-            throw new RuntimeException('Could not create the HQ record: ' . $hqInsert->error);
-        }
-        $linkedHqId = (int) $hqInsert->insert_id;
-        $hqInsert->close();
-
-        $userInsert = $conn->prepare(
-            "INSERT INTO users
-                (user_name, email, hashed_password, headquarter_id, role_id, status, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, 'approved', NOW(), NOW())"
-        );
-        if (!$userInsert) {
-            throw new RuntimeException('Could not prepare the HQ owner account insert.');
-        }
-        $userInsert->bind_param('sssii', $createdUsername, $ownerEmail, $hashedPassword, $linkedHqId, $roleId);
-        if (!$userInsert->execute()) {
-            throw new RuntimeException('Could not create the HQ owner account: ' . $userInsert->error);
-        }
-        $createdOwnerUserId = (int) $userInsert->insert_id;
-        $userInsert->close();
-
-        $ownerLink = $conn->prepare('UPDATE headquarter SET headquarters_owner_id = ? WHERE headquarter_id = ?');
-        if ($ownerLink) {
-            $ownerLink->bind_param('ii', $createdOwnerUserId, $linkedHqId);
-            $ownerLink->execute();
-            $ownerLink->close();
-        }
-
-        $createdHq = true;
-        $recipientUserId = $createdOwnerUserId;
-        $recipientEmail = $ownerEmail;
-        $reviewReason = 'Approved by administrator. HQ #' . $linkedHqId . ' and its owner account were created.';
-    }
+    $reviewerId = (int) $reviewer['user_id'];
+    $recipientUserId = !empty($target['existing_user_id']) ? (int) $target['existing_user_id'] : null;
+    $recipientEmail = trim((string) ($target['user_email'] ?: $target['sender_email']));
 
     $requestUpdate = $conn->prepare(
         "UPDATE system_requests
-         SET status = ?, review_reason = ?, reviewed_at = NOW(), reviewed_by = ?, headquarter_id = ?, updated_at = NOW()
+         SET status = ?, review_reason = ?, reviewed_at = NOW(), reviewed_by = ?, updated_at = NOW()
          WHERE request_id = ? AND status = 'pending'"
     );
     if (!$requestUpdate) {
         throw new RuntimeException('Could not prepare the request update.');
     }
-    $requestUpdate->bind_param('ssiii', $newStatus, $reviewReason, $reviewerId, $linkedHqId, $requestId);
+    $requestUpdate->bind_param('ssii', $newStatus, $reviewReason, $reviewerId, $requestId);
     if (!$requestUpdate->execute() || $requestUpdate->affected_rows !== 1) {
         throw new RuntimeException('The request was already changed or could not be updated.');
     }
     $requestUpdate->close();
 
-    // A newly submitted HQ request has no owner user until approval. Do not
-    // change the status of the admin/moderator who submitted it.
-    $shouldUpdateExistingUser = !$isHqRegistration || ($isHqRegistration && $linkedHqId !== null && !$createdHq);
-    if ($shouldUpdateExistingUser && !empty($target['existing_user_id'])) {
+    if ($recipientUserId !== null) {
         $userUpdate = $conn->prepare('UPDATE users SET status = ?, updated_at = NOW() WHERE user_id = ?');
         if (!$userUpdate) {
-            throw new RuntimeException('Could not prepare the account status update.');
+            throw new RuntimeException('Could not prepare the related account update.');
         }
-        $existingUserId = (int) $target['existing_user_id'];
-        $userUpdate->bind_param('si', $newStatus, $existingUserId);
+        $userUpdate->bind_param('si', $newStatus, $recipientUserId);
         if (!$userUpdate->execute()) {
-            throw new RuntimeException('Could not update the account status.');
+            throw new RuntimeException('Could not update the related account status.');
         }
         $userUpdate->close();
     }
 
     $subject = sprintf('Map & Pump request %s: %s', $target['reference_code'], ucfirst($newStatus));
-    if ($createdHq) {
-        $message = sprintf(
-            "Your HQ registration %s has been approved.\n\nHQ account username: %s\nTemporary password: %s\n\nPlease change the password after first sign-in.",
-            $target['reference_code'],
-            $createdUsername,
-            $temporaryPassword
-        );
-    } elseif ($action === 'approve') {
-        $message = sprintf('Your request %s for %s has been approved.', $target['reference_code'], $target['sender_entity']);
-    } else {
-        $message = sprintf("Your request %s for %s was rejected.\n\nReason:\n%s", $target['reference_code'], $target['sender_entity'], $reason);
-    }
+    $message = $action === 'approve'
+        ? sprintf('Your request %s for %s has been approved.', $target['reference_code'], $target['sender_entity'])
+        : sprintf("Your request %s for %s was rejected.\n\nReason:\n%s", $target['reference_code'], $target['sender_entity'], $reason);
     $notification = request_send_notification($recipientEmail, $subject, $message);
 
     $notificationInsert = $conn->prepare(
@@ -217,8 +111,6 @@ try {
         throw new RuntimeException('Could not prepare the notification record.');
     }
     $notificationType = 'request_' . $newStatus;
-    $deliveryStatus = $notification['status'];
-    $deliveryNote = $notification['note'];
     $notificationInsert->bind_param(
         'iissssss',
         $requestId,
@@ -227,8 +119,8 @@ try {
         $notificationType,
         $subject,
         $message,
-        $deliveryStatus,
-        $deliveryNote
+        $notification['status'],
+        $notification['note']
     );
     if (!$notificationInsert->execute()) {
         throw new RuntimeException('Could not record the notification.');
@@ -236,13 +128,11 @@ try {
     $notificationInsert->close();
 
     $conn->commit();
-    request_flash('success', $createdHq
-        ? sprintf('HQ registration %s was approved. HQ #%d and its owner account were created.', $target['reference_code'], $linkedHqId)
-        : sprintf('Request %s was %s. The notification was recorded for delivery.', $target['reference_code'], $newStatus));
+    request_flash('success', sprintf('Request %s was %s.', $target['reference_code'], $newStatus));
 } catch (Throwable $exception) {
     $conn->rollback();
-    error_log('[Request registry] Action failed: ' . $exception->getMessage());
-    request_flash('danger', $exception->getMessage());
+    error_log('[Request registry] Review failed: ' . $exception->getMessage());
+    request_flash('danger', 'The request could not be updated. No partial changes were saved.');
 }
 
 request_redirect();

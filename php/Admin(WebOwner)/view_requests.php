@@ -9,7 +9,7 @@ $flash = request_pull_flash();
 $search = trim((string) ($_GET['search'] ?? ''));
 $requestType = strtolower(trim((string) ($_GET['type'] ?? '')));
 $status = strtolower(trim((string) ($_GET['status'] ?? '')));
-$allowedTypes = ['station', 'license', 'deactivation', 'hq_registration'];
+$allowedTypes = ['station', 'license', 'deactivation'];
 $allowedStatuses = ['pending', 'approved', 'rejected', 'flagged'];
 
 if (!in_array($requestType, $allowedTypes, true)) {
@@ -28,8 +28,6 @@ $requestRows = [];
 $dbError = null;
 
 if (hq_db_available() && request_schema_ready()) {
-    request_backfill_pending_hq_registrations();
-
     $summaryQuery = $conn->query(
         "SELECT
             COALESCE(SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END), 0) AS pending,
@@ -48,10 +46,10 @@ if (hq_db_available() && request_schema_ready()) {
     $types = '';
 
     if ($search !== '') {
-        $where[] = '(LOWER(r.reference_code) LIKE ? OR LOWER(r.sender_entity) LIKE ? OR LOWER(r.sender_name) LIKE ? OR LOWER(h.company_name) LIKE ?)';
+        $where[] = '(LOWER(r.reference_code) LIKE ? OR LOWER(r.sender_entity) LIKE ? OR LOWER(r.sender_name) LIKE ?)';
         $searchLike = '%' . strtolower($search) . '%';
-        array_push($params, $searchLike, $searchLike, $searchLike, $searchLike);
-        $types .= 'ssss';
+        array_push($params, $searchLike, $searchLike, $searchLike);
+        $types .= 'sss';
     }
 
     if ($requestType !== '') {
@@ -59,7 +57,6 @@ if (hq_db_available() && request_schema_ready()) {
             'station' => ['station', 'new_station', 'new_station_registration'],
             'license' => ['license', 'license_modification'],
             'deactivation' => ['deactivation', 'account_deactivation'],
-            'hq_registration' => ['hq_registration', 'headquarter_registration'],
         };
         $where[] = 'LOWER(r.request_type) IN (' . implode(',', array_fill(0, count($typeValues), '?')) . ')';
         foreach ($typeValues as $typeValue) {
@@ -85,11 +82,9 @@ SELECT
     r.sender_email,
     r.location,
     r.created_at,
-    r.submitter_user_id,
-    h.company_name AS hq_company_name
+    r.submitter_user_id
 FROM system_requests r
 LEFT JOIN users u ON u.user_id = r.submitter_user_id
-LEFT JOIN headquarter h ON h.headquarter_id = r.headquarter_id
 SQL;
 
     if ($where) {
@@ -193,7 +188,7 @@ $flashType = $flash['type'] ?? '';
         <div class="row g-4">
             <div class="col-12"><div class="dashboard-card py-3 px-4"><form class="row g-3 align-items-center" method="GET" action="view_requests.php">
                 <div class="col-12 col-md-5"><div class="input-group"><span class="input-group-text bg-transparent border-end-0" style="border-color:var(--glass-border);color:var(--neon-cyan);border-radius:12px 0 0 12px;"><i class="bi bi-funnel-fill"></i></span><input type="text" class="form-control glass-input border-start-0" placeholder="Filter by company, sender name, or reference ID..." name="search" value="<?= hq_escape($search) ?>"></div></div>
-                <div class="col-12 col-md-3"><select class="form-select glass-select" name="type"><option value="" <?= $requestType === '' ? 'selected' : '' ?>>All Request Types</option><option value="station" <?= $requestType === 'station' ? 'selected' : '' ?>>New Station Registration</option><option value="license" <?= $requestType === 'license' ? 'selected' : '' ?>>License Modification</option><option value="deactivation" <?= $requestType === 'deactivation' ? 'selected' : '' ?>>Account Deactivation</option><option value="hq_registration" <?= $requestType === 'hq_registration' ? 'selected' : '' ?>>HQ Registration</option></select></div>
+                <div class="col-12 col-md-3"><select class="form-select glass-select" name="type"><option value="" <?= $requestType === '' ? 'selected' : '' ?>>All Request Types</option><option value="station" <?= $requestType === 'station' ? 'selected' : '' ?>>New Station Registration</option><option value="license" <?= $requestType === 'license' ? 'selected' : '' ?>>License Modification</option><option value="deactivation" <?= $requestType === 'deactivation' ? 'selected' : '' ?>>Account Deactivation</option></select></div>
                 <div class="col-12 col-md-2"><select class="form-select glass-select" name="status"><option value="" <?= $status === '' ? 'selected' : '' ?>>All Statuses</option><option value="pending" <?= $status === 'pending' ? 'selected' : '' ?>>Pending</option><option value="approved" <?= $status === 'approved' ? 'selected' : '' ?>>Approved</option><option value="rejected" <?= $status === 'rejected' ? 'selected' : '' ?>>Rejected</option><option value="flagged" <?= $status === 'flagged' ? 'selected' : '' ?>>Flagged</option></select></div>
                 <div class="col-12 col-md-2 d-grid"><button type="submit" class="btn btn-neon">Apply Filter</button></div>
             </form></div></div>
@@ -201,7 +196,7 @@ $flashType = $flash['type'] ?? '';
             <div class="col-12"><div class="analytics-card"><div class="table-responsive"><table class="table table-dark-custom align-middle m-0"><thead><tr><th>Ref ID</th><th>Sender Entity</th><th>Type of Request</th><th>Submission Date</th><th>Status</th><th class="text-end">Command</th></tr></thead><tbody>
                 <?php if (!$requestRows): ?><tr><td colspan="6" class="text-center text-white-50 py-5"><i class="bi bi-inbox fs-3 d-block mb-2"></i>No requests match the current filter.</td></tr><?php endif; ?>
                 <?php foreach ($requestRows as $row): ?>
-                    <?php $sender = (string) ($row['sender_entity'] ?: $row['hq_company_name'] ?: $row['sender_name'] ?: 'Unknown sender'); $location = (string) ($row['location'] ?: 'Location not provided'); $rowStatus = (string) ($row['status'] ?: 'pending'); ?>
+                    <?php $sender = (string) ($row['sender_entity'] ?: $row['sender_name'] ?: 'Unknown sender'); $location = (string) ($row['location'] ?: 'Location not provided'); $rowStatus = (string) ($row['status'] ?: 'pending'); ?>
                     <tr>
                         <td class="fw-bold txt-neon-cyan">#<?= hq_escape($row['reference_code']) ?></td>
                         <td><div class="fw-semibold text-white"><?= hq_escape($sender) ?></div><div class="text-white-50 small" style="font-size:.8rem;"><?= hq_escape($location) ?></div></td>

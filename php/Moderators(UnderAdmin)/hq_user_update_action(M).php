@@ -109,16 +109,6 @@ try {
         }
         $hqEmailUpdate->close();
 
-        $requestUpdate = $conn->prepare(
-            'UPDATE system_requests
-             SET sender_name = ?, sender_email = ?, updated_at = NOW()
-             WHERE headquarter_id = ? AND request_type IN (\'hq_registration\', \'headquarter_registration\') AND status = \'pending\''
-        );
-        if ($requestUpdate) {
-            $requestUpdate->bind_param('ssi', $userName, $email, $headquarterId);
-            $requestUpdate->execute();
-            $requestUpdate->close();
-        }
     }
 
     admin_record_log((int) $moderatorUser['user_id'], 'Updated user #' . $userId . ' in HQ #' . $headquarterId . ' (' . $target['company_name'] . ').');

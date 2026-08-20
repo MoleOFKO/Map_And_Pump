@@ -162,22 +162,20 @@ function moderator_request_rows(string $search, string $requestType, string $sta
         return $rows;
     }
 
-    request_backfill_pending_hq_registrations();
     $where = [];
     $params = [];
     $types = '';
     if ($search !== '') {
-        $where[] = '(LOWER(r.reference_code) LIKE ? OR LOWER(r.sender_entity) LIKE ? OR LOWER(r.sender_name) LIKE ? OR LOWER(h.company_name) LIKE ?)';
+        $where[] = '(LOWER(r.reference_code) LIKE ? OR LOWER(r.sender_entity) LIKE ? OR LOWER(r.sender_name) LIKE ?)';
         $like = '%' . strtolower($search) . '%';
-        array_push($params, $like, $like, $like, $like);
-        $types .= 'ssss';
+        array_push($params, $like, $like, $like);
+        $types .= 'sss';
     }
     if ($requestType !== '') {
         $aliases = [
             'station' => ['station', 'new_station', 'new_station_registration'],
             'license' => ['license', 'license_modification'],
             'deactivation' => ['deactivation', 'account_deactivation'],
-            'hq_registration' => ['hq_registration', 'headquarter_registration'],
         ][$requestType] ?? [$requestType];
         $where[] = 'LOWER(r.request_type) IN (' . implode(',', array_fill(0, count($aliases), '?')) . ')';
         foreach ($aliases as $alias) {
@@ -192,10 +190,8 @@ function moderator_request_rows(string $search, string $requestType, string $sta
     }
 
     $sql = 'SELECT r.request_id, r.reference_code, r.request_type, r.status, r.sender_entity,
-                   r.sender_name, r.sender_email, r.location, r.created_at, r.review_reason,
-                   h.company_name AS hq_company_name
-            FROM system_requests r
-            LEFT JOIN headquarter h ON h.headquarter_id = r.headquarter_id';
+                   r.sender_name, r.sender_email, r.location, r.created_at, r.review_reason
+            FROM system_requests r';
     if ($where) {
         $sql .= ' WHERE ' . implode(' AND ', $where);
     }
