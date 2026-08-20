@@ -1,159 +1,322 @@
+// Database: map_and_pump
 
-  // Clean DBML for dbdiagram.io
-  // Docs: https://dbml.dbdiagram.io/docs
+Table booking {
+  booking_id int [pk, increment]
+  user_id int [not null]
+  car_license_id int [null]
+  station_id int [not null]
+  oil_type_id int [not null]
+  qr_code varchar(255) [not null]
+  qr_refrence_code varchar(255) [not null]
+  status varchar(50) [not null]
+  filled_gas int [not null, default: 0]
+  time_of_filled datetime [null]
+  expire_at timestamp [not null]
+  created_at timestamp [not null, default: `CURRENT_TIMESTAMP`]
 
-  Table users {
-    user_id int [pk, increment]
-    username varchar(255) [not null]
-    email varchar(255) [not null, unique]
-    hashed_password varchar(255) [not null]
-    license_id int
-    headquarter_id int
-    role_id int
-    status varchar(50)
-    created_at timestamp
-    updated_at timestamp
+  Indexes {
+    user_id [name: "user_id_idx"]
+    station_id [name: "station_id_idx"]
+    oil_type_id [name: "oil_type_idx"]
+    car_license_id [name: "fk_booking_car_license_id_idx"]
   }
+}
 
-  Table user_car{
-    user_car_id int [pk, increment]
-    user_id int
-    car_id int
+Table car_license {
+  car_license_id int [pk, increment]
+  car_plate_number varchar(50) [not null]
+  model_year int [not null]
+  vehicle_type varchar(100) [not null]
+  location varchar(255) [not null]
+  filled_gas int [not null]
+  created_at timestamp [not null, default: `CURRENT_TIMESTAMP`]
+  updated_at timestamp [not null, default: `CURRENT_TIMESTAMP`]
+}
+
+Table feedback {
+  feedback_id int [pk, increment]
+  user_id int [not null]
+  feedback text [not null]
+  created_at timestamp [not null, default: `CURRENT_TIMESTAMP`]
+
+  Indexes {
+    user_id [name: "user_id_idx"]
   }
+}
 
-  Table roles {
-    role_id int [pk, increment]
-    role_name varchar(100) [not null]
+Table feedback_replies {
+  reply_id int [pk, increment]
+  feedback_id int [not null]
+  staff_id int [not null]
+  reply_text text [not null]
+  created_at datetime [default: `CURRENT_TIMESTAMP`]
+}
+
+Table headquarter {
+  headquarter_id int [pk, increment]
+  company_name varchar(255) [null]
+  headquarters_owner_id int [null]
+  company_logo varchar(255) [unique, null]
+  contact_number varchar(50) [null]
+  headquarter_email varchar(225) [unique, not null]
+  headquarter_bio varchar(45) [null]
+  location varchar(255) [null]
+  business_license varchar(255) [null]
+  created_at timestamp [not null, default: `CURRENT_TIMESTAMP`]
+  expire_at timestamp [not null, default: `CURRENT_TIMESTAMP`]
+  business_license_expire_date varchar(45) [null]
+
+  Indexes {
+    headquarters_owner_id [name: "fk_heardqurater_owner_id_idx"]
   }
+}
 
-  Table user_license {
-    license_id int [pk, increment]
-    license_image varchar(255)
-    license_number varchar(100)
-    license_name varchar(255)
-    phone_number varchar(50)
-    nrc_number varchar(100)
-    date_of_birth date
-    blood_type varchar(10)
-    license_last_valid_date date
-    status varchar(20)
-    created_at timestamp
-    updated_at timestamp
+Table hq_account_actions {
+  action_id int [pk, increment]
+  headquarter_id int [not null]
+  user_id int [null]
+  action_type varchar(20) [not null]
+  reason text [not null]
+  notification_status varchar(30) [not null, default: "not_configured"]
+  notification_note varchar(255) [null]
+  created_at timestamp [not null, default: `CURRENT_TIMESTAMP`]
+
+  Indexes {
+    headquarter_id [name: "idx_hq_account_actions_hq"]
+    created_at [name: "idx_hq_account_actions_created"]
   }
+}
 
-  Table car_license {
-    car_license_id int [pk, increment]
-    car_plate_number varchar(50)
-    model_year int
-    vehicle_type varchar(100)
-    location varchar(255)
-    filled_gas int
-    created_at timestamp
-    updated_at timestamp
+Table log {
+  log_id int [pk, increment]
+  user_id int [not null]
+  role_id int [null]
+  action varchar(255) [not null]
+  created_at timestamp [not null, default: `CURRENT_TIMESTAMP`]
+
+  Indexes {
+    user_id [name: "fk_log_user_id_idx"]
+    role_id [name: "fk_log_role_id_idx"]
   }
+}
 
-  Table sessions {
-    session_id int [pk, increment]
-    user_id int
-    ip_address varchar(45)
-    user_agent varchar(255)
-    is_active boolean [default: true]
-    created_at timestamp
-    expires_at timestamp
+Table lwk_license {
+  lwk_license_id int [pk, increment]
+  plate_number varchar(100) [not null]
+  created_at timestamp [not null, default: `CURRENT_TIMESTAMP`]
+}
+
+Table notifications {
+  notification_id int [pk, increment]
+  request_id int [null]
+  recipient_user_id int [null]
+  recipient_email varchar(255) [null]
+  notification_type varchar(40) [not null]
+  subject varchar(255) [not null]
+  message text [not null]
+  delivery_status varchar(30) [not null, default: "not_configured"]
+  delivery_note varchar(255) [null]
+  created_at timestamp [not null, default: `CURRENT_TIMESTAMP`]
+
+  Indexes {
+    request_id [name: "idx_notifications_request"]
+    recipient_user_id [name: "idx_notifications_recipient"]
+    created_at [name: "idx_notifications_created"]
   }
+}
 
-  Table headquarter {
-    headquarter_id int [pk, increment]
-    role_id int
-    station_id int
-    company_name varchar(255)
-    company_logo varchar(255)
-    contact_number varchar(50)
-    location varchar(255)
-    business_license varchar(255)
-    created_at timestamp
-    expire_at timestamp
+Table oil_types {
+  oil_type_id int [pk, increment]
+  oil_name varchar(255) [not null]
+}
+
+Table report {
+  report_id int [pk, increment]
+  user_id int [not null]
+  role_id int [not null]
+  image int [null]
+  importance varchar(10) [not null]
+  short_summery varchar(255) [not null]
+  message varchar(255) [null]
+  created_at timestamp [not null, default: `CURRENT_TIMESTAMP`]
+
+  Indexes {
+    user_id [name: "fk_report_user_id_idx"]
+    role_id [name: "fk_report_role_id_idx"]
   }
+}
 
-  Table stations {
-    station_id int [pk, increment]
-    station_name varchar(255)
-    location varchar(255)
-    created_at timestamp
-    updated_at timestamp
+Table roles {
+  role_id int [pk, increment]
+  role_name varchar(100) [not null]
+}
+
+Table sessions {
+  session_id int [pk, increment]
+  user_id int [not null]
+  ip_address varchar(45) [not null]
+  user_agent varchar(255) [not null]
+  is_active tinyint(1) [not null, default: 1]
+  created_at timestamp [not null, default: `CURRENT_TIMESTAMP`]
+  expires_at timestamp [not null, default: `CURRENT_TIMESTAMP`]
+
+  Indexes {
+    user_id [name: "fk_sessions_user_id_idx"]
   }
+}
 
-  Table oil_types {
-    oil_type_id int [pk, increment]
-    oil_name varchar(255)
-    price_per_liter decimal(10,2)
-    is_active boolean
-    created_at timestamp
-    updated_at timestamp
+Table station_oil_inventory {
+  inventory_id int [pk, increment]
+  station_id int [not null]
+  oil_type_id int [not null]
+  price_per_litre int [not null]
+  is_active tinyint(1) [not null]
+  current_amount_liters decimal(12,3) [not null]
+  updated_at timestamp [not null, default: `CURRENT_TIMESTAMP`]
+
+  Indexes {
+    station_id [name: "fk_station_oil_inventory_station_id_idx"]
+    oil_type_id [name: "fk_station_oil_inventory_oil_type_id"]
   }
+}
 
-  Table station_oil_inventory {
-    c int [pk, increment]
-    station_id int
-    oil_type_id int
-    current_amount_liters decimal(12,3)
-    updated_at timestamp
+Table stations {
+  station_id int [pk, increment]
+  station_name varchar(255) [not null]
+  location varchar(255) [not null]
+  business_user_id int [not null]
+  status varchar(15) [null]
+  created_at timestamp [not null, default: `CURRENT_TIMESTAMP`]
+  updated_at timestamp [not null, default: `CURRENT_TIMESTAMP`]
+
+  Indexes {
+    business_user_id [name: "fk_business_user_id_idx"]
   }
+}
 
-  Table booking {
-    booking_id int [pk, increment]
-    user_id int
-    station_id int
-    oil_type_id int
-    qr_code varchar(255)
-    status varchar(50)
-    filled boolean
-    expire_at timestamp
-    created_at timestamp
+Table system_requests {
+  request_id int [pk, increment]
+  reference_code varchar(40) [unique, not null]
+  request_type varchar(60) [not null]
+  status varchar(20) [not null, default: "pending"]
+  submitter_user_id int [null]
+  role_id int [null]
+  headquarter_id int [null]
+  sender_entity varchar(255) [not null]
+  sender_name varchar(255) [null]
+  sender_email varchar(255) [null]
+  location varchar(255) [null]
+  request_details text [null]
+  document_name varchar(255) [null]
+  document_path varchar(500) [null]
+  headquarter_owner_email varchar(255) [null]
+  headquarter_email varchar(255) [null]
+  headquarter_company_logo varchar(255) [null]
+  headquarter_contact_number varchar(50) [null]
+  headquarter_expire_at datetime [null]
+  review_reason text [null]
+  reviewed_by int [null]
+  reviewed_at timestamp [null]
+  created_at timestamp [not null, default: `CURRENT_TIMESTAMP`]
+  updated_at timestamp [not null, default: `CURRENT_TIMESTAMP`]
+
+  Indexes {
+    status [name: "idx_system_requests_status"]
+    request_type [name: "idx_system_requests_type"]
+    created_at [name: "idx_system_requests_created"]
+    submitter_user_id [name: "idx_system_requests_user"]
+    headquarter_id [name: "idx_system_requests_hq"]
   }
+}
 
-  Table feedback {
-    feedback_id int [pk, increment]
-    user_id int
-    feedback text
-    created_at timestamp
+Table user_account_actions {
+  action_id int [pk, increment]
+  user_id int [not null]
+  action_type varchar(20) [not null]
+  reason text [not null]
+  notification_status varchar(30) [not null, default: "not_configured"]
+  notification_note varchar(255) [null]
+  created_at timestamp [not null, default: `CURRENT_TIMESTAMP`]
+
+  Indexes {
+    user_id [name: "idx_user_account_actions_user"]
+    created_at [name: "idx_user_account_actions_created"]
   }
+}
 
-  Table report {
-    report_id int [pk, increment]
-    user_id int
-    role_id int
-    report text
-    created_at timestamp
+Table user_car {
+  user_car_id int [pk, increment]
+  user_id int [not null]
+  car_id int [not null]
+
+  Indexes {
+    user_id [name: "fk_user_car_user_id_idx"]
+    car_id [name: "fk_user_car_car_id_idx"]
   }
+}
 
-  Table log {
-    log_id int [pk, increment]
-    user_id int
-    action varchar(255)
-    created_at timestamp
+Table user_license {
+  license_id int [pk, increment]
+  license_image varchar(255) [not null]
+  face_image varchar(255) [null]
+  license_number varchar(100) [not null]
+  license_name varchar(255) [not null]
+  phone_number varchar(50) [not null]
+  nrc_number varchar(100) [not null]
+  date_of_birth date [not null]
+  blood_type varchar(10) [not null]
+  license_last_valid_date date [not null]
+  status varchar(20) [not null, default: "pending"]
+  created_at timestamp [not null, default: `CURRENT_TIMESTAMP`]
+  updated_at timestamp [not null, default: `CURRENT_TIMESTAMP`]
+}
+
+Table users {
+  user_id int [pk, increment]
+  user_name varchar(225) [not null]
+  email varchar(255) [unique, not null]
+  hashed_password varchar(255) [not null]
+  license_id int [null]
+  car_license_id int [null]
+  headquarter_id int [null]
+  role_id int [null]
+  business_role_id int [null]
+  status varchar(50) [not null]
+  created_at timestamp [not null, default: `CURRENT_TIMESTAMP`]
+  updated_at timestamp [not null, default: `CURRENT_TIMESTAMP`]
+  oauth_provider varchar(50) [null]
+  oauth_provider_id varchar(255) [null]
+  oauth_avatar_url varchar(500) [null]
+  last_login_at timestamp [null]
+
+  Indexes {
+    (oauth_provider, oauth_provider_id) [unique, name: "uq_users_oauth_provider_id"]
+    license_id [name: "fk_users_license_id_idx"]
+    headquarter_id [name: "fk_users_headquarter_id_idx"]
+    role_id [name: "fk_users_role_id_idx"]
+    business_role_id [name: "fk_business_role_id_idx"]
   }
+}
 
-  Table lwk_license {
-    lwk_license_id int [pk, increment]
-    plate_number varchar(100)
-    created_at timestamp
-  }
+// Foreign Key Relationships
 
-  // Foreign key references (child > parent)
-  Ref: users.role_id > roles.role_id
-  Ref: users.license_id > user_license.license_id
-  Ref: users.user_id < user_car.user_id
-  Ref: car_license.car_license_id < user_car.car_id
-  Ref: users.headquarter_id > headquarter.headquarter_id
-  Ref: sessions.user_id > users.user_id
-  Ref: booking.user_id > users.user_id
-  Ref: booking.station_id > stations.station_id
-  Ref: booking.oil_type_id > oil_types.oil_type_id
-  Ref: report.user_id > users.user_id
-  Ref: report.role_id > roles.role_id
-  Ref: users.user_id > log.user_id
-  Ref: feedback.user_id > users.user_id
-  Ref: station_oil_inventory.station_id > stations.station_id
-  Ref: station_oil_inventory.oil_type_id > oil_types.oil_type_id
-  Ref: headquarter.station_id > stations.station_id
+Ref: booking.oil_type_id > oil_types.oil_type_id [delete: cascade, update: cascade]
+Ref: booking.station_id > stations.station_id [delete: cascade, update: cascade]
+Ref: booking.user_id > users.user_id [delete: cascade, update: cascade]
+Ref: booking.car_license_id > car_license.car_license_id [delete: no action, update: no action]
+Ref: feedback.user_id > users.user_id [delete: cascade, update: cascade]
+Ref: headquarter.headquarters_owner_id > users.user_id [delete: no action, update: no action]
+Ref: log.user_id > users.user_id
+Ref: log.role_id > roles.role_id [delete: no action, update: no action]
+Ref: report.role_id > roles.role_id [delete: cascade, update: cascade]
+Ref: report.user_id > users.user_id [delete: cascade, update: cascade]
+Ref: sessions.user_id > users.user_id [delete: cascade, update: cascade]
+Ref: station_oil_inventory.oil_type_id > oil_types.oil_type_id [delete: cascade, update: cascade]
+Ref: station_oil_inventory.station_id > stations.station_id [delete: cascade, update: cascade]
+Ref: stations.business_user_id > users.user_id [delete: cascade, update: cascade]
+Ref: user_car.user_id > users.user_id [delete: cascade, update: cascade]
+Ref: user_car.car_id > car_license.car_license_id [delete: cascade, update: cascade]
+Ref: users.headquarter_id > headquarter.headquarter_id [delete: cascade, update: cascade]
+Ref: users.license_id > user_license.license_id [delete: cascade, update: cascade]
+Ref: users.role_id > roles.role_id [delete: cascade, update: cascade]
+Ref: users.business_role_id > roles.role_id [delete: no action, update: no action]

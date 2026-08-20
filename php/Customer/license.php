@@ -33,6 +33,54 @@ $statusPillClass = match (strtolower($licenseStatus)) {
     default => 'pending',
 };
 
+$licenseNumberValue = strtoupper((string) ($license['license_number'] ?? ''));
+$licenseParts = ['type' => '', 'serial' => '', 'year' => ''];
+if (preg_match('/^([LABCDET])\/(\d{5})\/(\d{2})$/', $licenseNumberValue, $matches)) {
+    $licenseParts = ['type' => $matches[1], 'serial' => $matches[2], 'year' => $matches[3]];
+}
+
+$phoneValue = (string) ($license['phone_number'] ?? '');
+
+$nrcValue = strtoupper((string) ($license['nrc_number'] ?? ''));
+$nrcParts = ['state' => '', 'township' => '', 'type' => 'N', 'number' => ''];
+if (preg_match('/^(1[0-4]|[1-9])\/([A-Z]{3,6})\(([A-Z])\)(\d{6})$/', $nrcValue, $matches)) {
+    $nrcParts = ['state' => $matches[1], 'township' => $matches[2], 'type' => $matches[3], 'number' => $matches[4]];
+}
+
+$currentYearShort = (int) date('y');
+$today = date('Y-m-d');
+$nrcTownships = [
+    'KAMANA' => 'Ka Ma Na',
+    'KAMATA' => 'Ka Ma Ta',
+    'KHABADA' => 'Kha Ba Da',
+    'LAMANA' => 'La Ma Na',
+    'MAMANA' => 'Ma Ma Na',
+    'PAMANA' => 'Pa Ma Na',
+    'TAMANA' => 'Ta Ma Na',
+    'YABAYA' => 'Ya Ba Ya',
+    'AHGAYA' => 'Ah Ga Ya',
+    'BAMANA' => 'Ba Ma Na',
+    'DAGANA' => 'Da Ga Na',
+    'LAMATA' => 'La Ma Ta',
+    'MAGADA' => 'Ma Ga Da',
+    'MAYAKA' => 'Ma Ya Ka',
+    'OUKAMA' => 'Ou Ka Ma',
+    'PAZATA' => 'Pa Za Ta',
+    'TAMATA' => 'Ta Ma Ta',
+    'YAKANA' => 'Ya Ka Na',
+    'AHLANA' => 'Ah La Na',
+    'BATHATA' => 'Ba Tha Ta',
+    'KAKAKA' => 'Ka Ka Ka',
+    'KAMAYA' => 'Ka Ma Ya',
+    'LAMAYA' => 'La Ma Ya',
+    'MABANA' => 'Ma Ba Na',
+    'MALANA' => 'Ma La Na',
+    'NAGANA' => 'Na Ga Na',
+    'PABANA' => 'Pa Ba Na',
+    'THAPANA' => 'Tha Pa Na',
+    'YATHANA' => 'Ya Tha Na',
+    'OAKATA' => 'Oa Ka Ta',
+];
 include 'share_header.php';
 ?>
 
@@ -106,6 +154,28 @@ include 'share_header.php';
         font-size: 13px;
         text-align: center;
         padding: 28px;
+    }
+    .license-composite-field {
+        display: flex;
+        align-items: stretch;
+        gap: 6px;
+    }
+    .license-composite-field .license-separator {
+        align-self: center;
+        color: var(--customer-muted);
+        font-weight: 700;
+        line-height: 1;
+    }
+    .license-code-select { flex: 0 0 78px !important; min-width: 78px; }
+    .license-serial-input { flex: 0 0 96px !important; min-width: 96px; text-align: center; }
+    .license-year-input { flex: 0 0 66px !important; min-width: 66px; text-align: center; }
+    .nrc-state-select { flex: 0 0 70px !important; min-width: 70px; }
+    .nrc-township-select { flex: 0 0 150px !important; width: 150px; min-width: 150px; }
+    .nrc-type-select { flex: 0 0 76px !important; min-width: 76px; }
+    .nrc-digits-input { flex: 0 0 108px !important; min-width: 108px; text-align: center; }
+    @media (max-width: 575.98px) {
+        .license-composite-field { flex-wrap: wrap; }
+        .nrc-township-select { flex-basis: 100% !important; }
     }
 </style>
 
@@ -190,7 +260,20 @@ include 'share_header.php';
                     </div>
                     <div class="col-md-6">
                         <label class="form-label text-secondary fw-bold" style="font-size:11px;">LICENSE NUMBER</label>
-                        <input type="text" name="license_number" class="form-control custom-form-field" maxlength="100" placeholder="YGN-123456" value="<?php echo htmlspecialchars((string) ($license['license_number'] ?? '')); ?>" required>
+                        <input type="hidden" name="license_number" id="licenseNumber" value="<?php echo htmlspecialchars($licenseNumberValue); ?>">
+                        <div class="license-composite-field">
+                            <select id="licenseType" class="form-select custom-form-field license-code-select" aria-label="License type" required>
+                                <option value="">Type</option>
+                                <?php foreach (['L', 'A', 'B', 'C', 'D', 'E', 'T'] as $type): ?>
+                                    <option value="<?php echo $type; ?>" <?php echo $licenseParts['type'] === $type ? 'selected' : ''; ?>><?php echo $type; ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                            <span class="license-separator">/</span>
+                            <input type="text" id="licenseSerial" class="form-control custom-form-field license-serial-input" inputmode="numeric" pattern="\d{5}" maxlength="5" placeholder="00000" value="<?php echo htmlspecialchars($licenseParts['serial']); ?>" aria-label="Five digit license number" required>
+                            <span class="license-separator">/</span>
+                            <input type="text" id="licenseYear" class="form-control custom-form-field license-year-input" inputmode="numeric" pattern="\d{2}" maxlength="2" placeholder="<?php echo htmlspecialchars(str_pad((string) $currentYearShort, 2, '0', STR_PAD_LEFT)); ?>" value="<?php echo htmlspecialchars($licenseParts['year']); ?>" aria-label="License year" required>
+                        </div>
+                        <small class="text-secondary d-block mt-2">Format: type/5 digits/year, for example L/12345/26.</small>
                     </div>
                     <div class="col-md-6">
                         <label class="form-label text-secondary fw-bold" style="font-size:11px;">LICENSE NAME</label>
@@ -198,15 +281,37 @@ include 'share_header.php';
                     </div>
                     <div class="col-md-6">
                         <label class="form-label text-secondary fw-bold" style="font-size:11px;">PHONE NUMBER</label>
-                        <input type="tel" name="phone_number" class="form-control custom-form-field" maxlength="50" placeholder="09..." value="<?php echo htmlspecialchars((string) ($license['phone_number'] ?? '')); ?>" required>
+                        <input type="tel" name="phone_number" id="phoneNumber" class="form-control custom-form-field" maxlength="13" placeholder="09... or +959..." value="<?php echo htmlspecialchars($phoneValue); ?>" required>
+                        <small class="text-secondary d-block mt-2">Must start with 09 or +959. Prefix is not counted in the 9 digit limit.</small>
                     </div>
-                    <div class="col-md-6">
+                    <div class="col-12">
                         <label class="form-label text-secondary fw-bold" style="font-size:11px;">NRC NUMBER</label>
-                        <input type="text" name="nrc_number" class="form-control custom-form-field" maxlength="100" placeholder="12/ABC(N)123456" value="<?php echo htmlspecialchars((string) ($license['nrc_number'] ?? '')); ?>" required>
+                        <input type="hidden" name="nrc_number" id="nrcNumber" value="<?php echo htmlspecialchars($nrcValue); ?>">
+                        <div class="license-composite-field">
+                            <select id="nrcState" class="form-select custom-form-field nrc-state-select" aria-label="NRC state" required>
+                                <option value="">No.</option>
+                                <?php for ($state = 1; $state <= 14; $state++): ?>
+                                    <option value="<?php echo $state; ?>" <?php echo $nrcParts['state'] === (string) $state ? 'selected' : ''; ?>><?php echo $state; ?></option>
+                                <?php endfor; ?>
+                            </select>
+                            <span class="license-separator">/</span>
+                            <select id="nrcTownship" class="form-select custom-form-field nrc-township-select" aria-label="NRC township" required>
+                                <option value="">Township</option>
+                                <?php foreach ($nrcTownships as $code => $label): ?>
+                                    <option value="<?php echo $code; ?>" <?php echo $nrcParts['township'] === $code ? 'selected' : ''; ?>><?php echo $label; ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                            <select id="nrcType" class="form-select custom-form-field nrc-type-select" aria-label="NRC citizen type" required>
+                                <?php foreach (['N', 'E', 'P', 'T'] as $type): ?>
+                                    <option value="<?php echo $type; ?>" <?php echo $nrcParts['type'] === $type ? 'selected' : ''; ?>>(<?php echo $type; ?>)</option>
+                                <?php endforeach; ?>
+                            </select>
+                            <input type="text" id="nrcDigits" class="form-control custom-form-field nrc-digits-input" inputmode="numeric" pattern="\d{6}" maxlength="6" placeholder="123456" value="<?php echo htmlspecialchars($nrcParts['number']); ?>" aria-label="Six digit NRC number" required>
+                        </div>
                     </div>
                     <div class="col-md-3">
                         <label class="form-label text-secondary fw-bold" style="font-size:11px;">DATE OF BIRTH</label>
-                        <input type="date" name="date_of_birth" class="form-control custom-form-field" value="<?php echo htmlspecialchars((string) ($license['date_of_birth'] ?? '')); ?>" required>
+                        <input type="date" name="date_of_birth" class="form-control custom-form-field" max="<?php echo htmlspecialchars($today); ?>" value="<?php echo htmlspecialchars((string) ($license['date_of_birth'] ?? '')); ?>" required>
                     </div>
                     <div class="col-md-3">
                         <label class="form-label text-secondary fw-bold" style="font-size:11px;">BLOOD TYPE</label>
@@ -219,7 +324,7 @@ include 'share_header.php';
                     </div>
                     <div class="col-md-6">
                         <label class="form-label text-secondary fw-bold" style="font-size:11px;">LICENSE LAST VALID DATE</label>
-                        <input type="date" name="license_last_valid_date" class="form-control custom-form-field" value="<?php echo htmlspecialchars((string) ($license['license_last_valid_date'] ?? '')); ?>" required>
+                        <input type="date" name="license_last_valid_date" class="form-control custom-form-field" min="<?php echo htmlspecialchars($today); ?>" value="<?php echo htmlspecialchars((string) ($license['license_last_valid_date'] ?? '')); ?>" required>
                     </div>
                 </div>
 
@@ -248,7 +353,61 @@ include 'share_header.php';
     const captureFaceBtn = document.getElementById('captureFaceBtn');
     const retakeFaceBtn = document.getElementById('retakeFaceBtn');
     const faceCaptureHelp = document.getElementById('faceCaptureHelp');
+    const licenseNumber = document.getElementById('licenseNumber');
+    const licenseType = document.getElementById('licenseType');
+    const licenseSerial = document.getElementById('licenseSerial');
+    const licenseYear = document.getElementById('licenseYear');
+    const phoneNumber = document.getElementById('phoneNumber');
+    const nrcNumber = document.getElementById('nrcNumber');
+    const nrcState = document.getElementById('nrcState');
+    const nrcTownship = document.getElementById('nrcTownship');
+    const nrcType = document.getElementById('nrcType');
+    const nrcDigits = document.getElementById('nrcDigits');
+    const currentLicenseYear = <?php echo (int) $currentYearShort; ?>;
     let faceStream = null;
+
+    function digitsOnly(input, limit) {
+        input.value = input.value.replace(/\D/g, '').slice(0, limit);
+    }
+
+    function syncLicenseNumber() {
+        digitsOnly(licenseSerial, 5);
+        digitsOnly(licenseYear, 2);
+        const yearValue = licenseYear.value.length === 2 ? Number(licenseYear.value) : NaN;
+        licenseYear.setCustomValidity(!Number.isNaN(yearValue) && yearValue > currentLicenseYear ? 'License year cannot be later than the current year.' : '');
+        licenseNumber.value = licenseType.value && licenseSerial.value && licenseYear.value
+            ? `${licenseType.value}/${licenseSerial.value}/${licenseYear.value}`
+            : '';
+    }
+
+    function syncPhoneNumber() {
+        const cleaned = phoneNumber.value.replace(/(?!^)\+/g, '').replace(/[^\d+]/g, '').slice(0, 13);
+        if (phoneNumber.value !== cleaned) {
+            phoneNumber.value = cleaned;
+        }
+        const match = phoneNumber.value.match(/^(09|\+959)(\d*)$/);
+        const invalid = phoneNumber.value !== '' && (!match || match[2].length < 1 || match[2].length > 9);
+        phoneNumber.setCustomValidity(invalid ? 'Invalid phone number. Use 09 or +959, then up to 9 digits.' : '');
+    }
+
+    function syncNrcNumber() {
+        digitsOnly(nrcDigits, 6);
+        nrcNumber.value = nrcState.value && nrcTownship.value && nrcType.value && nrcDigits.value
+            ? `${nrcState.value}/${nrcTownship.value}(${nrcType.value})${nrcDigits.value}`
+            : '';
+    }
+
+    [licenseType, licenseSerial, licenseYear].forEach((field) => field.addEventListener('input', syncLicenseNumber));
+    phoneNumber.addEventListener('input', syncPhoneNumber);
+    [nrcState, nrcTownship, nrcType, nrcDigits].forEach((field) => field.addEventListener('input', syncNrcNumber));
+    [licenseType, nrcState, nrcTownship, nrcType].forEach((field) => field.addEventListener('change', () => {
+        syncLicenseNumber();
+        syncPhoneNumber();
+        syncNrcNumber();
+    }));
+    syncLicenseNumber();
+    syncPhoneNumber();
+    syncNrcNumber();
 
     function showLicenseStatus(message, ok = false) {
         licenseStatus.textContent = message;
@@ -331,6 +490,9 @@ include 'share_header.php';
 
     licenseForm.addEventListener('submit', async (event) => {
         event.preventDefault();
+        syncLicenseNumber();
+        syncPhoneNumber();
+        syncNrcNumber();
         if (!licenseForm.checkValidity()) {
             licenseForm.reportValidity();
             return;

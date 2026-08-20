@@ -60,20 +60,24 @@ $bloodType = strtoupper(trim((string) ($_POST['blood_type'] ?? '')));
 $validUntil = trim((string) ($_POST['license_last_valid_date'] ?? ''));
 $licenseImageData = trim((string) ($_POST['license_image_data'] ?? ''));
 
-if ($licenseNumber === '' || strlen($licenseNumber) > 100) {
-    license_json(false, 'Please enter a valid license number.');
+if (!preg_match('/^([LABCDET])\/(\d{5})\/(\d{2})$/', $licenseNumber, $licenseMatches)) {
+    license_json(false, 'License number must use the format type/5 digits/year, for example L/12345/26.');
+}
+
+if ((int) $licenseMatches[3] > (int) date('y')) {
+    license_json(false, 'License year cannot be later than the current year.');
 }
 
 if ($licenseName === '' || strlen($licenseName) > 255) {
     license_json(false, 'Please enter the name shown on the license.');
 }
 
-if ($phoneNumber === '' || strlen($phoneNumber) > 50) {
-    license_json(false, 'Please enter a valid phone number.');
+if (!preg_match('/^(09|\+959)\d{1,9}$/', $phoneNumber)) {
+    license_json(false, 'Phone number must start with 09 or +959, followed by up to 9 digits.');
 }
 
-if ($nrcNumber === '' || strlen($nrcNumber) > 100) {
-    license_json(false, 'Please enter a valid NRC number.');
+if (!preg_match('/^(1[0-4]|[1-9])\/[A-Z]{3,6}\([NEPT]\)\d{6}$/', $nrcNumber)) {
+    license_json(false, 'NRC number must use the format 12/TOWNSHIP(N)123456.');
 }
 
 $birthDate = DateTime::createFromFormat('Y-m-d', $dateOfBirth);
