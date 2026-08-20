@@ -57,7 +57,7 @@ if ($reportsResult) {
 
 // Fetch Live Stations dynamically
 $stations = [];
-$stationsResult = $conn->query("SELECT station_id, station_name, location FROM stations");
+$stationsResult = $conn->query("SELECT station_id, station_name, location, status FROM stations");
 if ($stationsResult) {
     while ($row = $stationsResult->fetch_assoc()) {
         $stations[] = $row;
@@ -73,7 +73,7 @@ if ($stationsResult) {
 
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-<link rel="stylesheet" href="/css/HQstyle.css">
+<link rel="stylesheet" href="../../css/HQstyle.css">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600&display=swap" rel="stylesheet">
 
 <style>
@@ -230,11 +230,11 @@ if ($stationsResult) {
                 <td><?php echo htmlspecialchars($station['station_id']); ?></td>
                 <td><?php echo htmlspecialchars($station['station_name']); ?></td>
                 <td><?php echo htmlspecialchars($station['location']); ?></td>
-                <!-- <td><span class="badge"><?php echo htmlspecialchars($station['status']); ?></span></td> -->
+                <td><span class="badge"><?php echo htmlspecialchars($station['status'] ?: 'Active'); ?></span></td>
               </tr>
             <?php endforeach; ?>
           <?php else: ?>
-            <tr><td colspan="3">No stations monitored.</td></tr>
+            <tr><td colspan="4">No stations monitored.</td></tr>
           <?php endif; ?>
         </tbody>
       </table>

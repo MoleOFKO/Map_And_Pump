@@ -51,17 +51,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($action === 'register') {
         $station_name = trim($_POST['station_name'] ?? '');
         $location     = trim($_POST['location'] ?? '');
+        $manager_email = trim($_POST['manager_email'] ?? '');
 
-        if (!empty($station_name) && !empty($location)) {
+        if (!empty($station_name) && !empty($location) && !empty($manager_email)) {
             try {
-                $stmt = $pdo->prepare("INSERT INTO stations (station_name, location, status) VALUES (?, ?, 'Active')");
-                $stmt->execute([$station_name, $location]);
+                $managerStmt = $pdo->prepare("SELECT user_id FROM users WHERE email = ? AND COALESCE(business_role_id, role_id) = 4 LIMIT 1");
+                $managerStmt->execute([$manager_email]);
+                $manager_id = $managerStmt->fetchColumn();
+
+                if (!$manager_id) {
+                    throw new RuntimeException('Please select a valid branch manager.');
+                }
+
+                $stmt = $pdo->prepare("INSERT INTO stations (station_name, location, business_user_id, status) VALUES (?, ?, ?, 'Active')");
+                $stmt->execute([$station_name, $location, $manager_id]);
                 $message = "Station node created successfully.";
             } catch (PDOException $e) {
                 $error = "Error registering station: " . $e->getMessage();
+            } catch (RuntimeException $e) {
+                $error = $e->getMessage();
             }
         } else {
-            $error = "Station Name and Location are required.";
+            $error = "Station Name, branch manager email, and location are required.";
         }
     }
 
@@ -115,9 +126,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 // Fetch Stations from TiDB Cloud (Excluding Decommissioned ones)
 $stations = [];
+$branchManagers = [];
 try {
-    $stmt = $pdo->query("SELECT * FROM stations WHERE status != 'Decommissioned' OR status IS NULL ORDER BY station_id DESC");
+    $stmt = $pdo->query("SELECT s.*, u.email AS manager_email FROM stations s LEFT JOIN users u ON u.user_id = s.business_user_id WHERE s.status != 'Decommissioned' OR s.status IS NULL ORDER BY s.station_id DESC");
     $stations = $stmt->fetchAll();
+
+    $managerStmt = $pdo->query("SELECT user_id, email FROM users WHERE COALESCE(business_role_id, role_id) = 4 AND status NOT IN ('suspended', 'removed') ORDER BY email");
+    $branchManagers = $managerStmt->fetchAll();
 } catch (PDOException $e) {
     $error = "Could not retrieve stations: " . $e->getMessage();
 }
@@ -127,7 +142,8 @@ try {
 <head>
     <meta charset="UTF-8">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
-    <link rel="stylesheet" href="/css/HQstyle.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+    <link rel="stylesheet" href="../../css/HQstyle.css">
     <style>
         .table-custom { background-color: transparent !important; color: #dee2e6; }
         .table-custom th { text-transform: uppercase; font-size: 0.74rem; letter-spacing: 0.05em; color: var(--slate-300); padding: 12px 16px; background: rgba(255, 255, 255, 0.05); border-bottom: 1px solid rgba(255, 255, 255, 0.08); }
@@ -135,6 +151,7 @@ try {
         .table-actions { white-space: nowrap; }
         .modal-content-custom { background-color: #121A26 !important; border: 1px solid #373b3e !important; box-shadow: 0 1rem 3rem rgba(0, 0, 0, 0.5); }
         .modal-content-decommission { background-color: #121A26 !important; border: 1px solid #842029 !important; box-shadow: 0 1rem 3rem rgba(220, 53, 69, 0.15); }
+        #stationMap { height: 280px; border-radius: 8px; border: 1px solid #373b3e; }
     </style>
 </head>
 <body>
@@ -171,13 +188,14 @@ try {
                             <th>Station ID</th>
                             <th>Station Name</th>
                             <th>Location</th>
+                            <th>Branch Manager</th>
                             <th>Status</th>
                             <th class="text-end">Actions</th>
                         </tr>
                     </thead>
                     <tbody>
                         <?php if (empty($stations)): ?>
-                            <tr><td colspan="5" class="text-center text-muted">No station nodes found.</td></tr>
+                            <tr><td colspan="6" class="text-center text-muted">No station nodes found.</td></tr>
                         <?php else: ?>
                             <?php foreach ($stations as $row): ?>
                                 <?php 
@@ -192,6 +210,7 @@ try {
                                     <td>#<?= htmlspecialchars($row['station_id']) ?></td>
                                     <td><?= htmlspecialchars($row['station_name']) ?></td>
                                     <td><?= htmlspecialchars($row['location']) ?></td>
+                                    <td><?= htmlspecialchars($row['manager_email'] ?? 'Not assigned') ?></td>
                                     <td>
                                         <span id="status-badge-<?= $row['station_id'] ?>" class="<?= $badgeClass ?>">
                                             <?= $statusText ?>
@@ -230,8 +249,23 @@ try {
                                 <input type="text" name="station_name" class="form-control bg-dark text-light border-secondary" placeholder="e.g. Downtown Metro" required>
                             </div>
                             <div class="col-md-6 mb-3">
+                                <label class="form-label text-light">Branch Manager Email</label>
+                                <select name="manager_email" class="form-select bg-dark text-light border-secondary" required>
+                                    <option value="">Choose a branch manager</option>
+                                    <?php foreach ($branchManagers as $manager): ?>
+                                        <option value="<?= htmlspecialchars($manager['email'], ENT_QUOTES, 'UTF-8') ?>">
+                                            <?= htmlspecialchars($manager['email']) ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+                            <div class="col-12 mb-3">
                                 <label class="form-label text-light">Location</label>
-                                <input type="text" name="location" class="form-control bg-dark text-light border-secondary" placeholder="e.g. New York" required>
+                                <input type="text" id="stationLocation" name="location" class="form-control bg-dark text-light border-secondary" placeholder="Click the map to choose a location" required readonly>
+                            </div>
+                            <div class="col-12">
+                                <div id="stationMap" aria-label="Choose station location on map"></div>
+                                <small class="text-secondary">Click the map to select the station coordinates.</small>
                             </div>
                         </div>
                     </div>
@@ -302,7 +336,33 @@ try {
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
+        let stationMap;
+        let stationMarker;
+
+        document.getElementById('registerModal').addEventListener('shown.bs.modal', function () {
+            if (!stationMap) {
+                stationMap = L.map('stationMap').setView([21.9588, 96.0891], 6);
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    attribution: '&copy; OpenStreetMap contributors',
+                    maxZoom: 19
+                }).addTo(stationMap);
+
+                stationMap.on('click', function (event) {
+                    const latitude = event.latlng.lat.toFixed(6);
+                    const longitude = event.latlng.lng.toFixed(6);
+                    if (stationMarker) {
+                        stationMarker.setLatLng(event.latlng);
+                    } else {
+                        stationMarker = L.marker(event.latlng).addTo(stationMap);
+                    }
+                    document.getElementById('stationLocation').value = latitude + ', ' + longitude;
+                });
+            }
+            setTimeout(() => stationMap.invalidateSize(), 100);
+        });
+
         function toggleStatus(id, newStatus) {
             const formData = new URLSearchParams();
             formData.append('action', 'toggle_status');
