@@ -526,7 +526,7 @@ a { text-decoration: none; }
 
 .qr-wrapper i {
     color: #060b14;
-    font-size: 5.6rem;
+    font-size: 3rem;
     line-height: 1;
 }
 
@@ -562,8 +562,23 @@ a { text-decoration: none; }
     animation: mp-fill 3.2s var(--mp-ease) infinite alternate;
 }
 
-.fuel-bar.is-low span {
+.fuel-bar2.is-low span {
     background: linear-gradient(90deg, var(--mp-amber), #fcd34d);
+}
+
+.fuel-bar2 {
+    height: 6px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.09);
+    overflow: hidden;
+}
+
+.fuel-bar2 span {
+    display: block;
+    height: 100%;
+    border-radius: 999px;
+    background: linear-gradient(90deg, var(--mp-green), #6ee7b7);
+    animation: mp-fill 6.4s var(--mp-ease) infinite alternate;
 }
 
 @keyframes mp-fill {
@@ -594,13 +609,13 @@ a { text-decoration: none; }
 
 .float-chip.chip-a {
     top: 16%;
-    left: -14%;
+    left: -2%;
     animation: mp-float-a 5.5s ease-in-out infinite;
 }
 
 .float-chip.chip-b {
     bottom: 20%;
-    right: -12%;
+    right: -1%;
     animation: mp-float-b 6.5s ease-in-out infinite;
 }
 

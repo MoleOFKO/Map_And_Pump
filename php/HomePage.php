@@ -39,7 +39,7 @@ require __DIR__ . '/partials/nav.php';
                 </p>
 
                 <div class="d-sm-flex gap-3 justify-content-center justify-content-lg-start" data-reveal style="--reveal-delay:240ms">
-                    <a href="/php/Login/login.php" class="btn btn-primary btn-lg px-4 py-3 mb-3 mb-sm-0 w-100 w-sm-auto">
+                    <a href="/php/Company/register.php" class="btn btn-primary btn-lg px-4 py-3 mb-3 mb-sm-0 w-100 w-sm-auto">
                         <i class="fa-solid fa-building-circle-check me-2"></i>Register your company
                     </a>
                     <a href="#pricing" class="btn btn-outline-light btn-lg px-4 py-3 w-100 w-sm-auto">
@@ -259,7 +259,7 @@ require __DIR__ . '/partials/nav.php';
                     <li><i class="fa-solid fa-circle-check"></i><span><strong>Staff accounts</strong> so forecourt teams update stock without dashboard access.</span></li>
                 </ul>
 
-                <a href="/php/Login/login.php" class="btn btn-primary btn-lg px-4 py-3 mt-4">List your stations free</a>
+                <a href="/php/Company/register.php" class="btn btn-primary btn-lg px-4 py-3 mt-4">List your stations free</a>
             </div>
 
             <div class="col-lg-7" data-reveal style="--reveal-delay:140ms">
@@ -325,7 +325,7 @@ require __DIR__ . '/partials/nav.php';
                         <li><i class="fa-solid fa-check"></i> Per-grade stock status</li>
                         <li><i class="fa-solid fa-check"></i> Driver token bookings</li>
                     </ul>
-                    <a href="/php/Login/login.php" class="btn btn-ghost w-100 py-3 mt-auto">Register your company</a>
+                    <a href="/php/Company/register.php" class="btn btn-ghost w-100 py-3 mt-auto">Register your company</a>
                 </div>
             </div>
 
@@ -392,7 +392,7 @@ require __DIR__ . '/partials/nav.php';
                         </div>
                         <div class="calc-per" id="calc-per">2,000 MMK / station / month</div>
                         <p class="calc-foot" id="calc-note">Billed monthly.</p>
-                        <a href="/php/Login/login.php" class="btn btn-primary w-100 py-3">Get started free</a>
+                        <a href="/php/Company/register.php" class="btn btn-primary w-100 py-3">Get started free</a>
                     </div>
                 </div>
             </div>
@@ -506,7 +506,7 @@ require __DIR__ . '/partials/nav.php';
                                     <span>Diesel</span>
                                     <span class="fw-bold" style="color:#fbbf24">Running low</span>
                                 </div>
-                                <div class="fuel-bar is-low"><span></span></div>
+                                <div class="fuel-bar2 is-low"><span></span></div>
                             </div>
 
                             <div class="card bg-gradient-token p-3 d-flex flex-row align-items-center justify-content-between token-qr-card">
@@ -656,7 +656,7 @@ require __DIR__ . '/partials/nav.php';
                 </div>
 
                 <div class="d-sm-flex gap-3 justify-content-center">
-                    <a href="/php/Login/login.php" class="btn btn-success btn-lg px-5 py-3 fw-bold mb-3 mb-sm-0 w-100 w-sm-auto">Register your company</a>
+                    <a href="/php/Company/register.php" class="btn btn-success btn-lg px-5 py-3 fw-bold mb-3 mb-sm-0 w-100 w-sm-auto">Register your company</a>
                     <a href="/php/News.php" class="btn btn-outline-light btn-lg px-4 py-3 w-100 w-sm-auto">Check today's prices</a>
                 </div>
             </div>
