@@ -12,6 +12,7 @@ $adminNavClass = static fn (string $key): string => $adminSection === $key ? 'me
                 <a href="manage_users.php" class="<?= $adminNavClass('manage_users') ?>"><i class="bi bi-person-gear me-1 txt-neon-cyan"></i> Manage Users</a>
                 <a href="view_users.php" class="<?= $adminNavClass('view_users') ?>"><i class="bi bi-people me-1 txt-neon-cyan"></i> View Users</a>
                 <a href="admin_dashboard.php" class="menu-btn-nav"><i class="bi bi-house me-1 txt-neon-cyan"></i> Home</a>
+                <form action="../Login/logout.php" method="post" class="m-0"><button type="submit" class="menu-btn-nav btn border-0"><i class="bi bi-box-arrow-right me-1 text-danger"></i> Logout</button></form>
             </div>
         </div>
     </nav>
