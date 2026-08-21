@@ -3,6 +3,7 @@ session_start();
 
 require_once __DIR__ . '/../conn.php';
 require_once __DIR__ . '/../Customer/license_access.php';
+require_once __DIR__ . '/../role_state.php';
 
 function auth_redirect_to_login(string $message = 'Please sign in to continue.')
 {
@@ -23,14 +24,20 @@ if (!filter_var($email, FILTER_VALIDATE_EMAIL) || $password === '') {
 }
 
 try {
+    $hasCurrentRole = map_pump_current_role_column_ready($pdo);
+    $currentRoleSelect = $hasCurrentRole ? 'u.current_role_id, cr.role_name AS current_role_name,' : 'NULL AS current_role_id, NULL AS current_role_name,';
+    $currentRoleJoin = $hasCurrentRole ? 'LEFT JOIN roles cr ON cr.role_id = u.current_role_id' : '';
+
     $stmt = $pdo->prepare(
-        'SELECT u.user_id, u.user_name, u.email, u.hashed_password, u.status, u.role_id, u.business_role_id, u.license_id,
+        "SELECT u.user_id, u.user_name, u.email, u.hashed_password, u.status, u.role_id, u.business_role_id, u.license_id,
+                {$currentRoleSelect}
                 r.role_name, br.role_name AS business_role_name
          FROM users u
          LEFT JOIN roles r ON r.role_id = u.role_id
          LEFT JOIN roles br ON br.role_id = u.business_role_id
+         {$currentRoleJoin}
          WHERE LOWER(u.email) = LOWER(?)
-         LIMIT 1'
+         LIMIT 1"
     );
 
     if (!$stmt || !$stmt->execute([$email])) {
@@ -53,7 +60,8 @@ try {
         auth_redirect_to_login('Your account is not active. Please contact support.');
     }
 
-    $roleName = trim(strtolower((string) ($user['role_name'] ?? '')));
+    [$activeRoleId, $activeRoleName] = map_pump_session_role($user);
+    $roleName = trim(strtolower($activeRoleName));
 
     $dashboardMap = [
         'admin' => '/php/Admin(WebOwner)/admin_dashboard.php',
@@ -77,12 +85,13 @@ try {
     $_SESSION['user_id'] = (int) $user['user_id'];
     $_SESSION['user_name'] = (string) $user['user_name'];
     $_SESSION['user_email'] = (string) $user['email'];
-    $_SESSION['role_id'] = (int) ($user['role_id'] ?? 0);
-    $_SESSION['role_name'] = (string) ($user['role_name'] ?? 'customer');
+    $_SESSION['role_id'] = $activeRoleId;
+    $_SESSION['role_name'] = $activeRoleName;
     $_SESSION['business_role_id'] = (int) ($user['business_role_id'] ?? 0);
     $_SESSION['business_role_name'] = (string) ($user['business_role_name'] ?? '');
     $_SESSION['has_business'] = !empty($user['business_role_id']);
     $_SESSION['active_profile_mode'] = ($roleName === 'customer') ? 'customer' : 'business';
+    map_pump_set_current_role($pdo, (int) $user['user_id'], $activeRoleId);
     if (!empty($user['license_id'])) {
         $_SESSION['license_id'] = (int) $user['license_id'];
     }

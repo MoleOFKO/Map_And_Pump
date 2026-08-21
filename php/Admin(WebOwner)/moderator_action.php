@@ -119,15 +119,15 @@ if ($action === 'create') {
     $passwordHash = password_hash($password, PASSWORD_DEFAULT);
     $statement = $conn->prepare(
         "INSERT INTO users
-            (user_name, email, hashed_password, role_id, status, created_at, updated_at)
-         VALUES (?, ?, ?, ?, 'approved', NOW(), NOW())"
+            (user_name, email, hashed_password, role_id, current_role_id, status, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, 'approved', NOW(), NOW())"
     );
     if (!$statement) {
         moderator_flash('danger', 'The moderator account could not be prepared for insertion.');
         moderator_redirect();
     }
 
-    $statement->bind_param('sssi', $userName, $email, $passwordHash, $roleId);
+    $statement->bind_param('sssii', $userName, $email, $passwordHash, $roleId, $roleId);
     if (!$statement->execute()) {
         $error = $statement->error;
         $statement->close();
@@ -176,17 +176,17 @@ if ($action === 'update_profile') {
         }
         $passwordHash = password_hash($password, PASSWORD_DEFAULT);
         $statement = $conn->prepare(
-            'UPDATE users SET user_name = ?, email = ?, role_id = ?, hashed_password = ?, updated_at = NOW() WHERE user_id = ? AND headquarter_id IS NULL'
+            'UPDATE users SET user_name = ?, email = ?, role_id = ?, current_role_id = ?, hashed_password = ?, updated_at = NOW() WHERE user_id = ? AND headquarter_id IS NULL'
         );
         if ($statement) {
-            $statement->bind_param('ssisi', $userName, $email, $roleId, $passwordHash, $userId);
+            $statement->bind_param('ssiisi', $userName, $email, $roleId, $roleId, $passwordHash, $userId);
         }
     } else {
         $statement = $conn->prepare(
-            'UPDATE users SET user_name = ?, email = ?, role_id = ?, updated_at = NOW() WHERE user_id = ? AND headquarter_id IS NULL'
+            'UPDATE users SET user_name = ?, email = ?, role_id = ?, current_role_id = ?, updated_at = NOW() WHERE user_id = ? AND headquarter_id IS NULL'
         );
         if ($statement) {
-            $statement->bind_param('ssii', $userName, $email, $roleId, $userId);
+            $statement->bind_param('ssiii', $userName, $email, $roleId, $roleId, $userId);
         }
     }
 

@@ -2,6 +2,7 @@
 
 require_once __DIR__ . '/../conn.php';
 require_once __DIR__ . '/../Customer/license_access.php';
+require_once __DIR__ . '/../role_state.php';
 
 function social_login_fail(string $message): never
 {
@@ -167,12 +168,14 @@ function social_sign_in_user(PDO $pdo, string $provider, string $providerId, str
         social_login_fail('Your social account did not provide a valid email address.');
     }
 
+    map_pump_current_role_column_ready($pdo);
     $stmt = $pdo->prepare(
-        'SELECT u.user_id, u.user_name, u.email, u.status, u.role_id, u.business_role_id,
-                r.role_name, br.role_name AS business_role_name
+        'SELECT u.user_id, u.user_name, u.email, u.status, u.role_id, u.business_role_id, u.current_role_id,
+                r.role_name, br.role_name AS business_role_name, cr.role_name AS current_role_name
          FROM users u
          LEFT JOIN roles r ON r.role_id = u.role_id
          LEFT JOIN roles br ON br.role_id = u.business_role_id
+         LEFT JOIN roles cr ON cr.role_id = u.current_role_id
          WHERE (u.oauth_provider = ? AND u.oauth_provider_id = ?)
             OR LOWER(u.email) = LOWER(?)
          LIMIT 1'
@@ -195,18 +198,19 @@ function social_sign_in_user(PDO $pdo, string $provider, string $providerId, str
 
         $insert = $pdo->prepare(
             'INSERT INTO users
-                (user_name, email, hashed_password, role_id, status, oauth_provider, oauth_provider_id, oauth_avatar_url, last_login_at, created_at, updated_at)
+                (user_name, email, hashed_password, role_id, current_role_id, status, oauth_provider, oauth_provider_id, oauth_avatar_url, last_login_at, created_at, updated_at)
              VALUES
-                (?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), NOW())'
+                (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), NOW())'
         );
-        $insert->execute([$displayName, $email, $randomPassword, $roleId, 'active', $provider, $providerId, $avatarUrl]);
+        $insert->execute([$displayName, $email, $randomPassword, $roleId, $roleId, 'active', $provider, $providerId, $avatarUrl]);
 
         $stmt = $pdo->prepare(
-            'SELECT u.user_id, u.user_name, u.email, u.status, u.role_id, u.business_role_id,
-                    r.role_name, br.role_name AS business_role_name
+            'SELECT u.user_id, u.user_name, u.email, u.status, u.role_id, u.business_role_id, u.current_role_id,
+                    r.role_name, br.role_name AS business_role_name, cr.role_name AS current_role_name
              FROM users u
              LEFT JOIN roles r ON r.role_id = u.role_id
              LEFT JOIN roles br ON br.role_id = u.business_role_id
+             LEFT JOIN roles cr ON cr.role_id = u.current_role_id
              WHERE u.user_id = ?
              LIMIT 1'
         );
@@ -227,15 +231,17 @@ function social_sign_in_user(PDO $pdo, string $provider, string $providerId, str
     $_SESSION['user_id'] = (int) $user['user_id'];
     $_SESSION['user_name'] = (string) $user['user_name'];
     $_SESSION['user_email'] = (string) $user['email'];
-    $_SESSION['role_id'] = (int) ($user['role_id'] ?? 0);
-    $_SESSION['role_name'] = (string) ($user['role_name'] ?? 'Customer');
+    [$activeRoleId, $activeRoleName] = map_pump_session_role($user);
+    $_SESSION['role_id'] = $activeRoleId;
+    $_SESSION['role_name'] = $activeRoleName;
     $_SESSION['business_role_id'] = (int) ($user['business_role_id'] ?? 0);
     $_SESSION['business_role_name'] = (string) ($user['business_role_name'] ?? '');
     $_SESSION['has_business'] = !empty($user['business_role_id']);
-    $_SESSION['active_profile_mode'] = strtolower((string) ($user['role_name'] ?? 'Customer')) === 'customer' ? 'customer' : 'business';
+    $_SESSION['active_profile_mode'] = strtolower($activeRoleName) === 'customer' ? 'customer' : 'business';
+    map_pump_set_current_role($pdo, (int) $user['user_id'], $activeRoleId);
 
-    $roleName = strtolower((string) ($user['role_name'] ?? 'Customer'));
-    $destination = social_dashboard_for_role((string) ($user['role_name'] ?? 'Customer'));
+    $roleName = strtolower($activeRoleName);
+    $destination = social_dashboard_for_role($activeRoleName);
     if ($roleName === 'customer') {
         $licenseAccess = customer_license_access($pdo, (int) $user['user_id']);
         $_SESSION['license_id'] = (int) ($licenseAccess['license_id'] ?? 0);

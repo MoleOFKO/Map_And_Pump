@@ -24,6 +24,7 @@ register_shutdown_function(function () {
 
 define('MAP_PUMP_JSON_RESPONSE', true);
 require_once __DIR__ . '/../conn.php';
+require_once __DIR__ . '/../role_state.php';
 
 function verify_json(bool $ok, string $message, array $extra = []): never
 {
@@ -83,18 +84,23 @@ try {
         verify_json(false, 'That email is already registered. Please log in instead.');
     }
 
-    $insert = $pdo->prepare(
-        'INSERT INTO users (user_name, email, hashed_password, role_id, status, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, NOW(), NOW())'
-    );
     $roleId = customer_role_id($pdo);
-    $insert->execute([
+    $hasCurrentRole = map_pump_current_role_column_ready($pdo);
+    $insertSql = $hasCurrentRole
+        ? 'INSERT INTO users (user_name, email, hashed_password, role_id, current_role_id, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())'
+        : 'INSERT INTO users (user_name, email, hashed_password, role_id, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, NOW(), NOW())';
+    $insert = $pdo->prepare($insertSql);
+    $insertParams = [
         (string) $pending['username'],
         $email,
         (string) $pending['password_hash'],
         $roleId,
-        'active',
-    ]);
+    ];
+    if ($hasCurrentRole) {
+        $insertParams[] = $roleId;
+    }
+    $insertParams[] = 'active';
+    $insert->execute($insertParams);
     $userId = (int) $pdo->lastInsertId();
 
     unset($_SESSION['pending_registration']);

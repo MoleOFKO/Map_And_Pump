@@ -3,6 +3,7 @@ session_start();
 
 require_once __DIR__ . '/conn.php';
 require_once __DIR__ . '/Customer/license_access.php';
+require_once __DIR__ . '/role_state.php';
 
 function account_switch_redirect_login(string $message = 'Please sign in to continue.'): void
 {
@@ -79,6 +80,7 @@ if ($targetMode === 'customer') {
     $_SESSION['business_role_name'] = $businessRoleName;
     $_SESSION['user_name'] = (string) $user['user_name'];
     $_SESSION['user_email'] = (string) $user['email'];
+    map_pump_set_current_role($pdo, $userId, $customerRoleId);
 
     header('Location: /php/Customer/dashboard.php');
     exit;
@@ -111,6 +113,7 @@ if ($targetMode === 'business') {
     $_SESSION['has_business'] = true;
     $_SESSION['user_name'] = (string) $user['user_name'];
     $_SESSION['user_email'] = (string) $user['email'];
+    map_pump_set_current_role($pdo, $userId, $targetRoleId);
 
     header('Location: ' . account_switch_dashboard($targetRoleName));
     exit;
