@@ -69,7 +69,7 @@ try {
         'hq' => '/php/HQ/index.php',
         'manager' => '/php/BranchManager/dashboard.php',
         'staff' => '/php/Staff/staff_dashboard.php',
-        'customer' => '/php/Customer/dashboard.php',
+        'customer' => '../Customer/dashboard.php',
     ];
 
     $destination = $dashboardMap[$roleName] ?? '/php/Customer/dashboard.php';
