@@ -1,10 +1,145 @@
+<?php
+if (session_status() !== PHP_SESSION_ACTIVE) {
+    session_start();
+}
+
+require_once __DIR__ . '/../conn.php';
+
+$loggedUserId = isset($_SESSION['user_id']) ? (int) $_SESSION['user_id'] : '';
+$loggedUserEmail = isset($_SESSION['user_email']) ? trim((string) $_SESSION['user_email']) : '';
+
+function resolveImageUrl(?string $imagePath, string $fallback): string
+{
+    $imagePath = trim((string) $imagePath);
+    if ($imagePath === '') {
+        return $fallback;
+    }
+
+    if (preg_match('#^(https?:)?//#i', $imagePath) || str_starts_with($imagePath, 'data:')) {
+        return $imagePath;
+    }
+
+    // If it's already a relative path going up or starting correctly, keep it
+    if (str_starts_with($imagePath, '../') || str_starts_with($imagePath, './')) {
+        return $imagePath;
+    }
+
+    if (str_starts_with($imagePath, '/')) {
+        return $imagePath;
+    }
+
+    if (str_starts_with($imagePath, 'uploads/')) {
+        // Adjust this relative path based on where your script is relative to the uploads folder
+        return '../../' . $imagePath; 
+    }
+
+    return $imagePath;
+}
+
+// Default brand and user variables
+$hq_id = isset($_SESSION['headquarter_id']) ? (int) $_SESSION['headquarter_id'] : '';
+$brand_title = 'Map & Pump';
+$brand_logo = '../../images/Logo.png';
+
+$user_display_name = 'HQ Admin';
+$user_avatar = '../../images/Logo.png';
+$user_email_display = $loggedUserEmail ?: 'hq_admin@mapandpump.com';
+
+if ($loggedUserId > 0) {
+    // Fetch User Info, Headquarter Brand details, and OAuth avatar in a single query from database
+    $userHqStmt = $pdo->prepare(
+        'SELECT u.user_name, u.email, u.oauth_avatar_url, 
+                  h.company_name, h.company_logo, h.headquarter_id
+         FROM users u
+              LEFT JOIN headquarter h ON h.headquarter_id = u.headquarter_id
+         WHERE u.user_id = ?
+         LIMIT 1'
+    );
+    $userHqStmt->execute([$loggedUserId]);
+    $userHqRow = $userHqStmt->fetch(PDO::FETCH_ASSOC);
+
+    if ($userHqRow) {
+        // Set User Details from database
+        if (!empty($userHqRow['user_name'])) {
+            $user_display_name = htmlspecialchars((string) $userHqRow['user_name'], ENT_QUOTES, 'UTF-8');
+        }
+        if (!empty($userHqRow['email'])) {
+            $user_email_display = htmlspecialchars((string) $userHqRow['email'], ENT_QUOTES, 'UTF-8');
+        }
+        if (!empty($userHqRow['oauth_avatar_url'])) {
+            $user_avatar = resolveImageUrl($userHqRow['oauth_avatar_url'], '/images/Logo.png');
+        }
+
+        // Set Brand Details from database
+        if (!empty($userHqRow['company_name'])) {
+            $brand_title = htmlspecialchars((string) $userHqRow['company_name'], ENT_QUOTES, 'UTF-8');
+        }
+        if (!empty($userHqRow['company_logo'])) {
+            $brand_logo = resolveImageUrl($userHqRow['company_logo'], '/images/Logo.png');
+        }
+        if (!empty($userHqRow['headquarter_id'])) {
+            $hq_id = (int) $userHqRow['headquarter_id'];
+        }
+    }
+} else {
+    $brandStmt = $pdo->prepare('SELECT company_name, company_logo FROM headquarter WHERE headquarter_id = ? LIMIT 1');
+    $brandStmt->execute([$hq_id]);
+    $brandRow = $brandStmt->fetch(PDO::FETCH_ASSOC);
+    if ($brandRow) {
+        if (!empty($brandRow['company_name'])) {
+            $brand_title = htmlspecialchars((string) $brandRow['company_name'], ENT_QUOTES, 'UTF-8');
+        }
+        if (!empty($brandRow['company_logo'])) {
+            $brand_logo = resolveImageUrl($brandRow['company_logo'], '/images/Logo.png');
+        }
+    }
+}
+
+// Fetch notifications from database
+$notifications = [];
+if ($loggedUserId > 0 && $loggedUserEmail !== '') {
+    $notificationStmt = $pdo->prepare(
+        'SELECT notification_id, subject, message, notification_type, created_at
+         FROM notifications
+         WHERE recipient_user_id = :user_id
+            OR LOWER(recipient_email) = LOWER(:email)
+         ORDER BY created_at DESC
+         LIMIT 5'
+    );
+    $notificationStmt->execute([
+        ':user_id' => $loggedUserId,
+        ':email' => $loggedUserEmail,
+    ]);
+    $notifications = $notificationStmt->fetchAll(PDO::FETCH_ASSOC);
+} elseif ($loggedUserId > 0) {
+    $notificationStmt = $pdo->prepare(
+        'SELECT notification_id, subject, message, notification_type, created_at
+         FROM notifications
+         WHERE recipient_user_id = :user_id
+         ORDER BY created_at DESC
+         LIMIT 5'
+    );
+    $notificationStmt->execute([':user_id' => $loggedUserId]);
+    $notifications = $notificationStmt->fetchAll(PDO::FETCH_ASSOC);
+} elseif ($loggedUserEmail !== '') {
+    $notificationStmt = $pdo->prepare(
+        'SELECT notification_id, subject, message, notification_type, created_at
+         FROM notifications
+         WHERE LOWER(recipient_email) = LOWER(:email)
+         ORDER BY created_at DESC
+         LIMIT 5'
+    );
+    $notificationStmt->execute([':email' => $loggedUserEmail]);
+    $notifications = $notificationStmt->fetchAll(PDO::FETCH_ASSOC);
+}
+?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>HQ Management System</title>
-    <link rel="icon" type="image/png" href="/images/Logo.png">
+    <title>Map&Pump (HQ) - Management System</title>
+    <link rel="icon" type="image/png" href="../../images/Logo.png">
     <link rel="stylesheet" href="../../css/HQstyle.css">
     <style>
         :root {
@@ -380,100 +515,13 @@
         }
     </style>
 </head>
-<?php
-    // if (session_status() !== PHP_SESSION_ACTIVE) {
-    //     session_start();
-    // }
-
-    require_once __DIR__ . '/../conn.php';
-
-    $loggedUserId = isset($_SESSION['user_id']) ? (int) $_SESSION['user_id'] : 0;
-    $loggedUserEmail = isset($_SESSION['user_email']) ? trim((string) $_SESSION['user_email']) : '';
-
-    // Fetch dynamic brand information from TiDB Cloud database table 'headquarter'
-    $hq_id = isset($_SESSION['headquarter_id']) ? (int) $_SESSION['headquarter_id'] : 60010;
-    $brand_title = 'Map & Pump';
-    $brand_logo = '../../images/Logo.png';
-
-    if ($loggedUserId > 0) {
-        $hqStmt = $pdo->prepare(
-            'SELECT h.company_name, h.company_logo, h.headquarter_id
-             FROM users u
-             LEFT JOIN headquarter h ON h.headquarter_id = u.headquarter_id
-             WHERE u.user_id = ?
-             LIMIT 1'
-        );
-        $hqStmt->execute([$loggedUserId]);
-        $hqRow = $hqStmt->fetch(PDO::FETCH_ASSOC);
-        if ($hqRow) {
-            if (!empty($hqRow['company_name'])) {
-                $brand_title = htmlspecialchars((string) $hqRow['company_name'], ENT_QUOTES, 'UTF-8');
-            }
-            if (!empty($hqRow['company_logo'])) {
-                $brand_logo = htmlspecialchars((string) $hqRow['company_logo'], ENT_QUOTES, 'UTF-8');
-            }
-            if (!empty($hqRow['headquarter_id'])) {
-                $hq_id = (int) $hqRow['headquarter_id'];
-            }
-        }
-    } else {
-        $brandStmt = $pdo->prepare('SELECT company_name, company_logo FROM headquarter WHERE headquarter_id = ? LIMIT 1');
-        $brandStmt->execute([$hq_id]);
-        $brandRow = $brandStmt->fetch(PDO::FETCH_ASSOC);
-        if ($brandRow) {
-            if (!empty($brandRow['company_name'])) {
-                $brand_title = htmlspecialchars((string) $brandRow['company_name'], ENT_QUOTES, 'UTF-8');
-            }
-            if (!empty($brandRow['company_logo'])) {
-                $brand_logo = htmlspecialchars((string) $brandRow['company_logo'], ENT_QUOTES, 'UTF-8');
-            }
-        }
-    }
-
-    $notifications = [];
-    if ($loggedUserId > 0 && $loggedUserEmail !== '') {
-        $notificationStmt = $pdo->prepare(
-            'SELECT notification_id, subject, message, notification_type, created_at
-             FROM notifications
-             WHERE recipient_user_id = :user_id
-                OR LOWER(recipient_email) = LOWER(:email)
-             ORDER BY created_at DESC
-             LIMIT 5'
-        );
-        $notificationStmt->execute([
-            ':user_id' => $loggedUserId,
-            ':email' => $loggedUserEmail,
-        ]);
-        $notifications = $notificationStmt->fetchAll(PDO::FETCH_ASSOC);
-    } elseif ($loggedUserId > 0) {
-        $notificationStmt = $pdo->prepare(
-            'SELECT notification_id, subject, message, notification_type, created_at
-             FROM notifications
-             WHERE recipient_user_id = :user_id
-             ORDER BY created_at DESC
-             LIMIT 5'
-        );
-        $notificationStmt->execute([':user_id' => $loggedUserId]);
-        $notifications = $notificationStmt->fetchAll(PDO::FETCH_ASSOC);
-    } elseif ($loggedUserEmail !== '') {
-        $notificationStmt = $pdo->prepare(
-            'SELECT notification_id, subject, message, notification_type, created_at
-             FROM notifications
-             WHERE LOWER(recipient_email) = LOWER(:email)
-             ORDER BY created_at DESC
-             LIMIT 5'
-        );
-        $notificationStmt->execute([':email' => $loggedUserEmail]);
-        $notifications = $notificationStmt->fetchAll(PDO::FETCH_ASSOC);
-    }
-?>
 <body>
 
     <!-- Mobile Top Navigation Bar -->
     <div class="mobile-header">
         <button class="mobile-toggle-btn" onclick="toggleSidebar()">☰</button>
         <div class="mobile-brand">
-            <img src="<?php echo $brand_logo; ?>" alt="Logo">
+            <img src="<?php echo htmlspecialchars($brand_logo, ENT_QUOTES, 'UTF-8'); ?>" alt="Logo">
             <span><?php echo $brand_title; ?></span>
         </div>
         <div style="width: 24px;"></div>
@@ -498,8 +546,8 @@
         <aside class="sidebar" id="sidebar">
             <div>
                 <div class="sidebar-brand">
-                    <a href="index.php" class="text-decoration-none d-flex align-items-center justify-content-center gap-2 text-white fw-bold" style="text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 8px;">
-                        <img src="<?php echo $brand_logo; ?>" alt="Logo" class="nav-logo">
+                    <a href="index.php" style="text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 8px;">
+                        <img src="<?php echo htmlspecialchars($brand_logo, ENT_QUOTES, 'UTF-8'); ?>" alt="Logo" class="nav-logo">
                         <span style="font-size: 1.1rem; letter-spacing: 0.5px; color: #ffffff;"><?php echo $brand_title; ?></span>
                     </a>
                     <div style="font-size: 0.7rem; letter-spacing: 0.5px; color: var(--slate-400, #94a3b8); margin-top: 4px;">Headquarter Control Panel</div>
@@ -561,17 +609,20 @@
                             </div>
                         </div>
                     </div>
+
+                    <!-- User Profile Menu Button (Top Right) -->
                     <button class="user-menu-button" onclick="toggleUserDropdown(event)" type="button">
-                        <img src="../../images/default-avatar.png" alt="User Logo" class="user-avatar-small" id="headerUserAvatar">
-                        <span class="user-menu-name" id="headerUserName">HQ Admin</span>
+                        <img src="<?php echo htmlspecialchars($user_avatar, ENT_QUOTES, 'UTF-8'); ?>" alt="User Avatar" class="user-avatar-small" id="headerUserAvatar">
+                        <span class="user-menu-name" id="headerUserName"><?php echo $user_display_name; ?></span>
                     </button>
 
+                    <!-- User Dropdown Popup -->
                     <div class="user-dropdown-popup" id="userDropdownPopup">
                         <div class="dropdown-header">
-                            <img src="<?php echo $brand_logo; ?>" alt="User Logo" class="user-avatar-large" id="dropdownUserAvatar">
+                            <img src="<?php echo htmlspecialchars($user_avatar, ENT_QUOTES, 'UTF-8'); ?>" alt="User Avatar" class="user-avatar-large" id="dropdownUserAvatar">
                             <div class="dropdown-user-info">
-                                <p class="user-title" id="dropdownUserName">HQ Admin</p>
-                                <p class="user-email" id="dropdownUserEmail">hq_admin@mapandpump.com</p>
+                                <p class="user-title" id="dropdownUserName"><?php echo $user_display_name; ?></p>
+                                <p class="user-email" id="dropdownUserEmail"><?php echo $user_email_display; ?></p>
                             </div>
                         </div>
                         <button type="button" class="edit-profile-btn" onclick="routeTo('profile.php'); closeUserDropdown();">Edit Profile</button>

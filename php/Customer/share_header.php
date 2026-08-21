@@ -156,7 +156,7 @@ if ($currentPage == 'license.php') $viewTitle = "Driver License Setup";
                 </div>
             </div>
             <?php if ($customerLicenseAccess['is_approved'] && $linkedBusinessRoleNameHeader !== ''): ?>
-                <form action="/php/account_switch.php" method="POST" class="mb-3">
+                <form action="../account_switch.php" method="POST" class="mb-3">
                     <input type="hidden" name="mode" value="business">
                     <button type="submit" class="btn btn-outline-info btn-sm w-100 py-2 border-opacity-25" style="border-radius:10px;">
                         <i class="bi bi-arrow-left-right me-1"></i> Switch to <?= htmlspecialchars($linkedBusinessRoleNameHeader) ?>

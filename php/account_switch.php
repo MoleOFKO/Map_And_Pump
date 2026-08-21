@@ -24,7 +24,7 @@ function account_switch_dashboard(string $roleName): string
     $dashboards = [
         'admin' => '/php/Admin(WebOwner)/admin_dashboard.php',
         'moderator' => '/php/Moderators(UnderAdmin)/moderator_dashboard.php',
-        'hq' => '/php/HQ/index.php',
+        'hq' => 'HQ/index.php',
         'manager' => '/php/BranchManager/dashboard.php',
         'staff' => '/php/Staff/staff_dashboard.php',
         'customer' => '/php/Customer/dashboard.php',
