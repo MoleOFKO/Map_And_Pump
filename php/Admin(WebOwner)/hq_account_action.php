@@ -35,9 +35,8 @@ $targetQuery = $conn->prepare(
      LEFT JOIN users u ON u.user_id = (
          SELECT MIN(u2.user_id)
          FROM users u2
-         INNER JOIN roles r2 ON r2.role_id = u2.role_id
          WHERE u2.headquarter_id = h.headquarter_id
-           AND r2.role_id = 3 AND LOWER(TRIM(r2.role_name)) = 'hq'
+           AND (u2.role_id = 3 OR u2.business_role_id = 3)
      )
      WHERE h.headquarter_id = ?
      LIMIT 1"
@@ -77,7 +76,7 @@ $notification = !empty($target['email'])
 try {
     $conn->begin_transaction();
 
-    $statusUpdate = $conn->prepare('UPDATE users SET status = ?, updated_at = NOW() WHERE headquarter_id = ? AND role_id = 3');
+    $statusUpdate = $conn->prepare('UPDATE users SET status = ?, updated_at = NOW() WHERE headquarter_id = ? AND (role_id = 3 OR business_role_id = 3)');
     if (!$statusUpdate) {
         throw new RuntimeException('Could not prepare the HQ status update.');
     }

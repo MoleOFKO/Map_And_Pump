@@ -113,43 +113,40 @@ function moderator_hq_rows(string $search, string $region, string $status): arra
         $types .= 's';
     }
 
-    $sql = <<<'SQL'
-SELECT h.headquarter_id, h.company_name, h.company_logo, h.location, h.headquarter_email,
+   $sql = "SELECT h.headquarter_id, h.company_name, h.company_logo, h.location, h.headquarter_email,
        h.contact_number, h.business_license, h.created_at, h.expire_at,
        owner.user_name AS owner_name, owner.email AS owner_email,
        COALESCE(owner.status, 'pending') AS account_status,
        COALESCE(user_counts.user_count, 0) AS user_count,
        0 AS station_count
-FROM headquarter h
-INNER JOIN (
-    SELECT u.headquarter_id, MIN(u.user_id) AS owner_user_id, COUNT(*) AS user_count
-    FROM users u
-    INNER JOIN roles r ON r.role_id = u.role_id
-    WHERE r.role_id = 3 AND LOWER(TRIM(r.role_name)) = 'hq'
-    GROUP BY headquarter_id
-) user_counts ON user_counts.headquarter_id = h.headquarter_id
-INNER JOIN users owner ON owner.user_id = user_counts.owner_user_id
-SQL;
-    if ($where) {
-        $sql .= ' WHERE ' . implode(' AND ', $where);
-    }
-    $sql .= ' ORDER BY h.created_at DESC, h.headquarter_id DESC';
+   FROM headquarter h
+   INNER JOIN (
+       SELECT u.headquarter_id, MIN(u.user_id) AS owner_user_id, COUNT(*) AS user_count
+       FROM users u
+       WHERE (u.role_id = 3 OR u.business_role_id = 3)
+       GROUP BY headquarter_id
+   ) user_counts ON user_counts.headquarter_id = h.headquarter_id
+   INNER JOIN users owner ON owner.user_id = user_counts.owner_user_id";
+   if ($where) {
+       $sql .= ' WHERE ' . implode(' AND ', $where);
+   }
+   $sql .= ' ORDER BY h.created_at DESC, h.headquarter_id DESC';
 
-    $statement = $conn->prepare($sql);
-    if (!$statement) {
-        return $rows;
-    }
-    if ($types !== '') {
-        $bound = array_values($params);
-        hq_bind($statement, $types, $bound);
-    }
-    if ($statement->execute()) {
-        $result = $statement->get_result();
-        while ($result && ($row = $result->fetch_assoc())) {
-            $rows[] = $row;
-        }
-    }
-    $statement->close();
+   $statement = $conn->prepare($sql);
+   if (!$statement) {
+       return $rows;
+   }
+   if ($types !== '') {
+       $bound = array_values($params);
+       hq_bind($statement, $types, $bound);
+   }
+   if ($statement->execute()) {
+       $result = $statement->get_result();
+       while ($result && ($row = $result->fetch_assoc())) {
+           $rows[] = $row;
+       }
+   }
+   $statement->close();
 
     return $rows;
 }
