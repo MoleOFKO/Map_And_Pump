@@ -43,8 +43,8 @@
                 <ul class="footer-links">
                     <li><a href="/HomePage.php#drivers">For drivers</a></li>
                     <li><a href="/HomePage.php#faq">FAQ</a></li>
-                    <li><a href="#">Privacy policy</a></li>
-                    <li><a href="#">Terms of service</a></li>
+                    <li><a href="/php/PrivacyPolicy.php">Privacy policy</a></li>
+                    <li><a href="/php/TermsOfService.php">Terms of service</a></li>
                 </ul>
             </div>
         </div>

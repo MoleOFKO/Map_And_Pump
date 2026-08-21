@@ -463,7 +463,7 @@ require __DIR__ . '/partials/nav.php';
                 </ul>
 
                 <div class="d-sm-flex gap-3 mt-4">
-                    <a href="/register" class="btn btn-primary btn-lg px-4 py-3 mb-3 mb-sm-0 w-100 w-sm-auto">
+                    <a href="/php/Login/login.php" class="btn btn-primary btn-lg px-4 py-3 mb-3 mb-sm-0 w-100 w-sm-auto">
                         <i class="fa-solid fa-location-crosshairs me-2"></i>Find fuel near me
                     </a>
                 </div>
