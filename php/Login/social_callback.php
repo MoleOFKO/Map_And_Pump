@@ -18,7 +18,7 @@ $code = (string) ($_GET['code'] ?? $_POST['code'] ?? '');
 if ($code === '') {
     social_login_fail('Social login was cancelled or failed.');
 }
-
+ 
 try {
     $token = social_http_request($config['token_url'], 'POST', [
         'client_id' => $config['client_id'],
@@ -99,6 +99,6 @@ try {
 
     social_login_fail('Unsupported login provider.');
 } catch (Throwable $e) {
-    error_log('Social login failed: ' . $e->getMessage());
+    error_log('Social login failed for provider ' . $provider . ': ' . $e->getMessage());
     social_login_fail('Social login failed. Please try again.');
 }

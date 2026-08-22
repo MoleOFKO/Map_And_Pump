@@ -24,8 +24,20 @@ function social_base_url(): string
         return $configured;
     }
 
+    $forwardedProto = $_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '';
+    $forwardedHost = $_SERVER['HTTP_X_FORWARDED_HOST'] ?? '';
+
     $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
-    $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
+    if ($forwardedProto !== '') {
+        $scheme = strtolower(trim(explode(',', $forwardedProto)[0]));
+        if (!in_array($scheme, ['http', 'https'], true)) {
+            $scheme = 'https';
+        }
+    }
+
+    $host = $forwardedHost !== '' ? trim(explode(',', $forwardedHost)[0]) : ($_SERVER['HTTP_HOST'] ?? $_SERVER['SERVER_NAME'] ?? 'localhost');
+    $host = trim($host);
+
     return $scheme . '://' . $host;
 }
 
@@ -96,8 +108,8 @@ function social_provider_config(string $provider): array
 {
     return match ($provider) {
         'google' => [
-            'client_id' => social_env('GOOGLE_CLIENT_ID'),
-            'client_secret' => social_env('GOOGLE_CLIENT_SECRET'),
+            'client_id' => '513039511125-mlrd4m0lqn87radhimv0ms0vhtpvm9mh.apps.googleusercontent.com',
+            'client_secret' => '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',
             'auth_url' => 'https://accounts.google.com/o/oauth2/v2/auth',
             'token_url' => 'https://oauth2.googleapis.com/token',
             'scope' => 'openid email profile',
