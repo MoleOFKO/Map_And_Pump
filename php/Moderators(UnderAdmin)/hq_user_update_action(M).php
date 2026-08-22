@@ -32,27 +32,23 @@ $targetQuery = $conn->prepare(
     'SELECT u.user_id, u.headquarter_id, h.company_name,
             (SELECT MIN(u2.user_id)
              FROM users u2
-             INNER JOIN roles r2 ON r2.role_id = u2.role_id
              WHERE u2.headquarter_id = u.headquarter_id
-               AND r2.role_id = 3 AND LOWER(TRIM(r2.role_name)) = \'hq\') AS owner_user_id
+               AND (u2.role_id = 3 OR u2.business_role_id = 3)) AS owner_user_id
      FROM users u
      INNER JOIN roles r ON r.role_id = u.role_id
      INNER JOIN headquarter h ON h.headquarter_id = u.headquarter_id
      WHERE u.user_id = ? AND u.headquarter_id = ?
-       AND r.role_id = 3 AND LOWER(TRIM(r.role_name)) = \'hq\'
+       AND (u.role_id = 3 OR u.business_role_id = 3)
      LIMIT 1'
 );
-
 if (!$targetQuery) {
     hq_flash('danger', 'The selected HQ user could not be loaded.');
     hq_redirect('manage_hq(M).php');
 }
-
 $targetQuery->bind_param('ii', $userId, $headquarterId);
 $targetQuery->execute();
 $target = $targetQuery->get_result()?->fetch_assoc();
 $targetQuery->close();
-
 if (!$target) {
     hq_flash('danger', 'That user does not belong to the selected HQ.');
     hq_redirect('manage_hq(M).php');

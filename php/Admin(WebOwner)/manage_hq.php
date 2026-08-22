@@ -8,22 +8,31 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
 $flash = hq_pull_flash();
 $hqRows = [];
 if (hq_db_available() && hq_registry_schema_ready()) {
-    $result = $conn->query(
-        "SELECT h.headquarter_id, h.company_name, h.location, h.headquarter_email,
-                h.created_at, h.expire_at, owner.user_name AS owner_name,
-                owner.status AS account_status
-         FROM headquarter h
-         INNER JOIN (
-             SELECT u.headquarter_id, MIN(u.user_id) AS owner_user_id
-             FROM users u INNER JOIN roles r ON r.role_id = u.role_id
-             WHERE r.role_id = 3 AND LOWER(TRIM(r.role_name)) = 'hq'
-             GROUP BY u.headquarter_id
-         ) owners ON owners.headquarter_id = h.headquarter_id
-         INNER JOIN users owner ON owner.user_id = owners.owner_user_id
-         ORDER BY h.created_at DESC, h.headquarter_id DESC"
-    );
-    while ($result && ($row = $result->fetch_assoc())) {
-        $hqRows[] = $row;
+    $hqRoleId = hq_hq_role_id();
+    if ($hqRoleId > 0) {
+        $stmt = $conn->prepare(
+           "SELECT h.headquarter_id, h.company_name, h.location, h.headquarter_email,
+                   h.created_at, h.expire_at, owner.user_name AS owner_name,
+                   owner.status AS account_status
+             FROM headquarter h
+             INNER JOIN (
+               SELECT u.headquarter_id, MIN(u.user_id) AS owner_user_id
+                 FROM users u
+                 WHERE (u.role_id = 3 OR u.business_role_id = 3)
+                 GROUP BY u.headquarter_id
+             ) owners ON owners.headquarter_id = h.headquarter_id
+             INNER JOIN users owner ON owner.user_id = owners.owner_user_id
+             ORDER BY h.created_at DESC, h.headquarter_id DESC"
+        );
+        if ($stmt) {
+           if ($stmt->execute()) {
+               $result = $stmt->get_result();
+               while ($result && ($row = $result->fetch_assoc())) {
+                   $hqRows[] = $row;
+               }
+           }
+           $stmt->close();
+        }
     }
 }
 $dbError = hq_db_available() ? null : hq_db_error_message();

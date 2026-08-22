@@ -286,6 +286,17 @@ function hq_find_role_id(): int|false
     return $roleId;
 }
 
+function hq_hq_role_id(): int
+{
+    $roleId = hq_find_role_id();
+    return $roleId !== false ? (int) $roleId : 0;
+}
+
+function hq_hq_role_sql(string $tableAlias = 'r'): string
+{
+    return "LOWER(TRIM({$tableAlias}.role_name)) IN ('hq', 'headquarter', 'headquarters')";
+}
+
 function hq_unique_username(string $ownerName, string $email): string
 {
     global $conn;

@@ -55,8 +55,7 @@ $targetQuery = $conn->prepare(
      LEFT JOIN (
          SELECT u.headquarter_id, MIN(u.user_id) AS owner_user_id
          FROM users u
-         INNER JOIN roles r ON r.role_id = u.role_id
-         WHERE r.role_id = 3 AND LOWER(TRIM(r.role_name)) = \'hq\'
+         WHERE (u.role_id = 3 OR u.business_role_id = 3)
          GROUP BY headquarter_id
      ) first_owner ON first_owner.headquarter_id = h.headquarter_id
      LEFT JOIN users owner ON owner.user_id = first_owner.owner_user_id
