@@ -1,5 +1,53 @@
-<?php include 'share_header.php'; ?>
+<?php
+if (session_status() !== PHP_SESSION_ACTIVE) {
+    session_start();
+}
 
+require_once __DIR__ . '/../conn.php';
+require_once __DIR__ . '/../usage_history_schema.php';
+
+$userId = (int) ($_SESSION['user_id'] ?? 0);
+$usageRows = [];
+$usageHistoryReady = map_pump_usage_history_schema_ready($pdo);
+
+if ($userId > 0 && $usageHistoryReady) {
+    try {
+        $stmt = $pdo->prepare(
+            'SELECT uh.usage_id, uh.booking_id, uh.qr_refrence_code, uh.filled_liters, uh.price_per_litre,
+                    uh.total_cost, uh.status, uh.filled_at, s.station_name, s.location AS station_location,
+                    o.oil_name, c.car_plate_number
+             FROM usage_history uh
+             LEFT JOIN stations s ON s.station_id = uh.station_id
+             LEFT JOIN oil_types o ON o.oil_type_id = uh.oil_type_id
+             LEFT JOIN car_license c ON c.car_license_id = uh.car_license_id
+             WHERE uh.user_id = ?
+             ORDER BY uh.filled_at DESC, uh.usage_id DESC'
+        );
+        $stmt->execute([$userId]);
+        $usageRows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    } catch (Throwable $e) {
+        error_log('Failed to load customer usage history: ' . $e->getMessage());
+        $usageRows = [];
+    }
+}
+
+function customer_usage_fuel_class(?string $oilName): string
+{
+    $oilName = strtolower((string) $oilName);
+    if (str_contains($oilName, '95')) {
+        return 'fuel-95';
+    }
+    if (str_contains($oilName, '92')) {
+        return 'fuel-92';
+    }
+    if (str_contains($oilName, 'diesel')) {
+        return 'fuel-diesel';
+    }
+    return 'fuel-92';
+}
+
+include 'share_header.php';
+?>
 <div class="dashboard-panel-card">
     <div class="d-flex align-items-start justify-content-between flex-wrap gap-3 mb-4">
         <div>
@@ -48,46 +96,34 @@
                 </tr>
             </thead>
             <tbody id="usage-log-body" class="text-white" style="font-size:13px; font-weight:500;">
-                <tr class="border-bottom border-secondary border-opacity-5" data-date="2026-07-10">
-                    <td class="py-3 font-semibold text-white">TXN-29103-MP</td>
-                    <td class="py-3 text-secondary">2026-07-10</td>
-                    <td class="py-3">Yangon Terminal Center</td>
-                    <td class="py-3">12.5 Liters</td>
-                    <td class="py-3"><span class="fuel-tag fuel-95">Octane 95</span></td>
-                    <td class="py-3"><span class="status-pill active" style="font-size:9px;">Delivered</span></td>
-                </tr>
-                <tr class="border-bottom border-secondary border-opacity-5" data-date="2026-07-22">
-                    <td class="py-3 font-semibold text-white">TXN-30842-MP</td>
-                    <td class="py-3 text-secondary">2026-07-22</td>
-                    <td class="py-3">Sanchaung Fuel Hub</td>
-                    <td class="py-3">9.0 Liters</td>
-                    <td class="py-3"><span class="fuel-tag fuel-92">Octane 92</span></td>
-                    <td class="py-3"><span class="status-pill active" style="font-size:9px;">Delivered</span></td>
-                </tr>
-                <tr class="border-bottom border-secondary border-opacity-5" data-date="2026-07-28">
-                    <td class="py-3 font-semibold text-white">TXN-31501-MP</td>
-                    <td class="py-3 text-secondary">2026-07-28</td>
-                    <td class="py-3">Insein Branch Station 04</td>
-                    <td class="py-3">15.0 Liters</td>
-                    <td class="py-3"><span class="fuel-tag fuel-95">Octane 95</span></td>
-                    <td class="py-3"><span class="status-pill active" style="font-size:9px;">Delivered</span></td>
-                </tr>
-                <tr class="border-bottom border-secondary border-opacity-5" data-date="2026-08-02">
-                    <td class="py-3 font-semibold text-white">TXN-32915-MP</td>
-                    <td class="py-3 text-secondary">2026-08-02</td>
-                    <td class="py-3">Tamwe Express Station</td>
-                    <td class="py-3">8.0 Liters</td>
-                    <td class="py-3"><span class="fuel-tag fuel-diesel">Diesel</span></td>
-                    <td class="py-3"><span class="status-pill active" style="font-size:9px;">Delivered</span></td>
-                </tr>
-                <tr class="border-bottom border-secondary border-opacity-5" data-date="2026-08-05">
-                    <td class="py-3 font-semibold text-white">TXN-33560-MP</td>
-                    <td class="py-3 text-secondary">2026-08-05</td>
-                    <td class="py-3">Kamayut Central Pump</td>
-                    <td class="py-3">18.5 Liters</td>
-                    <td class="py-3"><span class="fuel-tag fuel-92">Octane 92</span></td>
-                    <td class="py-3"><span class="status-pill active" style="font-size:9px;">Delivered</span></td>
-                </tr>
+                <?php if (!$usageHistoryReady): ?>
+                    <tr><td colspan="6" class="py-4 text-center text-secondary">Usage history table is not available yet.</td></tr>
+                <?php elseif (!$usageRows): ?>
+                    <tr><td colspan="6" class="py-4 text-center text-secondary">No filled usage history yet.</td></tr>
+                <?php else: ?>
+                    <?php foreach ($usageRows as $usage): ?>
+                        <?php
+                            $filledAt = (string) ($usage['filled_at'] ?? '');
+                            $date = $filledAt !== '' ? date('Y-m-d', strtotime($filledAt)) : '';
+                            $liters = rtrim(rtrim(number_format((float) ($usage['filled_liters'] ?? 0), 1, '.', ''), '0'), '.');
+                            $stationText = trim((string) ($usage['station_name'] ?? 'Unknown station'));
+                            $stationLocation = trim((string) ($usage['station_location'] ?? ''));
+                            if ($stationLocation !== '') {
+                                $stationText .= ' / ' . $stationLocation;
+                            }
+                            $oilName = (string) ($usage['oil_name'] ?? 'Fuel');
+                            $status = ucfirst((string) ($usage['status'] ?? 'filled'));
+                        ?>
+                        <tr class="border-bottom border-secondary border-opacity-5" data-date="<?php echo htmlspecialchars($date); ?>">
+                            <td class="py-3 font-semibold text-white">TXN-<?php echo (int) $usage['usage_id']; ?>-MP</td>
+                            <td class="py-3 text-secondary"><?php echo htmlspecialchars($date ?: 'Not recorded'); ?></td>
+                            <td class="py-3"><?php echo htmlspecialchars($stationText); ?></td>
+                            <td class="py-3"><?php echo htmlspecialchars($liters); ?> Liters</td>
+                            <td class="py-3"><span class="fuel-tag <?php echo htmlspecialchars(customer_usage_fuel_class($oilName)); ?>"><?php echo htmlspecialchars($oilName); ?></span></td>
+                            <td class="py-3"><span class="status-pill active" style="font-size:9px;"><?php echo htmlspecialchars($status === 'Filled' ? 'Delivered' : $status); ?></span></td>
+                        </tr>
+                    <?php endforeach; ?>
+                <?php endif; ?>
             </tbody>
         </table>
     </div>

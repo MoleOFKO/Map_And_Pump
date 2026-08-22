@@ -72,6 +72,8 @@ $businessRoleId = (int) ($user['business_role_id'] ?? 0);
 $businessRoleName = (string) ($user['business_role_name'] ?? '');
 
 if ($targetMode === 'customer') {
+    $licenseAccess = customer_license_access($pdo, $userId);
+
     $_SESSION['role_id'] = $customerRoleId;
     $_SESSION['role_name'] = 'Customer';
     $_SESSION['active_profile_mode'] = 'customer';
@@ -82,19 +84,11 @@ if ($targetMode === 'customer') {
     $_SESSION['user_email'] = (string) $user['email'];
     map_pump_set_current_role($pdo, $userId, $customerRoleId);
 
-    header('Location: /php/Customer/dashboard.php');
+    header('Location: ' . ($licenseAccess['is_approved'] ? '/php/Customer/dashboard.php' : '/php/Customer/license.php'));
     exit;
 }
 
 if ($targetMode === 'business') {
-    $licenseAccess = customer_license_access($pdo, $userId);
-    if (!$licenseAccess['is_approved']) {
-        $_SESSION['profile_flash_message'] = 'Your driver license must be confirmed before switching account profiles.';
-        $_SESSION['profile_flash_type'] = 'warning';
-        header('Location: /php/Customer/license.php');
-        exit;
-    }
-
     $targetRoleId = $businessRoleId;
     $targetRoleName = $businessRoleName;
 

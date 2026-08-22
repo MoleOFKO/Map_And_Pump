@@ -25,6 +25,9 @@ Table booking {
 Table car_license {
   car_license_id int [pk, increment]
   car_plate_number varchar(50) [not null]
+  car_owner_name varchar(100) [null]
+  car_license_front_image varchar(255) [null]
+  car_license_back_image varchar(255) [null]
   model_year int [not null]
   vehicle_type varchar(100) [not null]
   location varchar(255) [not null]
