@@ -57,6 +57,59 @@ INSERT INTO `booking` VALUES (1,4,1,1,3,'MP-250-0A3I','MP-250-0A3I','filled',1,'
 /*!40000 ALTER TABLE `booking` ENABLE KEYS */;
 UNLOCK TABLES;
 
+
+--
+-- Table structure for table `usage_history`
+--
+
+DROP TABLE IF EXISTS `usage_history`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `usage_history` (
+  `usage_id` int NOT NULL AUTO_INCREMENT,
+  `booking_id` int NOT NULL,
+  `user_id` int NOT NULL,
+  `car_license_id` int DEFAULT NULL,
+  `station_id` int NOT NULL,
+  `oil_type_id` int NOT NULL,
+  `qr_code` varchar(255) COLLATE utf8mb4_0900_ai_ci NOT NULL,
+  `qr_refrence_code` varchar(255) COLLATE utf8mb4_0900_ai_ci NOT NULL,
+  `filled_liters` decimal(10,2) NOT NULL DEFAULT '0.00',
+  `price_per_litre` decimal(12,2) DEFAULT NULL,
+  `total_cost` decimal(12,2) DEFAULT NULL,
+  `status` varchar(50) COLLATE utf8mb4_0900_ai_ci NOT NULL DEFAULT 'filled',
+  `booked_at` timestamp NULL DEFAULT NULL,
+  `expire_at` timestamp NULL DEFAULT NULL,
+  `filled_at` datetime NOT NULL,
+  `staff_user_id` int DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`usage_id`) /*T![clustered_index] CLUSTERED */,
+  UNIQUE KEY `uq_usage_history_booking` (`booking_id`),
+  KEY `idx_usage_history_user_filled` (`user_id`,`filled_at`),
+  KEY `idx_usage_history_station` (`station_id`),
+  KEY `idx_usage_history_car` (`car_license_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Dumping data for table `usage_history`
+--
+
+LOCK TABLES `usage_history` WRITE;
+/*!40000 ALTER TABLE `usage_history` DISABLE KEYS */;
+/*!40000 ALTER TABLE `usage_history` ENABLE KEYS */;
+UNLOCK TABLES;
+
+--
+-- Move filled bookings out of active bookings for imported databases
+--
+
+INSERT IGNORE INTO `usage_history` (`booking_id`, `user_id`, `car_license_id`, `station_id`, `oil_type_id`, `qr_code`, `qr_refrence_code`, `filled_liters`, `status`, `booked_at`, `expire_at`, `filled_at`, `created_at`)
+SELECT `booking_id`, `user_id`, `car_license_id`, `station_id`, `oil_type_id`, `qr_code`, `qr_refrence_code`, `filled_gas`, 'filled', `created_at`, `expire_at`, COALESCE(`time_of_filled`, `created_at`), CURRENT_TIMESTAMP
+FROM `booking`
+WHERE LOWER(`status`) = 'filled';
+DELETE FROM `booking` WHERE LOWER(`status`) = 'filled';
+
 --
 -- Table structure for table `car_license`
 --

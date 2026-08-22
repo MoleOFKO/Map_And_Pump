@@ -66,23 +66,32 @@ try {
     $licenseStmt = $pdo->prepare(
         'SELECT u.car_license_id, c.filled_gas, c.updated_at
          FROM users u
-         LEFT JOIN car_license c ON c.car_license_id = u.car_license_id
+         INNER JOIN user_car uc ON uc.user_id = u.user_id AND uc.car_id = u.car_license_id
+         INNER JOIN car_license c ON c.car_license_id = u.car_license_id
          WHERE u.user_id = :user_id
          LIMIT 1'
     );
     $licenseStmt->execute([':user_id' => $userId]);
     $licenseRow = $licenseStmt->fetch(PDO::FETCH_ASSOC);
 
+    if (empty($licenseRow['car_license_id'])) {
+        http_response_code(422);
+        echo json_encode([
+            'success' => false,
+            'message' => 'Please add a car license and select the active car before booking.'
+        ]);
+        exit;
+    }
+
+    $activeCarLicenseId = (int)$licenseRow['car_license_id'];
     $weeklyTotal = 0.0;
-    if (!empty($licenseRow['car_license_id'])) {
-        $updatedAt = $licenseRow['updated_at'] ?? null;
-        if ($updatedAt && strtotime((string)$updatedAt) < strtotime('-7 days')) {
-            $resetStmt = $pdo->prepare('UPDATE car_license SET filled_gas = 0, updated_at = NOW() WHERE car_license_id = :car_license_id');
-            $resetStmt->execute([':car_license_id' => (int)$licenseRow['car_license_id']]);
-            $weeklyTotal = 0.0;
-        } else {
-            $weeklyTotal = (float)($licenseRow['filled_gas'] ?? 0);
-        }
+    $updatedAt = $licenseRow['updated_at'] ?? null;
+    if ($updatedAt && strtotime((string)$updatedAt) < strtotime('-7 days')) {
+        $resetStmt = $pdo->prepare('UPDATE car_license SET filled_gas = 0, updated_at = NOW() WHERE car_license_id = :car_license_id');
+        $resetStmt->execute([':car_license_id' => $activeCarLicenseId]);
+        $weeklyTotal = 0.0;
+    } else {
+        $weeklyTotal = (float)($licenseRow['filled_gas'] ?? 0);
     }
 
     if ($weeklyTotal >= 35.0) {
@@ -94,9 +103,10 @@ try {
         exit;
     }
 
-    $insert = $pdo->prepare('INSERT INTO booking (user_id, station_id, oil_type_id, qr_code, qr_refrence_code, status, filled_gas, expire_at, created_at) VALUES (:user_id, :station_id, :oil_type_id, :qr_code, :qr_refrence_code, :status, :filled_gas, DATE_ADD(NOW(), INTERVAL 1 HOUR), NOW())');
+    $insert = $pdo->prepare('INSERT INTO booking (user_id, car_license_id, station_id, oil_type_id, qr_code, qr_refrence_code, status, filled_gas, expire_at, created_at) VALUES (:user_id, :car_license_id, :station_id, :oil_type_id, :qr_code, :qr_refrence_code, :status, :filled_gas, DATE_ADD(NOW(), INTERVAL 1 HOUR), NOW())');
     $insert->execute([
         ':user_id' => $userId,
+        ':car_license_id' => $activeCarLicenseId,
         ':station_id' => $stationId,
         ':oil_type_id' => $oilTypeId,
         ':qr_code' => $displayPayload,

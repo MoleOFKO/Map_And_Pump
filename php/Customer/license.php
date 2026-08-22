@@ -397,6 +397,11 @@ include 'share_header.php';
             : '';
     }
 
+
+    document.querySelectorAll('input[type="date"]').forEach((field) => {
+        field.addEventListener('focus', () => field.showPicker?.());
+        field.addEventListener('click', () => field.showPicker?.());
+    });
     [licenseType, licenseSerial, licenseYear].forEach((field) => field.addEventListener('input', syncLicenseNumber));
     phoneNumber.addEventListener('input', syncPhoneNumber);
     [nrcState, nrcTownship, nrcType, nrcDigits].forEach((field) => field.addEventListener('input', syncNrcNumber));

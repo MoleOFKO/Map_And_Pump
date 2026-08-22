@@ -24,6 +24,34 @@ $customerLicenseAccess = customer_license_access($pdo, (int) $_SESSION['user_id'
 $_SESSION['license_id'] = $customerLicenseAccess['license_id'] ?: ($_SESSION['license_id'] ?? null);
 $_SESSION['license_status'] = $customerLicenseAccess['status'];
 
+$customerPublicUserId = (string) $_SESSION['user_id'];
+try {
+    $publicIdColumn = $pdo->query(
+        "SELECT COUNT(*)
+         FROM INFORMATION_SCHEMA.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = 'users'
+           AND COLUMN_NAME = 'user_public_id'"
+    );
+    if ((int) $publicIdColumn->fetchColumn() === 0) {
+        $pdo->exec("ALTER TABLE users ADD COLUMN user_public_id varchar(16) NULL AFTER user_id");
+    }
+
+    $publicIdStmt = $pdo->prepare(
+        "SELECT COALESCE(NULLIF(user_public_id, ''), LPAD(UPPER(HEX(user_id)), 6, '0')) AS public_user_id
+         FROM users
+         WHERE user_id = ?
+         LIMIT 1"
+    );
+    $publicIdStmt->execute([(int) $_SESSION['user_id']]);
+    $customerPublicUserId = (string) ($publicIdStmt->fetchColumn() ?: $customerPublicUserId);
+
+    $savePublicId = $pdo->prepare("UPDATE users SET user_public_id = ? WHERE user_id = ? AND (user_public_id IS NULL OR user_public_id = '')");
+    $savePublicId->execute([$customerPublicUserId, (int) $_SESSION['user_id']]);
+} catch (Throwable $e) {
+    error_log('Failed to prepare customer public user ID: ' . $e->getMessage());
+}
+
 $linkedBusinessRoleNameHeader = '';
 try {
     $profileModeStmt = $pdo->prepare(
@@ -56,6 +84,7 @@ if ($currentPage == 'track_book.php') $viewTitle = "Active Reservation Hub";
 if ($currentPage == 'usage_history.php') $viewTitle = "Usage Reports Log";
 if ($currentPage == 'profile_page.php') $viewTitle = "Portal Profile Settings";
 if ($currentPage == 'license.php') $viewTitle = "Driver License Setup";
+if ($currentPage == 'car_license.php') $viewTitle = "Car License Setup";
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -136,6 +165,9 @@ if ($currentPage == 'license.php') $viewTitle = "Driver License Setup";
                     <a href="profile_page.php" class="nav-item-link <?php echo ($currentPage == 'profile_page.php') ? 'active' : ''; ?>">
                         <i class="bi bi-person-fill-gear"></i> Edit Profile
                     </a>
+                    <a href="car_license.php" class="nav-item-link <?php echo ($currentPage == 'car_license.php') ? 'active' : ''; ?>">
+                        <i class="bi bi-car-front-fill"></i> Car License
+                    </a>
                 <?php endif; ?>
                 <?php if (!$customerLicenseAccess['is_approved']): ?>
                     <a href="license.php" class="nav-item-link <?php echo ($currentPage == 'license.php') ? 'active' : ''; ?>">
@@ -152,10 +184,10 @@ if ($currentPage == 'license.php') $viewTitle = "Driver License Setup";
                 </div>
                 <div>
                     <span class="fw-bold d-block text-white" style="font-size: 13px;"><?php echo htmlspecialchars($_SESSION['user_name']); ?></span>
-                    <small class="text-secondary" style="font-size: 11px;"><?php echo htmlspecialchars($_SESSION['user_id']); ?></small>
+                    <small class="text-secondary" style="font-size: 11px;">ID <?php echo htmlspecialchars($customerPublicUserId); ?></small>
                 </div>
             </div>
-            <?php if ($customerLicenseAccess['is_approved'] && $linkedBusinessRoleNameHeader !== ''): ?>
+            <?php if ($linkedBusinessRoleNameHeader !== ''): ?>
                 <form action="../account_switch.php" method="POST" class="mb-3">
                     <input type="hidden" name="mode" value="business">
                     <button type="submit" class="btn btn-outline-info btn-sm w-100 py-2 border-opacity-25" style="border-radius:10px;">

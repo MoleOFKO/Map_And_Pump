@@ -29,13 +29,13 @@ if ($bookingId > 0) {
     $stmt = $pdo->prepare(
         'SELECT b.booking_id, b.user_id, b.station_id, b.oil_type_id, b.qr_code, b.qr_refrence_code,
                 b.status, b.filled_gas, b.time_of_filled, b.expire_at, b.created_at,
-                s.station_name, o.oil_name, u.user_name, u.car_license_id,
+                s.station_name, o.oil_name, u.user_name, b.car_license_id,
                 c.filled_gas AS weekly_filled_gas, c.updated_at AS car_license_updated_at
          FROM booking b
          LEFT JOIN stations s ON s.station_id = b.station_id
          LEFT JOIN oil_types o ON o.oil_type_id = b.oil_type_id
          LEFT JOIN users u ON u.user_id = b.user_id
-         LEFT JOIN car_license c ON c.car_license_id = u.car_license_id
+         LEFT JOIN car_license c ON c.car_license_id = b.car_license_id
          WHERE b.booking_id = :booking_id
          LIMIT 1'
     );
@@ -256,3 +256,4 @@ $fillableDisplay = rtrim(rtrim(number_format($fillableLiters, 1, '.', ''), '0'),
     <script src="/js/Admin.js"></script>
 </body>
 </html>
+

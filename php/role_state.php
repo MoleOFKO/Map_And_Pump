@@ -48,13 +48,17 @@ function map_pump_session_role(array $user): array
     $businessRoleId = (int) ($user['business_role_id'] ?? 0);
     $currentRoleId = (int) ($user['current_role_id'] ?? 0);
 
-    if ($currentRoleId <= 0 || ($currentRoleId !== $baseRoleId && $currentRoleId !== $businessRoleId)) {
-        $currentRoleId = $baseRoleId;
-    }
-
     $baseRoleName = (string) ($user['role_name'] ?? 'customer');
     $businessRoleName = (string) ($user['business_role_name'] ?? '');
     $currentRoleName = (string) ($user['current_role_name'] ?? '');
+    $currentRoleKey = strtolower(trim($currentRoleName));
+
+    if (
+        $currentRoleId <= 0
+        || ($currentRoleId !== $baseRoleId && $currentRoleId !== $businessRoleId && $currentRoleKey !== 'customer')
+    ) {
+        $currentRoleId = $baseRoleId;
+    }
 
     if ($currentRoleId === $businessRoleId && $businessRoleName !== '') {
         $currentRoleName = $businessRoleName;
