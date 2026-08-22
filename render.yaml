@@ -7,6 +7,8 @@ services:
     envVars:
       - key: RENDER
         value: true
+      - key: APP_BASE_URL
+        sync: false
       - key: SMTP_HOST
         value: smtp.gmail.com
       - key: SMTP_PORT
