@@ -1,655 +1,475 @@
 <?php
-if (session_status() !== PHP_SESSION_ACTIVE) {
-    session_start();
+/**
+ * Shared database connection.
+ */
+include_once __DIR__ . '/../conn.php';
+$message = '';
+$error = '';
+
+// Handle Form Submissions & AJAX requests via PDO
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $action = $_POST['action'] ?? '';
+
+    // Register Station
+    if ($action === 'register') {
+        $station_name    = trim($_POST['station_name'] ?? '');
+        $location        = trim($_POST['location'] ?? '');
+        $station_address = trim($_POST['station_address'] ?? '');
+        $manager_email   = trim($_POST['manager_email'] ?? '');
+
+        if (!empty($station_name) && !empty($location) && !empty($manager_email)) {
+            try {
+                $managerStmt = $pdo->prepare("SELECT user_id FROM users WHERE email = ? AND COALESCE(business_role_id, role_id) = 4 LIMIT 1");
+                $managerStmt->execute([$manager_email]);
+                $manager_id = $managerStmt->fetchColumn();
+
+                if (!$manager_id) {
+                    throw new RuntimeException('Please select a valid branch manager.');
+                }
+
+                $stmt = $pdo->prepare("INSERT INTO stations (station_name, location, station_address, business_user_id, status) VALUES (?, ?, ?, ?, 'Active')");
+                $stmt->execute([$station_name, $location, $station_address, $manager_id]);
+                $message = "Station node created successfully.";
+            } catch (PDOException $e) {
+                $error = "Error registering station: " . $e->getMessage();
+            } catch (RuntimeException $e) {
+                $error = $e->getMessage();
+            }
+        } else {
+            $error = "Station Name, branch manager email, and location are required.";
+        }
+    }
+
+    // Update Configuration
+    if ($action === 'configure') {
+        $station_id      = trim($_POST['station_id'] ?? '');
+        $station_name    = trim($_POST['station_name'] ?? '');
+        $station_address = trim($_POST['station_address'] ?? '');
+        $location        = trim($_POST['location'] ?? '');
+        $manager_email   = trim($_POST['manager_email'] ?? '');
+
+        try {
+            // Find user_id based on manager email
+            $managerStmt = $pdo->prepare("SELECT user_id FROM users WHERE email = ? AND COALESCE(business_role_id, role_id) = 4 LIMIT 1");
+            $managerStmt->execute([$manager_email]);
+            $manager_id = $managerStmt->fetchColumn();
+
+            if (!$manager_id) {
+                throw new RuntimeException('Please select a valid branch manager.');
+            }
+
+            $stmt = $pdo->prepare("UPDATE stations SET station_name = ?, station_address = ?, location = ?, business_user_id = ? WHERE station_id = ?");
+            $stmt->execute([$station_name, $station_address, $location, $manager_id, $station_id]);
+            $message = "Configuration saved successfully!";
+        } catch (PDOException $e) {
+            $error = "Error updating configuration: " . $e->getMessage();
+        } catch (RuntimeException $e) {
+            $error = $e->getMessage();
+        }
+    }
+
+    // Toggle Status (AJAX Handler)
+    if ($action === 'toggle_status') {
+        $station_id = $_POST['station_id'] ?? '';
+        $new_status = $_POST['status'] ?? '';
+
+        if (!empty($station_id) && in_array($new_status, ['Active', 'Maintenance'])) {
+            try {
+                $stmt = $pdo->prepare("UPDATE stations SET status = ? WHERE station_id = ?");
+                $stmt->execute([$new_status, $station_id]);
+                echo json_encode(['success' => true]);
+            } catch (PDOException $e) {
+                echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+            }
+        } else {
+            echo json_encode(['success' => false, 'message' => 'Invalid parameters']);
+        }
+        exit;
+    }
+
+    // Decommission Station
+    if ($action === 'decommission') {
+        $station_id = $_POST['station_id'] ?? '';
+
+        try {
+            $stmt = $pdo->prepare("UPDATE stations SET status = 'Decommissioned' WHERE station_id = ?");
+            $stmt->execute([$station_id]);
+            $message = "Station successfully decommissioned and hidden.";
+        } catch (PDOException $e) {
+            $error = "Error decommissioning station: " . $e->getMessage();
+        }
+    }
+}
+
+// Fetch Stations from TiDB Cloud with Manager Info
+$stations = [];
+$branchManagers = [];
+try {
+    $stmt = $pdo->query("SELECT s.*, u.user_name AS manager_name, u.email AS manager_email FROM stations s LEFT JOIN users u ON u.user_id = s.business_user_id WHERE s.status != 'Decommissioned' OR s.status IS NULL ORDER BY s.station_id DESC");
+    $stations = $stmt->fetchAll();
+
+    $managerStmt = $pdo->query("SELECT user_id, email FROM users WHERE COALESCE(business_role_id, role_id) = 4 AND status NOT IN ('suspended', 'removed') ORDER BY email");
+    $branchManagers = $managerStmt->fetchAll();
+} catch (PDOException $e) {
+    $error = "Could not retrieve stations: " . $e->getMessage();
 }
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>HQ Management System</title>
-    <link rel="icon" type="image/png" href="/images/Logo.png">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
     <link rel="stylesheet" href="../../css/HQstyle.css">
     <style>
-        :root {
-            --sidebar-width: 260px;
-            --header-height: 60px;
-        }
-
-        * {
-            box-sizing: border-box;
-        }
-
-        body {
-            margin: 0;
-            padding: 0;
-            overflow-x: hidden; 
-            display: flex;
-            height: 100vh;
-            background: var(--bg, #0f172a);
-            font-family: system-ui, -apple-system, sans-serif;
-        }
-
-        .dashboard-layout {
-            display: grid;
-            grid-template-columns: var(--sidebar-width) 1fr;
-            width: 100%;
-            height: 100%;
-            position: relative;
-            transition: all 0.3s ease;
-        }
-
-        /* Mobile Header Bar */
-        .mobile-header {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: var(--header-height);
-            background: var(--card-bg, #1e293b);
-            border-bottom: 1px solid var(--border, #334155);
-            padding: 0 16px;
-            align-items: center;
-            justify-content: space-between;
-            z-index: 1001;
-        }
-
-        .mobile-toggle-btn {
-            background: none;
-            border: none;
-            color: #fff;
-            font-size: 1.5rem;
-            cursor: pointer;
-        }
-
-        .mobile-brand {
-            color: #fff;
-            font-weight: bold;
-            font-size: 1.1rem;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-
-        .mobile-brand img {
-            height: 24px;
-            width: auto;
-            object-fit: contain;
-        }
-
-        /* Sidebar Styling */
-        .sidebar {
-            background: var(--card-bg, #1e293b);
-            border-right: 1px solid var(--border, #334155);
-            padding: 24px 10px;
-            display: flex;
-            flex-direction: column;
-            justify-content: space-between;
-            height: 100%;
-            overflow-y: hidden;
-            transition: transform 0.3s ease;
-            z-index: 1002;
-        }
-
-        .sidebar-brand {
-            padding: 12px;
-            margin-top: -5px;
-            margin-bottom: 12px;
-            border: 1px solid var(--border, #334155);
-            border-radius: 10px;
-            background: rgba(255,255,255,0.03);
-            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-            text-align: center;
-        }
-
-        .sidebar-section-title {
-            font-size: 0.75rem;
-            font-weight: 700;
-            letter-spacing: 0.12em;
-            text-transform: uppercase;
-            color: var(--slate-400, #94a3b8);
-            margin: 8px 0 8px 6px;
-        }
-
-        .sidebar-menu {
-            list-style: none;
-            padding: 0;
-            margin: 0;
-        }
-
-        .sidebar-menu li {
-            padding: 12px 10px;
-            border-radius: 8px;
-            cursor: pointer;
-            margin-bottom: 4px;
-            font-weight: 500;
-            color: var(--slate-300, #cbd5e1);
-            transition: all 0.25s ease;
-        }
-
-        .sidebar-menu li:hover {
-            background: rgba(56, 189, 248, 0.08);
-            color: var(--sky-400, #38bdf8);
-            transform: translateX(4px);
-        }
-
-        .sidebar-menu li.active {
-            background: linear-gradient(135deg, rgba(56, 189, 248, 0.15), rgba(29, 78, 216, 0.2));
-            color: var(--sky-400, #38bdf8);
-            font-weight: 600;
-            border-left: 4px solid var(--sky-400, #38bdf8);
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-        }
-
-        .nav-logo {
-            height: 30px;
-            width: auto;
-            object-fit: contain;
-        }
-
-        /* Main Viewport Container */
-        .main-viewport {
-            height: 100%;
-            width: 100%;
-            display: flex;
-            flex-direction: column;
-            position: relative;
-        }
-
-        /* Sticky Top Right User Profile Menu Container */
-        .top-nav-bar {
-            position: absolute;
-            top: 16px;
-            right: 24px;
-            z-index: 1005;
-            display: flex;
-            align-items: center;
-        }
-
-        .user-menu-button {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            background: var(--card-bg, #1e293b);
-            border: 1px solid var(--border, #334155);
-            padding: 6px 14px 6px 6px;
-            border-radius: 30px;
-            cursor: pointer;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-            transition: all 0.2s ease;
-        }
-
-        .user-menu-button:hover {
-            border-color: var(--sky-400, #38bdf8);
-        }
-
-        .user-avatar-small {
-            width: 32px;
-            height: 32px;
-            border-radius: 50%;
-            object-fit: cover;
-            background: #334155;
-        }
-
-        .user-menu-name {
-            color: #fff;
-            font-size: 0.9rem;
-            font-weight: 500;
-        }
-
-        /* Dropdown Pop up */
-        .user-dropdown-popup {
-            display: none;
-            position: absolute;
-            top: calc(100% + 8px);
-            right: 0;
-            width: 260px;
-            background: var(--card-bg, #1e293b);
-            border: 1px solid var(--border, #334155);
-            border-radius: 14px;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
-            padding: 16px;
-            z-index: 1006;
-        }
-
-        .user-dropdown-popup.active {
-            display: block;
-        }
-
-        .dropdown-header {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            padding-bottom: 12px;
-            border-bottom: 1px solid var(--border, #334155);
-            margin-bottom: 12px;
-        }
-
-        .user-avatar-large {
-            width: 44px;
-            height: 44px;
-            border-radius: 50%;
-            object-fit: cover;
-            background: #334155;
-        }
-
-        .dropdown-user-info .user-title {
-            color: #fff;
-            font-weight: 600;
-            font-size: 0.95rem;
-            margin: 0;
-        }
-
-        .dropdown-user-info .user-email {
-            color: var(--slate-400, #94a3b8);
-            font-size: 0.8rem;
-            margin: 2px 0 0 0;
-        }
-
-        .edit-profile-btn {
-            width: 100%;
-            background: rgba(56, 189, 248, 0.1);
-            color: var(--sky-400, #38bdf8);
-            border: 1px solid rgba(56, 189, 248, 0.2);
-            padding: 8px 12px;
-            border-radius: 8px;
-            font-weight: 600;
-            font-size: 0.85rem;
-            cursor: pointer;
-            text-align: center;
-            transition: background 0.2s ease;
-        }
-
-        .edit-profile-btn:hover {
-            background: rgba(56, 189, 248, 0.2);
-        }
-
-        .content-frame {
-            width: 100%;
-            height: 100%;
-            border: none;
-            background: var(--bg, #0f172a);
-        }
-
-        /* Overlay for mobile sidebar */
-        .sidebar-overlay {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100vw;
-            height: 100vh;
-            background: rgba(0, 0, 0, 0.5);
-            z-index: 1000;
-        }
-
-        .logout-modal-overlay {
-            display: none;
-            position: fixed;
-            inset: 0;
-            background: rgba(0, 0, 0, 0.55);
-            z-index: 2000;
-            align-items: center;
-            justify-content: center;
-            padding: 16px;
-        }
-
-        .logout-modal-overlay.active {
-            display: flex;
-        }
-
-        .logout-modal {
-            width: min(100%, 420px);
-            background: var(--card-bg, #1e293b);
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            border-radius: 18px;
-            padding: 28px 24px;
-            box-shadow: 0 24px 80px rgba(0, 0, 0, 0.35);
-        }
-
-        .logout-modal h2 {
-            margin: 0 0 12px;
-            font-size: 1.25rem;
-            color: #fff;
-        }
-
-        .logout-modal p {
-            margin: 0 0 20px;
-            color: var(--slate-300, #cbd5e1);
-            line-height: 1.6;
-        }
-
-        .logout-modal-actions {
-            display: flex;
-            gap: 12px;
-            justify-content: flex-end;
-            flex-wrap: wrap;
-        }
-
-        .logout-modal-actions button {
-            min-width: 120px;
-            border: none;
-            border-radius: 10px;
-            padding: 10px 16px;
-            font-weight: 600;
-            cursor: pointer;
-        }
-
-        .logout-modal-actions .cancel-button {
-            background: rgba(148, 163, 184, 0.12);
-            color: #cbd5e1;
-        }
-
-        .logout-modal-actions .confirm-button {
-            background: #ef4444;
-            color: #fff;
-        }
-
-        /* Responsive Breakpoints */
-        @media (max-width: 992px) {
-            body {
-                overflow: auto;
-            }
-            .dashboard-layout {
-                grid-template-columns: 1fr;
-                padding-top: var(--header-height);
-            }
-            .mobile-header {
-                display: flex;
-            }
-            .sidebar {
-                position: fixed;
-                top: var(--header-height);
-                left: 0;
-                width: var(--sidebar-width);
-                height: calc(100vh - var(--header-height));
-                overflow-y: auto;
-                transform: translateX(-100%);
-            }
-            .sidebar.mobile-open {
-                transform: translateX(0);
-            }
-            .sidebar-overlay.active {
-                display: block;
-            }
-            .main-viewport {
-                height: calc(100vh - var(--header-height));
-            }
-            .top-nav-bar {
-                top: calc(var(--header-height) + 12px);
-                right: 16px;
-                display: none;
-            }
-        }
+        .table-custom { background-color: transparent !important; color: #dee2e6; }
+        .table-custom th { text-transform: uppercase; font-size: 0.74rem; letter-spacing: 0.05em; color: var(--slate-300); padding: 12px 16px; background: rgba(255, 255, 255, 0.05); border-bottom: 1px solid rgba(255, 255, 255, 0.08); }
+        .table-custom td { background-color: transparent !important; color: #ced4da !important; border-color: #2c3034; vertical-align: middle; }
+        .table-actions { white-space: nowrap; }
+        .modal-content-custom { background-color: #121A26 !important; border: 1px solid #373b3e !important; box-shadow: 0 1rem 3rem rgba(0, 0, 0, 0.5); }
+        .modal-content-decommission { background-color: #121A26 !important; border: 1px solid #842029 !important; box-shadow: 0 1rem 3rem rgba(220, 53, 69, 0.15); }
+        #stationMap, #configMap { height: 220px; border-radius: 8px; border: 1px solid #373b3e; }
     </style>
 </head>
-<?php
-    require_once __DIR__ . '/../conn.php';
-
-    $loggedUserId = isset($_SESSION['user_id']) ? (int) $_SESSION['user_id'] : 0;
-    $loggedUserEmail = isset($_SESSION['user_email']) ? trim((string) $_SESSION['user_email']) : '';
-
-    // Fetch dynamic brand information from TiDB Cloud database table 'headquarter'
-    $hq_id = isset($_SESSION['headquarter_id']) ? (int) $_SESSION['headquarter_id'] : 60010;
-    $brand_title = 'Map & Pump';
-    $brand_logo = '../../images/Logo.png';
-
-    if ($loggedUserId > 0) {
-        $hqStmt = $pdo->prepare(
-            'SELECT h.company_name, h.company_logo, h.headquarter_id
-             FROM users u
-             LEFT JOIN headquarter h ON h.headquarter_id = u.headquarter_id
-             WHERE u.user_id = ?
-             LIMIT 1'
-        );
-        $hqStmt->execute([$loggedUserId]);
-        $hqRow = $hqStmt->fetch(PDO::FETCH_ASSOC);
-        if ($hqRow) {
-            if (!empty($hqRow['company_name'])) {
-                $brand_title = htmlspecialchars((string) $hqRow['company_name'], ENT_QUOTES, 'UTF-8');
-            }
-            if (!empty($hqRow['company_logo'])) {
-                $brand_logo = htmlspecialchars((string) $hqRow['company_logo'], ENT_QUOTES, 'UTF-8');
-            }
-            if (!empty($hqRow['headquarter_id'])) {
-                $hq_id = (int) $hqRow['headquarter_id'];
-            }
-        }
-    } else {
-        $brandStmt = $pdo->prepare('SELECT company_name, company_logo FROM headquarter WHERE headquarter_id = ? LIMIT 1');
-        $brandStmt->execute([$hq_id]);
-        $brandRow = $brandStmt->fetch(PDO::FETCH_ASSOC);
-        if ($brandRow) {
-            if (!empty($brandRow['company_name'])) {
-                $brand_title = htmlspecialchars((string) $brandRow['company_name'], ENT_QUOTES, 'UTF-8');
-            }
-            if (!empty($brandRow['company_logo'])) {
-                $brand_logo = htmlspecialchars((string) $brandRow['company_logo'], ENT_QUOTES, 'UTF-8');
-            }
-        }
-    }
-
-    $notifications = [];
-    if ($loggedUserId > 0 && $loggedUserEmail !== '') {
-        $notificationStmt = $pdo->prepare(
-            'SELECT notification_id, subject, message, notification_type, created_at
-             FROM notifications
-             WHERE recipient_user_id = :user_id
-                OR LOWER(recipient_email) = LOWER(:email)
-             ORDER BY created_at DESC
-             LIMIT 5'
-        );
-        $notificationStmt->execute([
-            ':user_id' => $loggedUserId,
-            ':email' => $loggedUserEmail,
-        ]);
-        $notifications = $notificationStmt->fetchAll(PDO::FETCH_ASSOC);
-    } elseif ($loggedUserId > 0) {
-        $notificationStmt = $pdo->prepare(
-            'SELECT notification_id, subject, message, notification_type, created_at
-             FROM notifications
-             WHERE recipient_user_id = :user_id
-             ORDER BY created_at DESC
-             LIMIT 5'
-        );
-        $notificationStmt->execute([':user_id' => $loggedUserId]);
-        $notifications = $notificationStmt->fetchAll(PDO::FETCH_ASSOC);
-    } elseif ($loggedUserEmail !== '') {
-        $notificationStmt = $pdo->prepare(
-            'SELECT notification_id, subject, message, notification_type, created_at
-             FROM notifications
-             WHERE LOWER(recipient_email) = LOWER(:email)
-             ORDER BY created_at DESC
-             LIMIT 5'
-        );
-        $notificationStmt->execute([':email' => $loggedUserEmail]);
-        $notifications = $notificationStmt->fetchAll(PDO::FETCH_ASSOC);
-    }
-?>
 <body>
+    <div class="container py-4">
+        <h2 class="title">Station Network</h2>
+        <p class="subtitle">Onboard physical station nodes and set up terminal operating profiles.</p>
 
-    <!-- Mobile Top Navigation Bar -->
-    <div class="mobile-header">
-        <button class="mobile-toggle-btn" onclick="toggleSidebar()">☰</button>
-        <div class="mobile-brand">
-            <img src="<?php echo $brand_logo; ?>" alt="Logo">
-            <span><?php echo $brand_title; ?></span>
-        </div>
-        <div style="width: 24px;"></div>
-    </div>
-
-    <!-- Background Overlay for Mobile Menu -->
-    <div class="sidebar-overlay" id="sidebarOverlay" onclick="toggleSidebar()"></div>
-
-    <div class="logout-modal-overlay" id="logoutModalOverlay" onclick="cancelLogout()">
-        <div class="logout-modal" onclick="event.stopPropagation()">
-            <h2>Confirm Logout</h2>
-            <p>Are you sure you want to log out?</p>
-            <div class="logout-modal-actions">
-                <button type="button" class="cancel-button" onclick="cancelLogout()">Cancel</button>
-                <button type="button" class="confirm-button" onclick="confirmLogout()">Logout</button>
+        <?php if (!empty($message)): ?>
+            <div class="alert alert-success alert-dismissible fade show" role="alert">
+                <?= htmlspecialchars($message) ?>
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
             </div>
-        </div>
-    </div>
+        <?php endif; ?>
 
-    <div class="dashboard-layout">
-        <!-- Sidebar Navigation -->
-        <aside class="sidebar" id="sidebar">
-            <div>
-                <div class="sidebar-brand">
-                    <a href="index.php" class="text-decoration-none d-flex align-items-center justify-content-center gap-2 text-white fw-bold" style="text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 8px;">
-                        <img src="<?php echo $brand_logo; ?>" alt="Logo" class="nav-logo">
-                        <span style="font-size: 1.1rem; letter-spacing: 0.5px; color: #ffffff;"><?php echo $brand_title; ?></span>
-                    </a>
-                    <div style="font-size: 0.7rem; letter-spacing: 0.5px; color: var(--slate-400, #94a3b8); margin-top: 4px;">Headquarter Control Panel</div>
+        <?php if (!empty($error)): ?>
+            <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                <?= htmlspecialchars($error) ?>
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        <?php endif; ?>
+
+        <div class="card p-4 bg-dark text-light border-secondary">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <div>
+                    <h3>Manage Deployed Stations</h3>
+                    <p class="subtitle mb-0">Monitor active nodes, update operational status, or remove configurations.</p>
                 </div>
-                <div class="sidebar-section-title">Features</div>
-                <ul class="sidebar-menu">
-                    <li onclick="routeTo('dashboard.php')" class="active">DashBoard</li>
-                    <li onclick="routeTo('brand.php')">Brand Configuration</li>
-                    <li onclick="routeTo('pricing.php')">Oil Types & Pricing</li>
-                    <li onclick="routeTo('station.php')">Manage Stations</li>
-                    <li onclick="routeTo('report_from_manager.php')">Manager Reports</li>
-                    <li onclick="routeTo('report_to_admin.php')">Report to Admin</li>
-                    <li onclick="routeTo('account.php')">Manager Accounts</li>
-                </ul>
+                <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#registerModal">+Add Station</button>
             </div>
-            
-            <ul class="sidebar-menu">
-                <li onclick="handleLogout()" style="color: var(--danger, #ef4444); font-weight: bold;">Logout</li>
-            </ul>
-        </aside>
+            <div class="table-responsive">
+                <table class="table table-custom align-middle">
+                    <thead>
+                        <tr>
+                            <th>Station ID</th>
+                            <th>Station Name</th>
+                            <th>Address</th>
+                            <th>Branch Manager</th>
+                            <th>Status</th>
+                            <th class="text-end">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php if (empty($stations)): ?>
+                            <tr><td colspan="6" class="text-center text-muted">No station nodes found.</td></tr>
+                        <?php else: ?>
+                            <?php foreach ($stations as $row): ?>
+                                <?php 
+                                    $isMaintenance = ($row['status'] === 'Maintenance');
+                                    $badgeClass = $isMaintenance ? 'badge bg-warning text-dark' : 'badge bg-success';
+                                    $statusText = $isMaintenance ? 'Maintenance' : 'Active';
+                                    $btnClass = $isMaintenance ? 'btn btn-sm me-1' : 'btn btn-sm me-1';
+                                    $btnText = $isMaintenance ? 'Set Active' : 'Set Maintenance';
+                                    $targetStatus = $isMaintenance ? 'Active' : 'Maintenance';
+                                ?>
+                                <tr>
+                                    <td>#<?= htmlspecialchars($row['station_id']) ?></td>
+                                    <td><?= htmlspecialchars($row['station_name']) ?></td>
+                                    <td><?= htmlspecialchars($row['station_address']) ?></td>
+                                    <td><?= htmlspecialchars($row['manager_name'] ?? 'Not assigned') ?></td>
+                                    <td>
+                                        <span id="status-badge-<?= $row['station_id'] ?>" class="<?= $badgeClass ?>">
+                                            <?= $statusText ?>
+                                        </span>
+                                    </td>
+                                    <td class="text-end table-actions">
+                                        <button type="button" id="toggle-btn-<?= $row['station_id'] ?>" class="<?= $btnClass ?>" onclick="toggleStatus(<?= $row['station_id'] ?>, '<?= $targetStatus ?>')">
+                                            <?= $btnText ?>
+                                        </button>
+                                        <button type="button" class="btn btn-sm me-1" data-bs-toggle="modal" data-bs-target="#configureModal" 
+                                            onclick="setConfigureData('<?= htmlspecialchars($row['station_id'], ENT_QUOTES) ?>', '<?= htmlspecialchars($row['station_name'], ENT_QUOTES) ?>', '<?= htmlspecialchars($row['station_address'], ENT_QUOTES) ?>', '<?= htmlspecialchars($row['manager_email'], ENT_QUOTES) ?>', '<?= htmlspecialchars($row['location'], ENT_QUOTES) ?>')">
+                                            Configure
+                                        </button>
+                                        <button type="button" class="btn btn-sm btn-danger" data-bs-toggle="modal" data-bs-target="#decommissionModal" onclick="setDecommissionData('<?= htmlspecialchars($row['station_id']) ?>', 'Station #<?= htmlspecialchars($row['station_id']) ?> - <?= htmlspecialchars($row['station_name']) ?>')">Decommission</button>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
+                        <?php endif; ?>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
 
-        <!-- Main Dynamic Viewport -->
-        <main class="main-viewport">
-            <div class="top-nav-bar">
-                <div style="display: flex; align-items: center; gap: 12px; position: relative;">
-                    <!-- Notification Bell & Popup -->
-                    <div style="position: relative;">
-                        <button class="user-menu-button" onclick="toggleNotificationDropdown(event)" type="button" style="padding: 8px 10px;">
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: #cbd5e1;">
-                                <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
-                                <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
-                            </svg>
-                            <span style="position: absolute; top: 6px; right: 8px; width: 8px; height: 8px; background: #ef4444; border-radius: 50%;"></span>
-                        </button>
-
-                        <div class="user-dropdown-popup" id="notificationDropdownPopup" style="width: 300px;">
-                            <div class="dropdown-header" style="justify-content: space-between;">
-                                <p class="user-title" style="margin: 0;">Notifications</p>
-                                <span style="font-size: 0.755rem; color: var(--sky-400, #38bdf8); cursor: pointer;">Mark all read</span>
+    <!-- Register Modal -->
+    <div class="modal fade" id="registerModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content modal-content-custom text-light">
+                <form method="POST">
+                    <input type="hidden" name="action" value="register">
+                    <div class="modal-header border-secondary">
+                        <h5 class="modal-title">Register Station Node</h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label text-light">Station Name</label>
+                                <input type="text" name="station_name" class="form-control bg-dark text-light border-secondary" placeholder="e.g. Downtown Metro" required>
                             </div>
-                            <div style="display: flex; flex-direction: column; gap: 8px; max-height: 240px; overflow-y: auto;">
-                                <?php if (empty($notifications)): ?>
-                                    <div style="padding: 8px; background: rgba(255,255,255,0.02); border-radius: 6px; font-size: 0.85rem; color: var(--slate-300, #cbd5e1);">
-                                        No notifications yet.
-                                    </div>
-                                <?php else: ?>
-                                    <?php foreach ($notifications as $notification): ?>
-                                        <div style="padding: 8px; background: rgba(255,255,255,0.02); border-radius: 6px; font-size: 0.85rem; color: var(--slate-300, #cbd5e1);">
-                                            <strong><?= htmlspecialchars((string) ($notification['subject'] ?? 'Notification'), ENT_QUOTES, 'UTF-8') ?></strong><br>
-                                            <span style="font-size: 0.75rem; color: var(--slate-400, #94a3b8);">
-                                                <?= htmlspecialchars((string) ($notification['message'] ?? ''), ENT_QUOTES, 'UTF-8') ?>
-                                            </span>
-                                            <div style="font-size: 0.7rem; color: var(--slate-500, #64748b); margin-top: 4px;">
-                                                <?= htmlspecialchars((string) ($notification['created_at'] ?? ''), ENT_QUOTES, 'UTF-8') ?>
-                                            </div>
-                                        </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label text-light">Branch Manager Email</label>
+                                <select name="manager_email" class="form-select bg-dark text-light border-secondary" required>
+                                    <option value="">Choose a branch manager</option>
+                                    <?php foreach ($branchManagers as $manager): ?>
+                                        <option value="<?= htmlspecialchars($manager['email'], ENT_QUOTES, 'UTF-8') ?>">
+                                            <?= htmlspecialchars($manager['email']) ?>
+                                        </option>
                                     <?php endforeach; ?>
-                                <?php endif; ?>
+                                </select>
+                            </div>
+                            <div class="col-12 mb-3">
+                                <label class="form-label text-light">Station Address</label>
+                                <input type="text" name="station_address" class="form-control bg-dark text-light border-secondary" placeholder="e.g. No. 45, Main Road, Township">
+                            </div>
+                            <div class="col-12 mb-3">
+                                <label class="form-label text-light">Location (Coordinates)</label>
+                                <input type="text" id="stationLocation" name="location" class="form-control bg-dark text-light border-secondary" placeholder="Click the map to choose a location" required readonly>
+                            </div>
+                            <div class="col-12">
+                                <div id="stationMap" aria-label="Choose station location on map"></div>
+                                <small class="text-secondary">Click the map to select the station coordinates.</small>
                             </div>
                         </div>
                     </div>
-                    <button class="user-menu-button" onclick="toggleUserDropdown(event)" type="button">
-                        <img src="../../images/default-avatar.png" alt="User Logo" class="user-avatar-small" id="headerUserAvatar">
-                        <span class="user-menu-name" id="headerUserName">HQ Admin</span>
-                    </button>
-
-                    <div class="user-dropdown-popup" id="userDropdownPopup">
-                        <div class="dropdown-header">
-                            <img src="<?php echo $brand_logo; ?>" alt="User Logo" class="user-avatar-large" id="dropdownUserAvatar">
-                            <div class="dropdown-user-info">
-                                <p class="user-title" id="dropdownUserName">HQ Admin</p>
-                                <p class="user-email" id="dropdownUserEmail">hq_admin@mapandpump.com</p>
-                            </div>
-                        </div>
-                        <button type="button" class="edit-profile-btn" onclick="routeTo('profile.php'); closeUserDropdown();">Edit Profile</button>
+                    <div class="modal-footer border-secondary">
+                        <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Close</button>
+                        <button type="submit" class="btn btn-success">Register Station</button>
                     </div>
-                </div>
+                </form>
             </div>
-
-            <iframe id="viewport" class="content-frame" src="dashboard.php"></iframe>
-        </main>
+        </div>
     </div>
 
+    <!-- Configure Modal -->
+    <div class="modal fade" id="configureModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content modal-content-custom text-light">
+                <form method="POST">
+                    <input type="hidden" name="action" value="configure">
+                    <div class="modal-header border-secondary">
+                        <h5 class="modal-title">Configure Station Node</h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label text-light">Station ID</label>
+                                <input type="text" id="configStationId" name="station_id" class="form-control bg-dark text-light border-secondary" readonly>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label text-light">Station Name</label>
+                                <input type="text" id="configStationName" name="station_name" class="form-control bg-dark text-light border-secondary" required>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label text-light">Branch Manager Email</label>
+                                <select id="configManagerEmail" name="manager_email" class="form-select bg-dark text-light border-secondary" required>
+                                    <option value="">Choose a branch manager</option>
+                                    <?php foreach ($branchManagers as $manager): ?>
+                                        <option value="<?= htmlspecialchars($manager['email'], ENT_QUOTES, 'UTF-8') ?>">
+                                            <?= htmlspecialchars($manager['email']) ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label text-light">Station Address</label>
+                                <input type="text" id="configStationAddress" name="station_address" class="form-control bg-dark text-light border-secondary" placeholder="e.g. No. 45, Main Road">
+                            </div>
+                            <div class="col-12 mb-3">
+                                <label class="form-label text-light">Location (Coordinates)</label>
+                                <input type="text" id="configLocation" name="location" class="form-control bg-dark text-light border-secondary" required readonly>
+                            </div>
+                            <div class="col-12">
+                                <div id="configMap" aria-label="Choose station location on map"></div>
+                                <small class="text-secondary">Click the map to update the station coordinates.</small>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer border-secondary">
+                        <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-success">Save Changes</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Decommission Modal -->
+    <div class="modal fade" id="decommissionModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content modal-content-decommission text-light">
+                <form method="POST">
+                    <input type="hidden" name="action" value="decommission">
+                    <input type="hidden" id="decommissionStationId" name="station_id">
+                    <div class="modal-header border-danger">
+                        <h5 class="modal-title text-danger">Decommission Station Node</h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <p>Are you sure you want to decommission <strong id="decommissionTarget" class="text-warning"></strong>?</p>
+                        <p class="small text-muted">This action will hide the station from the active table without deleting its record from the database.</p>
+                        <div class="text-end mt-4">
+                            <button type="button" class="btn btn-outline-light me-2" data-bs-dismiss="modal">Cancel</button>
+                            <button type="submit" class="btn btn-danger">Confirm Decommission</button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
-    function routeTo(path) {
-        path = path.trim();
-        document.getElementById('viewport').src = path;
-    
-        document.querySelectorAll('.sidebar-menu li').forEach(item => {
-            item.classList.remove('active');
-            const onclickAttr = item.getAttribute('onclick') || '';
-            const match = onclickAttr.match(/routeTo\(['"]([^'"]+)['"]\)/);
-            if (match && match[1] === path) {
-                item.classList.add('active');
+        let stationMap, stationMarker;
+        let configMap, configMarker;
+
+        // Register Modal Map
+        document.getElementById('registerModal').addEventListener('shown.bs.modal', function () {
+            if (!stationMap) {
+                stationMap = L.map('stationMap').setView([21.9588, 96.0891], 6);
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    maxZoom: 19
+                }).addTo(stationMap);
+
+                stationMap.on('click', function (event) {
+                    const lat = event.latlng.lat.toFixed(6);
+                    const lng = event.latlng.lng.toFixed(6);
+                    if (stationMarker) {
+                        stationMarker.setLatLng(event.latlng);
+                    } else {
+                        stationMarker = L.marker(event.latlng).addTo(stationMap);
+                    }
+                    document.getElementById('stationLocation').value = lat + ', ' + lng;
+                });
             }
+            setTimeout(() => stationMap.invalidateSize(), 100);
         });
 
-        if (window.innerWidth <= 992) {
-            toggleSidebar();
+        // Configure Modal Map
+        document.getElementById('configureModal').addEventListener('shown.bs.modal', function () {
+            const coordsVal = document.getElementById('configLocation').value;
+            let initialLatLng = [21.9588, 96.0891];
+            let zoomLevel = 6;
+
+            if (coordsVal && coordsVal.includes(',')) {
+                const parts = coordsVal.split(',');
+                const parsedLat = parseFloat(parts[0]);
+                const parsedLng = parseFloat(parts[1]);
+                if (!isNaN(parsedLat) && !isNaN(parsedLng)) {
+                    initialLatLng = [parsedLat, parsedLng];
+                    zoomLevel = 14;
+                }
+            }
+
+            if (!configMap) {
+                configMap = L.map('configMap').setView(initialLatLng, zoomLevel);
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    maxZoom: 19
+                }).addTo(configMap);
+
+                configMap.on('click', function (event) {
+                    const lat = event.latlng.lat.toFixed(6);
+                    const lng = event.latlng.lng.toFixed(6);
+                    if (configMarker) {
+                        configMarker.setLatLng(event.latlng);
+                    } else {
+                        configMarker = L.marker(event.latlng).addTo(configMap);
+                    }
+                    document.getElementById('configLocation').value = lat + ', ' + lng;
+                });
+            } else {
+                configMap.setView(initialLatLng, zoomLevel);
+            }
+
+            // Set marker if coords exist
+            if (coordsVal && coordsVal.includes(',')) {
+                const parts = coordsVal.split(',');
+                const latLngObj = L.latLng(parseFloat(parts[0]), parseFloat(parts[1]));
+                if (configMarker) {
+                    configMarker.setLatLng(latLngObj);
+                } else {
+                    configMarker = L.marker(latLngObj).addTo(configMap);
+                }
+            }
+
+            setTimeout(() => configMap.invalidateSize(), 100);
+        });
+
+        function setConfigureData(stationId, stationName, stationAddress, managerEmail, location) {
+            document.getElementById('configStationId').value = stationId;
+            document.getElementById('configStationName').value = stationName;
+            document.getElementById('configStationAddress').value = stationAddress;
+            document.getElementById('configManagerEmail').value = managerEmail;
+            document.getElementById('configLocation').value = location;
         }
-    }
 
-    function toggleSidebar() {
-        const sidebar = document.getElementById('sidebar');
-        const overlay = document.getElementById('sidebarOverlay');
-        sidebar.classList.toggle('mobile-open');
-        overlay.classList.toggle('active');
-    }
+        function setDecommissionData(stationId, stationText) {
+            document.getElementById('decommissionStationId').value = stationId;
+            document.getElementById('decommissionTarget').textContent = stationText;
+        }
 
-    function closeUserDropdown() {
-        const popup = document.getElementById('userDropdownPopup');
-        if (popup) popup.classList.remove('active');
-    }
+        function toggleStatus(id, newStatus) {
+            const formData = new URLSearchParams();
+            formData.append('action', 'toggle_status');
+            formData.append('station_id', id);
+            formData.append('status', newStatus);
 
-    function closeNotificationDropdown() {
-        const popup = document.getElementById('notificationDropdownPopup');
-        if (popup) popup.classList.remove('active');
-    }
+            fetch('', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    const badge = document.getElementById('status-badge-' + id);
+                    const btn = document.getElementById('toggle-btn-' + id);
 
-    window.addEventListener('click', function() {
-        closeUserDropdown();
-        closeNotificationDropdown();
-    });
-
-    function handleLogout() {
-        document.getElementById('logoutModalOverlay').classList.add('active');
-    }
-
-    function cancelLogout() {
-        document.getElementById('logoutModalOverlay').classList.remove('active');
-    }
-
-    function confirmLogout() {
-        window.location.href = '../Login/login.php';
-    }
-
-    function toggleNotificationDropdown(event) {
-        event.stopPropagation();
-        closeUserDropdown();
-        const popup = document.getElementById('notificationDropdownPopup');
-        popup.classList.toggle('active');
-    }
-
-    function toggleUserDropdown(event) {
-        event.stopPropagation();
-        closeNotificationDropdown();
-        const popup = document.getElementById('userDropdownPopup');
-        popup.classList.toggle('active');
-    }
+                    if (newStatus === 'Maintenance') {
+                        badge.className = 'badge bg-warning text-dark';
+                        badge.textContent = 'Maintenance';
+                        btn.className = 'btn btn-sm btn-outline-success me-1';
+                        btn.textContent = 'Set Active';
+                        btn.setAttribute('onclick', `toggleStatus(${id}, 'Active')`);
+                    } else {
+                        badge.className = 'badge bg-success';
+                        badge.textContent = 'Active';
+                        btn.className = 'btn btn-sm btn-outline-warning me-1';
+                        btn.textContent = 'Set Maintenance';
+                        btn.setAttribute('onclick', `toggleStatus(${id}, 'Maintenance')`);
+                    }
+                } else {
+                    alert('Failed to update status: ' + (data.message || 'Unknown error'));
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('An error occurred while updating the status.');
+            });
+        }
     </script>
 </body>
+<footer class="text-white-50 text-center py-4 mt-5 small">&copy; 2026 Map & Pump | All Rights Reserved</footer>
 </html>
