@@ -513,13 +513,17 @@ include 'share_header.php';
 </div>
 
 <script>
+document.addEventListener('DOMContentLoaded', () => {
     const carForm = document.getElementById('car-license-form');
-    const carSwitchForm = document.getElementById('car-switch-form');
     const carStatus = document.getElementById('car-license-status');
     const carSubmit = document.getElementById('car-license-submit');
     const carSubmitLabel = carSubmit ? carSubmit.innerHTML : '';
     const carPlateNumber = document.getElementById('carPlateNumber');
+    const carSwitchModal = document.getElementById('carSwitchModal');
 
+    if (carSwitchModal && carSwitchModal.parentElement !== document.body) {
+        document.body.appendChild(carSwitchModal);
+    }
 
     function normalizeCarPlate(value) {
         const cleaned = value.toUpperCase().replace(/[^0-9A-Z]/g, '').slice(0, 6);
@@ -545,6 +549,7 @@ include 'share_header.php';
         syncCarPlate();
     }
 
+    const carSwitchForm = document.getElementById('car-switch-form');
     const carSwitchButton = document.getElementById('car-switch-submit');
     const carSwitchHint = document.getElementById('car-switch-hint');
     const carSwitchCurrentId = carSwitchForm ? Number(carSwitchForm.dataset.currentCar || 0) : 0;
@@ -565,11 +570,14 @@ include 'share_header.php';
 
     carSwitchInputs.forEach((input) => input.addEventListener('change', refreshCarSwitchState));
     refreshCarSwitchState();
+
     document.querySelectorAll('input[type="date"]').forEach((field) => {
         field.addEventListener('focus', () => field.showPicker?.());
         field.addEventListener('click', () => field.showPicker?.());
     });
+
     function showCarStatus(message, ok = false) {
+        if (!carStatus) return;
         carStatus.textContent = message;
         carStatus.classList.toggle('d-none', !message);
         carStatus.style.background = ok ? 'rgba(27, 228, 148, 0.1)' : 'rgba(255, 77, 106, 0.1)';
@@ -627,6 +635,7 @@ include 'share_header.php';
             submitCarForm(carSwitchForm, carSwitchForm.querySelector('button[type="submit"]'), 'Switch Car');
         });
     }
+});
 </script>
 
 
