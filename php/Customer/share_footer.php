@@ -39,7 +39,7 @@
                         </button>
                     </form>
                 <?php endif; ?>
-                <a href="/php/Login/logout.php" class="btn btn-danger w-100 py-2">Sign Out</a>
+                <a href="../Login/logout.php" class="btn btn-danger w-100 py-2">Sign Out</a>
             </div>
         </div>
     </div>

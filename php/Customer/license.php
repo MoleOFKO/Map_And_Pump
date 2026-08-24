@@ -8,7 +8,7 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
 
 $userId = (int) ($_SESSION['user_id'] ?? 0);
 if ($userId <= 0) {
-    header('Location: /php/Login/login.php');
+    header('Location: ../Login/login.php');
     exit;
 }
 
@@ -85,7 +85,36 @@ include 'share_header.php';
 ?>
 
 <style>
-    .license-face-capture {
+    .license-dropzone {
+        border: 2px dashed rgba(13, 110, 253, 0.35);
+        border-radius: 14px;
+        background: rgba(4, 9, 21, 0.3);
+        padding: 24px;
+        text-align: center;
+        position: relative;
+        cursor: pointer;
+        transition: all 0.2s ease-in-out;
+    }
+    .license-dropzone:hover, .license-dropzone.dragover {
+        border-color: rgba(13, 110, 253, 0.8);
+        background: rgba(13, 110, 253, 0.05);
+    }
+    .license-dropzone input[type="file"] {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        opacity: 0;
+        cursor: pointer;
+    }
+    .license-dropzone-preview {
+        max-height: 140px;
+        border-radius: 8px;
+        margin-top: 12px;
+        display: none;
+        object-fit: contain;
+    }
+    /* .license-face-capture {
         border: 1px solid var(--customer-border);
         border-radius: 18px;
         background: rgba(4, 9, 21, 0.46);
@@ -154,6 +183,72 @@ include 'share_header.php';
         font-size: 13px;
         text-align: center;
         padding: 28px;
+    } */
+    .license-face-capture {
+        border: 1px solid rgba(13, 110, 253, 0.2);
+        border-radius: 20px;
+        background: linear-gradient(135deg, rgba(13, 110, 253, 0.05) 0%, rgba(4, 9, 21, 0.6) 100%);
+        padding: 24px;
+        backdrop-filter: blur(10px);
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+    }
+    .license-face-frame {
+        position: relative;
+        width: min(100%, 260px);
+        aspect-ratio: 1;
+        margin: 0 auto;
+        border-radius: 50%;
+        overflow: hidden;
+        background: rgba(4, 9, 21, 0.8);
+        /* Modern multi-layered glowing border effect */
+        border: 3px solid rgba(13, 110, 253, 0.4);
+        box-shadow: 
+            0 0 0 6px rgba(13, 110, 253, 0.08),
+            0 12px 35px rgba(0, 0, 0, 0.4),
+            inset 0 0 20px rgba(13, 110, 253, 0.15);
+    }
+    .license-face-video,
+    .license-face-preview {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        transform: scaleX(-1);
+    }
+    .license-face-preview {
+        display: none;
+    }
+    .license-face-frame.has-capture .license-face-video,
+    .license-face-frame.has-capture .license-face-guide {
+        display: none;
+    }
+    .license-face-frame.has-capture .license-face-preview {
+        display: block;
+    }
+    .license-face-guide {
+        pointer-events: none;
+        position: absolute;
+        inset: 0;
+        border-radius: 50%;
+        border: 2px dashed rgba(27, 228, 148, 0.6);
+        animation: facePulse 3s infinite linear;
+    }
+    @keyframes facePulse {
+        0% { transform: scale(0.98); opacity: 0.7; }
+        50% { transform: scale(1.02); opacity: 1; }
+        100% { transform: scale(0.98); opacity: 0.7; }
+    }
+    .license-face-placeholder {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        color: var(--customer-muted);
+        font-size: 13px;
+        text-align: center;
+        padding: 24px;
+        background: radial-gradient(circle, rgba(13,110,253,0.08) 0%, rgba(4,9,21,0.95) 100%);
     }
     .license-composite-field {
         display: flex;
@@ -216,14 +311,7 @@ include 'share_header.php';
 
             <form id="license-form" enctype="multipart/form-data" class="<?php echo $showForm ? '' : 'd-none'; ?>">
                 <div class="row g-3">
-                    <div class="col-12">
-                        <label class="form-label text-secondary fw-bold" style="font-size:11px;">DRIVER LICENSE IMAGE</label>
-                        <input type="file" name="license_image" class="form-control custom-form-field" accept="image/jpeg,image/png,image/webp" <?php echo $hasLicense ? '' : 'required'; ?>>
-                        <?php if ($hasLicense && !empty($license['license_image'])): ?>
-                            <small class="text-secondary d-block mt-2">Current license image saved. Upload a new one only if the license card/document changed.</small>
-                        <?php endif; ?>
-                    </div>
-                    <div class="col-12">
+                    <!-- <div class="col-12">
                         <div class="license-face-capture">
                             <div class="d-flex align-items-start justify-content-between gap-3 flex-wrap mb-3">
                                 <div>
@@ -257,6 +345,73 @@ include 'share_header.php';
                             </div>
                             <small id="faceCaptureHelp" class="text-secondary d-block text-center mt-2">A real-time camera photo is required before saving.</small>
                         </div>
+                    </div> -->
+                    <div class="col-12">
+                        <div class="license-face-capture">
+                            <div class="d-flex align-items-center justify-content-between gap-3 flex-wrap mb-4">
+                                <div class="d-flex align-items-center gap-3">
+                                    <div class="rounded-circle d-flex align-items-center justify-content-center bg-info bg-opacity-10 text-info" style="width: 44px; height: 44px; font-size: 18px;">
+                                        <i class="bi bi-person-bounding-box"></i>
+                                    </div>
+                                    <div>
+                                        <h5 class="text-white mb-1" style="font-size: 15px;">Live Face Verification</h5>
+                                        <p class="text-secondary mb-0" style="font-size: 12px;">Center your face inside the glowing frame to verify identity.</p>
+                                    </div>
+                                </div>
+                                <?php if ($hasLicense && !empty($license['face_image'])): ?>
+                                    <span class="status-pill pending" style="font-size:10px;"><i class="bi bi-camera-fill"></i> Current photo saved</span>
+                                <?php endif; ?>
+                            </div>
+
+                            <div class="license-face-frame mb-3" id="faceFrame">
+                                <video id="faceVideo" class="license-face-video" autoplay playsinline muted></video>
+                                <img id="facePreview" class="license-face-preview" alt="Captured face verification photo">
+                                <div id="facePlaceholder" class="license-face-placeholder">
+                                    <i class="bi bi-camera text-info fs-2 mb-2 opacity-75"></i>
+                                    <span style="font-size: 12px;">Camera is ready</span>
+                                </div>
+                                <div class="license-face-guide"></div>
+                            </div>
+                            <canvas id="faceCanvas" class="d-none"></canvas>
+                            <input type="hidden" id="licenseImageData" name="license_image_data">
+
+                            <div class="d-flex justify-content-center gap-2 flex-wrap">
+                                <button type="button" id="startCameraBtn" class="btn btn-outline-info btn-sm rounded-pill px-4 fw-bold shadow-sm">
+                                    <i class="bi bi-camera-video-fill me-1"></i>Start Camera
+                                </button>
+                                <button type="button" id="captureFaceBtn" class="btn btn-info btn-sm rounded-pill px-4 fw-bold shadow-sm" disabled>
+                                    <i class="bi bi-camera-fill me-1"></i>Take Photo
+                                </button>
+                                <button type="button" id="retakeFaceBtn" class="btn btn-outline-secondary btn-sm rounded-pill px-4 fw-bold shadow-sm d-none">
+                                    <i class="bi bi-arrow-counterclockwise me-1"></i>Retake
+                                </button>
+                            </div>
+                            <small id="faceCaptureHelp" class="text-secondary d-block text-center mt-2" style="font-size: 11px;">Make sure your face is well-lit and unobstructed.</small>
+                        </div>
+                    </div>
+                    <!-- <div class="col-12">
+                        <label class="form-label text-secondary fw-bold" style="font-size:11px;">DRIVER LICENSE IMAGE</label>
+                        <input type="file" name="license_image" class="form-control custom-form-field" accept="image/jpeg,image/png,image/webp" <?php echo $hasLicense ? '' : 'required'; ?>>
+                        <?php if ($hasLicense && !empty($license['license_image'])): ?>
+                            <small class="text-secondary d-block mt-2">Current license image saved. Upload a new one only if the license card/document changed.</small>
+                        <?php endif; ?>
+                    </div> -->
+                    <div class="col-12">
+                        <label class="form-label text-secondary fw-bold" style="font-size:11px;">DRIVER LICENSE IMAGE</label>
+                        <div class="license-dropzone" id="licenseDropzone">
+                            <div id="dropzonePrompt">
+                                <i class="bi bi-cloud-arrow-up text-info fs-1 mb-2 d-block"></i>
+                                <span class="text-white fw-semibold d-block">Drag & drop your license image here</span>
+                                <span class="text-secondary" style="font-size: 12px;">or <span class="text-info text-decoration-underline">browse from your device</span></span>
+                            </div>
+                            <img id="licenseFilePreview" class="license-dropzone-preview mx-auto" alt="License preview">
+                            <input type="file" name="license_image" id="licenseImageInput" accept="image/jpeg,image/png,image/webp" <?php echo $hasLicense ? '' : 'required'; ?>>
+                        </div>
+                        <?php if ($hasLicense && !empty($license['license_image'])): ?>
+                            <small class="text-secondary d-block mt-2">Current license image saved. Upload a new one only if the license card/document changed.</small>
+                        <?php else: ?>
+                            <small id="fileNameDisplay" class="text-secondary d-block mt-2">Supported formats: JPEG, PNG, WEBP.</small>
+                        <?php endif; ?>
                     </div>
                     <div class="col-md-6">
                         <label class="form-label text-secondary fw-bold" style="font-size:11px;">LICENSE NUMBER</label>
@@ -457,7 +612,58 @@ include 'share_header.php';
         }
         faceVideo.srcObject = null;
     }
+    const dropzone = document.getElementById('licenseDropzone');
+    const fileInput = document.getElementById('licenseImageInput');
+    const filePreview = document.getElementById('licenseFilePreview');
+    const dropzonePrompt = document.getElementById('dropzonePrompt');
+    const fileNameDisplay = document.getElementById('fileNameDisplay');
 
+    if (dropzone && fileInput) {
+        ['dragenter', 'dragover'].forEach(eventName => {
+            dropzone.addEventListener(eventName, (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                dropzone.classList.add('dragover');
+            }, false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            dropzone.addEventListener(eventName, (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                dropzone.classList.remove('dragover');
+            }, false);
+        });
+
+        dropzone.addEventListener('drop', (e) => {
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                fileInput.files = files;
+                handleFileSelection(files[0]);
+            }
+        });
+
+        fileInput.addEventListener('change', (e) => {
+            if (fileInput.files.length > 0) {
+                handleFileSelection(fileInput.files[0]);
+            }
+        });
+    }
+
+    function handleFileSelection(file) {
+        if (file && file.type.startsWith('image/')) {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                filePreview.src = e.target.result;
+                filePreview.style.display = 'block';
+                dropzonePrompt.style.display = 'none';
+            }
+            reader.readAsDataURL(file);
+            if (fileNameDisplay) {
+                fileNameDisplay.textContent = `Selected file: ${file.name}`;
+            }
+        }
+    }
     function captureFacePhoto() {
         if (!faceVideo.videoWidth || !faceVideo.videoHeight) {
             showLicenseStatus('Camera is not ready yet. Please wait a moment and try again.');

@@ -101,7 +101,7 @@ if ($currentPage == 'car_license.php') $viewTitle = "Car License Setup";
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Noto+Sans+Myanmar:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/css/customer.css">
+    <link rel="stylesheet" href="../../css/customer.css">
 
     <style>
         /* Layout + structure only. Colors come from customer.css (admin parity theme). */
@@ -195,7 +195,7 @@ if ($currentPage == 'car_license.php') $viewTitle = "Car License Setup";
                     </button>
                 </form>
             <?php endif; ?>
-            <a href="/php/Login/logout.php" class="btn btn-outline-danger btn-sm w-100 py-2 border-opacity-10" style="border-radius:10px;">
+            <a href="../Login/logout.php" class="btn btn-outline-danger btn-sm w-100 py-2 border-opacity-10" style="border-radius:10px;">
                 <i class="bi bi-box-arrow-right me-1"></i> Sign Out Session
             </a>
         </div>
