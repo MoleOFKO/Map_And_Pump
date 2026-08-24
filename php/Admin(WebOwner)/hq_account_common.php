@@ -238,22 +238,45 @@ SQL;
     return (bool) $conn->query($sql);
 }
 
-/**
- * Email delivery is intentionally a safe placeholder until SMTP/provider
- * credentials are configured. Replace the body of this function with the
- * project's mailer integration later without changing the action workflow.
- */
 function hq_send_notification(string $recipient, string $subject, string $body): array
 {
-    error_log(sprintf('[HQ registry] Email placeholder for %s: %s', $recipient, $subject));
+    $recipient = trim($recipient);
 
-    return [
-        'sent' => false,
-        'status' => 'not_configured',
-        'note' => 'Email delivery is not configured; the reason was recorded in the HQ action history.',
-    ];
+    if ($recipient === '' || !filter_var($recipient, FILTER_VALIDATE_EMAIL)) {
+        return [
+            'sent' => false,
+            'status' => 'skipped',
+            'note' => 'No valid email address was available; the reason was recorded in the action history.',
+        ];
+    }
+
+    $safeSubject = htmlspecialchars($subject, ENT_QUOTES, 'UTF-8');
+    $safeBody = nl2br(htmlspecialchars($body, ENT_QUOTES, 'UTF-8'));
+    $html = '<div style="font-family:Arial,sans-serif;line-height:1.5;color:#111827">'
+        . '<h2>' . $safeSubject . '</h2>'
+        . '<p>' . $safeBody . '</p>'
+        . '<p style="color:#6b7280;font-size:13px">Map & Pump account registry</p>'
+        . '</div>';
+
+    try {
+        smtp_send_mail($recipient, $subject, $html, $body);
+
+        return [
+            'sent' => true,
+            'status' => 'sent',
+            'note' => 'Email sent to account owner.',
+        ];
+    } catch (Throwable $e) {
+        $note = 'Email delivery failed: ' . $e->getMessage();
+        error_log('[HQ registry] ' . $note);
+
+        return [
+            'sent' => false,
+            'status' => 'failed',
+            'note' => substr($note, 0, 255),
+        ];
+    }
 }
-
 function hq_find_role_id(): int|false
 {
     global $conn;
@@ -329,3 +352,4 @@ function hq_unique_username(string $ownerName, string $email): string
     $statement->close();
     return $candidate;
 }
+

@@ -117,7 +117,7 @@ try {
     $message = $actionType === 'remove'
         ? 'The HQ account was marked as removed.'
         : 'The HQ account was suspended.';
-    hq_flash('success', $message . ' The reason was recorded; email delivery is currently a placeholder.');
+    hq_flash('success', $message . ' The reason was recorded; email delivery status: ' . ($notification['status'] ?? 'unknown') . '.');
 } catch (Throwable $exception) {
     $conn->rollback();
     error_log('[HQ registry] Account action failed: ' . $exception->getMessage());
@@ -125,3 +125,5 @@ try {
 }
 
 hq_redirect();
+
+

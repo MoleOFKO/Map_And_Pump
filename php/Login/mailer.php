@@ -57,7 +57,89 @@ function mail_config_value(string $key, string $default = ''): string
     return is_string($value) && trim($value) !== '' ? trim($value) : $default;
 }
 
-function smtp_send_mail(string $to, string $subject, string $htmlBody, string $textBody = ''): void
+function mail_from_address(): string
+{
+    return mail_config_value(
+        'MAIL_FROM_EMAIL',
+        mail_config_value('RESEND_FROM_EMAIL', mail_config_value('SMTP_FROM_EMAIL', mail_config_value('SMTP_USERNAME')))
+    );
+}
+
+function mail_from_name(): string
+{
+    return mail_config_value('MAIL_FROM_NAME', mail_config_value('RESEND_FROM_NAME', mail_config_value('SMTP_FROM_NAME', 'Map & Pump')));
+}
+
+function mail_formatted_from(): string
+{
+    $fromEmail = mail_from_address();
+    $fromName = trim(mail_from_name());
+
+    if ($fromEmail === '') {
+        return '';
+    }
+
+    return $fromName !== '' ? sprintf('%s <%s>', $fromName, $fromEmail) : $fromEmail;
+}
+
+function mail_text_from_html(string $htmlBody): string
+{
+    $text = str_replace(['<br>', '<br/>', '<br />'], "\n", $htmlBody);
+    return trim(html_entity_decode(strip_tags($text), ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+}
+
+function resend_send_mail(string $to, string $subject, string $htmlBody, string $textBody = ''): void
+{
+    $apiKey = mail_config_value('RESEND_API_KEY');
+    $from = mail_formatted_from();
+
+    if ($apiKey === '' || $from === '') {
+        throw new RuntimeException('Resend email is not configured. Set RESEND_API_KEY and MAIL_FROM_EMAIL or RESEND_FROM_EMAIL.');
+    }
+
+    if (!function_exists('curl_init')) {
+        throw new RuntimeException('The PHP cURL extension is required for Resend API email delivery.');
+    }
+
+    $payload = [
+        'from' => $from,
+        'to' => [$to],
+        'subject' => $subject,
+        'html' => $htmlBody,
+        'text' => $textBody !== '' ? $textBody : mail_text_from_html($htmlBody),
+    ];
+
+    $ch = curl_init('https://api.resend.com/emails');
+    curl_setopt_array($ch, [
+        CURLOPT_POST => true,
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_HTTPHEADER => [
+            'Authorization: Bearer ' . $apiKey,
+            'Content-Type: application/json',
+            'Accept: application/json',
+            'User-Agent: MapAndPump/1.0',
+        ],
+        CURLOPT_POSTFIELDS => json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
+        CURLOPT_TIMEOUT => 20,
+    ]);
+
+    $response = curl_exec($ch);
+    $curlError = curl_error($ch);
+    $statusCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+
+    if ($response === false) {
+        throw new RuntimeException('Resend API request failed: ' . ($curlError ?: 'Unknown cURL error.'));
+    }
+
+    if ($statusCode < 200 || $statusCode >= 300) {
+        $decoded = json_decode((string) $response, true);
+        $message = is_array($decoded) ? (string) ($decoded['message'] ?? $decoded['error'] ?? $response) : (string) $response;
+        throw new RuntimeException('Resend API returned HTTP ' . $statusCode . ': ' . $message);
+    }
+}
+
+function smtp_send_mail_via_phpmailer(string $to, string $subject, string $htmlBody, string $textBody = ''): void
 {
     $host = mail_config_value('SMTP_HOST', 'smtp.gmail.com');
     $port = (int) mail_config_value('SMTP_PORT', '587');
@@ -68,7 +150,7 @@ function smtp_send_mail(string $to, string $subject, string $htmlBody, string $t
     $debugLevel = min(max((int) mail_config_value('SMTP_DEBUG', '0'), 0), 3);
 
     if ($username === '' || $password === '' || $fromEmail === '') {
-        throw new RuntimeException('Email is not configured. Set SMTP_USERNAME and SMTP_PASSWORD. SMTP_FROM_EMAIL is optional and defaults to SMTP_USERNAME.');
+        throw new RuntimeException('SMTP email is not configured. Set SMTP_USERNAME and SMTP_PASSWORD. SMTP_FROM_EMAIL is optional and defaults to SMTP_USERNAME.');
     }
 
     $mail = new PHPMailer(true);
@@ -116,13 +198,25 @@ function smtp_send_mail(string $to, string $subject, string $htmlBody, string $t
         $mail->isHTML(true);
         $mail->Subject = $subject;
         $mail->Body = $htmlBody;
-        $mail->AltBody = $textBody !== '' ? $textBody : strip_tags(str_replace(['<br>', '<br/>', '<br />'], "\n", $htmlBody));
+        $mail->AltBody = $textBody !== '' ? $textBody : mail_text_from_html($htmlBody);
 
         $mail->send();
     } catch (Exception $e) {
         error_log('PHPMailer exception: ' . $e->getMessage());
         throw new RuntimeException('Could not send email via PHPMailer: ' . $mail->ErrorInfo, 0, $e);
     }
+}
+
+function smtp_send_mail(string $to, string $subject, string $htmlBody, string $textBody = ''): void
+{
+    $provider = strtolower(mail_config_value('MAIL_PROVIDER', 'auto'));
+
+    if ($provider === 'resend' || ($provider === 'auto' && mail_config_value('RESEND_API_KEY') !== '')) {
+        resend_send_mail($to, $subject, $htmlBody, $textBody);
+        return;
+    }
+
+    smtp_send_mail_via_phpmailer($to, $subject, $htmlBody, $textBody);
 }
 
 function send_registration_code(string $email, string $code): void

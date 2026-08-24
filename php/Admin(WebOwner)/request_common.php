@@ -3,6 +3,7 @@
  * Shared helpers for the admin request review pipeline.
  */
 require_once __DIR__ . '/hq_account_common.php';
+require_once __DIR__ . '/../Login/mailer.php';
 
 function request_type_label(?string $type): string
 {
@@ -154,20 +155,42 @@ function request_schema_ready(): bool
     return true;
 }
 
-/**
- * Placeholder notification sender. It records the notification in the DB
- * and logs the intended delivery until SMTP/provider credentials are added.
- */
 function request_send_notification(string $recipient, string $subject, string $message): array
 {
-    error_log(sprintf('[Request registry] Email placeholder for %s: %s', $recipient, $subject));
+    $recipient = trim($recipient);
 
-    return [
-        'status' => 'not_configured',
-        'note' => 'Email delivery is not configured; the notification was recorded for later delivery.',
-    ];
+    if ($recipient === '' || !filter_var($recipient, FILTER_VALIDATE_EMAIL)) {
+        return [
+            'status' => 'skipped',
+            'note' => 'No valid requester email address was available.',
+        ];
+    }
+
+    $safeSubject = htmlspecialchars($subject, ENT_QUOTES, 'UTF-8');
+    $safeMessage = nl2br(htmlspecialchars($message, ENT_QUOTES, 'UTF-8'));
+    $html = '<div style="font-family:Arial,sans-serif;line-height:1.5;color:#111827">'
+        . '<h2>' . $safeSubject . '</h2>'
+        . '<p>' . $safeMessage . '</p>'
+        . '<p style="color:#6b7280;font-size:13px">Map & Pump request registry</p>'
+        . '</div>';
+
+    try {
+        smtp_send_mail($recipient, $subject, $html, $message);
+
+        return [
+            'status' => 'sent',
+            'note' => 'Email sent to requester.',
+        ];
+    } catch (Throwable $e) {
+        $note = 'Email delivery failed: ' . $e->getMessage();
+        error_log('[Request registry] ' . $note);
+
+        return [
+            'status' => 'failed',
+            'note' => substr($note, 0, 255),
+        ];
+    }
 }
-
 function request_date(?string $value): string
 {
     if (!$value) {
@@ -177,3 +200,4 @@ function request_date(?string $value): string
     $timestamp = strtotime($value);
     return $timestamp ? date('M j, Y · g:i A', $timestamp) : $value;
 }
+

@@ -115,8 +115,8 @@ function social_provider_config(string $provider): array
             'scope' => 'openid email profile',
         ],
         'facebook' => [
-            'client_id' => social_env('FACEBOOK_CLIENT_ID'),
-            'client_secret' => social_env('FACEBOOK_CLIENT_SECRET'),
+            'client_id' => '1398149002263202',
+            'client_secret' => 'b4d9b22007f8cb40ca1a70da6db0c832',
             'auth_url' => 'https://www.facebook.com/v20.0/dialog/oauth',
             'token_url' => 'https://graph.facebook.com/v20.0/oauth/access_token',
             'scope' => 'email,public_profile',
