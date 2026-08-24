@@ -82,6 +82,23 @@ function mail_formatted_from(): string
     return $fromName !== '' ? sprintf('%s <%s>', $fromName, $fromEmail) : $fromEmail;
 }
 
+function mail_resend_from_address(): string
+{
+    return mail_config_value('RESEND_FROM_EMAIL', mail_config_value('MAIL_FROM_EMAIL', mail_config_value('SMTP_FROM_EMAIL', mail_config_value('SMTP_USERNAME'))));
+}
+
+function mail_resend_formatted_from(): string
+{
+    $fromEmail = mail_resend_from_address();
+    $fromName = trim(mail_config_value('RESEND_FROM_NAME', mail_from_name()));
+
+    if ($fromEmail === '') {
+        return '';
+    }
+
+    return $fromName !== '' ? sprintf('%s <%s>', $fromName, $fromEmail) : $fromEmail;
+}
+
 function mail_text_from_html(string $htmlBody): string
 {
     $text = str_replace(['<br>', '<br/>', '<br />'], "\n", $htmlBody);
@@ -91,14 +108,10 @@ function mail_text_from_html(string $htmlBody): string
 function resend_send_mail(string $to, string $subject, string $htmlBody, string $textBody = ''): void
 {
     $apiKey = mail_config_value('RESEND_API_KEY');
-    $from = mail_formatted_from();
+    $from = mail_resend_formatted_from();
 
     if ($apiKey === '' || $from === '') {
-        throw new RuntimeException('Resend email is not configured. Set RESEND_API_KEY and MAIL_FROM_EMAIL or RESEND_FROM_EMAIL.');
-    }
-
-    if (!function_exists('curl_init')) {
-        throw new RuntimeException('The PHP cURL extension is required for Resend API email delivery.');
+        throw new RuntimeException('Resend email is not configured. Set RESEND_API_KEY and RESEND_FROM_EMAIL. The sender must be verified in Resend.');
     }
 
     $payload = [
@@ -108,28 +121,55 @@ function resend_send_mail(string $to, string $subject, string $htmlBody, string 
         'html' => $htmlBody,
         'text' => $textBody !== '' ? $textBody : mail_text_from_html($htmlBody),
     ];
+    $payloadJson = json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
 
-    $ch = curl_init('https://api.resend.com/emails');
-    curl_setopt_array($ch, [
-        CURLOPT_POST => true,
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_HTTPHEADER => [
-            'Authorization: Bearer ' . $apiKey,
-            'Content-Type: application/json',
-            'Accept: application/json',
-            'User-Agent: MapAndPump/1.0',
-        ],
-        CURLOPT_POSTFIELDS => json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
-        CURLOPT_TIMEOUT => 20,
-    ]);
+    if ($payloadJson === false) {
+        throw new RuntimeException('Could not encode the Resend email payload.');
+    }
 
-    $response = curl_exec($ch);
-    $curlError = curl_error($ch);
-    $statusCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    curl_close($ch);
+    $headers = [
+        'Authorization: Bearer ' . $apiKey,
+        'Content-Type: application/json',
+        'Accept: application/json',
+        'User-Agent: MapAndPump/1.0',
+    ];
 
-    if ($response === false) {
-        throw new RuntimeException('Resend API request failed: ' . ($curlError ?: 'Unknown cURL error.'));
+    if (function_exists('curl_init')) {
+        $ch = curl_init('https://api.resend.com/emails');
+        curl_setopt_array($ch, [
+            CURLOPT_POST => true,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_HTTPHEADER => $headers,
+            CURLOPT_POSTFIELDS => $payloadJson,
+            CURLOPT_TIMEOUT => 20,
+        ]);
+
+        $response = curl_exec($ch);
+        $curlError = curl_error($ch);
+        $statusCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+
+        if ($response === false) {
+            throw new RuntimeException('Resend API request failed: ' . ($curlError ?: 'Unknown cURL error.'));
+        }
+    } else {
+        $context = stream_context_create([
+            'http' => [
+                'method' => 'POST',
+                'header' => implode("\r\n", $headers),
+                'content' => $payloadJson,
+                'timeout' => 20,
+                'ignore_errors' => true,
+            ],
+        ]);
+        $response = file_get_contents('https://api.resend.com/emails', false, $context);
+        $statusLine = $http_response_header[0] ?? '';
+        $statusCode = preg_match('/\s(\d{3})\s/', $statusLine, $matches) ? (int) $matches[1] : 0;
+
+        if ($response === false) {
+            $lastError = error_get_last();
+            throw new RuntimeException('Resend API request failed: ' . ($lastError['message'] ?? 'Unknown HTTP error.'));
+        }
     }
 
     if ($statusCode < 200 || $statusCode >= 300) {
@@ -231,3 +271,4 @@ function send_registration_code(string $email, string $code): void
 
     smtp_send_mail($email, 'Your Map & Pump verification code', $html, "Your Map & Pump verification code is {$code}. It expires in 10 minutes.");
 }
+
