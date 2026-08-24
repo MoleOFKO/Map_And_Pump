@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/../conn.php';
+require_once __DIR__ . '/car_access.php';
 
 if (session_status() !== PHP_SESSION_ACTIVE) {
     session_start();
@@ -65,10 +66,9 @@ function car_license_page_schema_ready(PDO $pdo): void
 }
 
 car_license_page_schema_ready($pdo);
+customer_car_schema_ready($pdo);
 
-$userStmt = $pdo->prepare('SELECT car_license_id FROM users WHERE user_id = ? LIMIT 1');
-$userStmt->execute([$userId]);
-$activeCarId = (int) ($userStmt->fetchColumn() ?: 0);
+$activeCarId = customer_active_car_id($pdo, $userId);
 
 $carsStmt = $pdo->prepare(
     'SELECT c.*
@@ -693,3 +693,4 @@ document.addEventListener('DOMContentLoaded', () => {
                     </div>
                 <?php endif; ?>
 <?php include 'share_footer.php'; ?>
+
