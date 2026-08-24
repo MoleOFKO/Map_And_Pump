@@ -88,3 +88,29 @@
         }
     });
 })();
+
+/**
+ * Ensure sticky navs are direct children of <body> so `position: sticky` behaves consistently.
+ * Some admin pages render the sticky wrapper inside nested containers which prevents
+ * sticky from working correctly in some browsers. Move non-body-wrapped navs to the top of body.
+ */
+(function () {
+    try {
+        document.addEventListener('DOMContentLoaded', () => {
+            document.querySelectorAll('.sticky-nav-wrapper').forEach((nav) => {
+                if (!nav || !(nav instanceof HTMLElement)) return;
+                if (nav.parentElement === document.body) return; // already in the right place
+
+                // Only move navs that look like the capsule/navbar (guard against moving offcanvas bodies)
+                const hasNav = nav.querySelector('.navigation_style') !== null;
+                if (!hasNav) return;
+
+                // Move the nav wrapper to be the first child of body so sticky positioning works as intended.
+                document.body.insertBefore(nav, document.body.firstChild);
+            });
+        });
+    } catch (e) {
+        // swallow — non-critical enhancement
+        console.warn('sticky-nav-wrapper move failed', e);
+    }
+})();
