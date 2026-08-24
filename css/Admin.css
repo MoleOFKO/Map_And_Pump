@@ -2086,3 +2086,12 @@ body.background_color.light-mode .txt-neon-purple {
     }
 }
 
+/* Shared status chip used across admin and moderator pages */
+.hq-status { display: inline-flex; align-items: center; gap: .45rem; color: rgba(255,255,255,.68); font-size: .8rem; white-space: nowrap; }
+.hq-status::before { content: ''; width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.hq-status-active::before { background: #1be494; box-shadow: 0 0 8px #1be494; }
+.hq-status-pending::before { background: #ffc107; box-shadow: 0 0 8px #ffc107; }
+.hq-status-suspended::before { background: #ff9f43; box-shadow: 0 0 8px #ff9f43; }
+.hq-status-removed::before { background: #ff4d6a; box-shadow: 0 0 8px #ff4d6a; }
+body.background_color.light-mode .hq-status { color: var(--text-muted); }
+
