@@ -4,6 +4,7 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
 }
 
 require_once __DIR__ . '/../conn.php';
+require_once __DIR__ . '/car_access.php';
 
 $profileFlashMessage = $_SESSION['profile_flash_message'] ?? null;
 $profileFlashType = $_SESSION['profile_flash_type'] ?? 'success';
@@ -126,9 +127,7 @@ if (isset($_SESSION['user_id']) && ctype_digit((string) $_SESSION['user_id'])) {
         $businessStmt->execute([(int) $_SESSION['user_id']]);
         $profileRoles = $businessStmt->fetch(PDO::FETCH_ASSOC) ?: [];
         $linkedBusinessRoleName = trim((string) ($profileRoles['business_role_name'] ?? ''));
-        $activeCarStmt = $pdo->prepare('SELECT car_license_id FROM users WHERE user_id = ? LIMIT 1');
-        $activeCarStmt->execute([(int) $_SESSION['user_id']]);
-        $activeCarId = (int) ($activeCarStmt->fetchColumn() ?: 0);
+        $activeCarId = customer_active_car_id($pdo, (int) $_SESSION['user_id']);
 
         $carsStmt = $pdo->prepare(
             'SELECT c.*
@@ -323,3 +322,4 @@ include 'share_header.php';
 })();
 </script>
 <?php include 'share_footer.php'; ?>
+

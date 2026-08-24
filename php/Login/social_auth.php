@@ -109,14 +109,14 @@ function social_provider_config(string $provider): array
     return match ($provider) {
         'google' => [
             'client_id' => '513039511125-mlrd4m0lqn87radhimv0ms0vhtpvm9mh.apps.googleusercontent.com',
-            'client_secret' => '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',
+            'client_secret' => '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',
             'auth_url' => 'https://accounts.google.com/o/oauth2/v2/auth',
             'token_url' => 'https://oauth2.googleapis.com/token',
             'scope' => 'openid email profile',
         ],
         'facebook' => [
-            'client_id' => social_env('FACEBOOK_CLIENT_ID'),
-            'client_secret' => social_env('FACEBOOK_CLIENT_SECRET'),
+            'client_id' => '1398149002263202',
+            'client_secret' => 'b4d9b22007f8cb40ca1a70da6db0c832',
             'auth_url' => 'https://www.facebook.com/v20.0/dialog/oauth',
             'token_url' => 'https://graph.facebook.com/v20.0/oauth/access_token',
             'scope' => 'email,public_profile',

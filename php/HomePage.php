@@ -38,12 +38,12 @@ require __DIR__ . '/partials/nav.php';
                     and they come to you. Three stations free, forever.
                 </p>
 
-                <div class="d-sm-flex gap-3 justify-content-center justify-content-lg-start" data-reveal style="--reveal-delay:240ms">
+                <div class="hero-actions d-sm-flex gap-3 justify-content-center justify-content-lg-start" data-reveal style="--reveal-delay:240ms">
                     <a href="/php/Company/register.php" class="btn btn-primary btn-lg px-4 py-3 mb-3 mb-sm-0 w-100 w-sm-auto">
                         <i class="fa-solid fa-building-circle-check me-2"></i>Register your company
                     </a>
-                    <a href="#pricing" class="btn btn-outline-light btn-lg px-4 py-3 w-100 w-sm-auto">
-                        See pricing
+                    <a href="/php/Customer/dashboard.php" class="btn btn-outline-light btn-lg px-4 py-3 mb-3 mb-sm-0 w-100 w-sm-auto">
+                        Are you Driver?
                     </a>
                 </div>
 
@@ -67,69 +67,50 @@ require __DIR__ . '/partials/nav.php';
                 </div>
             </div>
 
-            <!-- Operator console mockup -->
+            <!-- Driver-facing listing mockup -->
             <div class="col-lg-6">
-                <div class="console-stage" data-reveal style="--reveal-delay:200ms">
+                <div class="listing-stage" data-reveal style="--reveal-delay:200ms">
 
-                    <div class="float-chip chip-console">
-                        <i class="fa-solid fa-eye" style="color:#22d3ee"></i> 1,284 drivers viewing now
-                    </div>
+                    <div class="map-panel">
+                        <span class="map-road road-1"></span>
+                        <span class="map-road road-2"></span>
+                        <span class="map-road road-3"></span>
+                        <span class="map-radar"></span>
 
-                    <div class="console-panel">
-                        <div class="console-head">
-                            <div>
-                                <div class="console-title">Station control</div>
-                                <div class="console-sub">Max Energy &middot; 42 stations</div>
+                        <div class="map-customer-card">
+                            <div class="customer-card-top">
+                                <span><i class="fa-solid fa-location-crosshairs"></i> Driver match</span>
+                                <strong>2.4 km</strong>
                             </div>
-                            <span class="console-live"><span class="pulse-dot"></span> Live</span>
+                            <div class="customer-card-station">TharKayTa Station</div>
+                            <div class="customer-card-meta">92 available &middot; token slot open</div>
+                            <div class="customer-card-actions">
+                                <span><i class="fa-solid fa-ticket"></i> Book token</span>
+                                <span><i class="fa-solid fa-bell"></i> Restock alert</span>
+                            </div>
                         </div>
 
-                        <div class="console-row">
-                            <div class="console-station">
-                                <span class="station-dot dot-ok"></span>
-                                <span>
-                                    <span class="station-name">TharKayTa Branch</span>
-                                    <span class="station-meta">92 &middot; 95 &middot; Diesel in stock</span>
-                                </span>
-                            </div>
-                            <span class="switch is-on" aria-hidden="true"><span></span></span>
+                        <div class="map-pin pin-1">
+                            <span class="pin-icon pin-ok"><i class="fa-solid fa-gas-pump"></i></span>
+                            TharKayTa &middot; In stock
+                        </div>
+                        <div class="map-pin pin-2">
+                            <span class="pin-icon pin-low"><i class="fa-solid fa-gas-pump"></i></span>
+                            Hlaing &middot; Low
+                        </div>
+                        <div class="map-pin pin-3">
+                            <span class="pin-icon pin-ok"><i class="fa-solid fa-gas-pump"></i></span>
+                            Insein &middot; In stock
+                        </div>
+                        <div class="map-pin pin-4 is-disabled">
+                            <span class="pin-icon pin-out"><i class="fa-solid fa-power-off"></i></span>
+                            Dagon &middot; Switched off
                         </div>
 
-                        <div class="console-row">
-                            <div class="console-station">
-                                <span class="station-dot dot-low"></span>
-                                <span>
-                                    <span class="station-name">Hlaing Branch</span>
-                                    <span class="station-meta">Diesel running low</span>
-                                </span>
-                            </div>
-                            <span class="switch is-on" aria-hidden="true"><span></span></span>
-                        </div>
-
-                        <div class="console-row is-off">
-                            <div class="console-station">
-                                <span class="station-dot dot-out"></span>
-                                <span>
-                                    <span class="station-name">Dagon Branch</span>
-                                    <span class="station-meta">Hidden from map &middot; out of stock</span>
-                                </span>
-                            </div>
-                            <span class="switch" aria-hidden="true"><span></span></span>
-                        </div>
-
-                        <div class="console-row">
-                            <div class="console-station">
-                                <span class="station-dot dot-ok"></span>
-                                <span>
-                                    <span class="station-name">Insein Branch</span>
-                                    <span class="station-meta">92 &middot; Diesel in stock</span>
-                                </span>
-                            </div>
-                            <span class="switch is-on" aria-hidden="true"><span></span></span>
-                        </div>
-
-                        <div class="console-foot">
-                            <span><i class="fa-solid fa-circle-info me-2"></i>Changes reach drivers in under 5 seconds</span>
+                        <div class="map-legend">
+                            <span><i class="fa-solid fa-circle" style="color:#10b981;font-size:.5rem"></i> In stock</span>
+                            <span><i class="fa-solid fa-circle" style="color:#f59e0b;font-size:.5rem"></i> Running low</span>
+                            <span><i class="fa-solid fa-circle" style="color:#64748b;font-size:.5rem"></i> Disabled by operator</span>
                         </div>
                     </div>
                 </div>
@@ -234,66 +215,6 @@ require __DIR__ . '/partials/nav.php';
                 </div>
             </div>
         </div>
-        </div>
-    </div>
-</section>
-
-<!-- ==========================================================================
-     DASHBOARD / MAP LISTING
-     ========================================================================== -->
-<section id="dashboard" class="section-pad pt-0">
-    <div class="container">
-        <div class="row g-4 align-items-center">
-
-            <div class="col-lg-5" data-reveal>
-                <span class="eyebrow">Your listing</span>
-                <h2 class="section-title-sm">This is what drivers see</h2>
-                <p class="section-lead">
-                    Your stations appear colour-coded by the stock status you control.
-                    Turn a branch off and it greys out instantly — no phone calls, no rumours.
-                </p>
-
-                <ul class="check-list">
-                    <li><i class="fa-solid fa-circle-check"></i><span><strong>Per-grade status</strong> for 92, 95, diesel and premium diesel separately.</span></li>
-                    <li><i class="fa-solid fa-circle-check"></i><span><strong>Instant enable / disable</strong> per station, per grade, from any phone.</span></li>
-                    <li><i class="fa-solid fa-circle-check"></i><span><strong>Staff accounts</strong> so forecourt teams update stock without dashboard access.</span></li>
-                </ul>
-
-                <a href="/php/Company/register.php" class="btn btn-primary btn-lg px-4 py-3 mt-4">List your stations free</a>
-            </div>
-
-            <div class="col-lg-7" data-reveal style="--reveal-delay:140ms">
-                <div class="map-panel">
-                    <span class="map-road road-1"></span>
-                    <span class="map-road road-2"></span>
-                    <span class="map-road road-3"></span>
-                    <span class="map-radar"></span>
-
-                    <div class="map-pin pin-1">
-                        <span class="pin-icon pin-ok"><i class="fa-solid fa-gas-pump"></i></span>
-                        TharKayTa &middot; In stock
-                    </div>
-                    <div class="map-pin pin-2">
-                        <span class="pin-icon pin-low"><i class="fa-solid fa-gas-pump"></i></span>
-                        Hlaing &middot; Low
-                    </div>
-                    <div class="map-pin pin-3">
-                        <span class="pin-icon pin-ok"><i class="fa-solid fa-gas-pump"></i></span>
-                        Insein &middot; In stock
-                    </div>
-                    <div class="map-pin pin-4 is-disabled">
-                        <span class="pin-icon pin-out"><i class="fa-solid fa-power-off"></i></span>
-                        Dagon &middot; Switched off
-                    </div>
-
-                    <div class="map-legend">
-                        <span><i class="fa-solid fa-circle" style="color:#10b981;font-size:.5rem"></i> In stock</span>
-                        <span><i class="fa-solid fa-circle" style="color:#f59e0b;font-size:.5rem"></i> Running low</span>
-                        <span><i class="fa-solid fa-circle" style="color:#64748b;font-size:.5rem"></i> Disabled by operator</span>
-                    </div>
-                </div>
-            </div>
-
         </div>
     </div>
 </section>

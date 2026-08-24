@@ -4,6 +4,7 @@ ini_set('display_errors', '0');
 
 define('MAP_PUMP_JSON_RESPONSE', true);
 require_once __DIR__ . '/../conn.php';
+require_once __DIR__ . '/car_access.php';
 
 header('Content-Type: application/json; charset=utf-8');
 
@@ -77,7 +78,7 @@ function customer_car_uploaded_image_path(int $userId, array $file, string $labe
 
     return '/php/Customer/uploads/car-licenses/' . $fileName;
 }
-function customer_car_schema_ready(PDO $pdo): bool
+function customer_car_license_schema_ready(PDO $pdo): bool
 {
     try {
         $pdo->exec(
@@ -126,16 +127,7 @@ function customer_car_schema_ready(PDO $pdo): bool
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
         );
 
-        $columnStmt = $pdo->query(
-            "SELECT COUNT(*)
-             FROM INFORMATION_SCHEMA.COLUMNS
-             WHERE TABLE_SCHEMA = DATABASE()
-               AND TABLE_NAME = 'users'
-               AND COLUMN_NAME = 'car_license_id'"
-        );
-        if ((int) $columnStmt->fetchColumn() === 0) {
-            $pdo->exec('ALTER TABLE users ADD COLUMN car_license_id int NULL AFTER license_id');
-        }
+        customer_car_schema_ready($pdo);
         return true;
     } catch (Throwable $e) {
         error_log('Could not prepare car license schema: ' . $e->getMessage());
@@ -155,7 +147,7 @@ if ($userId <= 0) {
 $action = trim((string) ($_POST['action'] ?? 'save'));
 $carId = (int) ($_POST['car_license_id'] ?? 0);
 
-if (!customer_car_schema_ready($pdo)) {
+if (!customer_car_license_schema_ready($pdo)) {
     car_license_json(false, 'Database needs the car license tables. Please import the updated db.sql first.');
 }
 
@@ -171,8 +163,9 @@ try {
             car_license_json(false, 'That car license is not linked to your account.');
         }
 
-        $update = $pdo->prepare('UPDATE users SET car_license_id = ?, updated_at = NOW() WHERE user_id = ?');
-        $update->execute([$carId, $userId]);
+        if (!customer_set_active_car($pdo, $userId, $carId)) {
+            car_license_json(false, 'That car license is not linked to your account.');
+        }
         $_SESSION['car_license_id'] = $carId;
         car_license_json(true, 'Selected car license switched.', ['redirect' => '/php/Customer/car_license.php?car_id=' . $carId]);
     }
@@ -291,12 +284,14 @@ try {
             throw new RuntimeException('Car license record was created but its ID could not be read.');
         }
 
-        $link = $pdo->prepare('INSERT INTO user_car (user_id, car_id) SELECT ?, ? WHERE NOT EXISTS (SELECT 1 FROM user_car WHERE user_id = ? AND car_id = ?)');
+        $link = $pdo->prepare('INSERT INTO user_car (user_id, car_id, is_active) SELECT ?, ?, 0 WHERE NOT EXISTS (SELECT 1 FROM user_car WHERE user_id = ? AND car_id = ?)');
         $link->execute([$userId, $savedCarId, $userId, $savedCarId]);
     }
 
-    $setActive = $pdo->prepare('UPDATE users SET car_license_id = ?, updated_at = NOW() WHERE user_id = ?');
-    $setActive->execute([$savedCarId, $userId]);
+    $clearActive = $pdo->prepare('UPDATE user_car SET is_active = 0, updated_at = NOW() WHERE user_id = ?');
+    $clearActive->execute([$userId]);
+    $setActive = $pdo->prepare('UPDATE user_car SET is_active = 1, updated_at = NOW() WHERE user_id = ? AND car_id = ?');
+    $setActive->execute([$userId, $savedCarId]);
 
     $pdo->commit();
     $_SESSION['car_license_id'] = $savedCarId;
@@ -316,3 +311,4 @@ try {
     error_log('Car license save failed: ' . $e->getMessage());
     car_license_json(false, 'Could not save your car license: ' . $e->getMessage());
 }
+

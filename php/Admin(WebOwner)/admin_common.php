@@ -57,10 +57,13 @@ function admin_current_user(bool $allowDevelopmentFallback = true): ?array
     $baseSql = <<<'SQL'
 SELECT u.user_id, u.user_name, u.email, u.hashed_password, u.role_id,
        u.status, u.created_at, u.updated_at, u.last_login_at,
-       u.oauth_avatar_url, u.headquarter_id, r.role_name,
+       u.oauth_avatar_url, u.headquarter_id,
+       COALESCE(active_role.role_name, business_role.role_name, primary_role.role_name) AS role_name,
        h.company_name AS hq_name
 FROM users u
-LEFT JOIN roles r ON r.role_id = u.role_id
+LEFT JOIN roles primary_role ON primary_role.role_id = u.role_id
+LEFT JOIN roles business_role ON business_role.role_id = u.business_role_id
+LEFT JOIN roles active_role ON active_role.role_id = u.current_role_id
 LEFT JOIN headquarter h ON h.headquarter_id = u.headquarter_id
 SQL;
 
@@ -70,7 +73,7 @@ SQL;
     }
 
     if ($sessionUserId > 0) {
-        $statement = $conn->prepare($baseSql . " WHERE u.user_id = ? AND LOWER(TRIM(r.role_name)) IN ('admin', 'moderator') LIMIT 1");
+        $statement = $conn->prepare($baseSql . " WHERE u.user_id = ? AND LOWER(TRIM(COALESCE(active_role.role_name, business_role.role_name, primary_role.role_name))) IN ('admin', 'moderator') LIMIT 1");
         if ($statement) {
             $statement->bind_param('i', $sessionUserId);
             $statement->execute();
@@ -88,7 +91,7 @@ SQL;
 
     $result = $conn->query(
         $baseSql . " WHERE u.headquarter_id IS NULL
-         AND LOWER(TRIM(r.role_name)) IN ('admin', 'moderator')
+         AND LOWER(TRIM(COALESCE(active_role.role_name, business_role.role_name, primary_role.role_name))) IN ('admin', 'moderator')
          ORDER BY CASE WHEN LOWER(u.status) IN ('approved', 'active') THEN 0 ELSE 1 END,
                   u.user_id ASC LIMIT 1"
     );

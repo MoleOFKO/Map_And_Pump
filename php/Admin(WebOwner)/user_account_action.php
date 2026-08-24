@@ -91,7 +91,7 @@ try {
     $reviewer = admin_current_user(false);
     admin_record_log((int) ($reviewer['user_id'] ?? 0), 'Marked Customer user #' . $userId . ' as ' . $newStatus . '.');
     $conn->commit();
-    hq_flash('success', 'The Customer account was marked as ' . $newStatus . '. The reason was recorded; email delivery is currently a placeholder.');
+    hq_flash('success', 'The Customer account was marked as ' . $newStatus . '. The reason was recorded; email delivery status: ' . ($notification['status'] ?? 'unknown') . '.');
 } catch (Throwable $exception) {
     $conn->rollback();
     error_log('[Customer registry] Account action failed: ' . $exception->getMessage());
@@ -99,3 +99,6 @@ try {
 }
 
 hq_redirect($redirect);
+
+
+
