@@ -365,6 +365,40 @@ a { text-decoration: none; }
     line-height: 1.7;
 }
 
+.hero-actions {
+    align-items: center;
+}
+
+.listing-stage {
+    position: relative;
+}
+
+@media (min-width: 992px) {
+    .hero-actions {
+        flex-wrap: nowrap;
+        gap: 0.5rem !important;
+    }
+
+    .hero-actions .btn {
+        flex: 0 0 auto;
+        white-space: nowrap;
+        padding-left: 1.05rem !important;
+        padding-right: 1.05rem !important;
+        font-size: 0.98rem;
+    }
+
+    .listing-stage {
+        margin-top: -44px;
+    }
+}
+
+@media (min-width: 1200px) {
+    .hero-actions .btn {
+        padding-left: 1.4rem !important;
+        padding-right: 1.4rem !important;
+    }
+}
+
 @media (max-width: 991.98px) {
     .hero-sub { max-width: 100%; margin-inline: auto; }
     .hero-section { padding-top: 132px; min-height: auto; }
@@ -1021,6 +1055,78 @@ a { text-decoration: none; }
 }
 
 .map-legend span { display: inline-flex; align-items: center; gap: 7px; }
+
+.map-customer-card {
+    position: absolute;
+    right: 20px;
+    top: 20px;
+    width: min(260px, calc(100% - 40px));
+    padding: 16px;
+    border-radius: 16px;
+    background: rgba(6, 10, 18, 0.88);
+    border: 1px solid rgba(34, 211, 238, 0.28);
+    backdrop-filter: blur(14px);
+    box-shadow: 0 20px 46px rgba(0, 0, 0, 0.55);
+    color: var(--mp-text);
+    z-index: 2;
+}
+
+.customer-card-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    font-size: 0.74rem;
+    color: var(--mp-cyan);
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+}
+
+.customer-card-top span {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+}
+
+.customer-card-top strong {
+    color: #fff;
+    white-space: nowrap;
+}
+
+.customer-card-station {
+    margin-top: 12px;
+    font-family: var(--mp-font-display);
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: #fff;
+}
+
+.customer-card-meta {
+    margin-top: 4px;
+    font-size: 0.82rem;
+    color: var(--mp-muted);
+}
+
+.customer-card-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 14px;
+}
+
+.customer-card-actions span {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 10px;
+    border-radius: 999px;
+    background: rgba(34, 211, 238, 0.1);
+    border: 1px solid rgba(34, 211, 238, 0.22);
+    color: #a5f3fc;
+    font-size: 0.72rem;
+    font-weight: 700;
+}
 
 /* checklist next to the map */
 .check-list { list-style: none; padding: 0; margin: 28px 0 0; }

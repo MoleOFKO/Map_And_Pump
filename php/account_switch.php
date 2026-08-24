@@ -19,12 +19,25 @@ function account_switch_role_id(PDO $pdo, string $roleName): int
     return (int) ($stmt->fetchColumn() ?: 0);
 }
 
-function account_switch_dashboard(string $roleName): string
+function account_switch_dashboard(string $roleName, int $roleId = 0): string
 {
+    $roleDashboards = [
+        1 => '/php/Admin(WebOwner)/admin_dashboard.php',
+        2 => '/php/Moderators(UnderAdmin)/moderator_dashboard.php',
+        3 => '/php/HQ/index.php',
+        4 => '/php/BranchManager/dashboard.php',
+        5 => '/php/Staff/staff_dashboard.php',
+        6 => '/php/Customer/dashboard.php',
+    ];
+
+    if (isset($roleDashboards[$roleId])) {
+        return $roleDashboards[$roleId];
+    }
+
     $dashboards = [
         'admin' => '/php/Admin(WebOwner)/admin_dashboard.php',
         'moderator' => '/php/Moderators(UnderAdmin)/moderator_dashboard.php',
-        'hq' => 'HQ/index.php',
+        'hq' => '/php/HQ/index.php',
         'manager' => '/php/BranchManager/dashboard.php',
         'branchmanager' => '/php/BranchManager/dashboard.php',
         'branch manager' => '/php/BranchManager/dashboard.php',
@@ -111,7 +124,7 @@ if ($targetMode === 'business') {
     $_SESSION['user_email'] = (string) $user['email'];
     map_pump_set_current_role($pdo, $userId, $targetRoleId);
 
-    header('Location: ' . account_switch_dashboard($targetRoleName));
+    header('Location: ' . account_switch_dashboard($targetRoleName, $targetRoleId));
     exit;
 }
 

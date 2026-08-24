@@ -3,6 +3,7 @@ session_start();
 define('MAP_PUMP_JSON_RESPONSE', true);
 require __DIR__ . '/../localconn.php';
 require_once __DIR__ . '/license_access.php';
+require_once __DIR__ . '/car_access.php';
 
 header('Content-Type: application/json');
 
@@ -64,11 +65,11 @@ try {
     }
 
     $licenseStmt = $pdo->prepare(
-        'SELECT u.car_license_id, c.filled_gas, c.updated_at
-         FROM users u
-         INNER JOIN user_car uc ON uc.user_id = u.user_id AND uc.car_id = u.car_license_id
-         INNER JOIN car_license c ON c.car_license_id = u.car_license_id
-         WHERE u.user_id = :user_id
+        'SELECT uc.car_id AS car_license_id, c.filled_gas, c.updated_at
+         FROM user_car uc
+         INNER JOIN car_license c ON c.car_license_id = uc.car_id
+         WHERE uc.user_id = :user_id
+         ORDER BY uc.is_active DESC, c.updated_at DESC, c.car_license_id DESC
          LIMIT 1'
     );
     $licenseStmt->execute([':user_id' => $userId]);
@@ -120,3 +121,4 @@ try {
     http_response_code(500);
     echo json_encode(['success' => false, 'message' => 'Unable to save booking: ' . $e->getMessage()]);
 }
+
