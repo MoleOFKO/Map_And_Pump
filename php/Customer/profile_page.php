@@ -69,8 +69,43 @@ function customer_profile_image_public_path(int $userId, array $file, string $im
 
     return '/php/Customer/uploads/profile/' . $fileName;
 }
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'change_password') {
+    $userId = (int) ($_SESSION['user_id'] ?? 0);
+    $currentPassword = (string) ($_POST['current_password'] ?? '');
+    $newPassword = (string) ($_POST['new_password'] ?? '');
+    $confirmPassword = (string) ($_POST['confirm_password'] ?? '');
+
+    try {
+        $passwordStmt = $pdo->prepare('SELECT hashed_password FROM users WHERE user_id = ? LIMIT 1');
+        $passwordStmt->execute([$userId]);
+        $hashedPassword = (string) ($passwordStmt->fetchColumn() ?: '');
+
+        if ($userId <= 0 || $currentPassword === '' || !password_verify($currentPassword, $hashedPassword)) {
+            throw new RuntimeException('Current password is incorrect.');
+        }
+        if (strlen($newPassword) < 8 || strlen($newPassword) > 72) {
+            throw new RuntimeException('New password must be between 8 and 72 characters.');
+        }
+        if ($newPassword !== $confirmPassword) {
+            throw new RuntimeException('New passwords do not match.');
+        }
+
+        $passwordUpdate = $pdo->prepare('UPDATE users SET hashed_password = ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?');
+        $passwordUpdate->execute([password_hash($newPassword, PASSWORD_DEFAULT), $userId]);
+        $_SESSION['profile_flash_message'] = 'Password changed successfully.';
+        $_SESSION['profile_flash_type'] = 'success';
+    } catch (Throwable $e) {
+        $_SESSION['profile_flash_message'] = $e->getMessage();
+        $_SESSION['profile_flash_type'] = 'danger';
+    }
+
+    header('Location: profile_page.php');
+    exit;
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'update_profile') {
     $newName = trim((string) ($_POST['user_name'] ?? ''));
+    $newEmail = trim((string) ($_POST['email'] ?? ''));
 
     if (!isset($_SESSION['user_id']) || !ctype_digit((string) $_SESSION['user_id'])) {
         $_SESSION['profile_flash_message'] = 'Please sign in before updating your profile.';
@@ -78,21 +113,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'updat
     } elseif ($newName === '') {
         $_SESSION['profile_flash_message'] = 'Please enter a display name.';
         $_SESSION['profile_flash_type'] = 'danger';
+    } elseif (!filter_var($newEmail, FILTER_VALIDATE_EMAIL)) {
+        $_SESSION['profile_flash_message'] = 'Please enter a valid email address.';
+        $_SESSION['profile_flash_type'] = 'danger';
     } elseif (mb_strlen($newName) > 225) {
         $_SESSION['profile_flash_message'] = 'Display name must be 225 characters or fewer.';
         $_SESSION['profile_flash_type'] = 'danger';
     } else {
         try {
+            $emailCheck = $pdo->prepare('SELECT user_id FROM users WHERE LOWER(email) = LOWER(?) AND user_id <> ? LIMIT 1');
+            $emailCheck->execute([$newEmail, (int) $_SESSION['user_id']]);
+            if ($emailCheck->fetchColumn()) {
+                throw new RuntimeException('That email address is already in use.');
+            }
+
             $profileImagePath = customer_profile_image_public_path((int) $_SESSION['user_id'], $_FILES['profile_image'] ?? [], trim((string) ($_POST['profile_image_data'] ?? '')));
             if ($profileImagePath !== null) {
-                $update = $pdo->prepare('UPDATE users SET user_name = ?, oauth_avatar_url = ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?');
-                $update->execute([$newName, $profileImagePath, (int) $_SESSION['user_id']]);
+                $update = $pdo->prepare('UPDATE users SET user_name = ?, email = ?, oauth_avatar_url = ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?');
+                $update->execute([$newName, $newEmail, $profileImagePath, (int) $_SESSION['user_id']]);
                 $_SESSION['oauth_avatar_url'] = $profileImagePath;
             } else {
-                $update = $pdo->prepare('UPDATE users SET user_name = ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?');
-                $update->execute([$newName, (int) $_SESSION['user_id']]);
+                $update = $pdo->prepare('UPDATE users SET user_name = ?, email = ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?');
+                $update->execute([$newName, $newEmail, (int) $_SESSION['user_id']]);
             }
             $_SESSION['user_name'] = $newName;
+            $_SESSION['user_email'] = $newEmail;
             $_SESSION['profile_flash_message'] = 'Shared profile updated.';
             $_SESSION['profile_flash_type'] = 'success';
         } catch (Throwable $e) {
@@ -127,7 +172,10 @@ if (isset($_SESSION['user_id']) && ctype_digit((string) $_SESSION['user_id'])) {
         $businessStmt->execute([(int) $_SESSION['user_id']]);
         $profileRoles = $businessStmt->fetch(PDO::FETCH_ASSOC) ?: [];
         $linkedBusinessRoleName = trim((string) ($profileRoles['business_role_name'] ?? ''));
-        $activeCarId = customer_active_car_id($pdo, (int) $_SESSION['user_id']);
+        
+        $activeCarStmt = $pdo->prepare('SELECT car_license_id FROM users WHERE user_id = ? LIMIT 1');
+        $activeCarStmt->execute([(int) $_SESSION['user_id']]);
+        $activeCarId = (int) ($activeCarStmt->fetchColumn() ?: 0);
 
         $carsStmt = $pdo->prepare(
             'SELECT c.*
@@ -179,26 +227,34 @@ include 'share_header.php';
 
             <form class="space-y-4" action="profile_page.php" method="POST" enctype="multipart/form-data">
                 <input type="hidden" name="action" value="update_profile">
-                <div class="mb-3">
+                <div class="mb-3 text-center">
                     <label class="form-label text-secondary" style="font-size:11px; font-weight:600;">PROFILE IMAGE</label>
-                    <div class="d-flex align-items-center gap-3 flex-wrap">
+                    <div class="d-flex flex-column align-items-center gap-3">
                         <img id="profileImagePreview" src="<?php echo htmlspecialchars($profileImage ?: '/images/Logo.png'); ?>" alt="Profile image preview" class="rounded-circle" style="width:76px;height:76px;object-fit:cover;background:rgba(13,110,253,.08);border:1px solid rgba(13,110,253,.22);">
-                        <div class="flex-grow-1">
-                            <input type="file" name="profile_image" id="profileImageInput" class="form-control custom-form-field" accept="image/jpeg,image/png,image/webp">
+                        <div class="w-100">
+                            <label for="profileImageInput" class="btn btn-outline-info btn-sm px-3 rounded-3 fw-bold mb-0" style="font-size:12px;cursor:pointer;">Change Profile Image</label>
+                            <input type="file" name="profile_image" id="profileImageInput" class="d-none" accept="image/jpeg,image/png,image/webp">
                             <input type="hidden" name="profile_image_data" id="profileImageData">
-                            <small id="profileImageHelp" class="text-secondary d-block mt-2">Upload an image, or copy an image from anywhere and paste it while this page is open.</small>
+                            <small id="profileImageHelp" class="text-secondary d-block mt-2 mx-auto" style="max-width:320px;">Upload an image, or copy an image from anywhere and paste it while this page is open.</small>
                         </div>
                     </div>
                 </div>
                 <div class="mb-3">
                     <label class="form-label text-secondary" style="font-size:11px; font-weight:600;">DISPLAY FULL NAME</label>
-                    <input type="text" name="user_name" value="<?php echo htmlspecialchars($_SESSION['user_name']); ?>" class="form-control custom-form-field" maxlength="225" required>
+                    <div class="form-control custom-form-field text-secondary">
+                        <?php echo htmlspecialchars($_SESSION['user_name']); ?>
+                    </div>
                 </div>
                 <div class="mb-4">
                     <label class="form-label text-secondary" style="font-size:11px; font-weight:600;">REGISTERED SYSTEM EMAIL</label>
-                    <input type="email" value="<?php echo htmlspecialchars($_SESSION['user_email']); ?>" class="form-control custom-form-field" readonly>
+                    <div class="form-control custom-form-field text-secondary">
+                        <?php echo htmlspecialchars($_SESSION['user_email']); ?>
+                    </div>
                 </div>
-                <button type="submit" class="btn btn-info px-4 py-2.5 fw-bold rounded-4" style="font-size:12px; font-family:'Space Grotesk';">Save Changes</button>
+                <div class="d-flex gap-2 flex-wrap">
+                    <button type="button" class="btn btn-outline-info px-4 py-2.5 fw-bold rounded-4" data-bs-toggle="modal" data-bs-target="#changeProfileModal" style="font-size:12px; font-family:'Space Grotesk';">Change Profile</button>
+                    <button type="button" class="btn btn-outline-info px-4 py-2.5 fw-bold rounded-4" data-bs-toggle="modal" data-bs-target="#changePasswordModal" style="font-size:12px; font-family:'Space Grotesk';">Change Password</button>
+                </div>
             </form>
         </div>
     </div>
@@ -288,14 +344,12 @@ include 'share_header.php';
     </div>
 </div>
 
-
 <script>
 (function () {
     const input = document.getElementById('profileImageInput');
     const data = document.getElementById('profileImageData');
     const preview = document.getElementById('profileImagePreview');
     const help = document.getElementById('profileImageHelp');
-
     function previewFile(file) {
         if (!file || !file.type.startsWith('image/')) return;
         data.value = '';
@@ -321,5 +375,77 @@ include 'share_header.php';
     });
 })();
 </script>
-<?php include 'share_footer.php'; ?>
 
+<!-- Custom CSS to fix modal locking / backdrop issues -->
+<style>
+.modal-backdrop {
+    display: none !important;
+}
+.modal.fade {
+    background: rgba(0, 0, 0, 0.6);
+}
+</style>
+
+<!-- Change Profile Modal -->
+<div class="modal fade" id="changeProfileModal" tabindex="-1" aria-labelledby="changeProfileModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content dashboard-panel-card">
+            <div class="modal-header border-secondary border-opacity-25">
+                <h5 class="modal-title text-white" id="changeProfileModalLabel">Change Profile</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form action="profile_page.php" method="POST">
+                <div class="modal-body">
+                    <input type="hidden" name="action" value="update_profile">
+                    <div class="mb-3">
+                        <label class="form-label text-secondary" for="modalProfileUserName">DISPLAY FULL NAME</label>
+                        <input type="text" id="modalProfileUserName" name="user_name" value="<?php echo htmlspecialchars($_SESSION['user_name']); ?>" class="form-control custom-form-field" maxlength="225" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label text-secondary" for="modalProfileEmail">REGISTERED SYSTEM EMAIL</label>
+                        <input type="email" id="modalProfileEmail" name="email" value="<?php echo htmlspecialchars($_SESSION['user_email']); ?>" class="form-control custom-form-field" maxlength="255" required>
+                    </div>
+                </div>
+                <div class="modal-footer border-secondary border-opacity-25">
+                    <button type="button" class="btn btn-outline-secondary rounded-3" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-info fw-bold rounded-3">Save Changes</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Change Password Modal -->
+<div class="modal fade" id="changePasswordModal" tabindex="-1" aria-labelledby="changePasswordModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content dashboard-panel-card">
+            <div class="modal-header border-secondary border-opacity-25">
+                <h5 class="modal-title text-white" id="changePasswordModalLabel">Change Password</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form action="profile_page.php" method="POST">
+                <div class="modal-body">
+                    <input type="hidden" name="action" value="change_password">
+                    <div class="mb-3">
+                        <label class="form-label text-secondary" for="modalCurrentPassword">CURRENT PASSWORD</label>
+                        <input type="password" id="modalCurrentPassword" name="current_password" class="form-control custom-form-field" autocomplete="current-password" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label text-secondary" for="modalNewPassword">NEW PASSWORD</label>
+                        <input type="password" id="modalNewPassword" name="new_password" class="form-control custom-form-field" minlength="8" maxlength="72" autocomplete="new-password" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label text-secondary" for="modalConfirmPassword">CONFIRM PASSWORD</label>
+                        <input type="password" id="modalConfirmPassword" name="confirm_password" class="form-control custom-form-field" minlength="8" maxlength="72" autocomplete="new-password" required>
+                    </div>
+                </div>
+                <div class="modal-footer border-secondary border-opacity-25">
+                    <button type="button" class="btn btn-outline-secondary rounded-3" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-info fw-bold rounded-3">Update Password</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<?php include 'share_footer.php'; ?>

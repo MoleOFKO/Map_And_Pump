@@ -8,7 +8,7 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
 
 $userId = (int) ($_SESSION['user_id'] ?? 0);
 if ($userId <= 0) {
-    header('Location: /php/Login/login.php');
+    header('Location: ../Login/login.php');
     exit;
 }
 
@@ -105,6 +105,50 @@ include 'share_header.php';
 ?>
 
 <style>
+    .image-dropzone {
+        border: 2px dashed rgba(13, 110, 253, 0.35);
+        border-radius: 14px;
+        background: rgba(4, 9, 21, 0.34);
+        padding: 20px;
+        text-align: center;
+        cursor: pointer;
+        transition: border-color 0.2s ease, background 0.2s ease;
+        position: relative;
+        overflow: hidden;
+    }
+    .image-dropzone:hover, .image-dropzone.dragover {
+        border-color: rgba(13, 110, 253, 0.8);
+        background: rgba(13, 110, 253, 0.08);
+    }
+    .image-dropzone input[type="file"] {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        opacity: 0;
+        cursor: pointer;
+    }
+    .image-dropzone-content {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 6px;
+        color: var(--customer-muted);
+        font-size: 13px;
+        pointer-events: none;
+    }
+    .image-dropzone-content i {
+        font-size: 28px;
+        color: #7dd3fc;
+    }
+    .image-preview-thumb {
+        max-height: 110px;
+        border-radius: 8px;
+        object-fit: contain;
+        margin-top: 8px;
+        display: none;
+    }
     .car-license-grid {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -437,7 +481,7 @@ include 'share_header.php';
                 <input type="hidden" name="action" value="save">
                 <input type="hidden" name="car_license_id" value="<?php echo (int) ($formCar['car_license_id'] ?? 0); ?>">
                 <div class="row g-3">
-                    <div class="col-md-6">
+                    <!-- <div class="col-md-6">
                         <label class="form-label text-secondary fw-bold" style="font-size:11px;">CAR LICENSE FRONT IMAGE</label>
                         <input type="file" name="car_license_front_image" class="form-control custom-form-field" accept="image/jpeg,image/png,image/webp" <?php echo !empty($formCar['car_license_front_image']) ? '' : 'required'; ?>>
                         <?php if (!empty($formCar['car_license_front_image'])): ?>
@@ -455,6 +499,44 @@ include 'share_header.php';
                             <small class="d-block mt-2">
                                 <a class="car-license-image-link" href="<?php echo htmlspecialchars((string) $formCar['car_license_back_image']); ?>" target="_blank" rel="noopener">
                                     <i class="bi bi-image-fill"></i> Current back image saved
+                                </a>
+                            </small>
+                        <?php endif; ?>
+                    </div> -->
+                    <div class="col-md-6">
+                        <label class="form-label text-secondary fw-bold" style="font-size:11px;">CAR LICENSE FRONT IMAGE</label>
+                        <div class="image-dropzone" id="frontImageDropzone">
+                            <input type="file" name="car_license_front_image" id="frontImageInput" accept="image/jpeg,image/png,image/webp" <?php echo !empty($formCar['car_license_front_image']) ? '' : 'required'; ?>>
+                            <div class="image-dropzone-content" id="frontDropzoneContent">
+                                <i class="bi bi-cloud-arrow-up-fill"></i>
+                                <span><strong>Drag & drop</strong> or browse front image</span>
+                                <small class="text-secondary" style="font-size: 10px;">JPG, PNG, WEBP</small>
+                            </div>
+                            <img id="frontImagePreview" class="image-preview-thumb" alt="Front Preview">
+                        </div>
+                        <?php if (!empty($formCar['car_license_front_image'])): ?>
+                            <small class="d-block mt-2">
+                                <a class="car-license-image-link" href="<?php echo htmlspecialchars((string) $formCar['car_license_front_image']); ?>" target="_blank" rel="noopener">
+                                    <i class="bi bi-image-fill"></i> Current front image saved[cite: 1]
+                                </a>
+                            </small>
+                        <?php endif; ?>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label text-secondary fw-bold" style="font-size:11px;">CAR LICENSE BACK IMAGE</label>
+                        <div class="image-dropzone" id="backImageDropzone">
+                            <input type="file" name="car_license_back_image" id="backImageInput" accept="image/jpeg,image/png,image/webp" <?php echo !empty($formCar['car_license_back_image']) ? '' : 'required'; ?>>
+                            <div class="image-dropzone-content" id="backDropzoneContent">
+                                <i class="bi bi-cloud-arrow-up-fill"></i>
+                                <span><strong>Drag & drop</strong> or browse back image</span>
+                                <small class="text-secondary" style="font-size: 10px;">JPG, PNG, WEBP</small>
+                            </div>
+                            <img id="backImagePreview" class="image-preview-thumb" alt="Back Preview">
+                        </div>
+                        <?php if (!empty($formCar['car_license_back_image'])): ?>
+                            <small class="d-block mt-2">
+                                <a class="car-license-image-link" href="<?php echo htmlspecialchars((string) $formCar['car_license_back_image']); ?>" target="_blank" rel="noopener">
+                                    <i class="bi bi-image-fill"></i> Current back image saved[cite: 1]
                                 </a>
                             </small>
                         <?php endif; ?>
@@ -513,6 +595,58 @@ include 'share_header.php';
 </div>
 
 <script>
+// Modern Image Dropzone Handler with Preview
+    function setupImageDropzone(dropzoneId, inputId, contentId, previewId) {
+        const dropzone = document.getElementById(dropzoneId);
+        const input = document.getElementById(inputId);
+        const content = document.getElementById(contentId);
+        const preview = document.getElementById(previewId);
+
+        if (!dropzone || !input) return;
+
+        ['dragenter', 'dragover'].forEach(eventName => {
+            dropzone.addEventListener(eventName, (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                dropzone.classList.add('dragover');
+            }, false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            dropzone.addEventListener(eventName, (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                dropzone.classList.remove('dragover');
+            }, false);
+        });
+
+        dropzone.addEventListener('drop', (e) => {
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                input.files = files;
+                updatePreview(files[0]);
+            }
+        });
+
+        input.addEventListener('change', () => {
+            if (input.files.length > 0) {
+                updatePreview(input.files[0]);
+            }
+        });
+
+        function updatePreview(file) {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                preview.src = e.target.result;
+                preview.style.display = 'block';
+                content.style.display = 'none';
+            };
+            reader.readAsDataURL(file);
+        }
+    }
+
+    setupImageDropzone('frontImageDropzone', 'frontImageInput', 'frontDropzoneContent', 'frontImagePreview');
+    setupImageDropzone('backImageDropzone', 'backImageInput', 'backDropzoneContent', 'backImagePreview');
 document.addEventListener('DOMContentLoaded', () => {
     const carForm = document.getElementById('car-license-form');
     const carStatus = document.getElementById('car-license-status');
