@@ -4,6 +4,7 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
 }
 
 require_once __DIR__ . '/../conn.php';
+require_once __DIR__ . '/../profile_avatar.php';
 require_once __DIR__ . '/car_access.php';
 
 $profileFlashMessage = $_SESSION['profile_flash_message'] ?? null;
@@ -203,13 +204,19 @@ if (isset($_SESSION['user_id']) && ctype_digit((string) $_SESSION['user_id'])) {
 $profileImage = '';
 if (isset($_SESSION['user_id']) && ctype_digit((string) $_SESSION['user_id'])) {
     try {
-        $profileImageStmt = $pdo->prepare('SELECT oauth_avatar_url FROM users WHERE user_id = ? LIMIT 1');
+        $profileImageStmt = $pdo->prepare('SELECT user_name, email, oauth_avatar_url FROM users WHERE user_id = ? LIMIT 1');
         $profileImageStmt->execute([(int) $_SESSION['user_id']]);
-        $profileImage = (string) ($profileImageStmt->fetchColumn() ?: ($_SESSION['oauth_avatar_url'] ?? ''));
+        $profileUserRow = $profileImageStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+        if ($profileUserRow) {
+            $_SESSION['user_name'] = trim((string) ($profileUserRow['user_name'] ?? $_SESSION['user_name'] ?? ''));
+            $_SESSION['user_email'] = trim((string) ($profileUserRow['email'] ?? $_SESSION['user_email'] ?? ''));
+        }
+        $profileImage = map_pump_profile_avatar_url((string) ($profileUserRow['oauth_avatar_url'] ?? $_SESSION['oauth_avatar_url'] ?? ''), '');
     } catch (Throwable $e) {
         error_log('Failed to load customer profile image: ' . $e->getMessage());
     }
 }
+$profileFallbackUrl = map_pump_profile_initial_svg((string) ($_SESSION['user_name'] ?? ''), 'U');
 include 'share_header.php';
 ?>
 
@@ -230,7 +237,7 @@ include 'share_header.php';
                 <div class="mb-3 text-center">
                     <label class="form-label text-secondary" style="font-size:11px; font-weight:600;">PROFILE IMAGE</label>
                     <div class="d-flex flex-column align-items-center gap-3">
-                        <img id="profileImagePreview" src="<?php echo htmlspecialchars($profileImage ?: '/images/Logo.png'); ?>" alt="Profile image preview" class="rounded-circle" style="width:76px;height:76px;object-fit:cover;background:rgba(13,110,253,.08);border:1px solid rgba(13,110,253,.22);">
+                        <img id="profileImagePreview" src="<?php echo htmlspecialchars(map_pump_profile_avatar_url($profileImage, $profileFallbackUrl), ENT_QUOTES, 'UTF-8'); ?>" alt="Profile image preview" class="rounded-circle" style="width:76px;height:76px;object-fit:cover;background:rgba(13,110,253,.08);border:1px solid rgba(13,110,253,.22);">
                         <div class="w-100">
                             <label for="profileImageInput" class="btn btn-outline-info btn-sm px-3 rounded-3 fw-bold mb-0" style="font-size:12px;cursor:pointer;">Change Profile Image</label>
                             <input type="file" name="profile_image" id="profileImageInput" class="d-none" accept="image/jpeg,image/png,image/webp">

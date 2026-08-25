@@ -4,6 +4,7 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
 }
 
 require_once __DIR__ . '/../conn.php';
+require_once __DIR__ . '/../profile_avatar.php';
 
 $loggedUserId = isset($_SESSION['user_id']) ? (int) $_SESSION['user_id'] : '';
 $loggedUserEmail = isset($_SESSION['user_email']) ? trim((string) $_SESSION['user_email']) : '';
@@ -15,12 +16,9 @@ function resolveImageUrl(?string $imagePath, string $fallback): string
         return $fallback;
     }
 
-    if (preg_match('#^(https?:)?//#i', $imagePath) || str_starts_with($imagePath, 'data:')) {
-        return $imagePath;
-    }
+    $imagePath = str_replace('\\', '/', $imagePath);
 
-    // If it's already a relative path going up or starting correctly, keep it
-    if (str_starts_with($imagePath, '../') || str_starts_with($imagePath, './')) {
+    if (preg_match('#^(https?:)?//#i', $imagePath) || str_starts_with($imagePath, 'data:')) {
         return $imagePath;
     }
 
@@ -28,12 +26,17 @@ function resolveImageUrl(?string $imagePath, string $fallback): string
         return $imagePath;
     }
 
+    $imagePath = ltrim(preg_replace('#^/?php/HQ/#', '', $imagePath), '/');
+
     if (str_starts_with($imagePath, 'uploads/')) {
-        // Adjust this relative path based on where your script is relative to the uploads folder
-        return '../../' . $imagePath; 
+        return '/php/HQ/' . $imagePath;
     }
 
-    return $imagePath;
+    if (str_starts_with($imagePath, '../') || str_starts_with($imagePath, './')) {
+        return $imagePath;
+    }
+
+    return '/php/HQ/' . $imagePath;
 }
 
 // Default brand and user variables
@@ -42,7 +45,8 @@ $brand_title = 'Map & Pump';
 $brand_logo = '../../images/Logo.png';
 
 $user_display_name = 'HQ Admin';
-$user_avatar = '../../images/Logo.png';
+$user_avatar = '';
+$user_initial = map_pump_profile_initial($user_display_name, 'H');
 $user_email_display = $loggedUserEmail ?: 'hq_admin@mapandpump.com';
 
 if ($loggedUserId > 0) {
@@ -62,12 +66,13 @@ if ($loggedUserId > 0) {
         // Set User Details from database
         if (!empty($userHqRow['user_name'])) {
             $user_display_name = htmlspecialchars((string) $userHqRow['user_name'], ENT_QUOTES, 'UTF-8');
+            $user_initial = map_pump_profile_initial((string) $userHqRow['user_name'], 'H');
         }
         if (!empty($userHqRow['email'])) {
             $user_email_display = htmlspecialchars((string) $userHqRow['email'], ENT_QUOTES, 'UTF-8');
         }
         if (!empty($userHqRow['oauth_avatar_url'])) {
-            $user_avatar = resolveImageUrl($userHqRow['oauth_avatar_url'], '/images/Logo.png');
+            $user_avatar = resolveImageUrl($userHqRow['oauth_avatar_url'], '');
         }
 
         // Set Brand Details from database
@@ -321,6 +326,16 @@ if ($loggedUserId > 0 && $loggedUserEmail !== '') {
             border-radius: 50%;
             object-fit: cover;
             background: #334155;
+        }
+
+        .user-avatar-initial {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(135deg, var(--sky-400, #38bdf8), var(--blue-700, #1d4ed8));
+            color: #fff;
+            font-weight: 800;
+            line-height: 1;
         }
 
         .user-menu-name {
@@ -612,14 +627,14 @@ if ($loggedUserId > 0 && $loggedUserEmail !== '') {
 
                     <!-- User Profile Menu Button (Top Right) -->
                     <button class="user-menu-button" onclick="toggleUserDropdown(event)" type="button">
-                        <img src="<?php echo htmlspecialchars($user_avatar, ENT_QUOTES, 'UTF-8'); ?>" alt="User Avatar" class="user-avatar-small" id="headerUserAvatar">
+                        <?php if ($user_avatar !== ''): ?><img src="<?php echo htmlspecialchars($user_avatar, ENT_QUOTES, 'UTF-8'); ?>" alt="User Avatar" class="user-avatar-small" id="headerUserAvatar"><?php else: ?><span class="user-avatar-small user-avatar-initial" id="headerUserAvatar"><?php echo htmlspecialchars($user_initial, ENT_QUOTES, 'UTF-8'); ?></span><?php endif; ?>
                         <span class="user-menu-name" id="headerUserName"><?php echo $user_display_name; ?></span>
                     </button>
 
                     <!-- User Dropdown Popup -->
                     <div class="user-dropdown-popup" id="userDropdownPopup">
                         <div class="dropdown-header">
-                            <img src="<?php echo htmlspecialchars($user_avatar, ENT_QUOTES, 'UTF-8'); ?>" alt="User Avatar" class="user-avatar-large" id="dropdownUserAvatar">
+                            <?php if ($user_avatar !== ''): ?><img src="<?php echo htmlspecialchars($user_avatar, ENT_QUOTES, 'UTF-8'); ?>" alt="User Avatar" class="user-avatar-large" id="dropdownUserAvatar"><?php else: ?><span class="user-avatar-large user-avatar-initial" id="dropdownUserAvatar"><?php echo htmlspecialchars($user_initial, ENT_QUOTES, 'UTF-8'); ?></span><?php endif; ?>
                             <div class="dropdown-user-info">
                                 <p class="user-title" id="dropdownUserName"><?php echo $user_display_name; ?></p>
                                 <p class="user-email" id="dropdownUserEmail"><?php echo $user_email_display; ?></p>

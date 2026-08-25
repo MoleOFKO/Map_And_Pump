@@ -1,4 +1,8 @@
 <?php
+if (session_status() !== PHP_SESSION_ACTIVE) {
+    session_start();
+}
+
 // // Database connection configuration
 // $host = 'gateway01.ap-southeast-1.prod.aws.tidbcloud.com'; // e.g., gateway01.us-west-2.prod.aws.tidbcloud.com
 // $dbname = 'map_and_pump';

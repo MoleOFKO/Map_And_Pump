@@ -44,7 +44,7 @@ CREATE TABLE `booking` (
   CONSTRAINT `fk_booking_station_id` FOREIGN KEY (`station_id`) REFERENCES `stations` (`station_id`) ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `fk_booking_user_id` FOREIGN KEY (`user_id`) REFERENCES `users` (`user_id`) ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `fk_booking_car_license_id` FOREIGN KEY (`car_license_id`) REFERENCES `car_license` (`car_license_id`) ON DELETE NO ACTION ON UPDATE NO ACTION
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci AUTO_INCREMENT=390002;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci AUTO_INCREMENT=420002;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -88,7 +88,7 @@ CREATE TABLE `branches` (
   `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`branch_id`) /*T![clustered_index] CLUSTERED */,
   UNIQUE KEY `branch_code` (`branch_code`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin AUTO_INCREMENT=60001;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin AUTO_INCREMENT=90001;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -129,7 +129,7 @@ CREATE TABLE `business_account_scope` (
   CONSTRAINT `fk_business_scope_hq_id` FOREIGN KEY (`headquarter_id`) REFERENCES `headquarter` (`headquarter_id`) ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `fk_business_scope_manager_user_id` FOREIGN KEY (`branch_manager_user_id`) REFERENCES `users` (`user_id`) ON DELETE SET NULL ON UPDATE CASCADE,
   CONSTRAINT `fk_business_scope_station_id` FOREIGN KEY (`station_id`) REFERENCES `stations` (`station_id`) ON DELETE SET NULL ON UPDATE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci AUTO_INCREMENT=60001;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci AUTO_INCREMENT=90001;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -166,7 +166,7 @@ CREATE TABLE `car_license` (
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`car_license_id`) /*T![clustered_index] CLUSTERED */
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci AUTO_INCREMENT=360002;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci AUTO_INCREMENT=390002;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -228,7 +228,7 @@ CREATE TABLE `feedback` (
   PRIMARY KEY (`feedback_id`) /*T![clustered_index] CLUSTERED */,
   KEY `user_id_idx` (`user_id`),
   CONSTRAINT `fk_feedback_user_id` FOREIGN KEY (`user_id`) REFERENCES `users` (`user_id`) ON DELETE CASCADE ON UPDATE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci AUTO_INCREMENT=240001;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci AUTO_INCREMENT=270001;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -255,7 +255,7 @@ CREATE TABLE `feedback_replies` (
   `reply_text` text NOT NULL,
   `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`reply_id`) /*T![clustered_index] CLUSTERED */
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin AUTO_INCREMENT=240001;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin AUTO_INCREMENT=270001;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -294,7 +294,7 @@ CREATE TABLE `headquarter` (
   UNIQUE KEY `company_logo_UNIQUE` (`company_logo`),
   KEY `fk_heardqurater_owner_id_idx` (`headquarters_owner_id`),
   CONSTRAINT `fk_heardqurater_owner_id` FOREIGN KEY (`headquarters_owner_id`) REFERENCES `users` (`user_id`) ON DELETE NO ACTION ON UPDATE NO ACTION
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci AUTO_INCREMENT=420010;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci AUTO_INCREMENT=450010;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -326,7 +326,7 @@ CREATE TABLE `hq_account_actions` (
   PRIMARY KEY (`action_id`) /*T![clustered_index] CLUSTERED */,
   KEY `idx_hq_account_actions_hq` (`headquarter_id`),
   KEY `idx_hq_account_actions_created` (`created_at`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci AUTO_INCREMENT=300002;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci AUTO_INCREMENT=330002;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -357,7 +357,7 @@ CREATE TABLE `log` (
   KEY `fk_log_role_id_idx` (`role_id`),
   CONSTRAINT `fk_log_user_id` FOREIGN KEY (`user_id`) REFERENCES `users` (`user_id`),
   CONSTRAINT `fk_log_role_id` FOREIGN KEY (`role_id`) REFERENCES `roles` (`role_id`) ON DELETE NO ACTION ON UPDATE NO ACTION
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci AUTO_INCREMENT=270001;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci AUTO_INCREMENT=300001;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -382,7 +382,7 @@ CREATE TABLE `lwk_license` (
   `plate_number` varchar(100) COLLATE utf8mb4_0900_ai_ci NOT NULL,
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`lwk_license_id`) /*T![clustered_index] CLUSTERED */
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci AUTO_INCREMENT=300002;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci AUTO_INCREMENT=330002;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -417,7 +417,7 @@ CREATE TABLE `notifications` (
   KEY `idx_notifications_request` (`request_id`),
   KEY `idx_notifications_recipient` (`recipient_user_id`),
   KEY `idx_notifications_created` (`created_at`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci AUTO_INCREMENT=390004;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci AUTO_INCREMENT=420004;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -441,7 +441,7 @@ CREATE TABLE `oil_types` (
   `oil_type_id` int NOT NULL AUTO_INCREMENT,
   `oil_name` varchar(255) COLLATE utf8mb4_0900_ai_ci NOT NULL,
   PRIMARY KEY (`oil_type_id`) /*T![clustered_index] CLUSTERED */
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci AUTO_INCREMENT=330002;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci AUTO_INCREMENT=360002;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -504,7 +504,7 @@ CREATE TABLE `report` (
   KEY `fk_report_role_id_idx` (`role_id`),
   CONSTRAINT `fk_report_role_id` FOREIGN KEY (`role_id`) REFERENCES `roles` (`role_id`) ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `fk_report_user_id` FOREIGN KEY (`user_id`) REFERENCES `users` (`user_id`) ON DELETE CASCADE ON UPDATE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci AUTO_INCREMENT=300001;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci AUTO_INCREMENT=330001;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -528,7 +528,7 @@ CREATE TABLE `roles` (
   `role_id` int NOT NULL AUTO_INCREMENT,
   `role_name` varchar(100) COLLATE utf8mb4_0900_ai_ci NOT NULL,
   PRIMARY KEY (`role_id`) /*T![clustered_index] CLUSTERED */
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci AUTO_INCREMENT=330002;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci AUTO_INCREMENT=360002;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -596,7 +596,7 @@ CREATE TABLE `staff` (
   KEY `idx_staff_shift` (`shift`),
   UNIQUE KEY `staff_code` (`staff_code`),
   CONSTRAINT `fk_staff_branch_id` FOREIGN KEY (`branch_id`) REFERENCES `branches` (`branch_id`) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin AUTO_INCREMENT=60001;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin AUTO_INCREMENT=90001;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -661,7 +661,7 @@ CREATE TABLE `station_oil_inventory` (
   KEY `fk_station_oil_inventory_oil_type_id` (`oil_type_id`),
   CONSTRAINT `fk_station_oil_inventory_oil_type_id` FOREIGN KEY (`oil_type_id`) REFERENCES `oil_types` (`oil_type_id`) ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `fk_station_oil_inventory_station_id` FOREIGN KEY (`station_id`) REFERENCES `stations` (`station_id`) ON DELETE CASCADE ON UPDATE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci AUTO_INCREMENT=300002;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci AUTO_INCREMENT=330002;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -693,7 +693,7 @@ CREATE TABLE `stations` (
   PRIMARY KEY (`station_id`) /*T![clustered_index] CLUSTERED */,
   KEY `fk_business_user_id_idx` (`business_user_id`),
   CONSTRAINT `fk_business_user_id` FOREIGN KEY (`business_user_id`) REFERENCES `users` (`user_id`) ON DELETE CASCADE ON UPDATE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci AUTO_INCREMENT=390003;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci AUTO_INCREMENT=420003;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -746,7 +746,7 @@ CREATE TABLE `system_requests` (
   KEY `idx_system_requests_user` (`submitter_user_id`),
   KEY `idx_system_requests_hq` (`headquarter_id`),
   KEY `idx_system_requests_headquarter` (`headquarter_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin AUTO_INCREMENT=223697;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin AUTO_INCREMENT=253697;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -821,7 +821,7 @@ CREATE TABLE `usage_history` (
   KEY `idx_usage_history_user_filled` (`user_id`,`filled_at`),
   KEY `idx_usage_history_station` (`station_id`),
   KEY `idx_usage_history_car` (`car_license_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci AUTO_INCREMENT=60001;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci AUTO_INCREMENT=90001;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -852,7 +852,7 @@ CREATE TABLE `user_account_actions` (
   PRIMARY KEY (`action_id`) /*T![clustered_index] CLUSTERED */,
   KEY `idx_user_account_actions_user` (`user_id`),
   KEY `idx_user_account_actions_created` (`created_at`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin AUTO_INCREMENT=150001;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin AUTO_INCREMENT=180001;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -886,7 +886,7 @@ CREATE TABLE `user_car` (
   UNIQUE KEY `uq_user_car_user_car` (`user_id`,`car_id`),
   CONSTRAINT `fk_user_car_user_id` FOREIGN KEY (`user_id`) REFERENCES `users` (`user_id`) ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `fk_user_car_car_id` FOREIGN KEY (`car_id`) REFERENCES `car_license` (`car_license_id`) ON DELETE CASCADE ON UPDATE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin AUTO_INCREMENT=180003;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin AUTO_INCREMENT=210003;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -895,7 +895,7 @@ CREATE TABLE `user_car` (
 
 LOCK TABLES `user_car` WRITE;
 /*!40000 ALTER TABLE `user_car` DISABLE KEYS */;
-INSERT INTO `user_car` VALUES (2,4,120002,0,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP),(150003,210014,330002,0,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP),(150004,210014,330003,1,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP),(1,270014,1,1,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP);
+INSERT INTO `user_car` VALUES (1,270014,1,1,'2026-08-24 07:23:42','2026-08-24 07:23:42'),(2,4,120002,0,'2026-08-24 07:23:42','2026-08-24 07:23:42'),(150003,210014,330002,0,'2026-08-24 07:23:42','2026-08-24 07:23:42'),(150004,210014,330003,1,'2026-08-24 07:23:42','2026-08-24 07:23:42');
 /*!40000 ALTER TABLE `user_car` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -921,7 +921,7 @@ CREATE TABLE `user_license` (
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`license_id`) /*T![clustered_index] CLUSTERED */
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci AUTO_INCREMENT=330003;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci AUTO_INCREMENT=360003;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -977,7 +977,7 @@ CREATE TABLE `users` (
   CONSTRAINT `fk_users_role_id` FOREIGN KEY (`role_id`) REFERENCES `roles` (`role_id`) ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `fk_user_current_role_id` FOREIGN KEY (`current_role_id`) REFERENCES `roles` (`role_id`) ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `fk_business_branch_id` FOREIGN KEY (`branch_id`) REFERENCES `branches` (`branch_id`) ON DELETE CASCADE ON UPDATE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci AUTO_INCREMENT=540014;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci AUTO_INCREMENT=570014;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -986,7 +986,7 @@ CREATE TABLE `users` (
 
 LOCK TABLES `users` WRITE;
 /*!40000 ALTER TABLE `users` DISABLE KEYS */;
-INSERT INTO `users` VALUES (4,'000004','admin_test_pending_owner','admin-test-pending-owner-20260805@example.test','$2y$12$TjVx96cvj5VBIYSZRyZ2AeDZsh/CG6fXWEjpEmcP89zlEbyTArXzm',NULL,2,6,3,6,NULL,'rejected',0,'2026-08-23 16:50:29','2026-08-23 16:50:29',NULL,NULL,NULL,NULL),(5,'000005','admin_test_active_owner','admin-test-active-owner-20260805@example.test','$2y$12$t7uyDkU/8Lyu4LzIZllkUuHjv0HJM0BniOpCcR1tA.n7SOdoU.JVa',NULL,3,6,3,6,NULL,'approved',0,'2026-08-23 16:50:29','2026-08-23 16:50:29',NULL,NULL,NULL,NULL),(6,'000006','admin_test_suspended_owner','admin-test-suspended-owner-20260805@example.test','$2y$12$gcUUWoJ/VSfvM2T.4z6.puCIK98Nmd8HBwqj9kKhScvXSlxv5BSh6',NULL,4,6,3,6,NULL,'suspended',0,'2026-08-23 16:50:29','2026-08-23 16:50:29',NULL,NULL,NULL,NULL),(7,'000007','admin_test_removed_owner','admin-test-removed-owner-20260805@example.test','$2y$12$3exwXVIQRqKrhuIw52qq5eir1Y862gHkJo/WG1QseaKMu7h5M5WrS',NULL,5,6,3,6,NULL,'removed',0,'2026-08-23 16:50:29','2026-08-23 16:50:29',NULL,NULL,NULL,NULL),(8,'000008','admin_test_active_operator','admin-test-active-operator-20260805@example.test','$2y$12$NCWhFV6J1W7EG5G9SPQbnOAaon0DfimXpTA3nMwvldQvUqNuQtq0q',NULL,3,6,3,6,NULL,'pending',0,'2026-08-23 16:50:29','2026-08-23 16:50:29',NULL,NULL,NULL,NULL),(10,'00000A','test_active','admin-test-active-operator-2026005@example.test','$2y$12$NCWhFV6J1W7EG5G9SPQbnOAaon0DfimXpTA3nMwvldQvUqNuQtq0q',NULL,NULL,6,1,6,NULL,'pending',0,'2026-08-23 16:17:22','2026-08-23 16:17:22',NULL,NULL,NULL,NULL),(12,'00000C','codex_verify_owner','codex.verify.20260805@example.test','$2y$12$CFhA7Kc/ioNIRtIvpAl/zuAEtggXfKu5BVb/bKv.wpZUUPYEJNtq6',NULL,8,6,3,6,NULL,'pending',0,'2026-08-23 16:50:29','2026-08-23 16:50:29',NULL,NULL,NULL,NULL),(60014,'00EA6E','thura_min','thura.min.apex.20260805@example.test','$2y$12$E1GPNjcZHJ9GNYujJ3IEiOZoXFbHBYVxtnxLDaQzJ9eq6eyEEvh7K',NULL,60010,6,3,6,NULL,'approved',0,'2026-08-23 16:17:22','2026-08-23 16:17:22',NULL,NULL,NULL,NULL),(60018,'00EA72','Ei Thinzar Mon','eithinzarmon@gmail.com','$2y$12$hQ1p3zKXAOXiSowHMtX9b.ppxkkLmE7afcvYvb0n83yuaANm4IpFa',NULL,NULL,6,1,1,NULL,'approved',0,'2026-08-24 06:51:17','2026-08-24 06:51:17',NULL,NULL,'/php/Admin(WebOwner)/uploads/admin-60018-91a6a033ed0d732a.jpg',NULL),(90014,'015F9E','tester_testing','tester@gmail.com','$2y$12$pkK4Y60pVgKwWFwdAiyXjuIE/6v645sV2lOoDVH2RV9MNttr8NmI6',NULL,90010,6,3,6,NULL,'approved',0,'2026-08-23 16:17:22','2026-08-23 16:17:22',NULL,NULL,NULL,NULL),(150014,'0249FE','MoleOFKO','shanekhant23@gmail.com','$2y$12$R.Aa6RBMhT7ROiteN9wFg.4bXcJLZDNjd5JlXbQG.bv5jTJU1Ij4i',150003,NULL,6,NULL,6,NULL,'active',0,'2026-08-23 16:17:22','2026-08-23 16:17:22',NULL,NULL,NULL,NULL),(210014,'03345E','KoShane','shanekopersonal@gmail.com','$2y$12$kY8nqDP4RnlrO.G1ao076ehpykOz5x6R6/YrS0o9QeeSE7ZgQRZQu',180003,2,6,5,6,NULL,'active',0,'2026-08-24 06:59:01','2026-08-24 06:59:01',NULL,NULL,NULL,NULL),(240014,'03A98E','KoShab','mapa.and.pump@gmail.com','$2y$12$mgqjrg5LoQeLu7kQgrCh1uNqz2h17sq42oJipzDIwpakJUQsco52K',180003,NULL,6,2,2,NULL,'active',0,'2026-08-24 06:56:07','2026-08-24 06:56:07',NULL,NULL,'/php/Moderators(UnderAdmin)/uploads/moderator_240014_1786347243.png',NULL),(270014,'041EBE','Larry-sama','koshan2104@gmail.com','$2y$12$f6VHNFpbbWY9hSX5BiFdw.QNaK5O0SUMo91nqI66NcL1KBCljsxxC',NULL,NULL,6,NULL,6,NULL,'suspended',0,'2026-08-23 16:17:22','2026-08-23 16:17:22',NULL,NULL,NULL,NULL),(270015,'041EBF','temp_temp','temp45@gmail.com','$2y$12$caTKDBBZre2OkSHh4xf3ReBFTeQ78.Q6NyYVxxuLd/A80sWVp6oB6',NULL,180010,6,3,6,NULL,'approved',0,'2026-08-23 16:17:22','2026-08-23 16:17:22',NULL,NULL,NULL,NULL),(330014,'05091E','Kaung Kaung','kaungzin365@gmail.com','$2y$10$wbiYdwea.zVPHMgyvwg9GOu8maL.zTquJtuW7.Yc68/qPjN4g9vMS',NULL,2,6,4,4,NULL,'active',0,'2026-08-24 07:03:28','2026-08-24 07:03:28',NULL,NULL,NULL,NULL),(420014,'0668AE','Test Me','bhonen94@gmail.com','$2y$12$uRed5QfY3CAWxZaaglmkNea/sfz38RITpP0KeI8jZO8LkapvHhaSS',NULL,NULL,6,NULL,6,NULL,'active',0,'2026-08-23 16:17:22','2026-08-23 16:17:22',NULL,NULL,NULL,NULL),(420015,'0668AF','Kaung Kaung HQ','kaungzin23may@gmail.com','$2y$10$4PXW5VHtOKMQyO6597rLK.GP2dIWf.DYjqcW//zhXWpaq33D62mdi',210003,2,6,3,3,NULL,'active',0,'2026-08-22 03:16:12','2026-08-22 03:16:12',NULL,NULL,NULL,NULL);
+INSERT INTO `users` VALUES (4,'000004','admin_test_pending_owner','admin-test-pending-owner-20260805@example.test','$2y$12$TjVx96cvj5VBIYSZRyZ2AeDZsh/CG6fXWEjpEmcP89zlEbyTArXzm',NULL,2,6,3,6,NULL,'rejected',0,'2026-08-23 16:50:29','2026-08-23 16:50:29',NULL,NULL,NULL,NULL),(5,'000005','admin_test_active_owner','admin-test-active-owner-20260805@example.test','$2y$12$t7uyDkU/8Lyu4LzIZllkUuHjv0HJM0BniOpCcR1tA.n7SOdoU.JVa',NULL,3,6,3,6,NULL,'approved',0,'2026-08-23 16:50:29','2026-08-23 16:50:29',NULL,NULL,NULL,NULL),(6,'000006','admin_test_suspended_owner','admin-test-suspended-owner-20260805@example.test','$2y$12$gcUUWoJ/VSfvM2T.4z6.puCIK98Nmd8HBwqj9kKhScvXSlxv5BSh6',NULL,4,6,3,6,NULL,'suspended',0,'2026-08-23 16:50:29','2026-08-23 16:50:29',NULL,NULL,NULL,NULL),(7,'000007','admin_test_removed_owner','admin-test-removed-owner-20260805@example.test','$2y$12$3exwXVIQRqKrhuIw52qq5eir1Y862gHkJo/WG1QseaKMu7h5M5WrS',NULL,5,6,3,6,NULL,'removed',0,'2026-08-23 16:50:29','2026-08-23 16:50:29',NULL,NULL,NULL,NULL),(8,'000008','admin_test_active_operator','admin-test-active-operator-20260805@example.test','$2y$12$NCWhFV6J1W7EG5G9SPQbnOAaon0DfimXpTA3nMwvldQvUqNuQtq0q',NULL,3,6,3,6,NULL,'pending',0,'2026-08-23 16:50:29','2026-08-23 16:50:29',NULL,NULL,NULL,NULL),(10,'00000A','test_active','admin-test-active-operator-2026005@example.test','$2y$12$NCWhFV6J1W7EG5G9SPQbnOAaon0DfimXpTA3nMwvldQvUqNuQtq0q',NULL,NULL,6,1,6,NULL,'pending',0,'2026-08-23 16:17:22','2026-08-23 16:17:22',NULL,NULL,NULL,NULL),(12,'00000C','codex_verify_owner','codex.verify.20260805@example.test','$2y$12$CFhA7Kc/ioNIRtIvpAl/zuAEtggXfKu5BVb/bKv.wpZUUPYEJNtq6',NULL,8,6,3,6,NULL,'pending',0,'2026-08-23 16:50:29','2026-08-23 16:50:29',NULL,NULL,NULL,NULL),(60014,'00EA6E','thura_min','thura.min.apex.20260805@example.test','$2y$12$E1GPNjcZHJ9GNYujJ3IEiOZoXFbHBYVxtnxLDaQzJ9eq6eyEEvh7K',NULL,60010,6,3,6,NULL,'approved',0,'2026-08-23 16:17:22','2026-08-23 16:17:22',NULL,NULL,NULL,NULL),(60018,'00EA72','Ei Thinzar Mon','eithinzarmon@gmail.com','$2y$12$hQ1p3zKXAOXiSowHMtX9b.ppxkkLmE7afcvYvb0n83yuaANm4IpFa',NULL,NULL,6,1,1,NULL,'approved',0,'2026-08-24 07:50:14','2026-08-24 07:50:14',NULL,NULL,'/php/Admin(WebOwner)/uploads/admin-60018-91a6a033ed0d732a.jpg',NULL),(90014,'015F9E','tester_testing','tester@gmail.com','$2y$12$pkK4Y60pVgKwWFwdAiyXjuIE/6v645sV2lOoDVH2RV9MNttr8NmI6',NULL,90010,6,3,6,NULL,'approved',0,'2026-08-23 16:17:22','2026-08-23 16:17:22',NULL,NULL,NULL,NULL),(150014,'0249FE','MoleOFKO','shanekhant23@gmail.com','$2y$12$R.Aa6RBMhT7ROiteN9wFg.4bXcJLZDNjd5JlXbQG.bv5jTJU1Ij4i',150003,NULL,6,NULL,6,NULL,'active',0,'2026-08-23 16:17:22','2026-08-23 16:17:22',NULL,NULL,NULL,NULL),(210014,'03345E','KoShane','shanekopersonal@gmail.com','$2y$12$kY8nqDP4RnlrO.G1ao076ehpykOz5x6R6/YrS0o9QeeSE7ZgQRZQu',180003,2,6,5,6,NULL,'active',0,'2026-08-25 07:36:12','2026-08-25 07:36:12',NULL,NULL,NULL,NULL),(240014,'03A98E','KoShab','mapa.and.pump@gmail.com','$2y$12$mgqjrg5LoQeLu7kQgrCh1uNqz2h17sq42oJipzDIwpakJUQsco52K',180003,NULL,6,2,2,NULL,'active',0,'2026-08-25 06:33:15','2026-08-25 06:33:15',NULL,NULL,'/php/Moderators(UnderAdmin)/uploads/moderator_240014_1786347243.png',NULL),(270014,'041EBE','Larry-sama','koshan2104@gmail.com','$2y$12$f6VHNFpbbWY9hSX5BiFdw.QNaK5O0SUMo91nqI66NcL1KBCljsxxC',NULL,NULL,6,NULL,6,NULL,'suspended',0,'2026-08-23 16:17:22','2026-08-23 16:17:22',NULL,NULL,NULL,NULL),(270015,'041EBF','temp_temp','temp45@gmail.com','$2y$12$caTKDBBZre2OkSHh4xf3ReBFTeQ78.Q6NyYVxxuLd/A80sWVp6oB6',NULL,180010,6,3,6,NULL,'approved',0,'2026-08-23 16:17:22','2026-08-23 16:17:22',NULL,NULL,NULL,NULL),(330014,'05091E','Kaung Kaung','kaungzin365@gmail.com','$2y$10$wbiYdwea.zVPHMgyvwg9GOu8maL.zTquJtuW7.Yc68/qPjN4g9vMS',NULL,2,6,4,4,NULL,'active',0,'2026-08-24 07:03:28','2026-08-24 07:03:28',NULL,NULL,NULL,NULL),(420014,'0668AE','Test Me','bhonen94@gmail.com','$2y$12$uRed5QfY3CAWxZaaglmkNea/sfz38RITpP0KeI8jZO8LkapvHhaSS',NULL,NULL,6,NULL,6,NULL,'active',0,'2026-08-23 16:17:22','2026-08-23 16:17:22',NULL,NULL,NULL,NULL),(420015,'0668AF','Kaung Kaung HQ','kaungzin23may@gmail.com','$2y$10$4PXW5VHtOKMQyO6597rLK.GP2dIWf.DYjqcW//zhXWpaq33D62mdi',210003,2,6,3,3,NULL,'active',0,'2026-08-25 07:46:04','2026-08-25 07:46:04',NULL,NULL,NULL,NULL),(540014,'083D6E','Yan Aung Bala','yanaungbala5678@gmail.com','$2y$12$dgMgYHInE9e3NRkglOEXOux3CLwFfIB8bR0/zxodyM0AjiGpPVMsK',NULL,NULL,6,NULL,6,NULL,'active',0,'2026-08-24 07:49:57','2026-08-24 07:49:57','google','113301012897426888448','https://lh3.googleusercontent.com/a/ACg8ocLiyDuyH8de1FAO4NgeEmAI6MGs7_Kp9JUCRLZp3Y3Om5x3IA=s96-c','2026-08-24 07:49:57');
 /*!40000 ALTER TABLE `users` ENABLE KEYS */;
 UNLOCK TABLES;
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
@@ -999,4 +999,4 @@ UNLOCK TABLES;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2026-08-24 13:35:20
+-- Dump completed on 2026-08-25 14:19:11

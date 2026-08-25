@@ -2,6 +2,7 @@
 session_start();
 
 require_once __DIR__ . '/moderator_common.php';
+require_once __DIR__ . '/../profile_avatar.php';
 
 $moderatorUser = moderator_require_user();
 
@@ -35,9 +36,8 @@ if (!$user) {
 $displayName = trim((string) ($user['user_name'] ?? ''));
 $userEmail = trim((string) ($user['email'] ?? ''));
 $avatarUrl = trim((string) ($user['oauth_avatar_url'] ?? ''));
-if ($avatarUrl === '') {
-    $avatarUrl = '/images/Logo.png';
-}
+$avatarInitial = map_pump_profile_initial($displayName, 'M');
+$avatarFallbackUrl = map_pump_profile_initial_svg($displayName, 'M');
 $roleName = trim((string) ($user['role_name'] ?? 'Moderator'));
 $accountStatus = ucfirst((string) ($user['status'] ?? 'active'));
 $joinedSince = $user['created_at'] ? date('M Y', strtotime((string) $user['created_at'])) : 'N/A';
@@ -81,7 +81,7 @@ $joinedSince = $user['created_at'] ? date('M Y', strtotime((string) $user['creat
                 <div class="dashboard-card text-center py-5">
                     <form action="update_avatar_action.php" method="POST" enctype="multipart/form-data" id="avatarForm">
                         <div class="profile-avatar-container mb-4">
-                            <img src="<?= htmlspecialchars($avatarUrl, ENT_QUOTES, 'UTF-8') ?>" alt="Avatar" class="profile-avatar-image" id="avatarPreview">
+                            <img src="<?= htmlspecialchars($avatarUrl !== '' ? $avatarUrl : $avatarFallbackUrl, ENT_QUOTES, 'UTF-8') ?>" alt="Avatar" class="profile-avatar-image" id="avatarPreview">
                             <label for="avatarInput" class="avatar-upload-trigger" title="Upload new photo">
                                 <i class="bi bi-camera-fill"></i>
                             </label>

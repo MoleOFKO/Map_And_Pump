@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/admin_common.php';
+require_once __DIR__ . '/../profile_avatar.php';
 
 if (session_status() !== PHP_SESSION_ACTIVE) {
     session_start();
@@ -24,10 +25,9 @@ $statusClass = static function (?string $status): string {
         default => 'text-white-50',
     };
 };
-$avatarUrl = (string) ($user['oauth_avatar_url'] ?? '');
-if ($avatarUrl === '') {
-    $avatarUrl = 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80';
-}
+$avatarUrl = trim((string) ($user['oauth_avatar_url'] ?? ''));
+$avatarInitial = map_pump_profile_initial((string) ($user['user_name'] ?? ''), 'A');
+$avatarFallbackUrl = map_pump_profile_initial_svg((string) ($user['user_name'] ?? ''), 'A');
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -53,7 +53,7 @@ if ($avatarUrl === '') {
         <?php if (!$user): ?><div class="alert alert-danger border-0">The live admin account could not be loaded.</div><?php else: ?>
         <div class="row g-4">
             <div class="col-12 col-md-4 d-flex flex-column gap-4">
-                <div class="dashboard-card text-center py-5"><form action="update_avatar_action.php" method="POST" enctype="multipart/form-data" id="avatarForm"><div class="profile-avatar-container mb-4"><img src="<?= hq_escape($avatarUrl) ?>" alt="Current profile avatar" class="profile-avatar-image" id="avatarPreview"><label for="avatarInput" class="avatar-upload-trigger" title="Upload new photo"><i class="bi bi-camera-fill"></i></label><input type="file" id="avatarInput" name="profile_avatar" accept="image/jpeg,image/png,image/gif,image/webp" class="d-none"></div><button type="submit" class="btn btn-outline-info btn-sm rounded-3">Upload Image</button></form><h5 class="fw-bold text-white mb-1 mt-4"><?= hq_escape((string) $user['user_name']) ?></h5><p class="text-white-50 small mb-4"><?= hq_escape(ucwords((string) ($user['role_name'] ?? 'Admin'))) ?></p><div class="border-top border-white border-opacity-10 pt-4 text-start"><div class="d-flex align-items-center justify-content-between mb-3"><span class="text-white-50 small">Role Status</span><span class="<?= hq_escape($statusClass((string) $user['status'])) ?> small"><i class="bi bi-circle-fill me-1" style="font-size:.4rem;"></i><?= hq_escape($statusLabel((string) $user['status'])) ?></span></div><div class="d-flex align-items-center justify-content-between mb-3"><span class="text-white-50 small">Joined Since</span><span class="text-white-50 small font-monospace"><?= hq_escape(admin_date((string) $user['created_at'])) ?></span></div><div class="d-flex align-items-center justify-content-between"><span class="text-white-50 small">Last Login</span><span class="text-white-50 small font-monospace"><?= hq_escape(admin_date($user['last_login_at'] ?? null)) ?></span></div></div></div>
+                <div class="dashboard-card text-center py-5"><form action="update_avatar_action.php" method="POST" enctype="multipart/form-data" id="avatarForm"><div class="profile-avatar-container mb-4"><img src="<?= hq_escape($avatarUrl !== '' ? $avatarUrl : $avatarFallbackUrl) ?>" alt="Current profile avatar" class="profile-avatar-image" id="avatarPreview"><label for="avatarInput" class="avatar-upload-trigger" title="Upload new photo"><i class="bi bi-camera-fill"></i></label><input type="file" id="avatarInput" name="profile_avatar" accept="image/jpeg,image/png,image/gif,image/webp" class="d-none"></div><button type="submit" class="btn btn-outline-info btn-sm rounded-3">Upload Image</button></form><h5 class="fw-bold text-white mb-1 mt-4"><?= hq_escape((string) $user['user_name']) ?></h5><p class="text-white-50 small mb-4"><?= hq_escape(ucwords((string) ($user['role_name'] ?? 'Admin'))) ?></p><div class="border-top border-white border-opacity-10 pt-4 text-start"><div class="d-flex align-items-center justify-content-between mb-3"><span class="text-white-50 small">Role Status</span><span class="<?= hq_escape($statusClass((string) $user['status'])) ?> small"><i class="bi bi-circle-fill me-1" style="font-size:.4rem;"></i><?= hq_escape($statusLabel((string) $user['status'])) ?></span></div><div class="d-flex align-items-center justify-content-between mb-3"><span class="text-white-50 small">Joined Since</span><span class="text-white-50 small font-monospace"><?= hq_escape(admin_date((string) $user['created_at'])) ?></span></div><div class="d-flex align-items-center justify-content-between"><span class="text-white-50 small">Last Login</span><span class="text-white-50 small font-monospace"><?= hq_escape(admin_date($user['last_login_at'] ?? null)) ?></span></div></div></div>
                 <div class="dashboard-card p-4" style="border-color:rgba(0,244,255,.18);background:rgba(0,244,255,.025)!important;"><h6 class="fw-bold text-white mb-2"><i class="bi bi-database-check txt-neon-cyan me-2"></i>Database-backed profile</h6><p class="text-white-50 small mb-0">The live schema stores the username, email, password hash, role, status, timestamps, and optional avatar URL. Unsupported fields are not displayed as editable fake values.</p></div>
                 <div class="dashboard-card p-4" style="border-color:rgba(0,244,255,.18);background:rgba(0,244,255,.025)!important;"><h6 class="fw-bold text-white mb-2"><i class="bi bi-fuel-pump txt-neon-cyan me-2"></i>Customer Gas Profile</h6><p class="text-white-50 small mb-3">Switch to the customer side of this same account to manage your driver license and fill your car.</p><form action="../account_switch.php" method="POST"><input type="hidden" name="mode" value="customer"><button type="submit" class="btn btn-outline-info btn-sm rounded-3 w-100 fw-bold"><i class="bi bi-arrow-left-right me-1"></i>Switch to Customer Profile</button></form></div>
             </div>

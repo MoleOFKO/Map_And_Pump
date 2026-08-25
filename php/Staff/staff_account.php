@@ -2,6 +2,7 @@
 session_start();
 
 require_once __DIR__ . '/../conn.php';
+require_once __DIR__ . '/../profile_avatar.php';
 
 function redirect_to_login(string $message = 'Please sign in to continue.')
 {
@@ -76,8 +77,7 @@ if (!$user) {
 $displayName = trim((string) ($user['user_name'] ?? ''));
 $displayEmail = trim((string) ($user['email'] ?? ''));
 $staffId = 'EMP-' . str_pad((string) $user['user_id'], 4, '0', STR_PAD_LEFT);
-$cleanName = preg_replace('/[^A-Za-z0-9]/', '', $displayName) ?: 'S';
-$initial = strtoupper(substr($cleanName, 0, 1));
+$initial = map_pump_profile_initial($displayName, 'S');
 $accountRole = trim((string) ($user['role_name'] ?? 'Staff')) ?: 'Staff';
 ?>
 <!DOCTYPE html>

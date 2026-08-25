@@ -1,4 +1,66 @@
-<!DOCTYPE html>
+<?php
+if (session_status() !== PHP_SESSION_ACTIVE) {
+    session_start();
+}
+require_once __DIR__ . '/../conn.php';
+require_once __DIR__ . '/../profile_avatar.php';
+
+$userId = isset($_SESSION['user_id']) ? (int) $_SESSION['user_id'] : 0;
+$message = '';
+$message_type = 'success';
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && $userId > 0) {
+    $fullName = trim((string) ($_POST['full_name'] ?? ''));
+    $email = trim((string) ($_POST['email'] ?? ''));
+
+    if ($fullName === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        $message = 'Please enter a valid name and email address.';
+        $message_type = 'danger';
+    } else {
+        try {
+            $update = $pdo->prepare('UPDATE users SET user_name = ?, email = ?, updated_at = NOW() WHERE user_id = ?');
+            $update->execute([$fullName, $email, $userId]);
+            $_SESSION['user_name'] = $fullName;
+            $_SESSION['user_email'] = $email;
+            $message = 'Profile updated successfully.';
+            $message_type = 'success';
+        } catch (Throwable $e) {
+            error_log('Branch manager profile update failed: ' . $e->getMessage());
+            $message = 'Profile could not be updated right now.';
+            $message_type = 'danger';
+        }
+    }
+}
+
+$user = [
+    'full_name' => trim((string) ($_SESSION['user_name'] ?? 'Manager')),
+    'email' => trim((string) ($_SESSION['user_email'] ?? '')),
+    'phone' => '',
+    'nrc' => '',
+    'branch_name' => 'Unassigned',
+    'branch_code' => 'N/A',
+];
+
+if ($userId > 0) {
+    try {
+        $stmt = $pdo->prepare('SELECT u.user_name, u.email, u.branch_id, b.branch_name FROM users u LEFT JOIN branches b ON b.branch_id = u.branch_id WHERE u.user_id = ? LIMIT 1');
+        $stmt->execute([$userId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
+        $user['full_name'] = trim((string) ($row['user_name'] ?? $user['full_name']));
+        $user['email'] = trim((string) ($row['email'] ?? $user['email']));
+        $user['branch_name'] = trim((string) ($row['branch_name'] ?? '')) ?: 'Unassigned';
+        $user['branch_code'] = !empty($row['branch_id']) ? 'BR-' . str_pad((string) $row['branch_id'], 3, '0', STR_PAD_LEFT) : 'N/A';
+        $_SESSION['user_name'] = $user['full_name'];
+        $_SESSION['user_email'] = $user['email'];
+    } catch (Throwable $e) {
+        error_log('Branch manager profile load failed: ' . $e->getMessage());
+    }
+}
+
+$managerDisplayName = $user['full_name'] !== '' ? $user['full_name'] : 'Manager';
+$managerInitial = map_pump_profile_initial($managerDisplayName, 'M');
+$initials = $managerInitial;
+?><!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -218,7 +280,7 @@
       <div class="topbar-right">
         <div class="bell" id="notif-bell"><i class="fa-regular fa-bell"></i><span class="ping"></span></div>
         <div class="avatar-chip">
-          <div class="avatar-circle"><?= $initials ?></div>
+          <div class="avatar-circle"><?= htmlspecialchars($managerInitial, ENT_QUOTES, 'UTF-8') ?></div>
           <div><b><?= htmlspecialchars(explode(' ', $user['full_name'])[0]) ?></b></div>
         </div>
       </div>
@@ -263,7 +325,7 @@
               </div>
               <div class="form-group">
                 <label for="pf-phone">Phone Number</label>
-                <input type="text" id="pf-phone" name="phone" class="form-control-custom" value="<?= htmlspecialchars($user['phone']) ?>" required>
+                <input type="text" id="pf-phone" name="phone" class="form-control-custom" value="<?= htmlspecialchars($user['phone']) ?>">
               </div>
             </div>
             <div class="form-row">
