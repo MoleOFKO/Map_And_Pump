@@ -957,6 +957,17 @@ body.background_color > .container:not(.sticky-nav-wrapper) {
     box-shadow: 0 0 30px rgba(10, 88, 202, 0.45), 0 0 60px rgba(10, 88, 202, 0.15);
 }
 
+.profile-avatar-initial {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, rgba(13, 110, 253, 0.95), rgba(0, 244, 255, 0.82));
+    color: #ffffff;
+    font-size: 2.75rem;
+    font-weight: 800;
+    line-height: 1;
+}
+
 .avatar-upload-trigger {
     position: absolute;
     bottom: 0;

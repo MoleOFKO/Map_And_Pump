@@ -1,6 +1,7 @@
 <?php
 session_start();
 require_once __DIR__ . '/../conn.php';
+require_once __DIR__ . '/../profile_avatar.php';
 
 if (empty($_SESSION['user_id'])) {
     $loginUrl = '../Login/login.php';
@@ -31,8 +32,67 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'UPDATE users SET user_name = ?, email = ?, updated_at = NOW() WHERE user_id = ?'
             );
             $update->execute([$name, $email, $userId]);
+            $_SESSION['user_name'] = $name;
+            $_SESSION['user_email'] = $email;
 
-            echo json_encode(['ok' => true, 'message' => 'Profile details updated successfully.']);
+            echo json_encode(['ok' => true, 'message' => 'Profile details updated successfully.', 'name' => $name, 'email' => $email]);
+            exit;
+        }
+
+        if ($action === 'update_avatar') {
+            $upload = $_FILES['profile_avatar'] ?? null;
+            if (!$upload || ($upload['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+                http_response_code(422);
+                echo json_encode(['ok' => false, 'message' => 'Please choose a profile picture.']);
+                exit;
+            }
+
+            if (($upload['size'] ?? 0) > 2 * 1024 * 1024) {
+                http_response_code(422);
+                echo json_encode(['ok' => false, 'message' => 'Profile pictures must be 2 MB or smaller.']);
+                exit;
+            }
+
+            $mime = '';
+            if (class_exists('finfo')) {
+                $finfo = new finfo(FILEINFO_MIME_TYPE);
+                $mime = (string) $finfo->file((string) $upload['tmp_name']);
+            }
+
+            $extensions = [
+                'image/jpeg' => 'jpg',
+                'image/png' => 'png',
+                'image/gif' => 'gif',
+                'image/webp' => 'webp',
+            ];
+
+            if (!isset($extensions[$mime])) {
+                http_response_code(422);
+                echo json_encode(['ok' => false, 'message' => 'Only JPG, PNG, GIF, and WebP profile pictures are supported.']);
+                exit;
+            }
+
+            $uploadDir = __DIR__ . '/uploads/profile';
+            if (!is_dir($uploadDir) && !mkdir($uploadDir, 0775, true)) {
+                http_response_code(500);
+                echo json_encode(['ok' => false, 'message' => 'The profile picture folder could not be prepared.']);
+                exit;
+            }
+
+            $fileName = 'hq-profile-' . $userId . '-' . bin2hex(random_bytes(8)) . '.' . $extensions[$mime];
+            $targetPath = $uploadDir . '/' . $fileName;
+            if (!move_uploaded_file((string) $upload['tmp_name'], $targetPath)) {
+                http_response_code(500);
+                echo json_encode(['ok' => false, 'message' => 'The profile picture could not be saved.']);
+                exit;
+            }
+
+            $avatarUrl = '/php/HQ/uploads/profile/' . $fileName;
+            $update = $pdo->prepare('UPDATE users SET oauth_avatar_url = ?, updated_at = NOW() WHERE user_id = ?');
+            $update->execute([$avatarUrl, $userId]);
+            $_SESSION['oauth_avatar_url'] = $avatarUrl;
+
+            echo json_encode(['ok' => true, 'message' => 'Profile picture updated successfully.', 'avatar_url' => $avatarUrl]);
             exit;
         }
 
@@ -81,7 +141,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         http_response_code(400);
         echo json_encode(['ok' => false, 'message' => 'Invalid account update action.']);
-    } catch (PDOException $exception) {
+    } catch (Throwable $exception) {
         http_response_code(500);
         echo json_encode(['ok' => false, 'message' => 'The account update could not be saved.']);
     }
@@ -99,7 +159,9 @@ $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
 $profileName = !empty($user['user_name']) ? $user['user_name'] : 'Unknown User';
 $profileEmail = !empty($user['email']) ? $user['email'] : '';
-$profileImage = !empty($user['oauth_avatar_url']) ? $user['oauth_avatar_url'] : 'https://via.placeholder.com/150';
+$profileImage = map_pump_profile_avatar_url((string) ($user['oauth_avatar_url'] ?? ''), '');
+$profileInitial = map_pump_profile_initial($profileName, 'H');
+$profileFallbackUrl = map_pump_profile_initial_svg($profileName, 'H');
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -231,10 +293,10 @@ $profileImage = !empty($user['oauth_avatar_url']) ? $user['oauth_avatar_url'] : 
                     
                     <!-- Profile Picture Centered at Top -->
                     <div class="text-center mb-4">
-                        <img id="profilePreview" src="<?= htmlspecialchars($profileImage, ENT_QUOTES, 'UTF-8') ?>" alt="Profile Picture" class="rounded-circle img-thumbnail mb-3" style="width: 130px; height: 130px; object-fit: cover; background-color: #fff;">
+                        <img id="profilePreview" src="<?= htmlspecialchars(map_pump_profile_avatar_url($profileImage, $profileFallbackUrl), ENT_QUOTES, 'UTF-8') ?>" alt="Profile Picture" class="rounded-circle img-thumbnail mb-3" style="width: 130px; height: 130px; object-fit: cover; background-color: #fff;">
                         <div>
                             <label for="profilePictureInput" class="btn btn-sm btn-outline-secondary text-white">Change Profile Picture</label>
-                            <input type="file" id="profilePictureInput" accept="image/*" style="display: none;" onchange="previewImage(event)">
+                            <input type="file" id="profilePictureInput" name="profile_avatar" accept="image/*" style="display: none;" onchange="previewImage(event)">
                         </div>
                     </div>
 
@@ -320,24 +382,44 @@ $profileImage = !empty($user['oauth_avatar_url']) ? $user['oauth_avatar_url'] : 
     <script>
         const serverName = <?= json_encode($profileName, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
         const serverEmail = <?= json_encode($profileEmail, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
-        const serverImage = <?= json_encode($profileImage, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
+        const serverImage = <?= json_encode(map_pump_profile_avatar_url($profileImage, $profileFallbackUrl), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
 
         window.addEventListener('DOMContentLoaded', () => {
-            const savedImage = localStorage.getItem('profile_image');
-
-            document.getElementById('profilePreview').src = savedImage || serverImage;
+            document.getElementById('profilePreview').src = serverImage;
         });
 
         function previewImage(event) {
             const file = event.target.files[0];
-            if (file) {
-                const reader = new FileReader();
-                reader.onload = function(e) {
-                    document.getElementById('profilePreview').src = e.target.result;
-                    localStorage.setItem('profile_image', e.target.result);
-                };
-                reader.readAsDataURL(file);
-            }
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                document.getElementById('profilePreview').src = e.target.result;
+            };
+            reader.readAsDataURL(file);
+
+            const data = new FormData();
+            data.append('action', 'update_avatar');
+            data.append('profile_avatar', file);
+
+            fetch('profile.php', {
+                method: 'POST',
+                body: data,
+                credentials: 'same-origin'
+            })
+                .then(response => response.json())
+                .then(result => {
+                    if (!result.ok) {
+                        throw new Error(result.message || 'Profile picture could not be saved.');
+                    }
+                    if (result.avatar_url) {
+                        localStorage.removeItem('profile_image');
+                        document.getElementById('profilePreview').src = result.avatar_url;
+                    }
+                })
+                .catch(error => {
+                    alert(error.message || 'Profile picture could not be saved.');
+                });
         }
 
         async function saveProfile(event) {

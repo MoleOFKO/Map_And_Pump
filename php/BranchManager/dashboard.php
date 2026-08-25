@@ -1,4 +1,11 @@
-<!DOCTYPE html>
+<?php
+if (session_status() !== PHP_SESSION_ACTIVE) {
+    session_start();
+}
+require_once __DIR__ . '/../profile_avatar.php';
+$managerDisplayName = trim((string) ($_SESSION['user_name'] ?? 'Manager'));
+$managerInitial = map_pump_profile_initial($managerDisplayName, 'M');
+?><!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -376,14 +383,14 @@
         </div>
 
         <div class="avatar-chip">
-          <div class="avatar-circle"><a href="edit-profile.php">Fe</a></div>
-          <div><b><a href="edit-profile.php">Felix</a></b></div>
+          <div class="avatar-circle"><a href="edit-profile.php"><?= htmlspecialchars($managerInitial, ENT_QUOTES, 'UTF-8') ?></a></div>
+          <div><b><a href="edit-profile.php"><?= htmlspecialchars($managerDisplayName, ENT_QUOTES, 'UTF-8') ?></a></b></div>
         </div>
       </div>
     </div>
 
     <div class="content">
-      <div class="hello">Welcome back, Felix👋</div>
+      <div class="hello">Welcome back, <?= htmlspecialchars($managerDisplayName, ENT_QUOTES, 'UTF-8') ?></div>
       <div class="hello-sub">Here's a quick overview of your branch today.</div>
 
       <div class="kpi-grid">
