@@ -109,9 +109,14 @@ function resend_send_mail(string $to, string $subject, string $htmlBody, string 
 {
     $apiKey = mail_config_value('RESEND_API_KEY');
     $from = mail_resend_formatted_from();
+    $fromEmail = mail_resend_from_address();
 
     if ($apiKey === '' || $from === '') {
         throw new RuntimeException('Resend email is not configured. Set RESEND_API_KEY and RESEND_FROM_EMAIL. The sender must be verified in Resend.');
+    }
+
+    if (!filter_var($fromEmail, FILTER_VALIDATE_EMAIL)) {
+        throw new RuntimeException('Resend sender email is invalid. Set RESEND_FROM_EMAIL to a verified email address or domain sender.');
     }
 
     $payload = [
@@ -254,6 +259,10 @@ function smtp_send_mail(string $to, string $subject, string $htmlBody, string $t
     if ($provider === 'resend' || ($provider === 'auto' && mail_config_value('RESEND_API_KEY') !== '')) {
         resend_send_mail($to, $subject, $htmlBody, $textBody);
         return;
+    }
+
+    if ($provider !== 'auto' && $provider !== 'smtp') {
+        throw new RuntimeException('Unsupported mail provider "' . $provider . '". Use "resend", "smtp", or "auto".');
     }
 
     smtp_send_mail_via_phpmailer($to, $subject, $htmlBody, $textBody);

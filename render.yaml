@@ -9,6 +9,16 @@ services:
         value: true
       - key: APP_BASE_URL
         sync: false
+      - key: MAIL_PROVIDER
+        value: resend
+      - key: MAIL_FROM_NAME
+        value: "Map & Pump"
+      - key: RESEND_FROM_NAME
+        value: "Map & Pump"
+      - key: RESEND_FROM_EMAIL
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
       - key: SMTP_HOST
         value: smtp.gmail.com
       - key: SMTP_PORT

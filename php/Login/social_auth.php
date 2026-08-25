@@ -119,7 +119,7 @@ function social_provider_config(string $provider): array
             'client_secret' => 'b4d9b22007f8cb40ca1a70da6db0c832',
             'auth_url' => 'https://www.facebook.com/v20.0/dialog/oauth',
             'token_url' => 'https://graph.facebook.com/v20.0/oauth/access_token',
-            'scope' => 'email,public_profile',
+            'scope' => 'email public_profile',
         ],
         'apple' => [
             'client_id' => social_env('APPLE_CLIENT_ID'),
