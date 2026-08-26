@@ -335,9 +335,9 @@ include 'share_header.php';
                         </div>
                     </div>
                     <?php if (count($profileCars) > 1): ?>
-                        <a href="car_license.php" class="btn btn-link text-info p-0 fw-bold text-decoration-none" style="font-size:12px;">
+                        <button type="button" class="btn btn-link text-info p-0 fw-bold text-decoration-none text-start" data-bs-toggle="modal" data-bs-target="#carSwitchModal" style="font-size:12px;">
                             <i class="bi bi-arrow-left-right me-1"></i>Switch Car
-                        </a>
+                        </button>
                     <?php else: ?>
                         <span class="text-secondary" style="font-size:12px;">Add another car to enable switching.</span>
                     <?php endif; ?>
@@ -388,6 +388,42 @@ include 'share_header.php';
 }
 .modal.fade {
     background: rgba(0, 0, 0, 0.6);
+}
+.car-switch-modal .modal-content {
+    background: rgba(6, 12, 24, 0.98);
+    border: 1px solid rgba(13, 110, 253, 0.22);
+    border-radius: 20px;
+    color: #fff;
+}
+.car-switch-modal .modal-header,
+.car-switch-modal .modal-footer {
+    border-color: rgba(255, 255, 255, 0.08);
+}
+.car-switch-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 10px;
+}
+.car-switch-option {
+    position: relative;
+    display: block;
+    cursor: pointer;
+}
+.car-switch-option input {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+}
+.car-switch-card {
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 14px;
+    background: rgba(4, 9, 21, 0.42);
+    padding: 12px 15px;
+    transition: all .18s ease;
+}
+.car-switch-option input:checked + .car-switch-card {
+    border-color: rgba(27, 228, 148, 0.58);
+    background: linear-gradient(135deg, rgba(27, 228, 148, 0.12), rgba(13, 110, 253, 0.08));
 }
 </style>
 
@@ -452,5 +488,122 @@ include 'share_header.php';
         </div>
     </div>
 </div>
+
+<!-- Switch Active Car Modal -->
+<?php if (count($profileCars) > 1): ?>
+    <div class="modal fade car-switch-modal" id="carSwitchModal" tabindex="-1" aria-labelledby="carSwitchModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+            <div class="modal-content">
+                <form id="profile-car-switch-form" method="POST" action="save_car_license.php" data-current-car="<?php echo (int) $activeCarId; ?>">
+                    <div class="modal-header px-4 pt-4">
+                        <div>
+                            <h5 class="modal-title fw-bold" id="carSwitchModalLabel"><i class="bi bi-car-front-fill text-info me-2"></i>Choose Active Car</h5>
+                            <p class="text-white-50 small mb-0 mt-1">This car will be used for your next fuel booking.</p>
+                        </div>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body px-4">
+                        <input type="hidden" name="action" value="switch">
+                        <div class="car-switch-grid" role="radiogroup" aria-label="Choose active car">
+                            <?php foreach ($profileCars as $car): ?>
+                                <?php
+                                    $carId = (int) $car['car_license_id'];
+                                    $isActiveCar = $carId === (int) $activeCarId;
+                                    $vehicleLabel = trim((string) ($car['vehicle_name'] ?? 'Vehicle')) ?: 'Vehicle';
+                                    $typeLabel = trim((string) ($car['vehicle_type'] ?? 'Vehicle')) ?: 'Vehicle';
+                                    $locationLabel = trim((string) ($car['location'] ?? 'Location not set')) ?: 'Location not set';
+                                ?>
+                                <label class="car-switch-option">
+                                    <input type="radio" name="car_license_id" value="<?php echo $carId; ?>" <?php echo $isActiveCar ? 'checked' : ''; ?> required>
+                                    <span class="car-switch-card d-block">
+                                        <div class="d-flex justify-content-between align-items-center mb-2">
+                                            <span class="text-white fw-bold fs-5"><?php echo htmlspecialchars((string) $car['car_plate_number']); ?></span>
+                                            <span class="badge <?php echo $isActiveCar ? 'bg-success bg-opacity-25 text-success' : 'bg-secondary bg-opacity-25 text-white-50'; ?>"><?php echo $isActiveCar ? 'Active' : 'Saved'; ?></span>
+                                        </div>
+                                        <div class="text-secondary small">
+                                            <div><i class="bi bi-car-front me-1"></i><?php echo htmlspecialchars($vehicleLabel . ' / ' . $typeLabel); ?></div>
+                                            <div><i class="bi bi-geo-alt me-1"></i><?php echo htmlspecialchars($locationLabel); ?></div>
+                                        </div>
+                                    </span>
+                                </label>
+                            <?php endforeach; ?>
+                        </div>
+                    </div>
+                    <div class="modal-footer px-4 pb-4">
+                        <span class="car-switch-hint text-secondary small flex-grow-1" id="profileCarSwitchHint">Select a car to switch.</span>
+                        <button type="button" class="btn btn-outline-light rounded-3 px-3 btn-sm" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-info rounded-3 px-3 fw-bold btn-sm" id="profileCarSwitchSubmit" disabled>
+                            <i class="bi bi-check2-circle me-1"></i>Switch
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const carSwitchModal = document.getElementById('carSwitchModal');
+        if (carSwitchModal && carSwitchModal.parentElement !== document.body) {
+            document.body.appendChild(carSwitchModal);
+        }
+
+        const carSwitchForm = document.getElementById('profile-car-switch-form');
+        const carSwitchButton = document.getElementById('profileCarSwitchSubmit');
+        const carSwitchHint = document.getElementById('profileCarSwitchHint');
+        const carSwitchCurrentId = carSwitchForm ? Number(carSwitchForm.dataset.currentCar || 0) : 0;
+        const carSwitchInputs = carSwitchForm ? Array.from(carSwitchForm.querySelectorAll('input[name="car_license_id"]')) : [];
+
+        function refreshCarSwitchState() {
+            if (!carSwitchForm || !carSwitchButton) return;
+            const selected = carSwitchInputs.find((input) => input.checked);
+            const selectedId = selected ? Number(selected.value || 0) : 0;
+            const hasChanged = selectedId > 0 && selectedId !== carSwitchCurrentId;
+            carSwitchButton.disabled = !hasChanged;
+            if (carSwitchHint) {
+                carSwitchHint.textContent = hasChanged ? 'Ready to switch.' : 'Choose another saved car.';
+            }
+        }
+
+        carSwitchInputs.forEach((input) => input.addEventListener('change', refreshCarSwitchState));
+        refreshCarSwitchState();
+
+        if (carSwitchForm) {
+            carSwitchForm.addEventListener('submit', async (event) => {
+                event.preventDefault();
+                if (carSwitchButton) {
+                    carSwitchButton.disabled = true;
+                    carSwitchButton.textContent = 'Switching...';
+                }
+
+                try {
+                    const response = await fetch('save_car_license.php', {
+                        method: 'POST',
+                        body: new FormData(carSwitchForm),
+                        credentials: 'same-origin'
+                    });
+                    const result = await response.json();
+                    if (result.ok) {
+                        // Reload seamlessly to update UI state in-place across both pages seamlessly
+                        window.location.reload();
+                    } else {
+                        alert(result.message || 'Could not switch active car.');
+                        if (carSwitchButton) {
+                            carSwitchButton.disabled = false;
+                            carSwitchButton.innerHTML = '<i class="bi bi-check2-circle me-1"></i>Switch';
+                        }
+                    }
+                } catch (err) {
+                    alert('Could not contact the server. Please try again.');
+                    if (carSwitchButton) {
+                        carSwitchButton.disabled = false;
+                        carSwitchButton.innerHTML = '<i class="bi bi-check2-circle me-1"></i>Switch';
+                    }
+                }
+            });
+        }
+    });
+    </script>
+<?php endif; ?>
 
 <?php include 'share_footer.php'; ?>
