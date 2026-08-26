@@ -4,6 +4,7 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
 }
 require __DIR__ . '/../conn.php';
 require __DIR__ . '/../usage_history_schema.php';
+require_once __DIR__ . '/../Customer/car_access.php';
 
 $bookingCode = '';
 $ajax = false;
@@ -67,41 +68,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             respond(['success' => false, 'message' => 'Usage history table is not ready.'], $ajax, 500, 'verify_detail.php?booking_id=' . urlencode((string)$bookingId));
         }
 
+        $carLicenseId = isset($row['car_license_id']) ? (int)$row['car_license_id'] : 0;
+        if ($carLicenseId <= 0) {
+            respond(['success' => false, 'message' => 'This booking does not have a car license linked. Ask the customer to add/select a car and book again.'], $ajax, 422, 'verify_detail.php?booking_id=' . urlencode((string)$bookingId));
+        }
+
+        $quota = customer_fuel_quota_for_car($pdo, (int)$row['user_id'], $carLicenseId);
+        $remainingLiters = (float)$quota['remaining'];
+        if ((float)$amountLiters > $remainingLiters) {
+            respond(['success' => false, 'message' => 'This fill is over the weekly fuel limit. Remaining allowance: ' . rtrim(rtrim(number_format($remainingLiters, 1, '.', ''), '0'), '.') . ' liters.'], $ajax, 422, 'verify_detail.php?booking_id=' . urlencode((string)$bookingId));
+        }
+
         $pdo->beginTransaction();
         try {
-            $carLicenseId = isset($row['car_license_id']) ? (int)$row['car_license_id'] : 0;
-            if ($carLicenseId <= 0) {
-                $pdo->rollBack();
-                respond(['success' => false, 'message' => 'This booking does not have a car license linked. Ask the customer to add/select a car and book again.'], $ajax, 422, 'verify_detail.php?booking_id=' . urlencode((string)$bookingId));
-            }
-
-            if ($carLicenseId > 0) {
-                $licenseCheck = $pdo->prepare('SELECT filled_gas, updated_at FROM car_license WHERE car_license_id = :car_license_id LIMIT 1');
-                $licenseCheck->execute([':car_license_id' => $carLicenseId]);
-                $licenseInfo = $licenseCheck->fetch(PDO::FETCH_ASSOC);
-                $currentTotal = 0.0;
-                if ($licenseInfo) {
-                    $updatedAt = $licenseInfo['updated_at'] ?? null;
-                    if ($updatedAt && strtotime((string)$updatedAt) < strtotime('-7 days')) {
-                        $resetCar = $pdo->prepare('UPDATE car_license SET filled_gas = 0, updated_at = NOW() WHERE car_license_id = :car_license_id');
-                        $resetCar->execute([':car_license_id' => $carLicenseId]);
-                        $currentTotal = 0.0;
-                    } else {
-                        $currentTotal = (float)($licenseInfo['filled_gas'] ?? 0);
-                    }
-                }
-
-                if (($currentTotal + (float)$amountLiters) > 35.0) {
-                    $pdo->rollBack();
-                    respond(['success' => false, 'message' => 'This customer has already reached the 35-liter weekly limit. The total will reset next week.'], $ajax, 422, 'verify_detail.php?booking_id=' . urlencode((string)$bookingId));
-                }
-
-                $updateCar = $pdo->prepare('UPDATE car_license SET filled_gas = filled_gas + :amount, updated_at = NOW() WHERE car_license_id = :car_license_id');
-                $updateCar->execute([
-                    ':amount' => (float)$amountLiters,
-                    ':car_license_id' => $carLicenseId,
-                ]);
-            }
+            $updateCar = $pdo->prepare('UPDATE car_license SET filled_gas = filled_gas + :amount, updated_at = NOW() WHERE car_license_id = :car_license_id');
+            $updateCar->execute([
+                ':amount' => (float)$amountLiters,
+                ':car_license_id' => $carLicenseId,
+            ]);
 
             $priceStmt = $pdo->prepare(
                 'SELECT price_per_litre
@@ -154,7 +138,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $row['filled_gas'] = (float)$amountLiters;
             $row['time_of_filled'] = $filledAt;
         } catch (Throwable $e) {
-            $pdo->rollBack();
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
             respond(['success' => false, 'message' => 'Failed to save fill amount. Please try again.'], $ajax, 500, 'verify_detail.php?booking_id=' . urlencode((string)$bookingId));
         }
 
@@ -165,15 +151,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         ], $ajax, 200, 'verify_qr.php');
     }
 
-    $bookingCode = isset($_POST['booking_code']) ? trim($_POST['booking_code']) : '';
-    if (isset($_POST['qr_payload'])) {
-        $qrPayload = trim($_POST['qr_payload']);
-        if (strpos($qrPayload, '|') !== false) {
-            $bookingCode = explode('|', $qrPayload)[0];
-        } else {
-            $bookingCode = $qrPayload;
-        }
-    }
+    $rawBookingCode = isset($_POST['booking_code']) ? trim((string)$_POST['booking_code']) : '';
+    $qrPayload = isset($_POST['qr_payload']) ? trim((string)$_POST['qr_payload']) : '';
+    $bookingCode = normalize_booking_reference($qrPayload !== '' ? $qrPayload : $rawBookingCode);
 }
 
 function respond(array $response, bool $ajax, int $status = 200, string $redirect = 'verify_qr.php'): void
@@ -191,6 +171,40 @@ function respond(array $response, bool $ajax, int $status = 200, string $redirec
     $_SESSION['verify_flash'] = $response;
     header('Location: ' . $redirect);
     exit;
+}
+
+
+function normalize_booking_reference(string $value): string
+{
+    $value = trim($value);
+    if ($value === '') {
+        return '';
+    }
+
+    $decoded = json_decode($value, true);
+    if (is_array($decoded)) {
+        foreach (['booking_code', 'qr_refrence_code', 'qr_reference_code', 'code'] as $key) {
+            if (!empty($decoded[$key])) {
+                return normalize_booking_reference((string)$decoded[$key]);
+            }
+        }
+    }
+
+    $parts = parse_url($value);
+    if (is_array($parts) && !empty($parts['query'])) {
+        parse_str($parts['query'], $query);
+        foreach (['booking_code', 'qr_refrence_code', 'qr_reference_code', 'code', 'qr'] as $key) {
+            if (!empty($query[$key])) {
+                return normalize_booking_reference((string)$query[$key]);
+            }
+        }
+    }
+
+    if (strpos($value, '|') !== false) {
+        $value = explode('|', $value, 2)[0];
+    }
+
+    return strtoupper(preg_replace('/\s+/', '', trim($value)));
 }
 
 function find_usage_history_by_booking_id(PDO $pdo, int $bookingId): ?array
@@ -256,7 +270,7 @@ if ($bookingCode === '') {
     respond(['success' => false, 'message' => 'No booking code was supplied.'], $ajax, 422);
 }
 
-$normalized = isset($_POST['qr_payload']) ? trim($_POST['qr_payload']) : '';
+$normalized = isset($_POST['qr_payload']) ? trim((string)$_POST['qr_payload']) : $bookingCode;
 
 try {
     $stmt = $pdo->prepare(

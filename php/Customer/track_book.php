@@ -1,6 +1,53 @@
 <?php
 include 'share_header.php';
 $availableOilQuota = max(0.0, (float) ($_SESSION['oil_remaining'] ?? (((float) ($_SESSION['oil_limit'] ?? 35.0)) - ((float) ($_SESSION['oil_used'] ?? 0.0)))));
+
+$stationCoordinateFallbacks = [
+    1 => [21.9588, 96.0891],
+    2 => [21.9800, 96.0836],
+    3 => [16.7792, 96.2033],
+    60003 => [16.8409, 96.2319],
+    60004 => [16.8964, 96.1691],
+    60005 => [16.8630, 96.2350],
+];
+$customerStationsData = [];
+try {
+    $stationStmt = $pdo->query(
+        "SELECT s.station_id, s.station_name, s.location, s.station_address,
+                GROUP_CONCAT(DISTINCT ot.oil_name ORDER BY ot.oil_name SEPARATOR '|') AS fuel_names
+         FROM stations s
+         INNER JOIN station_oil_inventory soi ON soi.station_id = s.station_id AND soi.is_active = 1 AND soi.current_amount_liters > 0
+         INNER JOIN oil_types ot ON ot.oil_type_id = soi.oil_type_id
+         WHERE COALESCE(s.status, 'Active') <> 'Decommissioned'
+         GROUP BY s.station_id, s.station_name, s.location, s.station_address
+         ORDER BY s.station_id ASC"
+    );
+    foreach ($stationStmt->fetchAll(PDO::FETCH_ASSOC) as $stationRow) {
+        $stationId = (int)($stationRow['station_id'] ?? 0);
+        $coords = $stationCoordinateFallbacks[$stationId] ?? [16.8409 + (($stationId % 9) * 0.012), 96.1735 + (($stationId % 7) * 0.011)];
+        $location = trim((string)($stationRow['location'] ?? ''));
+        if (preg_match('/(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)/', $location, $matches)) {
+            $coords = [(float)$matches[1], (float)$matches[2]];
+        }
+
+        $fuels = array_values(array_filter(array_map('trim', explode('|', (string)($stationRow['fuel_names'] ?? '')))));
+        if (!$fuels) {
+            continue;
+        }
+
+        $customerStationsData[] = [
+            'id' => $stationId,
+            'name' => (string)($stationRow['station_name'] ?? ('Station #' . $stationId)),
+            'address' => (string)($stationRow['station_address'] ?: $location ?: 'Address not set'),
+            'lat' => $coords[0],
+            'lng' => $coords[1],
+            'fuels' => $fuels,
+            'logo' => '../../images/Logo.png',
+        ];
+    }
+} catch (Throwable $e) {
+    error_log('Failed to load customer stations: ' . $e->getMessage());
+}
 ?>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
@@ -291,15 +338,7 @@ body.customer-light-mode .customer-map-recenter-btn:hover {
     let customerLocation = [16.8409, 96.1735]; // Yangon fallback when location permission is unavailable.
     const availableOilQuota = <?php echo json_encode($availableOilQuota); ?>;
     const stationLogoUrl = '../../images/Logo.png';
-    const stationsData = [
-        { id: 1, name: 'Yangon Terminal Center', address: 'Pyay Road, Mayangone Township', lat: 16.8661, lng: 96.1349, fuels: ['Octane 95', 'Diesel'], logo: stationLogoUrl },
-        { id: 2, name: 'Insein Branch Station 04', address: 'Baho Road, Insein Township', lat: 16.8961, lng: 96.0891, fuels: ['Octane 92'], logo: stationLogoUrl },
-        { id: 3, name: 'Sanchaung Fuel Hub', address: 'Bargayar Road, Sanchaung', lat: 16.8055, lng: 96.1330, fuels: ['Octane 95', 'Octane 92'], logo: stationLogoUrl },
-        { id: 4, name: 'Tamwe Express Station', address: 'Kyaikkasan Road, Tamwe', lat: 16.8120, lng: 96.1755, fuels: ['Diesel', 'Octane 92'], logo: stationLogoUrl },
-        { id: 5, name: 'Hlaing Tharyar Depot', address: 'No.3 Main Road, Hlaing Tharyar', lat: 16.8700, lng: 96.0650, fuels: ['Octane 95', 'Diesel'], logo: stationLogoUrl },
-        { id: 6, name: 'Thingangyun Station 02', address: 'Waizayantar Road, Thingangyun', lat: 16.8305, lng: 96.1950, fuels: ['Octane 92'], logo: stationLogoUrl },
-        { id: 7, name: 'Kamayut Central Pump', address: 'University Avenue, Kamayut', lat: 16.8250, lng: 96.1355, fuels: ['Octane 95', 'Octane 92', 'Diesel'], logo: stationLogoUrl }
-    ];
+    const stationsData = <?php echo json_encode($customerStationsData, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?>;
 
     function openMapExperience(autoSelectNearest, preselectStationId) {
         document.getElementById('station-launch-card').classList.add('d-none');
@@ -373,6 +412,10 @@ body.customer-light-mode .customer-map-recenter-btn:hover {
         const list = document.getElementById('top5-stations-list');
         if (!list) return;
         const top5 = getTopNearestStations(5);
+        if (!top5.length) {
+            list.innerHTML = '<div class="text-secondary" style="font-size:13px;">No active stations are available right now.</div>';
+            return;
+        }
         list.innerHTML = top5.map((station, index) => `
             <button type="button" class="top5-station-row" onclick="bookFromTop5(${station.id})" title="${station.name}">
                 <span class="row-rank">${index + 1}</span>
@@ -457,7 +500,11 @@ body.customer-light-mode .customer-map-recenter-btn:hover {
 
 
     function selectStation(stationId) {
-        selectedStation = stationsData.find(station => station.id === stationId);
+        selectedStation = stationsData.find(station => Number(station.id) === Number(stationId));
+        if (!selectedStation) {
+            alert('This station is not available for booking. Please choose another station.');
+            return;
+        }
         document.getElementById('selected-station-name').textContent = selectedStation.name;
         document.getElementById('selected-station-address').textContent = selectedStation.address;
         document.getElementById('station-fuel-select').innerHTML = selectedStation.fuels.map(fuel => `<option value="${fuel}">${fuel}</option>`).join('');
@@ -512,7 +559,7 @@ body.customer-light-mode .customer-map-recenter-btn:hover {
         formData.append('display_payload', displayPayload);
         formData.append('customer_id', '<?php echo isset($_SESSION['user_id']) ? (int)$_SESSION['user_id'] : 0; ?>');
 
-        let result = { payload: displayPayload };
+        let result;
         try {
             const response = await fetch('save_booking.php', {
                 method: 'POST',
@@ -520,13 +567,16 @@ body.customer-light-mode .customer-map-recenter-btn:hover {
             });
             result = await response.json();
             if (!response.ok || !result.success) {
-                console.warn('Booking was not saved to the server:', result.message || 'Unknown API error.');
+                alert(result.message || 'Could not save this booking. Please try again.');
+                return;
             }
         } catch (error) {
-            console.warn('Booking API unavailable; displaying the locally generated booking pass.', error);
+            console.error('Booking API unavailable.', error);
+            alert('Could not save this booking to the database. Please check your connection and try again.');
+            return;
         }
 
-        document.getElementById('qr-token-code').textContent = code;
+        document.getElementById('qr-token-code').textContent = result.booking_code || code;
         document.getElementById('booking-summary').textContent = `${selectedStation.name} / ${fuel} / ${quantity} L`;
         const qrPayload = result.payload || displayPayload;
         document.getElementById('qr-image').src = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(qrPayload)}`;
@@ -542,4 +592,5 @@ body.customer-light-mode .customer-map-recenter-btn:hover {
 </script>
 
 <?php include 'share_footer.php'; ?>
+
 

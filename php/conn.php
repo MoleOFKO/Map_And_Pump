@@ -66,6 +66,7 @@ try {
         header('Content-Type: application/json');
         echo json_encode([
             'ok' => false,
+            'success' => false,
             'message' => 'Database connection failed. Please try again later.',
         ]);
         exit;
@@ -75,3 +76,4 @@ try {
 }
 
 ?>
+

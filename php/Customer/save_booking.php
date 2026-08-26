@@ -1,7 +1,7 @@
 <?php
 session_start();
 define('MAP_PUMP_JSON_RESPONSE', true);
-require __DIR__ . '/../localconn.php';
+require __DIR__ . '/../conn.php';
 require_once __DIR__ . '/license_access.php';
 require_once __DIR__ . '/car_access.php';
 
@@ -13,7 +13,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     exit;
 }
 
-$bookingCode = isset($_POST['booking_code']) ? trim($_POST['booking_code']) : '';
+$bookingCode = isset($_POST['booking_code']) ? strtoupper(preg_replace('/\s+/', '', trim((string)$_POST['booking_code']))) : '';
 $stationId = isset($_POST['station_id']) ? (int)$_POST['station_id'] : 0;
 $fuelType = isset($_POST['fuel_type']) ? trim($_POST['fuel_type']) : '';
 $quantity = isset($_POST['quantity_liters']) ? (float)$_POST['quantity_liters'] : 0;
@@ -47,22 +47,49 @@ if ($displayPayload === '') {
 }
 
 try {
-    $lookup = $pdo->prepare('SELECT booking_id FROM booking WHERE qr_refrence_code = :code LIMIT 1');
-    $lookup->execute([':code' => $bookingCode]);
+    $lookup = $pdo->prepare('SELECT booking_id FROM booking WHERE qr_refrence_code = :code OR qr_code = :payload LIMIT 1');
+    $lookup->execute([':code' => $bookingCode, ':payload' => $displayPayload]);
 
     if ($lookup->fetch()) {
         echo json_encode(['success' => false, 'message' => 'Booking code already exists.']);
         exit;
     }
 
-    $oilTypeId = 1;
-    if (stripos($fuelType, 'diesel') !== false) {
-        $oilTypeId = 2;
-    } elseif (stripos($fuelType, 'octane 95') !== false) {
-        $oilTypeId = 3;
-    } elseif (stripos($fuelType, 'octane 92') !== false) {
-        $oilTypeId = 4;
+    $stationStmt = $pdo->prepare(
+        "SELECT s.station_id, s.station_name, ot.oil_type_id, ot.oil_name
+         FROM stations s
+         INNER JOIN station_oil_inventory soi ON soi.station_id = s.station_id
+            AND soi.is_active = 1
+            AND soi.current_amount_liters > 0
+         INNER JOIN oil_types ot ON ot.oil_type_id = soi.oil_type_id
+            AND LOWER(REPLACE(ot.oil_name, ' ', '')) = LOWER(REPLACE(:fuel_type, ' ', ''))
+         WHERE s.station_id = :station_id
+           AND COALESCE(s.status, 'Active') <> 'Decommissioned'
+         ORDER BY soi.updated_at DESC, soi.inventory_id DESC
+         LIMIT 1"
+    );
+    $stationStmt->execute([
+        ':station_id' => $stationId,
+        ':fuel_type' => $fuelType,
+    ]);
+    $stationFuel = $stationStmt->fetch(PDO::FETCH_ASSOC);
+
+    if (!$stationFuel) {
+        http_response_code(422);
+        echo json_encode(['success' => false, 'message' => 'This station or fuel type is not available. Please refresh and choose another station.']);
+        exit;
     }
+
+    if (empty($stationFuel['oil_type_id'])) {
+        http_response_code(422);
+        echo json_encode(['success' => false, 'message' => 'This fuel type is not available at the selected station. Please choose another fuel type.']);
+        exit;
+    }
+
+    $oilTypeId = (int)$stationFuel['oil_type_id'];
+    $fuelType = (string)$stationFuel['oil_name'];
+    $stationName = (string)($stationFuel['station_name'] ?? ('Station #' . $stationId));
+    $displayPayload = $bookingCode . '|' . $stationName . '|' . $fuelType . '|' . rtrim(rtrim(number_format($quantity, 1, '.', ''), '0'), '.') . 'L';
 
     $quota = customer_fuel_quota($pdo, $userId);
     if (empty($quota['has_active_car'])) {
@@ -94,6 +121,15 @@ try {
         exit;
     }
 
+    $stationId = (int)$stationFuel['station_id'];
+    $finalStationCheck = $pdo->prepare('SELECT station_id FROM stations WHERE station_id = :station_id LIMIT 1');
+    $finalStationCheck->execute([':station_id' => $stationId]);
+    if (!$finalStationCheck->fetchColumn()) {
+        http_response_code(422);
+        echo json_encode(['success' => false, 'message' => 'This station is no longer available. Please refresh and choose another station.']);
+        exit;
+    }
+
     $insert = $pdo->prepare('INSERT INTO booking (user_id, car_license_id, station_id, oil_type_id, qr_code, qr_refrence_code, status, filled_gas, expire_at, created_at) VALUES (:user_id, :car_license_id, :station_id, :oil_type_id, :qr_code, :qr_refrence_code, :status, :filled_gas, DATE_ADD(NOW(), INTERVAL 1 HOUR), NOW())');
     $insert->execute([
         ':user_id' => $userId,
@@ -107,8 +143,18 @@ try {
     ]);
 
     echo json_encode(['success' => true, 'message' => 'Booking saved.', 'booking_code' => $bookingCode, 'payload' => $displayPayload]);
+} catch (PDOException $e) {
+    $message = $e->getMessage();
+    if ($e->getCode() === '23000' && strpos($message, 'fk_booking_station_id') !== false) {
+        http_response_code(422);
+        echo json_encode(['success' => false, 'message' => 'This station is not available in the database. Please refresh the booking page and choose a listed station.']);
+        exit;
+    }
+
+    http_response_code(500);
+    echo json_encode(['success' => false, 'message' => 'Unable to save booking. Please try again.']);
 } catch (Throwable $e) {
     http_response_code(500);
-    echo json_encode(['success' => false, 'message' => 'Unable to save booking: ' . $e->getMessage()]);
+    echo json_encode(['success' => false, 'message' => 'Unable to save booking. Please try again.']);
 }
 

@@ -1,6 +1,8 @@
 <?php
 session_start();
 require_once __DIR__ . '/../conn.php';
+require_once __DIR__ . '/../feedback_schema.php';
+require_once __DIR__ . '/../usage_history_schema.php';
 
 function redirect_to_login(string $message = 'Please sign in to continue.')
 {
@@ -31,18 +33,27 @@ try {
     // ignore — displayName remains empty
 }
 
-// Load recent feedback (most recent 5)
+map_pump_feedback_schema_ready($pdo);
+map_pump_usage_history_schema_ready($pdo);
+
+// Load recent feedback (most recent 10)
 $recentFeedback = [];
-if (isset($conn)) {
-    $stmt = $conn->prepare('SELECT f.feedback_id, f.feedback, f.created_at, u.user_name FROM feedback f LEFT JOIN users u ON u.user_id = f.user_id ORDER BY f.created_at DESC LIMIT 5');
-    if ($stmt) {
-        $stmt->execute();
-        $res = $stmt->get_result();
-        while ($row = $res->fetch_assoc()) {
-            $recentFeedback[] = $row;
-        }
-        $stmt->close();
-    }
+try {
+    $stmt = $pdo->query(
+        'SELECT f.feedback_id, f.feedback, f.created_at, f.usage_id, f.rating,
+                u.user_name, uh.qr_refrence_code, s.station_name, o.oil_name
+         FROM feedback f
+         LEFT JOIN users u ON u.user_id = f.user_id
+         LEFT JOIN usage_history uh ON uh.usage_id = f.usage_id
+         LEFT JOIN stations s ON s.station_id = f.station_id
+         LEFT JOIN oil_types o ON o.oil_type_id = uh.oil_type_id
+         ORDER BY f.created_at DESC
+         LIMIT 10'
+    );
+    $recentFeedback = $stmt->fetchAll(PDO::FETCH_ASSOC);
+} catch (Throwable $e) {
+    error_log('Failed to load staff feedback: ' . $e->getMessage());
+    $recentFeedback = [];
 }
 $showSuccess = isset($_GET['report_created']) && $_GET['report_created'] === '1';
 $showReplySuccess = isset($_GET['reply_sent']) && $_GET['reply_sent'] === '1';
@@ -147,14 +158,19 @@ $showReplySuccess = isset($_GET['reply_sent']) && $_GET['reply_sent'] === '1';
                 <div class="col-12"><div class="dashboard-card text-center text-white-50 py-5">No recent feedback available.</div></div>
             <?php else: ?>
                 <?php foreach ($recentFeedback as $fb): ?>
+                    <?php
+                        $isUsageFeedback = !empty($fb['usage_id']);
+                        $feedbackTitle = $isUsageFeedback ? 'Fuel fill feedback' : (substr((string)$fb['feedback'], 0, 80) . (strlen((string)$fb['feedback']) > 80 ? '…' : ''));
+                        $feedbackMeta = $isUsageFeedback ? ('Usage #' . (int)$fb['usage_id'] . (!empty($fb['qr_refrence_code']) ? ' / ' . $fb['qr_refrence_code'] : '')) : 'General feedback';
+                    ?>
                     <div class="col-12">
                         <div class="dashboard-card">
                             <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
                                 <div>
-                                    <h5 class="mb-1 text-white fw-semibold"><?= htmlspecialchars(substr($fb['feedback'], 0, 80)) ?><?= strlen($fb['feedback']) > 80 ? '…' : '' ?></h5>
-                                    <small class="text-white-50">By: <strong class="text-white"><?= htmlspecialchars($fb['user_name'] ?: 'Anonymous') ?></strong> • <?= htmlspecialchars((new DateTime($fb['created_at']))->format('M j, Y \\a\\t H:i')) ?></small>
+                                    <h5 class="mb-1 text-white fw-semibold"><?= htmlspecialchars($feedbackTitle) ?></h5>
+                                    <small class="text-white-50">By: <strong class="text-white"><?= htmlspecialchars($fb['user_name'] ?: 'Anonymous') ?></strong> • <?= htmlspecialchars($feedbackMeta) ?> • <?= htmlspecialchars((new DateTime($fb['created_at']))->format('M j, Y \\a\\t H:i')) ?></small>
                                 </div>
-                                <span class="badge <?= 'badge-pending' ?> px-3 py-2 rounded-pill small fw-medium">Recent</span>
+                                <span class="badge <?= 'badge-pending' ?> px-3 py-2 rounded-pill small fw-medium"><?= !empty($fb['rating']) ? ((int)$fb['rating'] . '/5') : 'Recent' ?></span>
                             </div>
                             <p class="text-white-70 mb-4 small" style="opacity: 0.85;"><?= nl2br(htmlspecialchars(substr($fb['feedback'], 0, 240))) ?><?= strlen($fb['feedback']) > 240 ? '…' : '' ?></p>
                             <div class="d-flex justify-content-end gap-2 flex-wrap">

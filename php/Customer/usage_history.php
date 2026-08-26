@@ -5,22 +5,32 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
 
 require_once __DIR__ . '/../conn.php';
 require_once __DIR__ . '/../usage_history_schema.php';
+require_once __DIR__ . '/../feedback_schema.php';
 
 $userId = (int) ($_SESSION['user_id'] ?? 0);
 $usageRows = [];
 $usageHistoryReady = map_pump_usage_history_schema_ready($pdo);
+$feedbackReady = map_pump_feedback_schema_ready($pdo);
 
 if ($userId > 0 && $usageHistoryReady) {
     try {
         $stmt = $pdo->prepare(
             'SELECT uh.usage_id, uh.booking_id, uh.qr_refrence_code, uh.filled_liters, uh.price_per_litre,
                     uh.total_cost, uh.status, uh.filled_at, s.station_name, s.location AS station_location,
-                    o.oil_name, c.car_plate_number
+                    o.oil_name, c.car_plate_number,
+                    COALESCE(fb.feedback_count, 0) AS feedback_count, fb.latest_rating
              FROM usage_history uh
              LEFT JOIN stations s ON s.station_id = uh.station_id
              LEFT JOIN oil_types o ON o.oil_type_id = uh.oil_type_id
              LEFT JOIN car_license c ON c.car_license_id = uh.car_license_id
+             LEFT JOIN (
+                 SELECT usage_id, COUNT(*) AS feedback_count, MAX(rating) AS latest_rating
+                 FROM feedback
+                 WHERE usage_id IS NOT NULL
+                 GROUP BY usage_id
+             ) fb ON fb.usage_id = uh.usage_id
              WHERE uh.user_id = ?
+               AND LOWER(uh.status) = \'filled\'
              ORDER BY uh.filled_at DESC, uh.usage_id DESC'
         );
         $stmt->execute([$userId]);
@@ -49,6 +59,11 @@ function customer_usage_fuel_class(?string $oilName): string
 include 'share_header.php';
 ?>
 <div class="dashboard-panel-card">
+    <?php if (isset($_GET['feedback_sent'])): ?>
+        <div class="alert alert-success border-0 mb-4">Feedback sent to staff. Thank you.</div>
+    <?php elseif (isset($_GET['feedback_error'])): ?>
+        <div class="alert alert-warning border-0 mb-4">Feedback could not be saved. Please choose a filled usage record and try again.</div>
+    <?php endif; ?>
     <div class="d-flex align-items-start justify-content-between flex-wrap gap-3 mb-4">
         <div>
             <h3 class="text-white mb-1">Usage Log Reports</h3>
@@ -93,13 +108,14 @@ include 'share_header.php';
                     <th class="pb-3 border-0">VOLUME REGISTERED</th>
                     <th class="pb-3 border-0">FUEL CLASSIFICATION</th>
                     <th class="pb-3 border-0">STATUS STATE</th>
+                    <th class="pb-3 border-0 text-end">FEEDBACK</th>
                 </tr>
             </thead>
             <tbody id="usage-log-body" class="text-white" style="font-size:13px; font-weight:500;">
                 <?php if (!$usageHistoryReady): ?>
-                    <tr><td colspan="6" class="py-4 text-center text-secondary">Usage history table is not available yet.</td></tr>
+                    <tr><td colspan="7" class="py-4 text-center text-secondary">Usage history table is not available yet.</td></tr>
                 <?php elseif (!$usageRows): ?>
-                    <tr><td colspan="6" class="py-4 text-center text-secondary">No filled usage history yet.</td></tr>
+                    <tr><td colspan="7" class="py-4 text-center text-secondary">No filled usage history yet.</td></tr>
                 <?php else: ?>
                     <?php foreach ($usageRows as $usage): ?>
                         <?php
@@ -113,6 +129,9 @@ include 'share_header.php';
                             }
                             $oilName = (string) ($usage['oil_name'] ?? 'Fuel');
                             $status = ucfirst((string) ($usage['status'] ?? 'filled'));
+                            $feedbackCount = (int) ($usage['feedback_count'] ?? 0);
+                            $latestRating = (int) ($usage['latest_rating'] ?? 0);
+                            $feedbackModalId = 'feedbackModal' . (int) $usage['usage_id'];
                         ?>
                         <tr class="border-bottom border-secondary border-opacity-5" data-date="<?php echo htmlspecialchars($date); ?>">
                             <td class="py-3 font-semibold text-white">TXN-<?php echo (int) $usage['usage_id']; ?>-MP</td>
@@ -121,6 +140,14 @@ include 'share_header.php';
                             <td class="py-3"><?php echo htmlspecialchars($liters); ?> Liters</td>
                             <td class="py-3"><span class="fuel-tag <?php echo htmlspecialchars(customer_usage_fuel_class($oilName)); ?>"><?php echo htmlspecialchars($oilName); ?></span></td>
                             <td class="py-3"><span class="status-pill active" style="font-size:9px;"><?php echo htmlspecialchars($status === 'Filled' ? 'Delivered' : $status); ?></span></td>
+                            <td class="py-3 text-end">
+                                <button type="button" class="btn btn-outline-info btn-sm rounded-pill px-3" data-bs-toggle="modal" data-bs-target="#<?php echo htmlspecialchars($feedbackModalId, ENT_QUOTES, 'UTF-8'); ?>">
+                                    <i class="bi bi-chat-left-heart me-1"></i><?php echo $feedbackCount > 0 ? 'Feedback again' : 'Give feedback'; ?>
+                                </button>
+                                <?php if ($feedbackCount > 0): ?>
+                                    <div class="text-secondary mt-1" style="font-size:11px;"><?php echo $feedbackCount; ?> sent<?php echo $latestRating > 0 ? ' · last ' . $latestRating . '/5' : ''; ?></div>
+                                <?php endif; ?>
+                            </td>
                         </tr>
                     <?php endforeach; ?>
                 <?php endif; ?>
@@ -130,7 +157,76 @@ include 'share_header.php';
     <p id="usage-empty-msg" class="text-secondary text-center py-4 mb-0 d-none" style="font-size:13px;">No usage records for the selected date range.</p>
 </div>
 
+
+<?php if ($usageHistoryReady && $usageRows): ?>
+    <?php foreach ($usageRows as $usage): ?>
+        <?php
+            $feedbackModalId = 'feedbackModal' . (int)$usage['usage_id'];
+            $modalStation = trim((string)($usage['station_name'] ?? 'Unknown station'));
+            $modalFuel = (string)($usage['oil_name'] ?? 'Fuel');
+            $modalLiters = rtrim(rtrim(number_format((float)($usage['filled_liters'] ?? 0), 1, '.', ''), '0'), '.');
+        ?>
+        <div class="modal fade" id="<?php echo htmlspecialchars($feedbackModalId, ENT_QUOTES, 'UTF-8'); ?>" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog modal-dialog-centered px-3">
+                <div class="modal-content text_color" style="background: var(--glass-bg); backdrop-filter: blur(24px); border: 1px solid var(--glass-border); border-radius: var(--card-radius);">
+                    <form action="submit_feedback.php" method="POST">
+                        <div class="modal-header border-bottom border-secondary border-opacity-25">
+                            <div>
+                                <h5 class="modal-title text-white fw-bold">Fuel Fill Feedback</h5>
+                                <p class="text-secondary mb-0 small"><?php echo htmlspecialchars($modalStation . ' / ' . $modalFuel . ' / ' . $modalLiters . ' L', ENT_QUOTES, 'UTF-8'); ?></p>
+                            </div>
+                            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Skip feedback"></button>
+                        </div>
+                        <div class="modal-body">
+                            <input type="hidden" name="usage_id" value="<?php echo (int)$usage['usage_id']; ?>">
+                            <label class="form-label text-secondary small d-block">Rating</label>
+                            <div class="usage-feedback-rating mb-3" role="radiogroup" aria-label="Fuel fill rating">
+                                <?php for ($rating = 5; $rating >= 1; $rating--): ?>
+                                    <input type="radio" id="rating-<?php echo (int)$usage['usage_id']; ?>-<?php echo $rating; ?>" name="rating" value="<?php echo $rating; ?>">
+                                    <label for="rating-<?php echo (int)$usage['usage_id']; ?>-<?php echo $rating; ?>" title="<?php echo $rating; ?> out of 5"><i class="bi bi-star-fill"></i></label>
+                                <?php endfor; ?>
+                            </div>
+                            <label for="feedbackText<?php echo (int)$usage['usage_id']; ?>" class="form-label text-secondary small">Message to staff</label>
+                            <textarea id="feedbackText<?php echo (int)$usage['usage_id']; ?>" name="feedback" class="form-control glass-input" rows="4" maxlength="1000" placeholder="Tell staff about this fill, station, service, or queue experience..."></textarea>
+                            <p class="text-secondary small mt-2 mb-0">You can skip this now and send feedback from usage history later.</p>
+                        </div>
+                        <div class="modal-footer border-top border-secondary border-opacity-25">
+                            <button type="button" class="btn btn-outline-light rounded-pill px-4" data-bs-dismiss="modal">Skip</button>
+                            <button type="submit" class="btn btn-info rounded-pill px-4 fw-semibold"><i class="bi bi-send-fill me-2"></i>Send to staff</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    <?php endforeach; ?>
+<?php endif; ?>
+
 <style>
+.usage-feedback-rating {
+    display: inline-flex;
+    flex-direction: row-reverse;
+    gap: 6px;
+}
+.usage-feedback-rating input {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+}
+.usage-feedback-rating label {
+    color: rgba(255,255,255,0.28);
+    cursor: pointer;
+    font-size: 22px;
+    transition: color 0.15s ease, transform 0.15s ease;
+}
+.usage-feedback-rating label:hover,
+.usage-feedback-rating label:hover ~ label,
+.usage-feedback-rating input:checked ~ label {
+    color: #ffc107;
+}
+.usage-feedback-rating label:hover {
+    transform: translateY(-1px);
+}
+
 .usage-date-picker {
     position: relative;
     min-width: 220px;
@@ -555,3 +651,5 @@ body.customer-light-mode .usage-cal-day.is-selected {
 </script>
 
 <?php include 'share_footer.php'; ?>
+
+
