@@ -174,9 +174,7 @@ if (isset($_SESSION['user_id']) && ctype_digit((string) $_SESSION['user_id'])) {
         $profileRoles = $businessStmt->fetch(PDO::FETCH_ASSOC) ?: [];
         $linkedBusinessRoleName = trim((string) ($profileRoles['business_role_name'] ?? ''));
         
-        $activeCarStmt = $pdo->prepare('SELECT car_license_id FROM users WHERE user_id = ? LIMIT 1');
-        $activeCarStmt->execute([(int) $_SESSION['user_id']]);
-        $activeCarId = (int) ($activeCarStmt->fetchColumn() ?: 0);
+        $activeCarId = customer_active_car_id($pdo, (int) $_SESSION['user_id']);
 
         $carsStmt = $pdo->prepare(
             'SELECT c.*

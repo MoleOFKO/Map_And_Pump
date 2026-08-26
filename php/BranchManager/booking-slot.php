@@ -362,7 +362,7 @@ $managerInitial = map_pump_profile_initial($managerDisplayName, 'M');
       <a href="edit-profile.php" class="side-link"><span class="ic"><i class="fa-solid fa-gear"></i></span> Edit Profile</a>
     </nav>
 
-    <a href="login.php" class="side-logout"><span class="ic"><i class="fa-solid fa-right-from-bracket"></i></span> Log Out</a>
+    <a href="../Login/logout.php" class="side-logout"><span class="ic"><i class="fa-solid fa-right-from-bracket"></i></span> Log Out</a>
   </aside>
 
   <!-- Main Content Panel -->

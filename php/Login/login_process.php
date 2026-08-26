@@ -1,4 +1,8 @@
 <?php
+require_once __DIR__ . '/session_helper.php';
+
+$remember = !empty($_POST['remember']);
+map_pump_configure_session($remember);
 session_start();
 
 require_once __DIR__ . '/../conn.php';
@@ -93,6 +97,7 @@ try {
     $_SESSION['business_role_name'] = (string) ($user['business_role_name'] ?? '');
     $_SESSION['has_business'] = !empty($user['business_role_id']);
     $_SESSION['active_profile_mode'] = ($roleName === 'customer') ? 'customer' : 'business';
+    $_SESSION['remember_me'] = $remember;
     map_pump_set_current_role($pdo, (int) $user['user_id'], $activeRoleId);
     if (!empty($user['license_id'])) {
         $_SESSION['license_id'] = (int) $user['license_id'];
@@ -103,6 +108,8 @@ try {
         $_SESSION['oil_limit'] = $_SESSION['oil_limit'] ?? 50.0;
         $_SESSION['oil_used'] = $_SESSION['oil_used'] ?? 0.0;
     }
+
+    map_pump_set_remembered_email((string) $user['email'], $remember);
 
     header('Location: ' . $destination);
     exit;

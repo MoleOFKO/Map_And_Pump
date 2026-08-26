@@ -268,7 +268,7 @@ $initials = $managerInitial;
       <a href="edit-profile.php" class="side-link active"><span class="ic"><i class="fa-solid fa-gear"></i></span> Edit Profile</a>
     </nav>
 
-    <a href="logout.php" class="side-logout"><span class="ic"><i class="fa-solid fa-right-from-bracket"></i></span> Log Out</a>
+    <a href="../Login/logout.php" class="side-logout"><span class="ic"><i class="fa-solid fa-right-from-bracket"></i></span> Log Out</a>
   </aside>
 
   <div class="main">

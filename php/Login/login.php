@@ -1,7 +1,10 @@
 <?php
+require_once __DIR__ . '/session_helper.php';
+map_pump_configure_session();
 session_start();
 $loginError = $_SESSION['login_error'] ?? '';
 $loginSuccess = $_SESSION['login_success'] ?? '';
+$rememberedEmail = (string) ($_COOKIE[MAP_PUMP_REMEMBER_EMAIL_COOKIE] ?? '');
 unset($_SESSION['login_error']);
 unset($_SESSION['login_success']);
 ?>
@@ -61,7 +64,7 @@ unset($_SESSION['login_success']);
         <div class="input-group">
           <label for="email">Email</label>
           <div class="input-wrapper">
-            <input type="email" id="email" name="email" placeholder="example123@gmail.com" required />
+            <input type="email" id="email" name="email" placeholder="example123@gmail.com" value="<?= htmlspecialchars($rememberedEmail, ENT_QUOTES, 'UTF-8') ?>" required />
           </div>
         </div>
 
@@ -82,7 +85,7 @@ unset($_SESSION['login_success']);
         <!-- Options: Remember Me & Forgot Password -->
         <div class="form-options">
           <label class="checkbox-container">
-            <input type="checkbox" name="remember" />
+            <input type="checkbox" name="remember" value="1" <?= $rememberedEmail !== '' ? 'checked' : '' ?> />
             <span>Remember Me</span>
           </label>
           <a href="forgot_password.php" class="forgot-link">Forgot Password?</a>
