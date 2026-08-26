@@ -246,8 +246,8 @@ include 'share_header.php';
                         <div class="license-face-capture">
                             <div class="d-flex align-items-start justify-content-between gap-3 flex-wrap mb-3">
                                 <div>
-                                    <label class="form-label text-secondary fw-bold mb-1" style="font-size:11px;">LIVE FACE VERIFICATION[cite: 1]</label>
-                                    <p class="text-secondary mb-0" style="font-size:13px;">Use the camera and align both eyes with the middle guide before taking the photo.[cite: 1]</p>
+                                    <label class="form-label text-secondary fw-bold mb-1" style="font-size:11px;">LIVE FACE VERIFICATION</label>
+                                    <p class="text-secondary mb-0" style="font-size:13px;">Use the camera and align both eyes with the middle guide before taking the photo.</p>
                                 </div>
                                 <?php if ($hasLicense && !empty($license['face_image'])): ?>
                                     <span class="status-pill pending" style="font-size:10px;"><i class="bi bi-camera-fill"></i> Current photo saved</span>
