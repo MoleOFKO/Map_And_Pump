@@ -123,12 +123,17 @@ function hq_bind(mysqli_stmt $statement, string $types, array &$params): bool
         return true;
     }
 
-    $bind = [$types];
-    foreach ($params as $key => &$param) {
-        $bind[] = &$param;
+    $refs = [];
+    foreach ($params as $index => $value) {
+        $refs[] = &$params[$index];
     }
 
-    return call_user_func_array([$statement, 'bind_param'], $bind);
+    try {
+        return $statement->bind_param($types, ...$refs);
+    } catch (Throwable $exception) {
+        error_log('[HQ registry] bind_param failed: ' . $exception->getMessage());
+        return false;
+    }
 }
 
 function hq_prepare(string $sql, string $types = '', array $params = []): mysqli_stmt|false
