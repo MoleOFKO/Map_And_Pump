@@ -3,6 +3,7 @@ session_start();
 
 require_once __DIR__ . '/conn.php';
 require_once __DIR__ . '/Customer/license_access.php';
+require_once __DIR__ . '/Customer/car_access.php';
 require_once __DIR__ . '/role_state.php';
 require_once __DIR__ . '/profile_avatar.php';
 
@@ -105,6 +106,7 @@ if ($targetMode === 'customer') {
     } else {
         unset($_SESSION['oauth_avatar_url']);
     }
+    customer_refresh_session($pdo, $userId, $licenseAccess);
     map_pump_set_current_role($pdo, $userId, $customerRoleId);
 
     header('Location: ' . ($licenseAccess['is_approved'] ? '/php/Customer/dashboard.php' : '/php/Customer/license.php'));

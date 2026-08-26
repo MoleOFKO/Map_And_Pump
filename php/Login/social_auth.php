@@ -2,6 +2,7 @@
 
 require_once __DIR__ . '/../conn.php';
 require_once __DIR__ . '/../Customer/license_access.php';
+require_once __DIR__ . '/../Customer/car_access.php';
 require_once __DIR__ . '/../role_state.php';
 
 function social_login_fail(string $message): never
@@ -256,8 +257,7 @@ function social_sign_in_user(PDO $pdo, string $provider, string $providerId, str
     $destination = social_dashboard_for_role($activeRoleName);
     if ($roleName === 'customer') {
         $licenseAccess = customer_license_access($pdo, (int) $user['user_id']);
-        $_SESSION['license_id'] = (int) ($licenseAccess['license_id'] ?? 0);
-        $_SESSION['license_status'] = (string) ($licenseAccess['status'] ?? 'pending');
+        customer_refresh_session($pdo, (int) $user['user_id'], $licenseAccess);
         if (!$licenseAccess['is_approved']) {
             $destination = '/php/Customer/license.php';
         }

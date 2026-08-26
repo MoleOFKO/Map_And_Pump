@@ -1,4 +1,7 @@
-<?php include 'share_header.php'; ?>
+<?php
+include 'share_header.php';
+$availableOilQuota = max(0.0, (float) ($_SESSION['oil_remaining'] ?? (((float) ($_SESSION['oil_limit'] ?? 35.0)) - ((float) ($_SESSION['oil_used'] ?? 0.0)))));
+?>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 
@@ -286,7 +289,7 @@ body.customer-light-mode .customer-map-recenter-btn:hover {
 <script>
     let mapInstance, customerMarker, routeLine, selectedStation;
     let customerLocation = [16.8409, 96.1735]; // Yangon fallback when location permission is unavailable.
-    const availableOilQuota = <?php echo ($_SESSION['oil_limit'] - $_SESSION['oil_used']); ?>;
+    const availableOilQuota = <?php echo json_encode($availableOilQuota); ?>;
     const stationLogoUrl = '../../images/Logo.png';
     const stationsData = [
         { id: 1, name: 'Yangon Terminal Center', address: 'Pyay Road, Mayangone Township', lat: 16.8661, lng: 96.1349, fuels: ['Octane 95', 'Diesel'], logo: stationLogoUrl },
@@ -539,3 +542,4 @@ body.customer-light-mode .customer-map-recenter-btn:hover {
 </script>
 
 <?php include 'share_footer.php'; ?>
+

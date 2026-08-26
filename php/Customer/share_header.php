@@ -5,25 +5,17 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
 
 require_once __DIR__ . '/../conn.php';
 require_once __DIR__ . '/license_access.php';
+require_once __DIR__ . '/car_access.php';
 require_once __DIR__ . '/../profile_avatar.php';
 
-// Simulated login session check. Replace legacy text-based demo IDs because
-// booking.user_id is an integer foreign key.
 if (!isset($_SESSION['user_id']) || !ctype_digit((string) $_SESSION['user_id'])) {
-    // Keep the local fallback aligned with a real numeric users.user_id so
-    // booking records can satisfy the booking.user_id foreign-key constraint.
-    $_SESSION['user_id'] = 150014;
-    $_SESSION['user_name'] = 'MoleOFKO';
-    $_SESSION['user_email'] = 'shanekhant23@gmail.com';
-    $_SESSION['oil_limit'] = 50.0; // Max Allowed Liters
-    $_SESSION['oil_used'] = 12.5;  // Already consumed
-    $_SESSION['has_business'] = false;
+    header('Location: ../Login/login.php');
+    exit;
 }
 
 $currentPage = basename($_SERVER['PHP_SELF']);
-$customerLicenseAccess = customer_license_access($pdo, (int) $_SESSION['user_id']);
-$_SESSION['license_id'] = $customerLicenseAccess['license_id'] ?: ($_SESSION['license_id'] ?? null);
-$_SESSION['license_status'] = $customerLicenseAccess['status'];
+$customerSessionState = customer_refresh_session($pdo, (int) $_SESSION['user_id']);
+$customerLicenseAccess = $customerSessionState['license'];
 
 $customerPublicUserId = (string) $_SESSION['user_id'];
 $customerDisplayName = trim((string) ($_SESSION['user_name'] ?? 'User'));
