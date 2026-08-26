@@ -81,16 +81,14 @@ if (hq_db_available() && hq_registry_schema_ready()) {
        if (!$statement) {
            $dbError = hq_db_error_message();
        } else {
-           $boundParams = [$hqRoleId];
-           $boundParams = array_merge($boundParams, array_values($params));
            if ($types !== '') {
-               $types = 'i' . $types;
-           } else {
-               $types = 'i';
+               $bound = array_values($params);
+               if (!hq_bind($statement, $types, $bound)) {
+                   $dbError = hq_db_error_message();
+               }
            }
-           if (!hq_bind($statement, $types, $boundParams)) {
-               $dbError = hq_db_error_message();
-           } elseif (!$statement->execute()) {
+
+           if (!$dbError && !$statement->execute()) {
                $dbError = hq_db_error_message();
            } else {
                $result = $statement->get_result();
@@ -98,6 +96,7 @@ if (hq_db_available() && hq_registry_schema_ready()) {
                    $hqRows[] = $row;
                }
            }
+
            $statement->close();
        }
    }
