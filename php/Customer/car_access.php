@@ -92,3 +92,83 @@ function customer_set_active_car(PDO $pdo, int $userId, int $carId): bool
         throw $e;
     }
 }
+
+const CUSTOMER_WEEKLY_FUEL_LIMIT_LITERS = 35.0;
+
+function customer_fuel_quota(PDO $pdo, int $userId): array
+{
+    $limit = CUSTOMER_WEEKLY_FUEL_LIMIT_LITERS;
+    $quota = [
+        'limit' => $limit,
+        'used' => 0.0,
+        'remaining' => $limit,
+        'active_car_id' => 0,
+        'has_active_car' => false,
+    ];
+
+    if ($userId <= 0 || !customer_car_schema_ready($pdo)) {
+        return $quota;
+    }
+
+    $carStmt = $pdo->prepare(
+        'SELECT uc.car_id AS car_license_id, c.filled_gas, c.updated_at
+         FROM user_car uc
+         INNER JOIN car_license c ON c.car_license_id = uc.car_id
+         WHERE uc.user_id = ?
+         ORDER BY uc.is_active DESC, c.updated_at DESC, c.car_license_id DESC
+         LIMIT 1'
+    );
+    $carStmt->execute([$userId]);
+    $car = $carStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+    $activeCarId = (int) ($car['car_license_id'] ?? 0);
+    if ($activeCarId <= 0) {
+        return $quota;
+    }
+
+    $quota['active_car_id'] = $activeCarId;
+    $quota['has_active_car'] = true;
+
+    $usageStmt = $pdo->prepare(
+        'SELECT COALESCE(SUM(filled_liters), 0)
+         FROM usage_history
+         WHERE user_id = ?
+           AND car_license_id = ?
+           AND filled_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)'
+    );
+    $usageStmt->execute([$userId, $activeCarId]);
+    $used = (float) $usageStmt->fetchColumn();
+
+    if ($used <= 0.0) {
+        $updatedAt = (string) ($car['updated_at'] ?? '');
+        if ($updatedAt !== '' && strtotime($updatedAt) < strtotime('-7 days')) {
+            $resetStmt = $pdo->prepare('UPDATE car_license SET filled_gas = 0, updated_at = NOW() WHERE car_license_id = ?');
+            $resetStmt->execute([$activeCarId]);
+            $used = 0.0;
+        } else {
+            $used = (float) ($car['filled_gas'] ?? 0.0);
+        }
+    }
+
+    $used = max(0.0, min($limit, $used));
+    $quota['used'] = $used;
+    $quota['remaining'] = max(0.0, $limit - $used);
+
+    return $quota;
+}
+
+function customer_refresh_session(PDO $pdo, int $userId, ?array $licenseAccess = null): array
+{
+    if ($licenseAccess === null) {
+        $licenseAccess = customer_license_access($pdo, $userId);
+    }
+    $quota = customer_fuel_quota($pdo, $userId);
+
+    $_SESSION['license_id'] = (int) ($licenseAccess['license_id'] ?? 0);
+    $_SESSION['license_status'] = (string) ($licenseAccess['status'] ?? 'pending');
+    $_SESSION['car_license_id'] = (int) ($quota['active_car_id'] ?? 0);
+    $_SESSION['oil_limit'] = (float) ($quota['limit'] ?? CUSTOMER_WEEKLY_FUEL_LIMIT_LITERS);
+    $_SESSION['oil_used'] = (float) ($quota['used'] ?? 0.0);
+    $_SESSION['oil_remaining'] = (float) ($quota['remaining'] ?? max(0.0, $_SESSION['oil_limit'] - $_SESSION['oil_used']));
+
+    return ['license' => $licenseAccess, 'quota' => $quota];
+}

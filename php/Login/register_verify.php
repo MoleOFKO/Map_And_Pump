@@ -110,8 +110,9 @@ try {
     $_SESSION['user_email'] = $email;
     $_SESSION['role_id'] = $roleId;
     $_SESSION['role_name'] = 'customer';
-    $_SESSION['oil_limit'] = 50.0;
+    $_SESSION['oil_limit'] = 35.0;
     $_SESSION['oil_used'] = 0.0;
+    $_SESSION['oil_remaining'] = 35.0;
     $_SESSION['has_business'] = false;
     verify_json(true, 'Registration complete. Please add your driver license.', [
         'redirect' => '/php/Customer/license.php',

@@ -7,6 +7,7 @@ session_start();
 
 require_once __DIR__ . '/../conn.php';
 require_once __DIR__ . '/../Customer/license_access.php';
+require_once __DIR__ . '/../Customer/car_access.php';
 require_once __DIR__ . '/../role_state.php';
 
 function auth_redirect_to_login(string $message = 'Please sign in to continue.')
@@ -103,10 +104,7 @@ try {
         $_SESSION['license_id'] = (int) $user['license_id'];
     }
     if ($roleName === 'customer') {
-        $_SESSION['license_id'] = (int) ($customerLicenseAccess['license_id'] ?? 0);
-        $_SESSION['license_status'] = (string) ($customerLicenseAccess['status'] ?? 'pending');
-        $_SESSION['oil_limit'] = $_SESSION['oil_limit'] ?? 50.0;
-        $_SESSION['oil_used'] = $_SESSION['oil_used'] ?? 0.0;
+        customer_refresh_session($pdo, (int) $user['user_id'], $customerLicenseAccess);
     }
 
     map_pump_set_remembered_email((string) $user['email'], $remember);

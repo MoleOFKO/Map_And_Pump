@@ -64,18 +64,8 @@ try {
         $oilTypeId = 4;
     }
 
-    $licenseStmt = $pdo->prepare(
-        'SELECT uc.car_id AS car_license_id, c.filled_gas, c.updated_at
-         FROM user_car uc
-         INNER JOIN car_license c ON c.car_license_id = uc.car_id
-         WHERE uc.user_id = :user_id
-         ORDER BY uc.is_active DESC, c.updated_at DESC, c.car_license_id DESC
-         LIMIT 1'
-    );
-    $licenseStmt->execute([':user_id' => $userId]);
-    $licenseRow = $licenseStmt->fetch(PDO::FETCH_ASSOC);
-
-    if (empty($licenseRow['car_license_id'])) {
+    $quota = customer_fuel_quota($pdo, $userId);
+    if (empty($quota['has_active_car'])) {
         http_response_code(422);
         echo json_encode([
             'success' => false,
@@ -84,22 +74,22 @@ try {
         exit;
     }
 
-    $activeCarLicenseId = (int)$licenseRow['car_license_id'];
-    $weeklyTotal = 0.0;
-    $updatedAt = $licenseRow['updated_at'] ?? null;
-    if ($updatedAt && strtotime((string)$updatedAt) < strtotime('-7 days')) {
-        $resetStmt = $pdo->prepare('UPDATE car_license SET filled_gas = 0, updated_at = NOW() WHERE car_license_id = :car_license_id');
-        $resetStmt->execute([':car_license_id' => $activeCarLicenseId]);
-        $weeklyTotal = 0.0;
-    } else {
-        $weeklyTotal = (float)($licenseRow['filled_gas'] ?? 0);
-    }
-
-    if ($weeklyTotal >= 35.0) {
+    $activeCarLicenseId = (int) $quota['active_car_id'];
+    $remainingQuota = (float) $quota['remaining'];
+    if ($remainingQuota <= 0.0) {
         http_response_code(422);
         echo json_encode([
             'success' => false,
-            'message' => 'This customer has reached the weekly fuel limit of 35 liters. Please try again next week.'
+            'message' => 'This customer has reached the weekly fuel limit of ' . number_format((float) $quota['limit'], 1) . ' liters. Please try again next week.'
+        ]);
+        exit;
+    }
+
+    if ($quantity > $remainingQuota) {
+        http_response_code(422);
+        echo json_encode([
+            'success' => false,
+            'message' => 'Only ' . number_format($remainingQuota, 1) . ' liters remain from your weekly fuel limit.'
         ]);
         exit;
     }

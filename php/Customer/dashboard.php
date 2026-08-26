@@ -1,6 +1,11 @@
 <?php 
 include 'share_header.php'; 
 
+$oilLimit = max(0.1, (float) ($_SESSION['oil_limit'] ?? 35.0));
+$oilUsed = max(0.0, (float) ($_SESSION['oil_used'] ?? 0.0));
+$oilRemaining = max(0.0, (float) ($_SESSION['oil_remaining'] ?? ($oilLimit - $oilUsed)));
+$oilPercent = max(0.0, min(100.0, ($oilRemaining / $oilLimit) * 100));
+
 // Simulated variables for the new dashboard cards
 // You can later replace these with real database queries
 $monthly_visits = 3; 
@@ -14,11 +19,11 @@ $reward_points = 1250;
         <div class="dashboard-panel-card customer-stat-card w-100">
             <p class="text-secondary text-uppercase tracking-wider mb-2" style="font-size:11px; font-weight:600;">Remaining Fuel Quota</p>
             <h3 class="text-sky-400 fs-1 mb-1">
-                <?php echo ($_SESSION['oil_limit'] - $_SESSION['oil_used']); ?>
-                <span class="fs-4 text-secondary fw-normal">/ <?php echo $_SESSION['oil_limit']; ?> L</span>
+                <?php echo number_format($oilRemaining, 1); ?>
+                <span class="fs-4 text-secondary fw-normal">/ <?php echo number_format($oilLimit, 1); ?> L</span>
             </h3>
             <div class="progress bg-dark bg-opacity-50 rounded-pill mt-3" style="height: 6px;">
-                <div class="progress-bar bg-info" style="width: <?php echo (($_SESSION['oil_limit'] - $_SESSION['oil_used'])/$_SESSION['oil_limit'])*100; ?>%"></div>
+                <div class="progress-bar bg-info" style="width: <?php echo $oilPercent; ?>%"></div>
             </div>
         </div>
     </div>
@@ -62,3 +67,4 @@ $reward_points = 1250;
 </div>
 
 <?php include 'share_footer.php'; ?>
+
