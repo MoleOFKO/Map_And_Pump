@@ -42,7 +42,7 @@ require __DIR__ . '/partials/nav.php';
                     <a href="/php/Company/register.php" class="btn btn-primary btn-lg px-4 py-3 mb-3 mb-sm-0 w-100 w-sm-auto">
                         <i class="fa-solid fa-building-circle-check me-2"></i>Register your company
                     </a>
-                    <a href="/php/Customer/dashboard.php" class="btn btn-outline-light btn-lg px-4 py-3 mb-3 mb-sm-0 w-100 w-sm-auto">
+                    <a href="/php/link_button.php" class="btn btn-outline-light btn-lg px-4 py-3 mb-3 mb-sm-0 w-100 w-sm-auto">
                         Are you Driver?
                     </a>
                 </div>
