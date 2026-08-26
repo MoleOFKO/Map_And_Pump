@@ -207,6 +207,30 @@
         let lastScannedCode = '';
         let scanCooldown = false;
 
+        function normalizeBookingReference(value) {
+            let text = String(value || '').trim();
+            if (!text) return '';
+
+            try {
+                const parsed = JSON.parse(text);
+                const nested = parsed.booking_code || parsed.qr_refrence_code || parsed.qr_reference_code || parsed.code;
+                if (nested) return normalizeBookingReference(nested);
+            } catch (error) {
+                // The QR is usually plain text, not JSON.
+            }
+
+            try {
+                const url = new URL(text);
+                const nested = url.searchParams.get('booking_code') || url.searchParams.get('qr_refrence_code') || url.searchParams.get('qr_reference_code') || url.searchParams.get('code') || url.searchParams.get('qr');
+                if (nested) return normalizeBookingReference(nested);
+            } catch (error) {
+                // Not a URL payload.
+            }
+
+            if (text.includes('|')) text = text.split('|')[0];
+            return text.replace(/\s+/g, '').toUpperCase();
+        }
+
         function renderVerifyResult(result) {
             const panel = document.getElementById('verifyResult');
             const icon = document.getElementById('verifyResultIcon');
@@ -304,7 +328,7 @@
                             if (scanCooldown) return;
 
                             const raw = decodedText.trim();
-                            const bookingCode = raw.includes('|') ? raw.split('|')[0].trim() : raw;
+                            const bookingCode = normalizeBookingReference(raw);
                             if (!bookingCode || bookingCode === lastScannedCode) return;
 
                             scanCooldown = true;
@@ -319,10 +343,15 @@
                             payload.append('qr_payload', raw);
 
                             try {
-                                await scanner.pause(true);
+                                try {
+                                    await scanner.pause(true);
+                                } catch (pauseError) {
+                                    console.warn('QR scanner pause failed; continuing verification.', pauseError);
+                                }
                                 await submitVerification(payload);
                             } catch (error) {
-                                renderVerifyResult({ success: false, message: 'Scan succeeded but verification failed.' });
+                                console.error('QR verification request failed.', error);
+                                renderVerifyResult({ success: false, message: error?.message || 'Scan succeeded but verification failed.' });
                             }
 
                             setTimeout(async () => {

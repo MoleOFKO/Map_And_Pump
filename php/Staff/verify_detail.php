@@ -1,5 +1,6 @@
 <?php
 session_start();
+require_once __DIR__ . '/../Customer/car_access.php';
 require __DIR__ . '/../conn.php';
 
 function redirect_to_login(string $message = 'Please sign in to continue.')
@@ -22,7 +23,7 @@ unset($_SESSION['verify_flash']);
 
 $bookingId = isset($_GET['booking_id']) ? (int)$_GET['booking_id'] : 0;
 $booking = null;
-$weeklyLimitLiters = 35.0;
+$weeklyLimitLiters = CUSTOMER_WEEKLY_FUEL_LIMIT_LITERS;
 $weeklyFilledLiters = 0.0;
 $fillableLiters = $weeklyLimitLiters;
 if ($bookingId > 0) {
@@ -47,17 +48,12 @@ if (!$booking) {
     $errorMessage = 'Booking detail not found. Please return to the scanner and try again.';
 } else {
     $carLicenseId = isset($booking['car_license_id']) ? (int)$booking['car_license_id'] : 0;
-    $carLicenseUpdatedAt = $booking['car_license_updated_at'] ?? null;
-
-    if ($carLicenseId > 0 && $carLicenseUpdatedAt && strtotime((string)$carLicenseUpdatedAt) < strtotime('-7 days')) {
-        $resetStmt = $pdo->prepare('UPDATE car_license SET filled_gas = 0, updated_at = NOW() WHERE car_license_id = :car_license_id');
-        $resetStmt->execute([':car_license_id' => $carLicenseId]);
-        $weeklyFilledLiters = 0.0;
-    } else {
-        $weeklyFilledLiters = max(0.0, (float)($booking['weekly_filled_gas'] ?? 0));
+    if ($carLicenseId > 0) {
+        $quota = customer_fuel_quota_for_car($pdo, (int)$booking['user_id'], $carLicenseId);
+        $weeklyLimitLiters = (float)$quota['limit'];
+        $weeklyFilledLiters = max(0.0, (float)$quota['used']);
+        $fillableLiters = max(0.0, (float)$quota['remaining']);
     }
-
-    $fillableLiters = max(0.0, $weeklyLimitLiters - $weeklyFilledLiters);
 }
 
 $customerUid = $booking['user_id'] ?? '';
@@ -188,7 +184,7 @@ $fillableDisplay = rtrim(rtrim(number_format($fillableLiters, 1, '.', ''), '0'),
                             <div class="col-12 col-md-6">
                                 <div class="p-3 rounded-4" style="background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);">
                                     <div class="detail-label mb-2">Filled This Week</div>
-                                    <div class="detail-value"><?php echo htmlspecialchars($weeklyFilledDisplay, ENT_QUOTES, 'UTF-8'); ?> / 35 L</div>
+                                    <div class="detail-value"><?php echo htmlspecialchars($weeklyFilledDisplay, ENT_QUOTES, 'UTF-8'); ?> / <?php echo htmlspecialchars(rtrim(rtrim(number_format($weeklyLimitLiters, 1, '.', ''), '0'), '.'), ENT_QUOTES, 'UTF-8'); ?> L</div>
                                 </div>
                             </div>
                             <div class="col-12 col-md-6">
@@ -216,7 +212,7 @@ $fillableDisplay = rtrim(rtrim(number_format($fillableLiters, 1, '.', ''), '0'),
                             <?php if ($isFilled): ?>
                                 <p class="text-success small mt-3">This booking is already marked as filled.</p>
                             <?php elseif ($fillableLiters <= 0): ?>
-                                <p class="text-warning small mt-3">This customer has reached the 35-liter weekly limit.</p>
+                                <p class="text-warning small mt-3">This customer has reached the weekly fuel limit.</p>
                             <?php endif; ?>
                         </form>
                     <?php endif; ?>

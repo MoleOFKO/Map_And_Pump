@@ -125,27 +125,63 @@ function customer_fuel_quota(PDO $pdo, int $userId): array
         return $quota;
     }
 
-    $quota['active_car_id'] = $activeCarId;
-    $quota['has_active_car'] = true;
+    return customer_fuel_quota_for_car($pdo, $userId, $activeCarId);
+}
 
-    $usageStmt = $pdo->prepare(
-        'SELECT COALESCE(SUM(filled_liters), 0)
-         FROM usage_history
-         WHERE user_id = ?
-           AND car_license_id = ?
-           AND filled_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)'
-    );
-    $usageStmt->execute([$userId, $activeCarId]);
-    $used = (float) $usageStmt->fetchColumn();
+function customer_fuel_quota_for_car(PDO $pdo, int $userId, int $carId): array
+{
+    $limit = CUSTOMER_WEEKLY_FUEL_LIMIT_LITERS;
+    $quota = [
+        'limit' => $limit,
+        'used' => 0.0,
+        'remaining' => $limit,
+        'active_car_id' => 0,
+        'has_active_car' => false,
+    ];
+
+    if ($userId <= 0 || $carId <= 0) {
+        return $quota;
+    }
+
+    $carStmt = $pdo->prepare('SELECT filled_gas, updated_at FROM car_license WHERE car_license_id = ? LIMIT 1');
+    $carStmt->execute([$carId]);
+    $car = $carStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+    if (!$car) {
+        return $quota;
+    }
+
+    $quota['active_car_id'] = $carId;
+    $quota['has_active_car'] = true;
+    $used = 0.0;
+    $historyReady = false;
+
+    try {
+        require_once __DIR__ . '/../usage_history_schema.php';
+        $historyReady = function_exists('map_pump_usage_history_schema_ready') && map_pump_usage_history_schema_ready($pdo);
+    } catch (Throwable $e) {
+        $historyReady = false;
+    }
+
+    if ($historyReady) {
+        $usageStmt = $pdo->prepare(
+            'SELECT COALESCE(SUM(filled_liters), 0)
+             FROM usage_history
+             WHERE user_id = ?
+               AND car_license_id = ?
+               AND filled_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)'
+        );
+        $usageStmt->execute([$userId, $carId]);
+        $used = (float)$usageStmt->fetchColumn();
+    }
 
     if ($used <= 0.0) {
-        $updatedAt = (string) ($car['updated_at'] ?? '');
+        $updatedAt = (string)($car['updated_at'] ?? '');
         if ($updatedAt !== '' && strtotime($updatedAt) < strtotime('-7 days')) {
             $resetStmt = $pdo->prepare('UPDATE car_license SET filled_gas = 0, updated_at = NOW() WHERE car_license_id = ?');
-            $resetStmt->execute([$activeCarId]);
+            $resetStmt->execute([$carId]);
             $used = 0.0;
         } else {
-            $used = (float) ($car['filled_gas'] ?? 0.0);
+            $used = (float)($car['filled_gas'] ?? 0.0);
         }
     }
 
@@ -155,7 +191,6 @@ function customer_fuel_quota(PDO $pdo, int $userId): array
 
     return $quota;
 }
-
 function customer_refresh_session(PDO $pdo, int $userId, ?array $licenseAccess = null): array
 {
     if ($licenseAccess === null) {
@@ -172,3 +207,4 @@ function customer_refresh_session(PDO $pdo, int $userId, ?array $licenseAccess =
 
     return ['license' => $licenseAccess, 'quota' => $quota];
 }
+

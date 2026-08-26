@@ -223,10 +223,15 @@ DROP TABLE IF EXISTS `feedback`;
 CREATE TABLE `feedback` (
   `feedback_id` int NOT NULL AUTO_INCREMENT,
   `user_id` int NOT NULL,
+  `usage_id` int DEFAULT NULL,
+  `station_id` int DEFAULT NULL,
+  `rating` tinyint DEFAULT NULL,
   `feedback` text COLLATE utf8mb4_0900_ai_ci NOT NULL,
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`feedback_id`) /*T![clustered_index] CLUSTERED */,
   KEY `user_id_idx` (`user_id`),
+  KEY `idx_feedback_usage_id` (`usage_id`),
+  KEY `idx_feedback_station_id` (`station_id`),
   CONSTRAINT `fk_feedback_user_id` FOREIGN KEY (`user_id`) REFERENCES `users` (`user_id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci AUTO_INCREMENT=300001;
 /*!40101 SET character_set_client = @saved_cs_client */;
@@ -237,7 +242,7 @@ CREATE TABLE `feedback` (
 
 LOCK TABLES `feedback` WRITE;
 /*!40000 ALTER TABLE `feedback` DISABLE KEYS */;
-INSERT INTO `feedback` VALUES (1,150014,'Low Skill','2026-08-10 09:05:38');
+INSERT INTO `feedback` VALUES (1,150014,NULL,NULL,NULL,'Low Skill','2026-08-10 09:05:38');
 /*!40000 ALTER TABLE `feedback` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -1000,3 +1005,4 @@ UNLOCK TABLES;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
 -- Dump completed on 2026-08-26 13:10:07
+
