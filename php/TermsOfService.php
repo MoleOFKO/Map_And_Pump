@@ -32,6 +32,7 @@ require __DIR__ . '/partials/nav.php';
                 <h2>3. Accounts and eligibility</h2>
                 <p>You must provide accurate registration information and keep it up to date. You are responsible for activity under your account and for keeping your login credentials secure. Notify us promptly if you believe your account has been accessed without permission.</p>
                 <p>Company, branch, staff, and similar accounts may be subject to additional verification. We may suspend or refuse accounts that appear incomplete, inaccurate, or used in a way that harms the service or other users.</p>
+                <p>Where MAP &amp; PUMP requires company, station, vehicle, or driver license information, you must provide current and lawful license details. You are responsible for renewing expired licenses and updating the service when a license number, document, owner, vehicle, company, or station permit changes. We may review, reject, suspend, or remove access when license details are missing, expired, invalid, misleading, or cannot be verified.</p>
             </section>
 
             <section>
