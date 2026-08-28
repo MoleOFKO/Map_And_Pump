@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/hq_guard.php';
 require_once __DIR__ . '/../conn.php';
 
 $addMessage = '';
@@ -212,11 +213,15 @@ if ($result) {
     <h2 class="title">Oil Types & Pricing Matrix</h2>
     <p class="subtitle">Configure corporate product grades and establish localized/global base pricing.</p>
 
-    <?php if ($addMessage || $updateMessage || $errorMessage): ?>
-        <div class="alert <?php echo $errorMessage ? 'alert-danger' : 'alert-success'; ?>" role="alert">
-            <?php echo htmlspecialchars($errorMessage ?: $addMessage ?: $updateMessage); ?>
+    <?php
+if ($addMessage || $updateMessage || $errorMessage): ?>
+        <div class="alert <?php
+echo $errorMessage ? 'alert-danger' : 'alert-success'; ?>" role="alert">
+            <?php
+echo htmlspecialchars($errorMessage ?: $addMessage ?: $updateMessage); ?>
         </div>
-    <?php endif; ?>
+    <?php
+endif; ?>
 
     <!-- <div class="card mb-4 p-4">
         <h3>Define Standard Oil Grade</h3>
@@ -250,9 +255,13 @@ if ($result) {
                         <label class="form-label">Select Product Grade</label>
                         <select name="fuel_type" class="form-select" required>
                             <option value="">Select grade</option>
-                            <?php foreach ($grades as $grade): ?>
-                                <option value="<?php echo htmlspecialchars($grade['oil_name'], ENT_QUOTES); ?>"><?php echo htmlspecialchars($grade['oil_name']); ?></option>
-                            <?php endforeach; ?>
+                            <?php
+foreach ($grades as $grade): ?>
+                                <option value="<?php
+echo htmlspecialchars($grade['oil_name'], ENT_QUOTES); ?>"><?php
+echo htmlspecialchars($grade['oil_name']); ?></option>
+                            <?php
+endforeach; ?>
                         </select>
                     </div>
                     <div class="col-md-6">
@@ -280,18 +289,25 @@ if ($result) {
                         </tr>
                     </thead>
                     <tbody>
-                        <?php if (count($grades) > 0): ?>
-                            <?php foreach ($grades as $grade): ?>
+                        <?php
+if (count($grades) > 0): ?>
+                            <?php
+foreach ($grades as $grade): ?>
                                 <tr>
-                                    <td><?php echo htmlspecialchars($grade['oil_name']); ?></td>
-                                    <td><?php echo number_format((int) $grade['price_per_liter']); ?> MMK</td>
+                                    <td><?php
+echo htmlspecialchars($grade['oil_name']); ?></td>
+                                    <td><?php
+echo number_format((int) $grade['price_per_liter']); ?> MMK</td>
                                 </tr>
-                            <?php endforeach; ?>
-                        <?php else: ?>
+                            <?php
+endforeach; ?>
+                        <?php
+else: ?>
                             <tr>
                                 <td colspan="2">No fuel grades defined yet.</td>
                             </tr>
-                        <?php endif; ?>
+                        <?php
+endif; ?>
                     </tbody>
                 </table>
             </div>

@@ -1,11 +1,12 @@
 <?php
-/* Shared navigation. Expects $active_nav (home|how|pricing|news|drivers). */
+/* Shared navigation. Expects $active_nav (home|how|pricing|news|drivers|contact). */
 $active_nav = $active_nav ?? '';
 $nav_items = [
     'how'     => [ 'label' => 'How it works', 'href' => '/HomePage.php#how' ],
     'pricing' => [ 'label' => 'Pricing',      'href' => '/HomePage.php#pricing' ],
     'news'    => [ 'label' => 'News',         'href' => '/php/News.php' ],
     'drivers' => [ 'label' => 'For drivers',  'href' => '/HomePage.php#drivers' ],
+    'contact' => [ 'label' => 'Contact us',   'href' => '/php/ContactUs.php' ],
 ];
 ?>
 <nav class="navbar navbar-expand-lg navbar-dark fixed-top main-navbar py-3">

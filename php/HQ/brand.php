@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/hq_guard.php';
 if (session_status() !== PHP_SESSION_ACTIVE) {
     session_start();
 }
@@ -133,11 +134,13 @@ if ($brandLogo !== '' && !preg_match('#^(?:https?:)?//#i', $brandLogo)) {
     <p class="subtitle">Set global brand styles, logos, and configurations.</p>
     
     <div class="card p-4">
-        <?php if (!empty($message)): ?>
+        <?php
+if (!empty($message)): ?>
             <div class="alert alert-success" role="alert">
                 <?= htmlspecialchars($message) ?>
             </div>
-        <?php endif; ?>
+        <?php
+endif; ?>
 
         <form method="POST" enctype="multipart/form-data">
             <div class="row align-items-center">

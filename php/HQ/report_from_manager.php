@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/hq_guard.php';
 require_once __DIR__ . '/../conn.php';
 
 $reports = [];
@@ -47,21 +48,25 @@ try {
         <h2 class="title">Manager Reports & Activity</h2>
         <p class="subtitle">Review operational data, volume logs, and localized site edits from TiDB Cloud.</p>
 
-        <?php if (isset($dbError)): ?>
+        <?php
+if (isset($dbError)): ?>
             <div class="alert alert-danger" role="alert">
                 Database Connection Error: <?= htmlspecialchars($dbError) ?>
             </div>
-        <?php endif; ?>
+        <?php
+endif; ?>
 
         <div class="card mb-4 p-3">
             <h3>Site Reports</h3>
             <p class="subtitle" style="margin-bottom: 12px;">View shift-ending tallies submitted by field operators.</p>
             
-            <?php if (empty($reports)): ?>
+            <?php
+if (empty($reports)): ?>
                 <div style="background: var(--bg); padding: 15px; border-radius: 6px; font-size: 0.9rem; color: #ffffff; text-align: center;">
                     No pending daily station reports require evaluation.
                 </div>
-            <?php else: ?>
+            <?php
+else: ?>
                 <div class="table-responsive">
                     <table class="table table-dark table-striped">
                         <thead>
@@ -75,7 +80,8 @@ try {
                             </tr>
                         </thead>
                         <tbody>
-                            <?php foreach ($reports as $rep): ?>
+                            <?php
+foreach ($reports as $rep): ?>
                                 <tr id="report-<?= htmlspecialchars($rep['report_id']) ?>" onclick="showDetailFromRow(this)" style="cursor: pointer;">
                                     <td><?= htmlspecialchars($rep['report_id']) ?></td>
                                     <td><?= htmlspecialchars($rep['user_name']) ?></td>
@@ -101,11 +107,13 @@ try {
                                         </div>
                                     </td>
                                 </tr>
-                            <?php endforeach; ?>
+                            <?php
+endforeach; ?>
                         </tbody>
                     </table>
                 </div>
-            <?php endif; ?>
+            <?php
+endif; ?>
         </div>
 
         <div class="card p-3">
@@ -113,17 +121,22 @@ try {
             <p class="subtitle" style="margin-bottom: 12px;">Audit trail of critical events occurring at active pumps.</p>
             
             <ul style="list-style: none; padding-left: 0; font-family: monospace; font-size: 0.9rem; color: #ffffff;">
-                <?php if (empty($logs)): ?>
+                <?php
+if (empty($logs)): ?>
                     <li style="border-bottom: 1px solid var(--border); padding: 8px 0; color: #ffffff;">
                         No manager activity has been recorded yet.
                     </li>
-                <?php else: ?>
-                    <?php foreach ($logs as $log): ?>
+                <?php
+else: ?>
+                    <?php
+foreach ($logs as $log): ?>
                         <li style="border-bottom: 1px solid var(--border); padding: 8px 0; color: #ffffff;">
                             [<?= htmlspecialchars($log['created_at']) ?>] USER <?= htmlspecialchars($log['user_name'] ?? 'Unknown Manager') ?>: <?= htmlspecialchars($log['action'] ?? 'No action detail') ?>
                         </li>
-                    <?php endforeach; ?>
-                <?php endif; ?>
+                    <?php
+endforeach; ?>
+                <?php
+endif; ?>
             </ul>
         </div>
     </div>

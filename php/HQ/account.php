@@ -1,5 +1,5 @@
-
 <?php
+require_once __DIR__ . '/hq_guard.php';
 require_once __DIR__ . '/../conn.php';
 
 $managers = [];
@@ -49,17 +49,21 @@ try {
         <h2 class="title">Manage Manager Accounts</h2>
         <p class="subtitle">Control status permissions and access clearance for on-site personnel.</p>
 
-        <?php if (!empty($dbError)): ?>
+        <?php
+if (!empty($dbError)): ?>
             <div class="alert alert-danger" role="alert">
                 Database error: <?= htmlspecialchars($dbError) ?>
             </div>
-        <?php endif; ?>
+        <?php
+endif; ?>
 
-        <?php if (!empty($statusMessage)): ?>
+        <?php
+if (!empty($statusMessage)): ?>
             <div class="alert alert-success" role="alert">
                 <?= htmlspecialchars($statusMessage) ?>
             </div>
-        <?php endif; ?>
+        <?php
+endif; ?>
 
         <div class="card">
             <h3>Manager Roster</h3>
@@ -74,10 +78,12 @@ try {
                     </tr>
                 </thead>
                 <tbody>
-                    <?php if (!empty($managers)): ?>
-                        <?php foreach ($managers as $manager): ?>
+                    <?php
+if (!empty($managers)): ?>
+                        <?php
+foreach ($managers as $manager): ?>
                             <?php
-                                $status = strtolower((string)($manager['status'] ?? ''));
+$status = strtolower((string)($manager['status'] ?? ''));
                                 $isActive = in_array($status, ['active', 'approved'], true);
                                 $statusLabel = $isActive ? 'Active' : ucfirst($status ?: 'Inactive');
                                 $statusColor = $isActive ? 'var(--success)' : 'var(--danger)';
@@ -101,12 +107,15 @@ try {
                                     </form>
                                 </td>
                             </tr>
-                        <?php endforeach; ?>
-                    <?php else: ?>
+                        <?php
+endforeach; ?>
+                    <?php
+else: ?>
                         <tr>
                             <td colspan="5" style="padding: 16px 8px; text-align: center; color: var(--muted);">No manager accounts found.</td>
                         </tr>
-                    <?php endif; ?>
+                    <?php
+endif; ?>
                 </tbody>
             </table>
         </div>
