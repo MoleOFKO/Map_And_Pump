@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/hq_guard.php';
 /**
  * Shared database connection.
  */
@@ -137,19 +138,23 @@ try {
         <h2 class="title">Station Network</h2>
         <p class="subtitle">Onboard physical station nodes and set up terminal operating profiles.</p>
 
-        <?php if (!empty($message)): ?>
+        <?php
+if (!empty($message)): ?>
             <div class="alert alert-success alert-dismissible fade show" role="alert">
                 <?= htmlspecialchars($message) ?>
                 <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
             </div>
-        <?php endif; ?>
+        <?php
+endif; ?>
 
-        <?php if (!empty($error)): ?>
+        <?php
+if (!empty($error)): ?>
             <div class="alert alert-danger alert-dismissible fade show" role="alert">
                 <?= htmlspecialchars($error) ?>
                 <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
             </div>
-        <?php endif; ?>
+        <?php
+endif; ?>
 
         <div class="card p-4 bg-dark text-light border-secondary">
             <div class="d-flex justify-content-between align-items-center mb-3">
@@ -172,12 +177,15 @@ try {
                         </tr>
                     </thead>
                     <tbody>
-                        <?php if (empty($stations)): ?>
+                        <?php
+if (empty($stations)): ?>
                             <tr><td colspan="6" class="text-center text-muted">No station nodes found.</td></tr>
-                        <?php else: ?>
-                            <?php foreach ($stations as $row): ?>
-                                <?php 
-                                    $isMaintenance = ($row['status'] === 'Maintenance');
+                        <?php
+else: ?>
+                            <?php
+foreach ($stations as $row): ?>
+                                <?php
+$isMaintenance = ($row['status'] === 'Maintenance');
                                     $badgeClass = $isMaintenance ? 'badge bg-warning text-dark' : 'badge bg-success';
                                     $statusText = $isMaintenance ? 'Maintenance' : 'Active';
                                     $btnClass = $isMaintenance ? 'btn btn-sm me-1' : 'btn btn-sm me-1';
@@ -205,8 +213,10 @@ try {
                                         <button type="button" class="btn btn-sm btn-danger" data-bs-toggle="modal" data-bs-target="#decommissionModal" onclick="setDecommissionData('<?= htmlspecialchars($row['station_id']) ?>', 'Station #<?= htmlspecialchars($row['station_id']) ?> - <?= htmlspecialchars($row['station_name']) ?>')">Decommission</button>
                                     </td>
                                 </tr>
-                            <?php endforeach; ?>
-                        <?php endif; ?>
+                            <?php
+endforeach; ?>
+                        <?php
+endif; ?>
                     </tbody>
                 </table>
             </div>
@@ -233,11 +243,13 @@ try {
                                 <label class="form-label text-light">Branch Manager Email</label>
                                 <select name="manager_email" class="form-select bg-dark text-light border-secondary" required>
                                     <option value="">Choose a branch manager</option>
-                                    <?php foreach ($branchManagers as $manager): ?>
+                                    <?php
+foreach ($branchManagers as $manager): ?>
                                         <option value="<?= htmlspecialchars($manager['email'], ENT_QUOTES, 'UTF-8') ?>">
                                             <?= htmlspecialchars($manager['email']) ?>
                                         </option>
-                                    <?php endforeach; ?>
+                                    <?php
+endforeach; ?>
                                 </select>
                             </div>
                             <div class="col-12 mb-3">
@@ -292,11 +304,13 @@ try {
                                 <label class="form-label text-light">Branch Manager Email</label>
                                 <select id="configManagerEmail" name="manager_email" class="form-select bg-dark text-light border-secondary" required>
                                     <option value="">Choose a branch manager</option>
-                                    <?php foreach ($branchManagers as $manager): ?>
+                                    <?php
+foreach ($branchManagers as $manager): ?>
                                         <option value="<?= htmlspecialchars($manager['email'], ENT_QUOTES, 'UTF-8') ?>">
                                             <?= htmlspecialchars($manager['email']) ?>
                                         </option>
-                                    <?php endforeach; ?>
+                                    <?php
+endforeach; ?>
                                 </select>
                             </div>
                             <div class="col-md-6 mb-3">

@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/hq_guard.php';
 if (session_status() !== PHP_SESSION_ACTIVE) {
     session_start();
 }
@@ -536,8 +537,10 @@ if ($loggedUserId > 0 && $loggedUserEmail !== '') {
     <div class="mobile-header">
         <button class="mobile-toggle-btn" onclick="toggleSidebar()">☰</button>
         <div class="mobile-brand">
-            <img src="<?php echo htmlspecialchars($brand_logo, ENT_QUOTES, 'UTF-8'); ?>" alt="Logo">
-            <span><?php echo $brand_title; ?></span>
+            <img src="<?php
+echo htmlspecialchars($brand_logo, ENT_QUOTES, 'UTF-8'); ?>" alt="Logo">
+            <span><?php
+echo $brand_title; ?></span>
         </div>
         <div style="width: 24px;"></div>
     </div>
@@ -562,8 +565,10 @@ if ($loggedUserId > 0 && $loggedUserEmail !== '') {
             <div>
                 <div class="sidebar-brand">
                     <a href="index.php" style="text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 8px;">
-                        <img src="<?php echo htmlspecialchars($brand_logo, ENT_QUOTES, 'UTF-8'); ?>" alt="Logo" class="nav-logo">
-                        <span style="font-size: 1.1rem; letter-spacing: 0.5px; color: #ffffff;"><?php echo $brand_title; ?></span>
+                        <img src="<?php
+echo htmlspecialchars($brand_logo, ENT_QUOTES, 'UTF-8'); ?>" alt="Logo" class="nav-logo">
+                        <span style="font-size: 1.1rem; letter-spacing: 0.5px; color: #ffffff;"><?php
+echo $brand_title; ?></span>
                     </a>
                     <div style="font-size: 0.7rem; letter-spacing: 0.5px; color: var(--slate-400, #94a3b8); margin-top: 4px;">Headquarter Control Panel</div>
                 </div>
@@ -604,12 +609,15 @@ if ($loggedUserId > 0 && $loggedUserEmail !== '') {
                                 <span style="font-size: 0.755rem; color: var(--sky-400, #38bdf8); cursor: pointer;">Mark all read</span>
                             </div>
                             <div style="display: flex; flex-direction: column; gap: 8px; max-height: 240px; overflow-y: auto;">
-                                <?php if (empty($notifications)): ?>
+                                <?php
+if (empty($notifications)): ?>
                                     <div style="padding: 8px; background: rgba(255,255,255,0.02); border-radius: 6px; font-size: 0.85rem; color: var(--slate-300, #cbd5e1);">
                                         No notifications yet.
                                     </div>
-                                <?php else: ?>
-                                    <?php foreach ($notifications as $notification): ?>
+                                <?php
+else: ?>
+                                    <?php
+foreach ($notifications as $notification): ?>
                                         <div style="padding: 8px; background: rgba(255,255,255,0.02); border-radius: 6px; font-size: 0.85rem; color: var(--slate-300, #cbd5e1);">
                                             <strong><?= htmlspecialchars((string) ($notification['subject'] ?? 'Notification'), ENT_QUOTES, 'UTF-8') ?></strong><br>
                                             <span style="font-size: 0.75rem; color: var(--slate-400, #94a3b8);">
@@ -619,25 +627,40 @@ if ($loggedUserId > 0 && $loggedUserEmail !== '') {
                                                 <?= htmlspecialchars((string) ($notification['created_at'] ?? ''), ENT_QUOTES, 'UTF-8') ?>
                                             </div>
                                         </div>
-                                    <?php endforeach; ?>
-                                <?php endif; ?>
+                                    <?php
+endforeach; ?>
+                                <?php
+endif; ?>
                             </div>
                         </div>
                     </div>
 
                     <!-- User Profile Menu Button (Top Right) -->
                     <button class="user-menu-button" onclick="toggleUserDropdown(event)" type="button">
-                        <?php if ($user_avatar !== ''): ?><img src="<?php echo htmlspecialchars($user_avatar, ENT_QUOTES, 'UTF-8'); ?>" alt="User Avatar" class="user-avatar-small" id="headerUserAvatar"><?php else: ?><span class="user-avatar-small user-avatar-initial" id="headerUserAvatar"><?php echo htmlspecialchars($user_initial, ENT_QUOTES, 'UTF-8'); ?></span><?php endif; ?>
-                        <span class="user-menu-name" id="headerUserName"><?php echo $user_display_name; ?></span>
+                        <?php
+if ($user_avatar !== ''): ?><img src="<?php
+echo htmlspecialchars($user_avatar, ENT_QUOTES, 'UTF-8'); ?>" alt="User Avatar" class="user-avatar-small" id="headerUserAvatar"><?php
+else: ?><span class="user-avatar-small user-avatar-initial" id="headerUserAvatar"><?php
+echo htmlspecialchars($user_initial, ENT_QUOTES, 'UTF-8'); ?></span><?php
+endif; ?>
+                        <span class="user-menu-name" id="headerUserName"><?php
+echo $user_display_name; ?></span>
                     </button>
 
                     <!-- User Dropdown Popup -->
                     <div class="user-dropdown-popup" id="userDropdownPopup">
                         <div class="dropdown-header">
-                            <?php if ($user_avatar !== ''): ?><img src="<?php echo htmlspecialchars($user_avatar, ENT_QUOTES, 'UTF-8'); ?>" alt="User Avatar" class="user-avatar-large" id="dropdownUserAvatar"><?php else: ?><span class="user-avatar-large user-avatar-initial" id="dropdownUserAvatar"><?php echo htmlspecialchars($user_initial, ENT_QUOTES, 'UTF-8'); ?></span><?php endif; ?>
+                            <?php
+if ($user_avatar !== ''): ?><img src="<?php
+echo htmlspecialchars($user_avatar, ENT_QUOTES, 'UTF-8'); ?>" alt="User Avatar" class="user-avatar-large" id="dropdownUserAvatar"><?php
+else: ?><span class="user-avatar-large user-avatar-initial" id="dropdownUserAvatar"><?php
+echo htmlspecialchars($user_initial, ENT_QUOTES, 'UTF-8'); ?></span><?php
+endif; ?>
                             <div class="dropdown-user-info">
-                                <p class="user-title" id="dropdownUserName"><?php echo $user_display_name; ?></p>
-                                <p class="user-email" id="dropdownUserEmail"><?php echo $user_email_display; ?></p>
+                                <p class="user-title" id="dropdownUserName"><?php
+echo $user_display_name; ?></p>
+                                <p class="user-email" id="dropdownUserEmail"><?php
+echo $user_email_display; ?></p>
                             </div>
                         </div>
                         <button type="button" class="edit-profile-btn" onclick="routeTo('profile.php'); closeUserDropdown();">Edit Profile</button>

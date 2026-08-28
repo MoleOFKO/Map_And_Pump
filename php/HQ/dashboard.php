@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/hq_guard.php';
 // $hostname = "mysql-19032a73-bhonen94-b057.a.aivencloud.com";
 // $port = 27909;
 // $username = "avnadmin";
@@ -159,12 +160,15 @@ if ($stationsResult) {
   <h2 class="title">Headquarters Dashboard</h2>
   <p class="subtitle">Monitor national pricing, reporting activity, and station health in one place.</p>
 
-  <?php if (!empty($updateMessage)): ?>
+  <?php
+if (!empty($updateMessage)): ?>
     <div class="alert alert-info alert-dismissible fade show" role="alert">
-      <?php echo $updateMessage; ?>
+      <?php
+echo $updateMessage; ?>
       <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
     </div>
-  <?php endif; ?>
+  <?php
+endif; ?>
 
   <div class="dashboard-grid">
     <!-- National Fuel Pricing Card -->
@@ -176,17 +180,26 @@ if ($stationsResult) {
       <table>
         <thead><tr><th>Type</th><th>Price (MMK)</th><th>Action</th></tr></thead>
         <tbody>
-          <?php if (!empty($fuelPrices)): ?>
-            <?php foreach ($fuelPrices as $fuel): ?>
+          <?php
+if (!empty($fuelPrices)): ?>
+            <?php
+foreach ($fuelPrices as $fuel): ?>
               <tr>
-                <td><?php echo htmlspecialchars($fuel['oil_name']); ?></td>
-                <td><?php echo number_format($fuel['price_per_liter']); ?></td>
-                <td><button class="btn" onclick="openEditModal(event, '<?php echo htmlspecialchars($fuel['oil_name'], ENT_QUOTES); ?>', '<?php echo htmlspecialchars($fuel['price_per_liter'], ENT_QUOTES); ?>')">Edit</button></td>
+                <td><?php
+echo htmlspecialchars($fuel['oil_name']); ?></td>
+                <td><?php
+echo number_format($fuel['price_per_liter']); ?></td>
+                <td><button class="btn" onclick="openEditModal(event, '<?php
+echo htmlspecialchars($fuel['oil_name'], ENT_QUOTES); ?>', '<?php
+echo htmlspecialchars($fuel['price_per_liter'], ENT_QUOTES); ?>')">Edit</button></td>
               </tr>
-            <?php endforeach; ?>
-          <?php else: ?>
+            <?php
+endforeach; ?>
+          <?php
+else: ?>
             <tr><td colspan="3">No pricing records found.</td></tr>
-          <?php endif; ?>
+          <?php
+endif; ?>
         </tbody>
       </table>
     </div>
@@ -197,22 +210,30 @@ if ($stationsResult) {
         <h3 class="mb-0">Recent Manager Reports</h3>
         <span class="small text-info">View All <i class="fa-solid fa-arrow-right ms-1"></i></span>
       </div>
-      <?php if (!empty($recentReports)): ?>
+      <?php
+if (!empty($recentReports)): ?>
         <table>
           <thead><tr><th>Branch</th><th>Summary</th><th>Date</th></tr></thead>
           <tbody>
-            <?php foreach ($recentReports as $report): ?>
+            <?php
+foreach ($recentReports as $report): ?>
               <tr>
-                <td><?php echo htmlspecialchars($report['user_name'] ?? 'Manager'); ?></td>
-                <td><?php echo htmlspecialchars(substr($report['short_summery'] ?? 'No summary provided', 0, 40)); ?>...</td>
-                <td><?php echo htmlspecialchars($report['created_at']); ?></td>
+                <td><?php
+echo htmlspecialchars($report['user_name'] ?? 'Manager'); ?></td>
+                <td><?php
+echo htmlspecialchars(substr($report['short_summery'] ?? 'No summary provided', 0, 40)); ?>...</td>
+                <td><?php
+echo htmlspecialchars($report['created_at']); ?></td>
               </tr>
-            <?php endforeach; ?>
+            <?php
+endforeach; ?>
           </tbody>
         </table>
-      <?php else: ?>
+      <?php
+else: ?>
         <p class="subtitle" style="margin-bottom: 0;">No urgent pending reports. Click to review logs.</p>
-      <?php endif; ?>
+      <?php
+endif; ?>
     </div>
 
     <!-- Live Station Monitor Card -->
@@ -224,18 +245,27 @@ if ($stationsResult) {
       <table>
         <thead><tr><th>Branch ID</th><th>Branch Name</th><th>Location</th><th>Status</th></tr></thead>
         <tbody>
-          <?php if (!empty($stations)): ?>
-            <?php foreach ($stations as $station): ?>
+          <?php
+if (!empty($stations)): ?>
+            <?php
+foreach ($stations as $station): ?>
               <tr>
-                <td><?php echo htmlspecialchars($station['station_id']); ?></td>
-                <td><?php echo htmlspecialchars($station['station_name']); ?></td>
-                <td><?php echo htmlspecialchars($station['location']); ?></td>
-                <td><span class="badge"><?php echo htmlspecialchars($station['status'] ?: 'Active'); ?></span></td>
+                <td><?php
+echo htmlspecialchars($station['station_id']); ?></td>
+                <td><?php
+echo htmlspecialchars($station['station_name']); ?></td>
+                <td><?php
+echo htmlspecialchars($station['location']); ?></td>
+                <td><span class="badge"><?php
+echo htmlspecialchars($station['status'] ?: 'Active'); ?></span></td>
               </tr>
-            <?php endforeach; ?>
-          <?php else: ?>
+            <?php
+endforeach; ?>
+          <?php
+else: ?>
             <tr><td colspan="4">No stations monitored.</td></tr>
-          <?php endif; ?>
+          <?php
+endif; ?>
         </tbody>
       </table>
     </div>

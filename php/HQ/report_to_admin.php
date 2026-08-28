@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/hq_guard.php';
 require_once __DIR__ . '/../conn.php';
 // 2. Handle Form Submission
 $alertMessage = "";
@@ -39,11 +40,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <h2 class="title">Report to Admin</h2>
     <p class="subtitle">Submit incident files, request technical help, or escalate critical terminal operational issues directly to global system administrators.</p>
 
-    <?php if (!empty($alertMessage)): ?>
+    <?php
+if (!empty($alertMessage)): ?>
         <div class="alert alert-info" role="alert" style="margin: 15px 0;">
-            <?php echo htmlspecialchars($alertMessage); ?>
+            <?php
+echo htmlspecialchars($alertMessage); ?>
         </div>
-    <?php endif; ?>
+    <?php
+endif; ?>
 
     <div class="card">
         <h3>Operational Escalation</h3>

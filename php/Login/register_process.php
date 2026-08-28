@@ -34,6 +34,25 @@ function register_json(bool $ok, string $message, array $extra = []): never
     echo json_encode(['ok' => $ok, 'message' => $message] + $extra);
     exit;
 }
+function register_is_local_request(): bool
+{
+    $host = strtolower((string) ($_SERVER['HTTP_HOST'] ?? $_SERVER['SERVER_NAME'] ?? ''));
+    $host = preg_replace('/:\d+$/', '', $host) ?? $host;
+    $remoteAddr = (string) ($_SERVER['REMOTE_ADDR'] ?? '');
+
+    return in_array($host, ['localhost', '127.0.0.1', '::1'], true)
+        || in_array($remoteAddr, ['127.0.0.1', '::1'], true)
+        || str_ends_with($host, '.test')
+        || str_ends_with($host, '.local');
+}
+
+function register_local_mail_fallback_enabled(): bool
+{
+    $configured = mail_config_value('MAIL_LOCAL_FALLBACK', 'true');
+
+    return register_is_local_request()
+        && filter_var($configured, FILTER_VALIDATE_BOOLEAN);
+}
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     register_json(false, 'Registration request is invalid.');
@@ -82,9 +101,23 @@ try {
         'attempts' => 0,
     ];
 
-    send_registration_code($email, $code);
-    register_json(true, 'We sent a verification code to your email.');
+    try {
+        send_registration_code($email, $code);
+        register_json(true, 'We sent a verification code to your email.');
+    } catch (Throwable $mailError) {
+        error_log('Registration email failed: ' . $mailError->getMessage() . ' [' . get_class($mailError) . ']');
+
+        if (!register_local_mail_fallback_enabled()) {
+            register_json(false, 'Could not send the verification email. Please check mail settings and try again.');
+        }
+
+        error_log(sprintf('[Map&Pump local registration] Verification code for %s: %s', $email, $code));
+        register_json(true, 'Localhost mode: email could not be sent, so use this verification code: ' . $code, [
+            'dev_code' => $code,
+            'mail_warning' => 'SMTP failed. This fallback only works on localhost.',
+        ]);
+    }
 } catch (Throwable $e) {
     error_log('Registration code failed: ' . $e->getMessage() . ' [' . get_class($e) . ']');
-    register_json(false, 'Could not send the verification email. Please check mail settings and try again.');
+    register_json(false, 'Could not start registration. Please try again.');
 }
