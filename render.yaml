@@ -10,11 +10,11 @@ services:
       - key: APP_BASE_URL
         sync: false
       - key: MAIL_PROVIDER
-        value: resend
+        value: smtp
       - key: MAIL_FROM_NAME
-        value: "Map & Pump"
+        value: "Map&Pump"
       - key: RESEND_FROM_NAME
-        value: "Map & Pump"
+        value: "Map&Pump"
       - key: RESEND_FROM_EMAIL
         sync: false
       - key: RESEND_API_KEY
@@ -24,10 +24,10 @@ services:
       - key: SMTP_PORT
         value: 587
       - key: SMTP_FROM_NAME
-        value: "Map & Pump"
+        value: "Map&Pump"
       - key: SMTP_USERNAME
-        sync: false
+        value: mapa.and.pump@email.com
       - key: SMTP_PASSWORD
         sync: false
       - key: SMTP_FROM_EMAIL
-        sync: false
+        value: mapa.and.pump@email.com

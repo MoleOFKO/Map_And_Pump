@@ -1329,6 +1329,32 @@ footer.site-footer {
 
 .footer-links a:hover { color: var(--mp-cyan); padding-left: 4px; }
 
+.footer-contact {
+    display: grid;
+    gap: 8px;
+}
+
+.footer-contact a {
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    width: fit-content;
+    max-width: 100%;
+    color: rgba(226, 232, 240, 0.78);
+    font-size: 0.92rem;
+    font-weight: 600;
+    text-decoration: none;
+    overflow-wrap: anywhere;
+}
+
+.footer-contact a:hover {
+    color: var(--mp-cyan);
+}
+
+.footer-contact i {
+    color: var(--mp-cyan);
+}
+
 .social-row { display: flex; gap: 11px; margin-top: 20px; }
 
 .social-row a {

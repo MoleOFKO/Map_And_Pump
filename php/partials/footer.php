@@ -10,11 +10,15 @@
                     The availability layer for fuel retail. Companies control what their
                     stations show; drivers stop wasting mornings in queues.
                 </p>
+                <div class="footer-contact mt-3">
+                    <a href="tel:09421234567"><i class="fa-solid fa-phone"></i> 09-421234567</a>
+                    <a href="mailto:support@mapandpump.com"><i class="fa-solid fa-envelope"></i> support@mapandpump.com</a>
+                </div>
                 <div class="social-row">
                     <a href="#" aria-label="Facebook"><i class="fa-brands fa-facebook-f"></i></a>
                     <a href="#" aria-label="Telegram"><i class="fa-brands fa-telegram"></i></a>
                     <a href="#" aria-label="Viber"><i class="fa-brands fa-viber"></i></a>
-                    <a href="#" aria-label="Email"><i class="fa-solid fa-envelope"></i></a>
+                    <a href="mailto:support@mapandpump.com" aria-label="Email"><i class="fa-solid fa-envelope"></i></a>
                 </div>
             </div>
 
