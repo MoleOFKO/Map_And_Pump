@@ -259,7 +259,7 @@ function social_sign_in_user(PDO $pdo, string $provider, string $providerId, str
         $licenseAccess = customer_license_access($pdo, (int) $user['user_id']);
         customer_refresh_session($pdo, (int) $user['user_id'], $licenseAccess);
         if (!$licenseAccess['is_approved']) {
-            $destination = '/php/Customer/license.php';
+            $destination = '../Customer/license.php';
         }
     }
 

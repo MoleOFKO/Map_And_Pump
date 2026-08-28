@@ -75,7 +75,7 @@ try {
         'manager' => '/php/BranchManager/dashboard.php',
         'branchmanager' => '/php/BranchManager/dashboard.php',
         'branch manager' => '/php/BranchManager/dashboard.php',
-        'staff' => '/php/Staff/staff_dashboard.php',
+        'staff' => '../Staff/staff_dashboard.php',
         'customer' => '../Customer/dashboard.php',
     ];
 
@@ -84,7 +84,7 @@ try {
     if ($roleName === 'customer') {
         $customerLicenseAccess = customer_license_access($pdo, (int) $user['user_id']);
         if (!$customerLicenseAccess['is_approved']) {
-            $destination = '/php/Customer/license.php';
+            $destination = '../Customer/license.php';
         }
     }
 
