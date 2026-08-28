@@ -67,7 +67,7 @@ function mail_from_address(): string
 
 function mail_from_name(): string
 {
-    return mail_config_value('MAIL_FROM_NAME', mail_config_value('RESEND_FROM_NAME', mail_config_value('SMTP_FROM_NAME', 'Map & Pump')));
+    return mail_config_value('MAIL_FROM_NAME', mail_config_value('RESEND_FROM_NAME', mail_config_value('SMTP_FROM_NAME', 'Map&Pump')));
 }
 
 function mail_formatted_from(): string
@@ -191,7 +191,7 @@ function smtp_send_mail_via_phpmailer(string $to, string $subject, string $htmlB
     $username = mail_config_value('SMTP_USERNAME');
     $password = mail_config_value('SMTP_PASSWORD');
     $fromEmail = mail_config_value('SMTP_FROM_EMAIL', $username);
-    $fromName = mail_config_value('SMTP_FROM_NAME', 'Map & Pump');
+    $fromName = mail_config_value('SMTP_FROM_NAME', 'Map&Pump');
     $debugLevel = min(max((int) mail_config_value('SMTP_DEBUG', '0'), 0), 3);
 
     if ($username === '' || $password === '' || $fromEmail === '') {
@@ -272,12 +272,12 @@ function send_registration_code(string $email, string $code): void
 {
     $safeCode = htmlspecialchars($code, ENT_QUOTES, 'UTF-8');
     $html = '<div style="font-family:Arial,sans-serif;line-height:1.5;color:#111827">'
-        . '<h2>Verify your Map & Pump account</h2>'
+        . '<h2>Verify your Map&Pump account</h2>'
         . '<p>Your verification code is:</p>'
         . '<p style="font-size:28px;font-weight:700;letter-spacing:8px">' . $safeCode . '</p>'
         . '<p>This code expires in 10 minutes.</p>'
         . '</div>';
 
-    smtp_send_mail($email, 'Your Map & Pump verification code', $html, "Your Map & Pump verification code is {$code}. It expires in 10 minutes.");
+    smtp_send_mail($email, 'Your Map&Pump verification code', $html, "Your Map&Pump verification code is {$code}. It expires in 10 minutes.");
 }
 
