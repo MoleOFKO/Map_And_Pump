@@ -23,27 +23,27 @@
             </div>
 
             <div class="col-6 col-lg-2 offset-lg-1">
-                <div class="footer-title">For companies</div>
+                <div class="footer-title">Operators</div>
                 <ul class="footer-links">
                     <li><a href="/HomePage.php#how">How it works</a></li>
                     <li><a href="/HomePage.php#pricing">Pricing</a></li>
-                    <li><a href="/HomePage.php#dashboard">Dashboard</a></li>
+                    <li><a href="/php/Company/register.php">Register company</a></li>
                     <li><a href="/php/Login/login.php">Company login</a></li>
                 </ul>
             </div>
 
             <div class="col-6 col-lg-2">
-                <div class="footer-title">Market</div>
+                <div class="footer-title">Fuel prices</div>
                 <ul class="footer-links">
-                    <li><a href="/php/News.php">Fuel prices</a></li>
+                    <li><a href="/php/News.php">Live prices</a></li>
                     <li><a href="/php/News.php#by-company">Price by company</a></li>
                     <li><a href="/php/News.php#by-region">Price by region</a></li>
                     <li><a href="/php/News.php#updates">Announcements</a></li>
                 </ul>
             </div>
 
-            <div class="col-6 col-lg-3">
-                <div class="footer-title">Company</div>
+            <div class="col-12 col-sm-6 col-lg-3">
+                <div class="footer-title">Help &amp; legal</div>
                 <ul class="footer-links">
                     <li><a href="/HomePage.php#drivers">For drivers</a></li>
                     <li><a href="/HomePage.php#faq">FAQ</a></li>

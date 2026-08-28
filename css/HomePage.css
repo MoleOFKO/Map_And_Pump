@@ -1479,23 +1479,52 @@ footer.site-footer {
 ::-webkit-scrollbar-thumb:hover { background: var(--mp-cyan); }
 
 /* --------------------------------------------------------------------------
-   23. RESPONSIVE POLISH
+   23. RESPONSIVE POLISH — mobile, tablet, iPad, desktop
    -------------------------------------------------------------------------- */
+
+/* Large tablets / small laptops */
+@media (max-width: 1199.98px) {
+    .section-title { font-size: clamp(1.65rem, 3.2vw, 2.4rem); }
+    .hero-title { font-size: clamp(2.1rem, 5vw, 3.4rem); }
+}
+
+/* Tablets / iPad portrait & landscape under lg */
 @media (max-width: 991.98px) {
     .section-pad { padding: 62px 0; }
     .map-panel { min-height: 360px; }
+    footer.site-footer { padding: 52px 0 28px; }
+    .footer-title { margin-bottom: 14px; }
+    .footer-bottom { margin-top: 36px; }
+    .calc-wrap { padding: 24px 20px; }
+    .hero-actions { flex-direction: column; align-items: stretch; }
+    .hero-actions .btn { width: 100%; }
 }
 
+/* Small tablets / large phones */
 @media (max-width: 767.98px) {
     body { font-size: 0.97rem; }
-    .section-pad { padding: 62px 0; }
-    .hero-title { letter-spacing: -0.035em; }
+    .section-pad { padding: 52px 0; }
+    .hero-title {
+        letter-spacing: -0.035em;
+        font-size: clamp(1.85rem, 7.5vw, 2.6rem);
+    }
+    .hero-sub { font-size: 1rem; }
     .phone-stage { margin-top: 26px; }
-    .expanded-phone { max-width: 300px; min-height: 500px; }
-    .final-cta { padding: 58px 20px; }
+    .expanded-phone { max-width: 280px; min-height: 460px; }
+    .final-cta { padding: 48px 18px; }
     .map-legend { position: static; margin: 16px; }
     .footer-links a:hover { padding-left: 0; }
     .btn-lg { font-size: 1rem; padding: 0.85rem 1.6rem !important; }
+    .navbar-logo-img { height: 32px; }
+    .navbar-brand.logo-text { font-size: 1.15rem !important; }
+    #back-to-top {
+        right: 14px;
+        bottom: 14px;
+        width: 42px;
+        height: 42px;
+    }
+    .section-title-sm { font-size: clamp(1.35rem, 4.5vw, 1.75rem); }
+    .faq-accordion .accordion-button { font-size: 0.98rem; }
 }
 
 /* buttons: full width on phones, natural width from small up */
@@ -1503,12 +1532,40 @@ footer.site-footer {
     .w-sm-auto { width: auto !important; }
 }
 
+/* Phones */
 @media (max-width: 575.98px) {
     .w-sm-auto { width: 100% !important; }
-    .hero-trust { gap: 20px 28px; }
-    .map-panel { min-height: 320px; }
+    .hero-trust {
+        gap: 16px 22px;
+        justify-content: center;
+        flex-wrap: wrap;
+    }
+    .hero-trust .trust-num { font-size: 1.25rem; }
+    .map-panel { min-height: 280px; }
     .map-pin { font-size: 0.68rem; padding: 7px 11px 7px 8px; }
     .pin-4 { display: none; }
+    footer.site-footer { padding: 42px 0 24px; }
+    .footer-contact a { font-size: 0.88rem; }
+    .social-row a { width: 36px; height: 36px; }
+    .footer-bottom {
+        margin-top: 28px;
+        font-size: 0.8rem;
+        flex-direction: column;
+        gap: 8px;
+    }
+    .calc-wrap { padding: 18px 14px; border-radius: 14px; }
+    .section-pad { padding: 44px 0; }
+    .container {
+        padding-left: 16px;
+        padding-right: 16px;
+    }
+}
+
+/* Very small phones */
+@media (max-width: 379.98px) {
+    .hero-title { font-size: 1.7rem; }
+    .btn-lg { font-size: 0.95rem; padding: 0.75rem 1.2rem !important; }
+    .navbar-brand.logo-text { font-size: 1.05rem !important; }
 }
 
 /* --------------------------------------------------------------------------
@@ -2119,6 +2176,12 @@ footer.site-footer {
 
 @media (max-width: 991.98px) {
     .page-header { padding: 128px 0 40px; }
+}
+
+@media (max-width: 575.98px) {
+    .page-header { padding: 108px 0 32px; }
+    .page-title { font-size: clamp(1.75rem, 8vw, 2.4rem); }
+    .updated-card { padding: 16px 18px; }
 }
 
 /* --------------------------------------------------------------------------
