@@ -302,7 +302,7 @@ try {
     $pdo->commit();
     $_SESSION['license_id'] = $licenseId;
     $_SESSION['license_status'] = 'pending';
-    license_json(true, 'Driver license saved. Please wait for Moderator confirmation.', ['redirect' => '/php/Customer/license.php']);
+    license_json(true, 'Driver license saved. Please wait for Moderator confirmation.', ['redirect' => '../Customer/license.php']);
 } catch (Throwable $e) {
     if ($pdo->inTransaction()) {
         $pdo->rollBack();

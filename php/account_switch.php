@@ -109,7 +109,7 @@ if ($targetMode === 'customer') {
     customer_refresh_session($pdo, $userId, $licenseAccess);
     map_pump_set_current_role($pdo, $userId, $customerRoleId);
 
-    header('Location: ' . ($licenseAccess['is_approved'] ? '/php/Customer/dashboard.php' : '/php/Customer/license.php'));
+    header('Location: ' . ($licenseAccess['is_approved'] ? '/php/Customer/dashboard.php' : '../Customer/license.php'));
     exit;
 }
 

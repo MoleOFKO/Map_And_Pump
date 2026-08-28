@@ -26,8 +26,64 @@ if ($roleName !== 'staff') {
     redirect_to_login('This page is only available to staff accounts.');
 }
 
+// Handle Profile Avatar Upload Request
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'update_avatar') {
+    if (isset($_FILES['profile_logo']) && $_FILES['profile_logo']['error'] === UPLOAD_ERR_OK) {
+        $fileTmpPath = $_FILES['profile_logo']['tmp_name'];
+        $fileName = $_FILES['profile_logo']['name'];
+        $fileSize = $_FILES['profile_logo']['size'];
+        $fileType = $_FILES['profile_logo']['type'];
+        
+        $allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
+        $maxFileSize = 2 * 1024 * 1024; // 2MB
+
+        if (!in_array($fileType, $allowedTypes)) {
+            $_SESSION['flash_message'] = 'Only JPG, PNG, and WEBP images are allowed.';
+            $_SESSION['flash_type'] = 'error';
+        } elseif ($fileSize > $maxFileSize) {
+            $_SESSION['flash_message'] = 'Image size must not exceed 2MB.';
+            $_SESSION['flash_type'] = 'error';
+        } else {
+            $ext = pathinfo($fileName, PATHINFO_EXTENSION);
+            $newFileName = 'avatar_' . $userId . '_' . time() . '.' . $ext;
+            $uploadDir = __DIR__ . '/../../uploads/avatars/';
+            
+            if (!is_dir($uploadDir)) {
+                mkdir($uploadDir, 0755, true);
+            }
+
+            $destPath = $uploadDir . $newFileName;
+            $relativePath = '/uploads/avatars/' . $newFileName;
+
+            if (move_uploaded_file($fileTmpPath, $destPath)) {
+                try {
+                    $update = $pdo->prepare('UPDATE users SET avatar = ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?');
+                    $update->execute([$relativePath, $userId]);
+                    $_SESSION['flash_message'] = 'Profile image updated successfully.';
+                    $_SESSION['flash_type'] = 'success';
+                } catch (Throwable $e) {
+                    error_log('Failed to update avatar path: ' . $e->getMessage());
+                    $_SESSION['flash_message'] = 'Failed to save avatar details to database.';
+                    $_SESSION['flash_type'] = 'error';
+                }
+            } else {
+                $_SESSION['flash_message'] = 'Failed to upload the image file.';
+                $_SESSION['flash_type'] = 'error';
+            }
+        }
+    } else {
+        $_SESSION['flash_message'] = 'Please select a valid image file to upload.';
+        $_SESSION['flash_type'] = 'error';
+    }
+
+    header('Location: staff_account.php');
+    exit;
+}
+
+// Handle Profile Update Request (Name + Email)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'update_profile') {
     $newName = trim((string) ($_POST['user_name'] ?? ''));
+    $newEmail = trim((string) ($_POST['email'] ?? ''));
 
     if ($newName === '') {
         $_SESSION['flash_message'] = 'Please enter a display name.';
@@ -35,16 +91,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'updat
     } elseif (mb_strlen($newName) > 225) {
         $_SESSION['flash_message'] = 'Display name must be 225 characters or fewer.';
         $_SESSION['flash_type'] = 'error';
+    } elseif ($newEmail === '' || !filter_var($newEmail, FILTER_VALIDATE_EMAIL)) {
+        $_SESSION['flash_message'] = 'Please provide a valid email address.';
+        $_SESSION['flash_type'] = 'error';
     } else {
         try {
-            $update = $pdo->prepare('UPDATE users SET user_name = ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?');
-            $update->execute([$newName, $userId]);
-            $_SESSION['user_name'] = $newName;
-            $_SESSION['flash_message'] = 'Profile name updated. This name is shared across customer and business profiles.';
-            $_SESSION['flash_type'] = 'success';
+            $checkEmail = $pdo->prepare('SELECT user_id FROM users WHERE email = ? AND user_id != ? LIMIT 1');
+            $checkEmail->execute([$newEmail, $userId]);
+            
+            if ($checkEmail->fetch()) {
+                $_SESSION['flash_message'] = 'That email address is already in use by another account.';
+                $_SESSION['flash_type'] = 'error';
+            } else {
+                $update = $pdo->prepare('UPDATE users SET user_name = ?, email = ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?');
+                $update->execute([$newName, $newEmail, $userId]);
+                $_SESSION['user_name'] = $newName;
+                $_SESSION['flash_message'] = 'Profile details updated successfully.';
+                $_SESSION['flash_type'] = 'success';
+            }
         } catch (Throwable $e) {
-            error_log('Failed to update staff profile name: ' . $e->getMessage());
-            $_SESSION['flash_message'] = 'Profile name could not be updated right now.';
+            error_log('Failed to update staff profile: ' . $e->getMessage());
+            $_SESSION['flash_message'] = 'Profile could not be updated right now.';
             $_SESSION['flash_type'] = 'error';
         }
     }
@@ -55,7 +122,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'updat
 
 try {
     $stmt = $pdo->prepare(
-        'SELECT u.user_id, u.user_name, u.email, u.status, u.role_id, u.business_role_id, u.created_at,
+        'SELECT u.user_id, u.user_name, u.email, u.avatar, u.status, u.role_id, u.business_role_id, u.created_at,
                 r.role_name, br.role_name AS business_role_name
          FROM users u
          LEFT JOIN roles r ON r.role_id = u.role_id
@@ -76,6 +143,7 @@ if (!$user) {
 
 $displayName = trim((string) ($user['user_name'] ?? ''));
 $displayEmail = trim((string) ($user['email'] ?? ''));
+$avatarPath = trim((string) ($user['avatar'] ?? ''));
 $staffId = 'EMP-' . str_pad((string) $user['user_id'], 4, '0', STR_PAD_LEFT);
 $initial = map_pump_profile_initial($displayName, 'S');
 $accountRole = trim((string) ($user['role_name'] ?? 'Staff')) ?: 'Staff';
@@ -91,7 +159,7 @@ $accountRole = trim((string) ($user['role_name'] ?? 'Staff')) ?: 'Staff';
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
     <link rel="icon" type="image/png" href="/images/Logo.png">
-    <link rel="stylesheet" href="/css/Admin.css">
+    <link rel="stylesheet" href="../../css/Admin.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
     <style>
         .avatar-large { 
@@ -106,12 +174,12 @@ $accountRole = trim((string) ($user['role_name'] ?? 'Staff')) ?: 'Staff';
             font-size: 2.2rem;
             border: 2px solid rgba(0, 244, 255, 0.25);
             box-shadow: 0 0 15px rgba(0, 244, 255, 0.1);
+            overflow: hidden;
         }
-        .staff-security-panel {
-            border-top: 1px solid rgba(0, 244, 255, 0.14);
-            background: linear-gradient(135deg, rgba(0, 244, 255, 0.055), rgba(0, 132, 255, 0.035));
-            border-radius: 18px;
-            padding: 18px;
+        .avatar-large img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
         }
         .staff-security-modal .modal-content {
             background: rgba(6, 12, 24, 0.98);
@@ -149,10 +217,8 @@ $accountRole = trim((string) ($user['role_name'] ?? 'Staff')) ?: 'Staff';
 </head>
 <body class="background_color" id="background_color">
 
-    <!-- TOP LOADING SHIMMER BAR -->
     <div class="page-load-bar"></div>
 
-    <!-- IPHONE CAPSULE NAVBAR -->
     <div class="container sticky-nav-wrapper">
         <nav class="navbar navbar-dark text-white navigation_style">
             <div class="container-fluid d-flex justify-content-between align-items-center p-0 gap-3">
@@ -193,102 +259,176 @@ $accountRole = trim((string) ($user['role_name'] ?? 'Staff')) ?: 'Staff';
         </nav>
     </div>
 
-    <!-- MAIN CONTENT AREA -->
     <div class="container my-5 text_color">
         <div class="row justify-content-center">
             <div class="col-12 col-md-10 col-lg-8 px-3">
                 
-                <!-- Back Link -->
                 <div class="mb-3 ms-1">
                     <a href="staff_dashboard.php" class="stat-chip text-decoration-none">
                         <i class="bi bi-arrow-left"></i> Back to Dashboard
                     </a>
                 </div>
 
+                <?php if ($flashMessage): ?>
+                    <div class="alert alert-<?= htmlspecialchars($flashType === 'error' ? 'danger' : 'success') ?> rounded-3 border-0 mb-4" role="alert">
+                        <?= htmlspecialchars($flashMessage) ?>
+                    </div>
+                <?php endif; ?>
+
                 <div class="row g-4 mt-1">
-                    <!-- Left Column: Account Details (Watch Mode) -->
+                    <!-- Staff Account Card -->
                     <div class="col-12 col-md-5">
-                        <div class="analytics-card p-4 text-center h-100 d-flex flex-column align-items-center justify-content-center">
-                            <div class="avatar-large mb-3">
-                                <span><?= htmlspecialchars($initial) ?></span>
-                            </div>
-                            <!-- Dynamic values can be swapped here via PHP backend -->
-                            <h4 class="fw-bold mb-1 text-white">Staff Account</h4>
-                            <span class="stat-chip mb-4" style="color: var(--neon-cyan); border-color: rgba(0, 244, 255, 0.3);"><?= htmlspecialchars($accountRole) ?></span>
-                            
-                            <div class="w-100 text-start border-top border-secondary border-opacity-25 pt-3 mt-2">
-                                <label class="form-label text-white-50 small mb-0">Staff ID</label>
-                                <p class="fw-mono text-white mb-3" style="font-family: monospace;">#<?= htmlspecialchars($staffId) ?></p>
+                        <div class="analytics-card p-4 text-center h-100 d-flex flex-column align-items-center justify-content-between">
+                            <div class="w-100 d-flex flex-column align-items-center">
+                                <div class="avatar-large mb-2">
+                                    <?php if ($avatarPath): ?>
+                                        <img src="<?= htmlspecialchars($avatarPath) ?>" alt="Profile Logo">
+                                    <?php else: ?>
+                                        <span><?= htmlspecialchars($initial) ?></span>
+                                    <?php endif; ?>
+                                </div>
 
-                                <label class="form-label text-white-50 small mb-0">Username</label>
-                                <p class="text-white mb-3"><?= htmlspecialchars($displayName ?: 'Staff Member') ?></p>
+                                <!-- Change Profile Logo Button Under Logo -->
+                                <button type="button" class="btn btn-sm btn-outline-info rounded-pill px-3 py-1 mb-3 text-nowrap" style="font-size: 0.78rem;" data-bs-toggle="modal" data-bs-target="#uploadAvatarModal">
+                                    <i class="bi bi-camera me-1"></i> Change Profile Picture
+                                </button>
 
-                                <label class="form-label text-white-50 small mb-0">Email Address</label>
-                                <p class="text-white mb-0"><?= htmlspecialchars($displayEmail ?: 'Not available') ?></p>
+                                <h4 class="fw-bold mb-1 text-white">Staff Account</h4>
+                                <span class="stat-chip mb-4" style="color: var(--neon-cyan); border-color: rgba(0, 244, 255, 0.3);"><?= htmlspecialchars($accountRole) ?></span>
+                                
+                                <div class="w-100 text-start border-top border-secondary border-opacity-25 pt-3 mt-2 mb-3">
+                                    <label class="form-label text-white-50 small mb-0">Staff ID</label>
+                                    <p class="fw-mono text-white mb-3" style="font-family: monospace;">#<?= htmlspecialchars($staffId) ?></p>
+
+                                    <label class="form-label text-white-50 small mb-0">Display Name</label>
+                                    <p class="text-white mb-3"><?= htmlspecialchars($displayName ?: 'Not set') ?></p>
+
+                                    <label class="form-label text-white-50 small mb-0">Email Address</label>
+                                    <p class="text-white mb-0"><?= htmlspecialchars($displayEmail ?: 'Not set') ?></p>
+                                </div>
                             </div>
+
+                            <button type="button" class="btn btn-info w-100 py-2 fw-bold rounded-pill shadow" data-bs-toggle="modal" data-bs-target="#editProfileModal">
+                                <i class="bi bi-pencil-square me-2"></i>Change Profile
+                            </button>
                         </div>
                     </div>
 
-                    <!-- Right Column: Shared Profile / Change Password / Update Security Settings -->
-                    <div class="col-12 col-md-7">
-                        <div class="dashboard-card h-100">
-                            <h3 class="fw-bold mb-2 text-white"><i class="bi bi-person-badge me-2 txt-neon-cyan"></i>Shared Profile</h3>
-                            <p class="text-white-50 small mb-4">This name is used by the staff and customer views of this same account.</p>
-
-                            <?php if ($flashMessage): ?>
-                                <div class="alert alert-<?= htmlspecialchars($flashType === 'error' ? 'danger' : 'success') ?> rounded-3 border-0 mb-4" role="alert">
-                                    <?= htmlspecialchars($flashMessage) ?>
-                                </div>
-                            <?php endif; ?>
-
-                            <form action="staff_account.php" method="POST" class="mb-4">
-                                <input type="hidden" name="action" value="update_profile">
-                                <div class="mb-3">
-                                    <label for="profileUserName" class="form-label text-white-50 small">Display Name</label>
-                                    <div class="input-group">
-                                        <span class="input-group-text glass-input text-white-50 border-end-0"><i class="bi bi-person"></i></span>
-                                        <input type="text" class="form-control glass-input border-start-0" id="profileUserName" name="user_name" value="<?= htmlspecialchars($displayName) ?>" maxlength="225" required>
-                                    </div>
-                                </div>
-                                <button type="submit" class="btn btn-info w-100 py-2 fw-bold rounded-pill shadow">
-                                    <i class="bi bi-save me-2"></i>Save Shared Profile
+                    <!-- Right Column Split Cards -->
+                    <div class="col-12 col-md-7 d-flex flex-column gap-4">
+                        <!-- Card 1: Account Profile Mode -->
+                        <div class="dashboard-card p-4 d-flex flex-column justify-content-between h-100">
+                            <div>
+                                <h3 class="fw-bold mb-2 text-white"><i class="bi bi-arrow-left-right me-2 txt-neon-blue"></i>Account Profile Mode</h3>
+                                <p class="text-white-50 small mb-4">Switch to the customer profile when this staff account needs to fill gas. You can switch back to staff anytime from the customer profile page.</p>
+                            </div>
+                            <form action="../account_switch.php" method="POST">
+                                <input type="hidden" name="mode" value="customer">
+                                <button type="submit" class="btn btn-outline-info w-100 py-2 fw-bold rounded-pill">
+                                    <i class="bi bi-fuel-pump me-2"></i>Switch to Customer Profile
                                 </button>
                             </form>
+                        </div>
 
-                            <div class="border-top border-secondary border-opacity-25 pt-4 mb-4">
-                                <h3 class="fw-bold mb-2 text-white"><i class="bi bi-arrow-left-right me-2 txt-neon-blue"></i>Account Profile Mode</h3>
-                                <p class="text-white-50 small mb-3">Switch to the customer profile when this staff account needs to fill gas. You can switch back to staff anytime from the customer profile page.</p>
-                                <form action="../account_switch.php" method="POST">
-                                    <input type="hidden" name="mode" value="customer">
-                                    <button type="submit" class="btn btn-outline-info w-100 py-2 fw-bold rounded-pill">
-                                        <i class="bi bi-fuel-pump me-2"></i>Switch to Customer Profile
-                                    </button>
-                                </form>
-                            </div>
-
-                            <div class="staff-security-panel">
-                                <div class="d-flex align-items-start gap-3 mb-3">
+                        <!-- Card 2: Security Settings -->
+                        <div class="dashboard-card p-4 d-flex flex-column justify-content-between h-100">
+                            <div>
+                                <div class="d-flex align-items-center gap-3 mb-2">
                                     <span class="staff-security-icon"><i class="bi bi-shield-lock"></i></span>
-                                    <div>
-                                        <h3 class="fw-bold mb-1 text-white">Security Settings</h3>
-                                        <p class="text-white-50 small mb-0">Update your password in a protected floating window.</p>
-                                    </div>
+                                    <h3 class="fw-bold mb-0 text-white">Security Settings</h3>
                                 </div>
-                                <button type="button" class="btn btn-outline-info w-100 py-2 fw-bold rounded-pill" data-bs-toggle="modal" data-bs-target="#changePasswordModal">
-                                    <i class="bi bi-key-fill me-2"></i>Change Password
-                                </button>
+                                <p class="text-white-50 small mb-4">Update your password in a protected floating window to secure your staff credentials.</p>
                             </div>
+                            <button type="button" class="btn btn-outline-info w-100 py-2 fw-bold rounded-pill" data-bs-toggle="modal" data-bs-target="#changePasswordModal">
+                                <i class="bi bi-key-fill me-2"></i>Change Password
+                            </button>
                         </div>
                     </div>
                 </div>
 
-                <!-- Safe Logout Option below -->
                 <div class="text-center mt-4">
                     <a href="../Login/logout.php" class="text-danger small text-decoration-none fw-semibold">
                         <i class="bi bi-box-arrow-right me-1"></i> Securely Log Out of This Session
                     </a>
                 </div>
 
+            </div>
+        </div>
+    </div>
+
+    <!-- CHANGE PROFILE LOGO MODAL -->
+    <div class="modal fade staff-security-modal" id="uploadAvatarModal" tabindex="-1" aria-labelledby="uploadAvatarModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <form action="staff_account.php" method="POST" enctype="multipart/form-data">
+                    <input type="hidden" name="action" value="update_avatar">
+                    <div class="modal-header px-4 pt-4">
+                        <div class="d-flex align-items-center gap-3">
+                            <span class="staff-security-icon"><i class="bi bi-camera"></i></span>
+                            <div>
+                                <h5 class="modal-title fw-bold text-white mb-0" id="uploadAvatarModalLabel">Change Profile Picture</h5>
+                                <p class="text-white-50 small mb-0">Upload a custom image to display on your profile.</p>
+                            </div>
+                        </div>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body px-4">
+                        <div class="mb-3">
+                            <label for="profileLogoInput" class="form-label text-white-50 small">Select Image File</label>
+                            <input class="form-control glass-input text-white" type="file" id="profileLogoInput" name="profile_logo" accept="image/jpeg,image/png,image/webp" required>
+                            <div class="form-text text-white-50 small">Supports JPG, PNG, or WEBP (Max size: 2MB).</div>
+                        </div>
+                    </div>
+                    <div class="modal-footer px-4 pb-4">
+                        <button type="button" class="btn btn-outline-light rounded-pill px-4" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-info rounded-pill px-4 fw-bold">
+                            <i class="bi bi-upload me-2"></i>Upload Image
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- CHANGE PROFILE DETAILS MODAL -->
+    <div class="modal fade staff-security-modal" id="editProfileModal" tabindex="-1" aria-labelledby="editProfileModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <form action="staff_account.php" method="POST">
+                    <input type="hidden" name="action" value="update_profile">
+                    <div class="modal-header px-4 pt-4">
+                        <div class="d-flex align-items-center gap-3">
+                            <span class="staff-security-icon"><i class="bi bi-person-gear"></i></span>
+                            <div>
+                                <h5 class="modal-title fw-bold text-white mb-0" id="editProfileModalLabel">Change Profile</h5>
+                                <p class="text-white-50 small mb-0">Update your account's display name and email address.</p>
+                            </div>
+                        </div>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body px-4">
+                        <div class="mb-3">
+                            <label for="profileUserName" class="form-label text-white-50 small">Display Name</label>
+                            <div class="input-group">
+                                <span class="input-group-text glass-input text-white-50 border-end-0"><i class="bi bi-person"></i></span>
+                                <input type="text" class="form-control glass-input border-start-0 text-white" id="profileUserName" name="user_name" value="<?= htmlspecialchars($displayName) ?>" maxlength="225" required>
+                            </div>
+                        </div>
+                        <div class="mb-0">
+                            <label for="profileEmail" class="form-label text-white-50 small">Email Address</label>
+                            <div class="input-group">
+                                <span class="input-group-text glass-input text-white-50 border-end-0"><i class="bi bi-envelope"></i></span>
+                                <input type="email" class="form-control glass-input border-start-0 text-white" id="profileEmail" name="email" value="<?= htmlspecialchars($displayEmail) ?>" maxlength="255" required>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer px-4 pb-4">
+                        <button type="button" class="btn btn-outline-light rounded-pill px-4" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-info rounded-pill px-4 fw-bold">
+                            <i class="bi bi-save me-2"></i>Save Changes
+                        </button>
+                    </div>
+                </form>
             </div>
         </div>
     </div>
@@ -361,16 +501,16 @@ $accountRole = trim((string) ($user['role_name'] ?? 'Staff')) ?: 'Staff';
                     <div class="energy-line"></div>
                     <div class="energy-line"></div>
                     <div class="toggle-orb">
-                    <div class="inner-orb"></div>
-                    <div class="ring"></div>
+                        <div class="inner-orb"></div>
+                        <div class="ring"></div>
                     </div>
                     <div class="particles">
-                    <div style="--angle: 30deg" class="particle"></div>
-                    <div style="--angle: 60deg" class="particle"></div>
-                    <div style="--angle: 90deg" class="particle"></div>
-                    <div style="--angle: 120deg" class="particle"></div>
-                    <div style="--angle: 150deg" class="particle"></div>
-                    <div style="--angle: 180deg" class="particle"></div>
+                        <div style="--angle: 30deg" class="particle"></div>
+                        <div style="--angle: 60deg" class="particle"></div>
+                        <div style="--angle: 90deg" class="particle"></div>
+                        <div style="--angle: 120deg" class="particle"></div>
+                        <div style="--angle: 150deg" class="particle"></div>
+                        <div style="--angle: 180deg" class="particle"></div>
                     </div>
                 </div>
             </label>

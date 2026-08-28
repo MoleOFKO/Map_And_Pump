@@ -115,7 +115,7 @@ try {
     $_SESSION['oil_remaining'] = 35.0;
     $_SESSION['has_business'] = false;
     verify_json(true, 'Registration complete. Please add your driver license.', [
-        'redirect' => '/php/Customer/license.php',
+        'redirect' => '../Customer/license.php',
     ]);
 } catch (Throwable $e) {
     error_log('Registration verify failed: ' . $e->getMessage());
