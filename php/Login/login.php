@@ -3,10 +3,12 @@ require_once __DIR__ . '/session_helper.php';
 map_pump_configure_session();
 session_start();
 $loginError = $_SESSION['login_error'] ?? '';
+$socialDebug = $_SESSION['social_login_debug'] ?? '';
 $loginSuccess = $_SESSION['login_success'] ?? '';
 $rememberedEmail = (string) ($_COOKIE[MAP_PUMP_REMEMBER_EMAIL_COOKIE] ?? '');
 unset($_SESSION['login_error']);
 unset($_SESSION['login_success']);
+unset($_SESSION['social_login_debug']);
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -52,6 +54,11 @@ unset($_SESSION['login_success']);
           <?= htmlspecialchars($loginError, ENT_QUOTES, 'UTF-8') ?>
         </div>
       <?php endif; ?>
+      <?php if ($socialDebug === 'Unable to contact login provider.'): ?>
+        <div class="alert alert-warning" role="alert" style="margin-bottom: 1rem; padding: 0.85rem 1rem; border-radius: 12px; background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.35); color: #fef3c7;">
+          <strong>OAuth debug:</strong> <?= htmlspecialchars($socialDebug, ENT_QUOTES, 'UTF-8') ?>
+        </div>
+      <?php endif; ?>
       <?php if ($loginSuccess): ?>
         <div class="alert alert-success" role="alert" style="margin-bottom: 1rem; padding: 0.85rem 1rem; border-radius: 12px; background: rgba(34, 197, 94, 0.12); border: 1px solid rgba(34, 197, 94, 0.35); color: #d1fae5;">
           <?= htmlspecialchars($loginSuccess, ENT_QUOTES, 'UTF-8') ?>
@@ -88,7 +95,7 @@ unset($_SESSION['login_success']);
             <input type="checkbox" name="remember" value="1" <?= $rememberedEmail !== '' ? 'checked' : '' ?> />
             <span>Remember Me</span>
           </label>
-          <a href="forgot_password.php" class="forgot-link">Forgot Password?</a>
+          <fa href="forgot_password.php" class="forgot-link">Forgot Password?</fa>
         </div>
 
         <!-- Submit Button -->
