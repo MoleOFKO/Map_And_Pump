@@ -252,28 +252,39 @@ function social_sign_in_user(PDO $pdo, string $provider, string $providerId, str
     }
 
     map_pump_current_role_column_ready($pdo);
-    $stmt = $pdo->prepare(
-        'SELECT u.user_id, u.user_name, u.email, u.status, u.role_id, u.business_role_id, u.current_role_id,
+    $userSelect = 'SELECT u.user_id, u.user_name, u.email, u.status, u.role_id, u.business_role_id, u.current_role_id,
                 r.role_name, br.role_name AS business_role_name, cr.role_name AS current_role_name
          FROM users u
          LEFT JOIN roles r ON r.role_id = u.role_id
          LEFT JOIN roles br ON br.role_id = u.business_role_id
-         LEFT JOIN roles cr ON cr.role_id = u.current_role_id
-         WHERE (u.oauth_provider = ? AND u.oauth_provider_id = ?)
-            OR LOWER(u.email) = LOWER(?)
+         LEFT JOIN roles cr ON cr.role_id = u.current_role_id';
+
+    $stmt = $pdo->prepare(
+        $userSelect . '
+         WHERE u.oauth_provider = ? AND u.oauth_provider_id = ?
          LIMIT 1'
     );
-    $stmt->execute([$provider, $providerId, $email]);
+    $stmt->execute([$provider, $providerId]);
     $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
     if ($user) {
         $update = $pdo->prepare(
             'UPDATE users
-             SET oauth_provider = ?, oauth_provider_id = ?, oauth_avatar_url = ?, last_login_at = NOW(), updated_at = NOW()
+             SET oauth_avatar_url = ?, last_login_at = NOW(), updated_at = NOW()
              WHERE user_id = ?'
         );
-        $update->execute([$provider, $providerId, $avatarUrl, (int) $user['user_id']]);
+        $update->execute([$avatarUrl, (int) $user['user_id']]);
     } else {
+        $emailStmt = $pdo->prepare(
+            $userSelect . '
+             WHERE LOWER(u.email) = LOWER(?)
+             LIMIT 1'
+        );
+        $emailStmt->execute([$email]);
+        if ($emailStmt->fetch(PDO::FETCH_ASSOC)) {
+            social_login_fail('That email is already registered. Please log in instead.');
+        }
+
         $roleId = social_find_customer_role_id($pdo);
         $fallbackName = explode('@', $email)[0] ?: 'Social User';
         $displayName = trim($name) !== '' ? trim($name) : $fallbackName;
