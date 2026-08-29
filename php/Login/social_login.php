@@ -22,9 +22,5 @@ if ($provider === 'google') {
     $params['prompt'] = 'select_account';
 }
 
-if ($provider === 'apple') {
-    $params['response_mode'] = 'form_post';
-}
-
 header('Location: ' . $config['auth_url'] . '?' . http_build_query($params));
 exit;

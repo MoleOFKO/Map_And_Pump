@@ -71,7 +71,7 @@ unset($_SESSION['social_login_debug']);
         <div class="input-group">
           <label for="email">Email</label>
           <div class="input-wrapper">
-            <input type="email" id="email" name="email" placeholder="example123@gmail.com" value="<?= htmlspecialchars($rememberedEmail, ENT_QUOTES, 'UTF-8') ?>" required />
+            <input type="email" id="email" name="email" placeholder="example123@gmail.com" spellcheck="false" autocorrect="off" autocapitalize="off" value="<?= htmlspecialchars($rememberedEmail, ENT_QUOTES, 'UTF-8') ?>" required />
           </div>
         </div>
 
@@ -79,7 +79,7 @@ unset($_SESSION['social_login_debug']);
         <div class="input-group">
           <label for="password">Password</label>
           <div class="input-wrapper">
-            <input type="password" id="password" name="password" placeholder="••••••••••••" required />
+            <input type="password" id="password" name="password" spellcheck="false" placeholder="••••••••••••" required />
             <button type="button" class="eye-btn" id="togglePassword" aria-label="Toggle password visibility">
               <svg class="eye-icon" id="eyeIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
@@ -95,7 +95,7 @@ unset($_SESSION['social_login_debug']);
             <input type="checkbox" name="remember" value="1" <?= $rememberedEmail !== '' ? 'checked' : '' ?> />
             <span>Remember Me</span>
           </label>
-          <fa href="forgot_password.php" class="forgot-link">Forgot Password?</fa>
+          <a href="forgot_password.php" class="forgot-link">Forgot Password?</a>
         </div>
 
         <!-- Submit Button -->
@@ -110,7 +110,7 @@ unset($_SESSION['social_login_debug']);
           <div class="line"></div>
         </div>
 
-        <!-- Social Login Icons -->
+        <!-- Social Login Buttons (Side-by-Side Labeled Cards) -->
         <div class="social-options">
           <a href="social_login.php?provider=google" class="social-btn" aria-label="Login with Google">
             <svg viewBox="0 0 24 24">
@@ -119,18 +119,14 @@ unset($_SESSION['social_login_debug']);
               <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
               <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
             </svg>
+            <span>Google</span>
           </a>
           
           <a href="social_login.php?provider=facebook" class="social-btn" aria-label="Login with Facebook">
             <svg viewBox="0 0 24 24" fill="#1877F2">
               <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
             </svg>
-          </a>
-
-          <a href="social_login.php?provider=apple" class="social-btn" aria-label="Login with Apple">
-            <svg viewBox="0 0 24 24" fill="#FFFFFF">
-              <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M15.97 6.37c.68-.82 1.13-1.97.98-3.12-1 .04-2.19.67-2.88 1.48-.62.72-1.16 1.89-.99 3.01 1.12.09 2.22-.55 2.89-1.37z"/>
-            </svg>
+            <span>Facebook</span>
           </a>
         </div>
 
