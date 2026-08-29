@@ -2,7 +2,6 @@
 
 require_once __DIR__ . '/../conn.php';
 require_once __DIR__ . '/../Customer/license_access.php';
-require_once __DIR__ . '/../Customer/car_access.php';
 require_once __DIR__ . '/../role_state.php';
 
 function social_login_fail(string $message): never
@@ -57,6 +56,70 @@ function social_http_request(string $url, string $method = 'GET', array $data = 
         $requestHeaders[] = 'Content-Type: application/x-www-form-urlencoded';
     }
 
+    // Prefer curl when available for better SSL and error handling
+    if (function_exists('curl_init')) {
+        $ch = curl_init();
+        $requestUrl = $url;
+        if ($method === 'GET' && $content !== '') {
+            $requestUrl .= (str_contains($requestUrl, '?') ? '&' : '?') . $content;
+        }
+
+        curl_setopt($ch, CURLOPT_URL, $requestUrl);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 30);
+        // Prefer IPv4 to avoid IPv6 connectivity issues on some hosts
+        if (defined('CURLOPT_IPRESOLVE')) {
+            curl_setopt($ch, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
+        }
+        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 10);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, $requestHeaders);
+        // Respect system proxy environment variables if present (e.g., in corp networks)
+        $proxy = getenv('HTTPS_PROXY') ?: getenv('https_proxy') ?: getenv('HTTP_PROXY') ?: getenv('http_proxy');
+        if ($proxy) {
+            curl_setopt($ch, CURLOPT_PROXY, $proxy);
+        }
+
+        if ($method === 'POST') {
+            curl_setopt($ch, CURLOPT_POST, true);
+            curl_setopt($ch, CURLOPT_POSTFIELDS, $content);
+        }
+
+        $response = curl_exec($ch);
+        $curlErr = curl_error($ch);
+        $httpStatus = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        // curl_close($ch);
+
+        if ($response === false) {
+            throw new RuntimeException('Unable to contact login provider: ' . $curlErr);
+        }
+
+        if ($httpStatus >= 400) {
+            // Try to extract JSON error message
+            $json = json_decode((string) $response, true);
+            if (is_array($json) && isset($json['error'])) {
+                $detail = is_array($json['error']) ? ($json['error']['message'] ?? 'Provider rejected the request.') : (string) $json['error'];
+                throw new RuntimeException($detail);
+            }
+            throw new RuntimeException('Login provider returned HTTP ' . $httpStatus . '.');
+        }
+
+        $decoded = json_decode((string) $response, true);
+        if (!is_array($decoded)) {
+            throw new RuntimeException('Login provider returned an invalid response.');
+        }
+
+        if (isset($decoded['error'])) {
+            $detail = is_array($decoded['error']) ? ($decoded['error']['message'] ?? 'Provider rejected the request.') : (string) $decoded['error'];
+            throw new RuntimeException($detail);
+        }
+
+        return $decoded;
+    }
+
+    // Fallback to file_get_contents with diagnostic info
     $context = stream_context_create([
         'http' => [
             'method' => $method,
@@ -65,16 +128,30 @@ function social_http_request(string $url, string $method = 'GET', array $data = 
             'ignore_errors' => true,
             'timeout' => 20,
         ],
+        'ssl' => [
+            'verify_peer' => true,
+            'verify_peer_name' => true,
+            'allow_self_signed' => false,
+        ],
     ]);
 
     $fullUrl = $method === 'GET' && $content !== '' ? $url . (str_contains($url, '?') ? '&' : '?') . $content : $url;
     $response = @file_get_contents($fullUrl, false, $context);
 
     if ($response === false) {
-        throw new RuntimeException('Unable to contact login provider.');
+        $lastErr = error_get_last();
+        if (function_exists('http_get_last_response_headers')) {
+            $hdrArr = http_get_last_response_headers() ?: [];
+        } else {
+            // Avoid referencing the deprecated $http_response_header variable
+            $hdrArr = [];
+        }
+        $hdrs = is_array($hdrArr) ? implode(' | ', $hdrArr) : '';
+        $msg = 'Unable to contact login provider.' . ($lastErr ? ' ' . ($lastErr['message'] ?? '') : '') . ($hdrs ? ' Headers: ' . $hdrs : '');
+        throw new RuntimeException($msg);
     }
 
-    $decoded = json_decode($response, true);
+    $decoded = json_decode((string) $response, true);
     if (!is_array($decoded)) {
         throw new RuntimeException('Login provider returned an invalid response.');
     }
@@ -109,18 +186,18 @@ function social_provider_config(string $provider): array
 {
     return match ($provider) {
         'google' => [
-            'client_id' => '513039511125-mlrd4m0lqn87radhimv0ms0vhtpvm9mh.apps.googleusercontent.com',
-            'client_secret' => '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',
+            'client_id' =>  '517003577398-r239g2nh7h46upug007bov7a0cp2jm8o.apps.googleusercontent.com',
+            'client_secret' => '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',
             'auth_url' => 'https://accounts.google.com/o/oauth2/v2/auth',
             'token_url' => 'https://oauth2.googleapis.com/token',
             'scope' => 'openid email profile',
         ],
         'facebook' => [
-            'client_id' => '1398149002263202',
-            'client_secret' => 'b4d9b22007f8cb40ca1a70da6db0c832',
-            'auth_url' => 'https://www.facebook.com/v20.0/dialog/oauth',
-            'token_url' => 'https://graph.facebook.com/v20.0/oauth/access_token',
-            'scope' => 'email public_profile',
+            'client_id' => social_env('FACEBOOK_CLIENT_ID') ?: '1742682880362444',
+            'client_secret' => social_env('FACEBOOK_CLIENT_SECRET') ?: 'ba0b03b4e0a4df1bfe75b11e9dbb122d',
+            'auth_url' => 'https://www.facebook.com/v18.0/dialog/oauth',
+            'token_url' => 'https://graph.facebook.com/v18.0/oauth/access_token',
+            'scope' => 'email,public_profile',
         ],
         'apple' => [
             'client_id' => social_env('APPLE_CLIENT_ID'),
@@ -257,7 +334,8 @@ function social_sign_in_user(PDO $pdo, string $provider, string $providerId, str
     $destination = social_dashboard_for_role($activeRoleName);
     if ($roleName === 'customer') {
         $licenseAccess = customer_license_access($pdo, (int) $user['user_id']);
-        customer_refresh_session($pdo, (int) $user['user_id'], $licenseAccess);
+        $_SESSION['license_id'] = (int) ($licenseAccess['license_id'] ?? 0);
+        $_SESSION['license_status'] = (string) ($licenseAccess['status'] ?? 'pending');
         if (!$licenseAccess['is_approved']) {
             $destination = '../Customer/license.php';
         }
