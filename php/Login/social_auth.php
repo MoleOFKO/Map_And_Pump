@@ -199,13 +199,6 @@ function social_provider_config(string $provider): array
             'token_url' => 'https://graph.facebook.com/v18.0/oauth/access_token',
             'scope' => 'email,public_profile',
         ],
-        'apple' => [
-            'client_id' => social_env('APPLE_CLIENT_ID'),
-            'client_secret' => social_env('APPLE_CLIENT_SECRET'),
-            'auth_url' => 'https://appleid.apple.com/auth/authorize',
-            'token_url' => 'https://appleid.apple.com/auth/token',
-            'scope' => 'name email',
-        ],
         default => [],
     };
 }

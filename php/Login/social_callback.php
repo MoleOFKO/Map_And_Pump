@@ -68,39 +68,6 @@ try {
         );
     }
 
-    if ($provider === 'apple') {
-        $payload = social_decode_jwt_payload($idToken);
-        $now = time();
-
-        if (($payload['iss'] ?? '') !== 'https://appleid.apple.com') {
-            throw new RuntimeException('Apple identity token issuer is invalid.');
-        }
-        if (($payload['aud'] ?? '') !== $config['client_id']) {
-            throw new RuntimeException('Apple identity token audience is invalid.');
-        }
-        if ((int) ($payload['exp'] ?? 0) < $now) {
-            throw new RuntimeException('Apple identity token has expired.');
-        }
-
-        $name = '';
-        if (isset($_POST['user'])) {
-            $appleUser = json_decode((string) $_POST['user'], true);
-            if (is_array($appleUser)) {
-                $firstName = (string) ($appleUser['name']['firstName'] ?? '');
-                $lastName = (string) ($appleUser['name']['lastName'] ?? '');
-                $name = trim($firstName . ' ' . $lastName);
-            }
-        }
-
-        social_sign_in_user(
-            $pdo,
-            $provider,
-            (string) ($payload['sub'] ?? ''),
-            (string) ($payload['email'] ?? ''),
-            $name
-        );
-    }
-
     social_login_fail('Unsupported login provider.');
 } catch (Throwable $e) {
     // Write provider error to a private log file to avoid printing sensitive details to console.
