@@ -1,11 +1,129 @@
 <?php
+/**
+ * manage-staff.php  —  Staff CRUD + status toggle + activity log
+ * Actions handled here (form-post):
+ *   ?action=add         -> POST full_name, role, shift, contact
+ *   ?action=edit        -> POST staff_id, full_name, role, shift, contact
+ *   ?action=delete      -> POST staff_id
+ *   ?action=activate    -> POST staff_id
+ *   ?action=disable     -> POST staff_id
+ * Each returns JSON so the existing JS can keep working (AJAX-friendly).
+ */
 if (session_status() !== PHP_SESSION_ACTIVE) {
     session_start();
 }
 require_once __DIR__ . '/../profile_avatar.php';
+require_once __DIR__ . '/_helpers.php';
+require_once __DIR__ . '/../conn.php';
+require_branch_manager();
+
 $managerDisplayName = trim((string) ($_SESSION['user_name'] ?? 'Manager'));
 $managerInitial = map_pump_profile_initial($managerDisplayName, 'M');
-?><!DOCTYPE html>
+
+$ctx      = current_context($pdo);
+$user     = $ctx['user'];
+$branch   = $ctx['branch'];
+$initials = initials($user['full_name']);
+$bid      = (int)$branch['branch_id'];
+
+// -------- POST action router --------
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!csrf_check($_POST['csrf'] ?? null)) json_out(['ok' => false, 'error' => 'CSRF failed'], 403);
+    $action = $_POST['action'] ?? '';
+
+    try {
+        if ($action === 'add') {
+            $full_name = trim($_POST['full_name'] ?? '');
+            $role      = $_POST['role']    ?? 'Pump Attendant';
+            $shift     = $_POST['shift']   ?? 'Morning';
+            $contact   = trim($_POST['contact'] ?? '');
+            if ($full_name === '') json_out(['ok' => false, 'error' => 'Name required']);
+
+            // generate ST-#### code (starts from 2100 or next after existing)
+            $stmt = $pdo->prepare("
+                SELECT MAX(CAST(SUBSTRING(staff_code, 4) AS UNSIGNED)) FROM staff WHERE branch_id = :b
+            ");
+            $stmt->execute([':b' => $bid]);
+            $next = ((int)$stmt->fetchColumn() ?: 2090) + 1;
+            $code = 'ST-' . $next;
+
+            $stmt = $pdo->prepare("
+                INSERT INTO staff (staff_code, branch_id, full_name, role, shift, contact, is_active, duty_status, hired_at)
+                VALUES (:c, :b, :n, :r, :s, :p, 1, 'Off Duty', CURDATE())
+            ");
+            $stmt->execute([':c'=>$code, ':b'=>$bid, ':n'=>$full_name, ':r'=>$role, ':s'=>$shift, ':p'=>$contact]);
+
+            log_activity($pdo, $bid, 'user', $user['user_id'], $user['full_name'], "Added new staff: {$full_name} ({$code})");
+            json_out(['ok' => true, 'staff_id' => (int)$pdo->lastInsertId(), 'staff_code' => $code]);
+        }
+
+        if ($action === 'edit') {
+            $sid = (int)($_POST['staff_id'] ?? 0);
+            $stmt = $pdo->prepare("
+                UPDATE staff SET full_name = :n, role = :r, shift = :s, contact = :p
+                WHERE staff_id = :sid AND branch_id = :b
+            ");
+            $stmt->execute([
+                ':n' => trim($_POST['full_name'] ?? ''),
+                ':r' => $_POST['role'] ?? 'Pump Attendant',
+                ':s' => $_POST['shift'] ?? 'Morning',
+                ':p' => trim($_POST['contact'] ?? ''),
+                ':sid' => $sid, ':b' => $bid,
+            ]);
+            log_activity($pdo, $bid, 'user', $user['user_id'], $user['full_name'], "Edited staff #{$sid}");
+            json_out(['ok' => true]);
+        }
+
+        if ($action === 'delete') {
+            $sid = (int)($_POST['staff_id'] ?? 0);
+            $stmt = $pdo->prepare("DELETE FROM staff WHERE staff_id = :sid AND branch_id = :b");
+            $stmt->execute([':sid' => $sid, ':b' => $bid]);
+            log_activity($pdo, $bid, 'user', $user['user_id'], $user['full_name'], "Deleted staff #{$sid}");
+            json_out(['ok' => true]);
+        }
+
+        if ($action === 'activate' || $action === 'disable') {
+            $sid = (int)($_POST['staff_id'] ?? 0);
+            $flag = $action === 'activate' ? 1 : 0;
+            $stmt = $pdo->prepare("UPDATE staff SET is_active = :f WHERE staff_id = :sid AND branch_id = :b");
+            $stmt->execute([':f' => $flag, ':sid' => $sid, ':b' => $bid]);
+            log_activity($pdo, $bid, 'user', $user['user_id'], $user['full_name'],
+                         ($flag ? 'Activated' : 'Disabled') . " staff #{$sid}");
+            json_out(['ok' => true]);
+        }
+
+        json_out(['ok' => false, 'error' => 'Unknown action'], 400);
+    } catch (PDOException $e) {
+        json_out(['ok' => false, 'error' => $e->getMessage()], 500);
+    }
+}
+
+// -------- Load data for display --------
+$stmt = $pdo->prepare("SELECT * FROM staff WHERE branch_id = :b ORDER BY staff_code ASC");
+$stmt->execute([':b' => $bid]);
+$staff = $stmt->fetchAll();
+
+$total_staff    = count($staff);
+$active_staff   = count(array_filter($staff, fn($s) => (int)$s['is_active'] === 1));
+$disabled_staff = $total_staff - $active_staff;
+
+// activity log (latest 20)
+$stmt = $pdo->prepare("
+    SELECT l.log_id,
+           'user' AS actor_type,
+           l.user_id AS actor_id,
+           COALESCE(u.user_name, 'Branch Manager') AS actor_name,
+           l.action,
+           l.created_at
+    FROM log l
+    LEFT JOIN users u ON u.user_id = l.user_id
+    WHERE l.user_id = :manager_id AND l.role_id = 4
+    ORDER BY l.created_at DESC LIMIT 20
+");
+$stmt->execute([':manager_id' => $user['user_id']]);
+$activities = $stmt->fetchAll();
+?>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -319,8 +437,8 @@ $managerInitial = map_pump_profile_initial($managerDisplayName, 'M');
     <div class="side-role">Branch Manager Console</div>
 
     <div class="side-branch">
-      <b>Denko - Sanchaung</b>
-      <span>Branch ID: YGN-014</span>
+      <b><?= h($branch['branch_name']) ?></b>
+      <span>Branch ID: <?= h($branch['branch_code']) ?></span>
     </div>
 
     <nav class="side-nav">
@@ -330,6 +448,7 @@ $managerInitial = map_pump_profile_initial($managerDisplayName, 'M');
       <a href="booking-slot.php" class="side-link"><span class="ic"><i class="fa-solid fa-ticket"></i></span> Monitor Booking Slot</a>
       <a href="view-customers.php" class="side-link"><span class="ic"><i class="fa-solid fa-address-book"></i></span> View Customers</a>
       <a href="report-hq.php" class="side-link"><span class="ic"><i class="fa-solid fa-paper-plane"></i></span> Report to HQ</a>
+      <a href="branchprofile.php" class="side-link"><span class="ic"><i class="fa-solid fa-building"></i></span> Branch Profile</a>
       <a href="edit-profile.php" class="side-link"><span class="ic"><i class="fa-solid fa-gear"></i></span> Edit Profile</a>
     </nav>
 
@@ -346,7 +465,7 @@ $managerInitial = map_pump_profile_initial($managerDisplayName, 'M');
         <!-- Bell Trigger Button -->
         <div class="bell" id="notif-bell"><i class="fa-regular fa-bell"></i><span class="ping" id="notif-ping"></span></div>
         
-        <!-- Notification Dropdown Popup (manage-oil.php style) -->
+        <!-- Notification Dropdown Popup (manage-oil style) -->
         <div class="notif-popup" id="notif-popup">
           <div class="notif-header">
             <h4>Notifications</h4>
@@ -397,9 +516,9 @@ $managerInitial = map_pump_profile_initial($managerDisplayName, 'M');
       </div>
 
       <div class="stat-strip">
-        <div class="stat"><div class="n" id="stat-total">9</div><div class="l">Total Staff</div></div>
-        <div class="stat"><div class="n" id="stat-active" style="color:var(--mint-400)">7</div><div class="l">Active Account</div></div>
-        <div class="stat"><div class="n" id="stat-disabled" style="color:var(--slate-400)">2</div><div class="l">Disabled Account</div></div>
+        <div class="stat"><div class="n" id="stat-total"><?= $total_staff ?></div><div class="l">Total Staff</div></div>
+        <div class="stat"><div class="n" id="stat-active" style="color:var(--mint-400)"><?= $active_staff ?></div><div class="l">Active Account</div></div>
+        <div class="stat"><div class="n" id="stat-disabled" style="color:var(--slate-400)"><?= $disabled_staff ?></div><div class="l">Disabled Account</div></div>
         <div class="stat"><div class="n">3</div><div class="l">Shift Groups</div></div>
       </div>
 
@@ -425,11 +544,31 @@ $managerInitial = map_pump_profile_initial($managerDisplayName, 'M');
           <table id="staff-directory-table">
             <thead><tr><th>Staff</th><th>Role</th><th>Shift</th><th>Status</th><th>Contact</th><th></th></tr></thead>
             <tbody>
-              <tr data-shift="Morning"><td><div class="staff-name"><div class="mini-avatar">Jo</div><div><b>Joao</b><span>ID: ST-2091</span></div></div></td><td><span class="role-pill">Pump Attendant</span></td><td>Morning (6AM–2PM)</td><td><span class="status-pill on"><span class="d"></span> On Duty</span></td><td>09-751-XXXXXX</td><td class="actions"><a class="edit-action">Edit</a><a class="danger delete-action">Delete</a></td></tr>
-              <tr data-shift="Morning"><td><div class="staff-name"><div class="mini-avatar">Le</div><div><b>Leon</b><span>ID: ST-2092</span></div></div></td><td><span class="role-pill">Cashier</span></td><td>Morning (6AM–2PM)</td><td><span class="status-pill on"><span class="d"></span> On Duty</span></td><td>09-799-XXXXXX</td><td class="actions"><a class="edit-action">Edit</a><a class="danger delete-action">Delete</a></td></tr>
-              <tr data-shift="Afternoon"><td><div class="staff-name"><div class="mini-avatar">Xi</div><div><b>Xiao</b><span>ID: ST-2093</span></div></div></td><td><span class="role-pill">Pump Attendant</span></td><td>Afternoon (2PM–10PM)</td><td><span class="status-pill off"><span class="d"></span> Off Duty</span></td><td>09-425-XXXXXX</td><td class="actions"><a class="edit-action">Edit</a><a class="danger delete-action">Delete</a></td></tr>
-              <tr data-shift="Afternoon"><td><div class="staff-name"><div class="mini-avatar">He</div><div><b>Henry</b><span>ID: ST-2094</span></div></div></td><td><span class="role-pill">Supervisor</span></td><td>Afternoon (2PM–10PM)</td><td><span class="status-pill leave"><span class="d"></span> Leave</span></td><td>09-660-XXXXXX</td><td class="actions"><a class="edit-action">Edit</a><a class="danger delete-action">Delete</a></td></tr>
-              <tr data-shift="Night"><td><div class="staff-name"><div class="mini-avatar">Th</div><div><b>Thiago</b><span>ID: ST-2095</span></div></div></td><td><span class="role-pill">Pump Attendant</span></td><td>Night (10PM–6AM)</td><td><span class="status-pill off"><span class="d"></span> Off Duty</span></td><td>09-511-XXXXXX</td><td class="actions"><a class="edit-action">Edit</a><a class="danger delete-action">Delete</a></td></tr>
+              <?php
+              $shift_hours = ['Morning' => '6AM–2PM', 'Afternoon' => '2PM–10PM', 'Night' => '10PM–6AM'];
+              $duty_class  = ['On Duty' => 'on', 'Off Duty' => 'off', 'Leave' => 'leave'];
+              foreach ($staff as $s):
+              ?>
+              <tr data-shift="<?= h($s['shift']) ?>" data-id="<?= (int)$s['staff_id'] ?>">
+                <td>
+                  <div class="staff-name">
+                    <div class="mini-avatar"><?= h(initials($s['full_name'])) ?></div>
+                    <div><b><?= h($s['full_name']) ?></b><span>ID: <?= h($s['staff_code']) ?></span></div>
+                  </div>
+                </td>
+                <td><span class="role-pill"><?= h($s['role']) ?></span></td>
+                <td><?= h($s['shift']) ?> (<?= h($shift_hours[$s['shift']] ?? '') ?>)</td>
+                <td><span class="status-pill <?= h($duty_class[$s['duty_status']] ?? 'off') ?>"><span class="d"></span> <?= h($s['duty_status']) ?></span></td>
+                <td><?= h($s['contact']) ?></td>
+                <td class="actions">
+                  <a class="edit-action" data-id="<?= (int)$s['staff_id'] ?>">Edit</a>
+                  <a class="danger delete-action" data-id="<?= (int)$s['staff_id'] ?>">Delete</a>
+                </td>
+              </tr>
+              <?php endforeach; ?>
+              <?php if (!$staff): ?>
+                <tr><td colspan="6" style="text-align:center; color:var(--slate-400); padding:22px;">No staff registered yet.</td></tr>
+              <?php endif; ?>
             </tbody>
           </table>
         </div>
@@ -441,11 +580,27 @@ $managerInitial = map_pump_profile_initial($managerDisplayName, 'M');
           <table id="status-management-table">
             <thead><tr><th>Staff</th><th>Role</th><th>Account Status</th><th></th></tr></thead>
             <tbody>
-              <tr data-id="ST-2091"><td><div class="staff-name"><div class="mini-avatar">Jo</div><div><b>Joao</b><span>ID: ST-2091</span></div></div></td><td><span class="role-pill">Pump Attendant</span></td><td><span class="status-pill on"><span class="d"></span> Active</span></td><td class="actions"><a class="danger status-toggle" data-action="disable">Disable</a></td></tr>
-              <tr data-id="ST-2092"><td><div class="staff-name"><div class="mini-avatar">Le</div><div><b>Leon</b><span>ID: ST-2092</span></div></div></td><td><span class="role-pill">Cashier</span></td><td><span class="status-pill on"><span class="d"></span> Active</span></td><td class="actions"><a class="danger status-toggle" data-action="disable">Disable</a></td></tr>
-              <tr data-id="ST-2093"><td><div class="staff-name"><div class="mini-avatar">Xi</div><div><b>Xiao</b><span>ID: ST-2093</span></div></div></td><td><span class="role-pill">Pump Attendant</span></td><td><span class="status-pill on"><span class="d"></span> Active</span></td><td class="actions"><a class="danger status-toggle" data-action="disable">Disable</a></td></tr>
-              <tr data-id="ST-2089"><td><div class="staff-name"><div class="mini-avatar">He</div><div><b>Henry</b><span>ID: ST-2089</span></div></div></td><td><span class="role-pill">Pump Attendant</span></td><td><span class="status-pill off"><span class="d"></span> Disabled</span></td><td class="actions"><a class="status-toggle" style="color:var(--mint-400)" data-action="activate">Activate</a></td></tr>
-              <tr data-id="ST-2085"><td><div class="staff-name"><div class="mini-avatar">Th</div><div><b>Thiago</b><span>ID: ST-2085</span></div></div></td><td><span class="role-pill">Cashier</span></td><td><span class="status-pill off"><span class="d"></span> Disabled</span></td><td class="actions"><a class="status-toggle" style="color:var(--mint-400)" data-action="activate">Activate</a></td></tr>
+              <?php foreach ($staff as $s): $on = (int)$s['is_active'] === 1; ?>
+              <tr data-id="<?= (int)$s['staff_id'] ?>">
+                <td>
+                  <div class="staff-name">
+                    <div class="mini-avatar"><?= h(initials($s['full_name'])) ?></div>
+                    <div><b><?= h($s['full_name']) ?></b><span>ID: <?= h($s['staff_code']) ?></span></div>
+                  </div>
+                </td>
+                <td><span class="role-pill"><?= h($s['role']) ?></span></td>
+                <td>
+                  <span class="status-pill <?= $on ? 'on' : 'off' ?>"><span class="d"></span> <?= $on ? 'Active' : 'Disabled' ?></span>
+                </td>
+                <td class="actions">
+                  <?php if ($on): ?>
+                    <a class="danger status-toggle" data-action="disable" data-id="<?= (int)$s['staff_id'] ?>">Disable</a>
+                  <?php else: ?>
+                    <a class="status-toggle" style="color:var(--mint-400)" data-action="activate" data-id="<?= (int)$s['staff_id'] ?>">Activate</a>
+                  <?php endif; ?>
+                </td>
+              </tr>
+              <?php endforeach; ?>
             </tbody>
           </table>
         </div>
@@ -454,12 +609,14 @@ $managerInitial = map_pump_profile_initial($managerDisplayName, 'M');
       <!-- TAB 3: STAFF ACTIVITY LOG -->
       <div class="tab-panel" id="tab-activity">
         <div class="panel">
-          <div class="activity-row"><span class="t">11:24 AM</span><span><b>Joao</b> — Started serving Token B-041 at Pump #2</span></div>
-          <div class="activity-row"><span class="t">10:58 AM</span><span><b>Leon</b> — Shift check-in (Morning)</span></div>
-          <div class="activity-row"><span class="t">10:15 AM</span><span><b>Xiao</b> — Confirmed Petrol 92 delivery record</span></div>
-          <div class="activity-row"><span class="t">09:42 AM</span><span><b>Henry</b> — Submitted a leave request</span></div>
-          <div class="activity-row"><span class="t">09:05 AM</span><span><b>Thiago</b> — Shift check-in (Morning)</span></div>
-          <div class="activity-row"><span class="t">08:40 AM</span><span><b>Felix</b> — Disabled Lu's account</span></div>
+          <?php if (!$activities): ?>
+            <div style="text-align:center; padding:22px; color:var(--slate-400); font-size:12.5px;">No activity yet.</div>
+          <?php else: foreach ($activities as $a): ?>
+            <div class="activity-row">
+              <span class="t"><?= h(date('h:i A', strtotime($a['created_at']))) ?></span>
+              <span><b><?= h($a['actor_name']) ?></b> — <?= h($a['action']) ?></span>
+            </div>
+          <?php endforeach; endif; ?>
         </div>
       </div>
 
@@ -475,14 +632,17 @@ $managerInitial = map_pump_profile_initial($managerDisplayName, 'M');
       <h3 id="modal-title">Add New Staff Member</h3>
       <button class="modal-close" id="modal-close-btn">&times;</button>
     </div>
-    <form id="staff-form">
+    <form id="staff-form" method="POST" action="manage-staff.php">
+      <input type="hidden" name="csrf"     value="<?= h(csrf_token()) ?>">
+      <input type="hidden" name="action"   id="staff-form-action" value="add">
+      <input type="hidden" name="staff_id" id="staff-form-id"     value="">
       <div class="form-group">
         <label for="staff-name-input">Full Name</label>
-        <input type="text" id="staff-name-input" class="form-control-custom" required placeholder="e.g. Aung Ko Latt">
+        <input type="text" id="staff-name-input" name="full_name" class="form-control-custom" required placeholder="e.g. Aung Ko Latt">
       </div>
       <div class="form-group">
         <label for="staff-role-input">Role</label>
-        <select id="staff-role-input" class="form-control-custom">
+        <select id="staff-role-input" name="role" class="form-control-custom">
           <option>Pump Attendant</option>
           <option>Cashier</option>
           <option>Supervisor</option>
@@ -490,7 +650,7 @@ $managerInitial = map_pump_profile_initial($managerDisplayName, 'M');
       </div>
       <div class="form-group">
         <label for="staff-shift-input">Shift</label>
-        <select id="staff-shift-input" class="form-control-custom">
+        <select id="staff-shift-input" name="shift" class="form-control-custom">
           <option value="Morning">Morning (6AM–2PM)</option>
           <option value="Afternoon">Afternoon (2PM–10PM)</option>
           <option value="Night">Night (10PM–6AM)</option>
@@ -498,7 +658,7 @@ $managerInitial = map_pump_profile_initial($managerDisplayName, 'M');
       </div>
       <div class="form-group">
         <label for="staff-contact-input">Contact Phone</label>
-        <input type="text" id="staff-contact-input" class="form-control-custom" required placeholder="e.g. 09-751-XXXXXX">
+        <input type="text" id="staff-contact-input" name="contact" class="form-control-custom" required placeholder="e.g. 09-751-XXXXXX">
       </div>
       <div class="modal-actions">
         <button type="button" class="btn-secondary-custom" id="modal-cancel-btn">Cancel</button>
@@ -601,33 +761,55 @@ $managerInitial = map_pump_profile_initial($managerDisplayName, 'M');
       });
     }
 
-    // 5. Client Side Dynamic Delete Action
+    // 5. Server-side Delete Action
+    const csrfToken = '<?= h(csrf_token()) ?>';
     const directoryTable = document.getElementById('staff-directory-table');
-    directoryTable.addEventListener('click', (e) => {
+    directoryTable.addEventListener('click', async (e) => {
       if (e.target.classList.contains('delete-action')) {
         e.preventDefault();
         const row = e.target.closest('tr');
-        if (confirm(`Are you sure you want to delete this account?`)) {
+        const sid = row.dataset.id;
+        if (!confirm(`Are you sure you want to delete this account?`)) return;
+
+        const fd = new FormData();
+        fd.append('csrf', csrfToken);
+        fd.append('action', 'delete');
+        fd.append('staff_id', sid);
+        try {
+          const res = await fetch('manage-staff.php', { method: 'POST', body: fd });
+          const data = await res.json();
+          if (!data.ok) { alert('Delete failed: ' + (data.error || 'unknown')); return; }
           row.style.opacity = '0';
           row.style.transform = 'translateX(-20px)';
           setTimeout(() => {
             row.remove();
+            document.querySelector(`#status-management-table tr[data-id="${sid}"]`)?.remove();
             updateTotalMetrics();
           }, 300);
-        }
+        } catch (err) { alert('Network error: ' + err.message); }
       }
     });
 
-    // 6. Account Activation Status Changer logic
+    // 6. Server-side Account Activation Status Changer
     const statusTable = document.getElementById('status-management-table');
-    statusTable.addEventListener('click', (e) => {
+    statusTable.addEventListener('click', async (e) => {
       const toggleBtn = e.target.closest('.status-toggle');
-      if (toggleBtn) {
-        e.preventDefault();
-        const row = toggleBtn.closest('tr');
-        const pill = row.querySelector('.status-pill');
-        const action = toggleBtn.getAttribute('data-action');
+      if (!toggleBtn) return;
+      e.preventDefault();
+      const row = toggleBtn.closest('tr');
+      const sid = toggleBtn.dataset.id;
+      const action = toggleBtn.getAttribute('data-action');
 
+      const fd = new FormData();
+      fd.append('csrf', csrfToken);
+      fd.append('action', action);
+      fd.append('staff_id', sid);
+      try {
+        const res = await fetch('manage-staff.php', { method: 'POST', body: fd });
+        const data = await res.json();
+        if (!data.ok) { alert('Update failed: ' + (data.error || 'unknown')); return; }
+
+        const pill = row.querySelector('.status-pill');
         if (action === 'disable') {
           pill.className = 'status-pill off';
           pill.innerHTML = '<span class="d"></span> Disabled';
@@ -644,7 +826,7 @@ $managerInitial = map_pump_profile_initial($managerDisplayName, 'M');
           toggleBtn.classList.add('danger');
         }
         updateTotalMetrics();
-      }
+      } catch (err) { alert('Network error: ' + err.message); }
     });
 
     function updateTotalMetrics() {
@@ -707,56 +889,31 @@ $managerInitial = map_pump_profile_initial($managerDisplayName, 'M');
         if (shiftText.includes('Afternoon')) shiftVal = 'Afternoon';
         if (shiftText.includes('Night')) shiftVal = 'Night';
 
+        // set hidden form fields for edit
+        document.getElementById('staff-form-action').value = 'edit';
+        document.getElementById('staff-form-id').value = editTargetRow.dataset.id;
         openModal(true, name, role, shiftVal, contact);
       }
     });
 
-    // Form Submit handling
-    form.addEventListener('submit', (e) => {
+    // reset action=add when opening via "Add New"
+    openAddBtn.addEventListener('click', () => {
+      document.getElementById('staff-form-action').value = 'add';
+      document.getElementById('staff-form-id').value = '';
+    });
+
+    // Server-side Form Submit
+    form.addEventListener('submit', async (e) => {
       e.preventDefault();
-      const inputName = nameInput.value;
-      const inputRole = roleSelect.value;
-      const inputShift = shiftSelect.value;
-      const inputContact = contactInput.value;
-      const avatarLetters = inputName.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
-
-      if (editTargetRow) {
-        // Edit flow
-        editTargetRow.querySelector('.staff-name b').textContent = inputName;
-        editTargetRow.querySelector('.staff-name .mini-avatar').textContent = avatarLetters;
-        editTargetRow.querySelector('.role-pill').textContent = inputRole;
-        editTargetRow.cells[2].textContent = `${inputShift} (${inputShift === 'Morning' ? '6AM–2PM' : inputShift === 'Afternoon' ? '2PM–10PM' : '10PM–6AM'})`;
-        editTargetRow.cells[4].textContent = inputContact;
-        editTargetRow.setAttribute('data-shift', inputShift);
-      } else {
-        // Insert flow
-        const randomId = Math.floor(1000 + Math.random() * 9000);
-        const newDirRow = document.createElement('tr');
-        newDirRow.setAttribute('data-shift', inputShift);
-        newDirRow.innerHTML = `
-          <td><div class="staff-name"><div class="mini-avatar">${avatarLetters}</div><div><b>${inputName}</b><span>ID: ST-${randomId}</span></div></div></td>
-          <td><span class="role-pill">${inputRole}</span></td>
-          <td>${inputShift} (${inputShift === 'Morning' ? '6AM–2PM' : inputShift === 'Afternoon' ? '2PM–10PM' : '10PM–6AM'})</td>
-          <td><span class="status-pill off"><span class="d"></span> Off Duty</span></td>
-          <td>${inputContact}</td>
-          <td class="actions"><a class="edit-action">Edit</a><a class="danger delete-action">Delete</a></td>
-        `;
-        document.querySelector('#staff-directory-table tbody').appendChild(newDirRow);
-
-        // Also add to Status Control view
-        const newStatusRow = document.createElement('tr');
-        newStatusRow.setAttribute('data-id', `ST-${randomId}`);
-        newStatusRow.innerHTML = `
-          <td><div class="staff-name"><div class="mini-avatar">${avatarLetters}</div><div><b>${inputName}</b><span>ID: ST-${randomId}</span></div></div></td>
-          <td><span class="role-pill">${inputRole}</span></td>
-          <td><span class="status-pill on"><span class="d"></span> Active</span></td>
-          <td class="actions"><a class="danger status-toggle" data-action="disable">Disable</a></td>
-        `;
-        document.querySelector('#status-management-table tbody').appendChild(newStatusRow);
-      }
-
-      closeModal();
-      updateTotalMetrics();
+      const fd = new FormData(form);
+      try {
+        const res = await fetch('manage-staff.php', { method: 'POST', body: fd });
+        const data = await res.json();
+        if (!data.ok) { alert('Save failed: ' + (data.error || 'unknown')); return; }
+        // simplest reliable path: reload the page so PHP re-renders fresh data
+        closeModal();
+        window.location.reload();
+      } catch (err) { alert('Network error: ' + err.message); }
     });
   });
 </script>
