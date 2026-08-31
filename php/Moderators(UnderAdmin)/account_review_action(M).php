@@ -37,9 +37,9 @@ try {
     $conn->begin_transaction();
 
     $targetQuery = $conn->prepare(
-        'SELECT u.user_id, u.user_name, u.email, u.status, r.role_name
+        'SELECT u.user_id, u.user_name, u.email, u.status, u.license_id, r.role_name
          FROM users u
-         INNER JOIN roles r ON r.role_id = u.role_id
+         INNER JOIN roles r ON r.role_id = COALESCE(u.current_role_id, u.business_role_id, u.role_id)
          WHERE u.user_id = ?
          FOR UPDATE'
     );
@@ -68,6 +68,20 @@ try {
         throw new RuntimeException('Could not update the account status.');
     }
     $update->close();
+
+    if (!empty($target['license_id'])) {
+        $licenseStatus = $action === 'approve' ? 'approved' : 'rejected';
+        $licenseUpdate = $conn->prepare('UPDATE user_license SET status = ?, updated_at = NOW() WHERE license_id = ?');
+        if (!$licenseUpdate) {
+            throw new RuntimeException('Could not prepare the license status update.');
+        }
+        $licenseId = (int) $target['license_id'];
+        $licenseUpdate->bind_param('si', $licenseStatus, $licenseId);
+        if (!$licenseUpdate->execute()) {
+            throw new RuntimeException('Could not update the driver license status.');
+        }
+        $licenseUpdate->close();
+    }
 
     $logVerb = $action === 'approve' ? 'Approved' : 'Rejected';
     admin_record_log((int) $moderatorUser['user_id'], $logVerb . ' pending account #' . $userId . ' (' . $target['user_name'] . ').');

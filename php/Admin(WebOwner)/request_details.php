@@ -20,10 +20,16 @@ $statement = $conn->prepare(
     'SELECT r.request_id, r.reference_code, r.request_type, r.status,
             r.sender_entity, r.sender_name, r.sender_email, r.location,
             r.request_details, r.document_name, r.document_path,
+            r.headquarter_owner_email, r.headquarter_email, r.headquarter_company_logo,
+            r.headquarter_contact_number, r.headquarter_expire_at,
             r.review_reason, r.reviewed_at, r.created_at,
-            u.user_id AS submitter_user_id, u.user_name AS submitter_username
+            u.user_id AS submitter_user_id, u.user_name AS submitter_username,
+            h.company_name AS hq_company_name, h.company_logo, h.contact_number,
+            h.headquarter_email AS hq_email, h.headquarter_bio, h.location AS hq_location,
+            h.business_license, h.business_license_image, h.business_license_expire_date
      FROM system_requests r
      LEFT JOIN users u ON u.user_id = r.submitter_user_id
+     LEFT JOIN headquarter h ON h.headquarter_id = r.headquarter_id
      WHERE r.request_id = ?
      LIMIT 1'
 );
@@ -59,10 +65,24 @@ echo json_encode([
         'request_details' => $request['request_details'],
         'document_name' => $request['document_name'],
         'document_path' => $request['document_path'],
+        'headquarter_owner_email' => $request['headquarter_owner_email'],
+        'headquarter_email' => $request['headquarter_email'],
+        'headquarter_company_logo' => $request['headquarter_company_logo'],
+        'headquarter_contact_number' => $request['headquarter_contact_number'],
+        'headquarter_expire_at' => $request['headquarter_expire_at'],
         'review_reason' => $request['review_reason'],
         'reviewed_at' => $request['reviewed_at'],
         'created_at' => $request['created_at'],
         'submitter_user_id' => $request['submitter_user_id'] !== null ? (int) $request['submitter_user_id'] : null,
         'submitter_username' => $request['submitter_username'],
+        'hq_company_name' => $request['hq_company_name'],
+        'company_logo' => $request['company_logo'],
+        'contact_number' => $request['contact_number'],
+        'hq_email' => $request['hq_email'],
+        'headquarter_bio' => $request['headquarter_bio'],
+        'hq_location' => $request['hq_location'],
+        'business_license' => $request['business_license'],
+        'business_license_image' => $request['business_license_image'],
+        'business_license_expire_date' => $request['business_license_expire_date'],
     ],
 ]);
