@@ -1,18 +1,6 @@
 <?php
-require_once __DIR__ . '/user_account_common.php';
-
-if (session_status() !== PHP_SESSION_ACTIVE) {
-    session_start();
-}
-
-$flash = hq_pull_flash();
-$search = trim((string) ($_GET['search'] ?? ''));
-$status = strtolower(trim((string) ($_GET['status'] ?? '')));
-$allowedStatuses = ['active', 'approved', 'pending', 'suspended', 'removed', 'rejected'];
-$status = in_array($status, $allowedStatuses, true) ? $status : '';
-$userRows = customer_account_rows($search, $status);
-$dbError = hq_db_available() ? null : hq_db_error_message();
-$flashType = (string) ($flash['type'] ?? '');
+header('Location: manage_users.php');
+exit;
 ?>
 <!DOCTYPE html>
 <html lang="en">

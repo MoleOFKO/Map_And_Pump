@@ -1,24 +1,6 @@
 <?php
-require_once __DIR__ . '/moderator_common.php';
-
-$moderatorUser = moderator_require_user();
-$flash = hq_pull_flash();
-$search = trim((string) ($_GET['search'] ?? ''));
-$region = strtolower(trim((string) ($_GET['region'] ?? '')));
-$status = strtolower(trim((string) ($_GET['status'] ?? '')));
-$allowedRegions = ['yangon', 'mandalay', 'naypyidaw'];
-$allowedStatuses = ['active', 'pending', 'suspended', 'removed'];
-$region = in_array($region, $allowedRegions, true) ? $region : '';
-$status = in_array($status, $allowedStatuses, true) ? $status : '';
-$hqRows = moderator_hq_rows($search, $region, $status);
-$dbError = hq_db_available() ? null : hq_db_error_message();
-$regionLabel = static fn (string $value): string => match ($value) {
-    'yangon' => 'Yangon Region',
-    'mandalay' => 'Mandalay Region',
-    'naypyidaw' => 'Naypyidaw',
-    default => 'All Regions',
-};
-$flashType = (string) ($flash['type'] ?? '');
+header('Location: manage_hq(M).php');
+exit;
 ?>
 <!DOCTYPE html>
 <html lang="en">

@@ -13,9 +13,21 @@ $headquarterId = filter_var($_POST['headquarter_id'] ?? null, FILTER_VALIDATE_IN
 $actionType = strtolower(trim((string) ($_POST['action_type'] ?? '')));
 $reason = trim((string) ($_POST['reason'] ?? ''));
 
-if (!$headquarterId || !in_array($actionType, ['suspend', 'remove'], true) || $reason === '') {
-    hq_flash('danger', 'Choose suspend or remove and provide a reason before submitting.');
+if (!$headquarterId || !in_array($actionType, ['approve', 'reject', 'suspend', 'remove'], true)) {
+    hq_flash('danger', 'Choose a valid HQ account action before submitting.');
     hq_redirect();
+}
+
+if ($reason === '' && !in_array($actionType, ['approve', 'reject'], true)) {
+    hq_flash('danger', 'Please provide a reason before updating the HQ account.');
+    hq_redirect();
+}
+
+if ($actionType === 'approve' && $reason === '') {
+    $reason = 'Approved after HQ review.';
+}
+if ($actionType === 'reject' && $reason === '') {
+    $reason = 'Rejected after HQ review.';
 }
 
 if (mb_strlen($reason) > 2000) {
@@ -57,12 +69,18 @@ if (!$target) {
     hq_redirect();
 }
 
-$newStatus = $actionType === 'remove' ? 'removed' : 'suspended';
+$statusMap = [
+    'approve' => 'approved',
+    'reject' => 'rejected',
+    'suspend' => 'suspended',
+    'remove' => 'removed',
+];
+$newStatus = $statusMap[$actionType];
 $notificationSubject = sprintf('Map & Pump HQ account %s', ucfirst($actionType));
 $notificationBody = sprintf(
     "Your Map & Pump HQ account (%s) has been %s.\n\nReason:\n%s",
     $target['company_name'],
-    $actionType === 'remove' ? 'removed' : 'suspended',
+    $newStatus,
     $reason
 );
 $notification = !empty($target['email'])
@@ -114,9 +132,12 @@ try {
 
     $conn->commit();
 
-    $message = $actionType === 'remove'
-        ? 'The HQ account was marked as removed.'
-        : 'The HQ account was suspended.';
+    $message = match ($actionType) {
+        'approve' => 'The HQ account was approved.',
+        'reject' => 'The HQ account was rejected.',
+        'remove' => 'The HQ account was marked as removed.',
+        default => 'The HQ account was suspended.',
+    };
     hq_flash('success', $message . ' The reason was recorded; email delivery status: ' . ($notification['status'] ?? 'unknown') . '.');
 } catch (Throwable $exception) {
     $conn->rollback();

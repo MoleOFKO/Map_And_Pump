@@ -61,6 +61,9 @@ try {
 
     $status = strtolower((string) ($user['status'] ?? ''));
     $allowedStatuses = ['active', 'approved', 'enabled', 'ready'];
+    if ($status === 'pending') {
+        auth_redirect_to_login('Your account is awaiting moderator approval.');
+    }
     if ($status !== '' && !in_array($status, $allowedStatuses, true)) {
         auth_redirect_to_login('Your account is not active. Please contact support.');
     }

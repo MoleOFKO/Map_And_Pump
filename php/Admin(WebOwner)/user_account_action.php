@@ -14,9 +14,21 @@ $actionType = strtolower(trim((string) ($_POST['action_type'] ?? '')));
 $reason = trim((string) ($_POST['reason'] ?? ''));
 $redirect = trim((string) ($_POST['return_to'] ?? 'view_users.php'));
 
-if (!$userId || !in_array($actionType, ['suspend', 'remove'], true) || $reason === '') {
-    hq_flash('danger', 'Choose suspend or remove and provide a reason before submitting.');
+if (!$userId || !in_array($actionType, ['approve', 'reject', 'suspend', 'remove'], true)) {
+    hq_flash('danger', 'Choose a valid Customer account action before submitting.');
     hq_redirect($redirect);
+}
+
+if ($reason === '' && !in_array($actionType, ['approve', 'reject'], true)) {
+    hq_flash('danger', 'Please provide a reason before updating the Customer account.');
+    hq_redirect($redirect);
+}
+
+if ($actionType === 'approve' && $reason === '') {
+    $reason = 'Approved after moderator review.';
+}
+if ($actionType === 'reject' && $reason === '') {
+    $reason = 'Rejected after moderator review.';
 }
 
 if (mb_strlen($reason) > 2000) {
@@ -31,7 +43,7 @@ if (!hq_db_available() || !hq_registry_schema_ready() || !user_action_table_read
 
 global $conn;
 $targetQuery = $conn->prepare(
-    "SELECT u.user_id, u.user_name, u.email, u.status, r.role_id, r.role_name
+    "SELECT u.user_id, u.user_name, u.email, u.status, u.license_id, r.role_id, r.role_name
      FROM users u
      INNER JOIN roles r ON r.role_id = u.role_id
      WHERE u.user_id = ? AND r.role_id = 6 AND LOWER(TRIM(r.role_name)) = 'customer'
@@ -53,11 +65,17 @@ if (!$target) {
     hq_redirect($redirect);
 }
 
-$newStatus = $actionType === 'remove' ? 'removed' : 'suspended';
+$statusMap = [
+    'approve' => 'approved',
+    'reject' => 'rejected',
+    'suspend' => 'suspended',
+    'remove' => 'removed',
+];
+$newStatus = $statusMap[$actionType];
 $notification = hq_send_notification(
     (string) $target['email'],
     'Map & Pump Customer account ' . ucfirst($actionType),
-    sprintf("Your Map & Pump Customer account has been %s.\n\nReason:\n%s", $actionType === 'remove' ? 'removed' : 'suspended', $reason)
+    sprintf("Your Map & Pump Customer account has been %s.\n\nReason:\n%s", $newStatus, $reason)
 );
 
 try {
@@ -72,6 +90,18 @@ try {
         throw new RuntimeException('Could not update the Customer account status.');
     }
     $statusUpdate->close();
+
+    if (!empty($target['license_id'])) {
+        $licenseUpdate = $conn->prepare('UPDATE user_license SET status = ?, updated_at = NOW() WHERE license_id = ?');
+        if (!$licenseUpdate) {
+            throw new RuntimeException('Could not prepare the Customer license status update.');
+        }
+        $licenseUpdate->bind_param('si', $newStatus, $target['license_id']);
+        if (!$licenseUpdate->execute()) {
+            throw new RuntimeException('Could not update the Customer license status.');
+        }
+        $licenseUpdate->close();
+    }
 
     $actionInsert = $conn->prepare(
         'INSERT INTO user_account_actions (user_id, action_type, reason, notification_status, notification_note)
