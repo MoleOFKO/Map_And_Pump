@@ -70,6 +70,22 @@ function register_mail_setup_message(Throwable $error): string
     $password = mail_config_value('SMTP_PASSWORD');
     $provider = strtolower(mail_config_value('MAIL_PROVIDER', 'auto'));
 
+    if ($provider === 'resend' || str_contains($message, 'resend')) {
+        if (mail_config_value('RESEND_API_KEY') === '') {
+            return 'Resend is selected, but RESEND_API_KEY is missing in Render. Add your new Resend API key, then redeploy.';
+        }
+
+        if (mail_config_value('RESEND_FROM_EMAIL') === '') {
+            return 'Resend is selected, but RESEND_FROM_EMAIL is missing in Render. Use an address on your verified domain, for example noreply@map-and-pump.online.';
+        }
+
+        if (str_contains($message, 'not verified') || str_contains($message, 'domain') || str_contains($message, 'sender') || str_contains($message, 'from')) {
+            return 'Resend rejected the sender email. Verify map-and-pump.online in Resend DNS, then set RESEND_FROM_EMAIL to an address on that exact verified domain, for example noreply@map-and-pump.online.';
+        }
+
+        return 'Resend email is not configured correctly. Check RESEND_API_KEY, RESEND_FROM_EMAIL, and the verified domain in Resend, then redeploy.';
+    }
+
     if (($provider === 'smtp' || $provider === 'auto') && (trim($username) === '' || trim($password) === '')) {
         return 'Email is not configured on Render yet. Set SMTP_USERNAME to mapa.and.pump@gmail.com and set SMTP_PASSWORD to a Gmail App Password, then redeploy.';
     }
@@ -84,10 +100,6 @@ function register_mail_setup_message(Throwable $error): string
 
     if (str_contains($message, 'sender') || str_contains($message, 'from')) {
         return 'The sender email is not accepted. Set SMTP_USERNAME and SMTP_FROM_EMAIL to the same Gmail account: mapa.and.pump@gmail.com.';
-    }
-
-    if ($provider === 'resend' || str_contains($message, 'resend')) {
-        return 'Resend email is not configured correctly. Set RESEND_API_KEY and RESEND_FROM_EMAIL to a verified sender for map-and-pump.online, or switch MAIL_PROVIDER back to smtp.';
     }
 
     return 'Could not send the verification email. Check Render environment variables for SMTP_USERNAME, SMTP_PASSWORD, SMTP_FROM_EMAIL, SMTP_HOST, and SMTP_PORT, then redeploy.';
