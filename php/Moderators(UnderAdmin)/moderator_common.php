@@ -92,7 +92,7 @@ function moderator_hq_rows(string $search, string $region, string $status): arra
         return $rows;
     }
 
-    $where = [];
+    $where = [hq_manageable_status_sql("COALESCE(owner.status, 'pending')")];
     $params = [];
     $types = '';
     if ($search !== '') {

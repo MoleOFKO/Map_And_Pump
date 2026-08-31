@@ -21,8 +21,15 @@ global $conn;
 $hqQuery = $conn->prepare(
     'SELECT h.headquarter_id, h.company_name, h.location, h.contact_number,
             h.headquarter_email, h.company_logo, h.business_license,
-            h.created_at, h.expire_at
+            h.created_at, h.expire_at,
+            owner.user_name AS owner_name, owner.email AS owner_email
      FROM headquarter h
+     LEFT JOIN users owner ON owner.user_id = (
+         SELECT MIN(u2.user_id)
+         FROM users u2
+         WHERE u2.headquarter_id = h.headquarter_id
+           AND (u2.role_id = 3 OR u2.business_role_id = 3)
+     )
      WHERE h.headquarter_id = ?
      LIMIT 1'
 );
@@ -78,6 +85,8 @@ echo json_encode([
         'business_license' => $hq['business_license'],
         'created_at' => $hq['created_at'],
         'expire_at' => $hq['expire_at'],
+        'owner_name' => $hq['owner_name'],
+        'owner_email' => $hq['owner_email'],
     ],
     'stations' => $stations,
     'actions' => $actions,
