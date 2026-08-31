@@ -7,8 +7,12 @@ services:
     envVars:
       - key: RENDER
         value: true
+      - key: APP_ENV
+        value: production
       - key: APP_BASE_URL
-        sync: false
+        value: https://map-and-pump.online
+      - key: MAIL_LOCAL_FALLBACK
+        value: false
       - key: MAIL_PROVIDER
         value: smtp
       - key: MAIL_FROM_NAME
@@ -26,8 +30,8 @@ services:
       - key: SMTP_FROM_NAME
         value: "Map&Pump"
       - key: SMTP_USERNAME
-        value: mapa.and.pump@email.com
+        value: mapa.and.pump@gmail.com
       - key: SMTP_PASSWORD
         sync: false
       - key: SMTP_FROM_EMAIL
-        value: mapa.and.pump@email.com
+        value: mapa.and.pump@gmail.com
