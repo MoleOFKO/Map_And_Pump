@@ -36,6 +36,15 @@ function register_json(bool $ok, string $message, array $extra = []): never
 }
 function register_is_local_request(): bool
 {
+    if (filter_var(mail_config_value('RENDER', 'false'), FILTER_VALIDATE_BOOLEAN)) {
+        return false;
+    }
+
+    $appEnv = strtolower(mail_config_value('APP_ENV', mail_config_value('ENVIRONMENT', '')));
+    if (in_array($appEnv, ['production', 'prod'], true)) {
+        return false;
+    }
+
     $host = strtolower((string) ($_SERVER['HTTP_HOST'] ?? $_SERVER['SERVER_NAME'] ?? ''));
     $host = preg_replace('/:\d+$/', '', $host) ?? $host;
     $remoteAddr = (string) ($_SERVER['REMOTE_ADDR'] ?? '');
@@ -48,7 +57,7 @@ function register_is_local_request(): bool
 
 function register_local_mail_fallback_enabled(): bool
 {
-    $configured = mail_config_value('MAIL_LOCAL_FALLBACK', 'true');
+    $configured = mail_config_value('MAIL_LOCAL_FALLBACK', 'false');
 
     return register_is_local_request()
         && filter_var($configured, FILTER_VALIDATE_BOOLEAN);
@@ -108,7 +117,7 @@ try {
         error_log('Registration email failed: ' . $mailError->getMessage() . ' [' . get_class($mailError) . ']');
 
         if (!register_local_mail_fallback_enabled()) {
-            register_json(false, 'Could not send the verification email. Please check mail settings and try again.');
+            register_json(false, 'Could not send the verification email. Please check the site mail settings and try again.');
         }
 
         error_log(sprintf('[Map&Pump local registration] Verification code for %s: %s', $email, $code));
