@@ -3,9 +3,55 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
     session_start();
 }
 require_once __DIR__ . '/../profile_avatar.php';
-$managerDisplayName = trim((string) ($_SESSION['user_name'] ?? 'Manager'));
-$managerInitial = map_pump_profile_initial($managerDisplayName, 'M');
-?><!DOCTYPE html>
+require_once __DIR__ . '/_helpers.php';
+require_once __DIR__ . '/../conn.php';
+require_branch_manager();
+
+$ctx      = current_context($conn);
+$user     = $ctx['user'];
+$branch   = $ctx['branch'];
+$initials = initials($user['full_name']);
+$bid      = (int)$branch['branch_id'];
+
+$managerDisplayName = trim((string) ($_SESSION['user_name'] ?? $user['full_name'] ?? 'Manager'));
+$managerInitial     = map_pump_profile_initial($managerDisplayName, $initials ?: 'M');
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!csrf_check($_POST['csrf'] ?? null)) json_out(['ok' => false, 'error' => 'CSRF failed'], 403);
+    $category = $_POST['category'] ?? '';
+    $subject  = trim($_POST['subject'] ?? '');
+    $priority = $_POST['priority'] ?? 'low';
+    $desc     = trim($_POST['description'] ?? '');
+
+    $valid_cat = ['Stock Shortage','Equipment Issue','Staff Incident','Customer Complaint','Other'];
+    if (!in_array($category, $valid_cat, true)) json_out(['ok' => false, 'error' => 'Invalid category']);
+    if (!in_array($priority, ['low','medium','high'], true)) $priority = 'low';
+    if ($subject === '' || $desc === '') json_out(['ok' => false, 'error' => 'Subject and description are required']);
+
+    try {
+        $stmt = $conn->prepare("
+            INSERT INTO reports (branch_id, submitted_by, category, subject, priority, description)
+            VALUES (:b, :u, :c, :s, :p, :d)
+        ");
+        $stmt->execute([
+            ':b' => $bid, ':u' => $user['user_id'],
+            ':c' => $category, ':s' => $subject, ':p' => $priority, ':d' => $desc,
+        ]);
+        log_activity($conn, $bid, 'user', $user['user_id'], $user['full_name'], "Filed report: {$subject}");
+        json_out(['ok' => true, 'report_id' => (int)$conn->lastInsertId()]);
+    } catch (PDOException $e) {
+        json_out(['ok' => false, 'error' => $e->getMessage()], 500);
+    }
+}
+
+// -------- Load recent reports --------
+$stmt = $conn->prepare("
+    SELECT * FROM reports WHERE branch_id = :b ORDER BY created_at DESC LIMIT 15
+");
+$stmt->execute([':b' => $bid]);
+$reports = $stmt->fetchAll();
+?>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -241,8 +287,8 @@ $managerInitial = map_pump_profile_initial($managerDisplayName, 'M');
     <div class="side-role">Branch Manager Console</div>
 
     <div class="side-branch">
-      <b>Denko - Sanchaung</b>
-      <span>Branch ID: YGN-014</span>
+      <b><?= h($branch['branch_name']) ?></b>
+      <span>Branch ID: <?= h($branch['branch_code']) ?></span>
     </div>
 
     <nav class="side-nav">
@@ -252,6 +298,7 @@ $managerInitial = map_pump_profile_initial($managerDisplayName, 'M');
       <a href="booking-slot.php" class="side-link"><span class="ic"><i class="fa-solid fa-ticket"></i></span> Monitor Booking Slot</a>
       <a href="view-customers.php" class="side-link"><span class="ic"><i class="fa-solid fa-address-book"></i></span> View Customers</a>
       <a href="report-hq.php" class="side-link active"><span class="ic"><i class="fa-solid fa-paper-plane"></i></span> Report to HQ</a>
+      <a href="branchprofile.php" class="side-link"><span class="ic"><i class="fa-solid fa-building"></i></span> Branch Profile</a>
       <a href="edit-profile.php" class="side-link"><span class="ic"><i class="fa-solid fa-gear"></i></span> Edit Profile</a>
     </nav>
 
@@ -317,10 +364,12 @@ $managerInitial = map_pump_profile_initial($managerDisplayName, 'M');
       <div class="layout-2col">
         <div class="panel">
           <h3>New Report</h3>
-          <form id="report-form">
+          <form id="report-form" method="POST" action="report-hq.php">
+            <input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>">
+            <input type="hidden" name="priority" id="priority-input" value="low">
             <div class="form-group">
               <label for="report-category">Category</label>
-              <select id="report-category" class="form-control-custom" required>
+              <select id="report-category" name="category" class="form-control-custom" required>
                 <option value="">Select a category...</option>
                 <option value="Stock Shortage">Stock Shortage</option>
                 <option value="Equipment Issue">Equipment / Pump Issue</option>
@@ -331,7 +380,7 @@ $managerInitial = map_pump_profile_initial($managerDisplayName, 'M');
             </div>
             <div class="form-group">
               <label for="report-subject">Subject</label>
-              <input type="text" id="report-subject" class="form-control-custom" placeholder="e.g. Diesel tank leak at Pump #4" required>
+              <input type="text" id="report-subject" name="subject" class="form-control-custom" placeholder="e.g. Diesel tank leak at Pump #4" required>
             </div>
             <div class="form-group">
               <label>Priority</label>
@@ -343,7 +392,7 @@ $managerInitial = map_pump_profile_initial($managerDisplayName, 'M');
             </div>
             <div class="form-group">
               <label for="report-desc">Description</label>
-              <textarea id="report-desc" class="form-control-custom" placeholder="Describe the issue in detail..." required></textarea>
+              <textarea id="report-desc" name="description" class="form-control-custom" placeholder="Describe the issue in detail..." required></textarea>
             </div>
             <button type="submit" class="btn-report"><i class="fa-solid fa-paper-plane"></i> Send Report to HQ</button>
           </form>
@@ -352,30 +401,31 @@ $managerInitial = map_pump_profile_initial($managerDisplayName, 'M');
         <div class="panel">
           <h3>Recent Reports</h3>
           <div id="report-list">
-            <div class="report-row">
-              <div class="report-icon high"><i class="fa-solid fa-triangle-exclamation"></i></div>
-              <div class="report-body">
-                <b>Pump #4 hydraulic fault</b>
-                <p>Equipment Issue — Pump stopped mid-transaction twice this morning.</p>
-                <div class="report-meta"><span class="status-pill pending">Pending</span><span>Jul 19, 2026</span></div>
+            <?php
+            $cat_icon = [
+              'Stock Shortage'     => 'fa-gas-pump',
+              'Equipment Issue'    => 'fa-triangle-exclamation',
+              'Staff Incident'     => 'fa-user',
+              'Customer Complaint' => 'fa-comment',
+              'Other'              => 'fa-flag',
+            ];
+            if (!$reports): ?>
+              <div style="text-align:center; padding:22px; color:var(--slate-400); font-size:12.5px;">No reports filed yet.</div>
+            <?php else: foreach ($reports as $r):
+              $icon = $cat_icon[$r['category']] ?? 'fa-flag';
+            ?>
+              <div class="report-row">
+                <div class="report-icon <?= h($r['priority']) ?>"><i class="fa-solid <?= h($icon) ?>"></i></div>
+                <div class="report-body">
+                  <b><?= h($r['subject']) ?></b>
+                  <p><?= h($r['category']) ?> — <?= h(mb_strimwidth($r['description'], 0, 120, '…')) ?></p>
+                  <div class="report-meta">
+                    <span class="status-pill <?= h($r['status']) ?>"><?= h(ucfirst($r['status'])) ?></span>
+                    <span><?= h(fmt_date($r['created_at'])) ?></span>
+                  </div>
+                </div>
               </div>
-            </div>
-            <div class="report-row">
-              <div class="report-icon medium"><i class="fa-solid fa-gas-pump"></i></div>
-              <div class="report-body">
-                <b>Diesel stock running low</b>
-                <p>Stock Shortage — Current level at 22%, delivery requested within 2 days.</p>
-                <div class="report-meta"><span class="status-pill reviewed">Reviewed</span><span>Jul 18, 2026</span></div>
-              </div>
-            </div>
-            <div class="report-row">
-              <div class="report-icon low"><i class="fa-solid fa-user"></i></div>
-              <div class="report-body">
-                <b>Staff late check-in pattern</b>
-                <p>Staff Incident — Two staff repeatedly late for morning shift this week.</p>
-                <div class="report-meta"><span class="status-pill resolved">Resolved</span><span>Jul 14, 2026</span></div>
-              </div>
-            </div>
+            <?php endforeach; endif; ?>
           </div>
         </div>
       </div>
@@ -398,17 +448,19 @@ $managerInitial = map_pump_profile_initial($managerDisplayName, 'M');
     setInterval(updateClock, 1000);
     updateClock();
 
-    // Priority chip selector
+    // Priority chip selector — sync into hidden input for server POST
     let selectedPriority = 'low';
+    const priorityHidden = document.getElementById('priority-input');
     document.querySelectorAll('.priority-chip').forEach(chip => {
       chip.addEventListener('click', () => {
         document.querySelectorAll('.priority-chip').forEach(c => c.classList.remove('active'));
         chip.classList.add('active');
         selectedPriority = chip.dataset.p;
+        priorityHidden.value = selectedPriority;
       });
     });
 
-    // Submit new report — prepend to Recent Reports list
+    // Submit new report → POST to server, then prepend UI
     const form = document.getElementById('report-form');
     const reportList = document.getElementById('report-list');
     const iconMap = {
@@ -419,31 +471,39 @@ $managerInitial = map_pump_profile_initial($managerDisplayName, 'M');
       'Other': 'fa-flag'
     };
 
-    form.addEventListener('submit', (e) => {
+    form.addEventListener('submit', async (e) => {
       e.preventDefault();
-      const category = document.getElementById('report-category').value;
-      const subject = document.getElementById('report-subject').value;
-      const desc = document.getElementById('report-desc').value;
-      const icon = iconMap[category] || 'fa-flag';
-      const today = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+      const fd = new FormData(form);
+      try {
+        const res = await fetch('report-hq.php', { method: 'POST', body: fd });
+        const data = await res.json();
+        if (!data.ok) { alert('Send failed: ' + (data.error || 'unknown')); return; }
 
-      const row = document.createElement('div');
-      row.className = 'report-row';
-      row.style.opacity = '0';
-      row.innerHTML = `
-        <div class="report-icon ${selectedPriority}"><i class="fa-solid ${icon}"></i></div>
-        <div class="report-body">
-          <b>${subject}</b>
-          <p>${category} — ${desc}</p>
-          <div class="report-meta"><span class="status-pill pending">Pending</span><span>${today}</span></div>
-        </div>`;
-      reportList.prepend(row);
-      requestAnimationFrame(() => { row.style.transition = 'opacity 0.4s'; row.style.opacity = '1'; });
+        const category = document.getElementById('report-category').value;
+        const subject  = document.getElementById('report-subject').value;
+        const desc     = document.getElementById('report-desc').value;
+        const icon     = iconMap[category] || 'fa-flag';
+        const today    = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 
-      form.reset();
-      document.querySelectorAll('.priority-chip').forEach(c => c.classList.remove('active'));
-      document.querySelector('.priority-chip[data-p="low"]').classList.add('active');
-      selectedPriority = 'low';
+        const row = document.createElement('div');
+        row.className = 'report-row';
+        row.style.opacity = '0';
+        row.innerHTML = `
+          <div class="report-icon ${selectedPriority}"><i class="fa-solid ${icon}"></i></div>
+          <div class="report-body">
+            <b>${subject}</b>
+            <p>${category} — ${desc}</p>
+            <div class="report-meta"><span class="status-pill pending">Pending</span><span>${today}</span></div>
+          </div>`;
+        reportList.prepend(row);
+        requestAnimationFrame(() => { row.style.transition = 'opacity 0.4s'; row.style.opacity = '1'; });
+
+        form.reset();
+        document.querySelectorAll('.priority-chip').forEach(c => c.classList.remove('active'));
+        document.querySelector('.priority-chip[data-p="low"]').classList.add('active');
+        selectedPriority = 'low';
+        priorityHidden.value = 'low';
+      } catch (err) { alert('Network error: ' + err.message); }
     });
 
     // Notifications Popup Toggle, Clear Badge, & Clear All Handler

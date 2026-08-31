@@ -1,11 +1,114 @@
 <?php
-if (session_status() !== PHP_SESSION_ACTIVE) {
-    session_start();
-}
-require_once __DIR__ . '/../profile_avatar.php';
-$managerDisplayName = trim((string) ($_SESSION['user_name'] ?? 'Manager'));
-$managerInitial = map_pump_profile_initial($managerDisplayName, 'M');
-?><!DOCTYPE html>
+/**
+ * dashboard.php  —  Branch Manager landing page.
+ * Loads: KPIs, live queue, alerts, recent notifications.
+ */
+require_once __DIR__ . '/_helpers.php';
+require_once __DIR__ . '/../conn.php';
+require_branch_manager();
+
+$ctx      = current_context($conn);
+$user     = $ctx['user'];
+$branch   = $ctx['branch'];
+$initials = initials($user['full_name']);
+$bid      = (int)$branch['branch_id'];
+
+// ---- KPI: Tokens issued today ----
+$stmt = $conn->prepare("
+    SELECT COUNT(*) FROM tokens
+    WHERE branch_id = :b AND DATE(requested_at) = CURDATE()
+");
+$stmt->execute([':b' => $bid]);
+$tokens_today = (int)$stmt->fetchColumn();
+
+// tokens issued yesterday for comparison
+$stmt = $conn->prepare("
+    SELECT COUNT(*) FROM tokens
+    WHERE branch_id = :b AND DATE(requested_at) = DATE_SUB(CURDATE(), INTERVAL 1 DAY)
+");
+$stmt->execute([':b' => $bid]);
+$tokens_yesterday = (int)$stmt->fetchColumn();
+$tokens_delta_pct = $tokens_yesterday > 0
+    ? round((($tokens_today - $tokens_yesterday) / $tokens_yesterday) * 100)
+    : 0;
+
+// currently waiting
+$stmt = $conn->prepare("
+    SELECT COUNT(*) FROM tokens WHERE branch_id = :b AND status = 'waiting'
+");
+$stmt->execute([':b' => $bid]);
+$waiting_count = (int)$stmt->fetchColumn();
+
+// average wait time (minutes) — for tokens completed today
+$stmt = $conn->prepare("
+    SELECT AVG(TIMESTAMPDIFF(MINUTE, requested_at, served_at))
+    FROM tokens
+    WHERE branch_id = :b AND status = 'completed' AND DATE(served_at) = CURDATE()
+");
+$stmt->execute([':b' => $bid]);
+$avg_wait_min = round((float)$stmt->fetchColumn());
+
+// avg fuel stock across all tanks
+$stmt = $conn->prepare("
+    SELECT ROUND(AVG(current_l / capacity_l * 100)) AS pct
+    FROM tanks WHERE branch_id = :b AND capacity_l > 0
+");
+$stmt->execute([':b' => $bid]);
+$avg_stock_pct = (int)$stmt->fetchColumn();
+
+// low stock tank name (if any)
+$stmt = $conn->prepare("
+    SELECT fuel_name FROM tanks
+    WHERE branch_id = :b AND (current_l / capacity_l * 100) < alert_pct
+    ORDER BY (current_l / capacity_l) ASC LIMIT 1
+");
+$stmt->execute([':b' => $bid]);
+$low_stock_fuel = $stmt->fetchColumn() ?: null;
+
+// staff on duty
+$stmt = $conn->prepare("
+    SELECT COUNT(*) FROM staff WHERE branch_id = :b AND is_active = 1
+");
+$stmt->execute([':b' => $bid]);
+$staff_total = (int)$stmt->fetchColumn();
+
+$stmt = $conn->prepare("
+    SELECT COUNT(*) FROM staff
+    WHERE branch_id = :b AND is_active = 1 AND duty_status = 'On Duty'
+");
+$stmt->execute([':b' => $bid]);
+$staff_on_duty = (int)$stmt->fetchColumn();
+
+$stmt = $conn->prepare("
+    SELECT COUNT(*) FROM staff
+    WHERE branch_id = :b AND is_active = 1 AND duty_status = 'Leave'
+");
+$stmt->execute([':b' => $bid]);
+$staff_on_leave = (int)$stmt->fetchColumn();
+
+// current live queue (top 5)
+$stmt = $conn->prepare("
+    SELECT t.token_code, t.status, p.pump_no
+    FROM tokens t
+    LEFT JOIN pumps p ON p.pump_id = t.pump_id
+    WHERE t.branch_id = :b AND t.status IN ('waiting','serving')
+    ORDER BY FIELD(t.status,'serving','waiting'), t.requested_at ASC
+    LIMIT 5
+");
+$stmt->execute([':b' => $bid]);
+$queue = $stmt->fetchAll();
+
+// alerts (unread notifications, latest 5)
+$stmt = $conn->prepare("
+    SELECT * FROM notifications
+    WHERE branch_id = :b AND is_read = 0
+    ORDER BY created_at DESC LIMIT 5
+");
+$stmt->execute([':b' => $bid]);
+$alerts = $stmt->fetchAll();
+$has_unread = count($alerts) > 0;
+?>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -322,8 +425,8 @@ $managerInitial = map_pump_profile_initial($managerDisplayName, 'M');
     <div class="side-role">Branch Manager Console</div>
 
     <div class="side-branch">
-      <b>Denko - Sanchaung</b>
-      <span>Branch ID: YGN-014</span>
+      <b><?= h($branch['branch_name']) ?></b>
+      <span>Branch ID: <?= h($branch['branch_code']) ?></span>
     </div>
 
     <nav class="side-nav">
@@ -333,10 +436,11 @@ $managerInitial = map_pump_profile_initial($managerDisplayName, 'M');
       <a href="booking-slot.php" class="side-link"><span class="ic"><i class="fa-solid fa-ticket"></i></span> Monitor Booking Slot</a>
       <a href="view-customers.php" class="side-link"><span class="ic"><i class="fa-solid fa-address-book"></i></span> View Customers</a>
       <a href="report-hq.php" class="side-link"><span class="ic"><i class="fa-solid fa-paper-plane"></i></span> Report to HQ</a>
+      <a href="branchprofile.php" class="side-link"><span class="ic"><i class="fa-solid fa-building"></i></span> Branch Profile</a>
       <a href="edit-profile.php" class="side-link"><span class="ic"><i class="fa-solid fa-gear"></i></span> Edit Profile</a>
     </nav>
 
-    <a href="../Login/logout.php" class="side-logout"><span class="ic"><i class="fa-solid fa-right-from-bracket"></i></span> Log Out</a>
+    <a href="login.php" class="side-logout"><span class="ic"><i class="fa-solid fa-right-from-bracket"></i></span> Log Out</a>
   </aside>
 
   <div class="main">
@@ -346,7 +450,7 @@ $managerInitial = map_pump_profile_initial($managerDisplayName, 'M');
         <div class="date" id="live-clock">Wednesday · July 9, 2026</div>
       </div>
       <div class="topbar-right">
-        <div class="bell" id="notif-bell"><i class="fa-regular fa-bell"></i><span class="ping"></span></div>
+        <div class="bell" id="notif-bell"><i class="fa-regular fa-bell"></i><?php if ($has_unread): ?><span class="ping"></span><?php endif; ?></div>
         
         <!-- Notification Dropdown Menu -->
         <div class="notif-popup" id="notif-popup">
@@ -383,36 +487,50 @@ $managerInitial = map_pump_profile_initial($managerDisplayName, 'M');
         </div>
 
         <div class="avatar-chip">
-          <div class="avatar-circle"><a href="edit-profile.php"><?= htmlspecialchars($managerInitial, ENT_QUOTES, 'UTF-8') ?></a></div>
-          <div><b><a href="edit-profile.php"><?= htmlspecialchars($managerDisplayName, ENT_QUOTES, 'UTF-8') ?></a></b></div>
+          <div class="avatar-circle"><a href="edit-profile.php"><?= h($initials) ?></a></div>
+          <div><b><a href="edit-profile.php"><?= h(explode(' ', $user['full_name'])[0]) ?></a></b></div>
         </div>
       </div>
     </div>
 
     <div class="content">
-      <div class="hello">Welcome back, <?= htmlspecialchars($managerDisplayName, ENT_QUOTES, 'UTF-8') ?></div>
+      <div class="hello">Welcome back, <?= h(explode(' ', $user['full_name'])[0]) ?>👋</div>
       <div class="hello-sub">Here's a quick overview of your branch today.</div>
 
       <div class="kpi-grid">
         <div class="kpi">
           <div class="lbl">Tokens Issued Today</div>
-          <div class="val" id="issued-count">184</div>
-          <div class="trend up"><i class="fa-solid fa-caret-up"></i> 12% vs yesterday</div>
+          <div class="val" id="issued-count"><?= $tokens_today ?></div>
+          <?php if ($tokens_delta_pct > 0): ?>
+            <div class="trend up"><i class="fa-solid fa-caret-up"></i> <?= $tokens_delta_pct ?>% vs yesterday</div>
+          <?php elseif ($tokens_delta_pct < 0): ?>
+            <div class="trend down"><i class="fa-solid fa-caret-down"></i> <?= abs($tokens_delta_pct) ?>% vs yesterday</div>
+          <?php else: ?>
+            <div class="trend flat">Same as yesterday</div>
+          <?php endif; ?>
         </div>
         <div class="kpi">
           <div class="lbl">Currently Waiting</div>
-          <div class="val" id="waiting-count">9 cars</div>
-          <div class="trend flat">Avg wait 16 min</div>
+          <div class="val" id="waiting-count"><?= $waiting_count ?> cars</div>
+          <div class="trend flat">Avg wait <?= $avg_wait_min ?: '—' ?> min</div>
         </div>
         <div class="kpi">
           <div class="lbl">Avg Fuel Stock</div>
-          <div class="val">61%</div>
-          <div class="trend down"><i class="fa-solid fa-caret-down"></i> Diesel running low</div>
+          <div class="val"><?= $avg_stock_pct ?>%</div>
+          <?php if ($low_stock_fuel): ?>
+            <div class="trend down"><i class="fa-solid fa-caret-down"></i> <?= h($low_stock_fuel) ?> running low</div>
+          <?php else: ?>
+            <div class="trend ok" style="color:var(--mint-400)">All tanks healthy</div>
+          <?php endif; ?>
         </div>
         <div class="kpi">
           <div class="lbl">Staff On Duty Today</div>
-          <div class="val">7 / 9</div>
-          <div class="trend ok" style="color:var(--mint-400)">2 on leave</div>
+          <div class="val"><?= $staff_on_duty ?> / <?= $staff_total ?></div>
+          <?php if ($staff_on_leave > 0): ?>
+            <div class="trend ok" style="color:var(--mint-400)"><?= $staff_on_leave ?> on leave</div>
+          <?php else: ?>
+            <div class="trend flat">No one on leave</div>
+          <?php endif; ?>
         </div>
       </div>
 
@@ -460,20 +578,34 @@ $managerInitial = map_pump_profile_initial($managerDisplayName, 'M');
         <div class="panel">
           <h3>Current Queue — Live</h3>
           <div class="queue-list" id="queue-container">
-            <div class="queue-row"><span><span class="tok">B-041</span> · <span class="pump">Pump #2</span></span><span class="status-pill serving">Serving</span></div>
-            <div class="queue-row"><span><span class="tok">B-042</span> · <span class="pump">Pump #1</span></span><span class="status-pill serving">Serving</span></div>
-            <div class="queue-row"><span><span class="tok">B-043</span> · <span class="pump">—</span></span><span class="status-pill waiting">Waiting</span></div>
-            <div class="queue-row"><span><span class="tok">B-044</span> · <span class="pump">—</span></span><span class="status-pill waiting">Waiting</span></div>
-            <div class="queue-row"><span><span class="tok">B-045</span> · <span class="pump">—</span></span><span class="status-pill waiting">Waiting</span></div>
+            <?php if (!$queue): ?>
+              <div style="text-align:center; padding:20px; color:var(--slate-400); font-size:12.5px;">Queue is empty.</div>
+            <?php else: foreach ($queue as $q): ?>
+              <div class="queue-row">
+                <span>
+                  <span class="tok"><?= h($q['token_code']) ?></span> ·
+                  <span class="pump"><?= $q['pump_no'] ? 'Pump #' . (int)$q['pump_no'] : '—' ?></span>
+                </span>
+                <span class="status-pill <?= h($q['status']) ?>"><?= h(ucfirst($q['status'])) ?></span>
+              </div>
+            <?php endforeach; endif; ?>
           </div>
         </div>
 
         <div class="panel">
           <h3>Alerts <span style="font-size: 11px; font-weight: normal; color: var(--slate-400); margin-left: 6px;">(Click to dismiss)</span></h3>
           <div class="alert-list" id="alert-container">
-            <div class="alert-row warn"><div class="dot2"></div><div><b>Diesel Stock at 22%</b><span>Delivery needed within 2 days <small class="dismiss-txt">Dismiss</small></span></div></div>
-            <div class="alert-row err"><div class="dot2"></div><div><b>Pump #4 — Maintenance</b><span>Down since 9:30 AM <small class="dismiss-txt">Dismiss</small></span></div></div>
-            <div class="alert-row ok"><div class="dot2"></div><div><b>Petrol 92 Delivery Received</b><span>8,000 liters — received this morning <small class="dismiss-txt">Dismiss</small></span></div></div>
+            <?php if (!$alerts): ?>
+              <div style="text-align:center; padding:20px; color:var(--slate-400); font-size:12.5px;">All alerts cleared.</div>
+            <?php else:
+              $kind_map = ['warning'=>'warn','danger'=>'err','success'=>'ok','info'=>'ok'];
+              foreach ($alerts as $a):
+                $cls = $kind_map[$a['kind']] ?? 'ok'; ?>
+              <div class="alert-row <?= h($cls) ?>" data-notif-id="<?= (int)$a['notif-id'] ?>">
+                <div class="dot2"></div>
+                <div><b><?= h($a['title']) ?></b><span><?= h($a['body']) ?> <small class="dismiss-txt">Dismiss</small></span></div>
+              </div>
+            <?php endforeach; endif; ?>
           </div>
         </div>
       </div>

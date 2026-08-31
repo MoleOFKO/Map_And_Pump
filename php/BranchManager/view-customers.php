@@ -1,11 +1,81 @@
 <?php
+/**
+ * view-customers.php  —  Read-only customer directory + feedback for this branch.
+ * Optional GET params: ?q=  (server-side search too, in addition to client-side filter)
+ */
 if (session_status() !== PHP_SESSION_ACTIVE) {
     session_start();
 }
+require_once __DIR__ . '/_helpers.php';
+require_once __DIR__ . '/../conn.php';
 require_once __DIR__ . '/../profile_avatar.php';
-$managerDisplayName = trim((string) ($_SESSION['user_name'] ?? 'Manager'));
-$managerInitial = map_pump_profile_initial($managerDisplayName, 'M');
-?><!DOCTYPE html>
+require_branch_manager();
+
+$ctx      = current_context($conn);
+$user     = $ctx['user'];
+$branch   = $ctx['branch'];
+$initials = initials($user['full_name']);
+$bid      = (int)$branch['branch_id'];
+
+$managerDisplayName = trim((string) ($_SESSION['user_name'] ?? $user['full_name'] ?? 'Manager'));
+$managerInitial     = map_pump_profile_initial($managerDisplayName, $initials ?: 'M');
+
+$q = trim($_GET['q'] ?? '');
+
+// -------- Load customers (all who ever visited this branch OR are home-branch) --------
+$where = "(c.home_branch_id = :b OR EXISTS (SELECT 1 FROM tokens t WHERE t.customer_id = c.customer_id AND t.branch_id = :b))";
+$params = [':b' => $bid];
+if ($q !== '') {
+    $where .= " AND (c.full_name LIKE :q OR c.phone LIKE :q OR c.vehicle_no LIKE :q OR c.customer_code LIKE :q)";
+    $params[':q'] = '%' . $q . '%';
+}
+$stmt = $conn->prepare("
+    SELECT c.* FROM customers c
+    WHERE {$where}
+    ORDER BY c.last_visit_at DESC, c.customer_id DESC
+    LIMIT 200
+");
+$stmt->execute($params);
+$customers = $stmt->fetchAll();
+
+// -------- Aggregate stats --------
+$stmt = $conn->prepare("
+    SELECT COUNT(*) FROM customers c
+    WHERE c.home_branch_id = :b OR EXISTS (SELECT 1 FROM tokens t WHERE t.customer_id = c.customer_id AND t.branch_id = :b)
+");
+$stmt->execute([':b' => $bid]);
+$total_customers = (int)$stmt->fetchColumn();
+
+$stmt = $conn->prepare("
+    SELECT COUNT(*) FROM customers c
+    WHERE c.home_branch_id = :b AND c.created_at >= DATE_SUB(CURDATE(), INTERVAL 1 MONTH)
+");
+$stmt->execute([':b' => $bid]);
+$new_this_month = (int)$stmt->fetchColumn();
+
+$stmt = $conn->prepare("SELECT AVG(rating) FROM feedback WHERE branch_id = :b");
+$stmt->execute([':b' => $bid]);
+$avg_rating = round((float)$stmt->fetchColumn(), 1);
+
+$stmt = $conn->prepare("
+    SELECT COUNT(*) FROM customers c
+    WHERE c.tier = 'gold'
+      AND (c.home_branch_id = :b OR EXISTS (SELECT 1 FROM tokens t WHERE t.customer_id = c.customer_id AND t.branch_id = :b))
+");
+$stmt->execute([':b' => $bid]);
+$gold_count = (int)$stmt->fetchColumn();
+
+// -------- Feedback (latest 12) --------
+$stmt = $conn->prepare("
+    SELECT f.*, c.full_name FROM feedback f
+    LEFT JOIN customers c ON c.customer_id = f.customer_id
+    WHERE f.branch_id = :b
+    ORDER BY f.created_at DESC LIMIT 12
+");
+$stmt->execute([':b' => $bid]);
+$feedbacks = $stmt->fetchAll();
+?>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -255,8 +325,8 @@ $managerInitial = map_pump_profile_initial($managerDisplayName, 'M');
     <div class="side-role">Branch Manager Console</div>
 
     <div class="side-branch">
-      <b>Denko - Sanchaung</b>
-      <span>Branch ID: YGN-014</span>
+      <b><?= h($branch['branch_name']) ?></b>
+      <span>Branch ID: <?= h($branch['branch_code']) ?></span>
     </div>
 
     <nav class="side-nav">
@@ -266,10 +336,11 @@ $managerInitial = map_pump_profile_initial($managerDisplayName, 'M');
       <a href="booking-slot.php" class="side-link"><span class="ic"><i class="fa-solid fa-ticket"></i></span> Monitor Booking Slot</a>
       <a href="view-customers.php" class="side-link active"><span class="ic"><i class="fa-solid fa-address-book"></i></span> View Customers</a>
       <a href="report-hq.php" class="side-link"><span class="ic"><i class="fa-solid fa-paper-plane"></i></span> Report to HQ</a>
+      <a href="branchprofile.php" class="side-link"><span class="ic"><i class="fa-solid fa-building"></i></span> Branch Profile</a>
       <a href="edit-profile.php" class="side-link"><span class="ic"><i class="fa-solid fa-gear"></i></span> Edit Profile</a>
     </nav>
 
-    <a href="../Login/logout.php" class="side-logout"><span class="ic"><i class="fa-solid fa-right-from-bracket"></i></span> Log Out</a>
+    <a href="login.php" class="side-logout"><span class="ic"><i class="fa-solid fa-right-from-bracket"></i></span> Log Out</a>
   </aside>
 
   <div class="main">
@@ -331,10 +402,10 @@ $managerInitial = map_pump_profile_initial($managerDisplayName, 'M');
       </div>
 
       <div class="stat-strip">
-        <div class="stat"><div class="n">1,248</div><div class="l">Total Customers</div></div>
-        <div class="stat"><div class="n">86</div><div class="l">New This Month</div></div>
-        <div class="stat"><div class="n">4.6 ★</div><div class="l">Avg. Feedback Rating</div></div>
-        <div class="stat"><div class="n">312</div><div class="l">Gold Tier Members</div></div>
+        <div class="stat"><div class="n"><?= number_format($total_customers) ?></div><div class="l">Total Customers</div></div>
+        <div class="stat"><div class="n"><?= number_format($new_this_month) ?></div><div class="l">New This Month</div></div>
+        <div class="stat"><div class="n"><?= $avg_rating ? $avg_rating . ' ★' : '—' ?></div><div class="l">Avg. Feedback Rating</div></div>
+        <div class="stat"><div class="n"><?= number_format($gold_count) ?></div><div class="l">Gold Tier Members</div></div>
       </div>
 
       <div class="tabs">
@@ -344,7 +415,7 @@ $managerInitial = map_pump_profile_initial($managerDisplayName, 'M');
 
       <div class="tab-panel active" id="tab-list">
         <div class="toolbar">
-          <div class="search"><i class="fa-solid fa-magnifying-glass"></i><input type="text" id="customer-search" placeholder="Search by name, phone, or vehicle no..."></div>
+          <div class="search"><i class="fa-solid fa-magnifying-glass"></i><input type="text" id="customer-search" placeholder="Search by name, phone, or vehicle no..." value="<?= h($q) ?>"></div>
         </div>
         <div class="panel">
           <table id="customer-table">
@@ -352,11 +423,23 @@ $managerInitial = map_pump_profile_initial($managerDisplayName, 'M');
               <tr><th>Customer</th><th>Phone</th><th>Vehicle No.</th><th>Total Visits</th><th>Last Visit</th><th>Tier</th></tr>
             </thead>
             <tbody>
-              <tr><td><div class="cust-name"><div class="mini-avatar">KZ</div><div><b>Kyaw Zin Htet</b><span>ID: CU-1042</span></div></div></td><td>09-751-XXXX01</td><td>YGN-2C-4471</td><td>38</td><td>Jul 18, 2026</td><td><span class="tier-pill gold">Gold</span></td></tr>
-              <tr><td><div class="cust-name"><div class="mini-avatar">SM</div><div><b>Su Myat Noe</b><span>ID: CU-1043</span></div></div></td><td>09-751-XXXX02</td><td>YGN-4B-2210</td><td>21</td><td>Jul 17, 2026</td><td><span class="tier-pill silver">Silver</span></td></tr>
-              <tr><td><div class="cust-name"><div class="mini-avatar">TH</div><div><b>Thura Han</b><span>ID: CU-1044</span></div></div></td><td>09-751-XXXX03</td><td>YGN-6K-9081</td><td>9</td><td>Jul 15, 2026</td><td><span class="tier-pill regular">Regular</span></td></tr>
-              <tr><td><div class="cust-name"><div class="mini-avatar">NW</div><div><b>Nilar Win</b><span>ID: CU-1045</span></div></div></td><td>09-751-XXXX04</td><td>YGN-2C-7734</td><td>52</td><td>Jul 18, 2026</td><td><span class="tier-pill gold">Gold</span></td></tr>
-              <tr><td><div class="cust-name"><div class="mini-avatar">AK</div><div><b>Aung Kyaw</b><span>ID: CU-1046</span></div></div></td><td>09-751-XXXX05</td><td>YGN-8D-1123</td><td>4</td><td>Jul 10, 2026</td><td><span class="tier-pill regular">Regular</span></td></tr>
+              <?php if (!$customers): ?>
+                <tr><td colspan="6" style="text-align:center; color:var(--slate-400); padding:22px;">No customers found.</td></tr>
+              <?php else: foreach ($customers as $c): ?>
+                <tr>
+                  <td>
+                    <div class="cust-name">
+                      <div class="mini-avatar"><?= h(initials($c['full_name'])) ?></div>
+                      <div><b><?= h($c['full_name']) ?></b><span>ID: <?= h($c['customer_code']) ?></span></div>
+                    </div>
+                  </td>
+                  <td><?= h($c['phone']) ?></td>
+                  <td><?= h($c['vehicle_no']) ?></td>
+                  <td><?= (int)$c['total_visits'] ?></td>
+                  <td><?= h(fmt_date($c['last_visit_at'])) ?></td>
+                  <td><span class="tier-pill <?= h($c['tier']) ?>"><?= h(ucfirst($c['tier'])) ?></span></td>
+                </tr>
+              <?php endforeach; endif; ?>
             </tbody>
           </table>
         </div>
@@ -364,26 +447,21 @@ $managerInitial = map_pump_profile_initial($managerDisplayName, 'M');
 
       <div class="tab-panel" id="tab-feedback">
         <div class="feedback-grid">
-          <div class="fb-card">
-            <div class="fb-head"><span class="fb-stars">★★★★★</span><span class="fb-date">Jul 18, 2026</span></div>
-            <div class="fb-name">Kyaw Zin Htet</div>
-            <div class="fb-text">Very fast service today, no waiting at all. Pump #2 staff was friendly and helpful.</div>
-          </div>
-          <div class="fb-card">
-            <div class="fb-head"><span class="fb-stars">★★★★☆</span><span class="fb-date">Jul 17, 2026</span></div>
-            <div class="fb-name">Su Myat Noe</div>
-            <div class="fb-text">Good experience overall, but the queue app token number was a bit delayed to update.</div>
-          </div>
-          <div class="fb-card">
-            <div class="fb-head"><span class="fb-stars">★★★☆☆</span><span class="fb-date">Jul 16, 2026</span></div>
-            <div class="fb-name">Thura Han</div>
-            <div class="fb-text">Diesel pump was under maintenance, had to reroute to another branch nearby.</div>
-          </div>
-          <div class="fb-card">
-            <div class="fb-head"><span class="fb-stars">★★★★★</span><span class="fb-date">Jul 15, 2026</span></div>
-            <div class="fb-name">Nilar Win</div>
-            <div class="fb-text">Loyalty discount applied correctly and the receipt was sent to my email right away.</div>
-          </div>
+          <?php if (!$feedbacks): ?>
+            <div style="grid-column:1/-1; text-align:center; color:var(--slate-400); padding:22px;">No feedback yet.</div>
+          <?php else: foreach ($feedbacks as $f):
+            $r = max(0, min(5, (int)$f['rating']));
+            $stars = str_repeat('★', $r) . str_repeat('☆', 5 - $r);
+          ?>
+            <div class="fb-card">
+              <div class="fb-head">
+                <span class="fb-stars"><?= h($stars) ?></span>
+                <span class="fb-date"><?= h(fmt_date($f['created_at'])) ?></span>
+              </div>
+              <div class="fb-name"><?= h($f['full_name'] ?: 'Anonymous') ?></div>
+              <div class="fb-text"><?= h($f['body']) ?></div>
+            </div>
+          <?php endforeach; endif; ?>
         </div>
       </div>
 

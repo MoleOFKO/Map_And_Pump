@@ -1,11 +1,152 @@
 <?php
-if (session_status() !== PHP_SESSION_ACTIVE) {
-    session_start();
+/**
+ * booking-slot.php — Live queue + pump status
+ * POST actions (all JSON-out):
+ *   action=call_next  -> token_id, pump_id  (move waiting → serving)
+ *   action=complete   -> token_id           (serving → completed, free pump)
+ *   action=cancel     -> token_id           (any → cancelled)
+ *   action=pump_state -> pump_id, state     (active|idle|maintenance|offline)
+ */
+require_once __DIR__ . '/_helpers.php';
+require_once __DIR__ . '/../conn.php';
+require_branch_manager();
+
+$ctx      = current_context($conn);
+$user     = $ctx['user'];
+$branch   = $ctx['branch'];
+$initials = initials($user['full_name']);
+$bid      = (int)$branch['branch_id'];
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!csrf_check($_POST['csrf'] ?? null)) json_out(['ok' => false, 'error' => 'CSRF failed'], 403);
+    $action = $_POST['action'] ?? '';
+    try {
+        if ($action === 'call_next') {
+            $token_id = (int)($_POST['token_id'] ?? 0);
+            $pump_id  = (int)($_POST['pump_id'] ?? 0);
+
+            $conn->beginTransaction();
+            $stmt = $conn->prepare("SELECT token_code FROM tokens WHERE token_id = :t AND branch_id = :b");
+            $stmt->execute([':t' => $token_id, ':b' => $bid]);
+            $tok = $stmt->fetch();
+            if (!$tok) { $conn->rollBack(); json_out(['ok' => false, 'error' => 'Token not found']); }
+
+            $stmt = $conn->prepare("
+                UPDATE tokens SET status = 'serving', pump_id = :p
+                WHERE token_id = :t AND branch_id = :b
+            ");
+            $stmt->execute([':p' => $pump_id, ':t' => $token_id, ':b' => $bid]);
+
+            $stmt = $conn->prepare("
+                UPDATE pumps SET status = 'active', current_token = :tc
+                WHERE pump_id = :p AND branch_id = :b
+            ");
+            $stmt->execute([':tc' => $tok['token_code'], ':p' => $pump_id, ':b' => $bid]);
+            $conn->commit();
+
+            log_activity($conn, $bid, 'user', $user['user_id'], $user['full_name'], "Called next token {$tok['token_code']} to pump #{$pump_id}");
+            json_out(['ok' => true]);
+        }
+
+        if ($action === 'complete') {
+            $token_id = (int)($_POST['token_id'] ?? 0);
+            $conn->beginTransaction();
+            $stmt = $conn->prepare("SELECT pump_id, token_code FROM tokens WHERE token_id = :t AND branch_id = :b");
+            $stmt->execute([':t' => $token_id, ':b' => $bid]);
+            $tok = $stmt->fetch();
+            if (!$tok) { $conn->rollBack(); json_out(['ok' => false, 'error' => 'Token not found']); }
+
+            $stmt = $conn->prepare("UPDATE tokens SET status = 'completed', served_at = NOW() WHERE token_id = :t");
+            $stmt->execute([':t' => $token_id]);
+            if ($tok['pump_id']) {
+                $stmt = $conn->prepare("UPDATE pumps SET status = 'idle', current_token = NULL WHERE pump_id = :p");
+                $stmt->execute([':p' => $tok['pump_id']]);
+            }
+            $conn->commit();
+            log_activity($conn, $bid, 'user', $user['user_id'], $user['full_name'], "Completed token {$tok['token_code']}");
+            json_out(['ok' => true]);
+        }
+
+        if ($action === 'cancel') {
+            $token_id = (int)($_POST['token_id'] ?? 0);
+            $conn->beginTransaction();
+            $stmt = $conn->prepare("SELECT pump_id, token_code FROM tokens WHERE token_id = :t AND branch_id = :b");
+            $stmt->execute([':t' => $token_id, ':b' => $bid]);
+            $tok = $stmt->fetch();
+            if (!$tok) { $conn->rollBack(); json_out(['ok' => false, 'error' => 'Token not found']); }
+
+            $stmt = $conn->prepare("UPDATE tokens SET status = 'cancelled' WHERE token_id = :t");
+            $stmt->execute([':t' => $token_id]);
+            if ($tok['pump_id']) {
+                $stmt = $conn->prepare("UPDATE pumps SET status = 'idle', current_token = NULL WHERE pump_id = :p");
+                $stmt->execute([':p' => $tok['pump_id']]);
+            }
+            $conn->commit();
+            log_activity($conn, $bid, 'user', $user['user_id'], $user['full_name'], "Cancelled token {$tok['token_code']}");
+            json_out(['ok' => true]);
+        }
+
+        if ($action === 'pump_state') {
+            $pump_id = (int)($_POST['pump_id'] ?? 0);
+            $state = $_POST['state'] ?? 'idle';
+            if (!in_array($state, ['active','idle','maintenance','offline'], true)) $state = 'idle';
+            $stmt = $conn->prepare("UPDATE pumps SET status = :s WHERE pump_id = :p AND branch_id = :b");
+            $stmt->execute([':s' => $state, ':p' => $pump_id, ':b' => $bid]);
+            log_activity($conn, $bid, 'user', $user['user_id'], $user['full_name'], "Set pump #{$pump_id} to {$state}");
+            json_out(['ok' => true]);
+        }
+
+        json_out(['ok' => false, 'error' => 'Unknown action'], 400);
+    } catch (PDOException $e) {
+        if ($conn->inTransaction()) $conn->rollBack();
+        json_out(['ok' => false, 'error' => $e->getMessage()], 500);
+    }
 }
-require_once __DIR__ . '/../profile_avatar.php';
-$managerDisplayName = trim((string) ($_SESSION['user_name'] ?? 'Manager'));
-$managerInitial = map_pump_profile_initial($managerDisplayName, 'M');
-?><!DOCTYPE html>
+
+// -------- Load data --------
+$stmt = $conn->prepare("SELECT * FROM pumps WHERE branch_id = :b ORDER BY pump_no ASC");
+$stmt->execute([':b' => $bid]);
+$pumps = $stmt->fetchAll();
+
+// KPI stats
+$stmt = $conn->prepare("SELECT COUNT(*) FROM tokens WHERE branch_id = :b AND status = 'waiting'");
+$stmt->execute([':b' => $bid]);
+$waiting_count = (int)$stmt->fetchColumn();
+
+$stmt = $conn->prepare("
+    SELECT AVG(TIMESTAMPDIFF(MINUTE, requested_at, served_at))
+    FROM tokens WHERE branch_id = :b AND status = 'completed' AND DATE(served_at) = CURDATE()
+");
+$stmt->execute([':b' => $bid]);
+$avg_wait = round((float)$stmt->fetchColumn());
+
+$stmt = $conn->prepare("SELECT COUNT(*) FROM tokens WHERE branch_id = :b AND DATE(requested_at) = CURDATE()");
+$stmt->execute([':b' => $bid]);
+$issued_today = (int)$stmt->fetchColumn();
+
+$stmt = $conn->prepare("SELECT COUNT(*) FROM pumps WHERE branch_id = :b AND status = 'maintenance'");
+$stmt->execute([':b' => $bid]);
+$pump_maint = (int)$stmt->fetchColumn();
+$pump_total = count($pumps);
+
+// live queue (all non-completed, plus a few recently completed for context)
+$stmt = $conn->prepare("
+    SELECT t.token_id, t.token_code, t.requested_at, t.estimated_at, t.served_at, t.status,
+           p.pump_no
+    FROM tokens t
+    LEFT JOIN pumps p ON p.pump_id = t.pump_id
+    WHERE t.branch_id = :b
+      AND (t.status IN ('waiting','serving')
+           OR (t.status = 'completed' AND t.served_at >= DATE_SUB(NOW(), INTERVAL 30 MINUTE)))
+    ORDER BY FIELD(t.status, 'serving','waiting','completed'), t.requested_at ASC
+    LIMIT 30
+");
+$stmt->execute([':b' => $bid]);
+$queue = $stmt->fetchAll();
+
+$has_unread_notif = false; // TODO: hook into notifications table if needed
+?>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -348,8 +489,8 @@ $managerInitial = map_pump_profile_initial($managerDisplayName, 'M');
     <div class="side-role">Branch Manager Console</div>
 
     <div class="side-branch">
-      <b>Denko - Sanchaung</b>
-      <span>Branch ID: YGN-014</span>
+      <b><?= h($branch['branch_name']) ?></b>
+      <span>Branch ID: <?= h($branch['branch_code']) ?></span>
     </div>
 
     <nav class="side-nav">
@@ -359,10 +500,11 @@ $managerInitial = map_pump_profile_initial($managerDisplayName, 'M');
       <a href="booking-slot.php" class="side-link active"><span class="ic"><i class="fa-solid fa-ticket"></i></span> Monitor Booking Slot</a>
       <a href="view-customers.php" class="side-link"><span class="ic"><i class="fa-solid fa-address-book"></i></span> View Customers</a>
       <a href="report-hq.php" class="side-link"><span class="ic"><i class="fa-solid fa-paper-plane"></i></span> Report to HQ</a>
+      <a href="branchprofile.php" class="side-link"><span class="ic"><i class="fa-solid fa-building"></i></span> Branch Profile</a>
       <a href="edit-profile.php" class="side-link"><span class="ic"><i class="fa-solid fa-gear"></i></span> Edit Profile</a>
     </nav>
 
-    <a href="../Login/logout.php" class="side-logout"><span class="ic"><i class="fa-solid fa-right-from-bracket"></i></span> Log Out</a>
+    <a href="login.php" class="side-logout"><span class="ic"><i class="fa-solid fa-right-from-bracket"></i></span> Log Out</a>
   </aside>
 
   <!-- Main Content Panel -->
@@ -411,8 +553,8 @@ $managerInitial = map_pump_profile_initial($managerDisplayName, 'M');
         </div>
 
         <div class="avatar-chip">
-          <div class="avatar-circle"><a href="edit-profile.php"><?= htmlspecialchars($managerInitial, ENT_QUOTES, 'UTF-8') ?></a></div>
-          <div><b><a href="edit-profile.php"><?= htmlspecialchars($managerDisplayName, ENT_QUOTES, 'UTF-8') ?></a></b></div>
+          <div class="avatar-circle"><a href="edit-profile.php"><?= h($initials) ?></a></div>
+          <div><b><a href="edit-profile.php"><?= h(explode(' ', $user['full_name'])[0]) ?></a></b></div>
         </div>
       </div>
     </div>
@@ -427,25 +569,25 @@ $managerInitial = map_pump_profile_initial($managerDisplayName, 'M');
       <div class="row g-3 mb-4">
         <div class="col-6 col-lg-3">
           <div class="stat-card">
-            <div class="n" id="stat-waiting">9</div>
+            <div class="n" id="stat-waiting"><?= $waiting_count ?></div>
             <div class="l">Tokens Waiting</div>
           </div>
         </div>
         <div class="col-6 col-lg-3">
           <div class="stat-card">
-            <div class="n">16 min</div>
+            <div class="n"><?= $avg_wait ?: '—' ?> min</div>
             <div class="l">Avg Wait Time</div>
           </div>
         </div>
         <div class="col-6 col-lg-3">
           <div class="stat-card">
-            <div class="n" id="stat-issued">184</div>
+            <div class="n" id="stat-issued"><?= $issued_today ?></div>
             <div class="l">Tokens Issued Today</div>
           </div>
         </div>
         <div class="col-6 col-lg-3">
           <div class="stat-card">
-            <div class="n" style="color:var(--red-400)">1 / 4</div>
+            <div class="n" style="color:var(--red-400)"><?= $pump_maint ?> / <?= $pump_total ?></div>
             <div class="l">Pumps Under Maintenance</div>
           </div>
         </div>
@@ -454,34 +596,21 @@ $managerInitial = map_pump_profile_initial($managerDisplayName, 'M');
       <!-- Pump Status Section -->
       <div class="section-title">Pump Status</div>
       <div class="row g-3 mb-4">
+        <?php
+        $status_cls = ['active' => '', 'idle' => 'idle', 'maintenance' => 'maint', 'offline' => 'maint'];
+        $status_label = ['active' => 'Active', 'idle' => 'Idle', 'maintenance' => 'Maintenance', 'offline' => 'Offline'];
+        foreach ($pumps as $p):
+          $cls = $status_cls[$p['status']] ?? 'idle';
+          $lbl = $status_label[$p['status']] ?? ucfirst($p['status']);
+        ?>
         <div class="col-6 col-lg-3">
-          <div class="pump-card" id="pump-card-1">
-            <div class="pnum">PUMP #1</div>
-            <div class="tok">B-042</div>
-            <span class="pstat active"><span class="d"></span> Active</span>
+          <div class="pump-card <?= h($cls) ?>" id="pump-card-<?= (int)$p['pump_no'] ?>" data-pump-id="<?= (int)$p['pump_id'] ?>">
+            <div class="pnum">PUMP #<?= (int)$p['pump_no'] ?></div>
+            <div class="tok"><?= h($p['current_token'] ?: ($p['status'] === 'idle' ? 'Ready' : $lbl)) ?></div>
+            <span class="pstat <?= h($cls === '' ? 'active' : $cls) ?>"><span class="d"></span> <?= h($lbl) ?></span>
           </div>
         </div>
-        <div class="col-6 col-lg-3">
-          <div class="pump-card" id="pump-card-2">
-            <div class="pnum">PUMP #2</div>
-            <div class="tok">B-041</div>
-            <span class="pstat active"><span class="d"></span> Active</span>
-          </div>
-        </div>
-        <div class="col-6 col-lg-3">
-          <div class="pump-card idle" id="pump-card-3">
-            <div class="pnum">PUMP #3</div>
-            <div class="tok">Ready</div>
-            <span class="pstat idle"><span class="d"></span> Idle</span>
-          </div>
-        </div>
-        <div class="col-6 col-lg-3">
-          <div class="pump-card maint" id="pump-card-4">
-            <div class="pnum">PUMP #4</div>
-            <div class="tok">Maintenance</div>
-            <span class="pstat maint"><span class="d"></span> Maintenance</span>
-          </div>
-        </div>
+        <?php endforeach; ?>
       </div>
 
       <!-- Live Queue Section -->
@@ -500,63 +629,36 @@ $managerInitial = map_pump_profile_initial($managerDisplayName, 'M');
               </tr>
             </thead>
             <tbody>
-              <tr id="row-B-041">
-                <td class="tok-cell">B-041</td>
-                <td>11:24 AM</td>
-                <td>11:38 AM</td>
-                <td class="pump-cell">#2</td>
-                <td><span class="status-pill serving"><span class="d"></span> Serving</span></td>
-                <td><a class="act-link danger btn-cancel" data-token="B-041">Cancel</a></td>
-              </tr>
-              <tr id="row-B-042">
-                <td class="tok-cell">B-042</td>
-                <td>11:26 AM</td>
-                <td>11:40 AM</td>
-                <td class="pump-cell">#1</td>
-                <td><span class="status-pill serving"><span class="d"></span> Serving</span></td>
-                <td><a class="act-link danger btn-cancel" data-token="B-042">Cancel</a></td>
-              </tr>
-              <tr id="row-B-043">
-                <td class="tok-cell">B-043</td>
-                <td>11:29 AM</td>
-                <td>11:44 AM</td>
-                <td class="pump-cell">—</td>
-                <td><span class="status-pill waiting"><span class="d"></span> Waiting</span></td>
-                <td>
-                  <a class="act-link btn-next" data-token="B-043">Call Next</a>
-                  <a class="act-link danger btn-cancel" data-token="B-043">Cancel</a>
-                </td>
-              </tr>
-              <tr id="row-B-044">
-                <td class="tok-cell">B-044</td>
-                <td>11:31 AM</td>
-                <td>11:48 AM</td>
-                <td class="pump-cell">—</td>
-                <td><span class="status-pill waiting"><span class="d"></span> Waiting</span></td>
-                <td>
-                  <a class="act-link btn-next" data-token="B-044">Call Next</a>
-                  <a class="act-link danger btn-cancel" data-token="B-044">Cancel</a>
-                </td>
-              </tr>
-              <tr id="row-B-045">
-                <td class="tok-cell">B-045</td>
-                <td>11:33 AM</td>
-                <td>11:52 AM</td>
-                <td class="pump-cell">—</td>
-                <td><span class="status-pill waiting"><span class="d"></span> Waiting</span></td>
-                <td>
-                  <a class="act-link btn-next" data-token="B-045">Call Next</a>
-                  <a class="act-link danger btn-cancel" data-token="B-045">Cancel</a>
-                </td>
-              </tr>
-              <tr id="row-B-040">
-                <td class="tok-cell">B-040</td>
-                <td>11:18 AM</td>
-                <td>11:32 AM</td>
-                <td class="pump-cell">#3</td>
-                <td><span class="status-pill done"><span class="d"></span> Done</span></td>
-                <td>—</td>
-              </tr>
+              <?php
+              $stat_map = ['waiting' => 'waiting', 'serving' => 'serving', 'completed' => 'done', 'cancelled' => 'done'];
+              $stat_label = ['waiting' => 'Waiting', 'serving' => 'Serving', 'completed' => 'Done', 'cancelled' => 'Cancelled'];
+              // find first idle pump for "Call Next" default target
+              $default_pump = null;
+              foreach ($pumps as $p) { if ($p['status'] === 'idle') { $default_pump = $p; break; } }
+              if (!$queue): ?>
+                <tr><td colspan="6" style="text-align:center; color:var(--slate-400); padding:22px;">Queue is empty.</td></tr>
+              <?php else: foreach ($queue as $q): ?>
+                <tr id="row-<?= h($q['token_code']) ?>" data-token-id="<?= (int)$q['token_id'] ?>">
+                  <td class="tok-cell"><?= h($q['token_code']) ?></td>
+                  <td><?= h(date('h:i A', strtotime($q['requested_at']))) ?></td>
+                  <td><?= $q['estimated_at'] ? h(date('h:i A', strtotime($q['estimated_at']))) : '—' ?></td>
+                  <td class="pump-cell"><?= $q['pump_no'] ? '#' . (int)$q['pump_no'] : '—' ?></td>
+                  <td><span class="status-pill <?= h($stat_map[$q['status']] ?? 'waiting') ?>"><span class="d"></span> <?= h($stat_label[$q['status']] ?? ucfirst($q['status'])) ?></span></td>
+                  <td>
+                    <?php if ($q['status'] === 'serving'): ?>
+                      <a class="act-link btn-complete" data-token-id="<?= (int)$q['token_id'] ?>">Complete</a>
+                      <a class="act-link danger btn-cancel" data-token-id="<?= (int)$q['token_id'] ?>">Cancel</a>
+                    <?php elseif ($q['status'] === 'waiting'): ?>
+                      <?php if ($default_pump): ?>
+                        <a class="act-link btn-next" data-token-id="<?= (int)$q['token_id'] ?>" data-pump-id="<?= (int)$default_pump['pump_id'] ?>">Call Next</a>
+                      <?php endif; ?>
+                      <a class="act-link danger btn-cancel" data-token-id="<?= (int)$q['token_id'] ?>">Cancel</a>
+                    <?php else: ?>
+                      —
+                    <?php endif; ?>
+                  </td>
+                </tr>
+              <?php endforeach; endif; ?>
             </tbody>
           </table>
         </div>
@@ -616,90 +718,59 @@ $managerInitial = map_pump_profile_initial($managerDisplayName, 'M');
       }
     }
 
-    // 3. System States & Counters
-    let tokensWaiting = 9;
+    // 3. Queue Action Handlers → server persist
+    const csrfToken = '<?= h(csrf_token()) ?>';
+    const queueTable = document.getElementById('queue-table');
 
-    function updateWaitingStat(change) {
-      tokensWaiting = Math.max(0, tokensWaiting + change);
-      document.getElementById('stat-waiting').textContent = tokensWaiting;
+    async function serverAction(action, extra = {}) {
+      const fd = new FormData();
+      fd.append('csrf', csrfToken);
+      fd.append('action', action);
+      for (const k in extra) fd.append(k, extra[k]);
+      const res = await fetch('booking-slot.php', { method: 'POST', body: fd });
+      return res.json();
     }
 
-    // 4. Queue Event Delegation
-    const queueTable = document.getElementById('queue-table');
-    
-    queueTable.addEventListener('click', (e) => {
+    queueTable.addEventListener('click', async (e) => {
       const target = e.target;
-      
+
       // CALL NEXT ACTION
       if (target.classList.contains('btn-next')) {
-        const token = target.getAttribute('data-token');
-        const row = document.getElementById(`row-${token}`);
-        
-        // Find if Pump #3 is idle and available
-        const pump3Card = document.getElementById('pump-card-3');
-        if (pump3Card && pump3Card.classList.contains('idle')) {
-          // Transition Pump #3 from Idle to Active
-          pump3Card.classList.remove('idle');
-          pump3Card.querySelector('.tok').textContent = token;
-          pump3Card.querySelector('.tok').style.color = 'var(--amber-300)';
-          pump3Card.querySelector('.tok').style.fontSize = '28px';
-          
-          const pstat = pump3Card.querySelector('.pstat');
-          pstat.className = "pstat active";
-          pstat.innerHTML = `<span class="d"></span> Active`;
-          
-          // Update Row Data Cells in Table
-          if (row) {
-            row.querySelector('.pump-cell').textContent = '#3';
-            const statusCell = row.querySelector('.status-pill');
-            statusCell.className = "status-pill serving";
-            statusCell.innerHTML = `<span class="d"></span> Serving`;
-            
-            // Remove Call Next option, leave only Cancel
-            const actionCell = target.parentElement;
-            actionCell.innerHTML = `<a class="act-link danger btn-cancel" data-token="${token}">Cancel</a>`;
-          }
-          
-          updateWaitingStat(-1);
-        } else {
-          alert("All compatible pumps are currently busy serving other tokens.");
-        }
+        const tokenId = target.dataset.tokenId;
+        const pumpId  = target.dataset.pumpId;
+        if (!pumpId) { alert('No idle pump available.'); return; }
+        try {
+          const data = await serverAction('call_next', { token_id: tokenId, pump_id: pumpId });
+          if (!data.ok) { alert('Failed: ' + (data.error || 'unknown')); return; }
+          window.location.reload();
+        } catch (err) { alert('Network error: ' + err.message); }
       }
-      
+
+      // COMPLETE ACTION
+      if (target.classList.contains('btn-complete')) {
+        const tokenId = target.dataset.tokenId;
+        try {
+          const data = await serverAction('complete', { token_id: tokenId });
+          if (!data.ok) { alert('Failed: ' + (data.error || 'unknown')); return; }
+          window.location.reload();
+        } catch (err) { alert('Network error: ' + err.message); }
+      }
+
       // CANCEL ACTION
       if (target.classList.contains('btn-cancel')) {
-        const token = target.getAttribute('data-token');
-        const row = document.getElementById(`row-${token}`);
-        
-        if (row) {
-          // Check if this token was currently on a pump card
-          for (let i = 1; i <= 3; i++) {
-            const card = document.getElementById(`pump-card-${i}`);
-            if (card && card.querySelector('.tok').textContent === token) {
-              // Reset the card back to ready / idle status
-              card.classList.add('idle');
-              card.querySelector('.tok').textContent = "Ready";
-              card.querySelector('.tok').style.color = "var(--slate-400)";
-              card.querySelector('.tok').style.fontSize = "16px";
-              
-              const pstat = card.querySelector('.pstat');
-              pstat.className = "pstat idle";
-              pstat.innerHTML = `<span class="d"></span> Idle`;
-            }
+        const tokenId = target.dataset.tokenId;
+        const row = target.closest('tr');
+        if (!confirm('Cancel this token?')) return;
+        try {
+          const data = await serverAction('cancel', { token_id: tokenId });
+          if (!data.ok) { alert('Failed: ' + (data.error || 'unknown')); return; }
+          if (row) {
+            row.style.opacity = '0';
+            row.style.transform = 'translateX(20px)';
+            setTimeout(() => row.remove(), 300);
           }
-          
-          // Deduct from counter if it was in waiting status
-          if (row.querySelector('.status-pill').classList.contains('waiting')) {
-            updateWaitingStat(-1);
-          }
-          
-          // Smooth row removal animation
-          row.style.opacity = '0';
-          row.style.transform = 'translateX(20px)';
-          setTimeout(() => {
-            row.remove();
-          }, 300);
-        }
+          setTimeout(() => window.location.reload(), 350);
+        } catch (err) { alert('Network error: ' + err.message); }
       }
     });
   });

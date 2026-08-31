@@ -1,66 +1,78 @@
 <?php
+/**
+ * edit-profile.php — User's personal profile (branch manager account).
+ * Handles POST submit to update full_name, email, phone, nrc with CSRF protection.
+ */
 if (session_status() !== PHP_SESSION_ACTIVE) {
     session_start();
 }
+
+require_once __DIR__ . '/_helpers.php';
 require_once __DIR__ . '/../conn.php';
 require_once __DIR__ . '/../profile_avatar.php';
 
-$userId = isset($_SESSION['user_id']) ? (int) $_SESSION['user_id'] : 0;
+
+require_branch_manager();
+
 $message = '';
-$message_type = 'success';
+$message_type = '';
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && $userId > 0) {
-    $fullName = trim((string) ($_POST['full_name'] ?? ''));
-    $email = trim((string) ($_POST['email'] ?? ''));
-
-    if ($fullName === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
-        $message = 'Please enter a valid name and email address.';
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!csrf_check($_POST['csrf'] ?? null)) {
+        $message = 'Invalid CSRF token. Please refresh and try again.';
         $message_type = 'danger';
     } else {
-        try {
-            $update = $pdo->prepare('UPDATE users SET user_name = ?, email = ?, updated_at = NOW() WHERE user_id = ?');
-            $update->execute([$fullName, $email, $userId]);
-            $_SESSION['user_name'] = $fullName;
-            $_SESSION['user_email'] = $email;
-            $message = 'Profile updated successfully.';
-            $message_type = 'success';
-        } catch (Throwable $e) {
-            error_log('Branch manager profile update failed: ' . $e->getMessage());
-            $message = 'Profile could not be updated right now.';
+        $full_name = trim($_POST['full_name'] ?? '');
+        $phone     = trim($_POST['phone'] ?? '');
+        $email     = trim($_POST['email'] ?? '');
+        $nrc       = trim($_POST['nrc'] ?? '');
+
+        if ($full_name === '' || $email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            $message = 'Name and a valid email are required.';
             $message_type = 'danger';
+        } else {
+            try {
+                $stmt = $conn->prepare("
+                    UPDATE users 
+                    SET full_name = :n, phone = :p, email = :e, nrc = :nr, updated_at = NOW()
+                    WHERE user_id = :uid
+                ");
+                $stmt->execute([
+                    ':n'   => $full_name,
+                    ':p'   => $phone,
+                    ':e'   => $email,
+                    ':nr'  => $nrc,
+                    ':uid' => $_SESSION['user_id'],
+                ]);
+
+                $_SESSION['user_name']  = $full_name;
+                $_SESSION['user_email'] = $email;
+
+                $message = 'Profile updated successfully.';
+                $message_type = 'success';
+            } catch (PDOException $e) {
+                if ($e->getCode() === '23000') {
+                    $message = 'That email is already in use by another account.';
+                } else {
+                    error_log('Branch manager profile update failed: ' . $e->getMessage());
+                    $message = 'Could not update profile right now.';
+                }
+                $message_type = 'danger';
+            }
         }
     }
 }
 
-$user = [
-    'full_name' => trim((string) ($_SESSION['user_name'] ?? 'Manager')),
-    'email' => trim((string) ($_SESSION['user_email'] ?? '')),
-    'phone' => '',
-    'nrc' => '',
-    'branch_name' => 'Unassigned',
-    'branch_code' => 'N/A',
-];
+$ctx      = current_context($conn);
+$user     = $ctx['user'];
+$branch   = $ctx['branch'];
 
-if ($userId > 0) {
-    try {
-        $stmt = $pdo->prepare('SELECT u.user_name, u.email, u.branch_id, b.branch_name FROM users u LEFT JOIN branches b ON b.branch_id = u.branch_id WHERE u.user_id = ? LIMIT 1');
-        $stmt->execute([$userId]);
-        $row = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
-        $user['full_name'] = trim((string) ($row['user_name'] ?? $user['full_name']));
-        $user['email'] = trim((string) ($row['email'] ?? $user['email']));
-        $user['branch_name'] = trim((string) ($row['branch_name'] ?? '')) ?: 'Unassigned';
-        $user['branch_code'] = !empty($row['branch_id']) ? 'BR-' . str_pad((string) $row['branch_id'], 3, '0', STR_PAD_LEFT) : 'N/A';
-        $_SESSION['user_name'] = $user['full_name'];
-        $_SESSION['user_email'] = $user['email'];
-    } catch (Throwable $e) {
-        error_log('Branch manager profile load failed: ' . $e->getMessage());
-    }
-}
-
-$managerDisplayName = $user['full_name'] !== '' ? $user['full_name'] : 'Manager';
-$managerInitial = map_pump_profile_initial($managerDisplayName, 'M');
-$initials = $managerInitial;
-?><!DOCTYPE html>
+$managerDisplayName = !empty($user['full_name']) ? $user['full_name'] : 'Manager';
+$initials           = function_exists('map_pump_profile_initial') 
+                      ? map_pump_profile_initial($managerDisplayName, 'M') 
+                      : initials($managerDisplayName);
+?>
+<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -254,8 +266,8 @@ $initials = $managerInitial;
     <div class="side-role">Branch Manager Console</div>
 
     <div class="side-branch">
-      <b><?= htmlspecialchars($user['branch_name'] ?? 'Unassigned Branch') ?></b>
-      <span>Branch ID: <?= htmlspecialchars($user['branch_code'] ?? 'N/A') ?></span>
+      <b><?= htmlspecialchars($branch['branch_name'] ?? $user['branch_name'] ?? 'Unassigned Branch') ?></b>
+      <span>Branch ID: <?= htmlspecialchars($branch['branch_code'] ?? $user['branch_code'] ?? 'N/A') ?></span>
     </div>
 
     <nav class="side-nav">
@@ -265,6 +277,7 @@ $initials = $managerInitial;
       <a href="booking-slot.php" class="side-link"><span class="ic"><i class="fa-solid fa-ticket"></i></span> Monitor Booking Slot</a>
       <a href="view-customers.php" class="side-link"><span class="ic"><i class="fa-solid fa-address-book"></i></span> View Customers</a>
       <a href="report-hq.php" class="side-link"><span class="ic"><i class="fa-solid fa-paper-plane"></i></span> Report to HQ</a>
+      <a href="branchprofile.php" class="side-link"><span class="ic"><i class="fa-solid fa-building"></i></span> Branch Profile</a>
       <a href="edit-profile.php" class="side-link active"><span class="ic"><i class="fa-solid fa-gear"></i></span> Edit Profile</a>
     </nav>
 
@@ -280,8 +293,8 @@ $initials = $managerInitial;
       <div class="topbar-right">
         <div class="bell" id="notif-bell"><i class="fa-regular fa-bell"></i><span class="ping"></span></div>
         <div class="avatar-chip">
-          <div class="avatar-circle"><?= htmlspecialchars($managerInitial, ENT_QUOTES, 'UTF-8') ?></div>
-          <div><b><?= htmlspecialchars(explode(' ', $user['full_name'])[0]) ?></b></div>
+          <div class="avatar-circle"><?= htmlspecialchars($initials, ENT_QUOTES, 'UTF-8') ?></div>
+          <div><b><?= htmlspecialchars(explode(' ', $user['full_name'] ?? 'Manager')[0]) ?></b></div>
         </div>
       </div>
     </div>
@@ -301,10 +314,10 @@ $initials = $managerInitial;
 
       <div class="layout-2col">
         <div class="panel profile-card-center">
-          <div class="avatar-big"><?= $initials ?>
+          <div class="avatar-big"><?= htmlspecialchars($initials, ENT_QUOTES, 'UTF-8') ?>
             <div class="avatar-edit-btn"><i class="fa-solid fa-camera"></i></div>
           </div>
-          <h4><?= htmlspecialchars($user['full_name']) ?></h4>
+          <h4><?= htmlspecialchars($user['full_name'] ?? 'Manager') ?></h4>
           <span>Branch Manager</span>
           <div class="profile-tag"><i class="fa-solid fa-shield-halved"></i> Verified Manager Account</div>
 
@@ -318,20 +331,21 @@ $initials = $managerInitial;
         <div class="panel">
           <h3>Personal Details</h3>
           <form id="profile-form" action="edit-profile.php" method="POST">
+            <input type="hidden" name="csrf" value="<?= htmlspecialchars(csrf_token()) ?>">
             <div class="form-row">
               <div class="form-group">
                 <label for="pf-name">Full Name</label>
-                <input type="text" id="pf-name" name="full_name" class="form-control-custom" value="<?= htmlspecialchars($user['full_name']) ?>" required>
+                <input type="text" id="pf-name" name="full_name" class="form-control-custom" value="<?= htmlspecialchars($user['full_name'] ?? '') ?>" required>
               </div>
               <div class="form-group">
                 <label for="pf-phone">Phone Number</label>
-                <input type="text" id="pf-phone" name="phone" class="form-control-custom" value="<?= htmlspecialchars($user['phone']) ?>">
+                <input type="text" id="pf-phone" name="phone" class="form-control-custom" value="<?= htmlspecialchars($user['phone'] ?? '') ?>" required>
               </div>
             </div>
             <div class="form-row">
               <div class="form-group">
                 <label for="pf-email">Email Address</label>
-                <input type="email" id="pf-email" name="email" class="form-control-custom" value="<?= htmlspecialchars($user['email']) ?>" required>
+                <input type="email" id="pf-email" name="email" class="form-control-custom" value="<?= htmlspecialchars($user['email'] ?? '') ?>" required>
               </div>
               <div class="form-group">
                 <label for="pf-nrc">NRC / National ID</label>
@@ -341,7 +355,7 @@ $initials = $managerInitial;
             <div class="form-row">
               <div class="form-group">
                 <label for="pf-branch">Branch</label>
-                <input type="text" id="pf-branch" class="form-control-custom" value="<?= htmlspecialchars(($user['branch_name'] ?? 'Unassigned') . ' (' . ($user['branch_code'] ?? 'N/A') . ')') ?>" disabled>
+                <input type="text" id="pf-branch" class="form-control-custom" value="<?= htmlspecialchars(($branch['branch_name'] ?? $user['branch_name'] ?? 'Unassigned') . ' (' . ($branch['branch_code'] ?? $user['branch_code'] ?? 'N/A') . ')') ?>" disabled>
               </div>
               <div class="form-group">
                 <label for="pf-role">Role</label>

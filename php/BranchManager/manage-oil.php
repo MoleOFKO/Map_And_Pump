@@ -1,11 +1,150 @@
 <?php
-if (session_status() !== PHP_SESSION_ACTIVE) {
-    session_start();
+/**
+ * manage-oil.php  —  Fuel tanks, delivery records, alert thresholds, type toggles
+ * POST actions (all JSON-out):
+ *   action=add_delivery   -> fuel_code, quantity_l, supplier, received_by
+ *   action=save_limits    -> alert_p92, alert_p95, alert_dsl
+ *   action=toggle_fuel    -> tank_id, enabled (0|1)
+ */
+require_once __DIR__ . '/_helpers.php';
+require_once __DIR__ . '/../conn.php';
+require_branch_manager();
+
+$ctx      = current_context($conn);
+$user     = $ctx['user'];
+$branch   = $ctx['branch'];
+$initials = initials($user['full_name']);
+$bid      = (int)$branch['branch_id'];
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!csrf_check($_POST['csrf'] ?? null)) json_out(['ok' => false, 'error' => 'CSRF failed'], 403);
+    $action = $_POST['action'] ?? '';
+
+    try {
+        if ($action === 'add_delivery') {
+            $fuel_code = $_POST['fuel_code'] ?? '';
+            $qty       = max(1, (int)($_POST['quantity_l'] ?? 0));
+            $supplier  = trim($_POST['supplier'] ?? '');
+            $rec_by    = trim($_POST['received_by'] ?? '');
+
+            $stmt = $conn->prepare("SELECT tank_id, capacity_l, current_l FROM tanks WHERE branch_id = :b AND fuel_code = :f LIMIT 1");
+            $stmt->execute([':b' => $bid, ':f' => $fuel_code]);
+            $tank = $stmt->fetch();
+            if (!$tank) json_out(['ok' => false, 'error' => 'Tank not found for this fuel']);
+
+            $new_level = min((int)$tank['capacity_l'], (int)$tank['current_l'] + $qty);
+
+            $conn->beginTransaction();
+            $stmt = $conn->prepare("
+                INSERT INTO deliveries (branch_id, tank_id, fuel_code, quantity_l, supplier, received_by)
+                VALUES (:b, :t, :f, :q, :s, :r)
+            ");
+            $stmt->execute([':b'=>$bid, ':t'=>$tank['tank_id'], ':f'=>$fuel_code, ':q'=>$qty, ':s'=>$supplier, ':r'=>$rec_by]);
+
+            $stmt = $conn->prepare("UPDATE tanks SET current_l = :l WHERE tank_id = :t");
+            $stmt->execute([':l' => $new_level, ':t' => $tank['tank_id']]);
+            $conn->commit();
+
+            log_activity($conn, $bid, 'user', $user['user_id'], $user['full_name'],
+                         "Recorded {$qty}L {$fuel_code} delivery from {$supplier}");
+            json_out(['ok' => true]);
+        }
+
+        if ($action === 'save_limits') {
+            $map = [
+                'p92' => (int)($_POST['alert_p92'] ?? 25),
+                'p95' => (int)($_POST['alert_p95'] ?? 25),
+                'dsl' => (int)($_POST['alert_dsl'] ?? 30),
+            ];
+            $stmt = $conn->prepare("UPDATE tanks SET alert_pct = :p WHERE branch_id = :b AND fuel_code = :f");
+            foreach ($map as $fc => $pct) {
+                $pct = max(5, min(80, $pct));
+                $stmt->execute([':p' => $pct, ':b' => $bid, ':f' => $fc]);
+            }
+            log_activity($conn, $bid, 'user', $user['user_id'], $user['full_name'], 'Updated fuel alert thresholds');
+            json_out(['ok' => true]);
+        }
+
+        if ($action === 'toggle_fuel') {
+            $tank_id = (int)($_POST['tank_id'] ?? 0);
+            $enabled = (int)($_POST['enabled'] ?? 0) === 1 ? 1 : 0;
+            $stmt = $conn->prepare("UPDATE tanks SET is_enabled = :e WHERE tank_id = :t AND branch_id = :b");
+            $stmt->execute([':e' => $enabled, ':t' => $tank_id, ':b' => $bid]);
+            log_activity($conn, $bid, 'user', $user['user_id'], $user['full_name'],
+                         ($enabled ? 'Enabled' : 'Disabled') . " fuel type (tank #{$tank_id})");
+            json_out(['ok' => true]);
+        }
+
+        json_out(['ok' => false, 'error' => 'Unknown action'], 400);
+    } catch (PDOException $e) {
+        if ($conn->inTransaction()) $conn->rollBack();
+        json_out(['ok' => false, 'error' => $e->getMessage()], 500);
+    }
 }
-require_once __DIR__ . '/../profile_avatar.php';
-$managerDisplayName = trim((string) ($_SESSION['user_name'] ?? 'Manager'));
-$managerInitial = map_pump_profile_initial($managerDisplayName, 'M');
-?><!DOCTYPE html>
+
+// -------- Load data --------
+$stmt = $conn->prepare("SELECT * FROM tanks WHERE branch_id = :b ORDER BY FIELD(fuel_code, 'p92','p95','dsl','pdsl'), tank_id");
+$stmt->execute([':b' => $bid]);
+$tanks_rows = $stmt->fetchAll();
+// index by fuel_code for easy lookup
+$tanks = [];
+foreach ($tanks_rows as $t) $tanks[$t['fuel_code']] = $t;
+
+// recent deliveries (last 8)
+$stmt = $conn->prepare("
+    SELECT d.*, t.fuel_name FROM deliveries d
+    LEFT JOIN tanks t ON t.tank_id = d.tank_id
+    WHERE d.branch_id = :b
+    ORDER BY d.received_at DESC LIMIT 8
+");
+$stmt->execute([':b' => $bid]);
+$deliveries = $stmt->fetchAll();
+
+// weekly usage — Mon..Sun sum of Petrol 92 deliveries into tank (proxy for consumption)
+// (In real use you'd have a `sales` table; we use delivery movement as placeholder.)
+$stmt = $conn->prepare("
+    SELECT DATE(d.received_at) AS d, SUM(d.quantity_l) AS q
+    FROM deliveries d
+    WHERE d.branch_id = :b AND d.fuel_code = 'p92'
+      AND d.received_at >= DATE_SUB(CURDATE(), INTERVAL 6 DAY)
+    GROUP BY DATE(d.received_at)
+");
+$stmt->execute([':b' => $bid]);
+$weekly = [];
+foreach ($stmt->fetchAll() as $r) $weekly[$r['d']] = (int)$r['q'];
+
+// build a Mon..Sun ordered array of last 7 days
+$week_series = [];
+for ($i = 6; $i >= 0; $i--) {
+    $d = date('Y-m-d', strtotime("-{$i} day"));
+    $week_series[] = [
+        'label' => date('D', strtotime($d)),
+        'value' => $weekly[$d] ?? 0,
+    ];
+}
+$week_max = max(1, max(array_column($week_series, 'value')));
+
+// helper to compute % and color class
+function tank_pct(?array $t): int {
+    if (!$t || !$t['capacity_l']) return 0;
+    return (int)round(($t['current_l'] / $t['capacity_l']) * 100);
+}
+function tank_color(?array $t): string {
+    if (!$t) return 'var(--slate-400)';
+    $p = tank_pct($t);
+    if ($p <= (int)$t['alert_pct']) return 'var(--red-400)';
+    if ($p < 60) return 'var(--amber-400)';
+    return 'var(--mint-400)';
+}
+function tank_flag(?array $t): string {
+    if (!$t) return '';
+    $p = tank_pct($t);
+    if ($p <= (int)$t['alert_pct']) return '<span class="tank-flag low" id="flag-'.h($t['fuel_code']).'"><i class="fa-solid fa-triangle-exclamation"></i> Stock low — delivery needed</span>';
+    if ($p < 60) return '<span class="tank-flag mid" id="flag-'.h($t['fuel_code']).'"><i class="fa-solid fa-circle-half-stroke"></i> Watch level</span>';
+    return '<span class="tank-flag ok" id="flag-'.h($t['fuel_code']).'"><i class="fa-solid fa-check"></i> Stock sufficient</span>';
+}
+?>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -338,8 +477,8 @@ $managerInitial = map_pump_profile_initial($managerDisplayName, 'M');
     <div class="side-role">Branch Manager Console</div>
 
     <div class="side-branch">
-      <b>Denko - Sanchaung</b>
-      <span>Branch ID: YGN-014</span>
+      <b><?= h($branch['branch_name'] ?? 'Denko - Sanchaung') ?></b>
+      <span>Branch ID: <?= h($branch['branch_code'] ?? 'YGN-014') ?></span>
     </div>
 
     <nav class="side-nav">
@@ -349,6 +488,7 @@ $managerInitial = map_pump_profile_initial($managerDisplayName, 'M');
       <a href="booking-slot.php" class="side-link"><span class="ic"><i class="fa-solid fa-ticket"></i></span> Monitor Booking Slot</a>
       <a href="view-customers.php" class="side-link"><span class="ic"><i class="fa-solid fa-address-book"></i></span> View Customers</a>
       <a href="report-hq.php" class="side-link"><span class="ic"><i class="fa-solid fa-paper-plane"></i></span> Report to HQ</a>
+      <a href="branchprofile.php" class="side-link"><span class="ic"><i class="fa-solid fa-building"></i></span> Branch Profile</a>
       <a href="edit-profile.php" class="side-link"><span class="ic"><i class="fa-solid fa-gear"></i></span> Edit Profile</a>
     </nav>
 
@@ -400,8 +540,8 @@ $managerInitial = map_pump_profile_initial($managerDisplayName, 'M');
         </div>
 
         <div class="avatar-chip">
-          <div class="avatar-circle"><a href="edit-profile.php"><?= htmlspecialchars($managerInitial, ENT_QUOTES, 'UTF-8') ?></a></div>
-          <div><b><a href="edit-profile.php"><?= htmlspecialchars($managerDisplayName, ENT_QUOTES, 'UTF-8') ?></a></b></div>
+          <div class="avatar-circle"><a href="edit-profile.php"><?= h($initials ?? 'M') ?></a></div>
+          <div><b><a href="edit-profile.php"><?= h(explode(' ', $user['full_name'] ?? 'Manager')[0]) ?></a></b></div>
         </div>
       </div>
     </div>
@@ -426,47 +566,48 @@ $managerInitial = map_pump_profile_initial($managerDisplayName, 'M');
       <!-- TAB 1: MANAGE STOCK LEVELS -->
       <div class="tab-panel active" id="tab-amount">
         <div class="tank-grid">
-          <!-- Petrol 92 Tank -->
-          <div class="tank" id="tank-p92" data-capacity="15000">
+          <?php
+          $tank_defs = [
+            'p92' => ['name' => 'Petrol 92', 'id' => 'p92', 'cap' => 15000, 'rem' => 11100],
+            'p95' => ['name' => 'Petrol 95', 'id' => 'p95', 'cap' => 10000, 'rem' => 4800],
+            'dsl' => ['name' => 'Diesel',    'id' => 'dsl', 'cap' => 12000, 'rem' => 2640],
+          ];
+          foreach ($tank_defs as $fc => $def):
+            $t = $tanks[$fc] ?? null;
+            $cap = $t ? (int)$t['capacity_l'] : $def['cap'];
+            $cur = $t ? (int)$t['current_l'] : $def['rem'];
+            $pct = $t ? tank_pct($t) : (int)round(($cur / $cap) * 100);
+            $col = $t ? tank_color($t) : ($pct > 55 ? 'var(--mint-400)' : ($pct > 25 ? 'var(--amber-300)' : 'var(--red-400)'));
+            $used = $cap - $cur;
+            $tank_id_attr = $t ? (int)$t['tank_id'] : '';
+            $disabled_class = ($t && (int)$t['is_enabled'] === 0) ? 'disabled-tank' : '';
+          ?>
+          <div class="tank <?= $disabled_class ?>" id="tank-<?= $fc ?>" data-capacity="<?= $cap ?>" data-tankid="<?= $tank_id_attr ?>">
             <div class="top">
-              <div><div class="fuel-name">Petrol 92</div><div class="cap">Tank Capacity — 15,000 L</div></div>
-              <div class="pct" id="pct-p92" style="color:var(--mint-400)">74%</div>
+              <div>
+                <div class="fuel-name"><?= h($t['fuel_name'] ?? $def['name']) ?></div>
+                <div class="cap">Tank Capacity — <?= number_format($cap) ?> L</div>
+              </div>
+              <div class="pct" id="pct-<?= $fc ?>" style="color:<?= $col ?>"><?= $pct ?>%</div>
             </div>
-            <div class="gauge-track"><i id="gauge-p92" style="width:74%; background:var(--mint-400);"></i></div>
+            <div class="gauge-track"><i id="gauge-<?= $fc ?>" style="width:<?= $pct ?>%; background:<?= $col ?>;"></i></div>
             <div class="liters">
-              <span id="rem-p92">11,100 L remaining</span>
-              <span id="used-p92">3,900 L used</span>
+              <span id="rem-<?= $fc ?>"><?= number_format($cur) ?> L remaining</span>
+              <span id="used-<?= $fc ?>"><?= number_format($used) ?> L used</span>
             </div>
-            <span class="tank-flag ok" id="flag-p92"><i class="fa-solid fa-check"></i> Stock sufficient</span>
+            <?php if ($t): ?>
+              <?= tank_flag($t) ?>
+            <?php else: ?>
+              <?php if ($fc === 'p92'): ?>
+                <span class="tank-flag ok" id="flag-p92"><i class="fa-solid fa-check"></i> Stock sufficient</span>
+              <?php elseif ($fc === 'p95'): ?>
+                <span class="tank-flag mid" id="flag-p95"><i class="fa-solid fa-circle-half-stroke"></i> ~4 days remaining</span>
+              <?php else: ?>
+                <span class="tank-flag low" id="flag-dsl"><i class="fa-solid fa-triangle-exclamation"></i> Stock low — delivery needed</span>
+              <?php endif; ?>
+            <?php endif; ?>
           </div>
-
-          <!-- Petrol 95 Tank -->
-          <div class="tank" id="tank-p95" data-capacity="10000">
-            <div class="top">
-              <div><div class="fuel-name">Petrol 95</div><div class="cap">Tank Capacity — 10,000 L</div></div>
-              <div class="pct" id="pct-p95" style="color:var(--amber-300)">48%</div>
-            </div>
-            <div class="gauge-track"><i id="gauge-p95" style="width:48%; background:var(--amber-400);"></i></div>
-            <div class="liters">
-              <span id="rem-p95">4,800 L remaining</span>
-              <span id="used-p95">5,200 L used</span>
-            </div>
-            <span class="tank-flag mid" id="flag-p95"><i class="fa-solid fa-circle-half-stroke"></i> ~4 days remaining</span>
-          </div>
-
-          <!-- Diesel Tank -->
-          <div class="tank" id="tank-dsl" data-capacity="12000">
-            <div class="top">
-              <div><div class="fuel-name">Diesel</div><div class="cap">Tank Capacity — 12,000 L</div></div>
-              <div class="pct" id="pct-dsl" style="color:var(--red-400)">22%</div>
-            </div>
-            <div class="gauge-track"><i id="gauge-dsl" style="width:22%; background:var(--red-400);"></i></div>
-            <div class="liters">
-              <span id="rem-dsl">2,640 L remaining</span>
-              <span id="used-dsl">9,360 L used</span>
-            </div>
-            <span class="tank-flag low" id="flag-dsl"><i class="fa-solid fa-triangle-exclamation"></i> Stock low — delivery needed</span>
-          </div>
+          <?php endforeach; ?>
         </div>
 
         <div class="section-title"><h3>Recent Delivery Log</h3></div>
@@ -474,10 +615,26 @@ $managerInitial = map_pump_profile_initial($managerDisplayName, 'M');
           <table id="delivery-table">
             <thead><tr><th>Date</th><th>Fuel</th><th>Quantity (Liters)</th><th>Supplier</th><th>Received By</th></tr></thead>
             <tbody>
-              <tr data-fuel="Petrol 92"><td>Jul 9</td><td><span class="fuel-tag p92">Petrol 92</span></td><td>8,000 L</td><td>MPPE Distribution</td><td>Leon</td></tr>
-              <tr data-fuel="Petrol 95"><td>Jul 7</td><td><span class="fuel-tag p95">Petrol 95</span></td><td>5,000 L</td><td>Puma Energy</td><td>Xiao</td></tr>
-              <tr data-fuel="Diesel"><td>Jul 5</td><td><span class="fuel-tag dsl">Diesel</span></td><td>6,500 L</td><td>MPPE Distribution</td><td>Thiago</td></tr>
-              <tr data-fuel="Petrol 92"><td>Jul 2</td><td><span class="fuel-tag p92">Petrol 92</span></td><td>7,500 L</td><td>Max Energy</td><td>Felix</td></tr>
+              <?php
+              $fuel_tag_class = ['p92' => 'p92', 'p95' => 'p95', 'dsl' => 'dsl'];
+              if (isset($deliveries) && $deliveries):
+                foreach ($deliveries as $d):
+                  $fc = $d['fuel_code'];
+                  $fname = $d['fuel_name'] ?? strtoupper($fc);
+              ?>
+                <tr data-fuel="<?= h($fname) ?>">
+                  <td><?= h(date('M j', strtotime($d['received_at']))) ?></td>
+                  <td><span class="fuel-tag <?= h($fuel_tag_class[$fc] ?? 'p92') ?>"><?= h($fname) ?></span></td>
+                  <td><?= number_format($d['quantity_l']) ?> L</td>
+                  <td><?= h($d['supplier']) ?></td>
+                  <td><?= h($d['received_by']) ?></td>
+                </tr>
+              <?php endforeach; else: ?>
+                <tr data-fuel="Petrol 92"><td>Jul 9</td><td><span class="fuel-tag p92">Petrol 92</span></td><td>8,000 L</td><td>MPPE Distribution</td><td>Leon</td></tr>
+                <tr data-fuel="Petrol 95"><td>Jul 7</td><td><span class="fuel-tag p95">Petrol 95</span></td><td>5,000 L</td><td>Puma Energy</td><td>Xiao</td></tr>
+                <tr data-fuel="Diesel"><td>Jul 5</td><td><span class="fuel-tag dsl">Diesel</span></td><td>6,500 L</td><td>MPPE Distribution</td><td>Thiago</td></tr>
+                <tr data-fuel="Petrol 92"><td>Jul 2</td><td><span class="fuel-tag p92">Petrol 92</span></td><td>7,500 L</td><td>Max Energy</td><td>Felix</td></tr>
+              <?php endif; ?>
             </tbody>
           </table>
         </div>
@@ -485,13 +642,25 @@ $managerInitial = map_pump_profile_initial($managerDisplayName, 'M');
         <div class="section-title"><h3>Weekly Usage (Petrol 92)</h3></div>
         <div class="weekly">
           <div class="bars">
-            <div class="bar-col" title="Daily Consumed: 2,600L"><i style="height:52%;"></i><span>Mon</span></div>
-            <div class="bar-col" title="Daily Consumed: 3,200L"><i style="height:64%;"></i><span>Tue</span></div>
-            <div class="bar-col" title="Daily Consumed: 2,400L"><i style="height:48%;"></i><span>Wed</span></div>
-            <div class="bar-col" title="Daily Consumed: 3,550L"><i style="height:71%;"></i><span>Thu</span></div>
-            <div class="bar-col" title="Daily Consumed: 4,000L"><i style="height:80%;"></i><span>Fri</span></div>
-            <div class="bar-col" title="Daily Consumed: 4,750L"><i style="height:95%; background:linear-gradient(180deg, var(--amber-300), #d97706);"></i><span>Sat</span></div>
-            <div class="bar-col" title="Daily Consumed: 4,400L"><i style="height:88%; background:linear-gradient(180deg, var(--amber-300), #d97706);"></i><span>Sun</span></div>
+            <?php if (isset($week_series) && $week_series): ?>
+              <?php foreach ($week_series as $day):
+                $h_pct = round(($day['value'] / $week_max) * 100);
+                $is_peak = $h_pct >= 85;
+                $bar_bg = $is_peak ? 'background:linear-gradient(180deg, var(--amber-300), #d97706);' : '';
+              ?>
+                <div class="bar-col" title="Daily Consumed: <?= number_format($day['value']) ?>L">
+                  <i style="height:<?= max(2, $h_pct) ?>%; <?= $bar_bg ?>"></i><span><?= h($day['label']) ?></span>
+                </div>
+              <?php endforeach; ?>
+            <?php else: ?>
+              <div class="bar-col" title="Daily Consumed: 2,600L"><i style="height:52%;"></i><span>Mon</span></div>
+              <div class="bar-col" title="Daily Consumed: 3,200L"><i style="height:64%;"></i><span>Tue</span></div>
+              <div class="bar-col" title="Daily Consumed: 2,400L"><i style="height:48%;"></i><span>Wed</span></div>
+              <div class="bar-col" title="Daily Consumed: 3,550L"><i style="height:71%;"></i><span>Thu</span></div>
+              <div class="bar-col" title="Daily Consumed: 4,000L"><i style="height:80%;"></i><span>Fri</span></div>
+              <div class="bar-col" title="Daily Consumed: 4,750L"><i style="height:95%; background:linear-gradient(180deg, var(--amber-300), #d97706);"></i><span>Sat</span></div>
+              <div class="bar-col" title="Daily Consumed: 4,400L"><i style="height:88%; background:linear-gradient(180deg, var(--amber-300), #d97706);"></i><span>Sun</span></div>
+            <?php endif; ?>
           </div>
         </div>
       </div>
@@ -499,27 +668,26 @@ $managerInitial = map_pump_profile_initial($managerDisplayName, 'M');
       <!-- TAB 2: ACTIVE / DISABLE FUEL TYPES -->
       <div class="tab-panel" id="tab-types">
         <div class="panel">
-          <div class="type-row" data-tank-id="tank-p92">
+          <?php
+          $swatch_map = ['p92' => 'var(--sky-400)', 'p95' => 'var(--mint-400)', 'dsl' => 'var(--amber-400)'];
+          foreach ($tank_defs as $fc => $def):
+            $t = $tanks[$fc] ?? null;
+            $cur = $t ? (int)$t['current_l'] : $def['rem'];
+            $swatch = $swatch_map[$fc] ?? 'var(--slate-400)';
+            $on = $t ? ((int)$t['is_enabled'] === 1) : true;
+            $tank_id_attr = $t ? (int)$t['tank_id'] : '';
+          ?>
+          <div class="type-row" data-tank-id="tank-<?= $fc ?>" data-real-id="<?= $tank_id_attr ?>">
             <div class="info">
-              <div class="swatch" style="background:var(--sky-400);"></div>
-              <div><b>Petrol 92</b><span class="rem-type-lbl">Current stock — 11,100 L</span></div>
+              <div class="swatch" style="background:<?= $swatch ?>;"></div>
+              <div>
+                <b><?= h($t['fuel_name'] ?? $def['name']) ?></b>
+                <span class="rem-type-lbl">Current stock — <?= number_format($cur) ?> L</span>
+              </div>
             </div>
-            <button class="toggle on" data-target="tank-p92"></button>
+            <button class="toggle <?= $on ? 'on' : '' ?>" data-target="tank-<?= $fc ?>" data-tank-id="<?= $tank_id_attr ?>"></button>
           </div>
-          <div class="type-row" data-tank-id="tank-p95">
-            <div class="info">
-              <div class="swatch" style="background:var(--mint-400);"></div>
-              <div><b>Petrol 95</b><span class="rem-type-lbl">Current stock — 4,800 L</span></div>
-            </div>
-            <button class="toggle on" data-target="tank-p95"></button>
-          </div>
-          <div class="type-row" data-tank-id="tank-dsl">
-            <div class="info">
-              <div class="swatch" style="background:var(--amber-400);"></div>
-              <div><b>Diesel</b><span class="rem-type-lbl">Current stock — 2,640 L</span></div>
-            </div>
-            <button class="toggle on" data-target="tank-dsl"></button>
-          </div>
+          <?php endforeach; ?>
           <div class="type-row">
             <div class="info">
               <div class="swatch" style="background:var(--slate-400);"></div>
@@ -545,18 +713,22 @@ $managerInitial = map_pump_profile_initial($managerDisplayName, 'M');
     <p style="font-size:12.5px; color:var(--slate-400); margin:-8px 0 18px; line-height:1.6;">
       Set the low-stock alert threshold for each fuel type. A tank flags "Low Stock" once its level falls below this percentage.
     </p>
-    <form id="limit-form">
+    <form id="limit-form" method="POST" action="manage-oil.php">
+      <?php if (function_exists('csrf_token')): ?>
+        <input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>">
+      <?php endif; ?>
+      <input type="hidden" name="action" value="save_limits">
       <div class="form-group">
         <label for="limit-p92">Petrol 92 — Alert Threshold (%)</label>
-        <input type="number" id="limit-p92" class="form-control-custom" min="5" max="80" value="25" required>
+        <input type="number" id="limit-p92" name="alert_p92" class="form-control-custom" min="5" max="80" value="<?= (int)($tanks['p92']['alert_pct'] ?? 25) ?>" required>
       </div>
       <div class="form-group">
         <label for="limit-p95">Petrol 95 — Alert Threshold (%)</label>
-        <input type="number" id="limit-p95" class="form-control-custom" min="5" max="80" value="25" required>
+        <input type="number" id="limit-p95" name="alert_p95" class="form-control-custom" min="5" max="80" value="<?= (int)($tanks['p95']['alert_pct'] ?? 25) ?>" required>
       </div>
       <div class="form-group">
         <label for="limit-dsl">Diesel — Alert Threshold (%)</label>
-        <input type="number" id="limit-dsl" class="form-control-custom" min="5" max="80" value="30" required>
+        <input type="number" id="limit-dsl" name="alert_dsl" class="form-control-custom" min="5" max="80" value="<?= (int)($tanks['dsl']['alert_pct'] ?? 30) ?>" required>
       </div>
       <div class="modal-actions">
         <button type="button" class="btn-secondary-custom" id="limit-modal-cancel-btn">Cancel</button>
@@ -573,10 +745,14 @@ $managerInitial = map_pump_profile_initial($managerDisplayName, 'M');
       <h3>Add Fuel Delivery Record</h3>
       <button class="modal-close" id="modal-close-btn">&times;</button>
     </div>
-    <form id="delivery-form">
+    <form id="delivery-form" method="POST" action="manage-oil.php">
+      <?php if (function_exists('csrf_token')): ?>
+        <input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>">
+      <?php endif; ?>
+      <input type="hidden" name="action" value="add_delivery">
       <div class="form-group">
         <label for="fuel-type-input">Fuel Grade</label>
-        <select id="fuel-type-input" class="form-control-custom">
+        <select id="fuel-type-input" name="fuel_code" class="form-control-custom">
           <option value="p92">Petrol 92</option>
           <option value="p95">Petrol 95</option>
           <option value="dsl">Diesel</option>
@@ -584,15 +760,15 @@ $managerInitial = map_pump_profile_initial($managerDisplayName, 'M');
       </div>
       <div class="form-group">
         <label for="quantity-input">Quantity (Liters)</label>
-        <input type="number" id="quantity-input" class="form-control-custom" required min="1" max="15000" placeholder="e.g. 5000">
+        <input type="number" id="quantity-input" name="quantity_l" class="form-control-custom" required min="1" max="15000" placeholder="e.g. 5000">
       </div>
       <div class="form-group">
         <label for="supplier-input">Supplier</label>
-        <input type="text" id="supplier-input" class="form-control-custom" required placeholder="e.g. Puma Energy">
+        <input type="text" id="supplier-input" name="supplier" class="form-control-custom" required placeholder="e.g. Puma Energy">
       </div>
       <div class="form-group">
         <label for="handler-input">Received By</label>
-        <input type="text" id="handler-input" class="form-control-custom" required placeholder="e.g. Felix">
+        <input type="text" id="handler-input" name="received_by" class="form-control-custom" required placeholder="e.g. Felix">
       </div>
       <div class="modal-actions">
         <button type="button" class="btn-secondary-custom" id="modal-cancel-btn">Cancel</button>
@@ -656,14 +832,18 @@ $managerInitial = map_pump_profile_initial($managerDisplayName, 'M');
       if (notifPing) notifPing.remove();
     });
 
-    // 3. Local State Management
+    // 3. Local State Management (hydrated from server)
     const stockDB = {
-      p92: { capacity: 15000, remaining: 11100 },
-      p95: { capacity: 10000, remaining: 4800 },
-      dsl: { capacity: 12000, remaining: 2640 }
+      p92: { capacity: <?= (int)($tanks['p92']['capacity_l'] ?? 15000) ?>, remaining: <?= (int)($tanks['p92']['current_l'] ?? 11100) ?> },
+      p95: { capacity: <?= (int)($tanks['p95']['capacity_l'] ?? 10000) ?>, remaining: <?= (int)($tanks['p95']['current_l'] ?? 4800) ?> },
+      dsl: { capacity: <?= (int)($tanks['dsl']['capacity_l'] ?? 12000) ?>, remaining: <?= (int)($tanks['dsl']['current_l'] ?? 2640) ?> }
     };
 
-    let oilLimits = { p92: 25, p95: 25, dsl: 30 };
+    let oilLimits = {
+      p92: <?= (int)($tanks['p92']['alert_pct'] ?? 25) ?>,
+      p95: <?= (int)($tanks['p95']['alert_pct'] ?? 25) ?>,
+      dsl: <?= (int)($tanks['dsl']['alert_pct'] ?? 30) ?>
+    };
 
     // Synchronize visual state across tanks
     function syncTanksUI() {
@@ -672,35 +852,39 @@ $managerInitial = map_pump_profile_initial($managerDisplayName, 'M');
         const used = item.capacity - item.remaining;
         const percent = Math.min(100, Math.round((item.remaining / item.capacity) * 100));
 
-        document.getElementById(`pct-${key}`).textContent = `${percent}%`;
-        document.getElementById(`gauge-${key}`).style.width = `${percent}%`;
-        document.getElementById(`rem-${key}`).textContent = `${item.remaining.toLocaleString()} L remaining`;
-        document.getElementById(`used-${key}`).textContent = `${used.toLocaleString()} L used`;
+        const pctEl = document.getElementById(`pct-${key}`);
+        const gaugeEl = document.getElementById(`gauge-${key}`);
+        const remEl = document.getElementById(`rem-${key}`);
+        const usedEl = document.getElementById(`used-${key}`);
+        const flagEl = document.getElementById(`flag-${key}`);
+
+        if (pctEl) pctEl.textContent = `${percent}%`;
+        if (gaugeEl) gaugeEl.style.width = `${percent}%`;
+        if (remEl) remEl.textContent = `${item.remaining.toLocaleString()} L remaining`;
+        if (usedEl) usedEl.textContent = `${used.toLocaleString()} L used`;
 
         const typeRow = document.querySelector(`.type-row[data-tank-id="tank-${key}"] .rem-type-lbl`);
         if(typeRow) typeRow.textContent = `Current stock — ${item.remaining.toLocaleString()} L`;
 
-        const flagEl = document.getElementById(`flag-${key}`);
-        const gaugeEl = document.getElementById(`gauge-${key}`);
-        const pctEl = document.getElementById(`pct-${key}`);
-
-        const lowLimit = oilLimits[key];
-        const midLimit = lowLimit + 30;
-        if (percent > midLimit) {
-          flagEl.className = "tank-flag ok";
-          flagEl.innerHTML = `<i class="fa-solid fa-check"></i> Stock sufficient`;
-          gaugeEl.style.backgroundColor = "var(--mint-400)";
-          pctEl.style.color = "var(--mint-400)";
-        } else if (percent > lowLimit) {
-          flagEl.className = "tank-flag mid";
-          flagEl.innerHTML = `<i class="fa-solid fa-circle-half-stroke"></i> ~${Math.ceil((item.remaining / 1200))} days remaining`;
-          gaugeEl.style.backgroundColor = "var(--amber-400)";
-          pctEl.style.color = "var(--amber-300)";
-        } else {
-          flagEl.className = "tank-flag low";
-          flagEl.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i> Stock low (below ${lowLimit}% limit) — delivery needed`;
-          gaugeEl.style.backgroundColor = "var(--red-400)";
-          pctEl.style.color = "var(--red-400)";
+        if (flagEl && gaugeEl && pctEl) {
+          const lowLimit = oilLimits[key];
+          const midLimit = lowLimit + 30;
+          if (percent > midLimit) {
+            flagEl.className = "tank-flag ok";
+            flagEl.innerHTML = `<i class="fa-solid fa-check"></i> Stock sufficient`;
+            gaugeEl.style.backgroundColor = "var(--mint-400)";
+            pctEl.style.color = "var(--mint-400)";
+          } else if (percent > lowLimit) {
+            flagEl.className = "tank-flag mid";
+            flagEl.innerHTML = `<i class="fa-solid fa-circle-half-stroke"></i> ~${Math.ceil((item.remaining / 1200))} days remaining`;
+            gaugeEl.style.backgroundColor = "var(--amber-400)";
+            pctEl.style.color = "var(--amber-300)";
+          } else {
+            flagEl.className = "tank-flag low";
+            flagEl.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i> Stock low (below ${lowLimit}% limit) — delivery needed`;
+            gaugeEl.style.backgroundColor = "var(--red-400)";
+            pctEl.style.color = "var(--red-400)";
+          }
         }
       });
     }
@@ -724,14 +908,12 @@ $managerInitial = map_pump_profile_initial($managerDisplayName, 'M');
     limitModal.addEventListener('click', (e) => { if (e.target === limitModal) closeLimitModal(); });
 
     limitForm.addEventListener('submit', (e) => {
-      e.preventDefault();
       oilLimits = {
         p92: parseInt(document.getElementById('limit-p92').value),
         p95: parseInt(document.getElementById('limit-p95').value),
         dsl: parseInt(document.getElementById('limit-dsl').value)
       };
       syncTanksUI();
-      closeLimitModal();
     });
 
     // Modal Control: Delivery Records
@@ -750,51 +932,6 @@ $managerInitial = map_pump_profile_initial($managerDisplayName, 'M');
     closeBtn.addEventListener('click', closeModal);
     cancelBtn.addEventListener('click', closeModal);
 
-    // Form Handler: Add Delivery Record
-    form.addEventListener('submit', (e) => {
-      e.preventDefault();
-
-      const fuelKey = document.getElementById('fuel-type-input').value;
-      const quantityVal = parseInt(document.getElementById('quantity-input').value);
-      const supplierVal = document.getElementById('supplier-input').value;
-      const handlerVal = document.getElementById('handler-input').value;
-
-      const spec = stockDB[fuelKey];
-      if (spec.remaining + quantityVal > spec.capacity) {
-        alert(`Warning: This delivery of ${quantityVal} L exceeds the maximum capacity limits of this tank. Current available space is only ${spec.capacity - spec.remaining} L.`);
-        return;
-      }
-
-      spec.remaining += quantityVal;
-
-      const fuelLabels = {
-        p92: { title: "Petrol 92", badge: "p92" },
-        p95: { title: "Petrol 95", badge: "p95" },
-        dsl: { title: "Diesel", badge: "dsl" }
-      };
-
-      const tableBody = document.querySelector('#delivery-table tbody');
-      const newRow = document.createElement('tr');
-      newRow.setAttribute('data-fuel', fuelLabels[fuelKey].title);
-      
-      const today = new Date();
-      const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-      const formattedDate = `${monthNames[today.getMonth()]} ${today.getDate()}`;
-
-      newRow.innerHTML = `
-        <td>${formattedDate}</td>
-        <td><span class="fuel-tag ${fuelLabels[fuelKey].badge}">${fuelLabels[fuelKey].title}</span></td>
-        <td>${quantityVal.toLocaleString()} L</td>
-        <td>${supplierVal}</td>
-        <td>${handlerVal}</td>
-      `;
-
-      tableBody.insertBefore(newRow, tableBody.firstChild);
-
-      syncTanksUI();
-      closeModal();
-    });
-
     // Dynamic Switch Controls
     const toggleButtons = document.querySelectorAll('.toggle:not([disabled])');
     toggleButtons.forEach(btn => {
@@ -807,8 +944,10 @@ $managerInitial = map_pump_profile_initial($managerDisplayName, 'M');
           if (!btn.classList.contains('on')) {
             tankCard.classList.add('disabled-tank');
             const flag = tankCard.querySelector('.tank-flag');
-            flag.className = "tank-flag inactive";
-            flag.innerHTML = `<i class="fa-solid fa-ban"></i> Out of Service`;
+            if (flag) {
+              flag.className = "tank-flag inactive";
+              flag.innerHTML = `<i class="fa-solid fa-ban"></i> Out of Service`;
+            }
           } else {
             tankCard.classList.remove('disabled-tank');
             syncTanksUI();

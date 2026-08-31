@@ -73,8 +73,8 @@ try {
         'moderator' => '/php/Moderators(UnderAdmin)/moderator_dashboard.php',
         'hq' => '/php/HQ/index.php',
         'manager' => '/php/BranchManager/dashboard.php',
-        'branchmanager' => '/php/BranchManager/dashboard.php',
-        'branch manager' => '/php/BranchManager/dashboard.php',
+        'branchmanager' => '../BranchManager/dashboard.php',
+        'branch manager' => '../BranchManager/dashboard.php',
         'staff' => '../Staff/staff_dashboard.php',
         'customer' => '../Customer/dashboard.php',
     ];
