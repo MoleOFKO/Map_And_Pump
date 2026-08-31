@@ -80,6 +80,7 @@ function request_redirect(string $location = 'view_requests.php'): never
         'view_hq_and_user_account(M).php',
         'view_users(M).php',
         'view_users.php',
+        'view_requests.php',
         'view_requests(M).php',
         'view_report(M).php',
         'edit_profile(M).php',

@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/request_common.php';
+require_once __DIR__ . '/user_account_common.php';
 
 if (session_status() !== PHP_SESSION_ACTIVE) {
     session_start();
@@ -9,7 +10,7 @@ $flash = request_pull_flash();
 $search = trim((string) ($_GET['search'] ?? ''));
 $requestType = strtolower(trim((string) ($_GET['type'] ?? '')));
 $status = strtolower(trim((string) ($_GET['status'] ?? '')));
-$allowedTypes = ['station', 'license', 'deactivation'];
+$allowedTypes = ['account', 'station', 'license', 'deactivation'];
 $allowedStatuses = ['pending', 'approved', 'rejected', 'flagged'];
 
 if (!in_array($requestType, $allowedTypes, true)) {
@@ -25,6 +26,7 @@ $summary = [
     'declined_flagged' => 0,
 ];
 $requestRows = [];
+$accountRows = [];
 $dbError = null;
 
 if (hq_db_available() && request_schema_ready()) {
@@ -54,14 +56,17 @@ if (hq_db_available() && request_schema_ready()) {
 
     if ($requestType !== '') {
         $typeValues = match ($requestType) {
+            'account' => [],
             'station' => ['station', 'new_station', 'new_station_registration'],
             'license' => ['license', 'license_modification'],
             'deactivation' => ['deactivation', 'account_deactivation'],
         };
-        $where[] = 'LOWER(r.request_type) IN (' . implode(',', array_fill(0, count($typeValues), '?')) . ')';
-        foreach ($typeValues as $typeValue) {
-            $params[] = $typeValue;
-            $types .= 's';
+        if ($typeValues) {
+            $where[] = 'LOWER(r.request_type) IN (' . implode(',', array_fill(0, count($typeValues), '?')) . ')';
+            foreach ($typeValues as $typeValue) {
+                $params[] = $typeValue;
+                $types .= 's';
+            }
         }
     }
 
@@ -87,6 +92,9 @@ FROM system_requests r
 LEFT JOIN users u ON u.user_id = r.submitter_user_id
 SQL;
 
+    if ($requestType === 'account') {
+        $requestRows = [];
+    } else {
     if ($where) {
         $sql .= ' WHERE ' . implode(' AND ', $where);
     }
@@ -108,6 +116,12 @@ SQL;
             }
         }
         $statement->close();
+    }
+    }
+
+    if (($requestType === '' || $requestType === 'account') && ($status === '' || $status === 'pending')) {
+        $accountRows = pending_account_rows($search);
+        $summary['pending'] = (int) $summary['pending'] + count($accountRows);
     }
 } else {
     $dbError = 'The request database is temporarily unavailable.';
