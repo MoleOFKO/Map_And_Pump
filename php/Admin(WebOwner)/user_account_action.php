@@ -34,7 +34,7 @@ $targetQuery = $conn->prepare(
     "SELECT u.user_id, u.user_name, u.email, u.status, r.role_id, r.role_name
      FROM users u
      INNER JOIN roles r ON r.role_id = u.role_id
-     WHERE u.user_id = ? AND r.role_id = 6 AND LOWER(TRIM(r.role_name)) = 'customer'
+     WHERE u.user_id = ? AND LOWER(TRIM(r.role_name)) NOT IN ('admin', 'moderator', 'hq', 'headquarter', 'headquarters')
      LIMIT 1"
 );
 
@@ -49,7 +49,7 @@ $target = $targetQuery->get_result()?->fetch_assoc();
 $targetQuery->close();
 
 if (!$target) {
-    hq_flash('danger', 'The selected account is not a role 6 Customer account.');
+    hq_flash('danger', 'The selected account is not a manageable non-HQ user account.');
     hq_redirect($redirect);
 }
 
@@ -63,7 +63,15 @@ $notification = hq_send_notification(
 try {
     $conn->begin_transaction();
 
-    $statusUpdate = $conn->prepare('UPDATE users SET status = ?, updated_at = NOW() WHERE user_id = ? AND role_id = 6');
+    $statusUpdate = $conn->prepare(
+        "UPDATE users
+         SET status = ?, updated_at = NOW()
+         WHERE user_id = ?
+           AND role_id IN (
+               SELECT role_id FROM roles
+               WHERE LOWER(TRIM(role_name)) NOT IN ('admin', 'moderator', 'hq', 'headquarter', 'headquarters')
+           )"
+    );
     if (!$statusUpdate) {
         throw new RuntimeException('Could not prepare the Customer status update.');
     }

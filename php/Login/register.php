@@ -217,6 +217,25 @@
     const ruleNumber = document.getElementById('rule-number');
     const ruleSymbol = document.getElementById('rule-symbol');
 
+    function setButtonLoading(button, loading, label = '') {
+      if (!button) return;
+      if (!button.dataset.originalHtml) {
+        button.dataset.originalHtml = button.innerHTML;
+      }
+
+      if (loading) {
+        button.classList.add('is-loading');
+        button.setAttribute('aria-busy', 'true');
+        if ('disabled' in button) button.disabled = true;
+        button.innerHTML = `<span class="btn-spinner" aria-hidden="true"></span><span class="btn-loading-label">${label || button.dataset.loadingText || 'Loading...'}</span>`;
+        return;
+      }
+
+      button.classList.remove('is-loading');
+      button.removeAttribute('aria-busy');
+      if ('disabled' in button) button.disabled = false;
+      button.innerHTML = button.dataset.originalHtml;
+    }
     function showStatus(element, message, ok = false) {
       element.textContent = message;
       element.style.display = message ? 'block' : 'none';
@@ -357,8 +376,7 @@
 
       passwordError.textContent = '';
       showStatus(registerStatus, '');
-      toStep2.disabled = true;
-      toStep2.textContent = 'SENDING...';
+      setButtonLoading(toStep2, true, 'SENDING...');
 
       try {
         const result = await postForm('register_process.php', registrationFormData());
@@ -376,8 +394,7 @@
       } catch (error) {
         showStatus(registerStatus, 'Could not contact the server. Please try again.');
       } finally {
-        toStep2.disabled = false;
-        toStep2.textContent = 'REGISTER';
+        setButtonLoading(toStep2, false);
       }
     });
 
@@ -395,8 +412,7 @@
       }
 
       showStatus(verifyStatus, '');
-      toStep3.disabled = true;
-      toStep3.textContent = 'CONFIRMING...';
+      setButtonLoading(toStep3, true, 'CONFIRMING...');
 
       try {
         const data = new FormData();
@@ -418,16 +434,14 @@
       } catch (error) {
         showStatus(verifyStatus, 'Could not contact the server. Please try again.');
       } finally {
-        toStep3.disabled = false;
-        toStep3.textContent = 'Confirm';
+        setButtonLoading(toStep3, false);
       }
     });
 
     resendLink.addEventListener('click', async function(e) {
       e.preventDefault();
       showStatus(verifyStatus, '');
-      resendLink.style.pointerEvents = 'none';
-      resendLink.textContent = 'Sending...';
+      setButtonLoading(resendLink, true, 'Sending...');
 
       try {
         const result = await postForm('register_process.php', registrationFormData());
@@ -435,8 +449,7 @@
       } catch (error) {
         showStatus(verifyStatus, 'Could not contact the server. Please try again.');
       } finally {
-        resendLink.style.pointerEvents = '';
-        resendLink.textContent = 'Click to resend';
+        setButtonLoading(resendLink, false);
       }
     });
 

@@ -13,7 +13,10 @@ function customer_account_rows(string $search = '', string $status = ''): array
         return $rows;
     }
 
-    $where = ["r.role_id = 6", "LOWER(TRIM(r.role_name)) = 'customer'"];
+    $where = [
+        "LOWER(TRIM(r.role_name)) NOT IN ('admin', 'moderator', 'hq', 'headquarter', 'headquarters')",
+        hq_manageable_status_sql('u.status'),
+    ];
     $params = [];
     $types = '';
 
@@ -39,6 +42,57 @@ INNER JOIN roles r ON r.role_id = u.role_id
 LEFT JOIN headquarter h ON h.headquarter_id = u.headquarter_id
 SQL;
     $sql .= ' WHERE ' . implode(' AND ', $where) . ' ORDER BY u.updated_at DESC, u.user_id DESC';
+
+    $statement = $conn->prepare($sql);
+    if (!$statement) {
+        return $rows;
+    }
+
+    if ($types !== '') {
+        $bound = array_values($params);
+        hq_bind($statement, $types, $bound);
+    }
+
+    if ($statement->execute()) {
+        $result = $statement->get_result();
+        while ($result && ($row = $result->fetch_assoc())) {
+            $rows[] = $row;
+        }
+    }
+    $statement->close();
+
+    return $rows;
+}
+
+function pending_account_rows(string $search = ''): array
+{
+    global $conn;
+    $rows = [];
+
+    if (!hq_db_available() || !hq_registry_schema_ready()) {
+        return $rows;
+    }
+
+    $where = [hq_pending_status_sql('u.status')];
+    $params = [];
+    $types = '';
+
+    if ($search !== '') {
+        $where[] = '(LOWER(u.user_name) LIKE ? OR LOWER(u.email) LIKE ? OR LOWER(COALESCE(h.company_name, \'\')) LIKE ?)';
+        $like = '%' . strtolower($search) . '%';
+        array_push($params, $like, $like, $like);
+        $types .= 'sss';
+    }
+
+    $sql = <<<'SQL'
+SELECT u.user_id, u.user_name, u.email, u.status, u.created_at, u.updated_at,
+       u.headquarter_id, u.role_id, r.role_name,
+       h.company_name AS headquarter_name, h.location AS headquarter_location
+FROM users u
+INNER JOIN roles r ON r.role_id = u.role_id
+LEFT JOIN headquarter h ON h.headquarter_id = u.headquarter_id
+SQL;
+    $sql .= ' WHERE ' . implode(' AND ', $where) . ' ORDER BY u.created_at DESC, u.user_id DESC';
 
     $statement = $conn->prepare($sql);
     if (!$statement) {

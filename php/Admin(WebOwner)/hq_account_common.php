@@ -57,6 +57,9 @@ function hq_redirect(string $location = 'view_hq_and_user_account.php'): never
     $returnTo = trim((string) ($_POST['return_to'] ?? $_GET['return_to'] ?? ''));
     $allowedReturnTargets = [
         'moderator_dashboard.php',
+        'manage_hq.php',
+        'manage_users.php',
+        'view_hq_and_user_account.php',
         'manage_hq(M).php',
         'manage_users(M).php',
         'view_hq_and_user_account(M).php',
@@ -78,8 +81,10 @@ function hq_status_label(?string $status): string
 {
     return match (strtolower(trim((string) $status))) {
         'active' => 'Active',
+        'approved' => 'Approved',
         'suspended' => 'Suspended',
         'removed' => 'Removed',
+        'rejected' => 'Rejected',
         'pending', 'pending_verification' => 'Pending Verification',
         default => $status !== null && trim($status) !== '' ? ucwords(str_replace('_', ' ', $status)) : 'Pending Verification',
     };
@@ -88,7 +93,7 @@ function hq_status_label(?string $status): string
 function hq_status_class(?string $status): string
 {
     return match (strtolower(trim((string) $status))) {
-        'active' => 'hq-status-active',
+        'active', 'approved' => 'hq-status-active',
         'suspended' => 'hq-status-suspended',
         'removed' => 'hq-status-removed',
         default => 'hq-status-pending',
@@ -323,6 +328,21 @@ function hq_hq_role_id(): int
 function hq_hq_role_sql(string $tableAlias = 'r'): string
 {
     return "LOWER(TRIM({$tableAlias}.role_name)) IN ('hq', 'headquarter', 'headquarters')";
+}
+
+function hq_pending_status_sql(string $column): string
+{
+    return "LOWER(TRIM({$column})) IN ('pending', 'pending_verification')";
+}
+
+function hq_manageable_status_sql(string $column): string
+{
+    return "LOWER(TRIM({$column})) IN ('active', 'approved', 'suspended', 'removed')";
+}
+
+function hq_manageable_statuses(): array
+{
+    return ['active', 'approved', 'suspended', 'removed'];
 }
 
 function hq_unique_username(string $ownerName, string $email): string

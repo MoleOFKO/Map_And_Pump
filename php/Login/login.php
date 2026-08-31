@@ -100,7 +100,7 @@ unset($_SESSION['social_login_debug']);
 
         <!-- Submit Button -->
         <div class="login-btn-wrapper">
-          <button type="submit" class="submit-btn">LOG IN</button>
+          <button type="submit" class="submit-btn" id="loginSubmitBtn" data-loading-text="LOGGING IN">LOG IN</button>
         </div>
 
         <!-- Divider -->
@@ -112,7 +112,7 @@ unset($_SESSION['social_login_debug']);
 
         <!-- Social Login Buttons (Side-by-Side Labeled Cards) -->
         <div class="social-options">
-          <a href="social_login.php?provider=google" class="social-btn" aria-label="Login with Google">
+          <a href="social_login.php?provider=google" class="social-btn" aria-label="Login with Google" data-loading-text="Connecting...">
             <svg viewBox="0 0 24 24">
               <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
               <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
@@ -122,7 +122,7 @@ unset($_SESSION['social_login_debug']);
             <span>Google</span>
           </a>
           
-          <a href="social_login.php?provider=facebook" class="social-btn" aria-label="Login with Facebook">
+          <a href="social_login.php?provider=facebook" class="social-btn" aria-label="Login with Facebook" data-loading-text="Connecting...">
             <svg viewBox="0 0 24 24" fill="#1877F2">
               <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
             </svg>
@@ -149,10 +149,38 @@ unset($_SESSION['social_login_debug']);
 
   <!-- JS Interactivity -->
   <script>
+    function setButtonLoading(button, loading, label = '') {
+      if (!button) return;
+      if (!button.dataset.originalHtml) {
+        button.dataset.originalHtml = button.innerHTML;
+      }
+
+      if (loading) {
+        button.classList.add('is-loading');
+        button.setAttribute('aria-busy', 'true');
+        if ('disabled' in button) button.disabled = true;
+        button.innerHTML = `<span class="btn-spinner" aria-hidden="true"></span><span class="btn-loading-label">${label || button.dataset.loadingText || 'Loading...'}</span>`;
+        return;
+      }
+
+      button.classList.remove('is-loading');
+      button.removeAttribute('aria-busy');
+      if ('disabled' in button) button.disabled = false;
+      button.innerHTML = button.dataset.originalHtml;
+    }
     const passwordInput = document.getElementById('password');
     const togglePasswordBtn = document.getElementById('togglePassword');
     const eyeIcon = document.getElementById('eyeIcon');
 
+    document.getElementById('login-form')?.addEventListener('submit', function () {
+      setButtonLoading(document.getElementById('loginSubmitBtn'), true, 'LOGGING IN');
+    });
+
+    document.querySelectorAll('.social-btn').forEach((button) => {
+      button.addEventListener('click', function () {
+        setButtonLoading(button, true, button.dataset.loadingText || 'Connecting...');
+      });
+    });
     togglePasswordBtn.addEventListener('click', function () {
       const type = passwordInput.getAttribute('type') === 'password' ? 'text' : 'password';
       passwordInput.setAttribute('type', type);

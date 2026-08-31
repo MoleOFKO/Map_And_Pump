@@ -476,6 +476,61 @@ input:-webkit-autofill:active {
   box-shadow: 0 1px 2px rgba(56, 189, 248, 0.15);
 }
 
+.submit-btn:disabled,
+.submit-btn.is-loading,
+.social-btn.is-loading,
+.resend-link.is-loading {
+  cursor: wait;
+  pointer-events: none;
+}
+
+.submit-btn.is-loading {
+  transform: translateY(0);
+}
+
+.submit-btn.is-loading::after {
+  background-color: #0ea5e9;
+}
+
+.btn-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-top-color: #ffffff;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+  animation: mapPumpSpin 0.75s linear infinite;
+}
+
+.btn-loading-label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.submit-btn .btn-spinner,
+.social-btn .btn-spinner {
+  margin-right: 8px;
+}
+
+.social-btn.is-loading {
+  border-color: rgba(56, 189, 248, 0.7);
+  background: rgba(15, 23, 42, 0.98);
+  box-shadow: 0 0 18px rgba(56, 189, 248, 0.28);
+  transform: translateY(-1px);
+}
+
+.social-btn.is-loading svg {
+  display: none;
+}
+
+@keyframes mapPumpSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
 .register-prompt {
   text-align: center;
   font-size: 11px;
@@ -611,6 +666,19 @@ input:-webkit-autofill:active {
   text-decoration: underline;
 }
 
+.resend-link.is-loading {
+  display: inline-flex;
+  align-items: center;
+  color: #7dd3fc;
+  text-decoration: none;
+}
+
+.resend-link .btn-spinner {
+  width: 12px;
+  height: 12px;
+  border-width: 2px;
+  margin-right: 6px;
+}
 /* Password Strength Indicator & Popover Rules (Step 3) */
 .relative-group {
   position: relative;

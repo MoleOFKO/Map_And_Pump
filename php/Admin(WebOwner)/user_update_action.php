@@ -6,13 +6,13 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
 }
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    hq_redirect('manage_users.php');
+    hq_redirect('view_users.php');
 }
 
 $userId = filter_var($_POST['user_id'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
 $userName = trim((string) ($_POST['user_name'] ?? ''));
 $email = strtolower(trim((string) ($_POST['email'] ?? '')));
-$redirect = trim((string) ($_POST['return_to'] ?? 'manage_users.php'));
+$redirect = trim((string) ($_POST['return_to'] ?? 'view_users.php'));
 
 if (!$userId || $userName === '' || !filter_var($email, FILTER_VALIDATE_EMAIL) || mb_strlen($userName) > 225 || mb_strlen($email) > 255) {
     hq_flash('danger', 'Please provide valid Customer user details.');
@@ -25,7 +25,7 @@ if (!hq_db_available() || !hq_registry_schema_ready()) {
 }
 
 global $conn;
-$targetQuery = $conn->prepare("SELECT u.user_id FROM users u INNER JOIN roles r ON r.role_id = u.role_id WHERE u.user_id = ? AND r.role_id = 6 AND LOWER(TRIM(r.role_name)) = 'customer' LIMIT 1");
+$targetQuery = $conn->prepare("SELECT u.user_id FROM users u INNER JOIN roles r ON r.role_id = u.role_id WHERE u.user_id = ? AND LOWER(TRIM(r.role_name)) NOT IN ('admin', 'moderator', 'hq', 'headquarter', 'headquarters') LIMIT 1");
 if (!$targetQuery) {
     hq_flash('danger', 'The selected Customer account could not be loaded.');
     hq_redirect($redirect);
@@ -35,7 +35,7 @@ $targetQuery->execute();
 $target = $targetQuery->get_result()?->fetch_assoc();
 $targetQuery->close();
 if (!$target) {
-    hq_flash('danger', 'That user is not a role 6 Customer account.');
+    hq_flash('danger', 'That user is not a manageable non-HQ account.');
     hq_redirect($redirect);
 }
 
@@ -51,7 +51,7 @@ if ($duplicate) {
 
 try {
     $conn->begin_transaction();
-    $update = $conn->prepare('UPDATE users SET user_name = ?, email = ?, updated_at = NOW() WHERE user_id = ? AND role_id = 6');
+    $update = $conn->prepare("UPDATE users SET user_name = ?, email = ?, updated_at = NOW() WHERE user_id = ? AND role_id IN (SELECT role_id FROM roles WHERE LOWER(TRIM(role_name)) NOT IN ('admin', 'moderator', 'hq', 'headquarter', 'headquarters'))");
     $update->bind_param('ssi', $userName, $email, $userId);
     if (!$update->execute()) {
         throw new RuntimeException('Could not update the Customer account.');
@@ -60,7 +60,7 @@ try {
     $reviewer = admin_current_user(false);
     admin_record_log((int) ($reviewer['user_id'] ?? 0), 'Updated Customer user #' . $userId . ' (' . $userName . ').');
     $conn->commit();
-    hq_flash('success', 'The Customer account was updated in the database.');
+    hq_flash('success', 'The user account was updated in the database.');
 } catch (Throwable $exception) {
     $conn->rollback();
     error_log('[Admin Customer] Update failed: ' . $exception->getMessage());

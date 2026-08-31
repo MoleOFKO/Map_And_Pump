@@ -4,7 +4,7 @@ require_once __DIR__ . '/moderator_common.php';
 $moderatorUser = moderator_require_user();
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    hq_redirect('manage_hq(M).php');
+    hq_redirect('view_hq_and_user_account(M).php');
 }
 
 $headquarterId = filter_var($_POST['headquarter_id'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
@@ -19,7 +19,7 @@ $businessLicense = trim((string) ($_POST['business_license'] ?? ''));
 $expiryDate = trim((string) ($_POST['expire_at'] ?? ''));
 $allowedRegions = ['yangon', 'mandalay', 'naypyidaw'];
 
-$redirect = 'manage_hq(M).php';
+$redirect = trim((string) ($_POST['return_to'] ?? 'view_hq_and_user_account(M).php'));
 
 if (!$headquarterId || $hqName === '' || $companyLogo === '' || $contactNumber === '' || $ownerName === '' || $address === '' || $businessLicense === '' || $expiryDate === '' || !filter_var($ownerEmail, FILTER_VALIDATE_EMAIL)) {
     hq_flash('danger', 'Please complete every required HQ, owner, contact, address, license, and expiry field.');

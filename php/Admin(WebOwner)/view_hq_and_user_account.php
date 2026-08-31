@@ -10,7 +10,7 @@ $search = trim((string) ($_GET['search'] ?? ''));
 $region = strtolower(trim((string) ($_GET['region'] ?? '')));
 $status = strtolower(trim((string) ($_GET['status'] ?? '')));
 $allowedRegions = ['yangon', 'mandalay', 'naypyidaw'];
-$allowedStatuses = ['active', 'pending', 'suspended', 'removed'];
+$allowedStatuses = hq_manageable_statuses();
 
 if (!in_array($region, $allowedRegions, true)) {
     $region = '';
@@ -29,7 +29,7 @@ if (hq_db_available() && hq_registry_schema_ready()) {
 
    $hqRoleId = hq_hq_role_id();
    if ($hqRoleId > 0) {
-       $where = [];
+       $where = [hq_manageable_status_sql("COALESCE(owner.status, 'pending')")];
        $params = [];
        $types = '';
 
@@ -48,7 +48,7 @@ if (hq_db_available() && hq_registry_schema_ready()) {
 
        if ($status !== '') {
            $where[] = 'LOWER(COALESCE(owner.status, \'pending\')) = ?';
-           $params[] = $status === 'pending' ? 'pending' : $status;
+           $params[] = $status;
            $types .= 's';
        }
 
@@ -121,8 +121,8 @@ $flashContext = $flash['context'] ?? [];
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Map &amp; Pump Admin — View role 3 HQ accounts and their HQ details.">
-    <title>View HQ — Map &amp; Pump</title>
+    <meta name="description" content="Map &amp; Pump Admin — View and manage role 3 HQ accounts and their HQ details.">
+    <title>View/Manage HQ — Map &amp; Pump</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&amp;display=swap" rel="stylesheet">
@@ -213,9 +213,9 @@ $flashContext = $flash['context'] ?? [];
 
         <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3">
             <div>
-                <span class="stat-chip mb-2"><i class="bi bi-building-fill txt-neon-cyan"></i> View Registry</span>
-                <h1 class="fw-bold m-0 h4 text-white mt-2">View HQ</h1>
-                <p class="text-white-50 m-0 small mt-1">View only role 3 HQ accounts and their HQ details from the live database.</p>
+                <span class="stat-chip mb-2"><i class="bi bi-building-fill txt-neon-cyan"></i> HQ Administration</span>
+                <h1 class="fw-bold m-0 h4 text-white mt-2">View/Manage HQ</h1>
+                <p class="text-white-50 m-0 small mt-1">View and manage approved, active, suspended, or removed role 3 HQ accounts.</p>
             </div>
         </div>
 
@@ -246,10 +246,9 @@ $flashContext = $flash['context'] ?? [];
                         <div class="col-12 col-md-2">
                             <select class="form-select glass-select" name="status">
                                 <option value="" <?= $status === '' ? 'selected' : '' ?>>All Status</option>
-                                <option value="active" <?= $status === 'active' ? 'selected' : '' ?>>Active</option>
-                                <option value="pending" <?= $status === 'pending' ? 'selected' : '' ?>>Pending Verification</option>
-                                <option value="suspended" <?= $status === 'suspended' ? 'selected' : '' ?>>Suspended</option>
-                                <option value="removed" <?= $status === 'removed' ? 'selected' : '' ?>>Removed</option>
+                                <?php foreach ($allowedStatuses as $option): ?>
+                                    <option value="<?= $option ?>" <?= $status === $option ? 'selected' : '' ?>><?= hq_escape(hq_status_label($option)) ?></option>
+                                <?php endforeach; ?>
                             </select>
                         </div>
                         <div class="col-12 col-md-2 d-grid"><button type="submit" class="btn btn-neon">Apply Filter</button></div>
@@ -332,18 +331,19 @@ $flashContext = $flash['context'] ?? [];
             <div class="modal-content">
                 <div class="modal-header"><h5 class="modal-title fw-bold" id="hqDetailsModalLabel"><i class="bi bi-building txt-neon-cyan me-2"></i> HQ Details</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button></div>
                 <div class="modal-body" id="hqDetailsBody"><div class="text-center text-white-50 py-5"><div class="spinner-border spinner-border-sm txt-neon-cyan mb-2" role="status"></div><div>Loading HQ details…</div></div></div>
+                <div class="modal-footer"><button type="button" class="btn btn-neon js-edit-hq-details" data-bs-target="#editHQModal" data-bs-toggle="modal">Edit details</button></div>
             </div>
         </div>
     </div>
+
+    <div class="modal fade glass-modal" id="editHQModal" tabindex="-1" aria-labelledby="editHQLabel" aria-hidden="true"><div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-lg"><div class="modal-content"><div class="modal-header"><div><h5 class="modal-title fw-bold" id="editHQLabel"><i class="bi bi-pencil-square txt-neon-cyan me-2"></i> Edit HQ</h5><p class="text-white-50 small mb-0 mt-1">Update HQ and owner details in the live database.</p></div><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div><form action="hq_update_action.php" method="POST"><input type="hidden" name="headquarter_id" id="editHQId"><input type="hidden" name="return_to" value="view_hq_and_user_account.php"><div class="modal-body d-flex flex-column gap-3"><div class="manage-hq-note text-white-50 small"><span class="text-danger">*</span> Changing the owner email also updates the linked HQ account email.</div><div><label class="form-label text-white-50 small" for="editHqName">Company / HQ Name <span class="text-danger">*</span></label><input id="editHqName" type="text" name="hq_name" class="form-control glass-input" maxlength="255" required></div><div><label class="form-label text-white-50 small" for="editLogo">Company Logo URL / Storage Path <span class="text-danger">*</span></label><input id="editLogo" type="text" name="company_logo" class="form-control glass-input" maxlength="255" required></div><div class="row g-3"><div class="col-12 col-md-6"><label class="form-label text-white-50 small" for="editOwnerName">Owner Name <span class="text-danger">*</span></label><input id="editOwnerName" type="text" name="owner_name" class="form-control glass-input" maxlength="225" required></div><div class="col-12 col-md-6"><label class="form-label text-white-50 small" for="editOwnerEmail">Owner Email <span class="text-danger">*</span></label><input id="editOwnerEmail" type="email" name="owner_email" class="form-control glass-input" maxlength="225" required></div></div><div><label class="form-label text-white-50 small" for="editContact">Contact Number <span class="text-danger">*</span></label><input id="editContact" type="text" name="contact_number" class="form-control glass-input" maxlength="50" required></div><div><label class="form-label text-white-50 small" for="editRegion">Regional Headquarters Office <span class="text-danger">*</span></label><select id="editRegion" name="region" class="form-select glass-select" required><option value="">Select region</option><option value="yangon">Yangon Region</option><option value="mandalay">Mandalay Region</option><option value="naypyidaw">Naypyidaw</option></select></div><div><label class="form-label text-white-50 small" for="editAddress">Physical Address Details <span class="text-danger">*</span></label><textarea id="editAddress" name="address" rows="3" maxlength="220" class="form-control glass-input" required></textarea></div><div><label class="form-label text-white-50 small" for="editLicense">Business License <span class="text-danger">*</span></label><input id="editLicense" type="text" name="business_license" class="form-control glass-input" maxlength="255" required></div><div><label class="form-label text-white-50 small" for="editExpire">License Expiry Date <span class="text-danger">*</span></label><input id="editExpire" type="date" name="expire_at" min="<?= date('Y-m-d') ?>" class="form-control glass-input" required></div></div><div class="modal-footer"><button type="button" class="btn btn-outline-secondary rounded-3 text-white-50" data-bs-dismiss="modal">Cancel</button><button type="submit" class="btn btn-neon">Save HQ Changes</button></div></form></div></div></div>
 
     <div class="offcanvas offcanvas-end" tabindex="-1" id="mainMenuOffcanvas" style="width:320px;background:rgba(6,12,24,.98);backdrop-filter:blur(28px);border-left:1px solid rgba(0,180,255,.18);">
         <div class="offcanvas-header pb-2 border-bottom border-white border-opacity-10"><div><h5 class="offcanvas-title text-white fw-bold mb-0">Main Menu</h5><p class="text-white-50 small mb-0" style="font-size:.78rem;">Admin Portal</p></div><button type="button" class="btn-close btn-close-white" data-bs-dismiss="offcanvas"></button></div>
         <div class="offcanvas-body pt-3"><ul class="list-unstyled d-flex flex-column gap-2">
             <li><a href="admin_dashboard.php" class="menu-btn-nav"><i class="bi bi-house me-3 txt-neon-cyan"></i> Home</a></li>
-            <li><a href="view_hq_and_user_account.php" class="menu-btn-nav active-nav"><i class="bi bi-building-gear me-3 txt-neon-cyan"></i> View HQ</a></li>
-            <li><a href="manage_hq.php" class="menu-btn-nav"><i class="bi bi-buildings me-3 txt-neon-cyan"></i> Manage HQ</a></li>
-            <li><a href="view_users.php" class="menu-btn-nav"><i class="bi bi-people me-3 txt-neon-cyan"></i> View Users</a></li>
-            <li><a href="manage_users.php" class="menu-btn-nav"><i class="bi bi-person-gear me-3 txt-neon-cyan"></i> Manage Users</a></li>
+            <li><a href="view_hq_and_user_account.php" class="menu-btn-nav active-nav"><i class="bi bi-building-gear me-3 txt-neon-cyan"></i> View/Manage HQ</a></li>
+            <li><a href="view_users.php" class="menu-btn-nav"><i class="bi bi-people me-3 txt-neon-cyan"></i> View/Manage Users</a></li>
             <li><a href="view_requests.php" class="menu-btn-nav"><i class="bi bi-file-earmark-check me-3 txt-neon-cyan"></i> View Requests</a></li>
             <li><a href="view_report.php" class="menu-btn-nav"><i class="bi bi-graph-up-arrow me-3 txt-neon-cyan"></i> View Report</a></li>
             <li><a href="edit_profile.php" class="menu-btn-nav"><i class="bi bi-person-bounding-box me-3 txt-neon-blue"></i> Edit Profile</a></li>
@@ -367,11 +367,12 @@ $flashContext = $flash['context'] ?? [];
             const actionSubmit = document.getElementById('actionSubmit');
             const detailsTitle = document.getElementById('hqDetailsModalLabel');
             const detailsBody = document.getElementById('hqDetailsBody');
+            let currentHQDetails = null;
 
             const escapeHtml = (value) => String(value ?? '').replace(/[&<>'"]/g, (character) => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#039;','"':'&quot;'}[character]));
             const formatDate = (value) => value ? new Date(String(value).replace(' ', 'T')).toLocaleString() : 'Not available';
             const statusClass = (status) => ({active:'hq-status-active', suspended:'hq-status-suspended', removed:'hq-status-removed'}[String(status || '').toLowerCase()] || 'hq-status-pending');
-            const statusLabel = (status) => ({active:'Active', suspended:'Suspended', removed:'Removed', pending:'Pending Verification', pending_verification:'Pending Verification'}[String(status || '').toLowerCase()] || 'Pending Verification');
+            const statusLabel = (status) => ({active:'Active', approved:'Approved', suspended:'Suspended', removed:'Removed', pending:'Pending Verification', pending_verification:'Pending Verification'}[String(status || '').toLowerCase()] || 'Pending Verification');
             const removeUserSections = () => { detailsBody.querySelectorAll('h6, .hq-detail-label').forEach((heading) => { if (/linked\s+user|linked\s+account/i.test(heading.textContent || '')) { heading.nextElementSibling?.remove(); heading.remove(); } }); };
             new MutationObserver(removeUserSections).observe(detailsBody, {childList:true, subtree:true});
 
@@ -407,6 +408,7 @@ $flashContext = $flash['context'] ?? [];
 
             const renderDetailsHQOnly = (payload) => {
                 const hq = payload.hq || {};
+                currentHQDetails = hq;
                 const actions = payload.actions || [];
                 const actionRows = actions.length ? actions.map((action) => '<tr><td>' + escapeHtml(String(action.action_type || '').toUpperCase()) + '</td><td>' + escapeHtml(action.reason || '—') + '</td><td>' + escapeHtml(formatDate(action.created_at)) + '</td></tr>').join('') : '<tr><td colspan="3" class="text-center text-white-50">No HQ suspend/remove history.</td></tr>';
                 detailsTitle.innerHTML = '<i class="bi bi-building txt-neon-cyan me-2"></i>' + escapeHtml(hq.company_name || 'HQ Details');
@@ -427,6 +429,26 @@ $flashContext = $flash['context'] ?? [];
                     } catch (error) {
                         detailsBody.innerHTML = '<div class="alert hq-flash alert-danger"><i class="bi bi-exclamation-triangle me-2"></i>' + escapeHtml(error.message) + '</div>';
                     }
+                });
+            });
+
+            document.querySelectorAll('.js-edit-hq-details').forEach((button) => {
+                button.addEventListener('click', () => {
+                    const hq = currentHQDetails || {};
+                    const location = String(hq.location || '');
+                    const parts = location.split(/\s+(?:—|-)\s+/);
+                    const regionRaw = String(parts[0] || '').toLowerCase().replace(/\s+region$/, '').trim();
+                    const address = parts.length > 1 ? parts.slice(1).join(' - ') : location;
+                    document.getElementById('editHQId').value = hq.headquarter_id || '';
+                    document.getElementById('editHqName').value = hq.company_name || '';
+                    document.getElementById('editLogo').value = hq.company_logo || '';
+                    document.getElementById('editContact').value = hq.contact_number || '';
+                    document.getElementById('editOwnerName').value = hq.owner_name || '';
+                    document.getElementById('editOwnerEmail').value = hq.owner_email || hq.headquarter_email || '';
+                    document.getElementById('editRegion').value = regionRaw;
+                    document.getElementById('editAddress').value = address;
+                    document.getElementById('editLicense').value = hq.business_license || '';
+                    document.getElementById('editExpire').value = hq.expire_at ? String(hq.expire_at).slice(0, 10) : '';
                 });
             });
         })();

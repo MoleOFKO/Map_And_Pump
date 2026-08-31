@@ -73,10 +73,8 @@ $adminNavClass = static fn (string $key): string => $adminSection === $key ? 'me
     <div class="offcanvas-body pt-3">
         <ul class="list-unstyled d-flex flex-column gap-2">
             <li><a href="admin_dashboard.php" class="<?= $adminMenuClass('home') ?>"><i class="bi bi-house me-3 txt-neon-cyan"></i> Home</a></li>
-            <li><a href="view_hq_and_user_account.php" class="<?= $adminMenuClass('view_hq') ?>"><i class="bi bi-building-gear me-3 txt-neon-cyan"></i> View HQ</a></li>
-            <li><a href="view_users.php" class="<?= $adminMenuClass('view_users') ?>"><i class="bi bi-people me-3 txt-neon-cyan"></i> View Users</a></li>
-            <li><a href="manage_users.php" class="<?= $adminMenuClass('manage_users') ?>"><i class="bi bi-person-gear me-3 txt-neon-cyan"></i> Manage Users</a></li>
-            <li><a href="manage_hq.php" class="<?= $adminMenuClass('manage_hq') ?>"><i class="bi bi-buildings me-3 txt-neon-cyan"></i> Manage HQ</a></li>
+            <li><a href="view_hq_and_user_account.php" class="<?= $adminMenuClass('view_hq') ?>"><i class="bi bi-building-gear me-3 txt-neon-cyan"></i> View/Manage HQ</a></li>
+            <li><a href="view_users.php" class="<?= $adminMenuClass('view_users') ?>"><i class="bi bi-people me-3 txt-neon-cyan"></i> View/Manage Users</a></li>
             <li><a href="view_requests.php" class="<?= $adminMenuClass('requests') ?>"><i class="bi bi-file-earmark-check me-3 txt-neon-cyan"></i> View Requests</a></li>
             <li><a href="view_report.php" class="<?= $adminMenuClass('report') ?>"><i class="bi bi-graph-up-arrow me-3 txt-neon-cyan"></i> View Report</a></li>
             <li><a href="edit_profile.php" class="<?= $adminMenuClass('profile') ?>"><i class="bi bi-person-bounding-box me-3 txt-neon-blue"></i> Edit Profile</a></li>
