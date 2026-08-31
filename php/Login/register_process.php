@@ -63,6 +63,36 @@ function register_local_mail_fallback_enabled(): bool
         && filter_var($configured, FILTER_VALIDATE_BOOLEAN);
 }
 
+function register_mail_setup_message(Throwable $error): string
+{
+    $message = strtolower($error->getMessage());
+    $username = mail_config_value('SMTP_USERNAME');
+    $password = mail_config_value('SMTP_PASSWORD');
+    $provider = strtolower(mail_config_value('MAIL_PROVIDER', 'auto'));
+
+    if (($provider === 'smtp' || $provider === 'auto') && (trim($username) === '' || trim($password) === '')) {
+        return 'Email is not configured on Render yet. Set SMTP_USERNAME to mapa.and.pump@gmail.com and set SMTP_PASSWORD to a Gmail App Password, then redeploy.';
+    }
+
+    if (str_contains($message, 'username and password not accepted') || str_contains($message, 'authenticate') || str_contains($message, 'authentication failed')) {
+        return 'Gmail rejected the SMTP login. In Render, SMTP_PASSWORD must be a 16-character Gmail App Password for mapa.and.pump@gmail.com, not the normal Gmail password.';
+    }
+
+    if (str_contains($message, 'could not connect') || str_contains($message, 'connection refused') || str_contains($message, 'timed out')) {
+        return 'The site could not connect to the mail server. Check SMTP_HOST=smtp.gmail.com and SMTP_PORT=587 in Render, then redeploy.';
+    }
+
+    if (str_contains($message, 'sender') || str_contains($message, 'from')) {
+        return 'The sender email is not accepted. Set SMTP_USERNAME and SMTP_FROM_EMAIL to the same Gmail account: mapa.and.pump@gmail.com.';
+    }
+
+    if ($provider === 'resend' || str_contains($message, 'resend')) {
+        return 'Resend email is not configured correctly. Set RESEND_API_KEY and RESEND_FROM_EMAIL to a verified sender for map-and-pump.online, or switch MAIL_PROVIDER back to smtp.';
+    }
+
+    return 'Could not send the verification email. Check Render environment variables for SMTP_USERNAME, SMTP_PASSWORD, SMTP_FROM_EMAIL, SMTP_HOST, and SMTP_PORT, then redeploy.';
+}
+
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     register_json(false, 'Registration request is invalid.');
 }
@@ -117,7 +147,7 @@ try {
         error_log('Registration email failed: ' . $mailError->getMessage() . ' [' . get_class($mailError) . ']');
 
         if (!register_local_mail_fallback_enabled()) {
-            register_json(false, 'Could not send the verification email. Please check the site mail settings and try again.');
+            register_json(false, register_mail_setup_message($mailError));
         }
 
         error_log(sprintf('[Map&Pump local registration] Verification code for %s: %s', $email, $code));
