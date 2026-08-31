@@ -7,49 +7,61 @@ require_once __DIR__ . '/_helpers.php';
 require_once __DIR__ . '/../conn.php';
 require_branch_manager();
 
-$ctx      = current_context($conn);
+$ctx      = current_context($pdo);
 $user     = $ctx['user'];
 $branch   = $ctx['branch'];
 $initials = initials($user['full_name']);
 $bid      = (int)$branch['branch_id'];
 
 // ---- KPI: Tokens issued today ----
-$stmt = $conn->prepare("
-    SELECT COUNT(*) FROM tokens
-    WHERE branch_id = :b AND DATE(requested_at) = CURDATE()
+$stmt = $pdo->prepare("
+    SELECT COUNT(*)
+    FROM booking bk
+    INNER JOIN station_business_scope sbs ON sbs.station_id = bk.station_id
+    WHERE sbs.branch_manager_user_id = :manager_id
+      AND DATE(bk.created_at) = CURDATE()
 ");
-$stmt->execute([':b' => $bid]);
+$stmt->execute([':manager_id' => $user['user_id']]);
 $tokens_today = (int)$stmt->fetchColumn();
 
 // tokens issued yesterday for comparison
-$stmt = $conn->prepare("
-    SELECT COUNT(*) FROM tokens
-    WHERE branch_id = :b AND DATE(requested_at) = DATE_SUB(CURDATE(), INTERVAL 1 DAY)
+$stmt = $pdo->prepare("
+    SELECT COUNT(*)
+    FROM booking bk
+    INNER JOIN station_business_scope sbs ON sbs.station_id = bk.station_id
+    WHERE sbs.branch_manager_user_id = :manager_id
+      AND DATE(bk.created_at) = DATE_SUB(CURDATE(), INTERVAL 1 DAY)
 ");
-$stmt->execute([':b' => $bid]);
+$stmt->execute([':manager_id' => $user['user_id']]);
 $tokens_yesterday = (int)$stmt->fetchColumn();
 $tokens_delta_pct = $tokens_yesterday > 0
     ? round((($tokens_today - $tokens_yesterday) / $tokens_yesterday) * 100)
     : 0;
 
 // currently waiting
-$stmt = $conn->prepare("
-    SELECT COUNT(*) FROM tokens WHERE branch_id = :b AND status = 'waiting'
+$stmt = $pdo->prepare("
+    SELECT COUNT(*)
+    FROM booking bk
+    INNER JOIN station_business_scope sbs ON sbs.station_id = bk.station_id
+    WHERE sbs.branch_manager_user_id = :manager_id
+      AND bk.status IN ('notfilled','waiting','serving')
 ");
-$stmt->execute([':b' => $bid]);
+$stmt->execute([':manager_id' => $user['user_id']]);
 $waiting_count = (int)$stmt->fetchColumn();
 
 // average wait time (minutes) — for tokens completed today
-$stmt = $conn->prepare("
-    SELECT AVG(TIMESTAMPDIFF(MINUTE, requested_at, served_at))
-    FROM tokens
-    WHERE branch_id = :b AND status = 'completed' AND DATE(served_at) = CURDATE()
+$stmt = $pdo->prepare("
+    SELECT AVG(TIMESTAMPDIFF(MINUTE, booked_at, filled_at))
+    FROM usage_history uh
+    INNER JOIN station_business_scope sbs ON sbs.station_id = uh.station_id
+    WHERE sbs.branch_manager_user_id = :manager_id
+      AND DATE(uh.filled_at) = CURDATE()
 ");
-$stmt->execute([':b' => $bid]);
+$stmt->execute([':manager_id' => $user['user_id']]);
 $avg_wait_min = round((float)$stmt->fetchColumn());
 
 // avg fuel stock across all tanks
-$stmt = $conn->prepare("
+$stmt = $pdo->prepare("
     SELECT ROUND(AVG(current_l / capacity_l * 100)) AS pct
     FROM tanks WHERE branch_id = :b AND capacity_l > 0
 ");
@@ -57,7 +69,7 @@ $stmt->execute([':b' => $bid]);
 $avg_stock_pct = (int)$stmt->fetchColumn();
 
 // low stock tank name (if any)
-$stmt = $conn->prepare("
+$stmt = $pdo->prepare("
     SELECT fuel_name FROM tanks
     WHERE branch_id = :b AND (current_l / capacity_l * 100) < alert_pct
     ORDER BY (current_l / capacity_l) ASC LIMIT 1
@@ -66,20 +78,20 @@ $stmt->execute([':b' => $bid]);
 $low_stock_fuel = $stmt->fetchColumn() ?: null;
 
 // staff on duty
-$stmt = $conn->prepare("
+$stmt = $pdo->prepare("
     SELECT COUNT(*) FROM staff WHERE branch_id = :b AND is_active = 1
 ");
 $stmt->execute([':b' => $bid]);
 $staff_total = (int)$stmt->fetchColumn();
 
-$stmt = $conn->prepare("
+$stmt = $pdo->prepare("
     SELECT COUNT(*) FROM staff
     WHERE branch_id = :b AND is_active = 1 AND duty_status = 'On Duty'
 ");
 $stmt->execute([':b' => $bid]);
 $staff_on_duty = (int)$stmt->fetchColumn();
 
-$stmt = $conn->prepare("
+$stmt = $pdo->prepare("
     SELECT COUNT(*) FROM staff
     WHERE branch_id = :b AND is_active = 1 AND duty_status = 'Leave'
 ");
@@ -87,24 +99,28 @@ $stmt->execute([':b' => $bid]);
 $staff_on_leave = (int)$stmt->fetchColumn();
 
 // current live queue (top 5)
-$stmt = $conn->prepare("
-    SELECT t.token_code, t.status, p.pump_no
-    FROM tokens t
-    LEFT JOIN pumps p ON p.pump_id = t.pump_id
-    WHERE t.branch_id = :b AND t.status IN ('waiting','serving')
-    ORDER BY FIELD(t.status,'serving','waiting'), t.requested_at ASC
+$stmt = $pdo->prepare("
+    SELECT bk.qr_refrence_code AS token_code,
+           CASE WHEN bk.status = 'notfilled' THEN 'waiting' ELSE bk.status END AS status,
+           NULL AS pump_no
+    FROM booking bk
+    INNER JOIN station_business_scope sbs ON sbs.station_id = bk.station_id
+    WHERE sbs.branch_manager_user_id = :manager_id
+      AND bk.status IN ('notfilled','waiting','serving')
+    ORDER BY FIELD(bk.status,'serving','notfilled','waiting'), bk.created_at ASC
     LIMIT 5
 ");
-$stmt->execute([':b' => $bid]);
+$stmt->execute([':manager_id' => $user['user_id']]);
 $queue = $stmt->fetchAll();
 
 // alerts (unread notifications, latest 5)
-$stmt = $conn->prepare("
-    SELECT * FROM notifications
-    WHERE branch_id = :b AND is_read = 0
+$stmt = $pdo->prepare("
+    SELECT notification_id AS notif_id, subject, message, created_at
+    FROM notifications
+    WHERE recipient_user_id = :manager_id
     ORDER BY created_at DESC LIMIT 5
 ");
-$stmt->execute([':b' => $bid]);
+$stmt->execute([':manager_id' => $user['user_id']]);
 $alerts = $stmt->fetchAll();
 $has_unread = count($alerts) > 0;
 ?>

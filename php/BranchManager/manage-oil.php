@@ -10,7 +10,7 @@ require_once __DIR__ . '/_helpers.php';
 require_once __DIR__ . '/../conn.php';
 require_branch_manager();
 
-$ctx      = current_context($conn);
+$ctx      = current_context($pdo);
 $user     = $ctx['user'];
 $branch   = $ctx['branch'];
 $initials = initials($user['full_name']);
@@ -27,25 +27,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $supplier  = trim($_POST['supplier'] ?? '');
             $rec_by    = trim($_POST['received_by'] ?? '');
 
-            $stmt = $conn->prepare("SELECT tank_id, capacity_l, current_l FROM tanks WHERE branch_id = :b AND fuel_code = :f LIMIT 1");
+            $stmt = $pdo->prepare("SELECT tank_id, capacity_l, current_l FROM tanks WHERE branch_id = :b AND fuel_code = :f LIMIT 1");
             $stmt->execute([':b' => $bid, ':f' => $fuel_code]);
             $tank = $stmt->fetch();
             if (!$tank) json_out(['ok' => false, 'error' => 'Tank not found for this fuel']);
 
             $new_level = min((int)$tank['capacity_l'], (int)$tank['current_l'] + $qty);
 
-            $conn->beginTransaction();
-            $stmt = $conn->prepare("
+            $pdo->beginTransaction();
+            $stmt = $pdo->prepare("
                 INSERT INTO deliveries (branch_id, tank_id, fuel_code, quantity_l, supplier, received_by)
                 VALUES (:b, :t, :f, :q, :s, :r)
             ");
             $stmt->execute([':b'=>$bid, ':t'=>$tank['tank_id'], ':f'=>$fuel_code, ':q'=>$qty, ':s'=>$supplier, ':r'=>$rec_by]);
 
-            $stmt = $conn->prepare("UPDATE tanks SET current_l = :l WHERE tank_id = :t");
+            $stmt = $pdo->prepare("UPDATE tanks SET current_l = :l WHERE tank_id = :t");
             $stmt->execute([':l' => $new_level, ':t' => $tank['tank_id']]);
-            $conn->commit();
+            $pdo->commit();
 
-            log_activity($conn, $bid, 'user', $user['user_id'], $user['full_name'],
+            log_activity($pdo, $bid, 'user', $user['user_id'], $user['full_name'],
                          "Recorded {$qty}L {$fuel_code} delivery from {$supplier}");
             json_out(['ok' => true]);
         }
@@ -56,34 +56,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'p95' => (int)($_POST['alert_p95'] ?? 25),
                 'dsl' => (int)($_POST['alert_dsl'] ?? 30),
             ];
-            $stmt = $conn->prepare("UPDATE tanks SET alert_pct = :p WHERE branch_id = :b AND fuel_code = :f");
+            $stmt = $pdo->prepare("UPDATE tanks SET alert_pct = :p WHERE branch_id = :b AND fuel_code = :f");
             foreach ($map as $fc => $pct) {
                 $pct = max(5, min(80, $pct));
                 $stmt->execute([':p' => $pct, ':b' => $bid, ':f' => $fc]);
             }
-            log_activity($conn, $bid, 'user', $user['user_id'], $user['full_name'], 'Updated fuel alert thresholds');
+            log_activity($pdo, $bid, 'user', $user['user_id'], $user['full_name'], 'Updated fuel alert thresholds');
             json_out(['ok' => true]);
         }
 
         if ($action === 'toggle_fuel') {
             $tank_id = (int)($_POST['tank_id'] ?? 0);
             $enabled = (int)($_POST['enabled'] ?? 0) === 1 ? 1 : 0;
-            $stmt = $conn->prepare("UPDATE tanks SET is_enabled = :e WHERE tank_id = :t AND branch_id = :b");
+            $stmt = $pdo->prepare("UPDATE tanks SET is_enabled = :e WHERE tank_id = :t AND branch_id = :b");
             $stmt->execute([':e' => $enabled, ':t' => $tank_id, ':b' => $bid]);
-            log_activity($conn, $bid, 'user', $user['user_id'], $user['full_name'],
+            log_activity($pdo, $bid, 'user', $user['user_id'], $user['full_name'],
                          ($enabled ? 'Enabled' : 'Disabled') . " fuel type (tank #{$tank_id})");
             json_out(['ok' => true]);
         }
 
         json_out(['ok' => false, 'error' => 'Unknown action'], 400);
     } catch (PDOException $e) {
-        if ($conn->inTransaction()) $conn->rollBack();
+        if ($pdo->inTransaction()) $pdo->rollBack();
         json_out(['ok' => false, 'error' => $e->getMessage()], 500);
     }
 }
 
 // -------- Load data --------
-$stmt = $conn->prepare("SELECT * FROM tanks WHERE branch_id = :b ORDER BY FIELD(fuel_code, 'p92','p95','dsl','pdsl'), tank_id");
+$stmt = $pdo->prepare("SELECT * FROM tanks WHERE branch_id = :b ORDER BY FIELD(fuel_code, 'p92','p95','dsl','pdsl'), tank_id");
 $stmt->execute([':b' => $bid]);
 $tanks_rows = $stmt->fetchAll();
 // index by fuel_code for easy lookup
@@ -91,7 +91,7 @@ $tanks = [];
 foreach ($tanks_rows as $t) $tanks[$t['fuel_code']] = $t;
 
 // recent deliveries (last 8)
-$stmt = $conn->prepare("
+$stmt = $pdo->prepare("
     SELECT d.*, t.fuel_name FROM deliveries d
     LEFT JOIN tanks t ON t.tank_id = d.tank_id
     WHERE d.branch_id = :b
@@ -102,7 +102,7 @@ $deliveries = $stmt->fetchAll();
 
 // weekly usage — Mon..Sun sum of Petrol 92 deliveries into tank (proxy for consumption)
 // (In real use you'd have a `sales` table; we use delivery movement as placeholder.)
-$stmt = $conn->prepare("
+$stmt = $pdo->prepare("
     SELECT DATE(d.received_at) AS d, SUM(d.quantity_l) AS q
     FROM deliveries d
     WHERE d.branch_id = :b AND d.fuel_code = 'p92'

@@ -7,7 +7,7 @@ require_once __DIR__ . '/_helpers.php';
 require_once __DIR__ . '/../conn.php';
 require_branch_manager();
 
-$ctx    = current_context($conn);
+$ctx    = current_context($pdo);
 $user   = $ctx['user'];
 $branch = $ctx['branch'];
 $initials = initials($user['full_name']);
@@ -40,7 +40,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     try {
-        $stmt = $conn->prepare("
+        $stmt = $pdo->prepare("
             UPDATE branches SET
                 branch_name = :n, city = :c, township = :t, address = :a,
                 phone = :ph, email = :em,
@@ -57,7 +57,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ':hq' => $hq_region, ':st' => $status,
             ':bid' => $branch['branch_id'],
         ]);
-        log_activity($conn, $branch['branch_id'], 'user', $user['user_id'], $user['full_name'],
+        log_activity($pdo, $branch['branch_id'], 'user', $user['user_id'], $user['full_name'],
                      'Updated branch profile');
         redirect_with('success', 'Branch profile updated successfully.');
     } catch (PDOException $e) {
@@ -66,23 +66,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 // ------------------ Fetch aggregate stats for the profile card ------------------
-$stmt = $conn->prepare("SELECT COUNT(*) FROM staff WHERE branch_id = :b AND is_active = 1");
+$stmt = $pdo->prepare("SELECT COUNT(*) FROM staff WHERE branch_id = :b AND is_active = 1");
 $stmt->execute([':b' => $branch['branch_id']]);
 $active_staff = (int)$stmt->fetchColumn();
 
-$stmt = $conn->prepare("SELECT COUNT(*) FROM pumps WHERE branch_id = :b");
+$stmt = $pdo->prepare("SELECT COUNT(*) FROM pumps WHERE branch_id = :b");
 $stmt->execute([':b' => $branch['branch_id']]);
 $pump_total = (int)$stmt->fetchColumn();
 
-$stmt = $conn->prepare("SELECT COUNT(*) FROM pumps WHERE branch_id = :b AND status = 'active'");
+$stmt = $pdo->prepare("SELECT COUNT(*) FROM pumps WHERE branch_id = :b AND status = 'active'");
 $stmt->execute([':b' => $branch['branch_id']]);
 $pump_active = (int)$stmt->fetchColumn();
 
-$stmt = $conn->prepare("SELECT COUNT(*) FROM customers WHERE home_branch_id = :b");
-$stmt->execute([':b' => $branch['branch_id']]);
+$stmt = $pdo->prepare("
+    SELECT COUNT(DISTINCT customer_id)
+    FROM (
+        SELECT bk.user_id AS customer_id
+        FROM booking bk
+        INNER JOIN station_business_scope sbs ON sbs.station_id = bk.station_id
+        WHERE sbs.branch_manager_user_id = :manager_id
+        UNION
+        SELECT uh.user_id AS customer_id
+        FROM usage_history uh
+        INNER JOIN station_business_scope sbs ON sbs.station_id = uh.station_id
+        WHERE sbs.branch_manager_user_id = :manager_id
+    ) scoped_customers
+");
+$stmt->execute([':manager_id' => $user['user_id']]);
 $customer_total = (int)$stmt->fetchColumn();
 
-$stmt = $conn->prepare("
+$stmt = $pdo->prepare("
     SELECT COALESCE(SUM(current_l),0) AS filled, COALESCE(SUM(capacity_l),0) AS cap
     FROM tanks WHERE branch_id = :b
 ");
@@ -91,12 +104,12 @@ $row = $stmt->fetch();
 $stock_pct = ($row && $row['cap'] > 0) ? round(($row['filled'] / $row['cap']) * 100) : 0;
 
 // pumps list for the map/grid
-$stmt = $conn->prepare("SELECT * FROM pumps WHERE branch_id = :b ORDER BY pump_no ASC");
+$stmt = $pdo->prepare("SELECT * FROM pumps WHERE branch_id = :b ORDER BY pump_no ASC");
 $stmt->execute([':b' => $branch['branch_id']]);
 $pumps = $stmt->fetchAll();
 
 // tanks summary
-$stmt = $conn->prepare("SELECT * FROM tanks WHERE branch_id = :b ORDER BY tank_id ASC");
+$stmt = $pdo->prepare("SELECT * FROM tanks WHERE branch_id = :b ORDER BY tank_id ASC");
 $stmt->execute([':b' => $branch['branch_id']]);
 $tanks = $stmt->fetchAll();
 

@@ -8,7 +8,7 @@ if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 
-require_once __DIR__ . '/../conn.php';   // provides $conn (PDO)
+require_once __DIR__ . '/../conn.php';   // provides $pdo and $conn
 
 
 // -------- Auth guard --------
@@ -25,17 +25,28 @@ function require_branch_manager(): void {
 function current_context($db = null) {
     global $pdo, $conn;
     $dbHandle = $db ?? $pdo ?? $conn;
-    return $dbHandle;
 
-    $stmt = $conn->prepare("
-        SELECT u.user_id, u.branch_id, u.full_name, u.email, u.phone, u.nrc, u.role,
+    $stmt = $dbHandle->prepare("
+        SELECT u.user_id,
+               COALESCE(u.branch_id, managed.station_id) AS branch_id,
+               u.user_name AS full_name,
+               u.email,
+               NULL AS phone,
+               NULL AS nrc,
+               COALESCE(r.role_name, 'BranchManager') AS role,
                b.branch_code, b.branch_name, b.city, b.township, b.address,
                b.phone AS branch_phone, b.email AS branch_email,
                b.opening_time, b.closing_time, b.is_24hr,
                b.pump_count, b.tank_count, b.hq_region, b.established_at,
                b.status AS branch_status
         FROM users u
-        LEFT JOIN branches b ON b.branch_id = u.branch_id
+        LEFT JOIN roles r ON r.role_id = COALESCE(u.current_role_id, u.business_role_id, u.role_id)
+        LEFT JOIN (
+            SELECT branch_manager_user_id, MIN(station_id) AS station_id
+            FROM station_business_scope
+            GROUP BY branch_manager_user_id
+        ) managed ON managed.branch_manager_user_id = u.user_id
+        LEFT JOIN branches b ON b.branch_id = COALESCE(u.branch_id, managed.station_id)
         WHERE u.user_id = :uid
         LIMIT 1
     ");
@@ -151,11 +162,11 @@ function json_out($payload, int $code = 200): void {
 /** Log a manager / staff action */
 function log_activity(PDO $conn, int $branch_id, string $actor_type, int $actor_id, string $actor_name, string $action): void {
     $stmt = $conn->prepare("
-        INSERT INTO activity_logs (branch_id, actor_type, actor_id, actor_name, action)
-        VALUES (:b, :t, :i, :n, :a)
+        INSERT INTO log (user_id, role_id, action)
+        VALUES (:i, 4, :a)
     ");
     $stmt->execute([
-        ':b' => $branch_id, ':t' => $actor_type, ':i' => $actor_id,
-        ':n' => $actor_name, ':a' => $action
+        ':i' => $actor_id,
+        ':a' => $action
     ]);
 }

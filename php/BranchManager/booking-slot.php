@@ -11,7 +11,7 @@ require_once __DIR__ . '/_helpers.php';
 require_once __DIR__ . '/../conn.php';
 require_branch_manager();
 
-$ctx      = current_context($conn);
+$ctx      = current_context($pdo);
 $user     = $ctx['user'];
 $branch   = $ctx['branch'];
 $initials = initials($user['full_name']);
@@ -25,64 +25,82 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $token_id = (int)($_POST['token_id'] ?? 0);
             $pump_id  = (int)($_POST['pump_id'] ?? 0);
 
-            $conn->beginTransaction();
-            $stmt = $conn->prepare("SELECT token_code FROM tokens WHERE token_id = :t AND branch_id = :b");
-            $stmt->execute([':t' => $token_id, ':b' => $bid]);
-            $tok = $stmt->fetch();
-            if (!$tok) { $conn->rollBack(); json_out(['ok' => false, 'error' => 'Token not found']); }
-
-            $stmt = $conn->prepare("
-                UPDATE tokens SET status = 'serving', pump_id = :p
-                WHERE token_id = :t AND branch_id = :b
+            $pdo->beginTransaction();
+            $stmt = $pdo->prepare("
+                SELECT bk.booking_id, bk.qr_refrence_code AS token_code
+                FROM booking bk
+                INNER JOIN station_business_scope sbs ON sbs.station_id = bk.station_id
+                WHERE bk.booking_id = :t AND sbs.branch_manager_user_id = :manager_id
+                LIMIT 1
             ");
-            $stmt->execute([':p' => $pump_id, ':t' => $token_id, ':b' => $bid]);
+            $stmt->execute([':t' => $token_id, ':manager_id' => $user['user_id']]);
+            $tok = $stmt->fetch();
+            if (!$tok) { $pdo->rollBack(); json_out(['ok' => false, 'error' => 'Token not found']); }
 
-            $stmt = $conn->prepare("
+            $stmt = $pdo->prepare("
+                UPDATE booking SET status = 'serving'
+                WHERE booking_id = :t
+            ");
+            $stmt->execute([':t' => $token_id]);
+
+            $stmt = $pdo->prepare("
                 UPDATE pumps SET status = 'active', current_token = :tc
                 WHERE pump_id = :p AND branch_id = :b
             ");
             $stmt->execute([':tc' => $tok['token_code'], ':p' => $pump_id, ':b' => $bid]);
-            $conn->commit();
+            $pdo->commit();
 
-            log_activity($conn, $bid, 'user', $user['user_id'], $user['full_name'], "Called next token {$tok['token_code']} to pump #{$pump_id}");
+            log_activity($pdo, $bid, 'user', $user['user_id'], $user['full_name'], "Called next token {$tok['token_code']} to pump #{$pump_id}");
             json_out(['ok' => true]);
         }
 
         if ($action === 'complete') {
             $token_id = (int)($_POST['token_id'] ?? 0);
-            $conn->beginTransaction();
-            $stmt = $conn->prepare("SELECT pump_id, token_code FROM tokens WHERE token_id = :t AND branch_id = :b");
-            $stmt->execute([':t' => $token_id, ':b' => $bid]);
+            $pdo->beginTransaction();
+            $stmt = $pdo->prepare("
+                SELECT bk.booking_id, NULL AS pump_id, bk.qr_refrence_code AS token_code
+                FROM booking bk
+                INNER JOIN station_business_scope sbs ON sbs.station_id = bk.station_id
+                WHERE bk.booking_id = :t AND sbs.branch_manager_user_id = :manager_id
+                LIMIT 1
+            ");
+            $stmt->execute([':t' => $token_id, ':manager_id' => $user['user_id']]);
             $tok = $stmt->fetch();
-            if (!$tok) { $conn->rollBack(); json_out(['ok' => false, 'error' => 'Token not found']); }
+            if (!$tok) { $pdo->rollBack(); json_out(['ok' => false, 'error' => 'Token not found']); }
 
-            $stmt = $conn->prepare("UPDATE tokens SET status = 'completed', served_at = NOW() WHERE token_id = :t");
+            $stmt = $pdo->prepare("UPDATE booking SET status = 'completed', time_of_filled = NOW() WHERE booking_id = :t");
             $stmt->execute([':t' => $token_id]);
             if ($tok['pump_id']) {
-                $stmt = $conn->prepare("UPDATE pumps SET status = 'idle', current_token = NULL WHERE pump_id = :p");
+                $stmt = $pdo->prepare("UPDATE pumps SET status = 'idle', current_token = NULL WHERE pump_id = :p");
                 $stmt->execute([':p' => $tok['pump_id']]);
             }
-            $conn->commit();
-            log_activity($conn, $bid, 'user', $user['user_id'], $user['full_name'], "Completed token {$tok['token_code']}");
+            $pdo->commit();
+            log_activity($pdo, $bid, 'user', $user['user_id'], $user['full_name'], "Completed token {$tok['token_code']}");
             json_out(['ok' => true]);
         }
 
         if ($action === 'cancel') {
             $token_id = (int)($_POST['token_id'] ?? 0);
-            $conn->beginTransaction();
-            $stmt = $conn->prepare("SELECT pump_id, token_code FROM tokens WHERE token_id = :t AND branch_id = :b");
-            $stmt->execute([':t' => $token_id, ':b' => $bid]);
+            $pdo->beginTransaction();
+            $stmt = $pdo->prepare("
+                SELECT bk.booking_id, NULL AS pump_id, bk.qr_refrence_code AS token_code
+                FROM booking bk
+                INNER JOIN station_business_scope sbs ON sbs.station_id = bk.station_id
+                WHERE bk.booking_id = :t AND sbs.branch_manager_user_id = :manager_id
+                LIMIT 1
+            ");
+            $stmt->execute([':t' => $token_id, ':manager_id' => $user['user_id']]);
             $tok = $stmt->fetch();
-            if (!$tok) { $conn->rollBack(); json_out(['ok' => false, 'error' => 'Token not found']); }
+            if (!$tok) { $pdo->rollBack(); json_out(['ok' => false, 'error' => 'Token not found']); }
 
-            $stmt = $conn->prepare("UPDATE tokens SET status = 'cancelled' WHERE token_id = :t");
+            $stmt = $pdo->prepare("UPDATE booking SET status = 'cancelled' WHERE booking_id = :t");
             $stmt->execute([':t' => $token_id]);
             if ($tok['pump_id']) {
-                $stmt = $conn->prepare("UPDATE pumps SET status = 'idle', current_token = NULL WHERE pump_id = :p");
+                $stmt = $pdo->prepare("UPDATE pumps SET status = 'idle', current_token = NULL WHERE pump_id = :p");
                 $stmt->execute([':p' => $tok['pump_id']]);
             }
-            $conn->commit();
-            log_activity($conn, $bid, 'user', $user['user_id'], $user['full_name'], "Cancelled token {$tok['token_code']}");
+            $pdo->commit();
+            log_activity($pdo, $bid, 'user', $user['user_id'], $user['full_name'], "Cancelled token {$tok['token_code']}");
             json_out(['ok' => true]);
         }
 
@@ -90,58 +108,83 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $pump_id = (int)($_POST['pump_id'] ?? 0);
             $state = $_POST['state'] ?? 'idle';
             if (!in_array($state, ['active','idle','maintenance','offline'], true)) $state = 'idle';
-            $stmt = $conn->prepare("UPDATE pumps SET status = :s WHERE pump_id = :p AND branch_id = :b");
+            $stmt = $pdo->prepare("UPDATE pumps SET status = :s WHERE pump_id = :p AND branch_id = :b");
             $stmt->execute([':s' => $state, ':p' => $pump_id, ':b' => $bid]);
-            log_activity($conn, $bid, 'user', $user['user_id'], $user['full_name'], "Set pump #{$pump_id} to {$state}");
+            log_activity($pdo, $bid, 'user', $user['user_id'], $user['full_name'], "Set pump #{$pump_id} to {$state}");
             json_out(['ok' => true]);
         }
 
         json_out(['ok' => false, 'error' => 'Unknown action'], 400);
     } catch (PDOException $e) {
-        if ($conn->inTransaction()) $conn->rollBack();
+        if ($pdo->inTransaction()) $pdo->rollBack();
         json_out(['ok' => false, 'error' => $e->getMessage()], 500);
     }
 }
 
 // -------- Load data --------
-$stmt = $conn->prepare("SELECT * FROM pumps WHERE branch_id = :b ORDER BY pump_no ASC");
+$stmt = $pdo->prepare("SELECT * FROM pumps WHERE branch_id = :b ORDER BY pump_no ASC");
 $stmt->execute([':b' => $bid]);
 $pumps = $stmt->fetchAll();
 
 // KPI stats
-$stmt = $conn->prepare("SELECT COUNT(*) FROM tokens WHERE branch_id = :b AND status = 'waiting'");
-$stmt->execute([':b' => $bid]);
+$stmt = $pdo->prepare("
+    SELECT COUNT(*)
+    FROM booking bk
+    INNER JOIN station_business_scope sbs ON sbs.station_id = bk.station_id
+    WHERE sbs.branch_manager_user_id = :manager_id
+      AND bk.status IN ('notfilled','waiting','serving')
+");
+$stmt->execute([':manager_id' => $user['user_id']]);
 $waiting_count = (int)$stmt->fetchColumn();
 
-$stmt = $conn->prepare("
-    SELECT AVG(TIMESTAMPDIFF(MINUTE, requested_at, served_at))
-    FROM tokens WHERE branch_id = :b AND status = 'completed' AND DATE(served_at) = CURDATE()
+$stmt = $pdo->prepare("
+    SELECT AVG(TIMESTAMPDIFF(MINUTE, booked_at, filled_at))
+    FROM usage_history uh
+    INNER JOIN station_business_scope sbs ON sbs.station_id = uh.station_id
+    WHERE sbs.branch_manager_user_id = :manager_id
+      AND DATE(uh.filled_at) = CURDATE()
 ");
-$stmt->execute([':b' => $bid]);
+$stmt->execute([':manager_id' => $user['user_id']]);
 $avg_wait = round((float)$stmt->fetchColumn());
 
-$stmt = $conn->prepare("SELECT COUNT(*) FROM tokens WHERE branch_id = :b AND DATE(requested_at) = CURDATE()");
-$stmt->execute([':b' => $bid]);
+$stmt = $pdo->prepare("
+    SELECT COUNT(*)
+    FROM booking bk
+    INNER JOIN station_business_scope sbs ON sbs.station_id = bk.station_id
+    WHERE sbs.branch_manager_user_id = :manager_id
+      AND DATE(bk.created_at) = CURDATE()
+");
+$stmt->execute([':manager_id' => $user['user_id']]);
 $issued_today = (int)$stmt->fetchColumn();
 
-$stmt = $conn->prepare("SELECT COUNT(*) FROM pumps WHERE branch_id = :b AND status = 'maintenance'");
+$stmt = $pdo->prepare("SELECT COUNT(*) FROM pumps WHERE branch_id = :b AND status = 'maintenance'");
 $stmt->execute([':b' => $bid]);
 $pump_maint = (int)$stmt->fetchColumn();
 $pump_total = count($pumps);
 
 // live queue (all non-completed, plus a few recently completed for context)
-$stmt = $conn->prepare("
-    SELECT t.token_id, t.token_code, t.requested_at, t.estimated_at, t.served_at, t.status,
-           p.pump_no
-    FROM tokens t
-    LEFT JOIN pumps p ON p.pump_id = t.pump_id
-    WHERE t.branch_id = :b
-      AND (t.status IN ('waiting','serving')
-           OR (t.status = 'completed' AND t.served_at >= DATE_SUB(NOW(), INTERVAL 30 MINUTE)))
-    ORDER BY FIELD(t.status, 'serving','waiting','completed'), t.requested_at ASC
+$stmt = $pdo->prepare("
+    SELECT bk.booking_id AS token_id,
+           bk.qr_refrence_code AS token_code,
+           bk.created_at AS requested_at,
+           bk.expire_at AS estimated_at,
+           bk.time_of_filled AS served_at,
+           CASE WHEN bk.status = 'notfilled' THEN 'waiting' ELSE bk.status END AS status,
+           u.user_name AS full_name,
+           NULL AS vehicle_no,
+           ot.oil_name AS fuel_code,
+           NULL AS pump_no
+    FROM booking bk
+    INNER JOIN station_business_scope sbs ON sbs.station_id = bk.station_id
+    LEFT JOIN users u ON u.user_id = bk.user_id
+    LEFT JOIN oil_types ot ON ot.oil_type_id = bk.oil_type_id
+    WHERE sbs.branch_manager_user_id = :manager_id
+      AND (bk.status IN ('notfilled','waiting','serving')
+           OR (bk.status = 'completed' AND bk.time_of_filled >= DATE_SUB(NOW(), INTERVAL 30 MINUTE)))
+    ORDER BY FIELD(bk.status, 'serving','notfilled','waiting','completed'), bk.created_at ASC
     LIMIT 30
 ");
-$stmt->execute([':b' => $bid]);
+$stmt->execute([':manager_id' => $user['user_id']]);
 $queue = $stmt->fetchAll();
 
 $has_unread_notif = false; // TODO: hook into notifications table if needed

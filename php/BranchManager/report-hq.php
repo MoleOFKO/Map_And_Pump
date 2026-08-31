@@ -7,7 +7,7 @@ require_once __DIR__ . '/_helpers.php';
 require_once __DIR__ . '/../conn.php';
 require_branch_manager();
 
-$ctx      = current_context($conn);
+$ctx      = current_context($pdo);
 $user     = $ctx['user'];
 $branch   = $ctx['branch'];
 $initials = initials($user['full_name']);
@@ -29,26 +29,41 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($subject === '' || $desc === '') json_out(['ok' => false, 'error' => 'Subject and description are required']);
 
     try {
-        $stmt = $conn->prepare("
-            INSERT INTO reports (branch_id, submitted_by, category, subject, priority, description)
-            VALUES (:b, :u, :c, :s, :p, :d)
+        $stmt = $pdo->prepare("
+            INSERT INTO report (user_id, role_id, importance, short_summery, message)
+            VALUES (:u, 4, :p, :s, :d)
         ");
         $stmt->execute([
-            ':b' => $bid, ':u' => $user['user_id'],
-            ':c' => $category, ':s' => $subject, ':p' => $priority, ':d' => $desc,
+            ':u' => $user['user_id'],
+            ':s' => $subject,
+            ':p' => $priority,
+            ':d' => '[' . $category . '] ' . $desc,
         ]);
-        log_activity($conn, $bid, 'user', $user['user_id'], $user['full_name'], "Filed report: {$subject}");
-        json_out(['ok' => true, 'report_id' => (int)$conn->lastInsertId()]);
+        log_activity($pdo, $bid, 'user', $user['user_id'], $user['full_name'], "Filed report: {$subject}");
+        json_out(['ok' => true, 'report_id' => (int)$pdo->lastInsertId()]);
     } catch (PDOException $e) {
         json_out(['ok' => false, 'error' => $e->getMessage()], 500);
     }
 }
 
 // -------- Load recent reports --------
-$stmt = $conn->prepare("
-    SELECT * FROM reports WHERE branch_id = :b ORDER BY created_at DESC LIMIT 15
+$stmt = $pdo->prepare("
+    SELECT report_id,
+           user_id AS submitted_by,
+           SUBSTRING_INDEX(TRIM(BOTH ']' FROM SUBSTRING_INDEX(message, '] ', 1)), '[', -1) AS category,
+           short_summery AS subject,
+           importance AS priority,
+           'submitted' AS status,
+           CASE
+               WHEN message LIKE '[%] %' THEN SUBSTRING(message, LOCATE('] ', message) + 2)
+               ELSE message
+           END AS description,
+           created_at
+    FROM report
+    WHERE user_id = :u AND role_id = 4
+    ORDER BY created_at DESC LIMIT 15
 ");
-$stmt->execute([':b' => $bid]);
+$stmt->execute([':u' => $user['user_id']]);
 $reports = $stmt->fetchAll();
 ?>
 <!DOCTYPE html>

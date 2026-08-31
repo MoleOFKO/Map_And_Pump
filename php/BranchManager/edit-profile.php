@@ -1,7 +1,7 @@
 <?php
 /**
  * edit-profile.php — User's personal profile (branch manager account).
- * Handles POST submit to update full_name, email, phone, nrc with CSRF protection.
+ * Handles POST submit to update the branch manager account name/email with CSRF protection.
  */
 if (session_status() !== PHP_SESSION_ACTIVE) {
     session_start();
@@ -23,25 +23,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $message_type = 'danger';
     } else {
         $full_name = trim($_POST['full_name'] ?? '');
-        $phone     = trim($_POST['phone'] ?? '');
         $email     = trim($_POST['email'] ?? '');
-        $nrc       = trim($_POST['nrc'] ?? '');
 
         if ($full_name === '' || $email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
             $message = 'Name and a valid email are required.';
             $message_type = 'danger';
         } else {
             try {
-                $stmt = $conn->prepare("
+                $stmt = $pdo->prepare("
                     UPDATE users 
-                    SET full_name = :n, phone = :p, email = :e, nrc = :nr, updated_at = NOW()
+                    SET user_name = :n, email = :e, updated_at = NOW()
                     WHERE user_id = :uid
                 ");
                 $stmt->execute([
                     ':n'   => $full_name,
-                    ':p'   => $phone,
                     ':e'   => $email,
-                    ':nr'  => $nrc,
                     ':uid' => $_SESSION['user_id'],
                 ]);
 
@@ -63,7 +59,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-$ctx      = current_context($conn);
+$ctx      = current_context($pdo);
 $user     = $ctx['user'];
 $branch   = $ctx['branch'];
 

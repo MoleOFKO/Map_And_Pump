@@ -20,7 +20,7 @@ require_branch_manager();
 $managerDisplayName = trim((string) ($_SESSION['user_name'] ?? 'Manager'));
 $managerInitial = map_pump_profile_initial($managerDisplayName, 'M');
 
-$ctx      = current_context($conn);
+$ctx      = current_context($pdo);
 $user     = $ctx['user'];
 $branch   = $ctx['branch'];
 $initials = initials($user['full_name']);
@@ -40,26 +40,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($full_name === '') json_out(['ok' => false, 'error' => 'Name required']);
 
             // generate ST-#### code (starts from 2100 or next after existing)
-            $stmt = $conn->prepare("
+            $stmt = $pdo->prepare("
                 SELECT MAX(CAST(SUBSTRING(staff_code, 4) AS UNSIGNED)) FROM staff WHERE branch_id = :b
             ");
             $stmt->execute([':b' => $bid]);
             $next = ((int)$stmt->fetchColumn() ?: 2090) + 1;
             $code = 'ST-' . $next;
 
-            $stmt = $conn->prepare("
+            $stmt = $pdo->prepare("
                 INSERT INTO staff (staff_code, branch_id, full_name, role, shift, contact, is_active, duty_status, hired_at)
                 VALUES (:c, :b, :n, :r, :s, :p, 1, 'Off Duty', CURDATE())
             ");
             $stmt->execute([':c'=>$code, ':b'=>$bid, ':n'=>$full_name, ':r'=>$role, ':s'=>$shift, ':p'=>$contact]);
 
-            log_activity($conn, $bid, 'user', $user['user_id'], $user['full_name'], "Added new staff: {$full_name} ({$code})");
-            json_out(['ok' => true, 'staff_id' => (int)$conn->lastInsertId(), 'staff_code' => $code]);
+            log_activity($pdo, $bid, 'user', $user['user_id'], $user['full_name'], "Added new staff: {$full_name} ({$code})");
+            json_out(['ok' => true, 'staff_id' => (int)$pdo->lastInsertId(), 'staff_code' => $code]);
         }
 
         if ($action === 'edit') {
             $sid = (int)($_POST['staff_id'] ?? 0);
-            $stmt = $conn->prepare("
+            $stmt = $pdo->prepare("
                 UPDATE staff SET full_name = :n, role = :r, shift = :s, contact = :p
                 WHERE staff_id = :sid AND branch_id = :b
             ");
@@ -70,24 +70,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ':p' => trim($_POST['contact'] ?? ''),
                 ':sid' => $sid, ':b' => $bid,
             ]);
-            log_activity($conn, $bid, 'user', $user['user_id'], $user['full_name'], "Edited staff #{$sid}");
+            log_activity($pdo, $bid, 'user', $user['user_id'], $user['full_name'], "Edited staff #{$sid}");
             json_out(['ok' => true]);
         }
 
         if ($action === 'delete') {
             $sid = (int)($_POST['staff_id'] ?? 0);
-            $stmt = $conn->prepare("DELETE FROM staff WHERE staff_id = :sid AND branch_id = :b");
+            $stmt = $pdo->prepare("DELETE FROM staff WHERE staff_id = :sid AND branch_id = :b");
             $stmt->execute([':sid' => $sid, ':b' => $bid]);
-            log_activity($conn, $bid, 'user', $user['user_id'], $user['full_name'], "Deleted staff #{$sid}");
+            log_activity($pdo, $bid, 'user', $user['user_id'], $user['full_name'], "Deleted staff #{$sid}");
             json_out(['ok' => true]);
         }
 
         if ($action === 'activate' || $action === 'disable') {
             $sid = (int)($_POST['staff_id'] ?? 0);
             $flag = $action === 'activate' ? 1 : 0;
-            $stmt = $conn->prepare("UPDATE staff SET is_active = :f WHERE staff_id = :sid AND branch_id = :b");
+            $stmt = $pdo->prepare("UPDATE staff SET is_active = :f WHERE staff_id = :sid AND branch_id = :b");
             $stmt->execute([':f' => $flag, ':sid' => $sid, ':b' => $bid]);
-            log_activity($conn, $bid, 'user', $user['user_id'], $user['full_name'],
+            log_activity($pdo, $bid, 'user', $user['user_id'], $user['full_name'],
                          ($flag ? 'Activated' : 'Disabled') . " staff #{$sid}");
             json_out(['ok' => true]);
         }
@@ -99,7 +99,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 // -------- Load data for display --------
-$stmt = $conn->prepare("SELECT * FROM staff WHERE branch_id = :b ORDER BY staff_code ASC");
+$stmt = $pdo->prepare("SELECT * FROM staff WHERE branch_id = :b ORDER BY staff_code ASC");
 $stmt->execute([':b' => $bid]);
 $staff = $stmt->fetchAll();
 
@@ -108,10 +108,19 @@ $active_staff   = count(array_filter($staff, fn($s) => (int)$s['is_active'] === 
 $disabled_staff = $total_staff - $active_staff;
 
 // activity log (latest 20)
-$stmt = $conn->prepare("
-    SELECT * FROM activity_logs WHERE branch_id = :b ORDER BY created_at DESC LIMIT 20
+$stmt = $pdo->prepare("
+    SELECT l.log_id,
+           'user' AS actor_type,
+           l.user_id AS actor_id,
+           COALESCE(u.user_name, 'Branch Manager') AS actor_name,
+           l.action,
+           l.created_at
+    FROM log l
+    LEFT JOIN users u ON u.user_id = l.user_id
+    WHERE l.user_id = :manager_id AND l.role_id = 4
+    ORDER BY l.created_at DESC LIMIT 20
 ");
-$stmt->execute([':b' => $bid]);
+$stmt->execute([':manager_id' => $user['user_id']]);
 $activities = $stmt->fetchAll();
 ?>
 <!DOCTYPE html>

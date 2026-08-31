@@ -11,7 +11,7 @@ require_once __DIR__ . '/../conn.php';
 require_once __DIR__ . '/../profile_avatar.php';
 require_branch_manager();
 
-$ctx      = current_context($conn);
+$ctx      = current_context($pdo);
 $user     = $ctx['user'];
 $branch   = $ctx['branch'];
 $initials = initials($user['full_name']);
@@ -22,57 +22,116 @@ $managerInitial     = map_pump_profile_initial($managerDisplayName, $initials ?:
 
 $q = trim($_GET['q'] ?? '');
 
-// -------- Load customers (all who ever visited this branch OR are home-branch) --------
-$where = "(c.home_branch_id = :b OR EXISTS (SELECT 1 FROM tokens t WHERE t.customer_id = c.customer_id AND t.branch_id = :b))";
-$params = [':b' => $bid];
+// -------- Load customers (all who booked or filled at one of this manager's stations) --------
+$where = "(
+    EXISTS (
+        SELECT 1
+        FROM booking bke
+        INNER JOIN station_business_scope sbs ON sbs.station_id = bke.station_id
+        WHERE bke.user_id = u.user_id AND sbs.branch_manager_user_id = :manager_id
+    )
+    OR EXISTS (
+        SELECT 1
+        FROM usage_history uhe
+        INNER JOIN station_business_scope sbs ON sbs.station_id = uhe.station_id
+        WHERE uhe.user_id = u.user_id AND sbs.branch_manager_user_id = :manager_id
+    )
+)";
+$params = [':manager_id' => $user['user_id']];
 if ($q !== '') {
-    $where .= " AND (c.full_name LIKE :q OR c.phone LIKE :q OR c.vehicle_no LIKE :q OR c.customer_code LIKE :q)";
+    $where .= " AND (u.user_name LIKE :q OR u.email LIKE :q OR u.user_public_id LIKE :q OR cl.car_plate_number LIKE :q)";
     $params[':q'] = '%' . $q . '%';
 }
-$stmt = $conn->prepare("
-    SELECT c.* FROM customers c
+$stmt = $pdo->prepare("
+    SELECT u.user_id AS customer_id,
+           COALESCE(u.user_public_id, u.user_id) AS customer_code,
+           u.user_name AS full_name,
+           u.email AS phone,
+           COALESCE(cl.car_plate_number, 'N/A') AS vehicle_no,
+           (COUNT(DISTINCT bk.booking_id) + COUNT(DISTINCT uh.usage_id)) AS total_visits,
+           GREATEST(
+               COALESCE(MAX(bk.created_at), '1970-01-01'),
+               COALESCE(MAX(uh.filled_at), '1970-01-01')
+           ) AS last_visit_at,
+           CASE
+               WHEN COUNT(uh.usage_id) >= 10 THEN 'gold'
+               WHEN COUNT(uh.usage_id) >= 3 THEN 'silver'
+               ELSE 'regular'
+           END AS tier
+    FROM users u
+    LEFT JOIN user_car uc ON uc.user_id = u.user_id AND uc.is_active = 1
+    LEFT JOIN car_license cl ON cl.car_license_id = uc.car_id
+    LEFT JOIN booking bk ON bk.user_id = u.user_id
+    LEFT JOIN usage_history uh ON uh.user_id = u.user_id
     WHERE {$where}
-    ORDER BY c.last_visit_at DESC, c.customer_id DESC
+    GROUP BY u.user_id, u.user_public_id, u.user_name, u.email, cl.car_plate_number
+    ORDER BY last_visit_at DESC, customer_id DESC
     LIMIT 200
 ");
 $stmt->execute($params);
 $customers = $stmt->fetchAll();
 
 // -------- Aggregate stats --------
-$stmt = $conn->prepare("
-    SELECT COUNT(*) FROM customers c
-    WHERE c.home_branch_id = :b OR EXISTS (SELECT 1 FROM tokens t WHERE t.customer_id = c.customer_id AND t.branch_id = :b)
+$stmt = $pdo->prepare("
+    SELECT COUNT(DISTINCT customer_id)
+    FROM (
+        SELECT bk.user_id AS customer_id
+        FROM booking bk
+        INNER JOIN station_business_scope sbs ON sbs.station_id = bk.station_id
+        WHERE sbs.branch_manager_user_id = :manager_id
+        UNION
+        SELECT uh.user_id AS customer_id
+        FROM usage_history uh
+        INNER JOIN station_business_scope sbs ON sbs.station_id = uh.station_id
+        WHERE sbs.branch_manager_user_id = :manager_id
+    ) scoped_customers
 ");
-$stmt->execute([':b' => $bid]);
+$stmt->execute([':manager_id' => $user['user_id']]);
 $total_customers = (int)$stmt->fetchColumn();
 
-$stmt = $conn->prepare("
-    SELECT COUNT(*) FROM customers c
-    WHERE c.home_branch_id = :b AND c.created_at >= DATE_SUB(CURDATE(), INTERVAL 1 MONTH)
+$stmt = $pdo->prepare("
+    SELECT COUNT(DISTINCT bk.user_id)
+    FROM booking bk
+    INNER JOIN station_business_scope sbs ON sbs.station_id = bk.station_id
+    WHERE sbs.branch_manager_user_id = :manager_id
+      AND bk.created_at >= DATE_SUB(CURDATE(), INTERVAL 1 MONTH)
 ");
-$stmt->execute([':b' => $bid]);
+$stmt->execute([':manager_id' => $user['user_id']]);
 $new_this_month = (int)$stmt->fetchColumn();
 
-$stmt = $conn->prepare("SELECT AVG(rating) FROM feedback WHERE branch_id = :b");
-$stmt->execute([':b' => $bid]);
+$stmt = $pdo->prepare("
+    SELECT AVG(f.rating)
+    FROM feedback f
+    INNER JOIN station_business_scope sbs ON sbs.station_id = f.station_id
+    WHERE sbs.branch_manager_user_id = :manager_id
+");
+$stmt->execute([':manager_id' => $user['user_id']]);
 $avg_rating = round((float)$stmt->fetchColumn(), 1);
 
-$stmt = $conn->prepare("
-    SELECT COUNT(*) FROM customers c
-    WHERE c.tier = 'gold'
-      AND (c.home_branch_id = :b OR EXISTS (SELECT 1 FROM tokens t WHERE t.customer_id = c.customer_id AND t.branch_id = :b))
+$stmt = $pdo->prepare("
+    SELECT COUNT(*)
+    FROM (
+        SELECT uh.user_id
+        FROM usage_history uh
+        INNER JOIN station_business_scope sbs ON sbs.station_id = uh.station_id
+        WHERE sbs.branch_manager_user_id = :manager_id
+        GROUP BY uh.user_id
+        HAVING COUNT(*) >= 10
+    ) gold_customers
 ");
-$stmt->execute([':b' => $bid]);
+$stmt->execute([':manager_id' => $user['user_id']]);
 $gold_count = (int)$stmt->fetchColumn();
 
 // -------- Feedback (latest 12) --------
-$stmt = $conn->prepare("
-    SELECT f.*, c.full_name FROM feedback f
-    LEFT JOIN customers c ON c.customer_id = f.customer_id
-    WHERE f.branch_id = :b
+$stmt = $pdo->prepare("
+    SELECT f.*, u.user_name AS full_name
+    FROM feedback f
+    LEFT JOIN users u ON u.user_id = f.user_id
+    INNER JOIN station_business_scope sbs ON sbs.station_id = f.station_id
+    WHERE sbs.branch_manager_user_id = :manager_id
     ORDER BY f.created_at DESC LIMIT 12
 ");
-$stmt->execute([':b' => $bid]);
+$stmt->execute([':manager_id' => $user['user_id']]);
 $feedbacks = $stmt->fetchAll();
 ?>
 <!DOCTYPE html>
