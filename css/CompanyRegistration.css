@@ -13,8 +13,18 @@
 .company-registration textarea.form-control { min-height: auto; }
 .company-registration .form-control:focus { background: rgba(2, 6, 23, .72); border-color: #22d3ee; box-shadow: 0 0 0 .22rem rgba(34, 211, 238, .13); color: #fff; }
 .company-registration input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(1); }
+.payment-card { background: rgba(2, 6, 23, .5); border: 1px solid rgba(148, 163, 184, .22); border-radius: 16px; padding: 1.25rem; }
+.payment-card.is-hidden { display: none; }
+.payment-method-summary { align-items: center; background: rgba(34, 211, 238, .08); border: 1px solid rgba(34, 211, 238, .15); border-radius: 12px; display: flex; flex-wrap: wrap; gap: .5rem 1rem; justify-content: space-between; margin-bottom: 1rem; padding: .9rem 1rem; }
+.payment-method-label { color: #cbd5e1; font-size: .78rem; letter-spacing: .06em; text-transform: uppercase; }
+#selected-payment-name { color: #f8fafc; font-size: 1.05rem; }
+.payment-footer { display: flex; justify-content: flex-end; margin-top: 1.25rem; }
+.payment-actions { justify-content: flex-start; }
 .upload-field { align-items: center; background: rgba(2, 6, 23, .38); border: 1px dashed rgba(34, 211, 238, .5); border-radius: 12px; cursor: pointer; display: flex; gap: 1rem; min-height: 5.35rem; padding: .9rem 1rem; transition: .2s ease; width: 100%; }
 .upload-field:hover, .upload-field:focus-within { background: rgba(34, 211, 238, .07); border-color: #67e8f9; }
+.upload-field.is-invalid { background: rgba(127, 29, 29, .16); border-color: #f87171; box-shadow: 0 0 0 .22rem rgba(248, 113, 113, .12); }
+.upload-field.is-invalid .upload-icon { background: rgba(248, 113, 113, .12); color: #fca5a5; }
+.upload-field.is-invalid .upload-copy strong, .upload-field.is-invalid .upload-copy small { color: #fecaca; }
 .upload-field input { height: 1px; opacity: 0; overflow: hidden; position: absolute; width: 1px; }
 .upload-icon { align-items: center; background: rgba(34, 211, 238, .14); border-radius: 10px; color: #67e8f9; display: inline-flex; flex: 0 0 2.65rem; height: 2.65rem; justify-content: center; }
 .upload-copy { display: flex; flex-direction: column; min-width: 0; }
@@ -22,4 +32,9 @@
 .upload-copy small { color: var(--text-dim, #94a3b8); margin-top: .18rem; }
 .registration-actions { display: flex; justify-content: center; padding-top: 1rem; }
 .registration-form-status { color: #fbbf24; margin: 1rem auto 0; max-width: 38rem; text-align: center; }
-@media (max-width: 575.98px) { .company-registration { padding-top: 7.5rem; } .registration-actions .btn { width: 100%; } }
+.registration-success-state { background: rgba(15, 23, 42, .78); border: 1px solid rgba(34, 211, 238, .2); border-radius: 20px; box-shadow: 0 20px 40px rgba(0, 0, 0, .12); margin: 0 auto; max-width: 640px; padding: clamp(2rem, 5vw, 3rem); text-align: center; }
+.registration-success-state.is-hidden { display: none; }
+.success-badge { align-items: center; background: rgba(34, 197, 94, .12); border: 1px solid rgba(74, 222, 128, .4); border-radius: 50%; color: #4ade80; display: inline-flex; font-size: 2rem; height: 4.5rem; justify-content: center; margin-bottom: 1.2rem; width: 4.5rem; }
+.registration-success-state h2 { font: 800 clamp(2rem, 4vw, 3rem)/1.1 'Sora', sans-serif; letter-spacing: -.05em; margin: 0 0 .8rem; }
+.registration-success-state p { color: #dbeafe; font-size: 1.03rem; margin: .5rem 0; }
+@media (max-width: 575.98px) { .company-registration { padding-top: 7.5rem; } .registration-actions .btn { width: 100%; } .payment-method-summary { align-items: flex-start; flex-direction: column; } .payment-actions { justify-content: center; } .payment-footer { justify-content: center; } }
