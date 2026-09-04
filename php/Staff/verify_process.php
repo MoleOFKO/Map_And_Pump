@@ -5,6 +5,7 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
 require __DIR__ . '/../conn.php';
 require __DIR__ . '/../usage_history_schema.php';
 require_once __DIR__ . '/../Customer/car_access.php';
+require_once __DIR__ . '/../business_scope.php';
 
 $bookingCode = '';
 $ajax = false;
@@ -53,6 +54,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             respond(['success' => false, 'message' => 'Booking not found.'], $ajax, 404, 'verify_detail.php?booking_id=' . urlencode((string)$bookingId));
         }
 
+        $staffScopeStmt = $pdo->prepare(
+            "SELECT 1
+             FROM users u
+             LEFT JOIN business_account_scope bas ON bas.user_id = u.user_id
+             WHERE u.user_id = :staff_user_id
+               AND COALESCE(u.branch_id, bas.station_id) = :station_id
+             LIMIT 1"
+        );
+        $staffScopeStmt->execute([
+            ':staff_user_id' => (int)($_SESSION['user_id'] ?? 0),
+            ':station_id' => (int)$row['station_id'],
+        ]);
+        if (!$staffScopeStmt->fetchColumn()) {
+            respond(['success' => false, 'message' => 'This booking belongs to another station.'], $ajax, 403, 'verify_qr.php');
+        }
+
         $closedStatuses = ['filled', 'completed', 'cancelled', 'expired'];
         if (in_array(strtolower((string)$row['status']), $closedStatuses, true)) {
             respond(['success' => false, 'message' => 'This booking has already been used or is no longer valid.', 'booking' => $row], $ajax, 200, 'verify_qr.php');
@@ -87,12 +104,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ':car_license_id' => $carLicenseId,
             ]);
 
+            $latestInventorySql = map_pump_latest_station_inventory_sql();
             $priceStmt = $pdo->prepare(
-                'SELECT price_per_litre
-                 FROM station_oil_inventory
-                 WHERE station_id = :station_id AND oil_type_id = :oil_type_id
-                 ORDER BY is_active DESC, updated_at DESC, inventory_id DESC
-                 LIMIT 1'
+                "SELECT price_per_litre
+                 FROM ({$latestInventorySql}) li
+                 WHERE li.station_id = :station_id AND li.oil_type_id = :oil_type_id
+                 LIMIT 1"
             );
             $priceStmt->execute([
                 ':station_id' => (int)$row['station_id'],
@@ -313,6 +330,26 @@ try {
             }
         }
         respond(['success' => false, 'message' => 'Booking code not found in the database.'], $ajax, 404);
+    }
+
+    $staffScopeStmt = $pdo->prepare(
+        "SELECT 1
+         FROM users u
+         LEFT JOIN business_account_scope bas ON bas.user_id = u.user_id
+         WHERE u.user_id = :staff_user_id
+           AND COALESCE(u.branch_id, bas.station_id) = :station_id
+         LIMIT 1"
+    );
+    $staffScopeStmt->execute([
+        ':staff_user_id' => (int)($_SESSION['user_id'] ?? 0),
+        ':station_id' => (int)$row['station_id'],
+    ]);
+    if (!$staffScopeStmt->fetchColumn()) {
+        respond([
+            'success' => false,
+            'message' => 'This booking belongs to another station.',
+            'booking' => $row,
+        ], $ajax, 403);
     }
 
     $closedStatuses = ['filled', 'completed', 'cancelled', 'expired'];

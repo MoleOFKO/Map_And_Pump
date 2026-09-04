@@ -5,6 +5,7 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
 
 require_once __DIR__ . '/../conn.php';
 require_once __DIR__ . '/../role_state.php';
+require_once __DIR__ . '/../business_scope.php';
 
 function hq_guard_redirect_top(string $url, string $message = ''): void
 {
@@ -87,9 +88,7 @@ $_SESSION['has_business'] = !empty($user['business_role_id']);
 $_SESSION['active_profile_mode'] = ($activeRoleKey === 'customer') ? 'customer' : 'business';
 $_SESSION['user_name'] = (string) ($user['user_name'] ?? $_SESSION['user_name'] ?? '');
 $_SESSION['user_email'] = (string) ($user['email'] ?? $_SESSION['user_email'] ?? '');
-if (!empty($user['headquarter_id'])) {
-    $_SESSION['headquarter_id'] = (int) $user['headquarter_id'];
-}
+$_SESSION['headquarter_id'] = map_pump_current_hq_id($pdo, $userId);
 
 if ($activeRoleId !== 3 && $activeRoleKey !== 'hq') {
     hq_guard_redirect_top(hq_guard_dashboard_for_role($activeRoleName, $activeRoleId));

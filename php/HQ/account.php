@@ -1,10 +1,12 @@
 <?php
 require_once __DIR__ . '/hq_guard.php';
 require_once __DIR__ . '/../conn.php';
+require_once __DIR__ . '/../business_scope.php';
 
 $managers = [];
 $dbError = '';
 $statusMessage = '';
+$hqId = map_pump_current_hq_id($pdo);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['toggle_manager_status'])) {
     $userId = filter_input(INPUT_POST, 'user_id', FILTER_VALIDATE_INT);
@@ -12,10 +14,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['toggle_manager_status
 
     if ($userId && in_array($newStatus, ['active', 'disabled'], true)) {
         try {
-            $stmt = $pdo->prepare('UPDATE users SET status = ? WHERE user_id = ? AND COALESCE(business_role_id, role_id) = 4');
-            $stmt->execute([$newStatus, $userId]);
-            $statusMessage = 'Manager status updated successfully.';
+            if (!map_pump_manager_in_hq($pdo, (int)$userId, $hqId)) {
+                $statusMessage = 'That manager is not under your HQ.';
+            } else {
+                $pdo->beginTransaction();
+                $stmt = $pdo->prepare('UPDATE users SET status = ? WHERE user_id = ? AND COALESCE(business_role_id, role_id) = 4');
+                $stmt->execute([$newStatus, $userId]);
+
+                $stationStmt = $pdo->prepare('SELECT station_id FROM station_business_scope WHERE headquarter_id = ? AND branch_manager_user_id = ? ORDER BY station_id LIMIT 1');
+                $stationStmt->execute([$hqId, $userId]);
+                $stationId = $stationStmt->fetchColumn() ?: null;
+
+                $scopeStmt = $pdo->prepare(
+                    "INSERT INTO business_account_scope (user_id, business_role_id, headquarter_id, branch_manager_user_id, station_id, status)
+                     VALUES (?, 4, ?, NULL, ?, ?)
+                     ON DUPLICATE KEY UPDATE headquarter_id = VALUES(headquarter_id), station_id = VALUES(station_id), status = VALUES(status)"
+                );
+                $scopeStmt->execute([$userId, $hqId, $stationId, $newStatus]);
+                $pdo->commit();
+                $statusMessage = 'Manager status updated successfully.';
+            }
         } catch (PDOException $e) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
             $dbError = $e->getMessage();
         }
     } else {
@@ -26,11 +48,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['toggle_manager_status
 try {
     $sql = "SELECT u.user_id, u.user_name, u.email, u.status, s.station_id, s.station_name, s.location
             FROM users u
-            LEFT JOIN stations s ON s.business_user_id = u.user_id
+            LEFT JOIN business_account_scope bas ON bas.user_id = u.user_id
+            LEFT JOIN station_business_scope sbs ON sbs.branch_manager_user_id = u.user_id AND sbs.headquarter_id = :hq_id_scope
+            LEFT JOIN stations s ON s.station_id = COALESCE(bas.station_id, sbs.station_id)
             WHERE COALESCE(u.business_role_id, u.role_id) = 4
+              AND COALESCE(bas.headquarter_id, u.headquarter_id, sbs.headquarter_id) = :hq_id
             ORDER BY u.user_id ASC";
 
-    $stmt = $pdo->query($sql);
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute([':hq_id_scope' => $hqId, ':hq_id' => $hqId]);
     $managers = $stmt ? $stmt->fetchAll(PDO::FETCH_ASSOC) : [];
 } catch (PDOException $e) {
     $dbError = $e->getMessage();

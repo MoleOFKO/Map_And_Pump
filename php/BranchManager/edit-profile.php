@@ -373,7 +373,7 @@ $initials           = function_exists('map_pump_profile_initial')
   <div class="modal-card-custom">
     <div class="modal-icon"><i class="fa-solid fa-right-left"></i></div>
     <h3>Switch to Customer Profile?</h3>
-    <p>This keeps your Branch Manager role linked in the database and only changes the active profile for this session.</p>
+    <p>This logs out the current session first. Your email will be ready on the login page; enter only your password to continue.</p>
     <div class="modal-actions">
       <button type="button" class="btn-secondary-custom" id="switch-cancel-btn">Cancel</button>
       <form action="../account_switch.php" method="POST" style="display:inline;">

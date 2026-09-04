@@ -1,10 +1,12 @@
 <?php
 require_once __DIR__ . '/hq_guard.php';
 require_once __DIR__ . '/../conn.php';
+require_once __DIR__ . '/../business_scope.php';
 
 $addMessage = '';
 $updateMessage = '';
 $errorMessage = '';
+$hqId = map_pump_current_hq_id($pdo);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
@@ -16,6 +18,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($gradeName === '') {
             $errorMessage = 'Please enter a fuel grade name.';
         } else {
+            $gradeCountStmt = $pdo->query('SELECT COUNT(*) FROM oil_types');
+            if ((int)$gradeCountStmt->fetchColumn() >= 4) {
+                $errorMessage = 'Only the 4 configured fuel types are allowed.';
+            } else {
             $stmt = $conn->prepare('SELECT COUNT(*) AS existing FROM oil_types WHERE LOWER(oil_name) = LOWER(?)');
             if ($stmt) {
                 $stmt->bind_param('s', $gradeName);
@@ -43,48 +49,68 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } else {
                 $errorMessage = 'Unable to prepare select statement: ' . $conn->error;
             }
+            }
         }
     }
 
     if ($action === 'update_price') {
-        $fuelType = trim($_POST['fuel_type'] ?? '');
+        $stationId = filter_input(INPUT_POST, 'station_id', FILTER_VALIDATE_INT);
+        $oilTypeId = filter_input(INPUT_POST, 'oil_type_id', FILTER_VALIDATE_INT);
         $newPrice = trim($_POST['fuel_price'] ?? '');
 
-        if ($fuelType === '' || $newPrice === '') {
-            $errorMessage = 'Please select a fuel grade and enter a price.';
+        if (!$stationId || !$oilTypeId || $newPrice === '') {
+            $errorMessage = 'Please select a station, fuel grade, and enter a price.';
         } elseif (!is_numeric($newPrice) || (int) $newPrice < 0) {
             $errorMessage = 'Please enter a valid non-negative price.';
+        } elseif (!map_pump_station_in_hq($pdo, (int)$stationId, $hqId)) {
+            $errorMessage = 'You can only update prices for stations under your own HQ.';
         } else {
             $priceValue = (int) $newPrice;
-            $stmt = $conn->prepare('UPDATE station_oil_inventory soi JOIN oil_types ot ON soi.oil_type_id = ot.oil_type_id SET soi.price_per_litre = ? WHERE ot.oil_name = ?');
-            if ($stmt) {
-                $stmt->bind_param('is', $priceValue, $fuelType);
-                if ($stmt->execute()) {
-                    if ($stmt->affected_rows > 0) {
-                        $updateMessage = 'Updated "' . htmlspecialchars($fuelType, ENT_QUOTES) . '" to ' . number_format($priceValue) . ' MMK.';
-                    } else {
-                        $errorMessage = 'No changes were made. Please verify the selected fuel grade.';
-                    }
-                } else {
-                    $errorMessage = 'Unable to update price: ' . $conn->error;
-                }
-                $stmt->close();
-            } else {
-                $errorMessage = 'Unable to prepare update statement: ' . $conn->error;
+            try {
+                map_pump_append_station_price($pdo, (int)$stationId, (int)$oilTypeId, $priceValue);
+                $updateMessage = 'New station fuel price added at ' . number_format($priceValue) . ' MMK. Previous price records were kept.';
+            } catch (Throwable $e) {
+                $errorMessage = 'Unable to add price record: ' . $e->getMessage();
             }
         }
     }
 }
 
 $grades = [];
-$result = $conn->query('SELECT ot.oil_name, MAX(soi.price_per_litre) AS price_per_liter FROM oil_types ot 
-                        LEFT JOIN station_oil_inventory soi ON ot.oil_type_id = soi.oil_type_id
-                        GROUP BY ot.oil_type_id, ot.oil_name ORDER BY ot.oil_name');
-if ($result) {
-    while ($row = $result->fetch_assoc()) {
-        $grades[] = $row;
-    }
-    $result->close();
+$stations = [];
+$priceRows = [];
+try {
+    $gradeStmt = $pdo->query('SELECT oil_type_id, oil_name FROM oil_types ORDER BY oil_type_id LIMIT 4');
+    $grades = $gradeStmt->fetchAll(PDO::FETCH_ASSOC);
+
+    $stationStmt = $pdo->prepare(
+        "SELECT s.station_id, s.station_name
+         FROM stations s
+         INNER JOIN station_business_scope sbs ON sbs.station_id = s.station_id
+         WHERE sbs.headquarter_id = ?
+           AND COALESCE(s.status, 'Active') <> 'Decommissioned'
+         ORDER BY s.station_name"
+    );
+    $stationStmt->execute([$hqId]);
+    $stations = $stationStmt->fetchAll(PDO::FETCH_ASSOC);
+
+    $latestInventorySql = map_pump_latest_station_inventory_sql();
+    $priceStmt = $pdo->prepare(
+        "SELECT s.station_id, s.station_name, ot.oil_type_id, ot.oil_name,
+                li.price_per_litre AS price_per_liter, li.is_active, li.updated_at
+         FROM stations s
+         INNER JOIN station_business_scope sbs ON sbs.station_id = s.station_id
+         CROSS JOIN (SELECT oil_type_id, oil_name FROM oil_types ORDER BY oil_type_id LIMIT 4) ot
+         LEFT JOIN ({$latestInventorySql}) li
+            ON li.station_id = s.station_id AND li.oil_type_id = ot.oil_type_id
+         WHERE sbs.headquarter_id = ?
+           AND COALESCE(s.status, 'Active') <> 'Decommissioned'
+         ORDER BY s.station_name, ot.oil_type_id"
+    );
+    $priceStmt->execute([$hqId]);
+    $priceRows = $priceStmt->fetchAll(PDO::FETCH_ASSOC);
+} catch (Throwable $e) {
+    $errorMessage = $errorMessage ?: 'Could not retrieve pricing data: ' . $e->getMessage();
 }
 ?>
 <!DOCTYPE html>
@@ -252,13 +278,26 @@ endif; ?>
                 <input type="hidden" name="action" value="update_price">
                 <div class="row g-3">
                     <div class="col-md-6">
+                        <label class="form-label">Select Station</label>
+                        <select name="station_id" class="form-select" required>
+                            <option value="">Select station</option>
+                            <?php
+foreach ($stations as $station): ?>
+                                <option value="<?php
+echo (int)$station['station_id']; ?>"><?php
+echo htmlspecialchars($station['station_name']); ?></option>
+                            <?php
+endforeach; ?>
+                        </select>
+                    </div>
+                    <div class="col-md-6">
                         <label class="form-label">Select Product Grade</label>
-                        <select name="fuel_type" class="form-select" required>
+                        <select name="oil_type_id" class="form-select" required>
                             <option value="">Select grade</option>
                             <?php
 foreach ($grades as $grade): ?>
                                 <option value="<?php
-echo htmlspecialchars($grade['oil_name'], ENT_QUOTES); ?>"><?php
+echo (int)$grade['oil_type_id']; ?>"><?php
 echo htmlspecialchars($grade['oil_name']); ?></option>
                             <?php
 endforeach; ?>
@@ -284,27 +323,33 @@ endforeach; ?>
                 <table class="pricing-table table-borderless align-middle">
                     <thead>
                         <tr>
+                            <th>Station</th>
                             <th>Fuel Grade</th>
                             <th>Price / L</th>
+                            <th>Status</th>
                         </tr>
                     </thead>
                     <tbody>
                         <?php
-if (count($grades) > 0): ?>
+if (count($priceRows) > 0): ?>
                             <?php
-foreach ($grades as $grade): ?>
+foreach ($priceRows as $grade): ?>
                                 <tr>
+                                    <td><?php
+echo htmlspecialchars($grade['station_name']); ?></td>
                                     <td><?php
 echo htmlspecialchars($grade['oil_name']); ?></td>
                                     <td><?php
-echo number_format((int) $grade['price_per_liter']); ?> MMK</td>
+echo $grade['price_per_liter'] === null ? 'Not set' : number_format((int) $grade['price_per_liter']) . ' MMK'; ?></td>
+                                    <td><?php
+echo ((int)($grade['is_active'] ?? 0) === 1) ? 'Available' : 'Unavailable'; ?></td>
                                 </tr>
                             <?php
 endforeach; ?>
                         <?php
 else: ?>
                             <tr>
-                                <td colspan="2">No fuel grades defined yet.</td>
+                                <td colspan="4">No station pricing records found.</td>
                             </tr>
                         <?php
 endif; ?>

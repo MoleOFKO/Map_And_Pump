@@ -274,7 +274,7 @@ include 'share_header.php';
                         </div>
                         <div>
                             <h3 class="text-white mb-1">Account Profile Mode</h3>
-                            <p class="text-secondary mb-0" style="font-size:13px;">Customer is the basic gas-fill profile. Switch back to the linked business role anytime.</p>
+                            <p class="text-secondary mb-0" style="font-size:13px;">Switching profiles logs this session out first. Your email will be ready on the login page.</p>
                         </div>
                     </div>
                 </div>

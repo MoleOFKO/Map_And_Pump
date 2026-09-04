@@ -4,8 +4,10 @@ require_once __DIR__ . '/hq_guard.php';
  * Shared database connection.
  */
 include_once __DIR__ . '/../conn.php';
+require_once __DIR__ . '/../business_scope.php';
 $message = '';
 $error = '';
+$hqId = map_pump_current_hq_id($pdo);
 
 // Handle Form Submissions & AJAX requests via PDO
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -20,18 +22,80 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if (!empty($station_name) && !empty($location) && !empty($manager_email)) {
             try {
-                $managerStmt = $pdo->prepare("SELECT user_id FROM users WHERE email = ? AND COALESCE(business_role_id, role_id) = 4 LIMIT 1");
-                $managerStmt->execute([$manager_email]);
+                $managerStmt = $pdo->prepare(
+                    "SELECT u.user_id
+                     FROM users u
+                     LEFT JOIN business_account_scope bas ON bas.user_id = u.user_id
+                     WHERE u.email = ?
+                       AND COALESCE(u.business_role_id, u.role_id) = 4
+                       AND (
+                           COALESCE(bas.headquarter_id, u.headquarter_id) = ?
+                           OR EXISTS (
+                               SELECT 1 FROM station_business_scope sbs
+                               WHERE sbs.branch_manager_user_id = u.user_id
+                                 AND sbs.headquarter_id = ?
+                           )
+                       )
+                     LIMIT 1"
+                );
+                $managerStmt->execute([$manager_email, $hqId, $hqId]);
                 $manager_id = $managerStmt->fetchColumn();
 
                 if (!$manager_id) {
                     throw new RuntimeException('Please select a valid branch manager.');
                 }
 
+                $pdo->beginTransaction();
                 $stmt = $pdo->prepare("INSERT INTO stations (station_name, location, station_address, business_user_id, status) VALUES (?, ?, ?, ?, 'Active')");
                 $stmt->execute([$station_name, $location, $station_address, $manager_id]);
+                $stationId = (int)$pdo->lastInsertId();
+
+                $scopeStmt = $pdo->prepare(
+                    "INSERT INTO station_business_scope (station_id, headquarter_id, branch_manager_user_id)
+                     VALUES (?, ?, ?)"
+                );
+                $scopeStmt->execute([$stationId, $hqId, $manager_id]);
+
+                $accountScopeStmt = $pdo->prepare(
+                    "INSERT INTO business_account_scope
+                        (user_id, business_role_id, headquarter_id, branch_manager_user_id, station_id, status)
+                     VALUES (?, 4, ?, NULL, ?, 'active')
+                     ON DUPLICATE KEY UPDATE headquarter_id = VALUES(headquarter_id), station_id = VALUES(station_id), status = 'active'"
+                );
+                $accountScopeStmt->execute([$manager_id, $hqId, $stationId]);
+
+                $userScopeStmt = $pdo->prepare("UPDATE users SET headquarter_id = ?, branch_id = ?, business_role_id = 4 WHERE user_id = ?");
+                $userScopeStmt->execute([$hqId, $stationId, $manager_id]);
+
+                $fuelStmt = $pdo->query("SELECT oil_type_id FROM oil_types ORDER BY oil_type_id LIMIT 4");
+                $inventoryStmt = $pdo->prepare(
+                    "INSERT INTO station_oil_inventory
+                        (station_id, oil_type_id, price_per_litre, is_active, current_amount_liters, updated_at)
+                     VALUES (?, ?, 0, 1, 0, NOW())"
+                );
+                foreach ($fuelStmt->fetchAll(PDO::FETCH_COLUMN) as $oilTypeId) {
+                    $inventoryStmt->execute([$stationId, (int)$oilTypeId]);
+                }
+
+                $tankSeedStmt = $pdo->prepare(
+                    "INSERT INTO tanks (branch_id, fuel_code, fuel_name, capacity_l, current_l, alert_pct, is_enabled)
+                     VALUES (?, ?, ?, ?, 0, 25, 1)"
+                );
+                $tankSeeds = [
+                    ['p92', 'Petrol 92', 15000],
+                    ['p95', 'Petrol 95', 10000],
+                    ['dsl', 'Diesel', 12000],
+                    ['pdsl', 'Premium Diesel', 12000],
+                ];
+                foreach ($tankSeeds as $tankSeed) {
+                    $tankSeedStmt->execute([$stationId, $tankSeed[0], $tankSeed[1], $tankSeed[2]]);
+                }
+                $pdo->commit();
                 $message = "Station node created successfully.";
             } catch (PDOException $e) {
+                if ($pdo->inTransaction()) {
+                    $pdo->rollBack();
+                }
                 $error = "Error registering station: " . $e->getMessage();
             } catch (RuntimeException $e) {
                 $error = $e->getMessage();
@@ -51,18 +115,53 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         try {
             // Find user_id based on manager email
-            $managerStmt = $pdo->prepare("SELECT user_id FROM users WHERE email = ? AND COALESCE(business_role_id, role_id) = 4 LIMIT 1");
-            $managerStmt->execute([$manager_email]);
+            if (!map_pump_station_in_hq($pdo, (int)$station_id, $hqId)) {
+                throw new RuntimeException('You can only configure stations under your own HQ.');
+            }
+
+            $managerStmt = $pdo->prepare(
+                "SELECT u.user_id
+                 FROM users u
+                 LEFT JOIN business_account_scope bas ON bas.user_id = u.user_id
+                 WHERE u.email = ?
+                   AND COALESCE(u.business_role_id, u.role_id) = 4
+                   AND (
+                       COALESCE(bas.headquarter_id, u.headquarter_id) = ?
+                       OR EXISTS (
+                           SELECT 1 FROM station_business_scope sbs
+                           WHERE sbs.branch_manager_user_id = u.user_id
+                             AND sbs.headquarter_id = ?
+                       )
+                   )
+                 LIMIT 1"
+            );
+            $managerStmt->execute([$manager_email, $hqId, $hqId]);
             $manager_id = $managerStmt->fetchColumn();
 
             if (!$manager_id) {
                 throw new RuntimeException('Please select a valid branch manager.');
             }
 
+            $pdo->beginTransaction();
             $stmt = $pdo->prepare("UPDATE stations SET station_name = ?, station_address = ?, location = ?, business_user_id = ? WHERE station_id = ?");
             $stmt->execute([$station_name, $station_address, $location, $manager_id, $station_id]);
+            $scopeStmt = $pdo->prepare("UPDATE station_business_scope SET branch_manager_user_id = ? WHERE station_id = ? AND headquarter_id = ?");
+            $scopeStmt->execute([$manager_id, $station_id, $hqId]);
+            $accountScopeStmt = $pdo->prepare(
+                "INSERT INTO business_account_scope
+                    (user_id, business_role_id, headquarter_id, branch_manager_user_id, station_id, status)
+                 VALUES (?, 4, ?, NULL, ?, 'active')
+                 ON DUPLICATE KEY UPDATE headquarter_id = VALUES(headquarter_id), station_id = VALUES(station_id), status = 'active'"
+            );
+            $accountScopeStmt->execute([$manager_id, $hqId, $station_id]);
+            $userScopeStmt = $pdo->prepare("UPDATE users SET headquarter_id = ?, branch_id = ?, business_role_id = 4 WHERE user_id = ?");
+            $userScopeStmt->execute([$hqId, $station_id, $manager_id]);
+            $pdo->commit();
             $message = "Configuration saved successfully!";
         } catch (PDOException $e) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
             $error = "Error updating configuration: " . $e->getMessage();
         } catch (RuntimeException $e) {
             $error = $e->getMessage();
@@ -76,8 +175,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if (!empty($station_id) && in_array($new_status, ['Active', 'Maintenance'])) {
             try {
-                $stmt = $pdo->prepare("UPDATE stations SET status = ? WHERE station_id = ?");
-                $stmt->execute([$new_status, $station_id]);
+                $stmt = $pdo->prepare(
+                    "UPDATE stations s
+                     INNER JOIN station_business_scope sbs ON sbs.station_id = s.station_id
+                     SET s.status = ?
+                     WHERE s.station_id = ? AND sbs.headquarter_id = ?"
+                );
+                $stmt->execute([$new_status, $station_id, $hqId]);
                 echo json_encode(['success' => true]);
             } catch (PDOException $e) {
                 echo json_encode(['success' => false, 'message' => $e->getMessage()]);
@@ -93,8 +197,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $station_id = $_POST['station_id'] ?? '';
 
         try {
-            $stmt = $pdo->prepare("UPDATE stations SET status = 'Decommissioned' WHERE station_id = ?");
-            $stmt->execute([$station_id]);
+            $stmt = $pdo->prepare(
+                "UPDATE stations s
+                 INNER JOIN station_business_scope sbs ON sbs.station_id = s.station_id
+                 SET s.status = 'Decommissioned'
+                 WHERE s.station_id = ? AND sbs.headquarter_id = ?"
+            );
+            $stmt->execute([$station_id, $hqId]);
             $message = "Station successfully decommissioned and hidden.";
         } catch (PDOException $e) {
             $error = "Error decommissioning station: " . $e->getMessage();
@@ -106,10 +215,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $stations = [];
 $branchManagers = [];
 try {
-    $stmt = $pdo->query("SELECT s.*, u.user_name AS manager_name, u.email AS manager_email FROM stations s LEFT JOIN users u ON u.user_id = s.business_user_id WHERE s.status != 'Decommissioned' OR s.status IS NULL ORDER BY s.station_id DESC");
+    $stmt = $pdo->prepare(
+        "SELECT s.*, u.user_name AS manager_name, u.email AS manager_email
+         FROM stations s
+         INNER JOIN station_business_scope sbs ON sbs.station_id = s.station_id
+         LEFT JOIN users u ON u.user_id = s.business_user_id
+         WHERE sbs.headquarter_id = ?
+           AND (s.status != 'Decommissioned' OR s.status IS NULL)
+         ORDER BY s.station_id DESC"
+    );
+    $stmt->execute([$hqId]);
     $stations = $stmt->fetchAll();
 
-    $managerStmt = $pdo->query("SELECT user_id, email FROM users WHERE COALESCE(business_role_id, role_id) = 4 AND status NOT IN ('suspended', 'removed') ORDER BY email");
+    $managerStmt = $pdo->prepare(
+        "SELECT u.user_id, u.email
+         FROM users u
+         LEFT JOIN business_account_scope bas ON bas.user_id = u.user_id
+         WHERE COALESCE(u.business_role_id, u.role_id) = 4
+           AND (
+               COALESCE(bas.headquarter_id, u.headquarter_id) = ?
+               OR EXISTS (
+                   SELECT 1 FROM station_business_scope sbs
+                   WHERE sbs.branch_manager_user_id = u.user_id
+                     AND sbs.headquarter_id = ?
+               )
+           )
+           AND LOWER(COALESCE(u.status, 'active')) NOT IN ('suspended', 'removed')
+         ORDER BY u.email"
+    );
+    $managerStmt->execute([$hqId, $hqId]);
     $branchManagers = $managerStmt->fetchAll();
 } catch (PDOException $e) {
     $error = "Could not retrieve stations: " . $e->getMessage();

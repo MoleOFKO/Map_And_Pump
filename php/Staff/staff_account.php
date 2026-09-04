@@ -57,7 +57,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'updat
 
             if (move_uploaded_file($fileTmpPath, $destPath)) {
                 try {
-                    $update = $pdo->prepare('UPDATE users SET avatar = ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?');
+                    $update = $pdo->prepare('UPDATE users SET oauth_avatar_url = ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?');
                     $update->execute([$relativePath, $userId]);
                     $_SESSION['flash_message'] = 'Profile image updated successfully.';
                     $_SESSION['flash_type'] = 'success';
@@ -122,7 +122,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'updat
 
 try {
     $stmt = $pdo->prepare(
-        'SELECT u.user_id, u.user_name, u.email, u.avatar, u.status, u.role_id, u.business_role_id, u.created_at,
+        'SELECT u.user_id, u.user_name, u.email, u.oauth_avatar_url, u.status, u.role_id, u.business_role_id, u.created_at,
                 r.role_name, br.role_name AS business_role_name
          FROM users u
          LEFT JOIN roles r ON r.role_id = u.role_id
@@ -143,7 +143,7 @@ if (!$user) {
 
 $displayName = trim((string) ($user['user_name'] ?? ''));
 $displayEmail = trim((string) ($user['email'] ?? ''));
-$avatarPath = trim((string) ($user['avatar'] ?? ''));
+$avatarPath = trim((string) ($user['oauth_avatar_url'] ?? ''));
 $staffId = 'EMP-' . str_pad((string) $user['user_id'], 4, '0', STR_PAD_LEFT);
 $initial = map_pump_profile_initial($displayName, 'S');
 $accountRole = trim((string) ($user['role_name'] ?? 'Staff')) ?: 'Staff';
@@ -320,7 +320,7 @@ $accountRole = trim((string) ($user['role_name'] ?? 'Staff')) ?: 'Staff';
                         <div class="dashboard-card p-4 d-flex flex-column justify-content-between h-100">
                             <div>
                                 <h3 class="fw-bold mb-2 text-white"><i class="bi bi-arrow-left-right me-2 txt-neon-blue"></i>Account Profile Mode</h3>
-                                <p class="text-white-50 small mb-4">Switch to the customer profile when this staff account needs to fill gas. You can switch back to staff anytime from the customer profile page.</p>
+                                <p class="text-white-50 small mb-4">Switching profiles logs this session out first. Your email will be ready on the login page; enter only your password to continue.</p>
                             </div>
                             <form action="../account_switch.php" method="POST">
                                 <input type="hidden" name="mode" value="customer">

@@ -1,6 +1,7 @@
 <?php
 session_start();
 
+require_once __DIR__ . '/Login/session_helper.php';
 require_once __DIR__ . '/conn.php';
 require_once __DIR__ . '/Customer/license_access.php';
 require_once __DIR__ . '/Customer/car_access.php';
@@ -10,6 +11,29 @@ require_once __DIR__ . '/profile_avatar.php';
 function account_switch_redirect_login(string $message = 'Please sign in to continue.'): void
 {
     $_SESSION['login_error'] = $message;
+    header('Location: /php/Login/login.php');
+    exit;
+}
+
+function account_switch_logout_to_login(string $email, string $message): void
+{
+    map_pump_destroy_login_session();
+    map_pump_configure_session();
+    session_start();
+
+    session_regenerate_id(true);
+    $_SESSION['login_success'] = $message;
+    $_SESSION['login_prefill_email'] = $email;
+
+    setcookie(MAP_PUMP_LOGIN_PREFILL_EMAIL_COOKIE, $email, [
+        'expires' => time() + 600,
+        'path' => '/',
+        'domain' => '',
+        'secure' => map_pump_secure_cookie(),
+        'httponly' => true,
+        'samesite' => 'Lax',
+    ]);
+
     header('Location: /php/Login/login.php');
     exit;
 }
@@ -89,28 +113,8 @@ $businessRoleId = (int) ($user['business_role_id'] ?? 0);
 $businessRoleName = (string) ($user['business_role_name'] ?? '');
 
 if ($targetMode === 'customer') {
-    $licenseAccess = customer_license_access($pdo, $userId);
-
-    $_SESSION['role_id'] = $customerRoleId;
-    $_SESSION['current_role_id'] = $customerRoleId;
-    $_SESSION['role_name'] = 'Customer';
-    $_SESSION['active_profile_mode'] = 'customer';
-    $_SESSION['has_business'] = ($businessRoleId > 0);
-    $_SESSION['business_role_id'] = $businessRoleId;
-    $_SESSION['business_role_name'] = $businessRoleName;
-    $_SESSION['user_name'] = (string) $user['user_name'];
-    $_SESSION['user_email'] = (string) $user['email'];
-    $avatarUrl = map_pump_profile_avatar_url((string) ($user['oauth_avatar_url'] ?? ''), '');
-    if ($avatarUrl !== '') {
-        $_SESSION['oauth_avatar_url'] = $avatarUrl;
-    } else {
-        unset($_SESSION['oauth_avatar_url']);
-    }
-    customer_refresh_session($pdo, $userId, $licenseAccess);
     map_pump_set_current_role($pdo, $userId, $customerRoleId);
-
-    header('Location: ' . ($licenseAccess['is_approved'] ? '/php/Customer/dashboard.php' : '../Customer/license.php'));
-    exit;
+    account_switch_logout_to_login((string)$user['email'], 'Profile switched to Customer. Enter your password to continue.');
 }
 
 if ($targetMode === 'business') {
@@ -124,25 +128,8 @@ if ($targetMode === 'business') {
         exit;
     }
 
-    $_SESSION['role_id'] = $targetRoleId;
-    $_SESSION['current_role_id'] = $targetRoleId;
-    $_SESSION['role_name'] = $targetRoleName;
-    $_SESSION['active_profile_mode'] = 'business';
-    $_SESSION['business_role_id'] = $targetRoleId;
-    $_SESSION['business_role_name'] = $targetRoleName;
-    $_SESSION['has_business'] = true;
-    $_SESSION['user_name'] = (string) $user['user_name'];
-    $_SESSION['user_email'] = (string) $user['email'];
-    $avatarUrl = map_pump_profile_avatar_url((string) ($user['oauth_avatar_url'] ?? ''), '');
-    if ($avatarUrl !== '') {
-        $_SESSION['oauth_avatar_url'] = $avatarUrl;
-    } else {
-        unset($_SESSION['oauth_avatar_url']);
-    }
     map_pump_set_current_role($pdo, $userId, $targetRoleId);
-
-    header('Location: ' . account_switch_dashboard($targetRoleName, $targetRoleId));
-    exit;
+    account_switch_logout_to_login((string)$user['email'], 'Profile switched to ' . $targetRoleName . '. Enter your password to continue.');
 }
 
 $_SESSION['profile_flash_message'] = 'Choose a valid profile mode to switch accounts.';

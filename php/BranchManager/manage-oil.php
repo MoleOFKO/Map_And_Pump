@@ -8,6 +8,7 @@
  */
 require_once __DIR__ . '/_helpers.php';
 require_once __DIR__ . '/../conn.php';
+require_once __DIR__ . '/../business_scope.php';
 require_branch_manager();
 
 $ctx      = current_context($pdo);
@@ -15,6 +16,18 @@ $user     = $ctx['user'];
 $branch   = $ctx['branch'];
 $initials = initials($user['full_name']);
 $bid      = (int)$branch['branch_id'];
+$fuelCodeToOilName = [
+    'p92' => 'Octane 92',
+    'p95' => 'Octane 95',
+    'dsl' => 'Disel',
+    'pdsl' => 'Premium Disel',
+];
+$fuelCodeToOilAliases = [
+    'p92' => ['Octane 92'],
+    'p95' => ['Octane 95'],
+    'dsl' => ['Disel', 'Diesel'],
+    'pdsl' => ['Premium Disel', 'Premium Diesel'],
+];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!csrf_check($_POST['csrf'] ?? null)) json_out(['ok' => false, 'error' => 'CSRF failed'], 403);
@@ -55,6 +68,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'p92' => (int)($_POST['alert_p92'] ?? 25),
                 'p95' => (int)($_POST['alert_p95'] ?? 25),
                 'dsl' => (int)($_POST['alert_dsl'] ?? 30),
+                'pdsl' => (int)($_POST['alert_pdsl'] ?? 30),
             ];
             $stmt = $pdo->prepare("UPDATE tanks SET alert_pct = :p WHERE branch_id = :b AND fuel_code = :f");
             foreach ($map as $fc => $pct) {
@@ -68,10 +82,51 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($action === 'toggle_fuel') {
             $tank_id = (int)($_POST['tank_id'] ?? 0);
             $enabled = (int)($_POST['enabled'] ?? 0) === 1 ? 1 : 0;
+            $stmt = $pdo->prepare("SELECT fuel_code FROM tanks WHERE tank_id = :t AND branch_id = :b LIMIT 1");
+            $stmt->execute([':t' => $tank_id, ':b' => $bid]);
+            $fuelCode = (string)($stmt->fetchColumn() ?: '');
+            if ($fuelCode === '') json_out(['ok' => false, 'error' => 'Tank not found for this station'], 404);
+
+            $pdo->beginTransaction();
             $stmt = $pdo->prepare("UPDATE tanks SET is_enabled = :e WHERE tank_id = :t AND branch_id = :b");
             $stmt->execute([':e' => $enabled, ':t' => $tank_id, ':b' => $bid]);
+
+            $oilAliases = $fuelCodeToOilAliases[$fuelCode] ?? [];
+            if ($oilAliases) {
+                $placeholders = implode(',', array_fill(0, count($oilAliases), '?'));
+                $oilStmt = $pdo->prepare("SELECT oil_type_id FROM oil_types WHERE LOWER(oil_name) IN ({$placeholders}) LIMIT 1");
+                $oilStmt->execute(array_map('strtolower', $oilAliases));
+                $oilTypeId = (int)($oilStmt->fetchColumn() ?: 0);
+                if ($oilTypeId > 0) {
+                    $invStmt = $pdo->prepare("UPDATE station_oil_inventory SET is_active = :e WHERE station_id = :s AND oil_type_id = :o");
+                    $invStmt->execute([':e' => $enabled, ':s' => $bid, ':o' => $oilTypeId]);
+                }
+            }
+            $pdo->commit();
             log_activity($pdo, $bid, 'user', $user['user_id'], $user['full_name'],
                          ($enabled ? 'Enabled' : 'Disabled') . " fuel type (tank #{$tank_id})");
+            json_out(['ok' => true]);
+        }
+
+        if ($action === 'update_price') {
+            $fuel_code = $_POST['fuel_code'] ?? '';
+            $price = trim((string)($_POST['price_per_litre'] ?? ''));
+            if (!isset($fuelCodeToOilName[$fuel_code])) json_out(['ok' => false, 'error' => 'Invalid fuel type'], 422);
+            if ($price === '' || !is_numeric($price) || (int)$price < 0) json_out(['ok' => false, 'error' => 'Enter a valid non-negative price'], 422);
+
+            $oilAliases = $fuelCodeToOilAliases[$fuel_code];
+            $placeholders = implode(',', array_fill(0, count($oilAliases), '?'));
+            $oilStmt = $pdo->prepare("SELECT oil_type_id FROM oil_types WHERE LOWER(oil_name) IN ({$placeholders}) LIMIT 1");
+            $oilStmt->execute(array_map('strtolower', $oilAliases));
+            $oilTypeId = (int)($oilStmt->fetchColumn() ?: 0);
+            if ($oilTypeId <= 0) json_out(['ok' => false, 'error' => 'Fuel grade is missing in oil_types'], 422);
+
+            $activeStmt = $pdo->prepare("SELECT is_enabled FROM tanks WHERE branch_id = :b AND fuel_code = :f LIMIT 1");
+            $activeStmt->execute([':b' => $bid, ':f' => $fuel_code]);
+            $active = (int)($activeStmt->fetchColumn() ?: 1);
+            map_pump_append_station_price($pdo, $bid, $oilTypeId, (int)$price, $active);
+            log_activity($pdo, $bid, 'user', $user['user_id'], $user['full_name'],
+                         "Updated {$fuel_code} station price to {$price} MMK");
             json_out(['ok' => true]);
         }
 
@@ -89,6 +144,19 @@ $tanks_rows = $stmt->fetchAll();
 // index by fuel_code for easy lookup
 $tanks = [];
 foreach ($tanks_rows as $t) $tanks[$t['fuel_code']] = $t;
+
+$latestInventorySql = map_pump_latest_station_inventory_sql();
+$priceStmt = $pdo->prepare(
+    "SELECT ot.oil_name, li.price_per_litre
+     FROM ({$latestInventorySql}) li
+     INNER JOIN oil_types ot ON ot.oil_type_id = li.oil_type_id
+     WHERE li.station_id = :b"
+);
+$priceStmt->execute([':b' => $bid]);
+$priceByOilName = [];
+foreach ($priceStmt->fetchAll(PDO::FETCH_ASSOC) as $priceRow) {
+    $priceByOilName[strtolower((string)$priceRow['oil_name'])] = (int)$priceRow['price_per_litre'];
+}
 
 // recent deliveries (last 8)
 $stmt = $pdo->prepare("
@@ -571,6 +639,7 @@ function tank_flag(?array $t): string {
             'p92' => ['name' => 'Petrol 92', 'id' => 'p92', 'cap' => 15000, 'rem' => 11100],
             'p95' => ['name' => 'Petrol 95', 'id' => 'p95', 'cap' => 10000, 'rem' => 4800],
             'dsl' => ['name' => 'Diesel',    'id' => 'dsl', 'cap' => 12000, 'rem' => 2640],
+            'pdsl' => ['name' => 'Premium Diesel', 'id' => 'pdsl', 'cap' => 12000, 'rem' => 0],
           ];
           foreach ($tank_defs as $fc => $def):
             $t = $tanks[$fc] ?? null;
@@ -669,32 +738,50 @@ function tank_flag(?array $t): string {
       <div class="tab-panel" id="tab-types">
         <div class="panel">
           <?php
-          $swatch_map = ['p92' => 'var(--sky-400)', 'p95' => 'var(--mint-400)', 'dsl' => 'var(--amber-400)'];
+          $swatch_map = ['p92' => 'var(--sky-400)', 'p95' => 'var(--mint-400)', 'dsl' => 'var(--amber-400)', 'pdsl' => 'var(--blue-500)'];
           foreach ($tank_defs as $fc => $def):
             $t = $tanks[$fc] ?? null;
             $cur = $t ? (int)$t['current_l'] : $def['rem'];
             $swatch = $swatch_map[$fc] ?? 'var(--slate-400)';
             $on = $t ? ((int)$t['is_enabled'] === 1) : true;
             $tank_id_attr = $t ? (int)$t['tank_id'] : '';
+            $current_price = 0;
+            foreach (($fuelCodeToOilAliases[$fc] ?? [$def['name']]) as $oilAlias) {
+              $current_price = $priceByOilName[strtolower($oilAlias)] ?? $current_price;
+            }
           ?>
           <div class="type-row" data-tank-id="tank-<?= $fc ?>" data-real-id="<?= $tank_id_attr ?>">
             <div class="info">
               <div class="swatch" style="background:<?= $swatch ?>;"></div>
               <div>
                 <b><?= h($t['fuel_name'] ?? $def['name']) ?></b>
-                <span class="rem-type-lbl">Current stock — <?= number_format($cur) ?> L</span>
+                <span class="rem-type-lbl">Current stock — <?= number_format($cur) ?> L · Price <?= number_format($current_price) ?> MMK/L</span>
               </div>
             </div>
             <button class="toggle <?= $on ? 'on' : '' ?>" data-target="tank-<?= $fc ?>" data-tank-id="<?= $tank_id_attr ?>"></button>
           </div>
           <?php endforeach; ?>
-          <div class="type-row">
-            <div class="info">
-              <div class="swatch" style="background:var(--slate-400);"></div>
-              <div><b>Premium Diesel</b><span>Not yet available at this branch</span></div>
+        </div>
+
+        <div class="panel" style="padding:18px; margin-top:18px;">
+          <div class="section-title"><h3>Station Fuel Price</h3></div>
+          <form id="price-form" method="POST" action="manage-oil.php" style="display:grid; grid-template-columns: minmax(180px,1fr) minmax(180px,1fr) auto; gap:12px; align-items:end;">
+            <input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>">
+            <input type="hidden" name="action" value="update_price">
+            <div class="form-group" style="margin-bottom:0;">
+              <label for="price-fuel-input">Fuel Grade</label>
+              <select id="price-fuel-input" name="fuel_code" class="form-control-custom" required>
+                <?php foreach ($tank_defs as $fc => $def): ?>
+                  <option value="<?= h($fc) ?>"><?= h($def['name']) ?></option>
+                <?php endforeach; ?>
+              </select>
             </div>
-            <button class="toggle" disabled></button>
-          </div>
+            <div class="form-group" style="margin-bottom:0;">
+              <label for="price-input">New Price (MMK/L)</label>
+              <input type="number" id="price-input" name="price_per_litre" class="form-control-custom" min="0" step="1" required placeholder="e.g. 3500">
+            </div>
+            <button type="submit" class="btn-primary" style="box-shadow:none; height:44px;">Save Price</button>
+          </form>
         </div>
       </div>
 
@@ -730,6 +817,10 @@ function tank_flag(?array $t): string {
         <label for="limit-dsl">Diesel — Alert Threshold (%)</label>
         <input type="number" id="limit-dsl" name="alert_dsl" class="form-control-custom" min="5" max="80" value="<?= (int)($tanks['dsl']['alert_pct'] ?? 30) ?>" required>
       </div>
+      <div class="form-group">
+        <label for="limit-pdsl">Premium Diesel — Alert Threshold (%)</label>
+        <input type="number" id="limit-pdsl" name="alert_pdsl" class="form-control-custom" min="5" max="80" value="<?= (int)($tanks['pdsl']['alert_pct'] ?? 30) ?>" required>
+      </div>
       <div class="modal-actions">
         <button type="button" class="btn-secondary-custom" id="limit-modal-cancel-btn">Cancel</button>
         <button type="submit" class="btn-primary" style="box-shadow: none; padding: 10px 18px;">Save Limits</button>
@@ -756,6 +847,7 @@ function tank_flag(?array $t): string {
           <option value="p92">Petrol 92</option>
           <option value="p95">Petrol 95</option>
           <option value="dsl">Diesel</option>
+          <option value="pdsl">Premium Diesel</option>
         </select>
       </div>
       <div class="form-group">
@@ -836,18 +928,20 @@ function tank_flag(?array $t): string {
     const stockDB = {
       p92: { capacity: <?= (int)($tanks['p92']['capacity_l'] ?? 15000) ?>, remaining: <?= (int)($tanks['p92']['current_l'] ?? 11100) ?> },
       p95: { capacity: <?= (int)($tanks['p95']['capacity_l'] ?? 10000) ?>, remaining: <?= (int)($tanks['p95']['current_l'] ?? 4800) ?> },
-      dsl: { capacity: <?= (int)($tanks['dsl']['capacity_l'] ?? 12000) ?>, remaining: <?= (int)($tanks['dsl']['current_l'] ?? 2640) ?> }
+      dsl: { capacity: <?= (int)($tanks['dsl']['capacity_l'] ?? 12000) ?>, remaining: <?= (int)($tanks['dsl']['current_l'] ?? 2640) ?> },
+      pdsl: { capacity: <?= (int)($tanks['pdsl']['capacity_l'] ?? 12000) ?>, remaining: <?= (int)($tanks['pdsl']['current_l'] ?? 0) ?> }
     };
 
     let oilLimits = {
       p92: <?= (int)($tanks['p92']['alert_pct'] ?? 25) ?>,
       p95: <?= (int)($tanks['p95']['alert_pct'] ?? 25) ?>,
-      dsl: <?= (int)($tanks['dsl']['alert_pct'] ?? 30) ?>
+      dsl: <?= (int)($tanks['dsl']['alert_pct'] ?? 30) ?>,
+      pdsl: <?= (int)($tanks['pdsl']['alert_pct'] ?? 30) ?>
     };
 
     // Synchronize visual state across tanks
     function syncTanksUI() {
-      ['p92', 'p95', 'dsl'].forEach(key => {
+      ['p92', 'p95', 'dsl', 'pdsl'].forEach(key => {
         const item = stockDB[key];
         const used = item.capacity - item.remaining;
         const percent = Math.min(100, Math.round((item.remaining / item.capacity) * 100));
@@ -911,7 +1005,8 @@ function tank_flag(?array $t): string {
       oilLimits = {
         p92: parseInt(document.getElementById('limit-p92').value),
         p95: parseInt(document.getElementById('limit-p95').value),
-        dsl: parseInt(document.getElementById('limit-dsl').value)
+        dsl: parseInt(document.getElementById('limit-dsl').value),
+        pdsl: parseInt(document.getElementById('limit-pdsl').value)
       };
       syncTanksUI();
     });
@@ -935,13 +1030,39 @@ function tank_flag(?array $t): string {
     // Dynamic Switch Controls
     const toggleButtons = document.querySelectorAll('.toggle:not([disabled])');
     toggleButtons.forEach(btn => {
-      btn.addEventListener('click', () => {
-        btn.classList.toggle('on');
+      btn.addEventListener('click', async () => {
+        const wasOn = btn.classList.contains('on');
+        const nextOn = !wasOn;
+        const realTankId = btn.getAttribute('data-tank-id');
+        if (!realTankId) {
+          alert('This fuel type is not initialized for this station yet.');
+          return;
+        }
+
+        const fd = new FormData();
+        fd.append('csrf', '<?= h(csrf_token()) ?>');
+        fd.append('action', 'toggle_fuel');
+        fd.append('tank_id', realTankId);
+        fd.append('enabled', nextOn ? '1' : '0');
+
+        try {
+          const res = await fetch('manage-oil.php', { method: 'POST', body: fd });
+          const data = await res.json();
+          if (!data.ok) {
+            alert('Update failed: ' + (data.error || 'unknown'));
+            return;
+          }
+        } catch (err) {
+          alert('Network error: ' + err.message);
+          return;
+        }
+
+        btn.classList.toggle('on', nextOn);
         const targetId = btn.getAttribute('data-target');
         const tankCard = document.getElementById(targetId);
 
         if (tankCard) {
-          if (!btn.classList.contains('on')) {
+          if (!nextOn) {
             tankCard.classList.add('disabled-tank');
             const flag = tankCard.querySelector('.tank-flag');
             if (flag) {
@@ -955,6 +1076,24 @@ function tank_flag(?array $t): string {
         }
       });
     });
+
+    const priceForm = document.getElementById('price-form');
+    if (priceForm) {
+      priceForm.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        try {
+          const res = await fetch('manage-oil.php', { method: 'POST', body: new FormData(priceForm) });
+          const data = await res.json();
+          if (!data.ok) {
+            alert('Price update failed: ' + (data.error || 'unknown'));
+            return;
+          }
+          window.location.reload();
+        } catch (err) {
+          alert('Network error: ' + err.message);
+        }
+      });
+    }
   });
 </script>
 </body>
