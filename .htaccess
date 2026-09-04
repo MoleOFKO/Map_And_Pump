@@ -1,0 +1,5 @@
+DirectoryIndex index.php index.html
+
+RewriteEngine On
+RewriteRule ^HomePage\.php$ php/HomePage.php [L]
+

@@ -5,6 +5,7 @@
 # Environment & secret files
 .env
 *.env
+.env.*
 
 # Docker files
 Dockerfile
