@@ -42,11 +42,14 @@ function current_context($db = null) {
                NULL AS phone,
                NULL AS nrc,
                COALESCE(r.role_name, 'BranchManager') AS role,
-               b.branch_code, b.branch_name, b.city, b.township, b.address,
+               COALESCE(b.branch_code, CONCAT('ST-', s.station_id)) AS branch_code,
+               COALESCE(b.branch_name, s.station_name) AS branch_name,
+               b.city, b.township,
+               COALESCE(b.address, s.station_address, s.location) AS address,
                b.phone AS branch_phone, b.email AS branch_email,
                b.opening_time, b.closing_time, b.is_24hr,
                b.pump_count, b.tank_count, b.hq_region, b.established_at,
-               b.status AS branch_status
+               COALESCE(b.status, LOWER(s.status), 'active') AS branch_status
         FROM users u
         LEFT JOIN roles r ON r.role_id = COALESCE(u.current_role_id, u.business_role_id, u.role_id)
         LEFT JOIN (
@@ -54,6 +57,7 @@ function current_context($db = null) {
             FROM station_business_scope
             GROUP BY branch_manager_user_id
         ) managed ON managed.branch_manager_user_id = u.user_id
+        LEFT JOIN stations s ON s.station_id = COALESCE(u.branch_id, managed.station_id)
         LEFT JOIN branches b ON b.branch_id = COALESCE(u.branch_id, managed.station_id)
         WHERE u.user_id = :uid
         LIMIT 1

@@ -4,6 +4,7 @@ define('MAP_PUMP_JSON_RESPONSE', true);
 require __DIR__ . '/../conn.php';
 require_once __DIR__ . '/license_access.php';
 require_once __DIR__ . '/car_access.php';
+require_once __DIR__ . '/../business_scope.php';
 
 header('Content-Type: application/json');
 
@@ -55,14 +56,24 @@ try {
         exit;
     }
 
+    $latestInventorySql = map_pump_latest_station_inventory_sql();
     $stationStmt = $pdo->prepare(
         "SELECT s.station_id, s.station_name, ot.oil_type_id, ot.oil_name
          FROM stations s
-         INNER JOIN station_oil_inventory soi ON soi.station_id = s.station_id
+         INNER JOIN ({$latestInventorySql}) soi ON soi.station_id = s.station_id
             AND soi.is_active = 1
-            AND soi.current_amount_liters > 0
+         INNER JOIN station_business_scope sbs ON sbs.station_id = s.station_id
          INNER JOIN oil_types ot ON ot.oil_type_id = soi.oil_type_id
             AND LOWER(REPLACE(ot.oil_name, ' ', '')) = LOWER(REPLACE(:fuel_type, ' ', ''))
+         INNER JOIN tanks t ON t.branch_id = s.station_id
+            AND t.is_enabled = 1
+            AND t.current_l > 0
+            AND (
+                (t.fuel_code = 'p92' AND LOWER(REPLACE(ot.oil_name, ' ', '')) = 'octane92')
+                OR (t.fuel_code = 'p95' AND LOWER(REPLACE(ot.oil_name, ' ', '')) = 'octane95')
+                OR (t.fuel_code = 'dsl' AND LOWER(REPLACE(ot.oil_name, ' ', '')) IN ('disel', 'diesel'))
+                OR (t.fuel_code = 'pdsl' AND LOWER(REPLACE(ot.oil_name, ' ', '')) IN ('premiumdisel', 'premiumdiesel'))
+            )
          WHERE s.station_id = :station_id
            AND COALESCE(s.status, 'Active') <> 'Decommissioned'
          ORDER BY soi.updated_at DESC, soi.inventory_id DESC

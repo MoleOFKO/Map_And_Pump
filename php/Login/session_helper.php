@@ -2,6 +2,7 @@
 
 const MAP_PUMP_REMEMBER_SECONDS = 2592000;
 const MAP_PUMP_REMEMBER_EMAIL_COOKIE = 'map_pump_remember_email';
+const MAP_PUMP_LOGIN_PREFILL_EMAIL_COOKIE = 'map_pump_login_prefill_email';
 
 function map_pump_secure_cookie(): bool
 {

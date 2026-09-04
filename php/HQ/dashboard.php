@@ -14,56 +14,77 @@ require_once __DIR__ . '/hq_guard.php';
 //     $db_error = "Database connection failed.";
 // }
 require_once __DIR__ . '/../conn.php';
+require_once __DIR__ . '/../business_scope.php';
+$hqId = map_pump_current_hq_id($pdo);
 // Handle quick price update submission if posted
 $updateMessage = "";
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'update_price') {
-    $fuelType = trim((string)($_POST['fuel_type'] ?? ''));
+    $stationId = filter_input(INPUT_POST, 'station_id', FILTER_VALIDATE_INT);
+    $oilTypeId = filter_input(INPUT_POST, 'oil_type_id', FILTER_VALIDATE_INT);
     $newPrice = trim((string)($_POST['fuel_price'] ?? ''));
 
-    if ($fuelType !== '' && $newPrice !== '' && is_numeric($newPrice) && (float) $newPrice >= 0) {
-        $stmt = $conn->prepare("UPDATE station_oil_inventory soi JOIN oil_types ot ON ot.oil_type_id = soi.oil_type_id SET soi.price_per_litre = ? WHERE ot.oil_name = ?");
-        if ($stmt) {
-            $priceValue = (int) $newPrice;
-            $stmt->bind_param("is", $priceValue, $fuelType);
-            if ($stmt->execute()) {
-                $updateMessage = "Successfully updated price for " . htmlspecialchars($fuelType) . " to " . htmlspecialchars($newPrice) . " MMK";
-            } else {
-                $updateMessage = "Error updating price: " . $conn->error;
-            }
-            $stmt->close();
-        }
+    if ($stationId && $oilTypeId && $newPrice !== '' && is_numeric($newPrice) && (float) $newPrice >= 0 && map_pump_station_in_hq($pdo, (int)$stationId, $hqId)) {
+        map_pump_append_station_price($pdo, (int)$stationId, (int)$oilTypeId, (int)$newPrice);
+        $updateMessage = "New station fuel price added. Previous price records were kept.";
     } else {
-        $updateMessage = "Please enter a valid non-negative numeric price.";
+        $updateMessage = "Please select one of your HQ stations and enter a valid non-negative numeric price.";
     }
 }
 
 // Fetch National Fuel Pricing dynamically from the live station inventory
 $fuelPrices = [];
-$pricingResult = $conn->query("SELECT ot.oil_name, MAX(soi.price_per_litre) AS price_per_liter FROM oil_types ot LEFT JOIN station_oil_inventory soi ON ot.oil_type_id = soi.oil_type_id GROUP BY ot.oil_type_id, ot.oil_name ORDER BY ot.oil_name");
-if ($pricingResult) {
-    while ($row = $pricingResult->fetch_assoc()) {
-        $fuelPrices[] = $row;
-    }
-}
+$dashboardStations = [];
+$latestInventorySql = map_pump_latest_station_inventory_sql();
+$pricingStmt = $pdo->prepare(
+    "SELECT s.station_id, s.station_name, ot.oil_type_id, ot.oil_name, li.price_per_litre AS price_per_liter
+     FROM stations s
+     INNER JOIN station_business_scope sbs ON sbs.station_id = s.station_id
+     INNER JOIN ({$latestInventorySql}) li ON li.station_id = s.station_id
+     INNER JOIN oil_types ot ON ot.oil_type_id = li.oil_type_id
+     WHERE sbs.headquarter_id = ?
+       AND COALESCE(s.status, 'Active') <> 'Decommissioned'
+     ORDER BY s.station_name, ot.oil_type_id
+     LIMIT 8"
+);
+$pricingStmt->execute([$hqId]);
+$fuelPrices = $pricingStmt->fetchAll(PDO::FETCH_ASSOC);
+
+$dashboardStationStmt = $pdo->prepare(
+    "SELECT s.station_id, s.station_name
+     FROM stations s
+     INNER JOIN station_business_scope sbs ON sbs.station_id = s.station_id
+     WHERE sbs.headquarter_id = ?
+       AND COALESCE(s.status, 'Active') <> 'Decommissioned'
+     ORDER BY s.station_name"
+);
+$dashboardStationStmt->execute([$hqId]);
+$dashboardStations = $dashboardStationStmt->fetchAll(PDO::FETCH_ASSOC);
 
 // Fetch recent manager reports by the user's original business role, since role_id is normalized to the customer profile in the account-switch flow.
 $recentReports = [];
-$reportsQuery = "SELECT r.report_id, r.user_id, r.short_summery, r.message, r.importance, r.created_at, u.user_name, COALESCE(u.business_role_id, u.role_id) AS source_role_id FROM report r LEFT JOIN users u ON u.user_id = r.user_id WHERE COALESCE(u.business_role_id, u.role_id) = 4 ORDER BY r.created_at DESC LIMIT 5";
-$reportsResult = $conn->query($reportsQuery);
-if ($reportsResult) {
-    while ($row = $reportsResult->fetch_assoc()) {
-        $recentReports[] = $row;
-    }
-}
+$reportsStmt = $pdo->prepare(
+    "SELECT r.report_id, r.user_id, r.short_summery, r.message, r.importance, r.created_at, u.user_name, COALESCE(u.business_role_id, u.role_id) AS source_role_id
+     FROM report r
+     LEFT JOIN users u ON u.user_id = r.user_id
+     INNER JOIN business_account_scope bas ON bas.user_id = u.user_id
+     WHERE COALESCE(u.business_role_id, u.role_id) = 4
+       AND bas.headquarter_id = ?
+     ORDER BY r.created_at DESC LIMIT 5"
+);
+$reportsStmt->execute([$hqId]);
+$recentReports = $reportsStmt->fetchAll(PDO::FETCH_ASSOC);
 
 // Fetch Live Stations dynamically
 $stations = [];
-$stationsResult = $conn->query("SELECT station_id, station_name, location, status FROM stations");
-if ($stationsResult) {
-    while ($row = $stationsResult->fetch_assoc()) {
-        $stations[] = $row;
-    }
-}
+$stationsStmt = $pdo->prepare(
+    "SELECT s.station_id, s.station_name, s.location, s.status
+     FROM stations s
+     INNER JOIN station_business_scope sbs ON sbs.station_id = s.station_id
+     WHERE sbs.headquarter_id = ?
+     ORDER BY s.station_id DESC"
+);
+$stationsStmt->execute([$hqId]);
+$stations = $stationsStmt->fetchAll(PDO::FETCH_ASSOC);
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -178,7 +199,7 @@ endif; ?>
         <span class="small text-info">Manage <i class="fa-solid fa-arrow-right ms-1"></i></span>
       </div>
       <table>
-        <thead><tr><th>Type</th><th>Price (MMK)</th><th>Action</th></tr></thead>
+        <thead><tr><th>Station</th><th>Type</th><th>Price (MMK)</th><th>Action</th></tr></thead>
         <tbody>
           <?php
 if (!empty($fuelPrices)): ?>
@@ -186,11 +207,15 @@ if (!empty($fuelPrices)): ?>
 foreach ($fuelPrices as $fuel): ?>
               <tr>
                 <td><?php
+echo htmlspecialchars($fuel['station_name']); ?></td>
+                <td><?php
 echo htmlspecialchars($fuel['oil_name']); ?></td>
                 <td><?php
 echo number_format($fuel['price_per_liter']); ?></td>
                 <td><button class="btn" onclick="openEditModal(event, '<?php
-echo htmlspecialchars($fuel['oil_name'], ENT_QUOTES); ?>', '<?php
+echo (int)$fuel['station_id']; ?>', '<?php
+echo (int)$fuel['oil_type_id']; ?>', '<?php
+echo htmlspecialchars($fuel['station_name'] . ' / ' . $fuel['oil_name'], ENT_QUOTES); ?>', '<?php
 echo htmlspecialchars($fuel['price_per_liter'], ENT_QUOTES); ?>')">Edit</button></td>
               </tr>
             <?php
@@ -283,8 +308,10 @@ endif; ?>
           <form id="quickEditForm" method="POST" action="">
             <input type="hidden" name="action" value="update_price">
             <div class="mb-3">
-              <label for="modalFuelType" class="form-label text-muted">Fuel Type</label>
-              <input type="text" class="form-control" id="modalFuelType" name="fuel_type" readonly>
+              <label for="modalFuelLabel" class="form-label text-muted">Station / Fuel Type</label>
+              <input type="hidden" id="modalStationId" name="station_id">
+              <input type="hidden" id="modalOilTypeId" name="oil_type_id">
+              <input type="text" class="form-control" id="modalFuelLabel" readonly>
             </div>
             <div class="mb-3">
               <label for="modalFuelPrice" class="form-label text-muted">New Price (MMK)</label>
@@ -314,10 +341,12 @@ endif; ?>
       }
     }
 
-    function openEditModal(event, fuelType, currentPrice) {
+    function openEditModal(event, stationId, oilTypeId, label, currentPrice) {
       event.stopPropagation();
       
-      document.getElementById('modalFuelType').value = fuelType;
+      document.getElementById('modalStationId').value = stationId;
+      document.getElementById('modalOilTypeId').value = oilTypeId;
+      document.getElementById('modalFuelLabel').value = label;
       document.getElementById('modalFuelPrice').value = currentPrice;
 
       const editModal = new bootstrap.Modal(document.getElementById('editPricingModal'));

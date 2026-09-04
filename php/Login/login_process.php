@@ -10,9 +10,12 @@ require_once __DIR__ . '/../Customer/license_access.php';
 require_once __DIR__ . '/../Customer/car_access.php';
 require_once __DIR__ . '/../role_state.php';
 
-function auth_redirect_to_login(string $message = 'Please sign in to continue.')
+function auth_redirect_to_login(string $message = 'Please sign in to continue.', string $prefillEmail = '')
 {
     $_SESSION['login_error'] = $message;
+    if (filter_var($prefillEmail, FILTER_VALIDATE_EMAIL)) {
+        $_SESSION['login_prefill_email'] = $prefillEmail;
+    }
     header('Location: login.php');
     exit;
 }
@@ -25,7 +28,7 @@ $email = trim((string) ($_POST['email'] ?? ''));
 $password = (string) ($_POST['password'] ?? '');
 
 if (!filter_var($email, FILTER_VALIDATE_EMAIL) || $password === '') {
-    auth_redirect_to_login('Please enter a valid email and password.');
+    auth_redirect_to_login('Please enter a valid email and password.', $email);
 }
 
 try {
@@ -46,23 +49,23 @@ try {
     );
 
     if (!$stmt || !$stmt->execute([$email])) {
-        auth_redirect_to_login('Unable to validate your credentials right now.');
+        auth_redirect_to_login('Unable to validate your credentials right now.', $email);
     }
 
     $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
     if (!$user) {
-        auth_redirect_to_login('Invalid email or password.');
+        auth_redirect_to_login('Invalid email or password.', $email);
     }
 
     if (!isset($user['hashed_password']) || !password_verify($password, $user['hashed_password'])) {
-        auth_redirect_to_login('Invalid email or password.');
+        auth_redirect_to_login('Invalid email or password.', $email);
     }
 
     $status = strtolower((string) ($user['status'] ?? ''));
     $allowedStatuses = ['active', 'approved', 'enabled', 'ready'];
     if ($status !== '' && !in_array($status, $allowedStatuses, true)) {
-        auth_redirect_to_login('Your account is not active. Please contact support.');
+        auth_redirect_to_login('Your account is not active. Please contact support.', $email);
     }
 
     [$activeRoleId, $activeRoleName] = map_pump_session_role($user);
@@ -113,5 +116,5 @@ try {
     exit;
 } catch (Throwable $e) {
     error_log('Login failed: ' . $e->getMessage());
-    auth_redirect_to_login('Login failed. Please try again.');
+    auth_redirect_to_login('Login failed. Please try again.', $email);
 }

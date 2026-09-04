@@ -1,5 +1,6 @@
 <?php
 include 'share_header.php';
+require_once __DIR__ . '/../business_scope.php';
 $availableOilQuota = max(0.0, (float) ($_SESSION['oil_remaining'] ?? (((float) ($_SESSION['oil_limit'] ?? 35.0)) - ((float) ($_SESSION['oil_used'] ?? 0.0)))));
 
 $stationCoordinateFallbacks = [
@@ -12,12 +13,23 @@ $stationCoordinateFallbacks = [
 ];
 $customerStationsData = [];
 try {
+    $latestInventorySql = map_pump_latest_station_inventory_sql();
     $stationStmt = $pdo->query(
         "SELECT s.station_id, s.station_name, s.location, s.station_address,
                 GROUP_CONCAT(DISTINCT ot.oil_name ORDER BY ot.oil_name SEPARATOR '|') AS fuel_names
          FROM stations s
-         INNER JOIN station_oil_inventory soi ON soi.station_id = s.station_id AND soi.is_active = 1 AND soi.current_amount_liters > 0
+         INNER JOIN ({$latestInventorySql}) soi ON soi.station_id = s.station_id AND soi.is_active = 1
          INNER JOIN oil_types ot ON ot.oil_type_id = soi.oil_type_id
+         INNER JOIN tanks t ON t.branch_id = s.station_id
+            AND t.is_enabled = 1
+            AND t.current_l > 0
+            AND (
+                (t.fuel_code = 'p92' AND LOWER(REPLACE(ot.oil_name, ' ', '')) = 'octane92')
+                OR (t.fuel_code = 'p95' AND LOWER(REPLACE(ot.oil_name, ' ', '')) = 'octane95')
+                OR (t.fuel_code = 'dsl' AND LOWER(REPLACE(ot.oil_name, ' ', '')) IN ('disel', 'diesel'))
+                OR (t.fuel_code = 'pdsl' AND LOWER(REPLACE(ot.oil_name, ' ', '')) IN ('premiumdisel', 'premiumdiesel'))
+            )
+         INNER JOIN station_business_scope sbs ON sbs.station_id = s.station_id
          WHERE COALESCE(s.status, 'Active') <> 'Decommissioned'
          GROUP BY s.station_id, s.station_name, s.location, s.station_address
          ORDER BY s.station_id ASC"

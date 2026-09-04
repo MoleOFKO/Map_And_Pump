@@ -6,9 +6,22 @@ $loginError = $_SESSION['login_error'] ?? '';
 $socialDebug = $_SESSION['social_login_debug'] ?? '';
 $loginSuccess = $_SESSION['login_success'] ?? '';
 $rememberedEmail = (string) ($_COOKIE[MAP_PUMP_REMEMBER_EMAIL_COOKIE] ?? '');
+$prefillEmail = (string) ($_SESSION['login_prefill_email'] ?? $_COOKIE[MAP_PUMP_LOGIN_PREFILL_EMAIL_COOKIE] ?? '');
+$loginEmailValue = $prefillEmail !== '' ? $prefillEmail : $rememberedEmail;
 unset($_SESSION['login_error']);
 unset($_SESSION['login_success']);
 unset($_SESSION['social_login_debug']);
+unset($_SESSION['login_prefill_email']);
+if (!empty($_COOKIE[MAP_PUMP_LOGIN_PREFILL_EMAIL_COOKIE])) {
+  setcookie(MAP_PUMP_LOGIN_PREFILL_EMAIL_COOKIE, '', [
+    'expires' => time() - 3600,
+    'path' => '/',
+    'domain' => '',
+    'secure' => map_pump_secure_cookie(),
+    'httponly' => true,
+    'samesite' => 'Lax',
+  ]);
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -71,7 +84,7 @@ unset($_SESSION['social_login_debug']);
         <div class="input-group">
           <label for="email">Email</label>
           <div class="input-wrapper">
-            <input type="email" id="email" name="email" placeholder="example123@gmail.com" spellcheck="false" autocorrect="off" autocapitalize="off" value="<?= htmlspecialchars($rememberedEmail, ENT_QUOTES, 'UTF-8') ?>" required />
+            <input type="email" id="email" name="email" placeholder="example123@gmail.com" spellcheck="false" autocorrect="off" autocapitalize="off" value="<?= htmlspecialchars($loginEmailValue, ENT_QUOTES, 'UTF-8') ?>" required />
           </div>
         </div>
 
