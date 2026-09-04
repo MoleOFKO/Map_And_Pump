@@ -1,25 +1,289 @@
+/* ==========================================================================
+   COMPANY REGISTRATION
+   1. Page layout          5. Payment modal shell
+   2. Form controls        6. Step 1 — method dropdown + bank picker
+   3. Upload fields        7. Step 2 — transfer details + receipt upload
+   4. Actions / status     8. Responsive
+   ========================================================================== */
+
+/* 1. Page layout ---------------------------------------------------------- */
 .company-registration { min-height: 100vh; padding: 9rem 0 5rem; }
-.registration-intro { max-width: 680px; margin-bottom: 3rem; }
+.registration-intro { max-width: 680px; margin-bottom: 3.25rem; }
 .registration-intro h1 { font: 800 clamp(2.25rem, 5vw, 3.75rem)/1.1 'Sora', sans-serif; letter-spacing: -.06em; margin: 1rem 0; }
-.registration-intro p { color: var(--text-dim, #94a3b8); font-size: 1.08rem; }
+.registration-intro p { color: var(--text-dim, #94a3b8); font-size: 1.08rem; margin: 0; }
+
 .company-registration-form { max-width: 880px; margin: 0 auto; }
-.registration-section { background: rgba(15, 23, 42, .72); border: 1px solid rgba(148, 163, 184, .17); border-radius: 20px; box-shadow: 0 20px 40px rgba(0, 0, 0, .12); margin-bottom: 1.25rem; padding: clamp(1.35rem, 4vw, 2.25rem); }
-.registration-section-title { align-items: flex-start; display: flex; gap: 1rem; margin-bottom: 1.75rem; }
+.registration-section {
+    background: rgba(15, 23, 42, .72);
+    border: 1px solid rgba(148, 163, 184, .17);
+    border-radius: 20px;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, .12);
+    margin-bottom: 1.5rem;
+    padding: clamp(1.5rem, 4vw, 2.4rem);
+    transition: border-color .25s ease, box-shadow .25s ease;
+}
+.registration-section:focus-within { border-color: rgba(34, 211, 238, .38); box-shadow: 0 22px 46px rgba(0, 0, 0, .22); }
+.registration-section-title { align-items: flex-start; display: flex; gap: 1rem; margin-bottom: 1.9rem; }
 .registration-section-title h2 { font: 700 1.25rem/1.3 'Sora', sans-serif; margin: .05rem 0 .3rem; }
 .registration-section-title p { color: var(--text-dim, #94a3b8); font-size: .92rem; margin: 0; }
-.registration-step { align-items: center; background: rgba(34, 211, 238, .12); border: 1px solid rgba(34, 211, 238, .36); border-radius: 50%; color: #67e8f9; display: inline-flex; flex: 0 0 2.3rem; font: 700 .75rem 'Sora', sans-serif; height: 2.3rem; justify-content: center; }
+.registration-step {
+    align-items: center; background: rgba(34, 211, 238, .12);
+    border: 1px solid rgba(34, 211, 238, .36); border-radius: 50%;
+    color: #67e8f9; display: inline-flex; flex: 0 0 2.3rem;
+    font: 700 .75rem 'Sora', sans-serif; height: 2.3rem; justify-content: center;
+}
+
+/* 2. Form controls -------------------------------------------------------- */
 .company-registration .form-label { color: #dbeafe; font-size: .91rem; font-weight: 600; margin-bottom: .55rem; }
-.company-registration .form-control { background: rgba(2, 6, 23, .55); border: 1px solid rgba(148, 163, 184, .28); border-radius: 10px; color: #f8fafc; min-height: 3.1rem; padding: .75rem .9rem; }
-.company-registration textarea.form-control { min-height: auto; }
-.company-registration .form-control:focus { background: rgba(2, 6, 23, .72); border-color: #22d3ee; box-shadow: 0 0 0 .22rem rgba(34, 211, 238, .13); color: #fff; }
-.company-registration input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(1); }
-.upload-field { align-items: center; background: rgba(2, 6, 23, .38); border: 1px dashed rgba(34, 211, 238, .5); border-radius: 12px; cursor: pointer; display: flex; gap: 1rem; min-height: 5.35rem; padding: .9rem 1rem; transition: .2s ease; width: 100%; }
+.company-registration .form-control {
+    background: rgba(2, 6, 23, .55);
+    border: 1px solid rgba(148, 163, 184, .28);
+    border-radius: 12px; color: #f8fafc;
+    min-height: 3.1rem; padding: .75rem .95rem;
+    transition: border-color .2s ease, box-shadow .2s ease, background .2s ease;
+}
+.company-registration .form-control::placeholder { color: rgba(148, 163, 184, .65); }
+.company-registration textarea.form-control { min-height: auto; resize: vertical; }
+.company-registration .form-control:hover { border-color: rgba(148, 163, 184, .45); }
+.company-registration .form-control:focus { background: rgba(2, 6, 23, .72); border-color: #22d3ee; box-shadow: 0 0 0 .22rem rgba(34, 211, 238, .16); color: #fff; }
+.company-registration .was-validated .form-control:invalid { border-color: rgba(248, 113, 113, .7); box-shadow: none; }
+.company-registration input[type="date"]::-webkit-calendar-picker-indicator { cursor: pointer; filter: invert(1); opacity: .7; }
+.company-registration input[type="date"]::-webkit-calendar-picker-indicator:hover { opacity: 1; }
+
+/* 3. Upload fields -------------------------------------------------------- */
+.upload-field {
+    align-items: center; background: rgba(2, 6, 23, .38);
+    border: 1px dashed rgba(34, 211, 238, .5); border-radius: 14px;
+    cursor: pointer; display: flex; gap: 1rem; min-height: 5.35rem;
+    padding: .9rem 1rem; transition: .2s ease; width: 100%;
+}
 .upload-field:hover, .upload-field:focus-within { background: rgba(34, 211, 238, .07); border-color: #67e8f9; }
+.upload-field:focus-within { box-shadow: 0 0 0 .22rem rgba(34, 211, 238, .16); }
 .upload-field input { height: 1px; opacity: 0; overflow: hidden; position: absolute; width: 1px; }
-.upload-icon { align-items: center; background: rgba(34, 211, 238, .14); border-radius: 10px; color: #67e8f9; display: inline-flex; flex: 0 0 2.65rem; height: 2.65rem; justify-content: center; }
+.upload-icon {
+    align-items: center; background: rgba(34, 211, 238, .14); border-radius: 10px;
+    color: #67e8f9; display: inline-flex; flex: 0 0 2.65rem; height: 2.65rem; justify-content: center;
+}
 .upload-copy { display: flex; flex-direction: column; min-width: 0; }
 .upload-copy strong { color: #e2e8f0; font-size: .94rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .upload-copy small { color: var(--text-dim, #94a3b8); margin-top: .18rem; }
-.registration-actions { display: flex; justify-content: center; padding-top: 1rem; }
+
+/* 4. Actions / status ----------------------------------------------------- */
+.registration-actions { display: flex; justify-content: center; padding-top: 1.25rem; }
 .registration-form-status { color: #fbbf24; margin: 1rem auto 0; max-width: 38rem; text-align: center; }
-@media (max-width: 575.98px) { .company-registration { padding-top: 7.5rem; } .registration-actions .btn { width: 100%; } }
+.registration-form-status.is-success { color: #6ee7b7; }
+
+/* 5. Payment modal shell -------------------------------------------------- */
+.payment-modal-open { overflow: hidden; }
+.payment-modal[hidden] { display: none; }
+.payment-modal { align-items: center; display: flex; inset: 0; justify-content: center; padding: 1rem; position: fixed; z-index: 1055; }
+.payment-modal-backdrop { backdrop-filter: blur(3px); background: rgba(2, 6, 23, .78); inset: 0; position: absolute; }
+.payment-card {
+    animation: payment-card-in .22s ease-out;
+    background: #0f172a;
+    border: 1px solid rgba(103, 232, 249, .28);
+    border-radius: 20px;
+    box-shadow: 0 24px 70px rgba(0, 0, 0, .45);
+    max-height: calc(100vh - 2rem); max-width: 31rem;
+    overflow-y: auto; padding: clamp(1.5rem, 4vw, 2.25rem);
+    position: relative; width: 100%;
+}
+@keyframes payment-card-in { from { opacity: 0; transform: translateY(14px) scale(.985); } }
+.payment-close { background: transparent; border: 0; border-radius: 8px; color: #94a3b8; font-size: 1.15rem; line-height: 1; padding: .4rem; position: absolute; right: 1rem; top: 1rem; transition: color .2s ease, background .2s ease; z-index: 2; }
+.payment-close:hover, .payment-close:focus-visible { background: rgba(148, 163, 184, .14); color: #fff; outline: none; }
+.payment-kicker { color: #67e8f9; font-size: .76rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.payment-card h2 { color: #f8fafc; font: 700 clamp(1.3rem, 4vw, 1.7rem)/1.2 'Sora', sans-serif; margin: .35rem 2rem .55rem 0; }
+.payment-description { color: #94a3b8; font-size: .92rem; margin-bottom: 1.35rem; }
+.payment-total {
+    align-items: center; background: rgba(34, 211, 238, .08);
+    border: 1px solid rgba(34, 211, 238, .2); border-radius: 12px;
+    display: flex; justify-content: space-between; margin-bottom: 1.5rem; padding: .95rem 1.05rem;
+}
+.payment-total span { color: #cbd5e1; font-size: .86rem; }
+.payment-total strong { color: #67e8f9; font: 700 1.1rem 'Sora', sans-serif; }
+.payment-total small { font-size: .65rem; }
+
+/* Step indicator + step switching */
+.payment-steps { display: flex; gap: .5rem; list-style: none; margin: .9rem 0 1.1rem; padding: 0; }
+.payment-steps-item {
+    align-items: center; background: rgba(2, 6, 23, .45); border: 1px solid rgba(148, 163, 184, .18);
+    border-radius: 999px; color: #64748b; display: flex; flex: 1; font-size: .74rem; font-weight: 600;
+    gap: .4rem; justify-content: center; padding: .4rem .55rem; transition: .25s ease;
+}
+.payment-steps-item span {
+    align-items: center; background: rgba(148, 163, 184, .18); border-radius: 50%; color: inherit;
+    display: inline-flex; flex: 0 0 1.25rem; font-size: .68rem; height: 1.25rem; justify-content: center;
+}
+.payment-steps-item.is-current { background: rgba(34, 211, 238, .12); border-color: rgba(34, 211, 238, .45); color: #67e8f9; }
+.payment-steps-item.is-current span { background: #22d3ee; color: #04121c; }
+.payment-steps-item.is-done { border-color: rgba(110, 231, 183, .35); color: #6ee7b7; }
+.payment-steps-item.is-done span { background: rgba(110, 231, 183, .22); color: #6ee7b7; }
+
+.payment-step[hidden] { display: none; }
+.payment-step.is-active { animation: payment-step-in .22s ease-out; }
+@keyframes payment-step-in { from { opacity: 0; transform: translateX(10px); } }
+.payment-step-title { margin-top: 0; }
+
+/* 6. Step 1 — dropdown + bank picker -------------------------------------- */
+.payment-field { margin-bottom: 1.15rem; }
+.payment-field-label { color: #dbeafe; display: block; font-size: .84rem; font-weight: 600; margin-bottom: .55rem; }
+
+.payment-select { position: relative; }
+.payment-select-toggle {
+    align-items: center; background: rgba(2, 6, 23, .55);
+    border: 1px solid rgba(148, 163, 184, .28); border-radius: 12px;
+    cursor: pointer; display: flex; gap: .75rem; padding: .7rem .85rem;
+    text-align: left; transition: border-color .2s ease, box-shadow .2s ease, background .2s ease; width: 100%;
+}
+.payment-select-toggle:hover { background: rgba(2, 6, 23, .7); border-color: rgba(103, 232, 249, .5); }
+.payment-select-toggle:focus-visible { border-color: #22d3ee; box-shadow: 0 0 0 .22rem rgba(34, 211, 238, .16); outline: none; }
+.payment-select.is-open .payment-select-toggle { background: rgba(34, 211, 238, .08); border-color: #22d3ee; }
+.payment-select.has-error .payment-select-toggle { border-color: rgba(248, 113, 113, .75); }
+.payment-select-caret { color: #94a3b8; font-size: .8rem; transition: transform .2s ease, color .2s ease; }
+.payment-select.is-open .payment-select-caret { color: #67e8f9; transform: rotate(180deg); }
+
+.payment-select-menu[hidden] { display: none; }
+.payment-select-menu {
+    animation: payment-menu-in .16s ease-out;
+    background: #101b33; border: 1px solid rgba(103, 232, 249, .3);
+    border-radius: 12px; box-shadow: 0 18px 44px rgba(2, 6, 23, .6);
+    left: 0; list-style: none; margin: .4rem 0 0; max-height: 17.5rem;
+    overflow-y: auto; padding: .35rem; position: absolute; right: 0; top: 100%; z-index: 5;
+}
+@keyframes payment-menu-in { from { opacity: 0; transform: translateY(-4px); } }
+.payment-select-menu::-webkit-scrollbar { width: 8px; }
+.payment-select-menu::-webkit-scrollbar-thumb { background: rgba(148, 163, 184, .3); border-radius: 8px; }
+
+.payment-select-option {
+    align-items: center; border: 1px solid transparent; border-radius: 10px;
+    cursor: pointer; display: flex; gap: .75rem; padding: .6rem .65rem;
+    transition: background .18s ease, border-color .18s ease;
+}
+.payment-select-option + .payment-select-option { margin-top: .2rem; }
+.payment-select-option:hover, .payment-select-option.is-active { background: rgba(34, 211, 238, .1); border-color: rgba(34, 211, 238, .45); }
+.payment-select-option[aria-selected="true"] { background: rgba(34, 211, 238, .14); border-color: #22d3ee; }
+.payment-select-option[aria-selected="true"] .payment-check { display: inline-block; }
+
+.payment-option-body { align-items: center; display: flex; flex: 1; gap: .75rem; min-width: 0; }
+.payment-option-copy { display: flex; flex: 1; flex-direction: column; gap: .12rem; min-width: 0; }
+.payment-option-copy strong { color: #f8fafc; font-size: .92rem; }
+.payment-option-copy small { color: #94a3b8; font-size: .75rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.payment-logo {
+    align-items: center; border-radius: 9px; display: inline-flex; flex: 0 0 2.6rem;
+    font: 800 .85rem 'Sora', sans-serif; height: 2.6rem; justify-content: center;
+}
+.payment-logo-kpay { background: #1477f8; color: #fff; font-size: 1.3rem; }
+.payment-logo-aya  { background: #fff; color: #e3282e; font-size: .62rem; }
+.payment-logo-cb   { background: #0875c9; color: #fff; }
+.payment-logo-wave { background: #ffd400; color: #111827; font-size: 1.25rem; }
+.payment-logo-kbz  { background: #0a4d9e; color: #fff; font-size: .68rem; }
+.payment-logo-yoma { background: #f5821f; color: #fff; font-size: .58rem; }
+.payment-logo-bank { background: rgba(34, 211, 238, .16); border: 1px solid rgba(34, 211, 238, .38); color: #67e8f9; font-size: 1rem; }
+.payment-logo-empty { background: rgba(148, 163, 184, .12); border: 1px solid rgba(148, 163, 184, .26); color: #94a3b8; font-size: 1rem; }
+
+.payment-check { color: #22d3ee; display: none; }
+
+.payment-banks[hidden] { display: none; }
+.payment-banks {
+    animation: payment-menu-in .18s ease-out;
+    background: rgba(2, 6, 23, .4); border: 1px solid rgba(148, 163, 184, .18);
+    border-radius: 14px; margin-bottom: 1.15rem; padding: .9rem;
+}
+.payment-banks.has-error { border-color: rgba(248, 113, 113, .6); }
+.payment-banks-title { color: #dbeafe; display: block; font-size: .8rem; font-weight: 600; margin-bottom: .7rem; }
+.payment-bank-grid { display: grid; gap: .55rem; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.payment-bank {
+    align-items: center; background: rgba(15, 23, 42, .8);
+    border: 1px solid rgba(148, 163, 184, .2); border-radius: 11px;
+    cursor: pointer; display: flex; gap: .6rem; padding: .6rem .65rem;
+    position: relative; text-align: left; transition: border-color .2s ease, background .2s ease, transform .15s ease;
+}
+.payment-bank:hover { background: rgba(34, 211, 238, .08); border-color: rgba(103, 232, 249, .55); transform: translateY(-1px); }
+.payment-bank:focus-visible { border-color: #22d3ee; box-shadow: 0 0 0 .2rem rgba(34, 211, 238, .18); outline: none; }
+.payment-bank[aria-checked="true"] { background: rgba(34, 211, 238, .13); border-color: #22d3ee; }
+.payment-bank[aria-checked="true"] .payment-check { display: inline-block; font-size: .78rem; position: absolute; right: .55rem; top: .5rem; }
+.payment-bank .payment-logo { flex: 0 0 2.15rem; height: 2.15rem; }
+.payment-bank-name { color: #e2e8f0; font-size: .82rem; font-weight: 600; line-height: 1.2; }
+
+/* 7. Step 2 — transfer details + receipt upload --------------------------- */
+.payment-back {
+    align-items: center; background: transparent; border: 0; color: #94a3b8;
+    display: inline-flex; font-size: .8rem; font-weight: 600; gap: .4rem;
+    margin: 0 0 .6rem; padding: .25rem 0; transition: color .2s ease;
+}
+.payment-back:hover, .payment-back:focus-visible { color: #67e8f9; outline: none; }
+
+.payment-summary {
+    align-items: center; background: rgba(2, 6, 23, .45);
+    border: 1px solid rgba(148, 163, 184, .18); border-radius: 12px;
+    display: flex; gap: .75rem; margin-bottom: 1rem; padding: .7rem .85rem;
+}
+.payment-summary-copy { display: flex; flex: 1; flex-direction: column; gap: .12rem; min-width: 0; }
+.payment-summary-copy strong { color: #f8fafc; font-size: .92rem; }
+.payment-summary-copy small { color: #94a3b8; font-size: .75rem; }
+.payment-summary-amount { color: #67e8f9; font: 700 .95rem 'Sora', sans-serif; white-space: nowrap; }
+.payment-summary-amount small { font-size: .62rem; }
+
+.payment-transfer {
+    background: linear-gradient(180deg, rgba(34, 211, 238, .12), rgba(34, 211, 238, .05));
+    border: 1px solid rgba(34, 211, 238, .32); border-radius: 14px;
+    margin-bottom: 1.35rem; padding: 1rem;
+}
+.payment-transfer-label { color: #a5f3fc; display: block; font-size: .76rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+.payment-transfer-row { align-items: center; display: flex; gap: .6rem; margin-top: .5rem; }
+.payment-transfer-number { color: #fff; flex: 1; font: 700 clamp(1.15rem, 4.5vw, 1.5rem)/1.2 'Sora', sans-serif; letter-spacing: .02em; word-break: break-all; }
+.payment-copy {
+    align-items: center; background: rgba(2, 6, 23, .5); border: 1px solid rgba(103, 232, 249, .4);
+    border-radius: 9px; color: #67e8f9; display: inline-flex; flex: 0 0 auto; font-size: .76rem;
+    font-weight: 600; gap: .35rem; padding: .45rem .65rem; transition: .2s ease;
+}
+.payment-copy:hover { background: rgba(34, 211, 238, .16); }
+.payment-copy:focus-visible { box-shadow: 0 0 0 .2rem rgba(34, 211, 238, .2); outline: none; }
+.payment-copy.is-copied { border-color: #6ee7b7; color: #6ee7b7; }
+.payment-transfer-meta { list-style: none; margin: .75rem 0 0; padding: 0; }
+.payment-transfer-meta li { color: #94a3b8; font-size: .78rem; margin-top: .3rem; }
+.payment-transfer-meta li[hidden] { display: none; }
+.payment-transfer-meta strong { color: #e2e8f0; font-weight: 600; }
+.payment-transfer-meta i { color: #67e8f9; margin-right: .35rem; width: .95rem; }
+
+.payment-receipt-field.has-error { border-color: rgba(248, 113, 113, .7); }
+.payment-receipt-preview[hidden] { display: none; }
+.payment-receipt-preview {
+    align-items: center; animation: payment-menu-in .18s ease-out;
+    background: rgba(2, 6, 23, .5); border: 1px solid rgba(103, 232, 249, .3);
+    border-radius: 12px; display: flex; gap: .75rem; margin-top: .65rem; padding: .6rem .7rem; position: relative;
+}
+.payment-receipt-preview img { border: 1px solid rgba(148, 163, 184, .25); border-radius: 9px; flex: 0 0 3.25rem; height: 3.25rem; object-fit: cover; width: 3.25rem; }
+.payment-receipt-info { display: flex; flex: 1; flex-direction: column; gap: .15rem; min-width: 0; }
+.payment-receipt-info strong { color: #e2e8f0; font-size: .84rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.payment-receipt-info small { color: #94a3b8; font-size: .72rem; }
+.payment-receipt-remove { background: transparent; border: 0; border-radius: 8px; color: #94a3b8; padding: .35rem .45rem; transition: .2s ease; }
+.payment-receipt-remove:hover, .payment-receipt-remove:focus-visible { background: rgba(248, 113, 113, .16); color: #fca5a5; outline: none; }
+
+/* Errors / footer --------------------------------------------------------- */
+.payment-error[hidden] { display: none; }
+.payment-error { color: #fca5a5; font-size: .82rem; margin: 0 0 .9rem; }
+.payment-error i { margin-right: .35rem; }
+.payment-confirm { border-radius: 12px; padding: .85rem 1rem; width: 100%; }
+.payment-note { color: #64748b; font-size: .7rem; margin: 1rem 0 0; text-align: center; }
+.payment-note i { margin-right: .25rem; }
+
+@media (prefers-reduced-motion: reduce) {
+    .payment-card, .payment-step.is-active, .payment-select-menu, .payment-banks, .payment-receipt-preview { animation: none; }
+}
+
+/* 8. Responsive ----------------------------------------------------------- */
+@media (max-width: 575.98px) {
+    .company-registration { padding-top: 7.5rem; }
+    .registration-intro { margin-bottom: 2.25rem; }
+    .registration-actions .btn { width: 100%; }
+    .registration-section-title { gap: .75rem; margin-bottom: 1.4rem; }
+    .payment-card { border-radius: 16px; max-height: calc(100vh - 1rem); }
+    .payment-bank-grid { grid-template-columns: 1fr; }
+    .payment-option-copy small { white-space: normal; }
+    .payment-select-menu { max-height: 14rem; }
+    .payment-steps-item { font-size: .68rem; }
+    .payment-transfer-row { align-items: flex-start; flex-direction: column; }
+    .payment-copy { width: 100%; justify-content: center; }
+}
