@@ -27,7 +27,7 @@ function account_switch_dashboard(string $roleName, int $roleId = 0): string
         1 => '/php/Admin(WebOwner)/admin_dashboard.php',
         2 => '/php/Moderators(UnderAdmin)/moderator_dashboard.php',
         3 => '/php/HQ/index.php',
-        4 => '/php/BranchManager/dashboard.php',
+        4 => 'php/BranchManager/dashboard.php',
         5 => '/php/Staff/staff_dashboard.php',
         6 => '/php/Customer/dashboard.php',
     ];
@@ -43,8 +43,8 @@ function account_switch_dashboard(string $roleName, int $roleId = 0): string
         'manager' => '/php/BranchManager/dashboard.php',
         'branchmanager' => '/php/BranchManager/dashboard.php',
         'branch manager' => '/php/BranchManager/dashboard.php',
-        'staff' => '/php/Staff/staff_dashboard.php',
-        'customer' => '/php/Customer/dashboard.php',
+        'staff' => 'php/Staff/staff_dashboard.php',
+        'customer' => 'php/Customer/dashboard.php',
     ];
 
     return $dashboards[strtolower($roleName)] ?? '/php/Customer/dashboard.php';
