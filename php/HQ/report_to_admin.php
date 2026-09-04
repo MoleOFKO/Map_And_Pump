@@ -7,10 +7,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $topic = $_POST['topic'] ?? '';
     $urgency = $_POST['urgency'] ?? '';
     $description = $_POST['description'] ?? '';
-    
-    // Default mock IDs based on your db.sql schema context
-    $user_id = 150014; // Existing user ID from users table
-    $role_id = 6;      // Customer role ID from roles table
+
+    $user_id = (int) ($_SESSION['user_id'] ?? 0);
+    $role_id = (int) ($_SESSION['role_id'] ?? $_SESSION['current_role_id'] ?? 3);
 
     if (!empty($topic) && !empty($urgency) && !empty($description)) {
         try {

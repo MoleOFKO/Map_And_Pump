@@ -14,7 +14,15 @@ require_once __DIR__ . '/../conn.php';   // provides $pdo and $conn
 // -------- Auth guard --------
 // Redirects to login if the current visitor is not signed in as a branch manager.
 function require_branch_manager(): void {
-    if (empty($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'branch_manager') {
+    $roleName = strtolower(trim((string) ($_SESSION['role_name'] ?? $_SESSION['role'] ?? '')));
+    $roleName = str_replace([' ', '_'], '', $roleName);
+    $roleId = (int) ($_SESSION['role_id'] ?? $_SESSION['current_role_id'] ?? 0);
+
+    if (
+        empty($_SESSION['is_logged_in'])
+        || empty($_SESSION['user_id'])
+        || ($roleId !== 4 && $roleName !== 'branchmanager' && $roleName !== 'manager')
+    ) {
         header('Location: login.php');
         exit;
     }

@@ -44,7 +44,7 @@ CREATE TABLE `booking` (
   CONSTRAINT `fk_booking_station_id` FOREIGN KEY (`station_id`) REFERENCES `stations` (`station_id`) ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `fk_booking_user_id` FOREIGN KEY (`user_id`) REFERENCES `users` (`user_id`) ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `fk_booking_car_license_id` FOREIGN KEY (`car_license_id`) REFERENCES `car_license` (`car_license_id`) ON DELETE NO ACTION ON UPDATE NO ACTION
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci AUTO_INCREMENT=540002;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci AUTO_INCREMENT=600002;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -166,7 +166,7 @@ CREATE TABLE `car_license` (
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`car_license_id`) /*T![clustered_index] CLUSTERED */
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci AUTO_INCREMENT=450002;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci AUTO_INCREMENT=510002;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -175,7 +175,7 @@ CREATE TABLE `car_license` (
 
 LOCK TABLES `car_license` WRITE;
 /*!40000 ALTER TABLE `car_license` DISABLE KEYS */;
-INSERT INTO `car_license` VALUES (1,'1234',NULL,NULL,NULL,NULL,2000,NULL,'Yamaha',NULL,'Yangon',1,NULL,'2026-08-04 06:26:11','2026-08-04 06:26:11'),(120002,'TEST-9999',NULL,NULL,NULL,NULL,2024,NULL,'Sedan',NULL,'Mandalay',10,NULL,'2026-08-14 07:48:44','2026-08-14 07:48:44'),(330002,'1A/1234','KoShane','/php/Customer/uploads/car-licenses/car-license-front-210014-ca16dee7b720028e.jpg','/php/Customer/uploads/car-licenses/car-license-back-210014-178b28ee44d5b868.jpg',NULL,2000,'Ho','Bus','JMA2324567435423','YGN',0,'2023-07-24','2026-08-24 06:16:19','2026-08-24 06:16:19'),(330003,'1A/1234','KoShae','/php/Customer/uploads/car-licenses/car-license-front-210014-604a563a1d6d4ee5.jpg','/php/Customer/uploads/car-licenses/car-license-back-210014-af28e153d84badcf.jpg',NULL,2002,'BMW','SUV','JMA2324567435423','YGN',35,'2026-08-01','2026-08-26 08:19:10','2026-08-26 08:19:10');
+INSERT INTO `car_license` VALUES (1,'1234',NULL,NULL,NULL,NULL,2000,NULL,'Yamaha',NULL,'Yangon',1,NULL,'2026-08-04 06:26:11','2026-08-04 06:26:11'),(120002,'TEST-9999',NULL,NULL,NULL,NULL,2024,NULL,'Sedan',NULL,'Mandalay',10,NULL,'2026-08-14 07:48:44','2026-08-14 07:48:44'),(330002,'1A/1234','KoShane','/php/Customer/uploads/car-licenses/car-license-front-210014-ca16dee7b720028e.jpg','/php/Customer/uploads/car-licenses/car-license-back-210014-178b28ee44d5b868.jpg',NULL,2000,'Ho','Bus','JMA2324567435423','YGN',0,'2023-07-24','2026-09-01 07:27:09','2026-09-01 07:27:09'),(330003,'1A/1234','KoShae','/php/Customer/uploads/car-licenses/car-license-front-210014-604a563a1d6d4ee5.jpg','/php/Customer/uploads/car-licenses/car-license-back-210014-af28e153d84badcf.jpg',NULL,2002,'BMW','SUV','JMA2324567435423','YGN',35,'2026-08-01','2026-08-26 08:19:10','2026-08-26 08:19:10'),(450002,'1A/1234','Test Staff','/php/Customer/uploads/car-licenses/car-license-front-600017-e6f7887fd302a711.jpg','/php/Customer/uploads/car-licenses/car-license-back-600017-d9934c5b27254009.webp',NULL,2007,'BMW','Sedan','JJJJJ2222MDIDFDF','Yangon,Myanmar',20,'2025-01-31','2026-08-31 08:45:58','2026-08-31 08:45:58'),(480002,'2B/7832','Yum Yum','/php/Customer/uploads/car-licenses/car-license-front-750019-b06e231e4e1266da.png','/php/Customer/uploads/car-licenses/car-license-back-750019-ee877d3b991ccfb5.png',NULL,2006,'Honda','Motorcycle','JBMH2355432QER','Hlaing Thar Yar',20,'2024-08-01','2026-09-01 07:33:05','2026-09-01 07:33:05');
 /*!40000 ALTER TABLE `car_license` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -258,7 +258,7 @@ CREATE TABLE `feedback_replies` (
   `reply_text` text NOT NULL,
   `created_at` datetime DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`reply_id`) /*T![clustered_index] CLUSTERED */
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin AUTO_INCREMENT=330001;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin AUTO_INCREMENT=360001;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -267,7 +267,7 @@ CREATE TABLE `feedback_replies` (
 
 LOCK TABLES `feedback_replies` WRITE;
 /*!40000 ALTER TABLE `feedback_replies` DISABLE KEYS */;
-INSERT INTO `feedback_replies` VALUES (1,1,210014,'Thank You','2026-08-10 09:08:47');
+INSERT INTO `feedback_replies` VALUES (1,1,210014,'Thank You','2026-08-10 09:08:47'),(330001,1,600017,'Why?','2026-08-31 08:48:05'),(330002,1,600017,'why','2026-08-31 08:49:28');
 /*!40000 ALTER TABLE `feedback_replies` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -343,6 +343,33 @@ INSERT INTO `hq_account_actions` VALUES (1,4,6,'suspend','Seeded action history 
 UNLOCK TABLES;
 
 --
+-- Table structure for table `hq_receipt`
+--
+
+DROP TABLE IF EXISTS `hq_receipt`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `hq_receipt` (
+  `hq_receipt_id` int NOT NULL AUTO_INCREMENT,
+  `hq_id` int NOT NULL,
+  `receipt_type` varchar(20) NOT NULL,
+  `receipt_image` varchar(255) NOT NULL,
+  PRIMARY KEY (`hq_receipt_id`) /*T![clustered_index] CLUSTERED */,
+  KEY `hq_receipt_hq_id_idx` (`hq_id`),
+  CONSTRAINT `hq_receipt_hq_id` FOREIGN KEY (`hq_id`) REFERENCES `headquarter` (`headquarter_id`) ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Dumping data for table `hq_receipt`
+--
+
+LOCK TABLES `hq_receipt` WRITE;
+/*!40000 ALTER TABLE `hq_receipt` DISABLE KEYS */;
+/*!40000 ALTER TABLE `hq_receipt` ENABLE KEYS */;
+UNLOCK TABLES;
+
+--
 -- Table structure for table `log`
 --
 
@@ -360,7 +387,7 @@ CREATE TABLE `log` (
   KEY `fk_log_role_id_idx` (`role_id`),
   CONSTRAINT `fk_log_user_id` FOREIGN KEY (`user_id`) REFERENCES `users` (`user_id`),
   CONSTRAINT `fk_log_role_id` FOREIGN KEY (`role_id`) REFERENCES `roles` (`role_id`) ON DELETE NO ACTION ON UPDATE NO ACTION
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci AUTO_INCREMENT=360001;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci AUTO_INCREMENT=420001;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -369,7 +396,7 @@ CREATE TABLE `log` (
 
 LOCK TABLES `log` WRITE;
 /*!40000 ALTER TABLE `log` DISABLE KEYS */;
-INSERT INTO `log` VALUES (30001,60018,4,'Updated admin profile avatar.','2026-08-14 07:47:08'),(30002,60018,4,'Updated admin profile avatar.','2026-08-14 07:47:09'),(30003,60018,4,'Generated report #30001 (hq_performance).','2026-08-14 07:47:09'),(90001,60018,NULL,'Marked Customer user #270014 as suspended.','2026-08-14 07:58:24');
+INSERT INTO `log` VALUES (30001,60018,4,'Updated admin profile avatar.','2026-08-14 07:47:08'),(30002,60018,4,'Updated admin profile avatar.','2026-08-14 07:47:09'),(30003,60018,4,'Generated report #30001 (hq_performance).','2026-08-14 07:47:09'),(90001,60018,NULL,'Marked Customer user #270014 as suspended.','2026-08-14 07:58:24'),(360001,210014,NULL,'Approved pending account #10 (test_active).','2026-08-31 08:06:19'),(390001,210014,NULL,'Approved pending account #750019 (Yum Yum).','2026-09-01 07:27:01');
 /*!40000 ALTER TABLE `log` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -507,7 +534,7 @@ CREATE TABLE `report` (
   KEY `fk_report_role_id_idx` (`role_id`),
   CONSTRAINT `fk_report_role_id` FOREIGN KEY (`role_id`) REFERENCES `roles` (`role_id`) ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `fk_report_user_id` FOREIGN KEY (`user_id`) REFERENCES `users` (`user_id`) ON DELETE CASCADE ON UPDATE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci AUTO_INCREMENT=390001;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci AUTO_INCREMENT=420001;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -516,7 +543,7 @@ CREATE TABLE `report` (
 
 LOCK TABLES `report` WRITE;
 /*!40000 ALTER TABLE `report` DISABLE KEYS */;
-INSERT INTO `report` VALUES (30001,60018,2,NULL,'normal','August HQ performance summary','[scope=hq_performance][format=pdf][start=2022-12-01][end=2023-12-01] HQ records: 9; active linked accounts: 2','2026-08-10 08:25:41'),(90001,330014,4,NULL,'normal','station performance','This station performs at top1 in this week','2026-08-14 07:34:16');
+INSERT INTO `report` VALUES (30001,60018,2,NULL,'normal','August HQ performance summary','[scope=hq_performance][format=pdf][start=2022-12-01][end=2023-12-01] HQ records: 9; active linked accounts: 2','2026-08-10 08:25:41'),(90001,330014,4,NULL,'normal','station performance','This station performs at top1 in this week','2026-08-14 07:34:16'),(390001,600017,5,NULL,'low','Good but bad temper','Why: Good but customer don\'t use polite language','2026-08-31 08:47:37'),(390002,600017,5,NULL,'normal','Good but bad temper','Recent problem: Low Skill','2026-08-31 08:56:54');
 /*!40000 ALTER TABLE `report` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -824,7 +851,7 @@ CREATE TABLE `usage_history` (
   KEY `idx_usage_history_user_filled` (`user_id`,`filled_at`),
   KEY `idx_usage_history_station` (`station_id`),
   KEY `idx_usage_history_car` (`car_license_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci AUTO_INCREMENT=180001;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci AUTO_INCREMENT=240001;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -833,7 +860,7 @@ CREATE TABLE `usage_history` (
 
 LOCK TABLES `usage_history` WRITE;
 /*!40000 ALTER TABLE `usage_history` DISABLE KEYS */;
-INSERT INTO `usage_history` VALUES (1,1,210014,1,1,3,'MP-250-0A3I','MP-250-0A3I',1.00,NULL,NULL,'filled','2026-08-08 07:32:39','2026-08-08 07:32:39','2026-08-08 07:32:39',NULL,'2026-08-23 16:17:04'),(2,180004,210014,NULL,1,2,'MP-999-TEST1|Danko(Mdy)|Octane 95|15.0L','MP-999-TEST1',1.00,NULL,NULL,'filled','2026-08-14 07:13:57','2026-08-15 07:13:54','2026-08-14 07:22:49',NULL,'2026-08-23 16:17:04'),(3,180005,210014,NULL,1,2,'MP-999-TEST1|Danko(Mdy)|Octane 95|15.0L','MP-999-TEST1',1.00,NULL,NULL,'filled','2026-08-14 07:15:39','2026-08-16 07:15:39','2026-08-14 07:22:19',NULL,'2026-08-23 16:17:04'),(4,180009,210014,NULL,1,2,'MP-CAR-VERIFY-072827|Danko(Mdy)|Octane 95|15.0L','MP-CAR-VERIFY-072827',0.00,NULL,NULL,'filled','2026-08-14 07:28:29','2026-08-15 07:28:29','2026-08-14 07:48:44',NULL,'2026-08-23 16:17:04'),(120001,450003,210014,330003,3,3,'MP-817-4PHB|Danko(TKT)|Disel|20L','MP-817-4PHB',35.00,2650.00,92750.00,'filled','2026-08-26 08:18:26','2026-08-26 09:18:26','2026-08-26 08:19:09',210014,'2026-08-26 08:19:10');
+INSERT INTO `usage_history` VALUES (1,1,210014,1,1,3,'MP-250-0A3I','MP-250-0A3I',1.00,NULL,NULL,'filled','2026-08-08 07:32:39','2026-08-08 07:32:39','2026-08-08 07:32:39',NULL,'2026-08-23 16:17:04'),(2,180004,210014,NULL,1,2,'MP-999-TEST1|Danko(Mdy)|Octane 95|15.0L','MP-999-TEST1',1.00,NULL,NULL,'filled','2026-08-14 07:13:57','2026-08-15 07:13:54','2026-08-14 07:22:49',NULL,'2026-08-23 16:17:04'),(3,180005,210014,NULL,1,2,'MP-999-TEST1|Danko(Mdy)|Octane 95|15.0L','MP-999-TEST1',1.00,NULL,NULL,'filled','2026-08-14 07:15:39','2026-08-16 07:15:39','2026-08-14 07:22:19',NULL,'2026-08-23 16:17:04'),(4,180009,210014,NULL,1,2,'MP-CAR-VERIFY-072827|Danko(Mdy)|Octane 95|15.0L','MP-CAR-VERIFY-072827',0.00,NULL,NULL,'filled','2026-08-14 07:28:29','2026-08-15 07:28:29','2026-08-14 07:48:44',NULL,'2026-08-23 16:17:04'),(120001,450003,210014,330003,3,3,'MP-817-4PHB|Danko(TKT)|Disel|20L','MP-817-4PHB',35.00,2650.00,92750.00,'filled','2026-08-26 08:18:26','2026-08-26 09:18:26','2026-08-26 08:19:09',210014,'2026-08-26 08:19:10'),(180001,540002,600017,450002,3,3,'MP-904-6G6J|Danko(TKT)|Disel|20L','MP-904-6G6J',20.00,2650.00,53000.00,'filled','2026-08-31 08:44:15','2026-08-31 09:44:15','2026-08-31 08:45:58',600017,'2026-08-31 08:45:58'),(210001,570002,750019,480002,3,3,'MP-813-KSZX|Danko(TKT)|Disel|20L','MP-813-KSZX',20.00,2650.00,53000.00,'filled','2026-09-01 07:30:27','2026-09-01 08:30:27','2026-09-01 07:33:05',600017,'2026-09-01 07:33:05');
 /*!40000 ALTER TABLE `usage_history` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -889,7 +916,7 @@ CREATE TABLE `user_car` (
   UNIQUE KEY `uq_user_car_user_car` (`user_id`,`car_id`),
   CONSTRAINT `fk_user_car_user_id` FOREIGN KEY (`user_id`) REFERENCES `users` (`user_id`) ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `fk_user_car_car_id` FOREIGN KEY (`car_id`) REFERENCES `car_license` (`car_license_id`) ON DELETE CASCADE ON UPDATE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin AUTO_INCREMENT=270003;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin AUTO_INCREMENT=330003;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -898,7 +925,7 @@ CREATE TABLE `user_car` (
 
 LOCK TABLES `user_car` WRITE;
 /*!40000 ALTER TABLE `user_car` DISABLE KEYS */;
-INSERT INTO `user_car` VALUES (1,270014,1,1,'2026-08-24 07:23:42','2026-08-24 07:23:42'),(2,4,120002,0,'2026-08-24 07:23:42','2026-08-24 07:23:42'),(150003,210014,330002,1,'2026-08-24 07:23:42','2026-08-26 08:40:13'),(150004,210014,330003,0,'2026-08-24 07:23:42','2026-08-26 08:40:13');
+INSERT INTO `user_car` VALUES (1,270014,1,1,'2026-08-24 07:23:42','2026-08-24 07:23:42'),(2,4,120002,0,'2026-08-24 07:23:42','2026-08-24 07:23:42'),(150003,210014,330002,1,'2026-08-24 07:23:42','2026-08-26 08:40:13'),(150004,210014,330003,0,'2026-08-24 07:23:42','2026-08-26 08:40:13'),(270003,600017,450002,1,'2026-08-31 08:42:33','2026-08-31 08:42:33'),(300003,750019,480002,1,'2026-09-01 07:30:07','2026-09-01 07:30:07');
 /*!40000 ALTER TABLE `user_car` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -924,7 +951,7 @@ CREATE TABLE `user_license` (
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`license_id`) /*T![clustered_index] CLUSTERED */
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci AUTO_INCREMENT=420003;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci AUTO_INCREMENT=510003;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -933,7 +960,7 @@ CREATE TABLE `user_license` (
 
 LOCK TABLES `user_license` WRITE;
 /*!40000 ALTER TABLE `user_license` DISABLE KEYS */;
-INSERT INTO `user_license` VALUES (1,'image',NULL,'1234','B','12345678','34567','2000-12-20','O','2016-09-10','pending','2026-08-04 06:24:11','2026-08-04 06:24:11'),(2,'license_image.jpg',NULL,'123456789','John Doe','555-1234','NRC123456','1990-01-01','O+','2025-12-31','pending','2026-08-05 06:37:28','2026-08-05 06:37:28'),(150003,'/php/Customer/uploads/licenses/license-150014-8d2fcee6de20d961.jpg',NULL,'YGN-1233','MoleOFKO','+95 9 799 055836','10/TAKETA(N)/123452','2000-12-21','O-','2030-11-11','approved','2026-08-15 05:47:13','2026-08-15 05:47:13'),(180003,'/php/Customer/uploads/licenses/license-210014-be77ccfa45961d78.jpg','/php/Customer/uploads/licenses/license-face-210014-8c9f216da4982fa2.jpg','YGN-1234','KoShane','+95 9 799 055836','10/TAKETA(N)/123452','2000-02-02','O-','2030-01-01','approved','2026-08-16 19:34:09','2026-08-16 19:34:09'),(210003,'/php/Customer/uploads/licenses/license-420015-45f3dc2d7151f1e6.jpg','/php/Customer/uploads/licenses/license-face-420015-69f9e339f2d5e5b8.jpg','L/12345/23','Kaung Kaung','+959799055836','14/YAKANA(N)123456','2012-12-31','AB-','2030-12-12','approved','2026-08-20 08:52:23','2026-08-20 08:52:23');
+INSERT INTO `user_license` VALUES (1,'image',NULL,'1234','B','12345678','34567','2000-12-20','O','2016-09-10','pending','2026-08-04 06:24:11','2026-08-04 06:24:11'),(2,'license_image.jpg',NULL,'123456789','John Doe','555-1234','NRC123456','1990-01-01','O+','2025-12-31','pending','2026-08-05 06:37:28','2026-08-05 06:37:28'),(150003,'/php/Customer/uploads/licenses/license-150014-8d2fcee6de20d961.jpg',NULL,'YGN-1233','MoleOFKO','+95 9 799 055836','10/TAKETA(N)/123452','2000-12-21','O-','2030-11-11','approved','2026-08-15 05:47:13','2026-08-15 05:47:13'),(180003,'/php/Customer/uploads/licenses/license-210014-be77ccfa45961d78.jpg','/php/Customer/uploads/licenses/license-face-210014-8c9f216da4982fa2.jpg','YGN-1234','KoShane','+95 9 799 055836','10/TAKETA(N)/123452','2000-02-02','O-','2030-01-01','approved','2026-08-16 19:34:09','2026-08-16 19:34:09'),(210003,'/php/Customer/uploads/licenses/license-420015-45f3dc2d7151f1e6.jpg','/php/Customer/uploads/licenses/license-face-420015-69f9e339f2d5e5b8.jpg','L/12345/23','Kaung Kaung','+959799055836','14/YAKANA(N)123456','2012-12-31','AB-','2030-12-12','approved','2026-08-20 08:52:23','2026-08-20 08:52:23'),(420003,'/php/Customer/uploads/licenses/license-600017-9147ef44a3cf93c3.jpg','/php/Customer/uploads/licenses/license-face-600017-df2ef3bbb0c94b3b.jpg','L/11111/11','Test Staff','0911111111','1/KAMANA(E)111112','2001-01-01','A+','2030-02-28','approved','2026-08-31 08:37:01','2026-08-31 08:37:01'),(450003,'/php/Customer/uploads/licenses/license-750019-4891906d6f7e5f89.png','/php/Customer/uploads/licenses/license-face-750019-e950183acd71f562.jpg','L/56112/21','Yum Yum','09671129043','12/MAGADA(N)991123','1990-01-01','A+','2029-12-31','approved','2026-09-01 07:27:01','2026-09-01 07:27:01'),(480003,'/php/Customer/uploads/licenses/license-330014-eceac094a014b23d.webp','/php/Customer/uploads/licenses/license-face-330014-e5ef690b0e57a84f.jpg','L/11111/11','Kaung Kaung','0911111111','1/KAMANA(N)111112','2006-01-01','B+','2030-02-28','pending','2026-09-04 06:32:06','2026-09-04 06:32:06');
 /*!40000 ALTER TABLE `user_license` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -980,7 +1007,7 @@ CREATE TABLE `users` (
   CONSTRAINT `fk_users_role_id` FOREIGN KEY (`role_id`) REFERENCES `roles` (`role_id`) ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `fk_user_current_role_id` FOREIGN KEY (`current_role_id`) REFERENCES `roles` (`role_id`) ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `fk_business_branch_id` FOREIGN KEY (`branch_id`) REFERENCES `branches` (`branch_id`) ON DELETE CASCADE ON UPDATE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci AUTO_INCREMENT=660019;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci AUTO_INCREMENT=780019;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -989,7 +1016,7 @@ CREATE TABLE `users` (
 
 LOCK TABLES `users` WRITE;
 /*!40000 ALTER TABLE `users` DISABLE KEYS */;
-INSERT INTO `users` VALUES (4,'000004','admin_test_pending_owner','admin-test-pending-owner-20260805@example.test','$2y$12$TjVx96cvj5VBIYSZRyZ2AeDZsh/CG6fXWEjpEmcP89zlEbyTArXzm',NULL,2,6,3,6,NULL,'rejected',0,'2026-08-23 16:50:29','2026-08-23 16:50:29',NULL,NULL,NULL,NULL),(5,'000005','admin_test_active_owner','admin-test-active-owner-20260805@example.test','$2y$12$t7uyDkU/8Lyu4LzIZllkUuHjv0HJM0BniOpCcR1tA.n7SOdoU.JVa',NULL,3,6,3,6,NULL,'approved',0,'2026-08-23 16:50:29','2026-08-23 16:50:29',NULL,NULL,NULL,NULL),(6,'000006','admin_test_suspended_owner','admin-test-suspended-owner-20260805@example.test','$2y$12$gcUUWoJ/VSfvM2T.4z6.puCIK98Nmd8HBwqj9kKhScvXSlxv5BSh6',NULL,4,6,3,6,NULL,'suspended',0,'2026-08-23 16:50:29','2026-08-23 16:50:29',NULL,NULL,NULL,NULL),(7,'000007','admin_test_removed_owner','admin-test-removed-owner-20260805@example.test','$2y$12$3exwXVIQRqKrhuIw52qq5eir1Y862gHkJo/WG1QseaKMu7h5M5WrS',NULL,5,6,3,6,NULL,'removed',0,'2026-08-23 16:50:29','2026-08-23 16:50:29',NULL,NULL,NULL,NULL),(8,'000008','admin_test_active_operator','admin-test-active-operator-20260805@example.test','$2y$12$NCWhFV6J1W7EG5G9SPQbnOAaon0DfimXpTA3nMwvldQvUqNuQtq0q',NULL,3,6,3,6,NULL,'pending',0,'2026-08-23 16:50:29','2026-08-23 16:50:29',NULL,NULL,NULL,NULL),(10,'00000A','test_active','admin-test-active-operator-2026005@example.test','$2y$12$NCWhFV6J1W7EG5G9SPQbnOAaon0DfimXpTA3nMwvldQvUqNuQtq0q',NULL,NULL,6,1,6,NULL,'pending',0,'2026-08-23 16:17:22','2026-08-23 16:17:22',NULL,NULL,NULL,NULL),(12,'00000C','codex_verify_owner','codex.verify.20260805@example.test','$2y$12$CFhA7Kc/ioNIRtIvpAl/zuAEtggXfKu5BVb/bKv.wpZUUPYEJNtq6',NULL,8,6,3,6,NULL,'pending',0,'2026-08-23 16:50:29','2026-08-23 16:50:29',NULL,NULL,NULL,NULL),(60014,'00EA6E','thura_min','thura.min.apex.20260805@example.test','$2y$12$E1GPNjcZHJ9GNYujJ3IEiOZoXFbHBYVxtnxLDaQzJ9eq6eyEEvh7K',NULL,60010,6,3,6,NULL,'approved',0,'2026-08-23 16:17:22','2026-08-23 16:17:22',NULL,NULL,NULL,NULL),(60018,'00EA72','Ei Thinzar Mon','eithinzarmon@gmail.com','$2y$12$hQ1p3zKXAOXiSowHMtX9b.ppxkkLmE7afcvYvb0n83yuaANm4IpFa',NULL,NULL,6,1,1,NULL,'approved',0,'2026-08-26 08:12:42','2026-08-26 08:12:42',NULL,NULL,'/php/Admin(WebOwner)/uploads/admin-60018-91a6a033ed0d732a.jpg',NULL),(90014,'015F9E','tester_testing','tester@gmail.com','$2y$12$pkK4Y60pVgKwWFwdAiyXjuIE/6v645sV2lOoDVH2RV9MNttr8NmI6',NULL,90010,6,3,6,NULL,'approved',0,'2026-08-23 16:17:22','2026-08-23 16:17:22',NULL,NULL,NULL,NULL),(150014,'0249FE','MoleOFKO','shanekhant23@gmail.com','$2y$12$R.Aa6RBMhT7ROiteN9wFg.4bXcJLZDNjd5JlXbQG.bv5jTJU1Ij4i',150003,NULL,6,NULL,6,NULL,'active',0,'2026-08-28 06:49:27','2026-08-28 06:49:27','google','100787895739316965029','https://lh3.googleusercontent.com/a/ACg8ocJDnzcBRStX0x8DYtMJdMkWUkiL79x6k68sixAToMLC-xMLtlE=s96-c','2026-08-28 06:49:27'),(210014,'03345E','KoShane','shanekopersonal@gmail.com','$2y$12$kY8nqDP4RnlrO.G1ao076ehpykOz5x6R6/YrS0o9QeeSE7ZgQRZQu',180003,2,6,2,6,NULL,'active',0,'2026-08-31 06:14:52','2026-08-31 06:14:52',NULL,NULL,NULL,NULL),(240014,'03A98E','KoShab','mapa.and.pump@gmail.com','$2y$12$mgqjrg5LoQeLu7kQgrCh1uNqz2h17sq42oJipzDIwpakJUQsco52K',180003,NULL,6,2,2,NULL,'active',0,'2026-08-29 04:40:57','2026-08-29 04:40:57','google','118311246391062428561','https://lh3.googleusercontent.com/a/ACg8ocIXZque38Mkmro0Ieg_CVZtgFvpoGTrQKxjw6gzx6qGk4FY=s96-c','2026-08-29 04:40:57'),(270014,'041EBE','Larry-sama','koshan2104@gmail.com','$2y$12$f6VHNFpbbWY9hSX5BiFdw.QNaK5O0SUMo91nqI66NcL1KBCljsxxC',NULL,NULL,6,NULL,6,NULL,'suspended',0,'2026-08-23 16:17:22','2026-08-23 16:17:22',NULL,NULL,NULL,NULL),(270015,'041EBF','temp_temp','temp45@gmail.com','$2y$12$caTKDBBZre2OkSHh4xf3ReBFTeQ78.Q6NyYVxxuLd/A80sWVp6oB6',NULL,180010,6,3,6,NULL,'approved',0,'2026-08-23 16:17:22','2026-08-23 16:17:22',NULL,NULL,NULL,NULL),(330014,'05091E','Kaung Kaung','kaungzin365@gmail.com','$2y$10$wbiYdwea.zVPHMgyvwg9GOu8maL.zTquJtuW7.Yc68/qPjN4g9vMS',NULL,2,6,4,4,NULL,'active',0,'2026-08-24 07:03:28','2026-08-24 07:03:28',NULL,NULL,NULL,NULL),(420014,'0668AE','Test Me','bhonen94@gmail.com','$2y$12$uRed5QfY3CAWxZaaglmkNea/sfz38RITpP0KeI8jZO8LkapvHhaSS',NULL,NULL,6,NULL,6,NULL,'active',0,'2026-08-23 16:17:22','2026-08-23 16:17:22',NULL,NULL,NULL,NULL),(420015,'0668AF','Kaung Kaung HQ','kaungzin23may@gmail.com','$2y$10$4PXW5VHtOKMQyO6597rLK.GP2dIWf.DYjqcW//zhXWpaq33D62mdi',210003,2,6,3,6,NULL,'active',0,'2026-08-28 07:11:30','2026-08-28 07:11:30',NULL,NULL,NULL,NULL),(540014,'083D6E','Yan Aung Bala','yanaungbala5678@gmail.com','$2y$12$dgMgYHInE9e3NRkglOEXOux3CLwFfIB8bR0/zxodyM0AjiGpPVMsK',NULL,NULL,6,NULL,6,NULL,'active',0,'2026-08-29 12:47:32','2026-08-29 12:47:32','google','113301012897426888448','https://lh3.googleusercontent.com/a/ACg8ocLiyDuyH8de1FAO4NgeEmAI6MGs7_Kp9JUCRLZp3Y3Om5x3IA=s96-c','2026-08-29 12:47:32'),(600014,'0927CE','Test Admin','test.admin@mapandpump.test','$2y$12$awtEws/29QtZLz/AJlBhWOXyrE96xZ2X9hBL7ZD0p9xfzxoW.YTEG',NULL,NULL,6,1,1,NULL,'active',0,'2026-08-28 00:00:00','2026-08-28 00:00:00',NULL,NULL,NULL,NULL),(600015,'0927CF','Test Moderator','test.moderator@mapandpump.test','$2y$12$FiGXeOMmq7O1E6CpSMqrnuBvm75b5l1biKOhdhh/9IPboadaAqf1y',NULL,NULL,6,2,2,NULL,'active',0,'2026-08-28 00:00:00','2026-08-28 00:00:00',NULL,NULL,NULL,NULL),(600016,'0927D0','Test HQ','test.hq@mapandpump.test','$2y$12$mLrbOowJ5Jp0r2zCiVf8v.GhfcWX4jezJqHr/K.fYIAbKNEMNDQwK',NULL,480010,6,3,3,NULL,'active',0,'2026-08-28 00:00:00','2026-08-28 00:00:00',NULL,NULL,NULL,NULL),(600017,'0927D1','Test Staff','test.staff@mapandpump.test','$2y$12$c5wZ3HcOcDr7s5Ui8UOLWudr5AnSD/fYemk/yA3uNzQ4OUu/wMTwS',NULL,480010,6,5,6,1,'active',0,'2026-08-28 09:03:24','2026-08-28 09:03:24',NULL,NULL,NULL,NULL),(630019,'099D03','yan aung bala','yan60421@gmail.com','$2y$12$UDgj/mBIehPxL5F4WOraoOJjteyNoIgW/gL6dr4b/RKiR328tCwxC',NULL,NULL,6,NULL,6,NULL,'active',0,'2026-08-29 12:30:56','2026-08-29 12:30:56','google','108332824446244416656','https://lh3.googleusercontent.com/a/ACg8ocLYGAxKp4X8VLY-EfLvNrZlGiBqn9Us6I1CGvd7YRrmcdWwtA=s96-c','2026-08-29 12:30:56'),(630020,'099D04','Yan Aung','yanaung1106@gmail.com','$2y$12$t1tfBywjkf6v9m66maOKHub.gOemptXycvhGs0WJi5EqidTlLnMja',NULL,NULL,6,NULL,6,NULL,'active',0,'2026-08-29 12:31:29','2026-08-29 12:31:29','google','116848264870935136373','https://lh3.googleusercontent.com/a/ACg8ocKRgoMg7gTOePWQSVaMB_Nblf4ZiBZ-WXYhy--99oXPcmk_sUc=s96-c','2026-08-29 12:31:29');
+INSERT INTO `users` VALUES (4,'000004','admin_test_pending_owner','admin-test-pending-owner-20260805@example.test','$2y$12$TjVx96cvj5VBIYSZRyZ2AeDZsh/CG6fXWEjpEmcP89zlEbyTArXzm',NULL,2,6,3,6,NULL,'rejected',0,'2026-08-23 16:50:29','2026-08-23 16:50:29',NULL,NULL,NULL,NULL),(5,'000005','admin_test_active_owner','admin-test-active-owner-20260805@example.test','$2y$12$t7uyDkU/8Lyu4LzIZllkUuHjv0HJM0BniOpCcR1tA.n7SOdoU.JVa',NULL,3,6,3,6,NULL,'approved',0,'2026-08-23 16:50:29','2026-08-23 16:50:29',NULL,NULL,NULL,NULL),(6,'000006','admin_test_suspended_owner','admin-test-suspended-owner-20260805@example.test','$2y$12$gcUUWoJ/VSfvM2T.4z6.puCIK98Nmd8HBwqj9kKhScvXSlxv5BSh6',NULL,4,6,3,6,NULL,'suspended',0,'2026-08-23 16:50:29','2026-08-23 16:50:29',NULL,NULL,NULL,NULL),(7,'000007','admin_test_removed_owner','admin-test-removed-owner-20260805@example.test','$2y$12$3exwXVIQRqKrhuIw52qq5eir1Y862gHkJo/WG1QseaKMu7h5M5WrS',NULL,5,6,3,6,NULL,'removed',0,'2026-08-23 16:50:29','2026-08-23 16:50:29',NULL,NULL,NULL,NULL),(8,'000008','admin_test_active_operator','admin-test-active-operator-20260805@example.test','$2y$12$NCWhFV6J1W7EG5G9SPQbnOAaon0DfimXpTA3nMwvldQvUqNuQtq0q',NULL,3,6,3,6,NULL,'pending',0,'2026-08-23 16:50:29','2026-08-23 16:50:29',NULL,NULL,NULL,NULL),(10,'00000A','test_active','admin-test-active-operator-2026005@example.test','$2y$12$NCWhFV6J1W7EG5G9SPQbnOAaon0DfimXpTA3nMwvldQvUqNuQtq0q',NULL,NULL,6,1,6,NULL,'approved',0,'2026-08-31 08:06:18','2026-08-31 08:06:18',NULL,NULL,NULL,NULL),(12,'00000C','codex_verify_owner','codex.verify.20260805@example.test','$2y$12$CFhA7Kc/ioNIRtIvpAl/zuAEtggXfKu5BVb/bKv.wpZUUPYEJNtq6',NULL,8,6,3,6,NULL,'pending',0,'2026-08-23 16:50:29','2026-08-23 16:50:29',NULL,NULL,NULL,NULL),(60014,'00EA6E','thura_min','thura.min.apex.20260805@example.test','$2y$12$E1GPNjcZHJ9GNYujJ3IEiOZoXFbHBYVxtnxLDaQzJ9eq6eyEEvh7K',NULL,60010,6,3,6,NULL,'approved',0,'2026-08-23 16:17:22','2026-08-23 16:17:22',NULL,NULL,NULL,NULL),(60018,'00EA72','Ei Thinzar Mon','eithinzarmon@gmail.com','$2y$12$hQ1p3zKXAOXiSowHMtX9b.ppxkkLmE7afcvYvb0n83yuaANm4IpFa',NULL,NULL,6,1,1,NULL,'approved',0,'2026-09-01 07:12:07','2026-09-01 07:12:07',NULL,NULL,'/php/Admin(WebOwner)/uploads/admin-60018-91a6a033ed0d732a.jpg',NULL),(90014,'015F9E','tester_testing','tester@gmail.com','$2y$12$pkK4Y60pVgKwWFwdAiyXjuIE/6v645sV2lOoDVH2RV9MNttr8NmI6',NULL,90010,6,3,6,NULL,'approved',0,'2026-08-23 16:17:22','2026-08-23 16:17:22',NULL,NULL,NULL,NULL),(150014,'0249FE','MoleOFKO','shanekhant23@gmail.com','$2y$12$R.Aa6RBMhT7ROiteN9wFg.4bXcJLZDNjd5JlXbQG.bv5jTJU1Ij4i',150003,NULL,6,NULL,6,NULL,'active',0,'2026-08-28 06:49:27','2026-08-28 06:49:27','google','100787895739316965029','https://lh3.googleusercontent.com/a/ACg8ocJDnzcBRStX0x8DYtMJdMkWUkiL79x6k68sixAToMLC-xMLtlE=s96-c','2026-08-28 06:49:27'),(210014,'03345E','KoShane','shanekopersonal@gmail.com','$2y$12$kY8nqDP4RnlrO.G1ao076ehpykOz5x6R6/YrS0o9QeeSE7ZgQRZQu',180003,2,6,2,2,NULL,'active',0,'2026-09-04 06:33:32','2026-09-04 06:33:32',NULL,NULL,'/php/Moderators(UnderAdmin)/uploads/moderator_210014_1788158885.jpg',NULL),(240014,'03A98E','KoShab','mapa.and.pump@gmail.com','$2y$12$mgqjrg5LoQeLu7kQgrCh1uNqz2h17sq42oJipzDIwpakJUQsco52K',180003,NULL,6,2,2,NULL,'active',0,'2026-08-29 04:40:57','2026-08-29 04:40:57','google','118311246391062428561','https://lh3.googleusercontent.com/a/ACg8ocIXZque38Mkmro0Ieg_CVZtgFvpoGTrQKxjw6gzx6qGk4FY=s96-c','2026-08-29 04:40:57'),(270014,'041EBE','Larry-sama','koshan2104@gmail.com','$2y$12$f6VHNFpbbWY9hSX5BiFdw.QNaK5O0SUMo91nqI66NcL1KBCljsxxC',NULL,NULL,6,NULL,6,NULL,'suspended',0,'2026-08-23 16:17:22','2026-08-23 16:17:22',NULL,NULL,NULL,NULL),(270015,'041EBF','temp_temp','temp45@gmail.com','$2y$12$caTKDBBZre2OkSHh4xf3ReBFTeQ78.Q6NyYVxxuLd/A80sWVp6oB6',NULL,180010,6,3,6,NULL,'approved',0,'2026-08-23 16:17:22','2026-08-23 16:17:22',NULL,NULL,NULL,NULL),(330014,'05091E','Kaung Kaung','kaungzin365@gmail.com','$2y$10$wbiYdwea.zVPHMgyvwg9GOu8maL.zTquJtuW7.Yc68/qPjN4g9vMS',480003,2,6,4,6,NULL,'pending_verification',0,'2026-09-04 06:32:06','2026-09-04 06:32:06',NULL,NULL,NULL,NULL),(420014,'0668AE','Test Me','bhonen94@gmail.com','$2y$12$uRed5QfY3CAWxZaaglmkNea/sfz38RITpP0KeI8jZO8LkapvHhaSS',NULL,NULL,6,NULL,6,NULL,'active',0,'2026-08-23 16:17:22','2026-08-23 16:17:22',NULL,NULL,NULL,NULL),(420015,'0668AF','Kaung Kaung HQ','kaungzin23may@gmail.com','$2y$10$4PXW5VHtOKMQyO6597rLK.GP2dIWf.DYjqcW//zhXWpaq33D62mdi',210003,2,6,3,6,NULL,'active',0,'2026-08-28 07:11:30','2026-08-28 07:11:30',NULL,NULL,NULL,NULL),(600014,'0927CE','Test Admin','test.admin@mapandpump.test','$2y$12$awtEws/29QtZLz/AJlBhWOXyrE96xZ2X9hBL7ZD0p9xfzxoW.YTEG',NULL,NULL,6,1,1,NULL,'active',0,'2026-08-28 00:00:00','2026-08-28 00:00:00',NULL,NULL,NULL,NULL),(600015,'0927CF','Test Moderator','test.moderator@mapandpump.test','$2y$12$FiGXeOMmq7O1E6CpSMqrnuBvm75b5l1biKOhdhh/9IPboadaAqf1y',NULL,NULL,6,2,2,NULL,'active',0,'2026-08-28 00:00:00','2026-08-28 00:00:00',NULL,NULL,NULL,NULL),(600016,'0927D0','Test HQ','test.hq@mapandpump.test','$2y$12$mLrbOowJ5Jp0r2zCiVf8v.GhfcWX4jezJqHr/K.fYIAbKNEMNDQwK',NULL,480010,6,3,3,NULL,'active',0,'2026-08-28 00:00:00','2026-08-28 00:00:00',NULL,NULL,NULL,NULL),(600017,'0927D1','Test Staff','test.staff@mapandpump.test','$2y$12$c5wZ3HcOcDr7s5Ui8UOLWudr5AnSD/fYemk/yA3uNzQ4OUu/wMTwS',420003,480010,6,5,5,1,'active',0,'2026-09-04 06:26:20','2026-09-04 06:26:20',NULL,NULL,NULL,NULL),(630019,'099D03','yan aung bala','yan60421@gmail.com','$2y$12$UDgj/mBIehPxL5F4WOraoOJjteyNoIgW/gL6dr4b/RKiR328tCwxC',NULL,NULL,6,NULL,6,NULL,'active',0,'2026-08-29 12:30:56','2026-08-29 12:30:56','google','108332824446244416656','https://lh3.googleusercontent.com/a/ACg8ocLYGAxKp4X8VLY-EfLvNrZlGiBqn9Us6I1CGvd7YRrmcdWwtA=s96-c','2026-08-29 12:30:56'),(630020,'099D04','Yan Aung','yanaung1106@gmail.com','$2y$12$t1tfBywjkf6v9m66maOKHub.gOemptXycvhGs0WJi5EqidTlLnMja',NULL,NULL,6,NULL,6,NULL,'active',0,'2026-08-29 12:31:29','2026-08-29 12:31:29','google','116848264870935136373','https://lh3.googleusercontent.com/a/ACg8ocKRgoMg7gTOePWQSVaMB_Nblf4ZiBZ-WXYhy--99oXPcmk_sUc=s96-c','2026-08-29 12:31:29'),(690019,'0A8763','Test Me','atuwahipil68@gmail.com','$2y$10$X2wu6lJE2QIXvVt18eog6u76jqsXCaZV2CgDPI06wKf9Bd9vuuRCy',NULL,NULL,6,NULL,6,NULL,'active',0,'2026-08-31 13:52:23','2026-08-31 13:52:23',NULL,NULL,NULL,NULL),(720019,'0AFC93','danielmelnedez','icec9270@gmail.com','$2y$10$i0Hq1vQm5UqjDMT2ujT1Juv4/.Nh1i6P6QZPX4ojfUMz9Uvq5teSW',NULL,NULL,6,NULL,6,NULL,'active',0,'2026-08-31 16:07:45','2026-08-31 16:07:45',NULL,NULL,NULL,NULL),(750019,'0B71C3','Yum Yum','yanaungbala5678@gmail.com','$2y$10$xmMfOdzJXzf8TxB9D8yGf.r5af5Q.7a/5P899d.QXsiQw64vsj.7u',450003,NULL,6,NULL,6,NULL,'approved',0,'2026-09-01 07:37:20','2026-09-01 07:37:20',NULL,NULL,NULL,NULL);
 /*!40000 ALTER TABLE `users` ENABLE KEYS */;
 UNLOCK TABLES;
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
@@ -1002,4 +1029,4 @@ UNLOCK TABLES;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2026-08-31 12:56:30
+-- Dump completed on 2026-09-04 13:04:11
