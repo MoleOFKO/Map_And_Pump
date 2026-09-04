@@ -166,9 +166,9 @@ include 'share_header.php';
             $modalFuel = (string)($usage['oil_name'] ?? 'Fuel');
             $modalLiters = rtrim(rtrim(number_format((float)($usage['filled_liters'] ?? 0), 1, '.', ''), '0'), '.');
         ?>
-        <div class="modal fade" id="<?php echo htmlspecialchars($feedbackModalId, ENT_QUOTES, 'UTF-8'); ?>" tabindex="-1" aria-hidden="true">
+        <div class="modal fade" id="<?php echo htmlspecialchars($feedbackModalId, ENT_QUOTES, 'UTF-8'); ?>" tabindex="-1" aria-hidden="true" data-bs-backdrop="true">
             <div class="modal-dialog modal-dialog-centered px-3">
-                <div class="modal-content text_color" style="background: var(--glass-bg); backdrop-filter: blur(24px); border: 1px solid var(--glass-border); border-radius: var(--card-radius);">
+                <div class="modal-content custom-glass-modal text_color">
                     <form action="submit_feedback.php" method="POST">
                         <div class="modal-header border-bottom border-secondary border-opacity-25">
                             <div>
@@ -202,6 +202,32 @@ include 'share_header.php';
 <?php endif; ?>
 
 <style>
+/* Fix modal non-interactive and backdrop layering bug */
+.modal {
+    z-index: 1055 !important;
+}
+
+.modal-backdrop {
+    z-index: 1050 !important;
+}
+
+.custom-glass-modal {
+    background: var(--glass-bg, rgba(15, 23, 42, 0.85)) !important;
+    backdrop-filter: blur(24px) !important;
+    -webkit-backdrop-filter: blur(24px) !important;
+    border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.1)) !important;
+    border-radius: var(--card-radius, 16px) !important;
+    pointer-events: auto !important;
+}
+
+.glass-input, 
+.usage-feedback-rating label {
+    pointer-events: auto !important;
+    position: relative;
+    z-index: 2;
+}
+
+/* Rating styles */
 .usage-feedback-rating {
     display: inline-flex;
     flex-direction: row-reverse;
@@ -440,7 +466,13 @@ body.customer-light-mode .usage-cal-day.is-selected {
 </style>
 
 <script>
-(function () {
+document.addEventListener('DOMContentLoaded', function () {
+    // Append modals directly to <body> to avoid stacking context collisions
+    const modals = document.querySelectorAll('.modal');
+    modals.forEach(function (modal) {
+        document.body.appendChild(modal);
+    });
+
     const rows = Array.from(document.querySelectorAll('#usage-log-body tr'));
     const emptyMsg = document.getElementById('usage-empty-msg');
     const toggleBtn = document.getElementById('usage-range-toggle');
@@ -461,11 +493,6 @@ body.customer-light-mode .usage-cal-day.is-selected {
         return `${y}-${m}-${day}`;
     }
 
-    function parseISO(s) {
-        const [y, m, d] = s.split('-').map(Number);
-        return new Date(y, m - 1, d);
-    }
-
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const todayStr = toISO(today);
@@ -475,8 +502,8 @@ body.customer-light-mode .usage-cal-day.is-selected {
     );
 
     let viewYear = today.getFullYear();
-    let viewMonth = today.getMonth(); // 0-based
-    let rangeStart = null; // ISO string or null
+    let viewMonth = today.getMonth();
+    let rangeStart = null;
     let rangeEnd = null;
 
     function formatLabel(start, end) {
@@ -496,7 +523,7 @@ body.customer-light-mode .usage-cal-day.is-selected {
             } else if (rangeStart && !rangeEnd) {
                 show = rowDate === rangeStart;
             } else {
-                show = true; // no selection → every history row
+                show = true;
             }
             row.classList.toggle('d-none', !show);
             if (show) visibleCount++;
@@ -510,10 +537,9 @@ body.customer-light-mode .usage-cal-day.is-selected {
         grid.innerHTML = '';
 
         const first = new Date(viewYear, viewMonth, 1);
-        const startWeekday = first.getDay(); // 0 Sun
+        const startWeekday = first.getDay();
         const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
 
-        // Disable next if viewing current month of today or later
         const isCurrentOrFutureMonth =
             viewYear > today.getFullYear() ||
             (viewYear === today.getFullYear() && viewMonth >= today.getMonth());
@@ -571,11 +597,9 @@ body.customer-light-mode .usage-cal-day.is-selected {
 
     function onDayClick(iso) {
         if (!rangeStart || (rangeStart && rangeEnd)) {
-            // Start a new range — keep panel open for the end date
             rangeStart = iso;
             rangeEnd = null;
         } else {
-            // Complete the range (same date twice = single-day filter)
             if (iso < rangeStart) {
                 rangeEnd = rangeStart;
                 rangeStart = iso;
@@ -585,7 +609,6 @@ body.customer-light-mode .usage-cal-day.is-selected {
         }
         filterRows();
         renderCalendar();
-        // Only close after both ends are set (including start === end)
         if (rangeStart && rangeEnd) {
             closePanel();
         }
@@ -645,11 +668,8 @@ body.customer-light-mode .usage-cal-day.is-selected {
         }
     });
 
-    // Default: no date selected → show every history row
     filterRows();
-})();
+});
 </script>
 
 <?php include 'share_footer.php'; ?>
-
-

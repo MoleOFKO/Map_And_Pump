@@ -70,7 +70,7 @@ try {
 
     $dashboardMap = [
         'admin' => '/php/Admin(WebOwner)/admin_dashboard.php',
-        'moderator' => '/php/Moderators(UnderAdmin)/moderator_dashboard.php',
+        'moderator' => '../Moderators(UnderAdmin)/moderator_dashboard.php',
         'hq' => '/php/HQ/index.php',
         'manager' => '/php/BranchManager/dashboard.php',
         'branchmanager' => '../BranchManager/dashboard.php',
