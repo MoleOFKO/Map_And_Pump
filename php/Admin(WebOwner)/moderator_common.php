@@ -3,6 +3,7 @@
  * Shared helpers for the admin moderator registry.
  */
 require_once __DIR__ . '/hq_account_common.php';
+require_once __DIR__ . '/../moderator_hire_helpers.php';
 
 function moderator_flash(string $type, string $message, array $context = []): void
 {
@@ -158,4 +159,88 @@ function moderator_status_class(?string $status): string
         'removed', 'rejected' => 'moderator-status-removed',
         default => 'moderator-status-pending',
     };
+}
+
+function moderator_hire_schema_ready(): bool
+{
+    global $conn;
+
+    if (!hq_db_available()) {
+        return false;
+    }
+
+    return moderator_hire_notifications_ready_mysqli($conn);
+}
+
+/**
+ * True when the target user exists and is not already an admin/moderator.
+ */
+function moderator_hire_target_eligible(int $userId): bool
+{
+    global $conn;
+
+    if ($userId <= 0 || !hq_db_available()) {
+        return false;
+    }
+
+    $statement = $conn->prepare(
+        "SELECT u.user_id
+         FROM users u
+         LEFT JOIN roles r ON r.role_id = u.role_id
+         WHERE u.user_id = ?
+           AND LOWER(TRIM(COALESCE(r.role_name, ''))) NOT IN ('admin', 'moderator')
+         LIMIT 1"
+    );
+    if (!$statement) {
+        return false;
+    }
+    $statement->bind_param('i', $userId);
+    $ok = $statement->execute();
+    $exists = $ok && (bool) ($statement->get_result()?->fetch_assoc());
+    $statement->close();
+
+    return $exists;
+}
+
+/**
+ * True when the target already has a pending moderator_hire notification
+ * for the same offered role (encoded in delivery_note JSON).
+ */
+function moderator_hire_pending_exists(int $targetUserId, int $roleId): bool
+{
+    global $conn;
+
+    if (!moderator_hire_schema_ready()) {
+        return false;
+    }
+
+    $statement = $conn->prepare(
+        "SELECT notification_id, delivery_note
+         FROM notifications
+         WHERE recipient_user_id = ?
+           AND LOWER(notification_type) = 'moderator_hire'
+           AND LOWER(delivery_status) = 'pending'
+         ORDER BY created_at DESC
+         LIMIT 20"
+    );
+    if (!$statement) {
+        return false;
+    }
+    $statement->bind_param('i', $targetUserId);
+    if (!$statement->execute()) {
+        $statement->close();
+        return false;
+    }
+    $result = $statement->get_result();
+    $exists = false;
+    while ($result && ($row = $result->fetch_assoc())) {
+        $meta = moderator_hire_meta_decode($row['delivery_note'] ?? null);
+        if ((int) $meta['offered_role_id'] === $roleId) {
+            $exists = true;
+            break;
+        }
+    }
+    $statement->close();
+
+    return $exists;
 }

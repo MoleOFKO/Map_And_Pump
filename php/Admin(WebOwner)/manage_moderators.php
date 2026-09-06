@@ -136,8 +136,36 @@ $flashType = (string) ($flash['type'] ?? '');
         .moderator-status-suspended::before { background:#ff9f43; box-shadow:0 0 8px #ff9f43; }
         .moderator-status-removed::before { background:#ff4d6a; box-shadow:0 0 8px #ff4d6a; }
         .moderator-modal-note { color:rgba(255,255,255,.58); font-size:.78rem; line-height:1.5; }
+        .moderator-mode-tabs { display:flex; gap:.5rem; flex-wrap:wrap; }
+        .moderator-mode-tabs .btn { border-radius:999px; font-size:.8rem; font-weight:600; }
+        .moderator-search-wrap { position:relative; }
+        .moderator-search-results {
+            position:absolute; left:0; right:0; top:calc(100% + 4px); z-index:20;
+            max-height:240px; overflow:auto; border-radius:12px;
+            background:rgba(8,14,28,.98); border:1px solid rgba(0,244,255,.22);
+            box-shadow:0 12px 32px rgba(0,0,0,.45); display:none;
+        }
+        .moderator-search-results.show { display:block; }
+        .moderator-search-item {
+            width:100%; text-align:left; border:0; background:transparent; color:#fff;
+            padding:.7rem .9rem; border-bottom:1px solid rgba(255,255,255,.06);
+        }
+        .moderator-search-item:hover, .moderator-search-item:focus { background:rgba(0,244,255,.08); }
+        .moderator-search-item small { color:rgba(255,255,255,.55); }
+        .moderator-selected-chip {
+            display:none; align-items:center; gap:.6rem; margin-top:.65rem;
+            padding:.55rem .8rem; border-radius:12px;
+            background:rgba(0,244,255,.08); border:1px solid rgba(0,244,255,.22);
+            color:rgba(255,255,255,.9); font-size:.85rem;
+        }
+        .moderator-selected-chip.show { display:flex; }
         body.background_color.light-mode .moderator-status { color:var(--text-muted); }
         body.background_color.light-mode .moderator-modal-note { color:var(--text-muted); }
+        body.background_color.light-mode .moderator-search-results {
+            background:#fff; border-color:rgba(0,0,0,.12); color:#111;
+        }
+        body.background_color.light-mode .moderator-search-item { color:#111; }
+        body.background_color.light-mode .moderator-search-item small { color:#666; }
     </style>
 </head>
 <body class="background_color" id="background_color">
@@ -220,7 +248,101 @@ $flashType = (string) ($flash['type'] ?? '');
         </div>
     </div>
 
-    <div class="modal fade glass-modal" id="addAdminModal" tabindex="-1" aria-labelledby="addAdminModalLabel" aria-hidden="true"><div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-lg"><div class="modal-content"><div class="modal-header"><div><h5 class="modal-title fw-bold" id="addAdminModalLabel"><i class="bi bi-person-lock txt-neon-cyan me-2"></i> Add New Moderator</h5><p class="moderator-modal-note mb-0 mt-1">These fields map directly to the live <code>users</code> and <code>roles</code> tables.</p></div><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button></div><form action="moderator_action.php" method="POST"><input type="hidden" name="action" value="create"><div class="modal-body d-flex flex-column gap-3"><div><label class="form-label text-white-50 small" for="newModeratorName">Username / Display Name <span class="text-danger">*</span></label><input id="newModeratorName" type="text" name="user_name" class="form-control glass-input" placeholder="e.g. ei_thinzar" maxlength="225" autocomplete="username" required><div class="moderator-modal-note mt-1">The database has one identity field, <code>users.user_name</code>; it is used for the moderator’s username/display name.</div></div><div><label class="form-label text-white-50 small" for="newModeratorEmail">Email Address <span class="text-danger">*</span></label><input id="newModeratorEmail" type="email" name="email" class="form-control glass-input" placeholder="moderator@mapandpump.com" maxlength="255" autocomplete="email" required></div><div><label class="form-label text-white-50 small" for="newModeratorRole">Database Role <span class="text-danger">*</span></label><select id="newModeratorRole" class="form-select glass-select" name="role_id" required <?= !$roles ? 'disabled' : '' ?>><option value="">Select a role</option><?php foreach ($roles as $role): ?><option value="<?= (int) $role['role_id'] ?>" <?= (string) $role['role_id'] === $defaultRoleId ? 'selected' : '' ?>><?= hq_escape(moderator_role_label($role['role_name'])) ?></option><?php endforeach; ?></select><div class="moderator-modal-note mt-1">Only Admin and Moderator roles are offered here; HQ and operational roles are managed elsewhere.</div></div><div class="row g-3"><div class="col-12 col-md-6"><label class="form-label text-white-50 small" for="newModeratorPassword">Password <span class="text-danger">*</span></label><input id="newModeratorPassword" type="password" name="password" class="form-control glass-input" minlength="8" maxlength="255" autocomplete="new-password" required></div><div class="col-12 col-md-6"><label class="form-label text-white-50 small" for="newModeratorConfirm">Confirm Password <span class="text-danger">*</span></label><input id="newModeratorConfirm" type="password" name="confirm_password" class="form-control glass-input" minlength="8" maxlength="255" autocomplete="new-password" required></div></div><div class="moderator-modal-note"><i class="bi bi-info-circle txt-neon-cyan me-1"></i><code>status</code> is set to <strong>approved</strong> automatically when an administrator provisions the account. The nullable HQ and license fields are intentionally left empty.</div></div><div class="modal-footer"><button type="button" class="btn btn-outline-secondary rounded-3 text-white-50 border-secondary border-opacity-20" data-bs-dismiss="modal">Cancel</button><button type="submit" class="btn btn-neon" <?= !$roles ? 'disabled' : '' ?>>Provision Access</button></div></form></div></div></div>
+    <div class="modal fade glass-modal" id="addAdminModal" tabindex="-1" aria-labelledby="addAdminModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <div>
+                        <h5 class="modal-title fw-bold" id="addAdminModalLabel"><i class="bi bi-person-lock txt-neon-cyan me-2"></i> Add New Moderator</h5>
+                        <p class="moderator-modal-note mb-0 mt-1">Create a brand-new moderator account, or hire an existing customer / operational account.</p>
+                    </div>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body d-flex flex-column gap-3">
+                    <div class="moderator-mode-tabs" role="tablist" aria-label="Provision mode">
+                        <button type="button" class="btn btn-neon js-moderator-mode" data-mode="create" aria-pressed="true">Create new account</button>
+                        <button type="button" class="btn btn-outline-secondary text-white-50 border-secondary border-opacity-25 js-moderator-mode" data-mode="hire" aria-pressed="false">Hire existing account</button>
+                    </div>
+
+                    <form id="createModeratorForm" action="moderator_action.php" method="POST">
+                        <input type="hidden" name="action" value="create">
+                        <div class="d-flex flex-column gap-3">
+                            <div>
+                                <label class="form-label text-white-50 small" for="newModeratorName">Username / Display Name <span class="text-danger">*</span></label>
+                                <input id="newModeratorName" type="text" name="user_name" class="form-control glass-input" placeholder="e.g. ei_thinzar" maxlength="225" autocomplete="username" required>
+                                <div class="moderator-modal-note mt-1">Maps to <code>users.user_name</code>.</div>
+                            </div>
+                            <div>
+                                <label class="form-label text-white-50 small" for="newModeratorEmail">Email Address <span class="text-danger">*</span></label>
+                                <input id="newModeratorEmail" type="email" name="email" class="form-control glass-input" placeholder="moderator@mapandpump.com" maxlength="255" autocomplete="email" required>
+                            </div>
+                            <div>
+                                <label class="form-label text-white-50 small" for="newModeratorRole">Database Role <span class="text-danger">*</span></label>
+                                <select id="newModeratorRole" class="form-select glass-select" name="role_id" required <?= !$roles ? 'disabled' : '' ?>>
+                                    <option value="">Select a role</option>
+                                    <?php foreach ($roles as $role): ?>
+                                        <option value="<?= (int) $role['role_id'] ?>" <?= (string) $role['role_id'] === $defaultRoleId ? 'selected' : '' ?>><?= hq_escape(moderator_role_label($role['role_name'])) ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                                <div class="moderator-modal-note mt-1">Only Admin and Moderator roles are offered here.</div>
+                            </div>
+                            <div class="row g-3">
+                                <div class="col-12 col-md-6">
+                                    <label class="form-label text-white-50 small" for="newModeratorPassword">Password <span class="text-danger">*</span></label>
+                                    <input id="newModeratorPassword" type="password" name="password" class="form-control glass-input" minlength="8" maxlength="255" autocomplete="new-password" required>
+                                </div>
+                                <div class="col-12 col-md-6">
+                                    <label class="form-label text-white-50 small" for="newModeratorConfirm">Confirm Password <span class="text-danger">*</span></label>
+                                    <input id="newModeratorConfirm" type="password" name="confirm_password" class="form-control glass-input" minlength="8" maxlength="255" autocomplete="new-password" required>
+                                </div>
+                            </div>
+                            <div class="moderator-modal-note"><i class="bi bi-info-circle txt-neon-cyan me-1"></i><code>status</code> is set to <strong>approved</strong> when the account is created.</div>
+                        </div>
+                        <div class="d-flex justify-content-end gap-2 mt-4">
+                            <button type="button" class="btn btn-outline-secondary rounded-3 text-white-50 border-secondary border-opacity-20" data-bs-dismiss="modal">Cancel</button>
+                            <button type="submit" class="btn btn-neon" <?= !$roles ? 'disabled' : '' ?>>Provision Access</button>
+                        </div>
+                    </form>
+
+                    <form id="hireModeratorForm" action="moderator_action.php" method="POST" class="d-none" novalidate>
+                        <input type="hidden" name="action" value="hire_existing">
+                        <input type="hidden" name="target_user_id" id="hireTargetUserId" value="">
+                        <div class="d-flex flex-column gap-3">
+                            <div class="moderator-search-wrap">
+                                <label class="form-label text-white-50 small" for="hireAccountSearch">Search by name or email <span class="text-danger">*</span></label>
+                                <input id="hireAccountSearch" type="search" class="form-control glass-input" placeholder="Type at least 2 characters…" autocomplete="off" aria-autocomplete="list" aria-controls="hireSearchResults">
+                                <div id="hireSearchResults" class="moderator-search-results" role="listbox"></div>
+                                <div id="hireSelectedChip" class="moderator-selected-chip" aria-live="polite">
+                                    <i class="bi bi-person-check txt-neon-cyan"></i>
+                                    <span id="hireSelectedLabel">No account selected</span>
+                                    <button type="button" class="btn btn-sm btn-link text-white-50 ms-auto p-0 js-clear-hire-target" aria-label="Clear selected account">Clear</button>
+                                </div>
+                                <div class="moderator-modal-note mt-1">Existing Admin/Moderator accounts are excluded. Matching users appear in the dropdown as you type.</div>
+                            </div>
+                            <div>
+                                <label class="form-label text-white-50 small" for="hireModeratorRole">Offered role <span class="text-danger">*</span></label>
+                                <select id="hireModeratorRole" class="form-select glass-select" name="role_id" required <?= !$roles ? 'disabled' : '' ?>>
+                                    <option value="">Select a role</option>
+                                    <?php foreach ($roles as $role): ?>
+                                        <option value="<?= (int) $role['role_id'] ?>" <?= (string) $role['role_id'] === $defaultRoleId ? 'selected' : '' ?>><?= hq_escape(moderator_role_label($role['role_name'])) ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="form-label text-white-50 small" for="hireMessage">Hire message <span class="text-danger">*</span></label>
+                                <textarea id="hireMessage" name="hire_message" class="form-control glass-input" rows="4" maxlength="2000" placeholder="Explain why they are being invited and what access they will receive." required></textarea>
+                                <div class="moderator-modal-note mt-1">Saved in the database and shown as a popup the next time that account signs in.</div>
+                            </div>
+                        </div>
+                        <div class="d-flex justify-content-end gap-2 mt-4">
+                            <button type="button" class="btn btn-outline-secondary rounded-3 text-white-50 border-secondary border-opacity-20" data-bs-dismiss="modal">Cancel</button>
+                            <button type="submit" class="btn btn-neon" id="hireSubmitBtn" <?= !$roles ? 'disabled' : '' ?>>Provision Access</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <div class="modal fade glass-modal" id="editAdminModal" tabindex="-1" aria-labelledby="editAdminModalLabel" aria-hidden="true"><div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-lg"><div class="modal-content"><div class="modal-header"><h5 class="modal-title fw-bold" id="editAdminModalLabel"><i class="bi bi-pencil-square txt-neon-cyan me-2"></i> Edit Moderator</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button></div><form action="moderator_action.php" method="POST"><input type="hidden" name="action" value="update_profile"><input type="hidden" name="user_id" id="editModeratorId"><div class="modal-body d-flex flex-column gap-3"><div><label class="form-label text-white-50 small" for="editModeratorName">Username / Display Name <span class="text-danger">*</span></label><input id="editModeratorName" type="text" name="user_name" class="form-control glass-input" maxlength="225" required></div><div><label class="form-label text-white-50 small" for="editModeratorEmail">Email Address <span class="text-danger">*</span></label><input id="editModeratorEmail" type="email" name="email" class="form-control glass-input" maxlength="255" required></div><div><label class="form-label text-white-50 small" for="editModeratorRole">Database Role <span class="text-danger">*</span></label><select id="editModeratorRole" class="form-select glass-select" name="role_id" required><?php foreach ($roles as $role): ?><option value="<?= (int) $role['role_id'] ?>"><?= hq_escape(moderator_role_label($role['role_name'])) ?></option><?php endforeach; ?></select></div><div class="row g-3"><div class="col-12 col-md-6"><label class="form-label text-white-50 small" for="editModeratorPassword">New Password</label><input id="editModeratorPassword" type="password" name="password" class="form-control glass-input" minlength="8" maxlength="255" autocomplete="new-password"><div class="moderator-modal-note mt-1">Leave blank to keep the current password.</div></div><div class="col-12 col-md-6"><label class="form-label text-white-50 small" for="editModeratorConfirm">Confirm New Password</label><input id="editModeratorConfirm" type="password" name="confirm_password" class="form-control glass-input" minlength="8" maxlength="255" autocomplete="new-password"></div></div></div><div class="modal-footer"><button type="button" class="btn btn-outline-secondary rounded-3 text-white-50 border-secondary border-opacity-20" data-bs-dismiss="modal">Cancel</button><button type="submit" class="btn btn-neon">Save Changes</button></div></form></div></div></div>
 
@@ -258,6 +380,133 @@ $flashType = (string) ($flash['type'] ?? '');
             const currentStatus = String(button.dataset.status || '').toLowerCase();
             document.getElementById('statusModeratorValue').value = ['approved', 'suspended', 'removed'].includes(currentStatus) ? currentStatus : 'approved';
         });
+
+        (function initModeratorProvisionModes() {
+            const createForm = document.getElementById('createModeratorForm');
+            const hireForm = document.getElementById('hireModeratorForm');
+            const modeButtons = document.querySelectorAll('.js-moderator-mode');
+            const searchInput = document.getElementById('hireAccountSearch');
+            const resultsBox = document.getElementById('hireSearchResults');
+            const targetInput = document.getElementById('hireTargetUserId');
+            const selectedChip = document.getElementById('hireSelectedChip');
+            const selectedLabel = document.getElementById('hireSelectedLabel');
+            let searchTimer = null;
+            let lastQuery = '';
+
+            function setMode(mode) {
+                const isHire = mode === 'hire';
+                createForm?.classList.toggle('d-none', isHire);
+                hireForm?.classList.toggle('d-none', !isHire);
+                modeButtons.forEach((btn) => {
+                    const active = btn.dataset.mode === mode;
+                    btn.classList.toggle('btn-neon', active);
+                    btn.classList.toggle('btn-outline-secondary', !active);
+                    btn.classList.toggle('text-white-50', !active);
+                    btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+                });
+            }
+
+            function clearHireTarget() {
+                if (targetInput) targetInput.value = '';
+                if (selectedLabel) selectedLabel.textContent = 'No account selected';
+                selectedChip?.classList.remove('show');
+            }
+
+            function selectHireTarget(user) {
+                if (!user || !targetInput) return;
+                targetInput.value = String(user.user_id || '');
+                if (selectedLabel) {
+                    selectedLabel.textContent = `${user.user_name || 'User'} · ${user.email || ''} (${user.role_name || 'role'})`;
+                }
+                selectedChip?.classList.add('show');
+                if (searchInput) searchInput.value = user.email || user.user_name || '';
+                resultsBox?.classList.remove('show');
+                if (resultsBox) resultsBox.innerHTML = '';
+            }
+
+            function renderResults(results) {
+                if (!resultsBox) return;
+                resultsBox.innerHTML = '';
+                if (!Array.isArray(results) || results.length === 0) {
+                    resultsBox.innerHTML = '<div class="moderator-search-item"><small>No matching accounts</small></div>';
+                    resultsBox.classList.add('show');
+                    return;
+                }
+                results.forEach((row) => {
+                    const button = document.createElement('button');
+                    button.type = 'button';
+                    button.className = 'moderator-search-item';
+                    button.setAttribute('role', 'option');
+                    button.innerHTML = `<div class="fw-semibold">${String(row.user_name || '').replace(/</g, '&lt;')}</div><small>${String(row.email || '').replace(/</g, '&lt;')} · ${String(row.role_name || '').replace(/</g, '&lt;')}</small>`;
+                    button.addEventListener('click', () => selectHireTarget(row));
+                    resultsBox.appendChild(button);
+                });
+                resultsBox.classList.add('show');
+            }
+
+            async function runSearch(query) {
+                if (query.length < 2) {
+                    resultsBox?.classList.remove('show');
+                    if (resultsBox) resultsBox.innerHTML = '';
+                    return;
+                }
+                try {
+                    const response = await fetch(`moderator_user_search.php?q=${encodeURIComponent(query)}`, {
+                        headers: { 'Accept': 'application/json' },
+                        credentials: 'same-origin',
+                    });
+                    const payload = await response.json();
+                    if (!payload || !payload.ok) {
+                        renderResults([]);
+                        return;
+                    }
+                    renderResults(payload.results || []);
+                } catch (error) {
+                    renderResults([]);
+                }
+            }
+
+            modeButtons.forEach((btn) => {
+                btn.addEventListener('click', () => setMode(btn.dataset.mode || 'create'));
+            });
+
+            document.querySelector('.js-clear-hire-target')?.addEventListener('click', () => {
+                clearHireTarget();
+                if (searchInput) searchInput.value = '';
+            });
+
+            searchInput?.addEventListener('input', () => {
+                const query = searchInput.value.trim();
+                if (query !== lastQuery) {
+                    clearHireTarget();
+                }
+                lastQuery = query;
+                window.clearTimeout(searchTimer);
+                searchTimer = window.setTimeout(() => runSearch(query), 250);
+            });
+
+            searchInput?.addEventListener('focus', () => {
+                if ((resultsBox?.children?.length || 0) > 0) {
+                    resultsBox.classList.add('show');
+                }
+            });
+
+            document.addEventListener('click', (event) => {
+                if (!resultsBox || !searchInput) return;
+                if (event.target === searchInput || resultsBox.contains(event.target)) return;
+                resultsBox.classList.remove('show');
+            });
+
+            hireForm?.addEventListener('submit', (event) => {
+                if (!targetInput?.value) {
+                    event.preventDefault();
+                    alert('Select an existing account from the search dropdown before provisioning access.');
+                    searchInput?.focus();
+                }
+            });
+
+            setMode('create');
+        })();
     </script>
 </body>
 </html>

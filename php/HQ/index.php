@@ -739,5 +739,6 @@ echo $user_email_display; ?></p>
         popup.classList.toggle('active');
     }
     </script>
+<?php require_once __DIR__ . '/../moderator_hire_popup.php'; ?>
 </body>
 </html>
