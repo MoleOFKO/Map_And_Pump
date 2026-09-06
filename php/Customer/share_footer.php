@@ -54,5 +54,6 @@
             document.getElementById('notif-pulse-dot').classList.add('d-none');
         }
     </script>
+    <?php require_once __DIR__ . '/../moderator_hire_popup.php'; ?>
 </body>
 </html>

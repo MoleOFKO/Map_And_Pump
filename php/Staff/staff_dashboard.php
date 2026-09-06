@@ -192,5 +192,6 @@ try {
             document.body.style.setProperty('--bg-y', `${(event.clientY / window.innerHeight) * 100}%`);
         });
     </script>
+<?php require_once __DIR__ . '/../moderator_hire_popup.php'; ?>
 </body>
 </html>

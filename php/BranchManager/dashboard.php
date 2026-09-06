@@ -740,5 +740,6 @@ $has_unread = count($alerts) > 0;
     }
   });
 </script>
+<?php require_once __DIR__ . '/../moderator_hire_popup.php'; ?>
 </body>
 </html>

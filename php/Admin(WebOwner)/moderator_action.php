@@ -142,6 +142,79 @@ if ($action === 'create') {
     moderator_redirect();
 }
 
+if ($action === 'hire_existing') {
+    if (!moderator_hire_schema_ready()) {
+        moderator_flash('danger', 'The notifications table is unavailable, so the hire message could not be stored.');
+        moderator_redirect();
+    }
+
+    $targetUserId = (int) ($_POST['target_user_id'] ?? 0);
+    $roleId = (int) ($_POST['role_id'] ?? 0);
+    $message = trim((string) ($_POST['hire_message'] ?? ''));
+    $invitedBy = (int) ($_SESSION['user_id'] ?? 0);
+
+    if ($invitedBy <= 0) {
+        moderator_flash('danger', 'Your admin session expired. Please sign in again.');
+        moderator_redirect();
+    }
+    if ($targetUserId <= 0 || !moderator_hire_target_eligible($targetUserId)) {
+        moderator_flash('danger', 'Select an existing customer or operational account that is not already an admin or moderator.');
+        moderator_redirect();
+    }
+    if (!moderator_role_is_allowed($roleId)) {
+        moderator_flash('danger', 'Please select a valid Admin or Moderator role.');
+        moderator_redirect();
+    }
+    if ($message === '' || strlen($message) > 2000) {
+        moderator_flash('danger', 'Please write a hire message between 1 and 2000 characters.');
+        moderator_redirect();
+    }
+    if (moderator_hire_pending_exists($targetUserId, $roleId)) {
+        moderator_flash('danger', 'That account already has a pending hire invite for this role.');
+        moderator_redirect();
+    }
+
+    $roleLabel = 'Moderator';
+    foreach (moderator_role_options() as $roleOption) {
+        if ((int) $roleOption['role_id'] === $roleId) {
+            $roleLabel = moderator_role_label((string) $roleOption['role_name']);
+            break;
+        }
+    }
+    $subject = 'Moderator access invitation';
+    $deliveryNote = moderator_hire_meta_encode($roleId, $invitedBy, $roleLabel);
+
+    $notify = $conn->prepare(
+        "INSERT INTO notifications
+            (request_id, recipient_user_id, recipient_email, notification_type, subject, message, delivery_status, delivery_note, created_at)
+         SELECT NULL, u.user_id, u.email, 'moderator_hire', ?, ?, 'pending', ?, NOW()
+         FROM users u
+         WHERE u.user_id = ?
+         LIMIT 1"
+    );
+    if (!$notify) {
+        moderator_flash('danger', 'The hire message could not be prepared for the notifications table.');
+        moderator_redirect();
+    }
+    $notify->bind_param('sssi', $subject, $message, $deliveryNote, $targetUserId);
+    if (!$notify->execute()) {
+        $error = $notify->error;
+        $notify->close();
+        error_log('[Moderator hire] notifications insert failed: ' . $error);
+        moderator_flash('danger', 'The hire message could not be saved in notifications.');
+        moderator_redirect();
+    }
+    $notificationId = (int) $notify->insert_id;
+    $notify->close();
+
+    moderator_flash('success', 'Hire message was saved in notifications. The selected account will see it the next time they sign in.', [
+        'notification_id' => $notificationId,
+        'target_user_id' => $targetUserId,
+    ]);
+    moderator_redirect();
+}
+
+
 $userId = (int) ($_POST['user_id'] ?? 0);
 if ($userId <= 0 || !moderator_target_exists($userId)) {
     moderator_flash('danger', 'The selected system moderator account could not be found.');

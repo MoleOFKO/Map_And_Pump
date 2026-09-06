@@ -9,6 +9,7 @@ require_once __DIR__ . '/../conn.php';
 require_once __DIR__ . '/../Customer/license_access.php';
 require_once __DIR__ . '/../Customer/car_access.php';
 require_once __DIR__ . '/../role_state.php';
+require_once __DIR__ . '/../moderator_hire_helpers.php';
 
 function auth_redirect_to_login(string $message = 'Please sign in to continue.', string $prefillEmail = '')
 {
@@ -111,6 +112,10 @@ try {
     }
 
     map_pump_set_remembered_email((string) $user['email'], $remember);
+
+    // Load pending moderator hire invites so destination pages can show a popup.
+    $pendingHires = moderator_hire_pending_for_user_pdo($pdo, (int) $user['user_id']);
+    moderator_hire_store_pending_in_session($pendingHires);
 
     header('Location: ' . $destination);
     exit;
