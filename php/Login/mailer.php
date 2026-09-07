@@ -3,7 +3,6 @@
 require_once __DIR__ . '/../../vendor/autoload.php';
 
 use PHPMailer\PHPMailer\PHPMailer;
-use PHPMailer\PHPMailer\SMTP;
 use PHPMailer\PHPMailer\Exception;
 
 function mail_load_local_env(): void
@@ -61,13 +60,13 @@ function mail_from_address(): string
 {
     return mail_config_value(
         'MAIL_FROM_EMAIL',
-        mail_config_value('RESEND_FROM_EMAIL', mail_config_value('SMTP_FROM_EMAIL', mail_config_value('SMTP_USERNAME')))
+        mail_config_value('SMTP_FROM_EMAIL', mail_config_value('SMTP_USERNAME'))
     );
 }
 
 function mail_from_name(): string
 {
-    return mail_config_value('MAIL_FROM_NAME', mail_config_value('RESEND_FROM_NAME', mail_config_value('SMTP_FROM_NAME', 'Map&Pump')));
+    return mail_config_value('MAIL_FROM_NAME', mail_config_value('SMTP_FROM_NAME', 'Map&Pump'));
 }
 
 function mail_formatted_from(): string
@@ -82,106 +81,10 @@ function mail_formatted_from(): string
     return $fromName !== '' ? sprintf('%s <%s>', $fromName, $fromEmail) : $fromEmail;
 }
 
-function mail_resend_from_address(): string
-{
-    return mail_config_value('RESEND_FROM_EMAIL', mail_config_value('MAIL_FROM_EMAIL', mail_config_value('SMTP_FROM_EMAIL', mail_config_value('SMTP_USERNAME'))));
-}
-
-function mail_resend_formatted_from(): string
-{
-    $fromEmail = mail_resend_from_address();
-    $fromName = trim(mail_config_value('RESEND_FROM_NAME', mail_from_name()));
-
-    if ($fromEmail === '') {
-        return '';
-    }
-
-    return $fromName !== '' ? sprintf('%s <%s>', $fromName, $fromEmail) : $fromEmail;
-}
-
 function mail_text_from_html(string $htmlBody): string
 {
     $text = str_replace(['<br>', '<br/>', '<br />'], "\n", $htmlBody);
     return trim(html_entity_decode(strip_tags($text), ENT_QUOTES | ENT_HTML5, 'UTF-8'));
-}
-
-function resend_send_mail(string $to, string $subject, string $htmlBody, string $textBody = ''): void
-{
-    $apiKey = mail_config_value('RESEND_API_KEY');
-    $from = mail_resend_formatted_from();
-    $fromEmail = mail_resend_from_address();
-
-    if ($apiKey === '' || $from === '') {
-        throw new RuntimeException('Resend email is not configured. Set RESEND_API_KEY and RESEND_FROM_EMAIL. The sender must be verified in Resend.');
-    }
-
-    if (!filter_var($fromEmail, FILTER_VALIDATE_EMAIL)) {
-        throw new RuntimeException('Resend sender email is invalid. Set RESEND_FROM_EMAIL to a verified email address or domain sender.');
-    }
-
-    $payload = [
-        'from' => $from,
-        'to' => [$to],
-        'subject' => $subject,
-        'html' => $htmlBody,
-        'text' => $textBody !== '' ? $textBody : mail_text_from_html($htmlBody),
-    ];
-    $payloadJson = json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
-
-    if ($payloadJson === false) {
-        throw new RuntimeException('Could not encode the Resend email payload.');
-    }
-
-    $headers = [
-        'Authorization: Bearer ' . $apiKey,
-        'Content-Type: application/json',
-        'Accept: application/json',
-        'User-Agent: MapAndPump/1.0',
-    ];
-
-    if (function_exists('curl_init')) {
-        $ch = curl_init('https://api.resend.com/emails');
-        curl_setopt_array($ch, [
-            CURLOPT_POST => true,
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_HTTPHEADER => $headers,
-            CURLOPT_POSTFIELDS => $payloadJson,
-            CURLOPT_TIMEOUT => 20,
-        ]);
-
-        $response = curl_exec($ch);
-        $curlError = curl_error($ch);
-        $statusCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        curl_close($ch);
-
-        if ($response === false) {
-            throw new RuntimeException('Resend API request failed: ' . ($curlError ?: 'Unknown cURL error.'));
-        }
-    } else {
-        $context = stream_context_create([
-            'http' => [
-                'method' => 'POST',
-                'header' => implode("\r\n", $headers),
-                'content' => $payloadJson,
-                'timeout' => 20,
-                'ignore_errors' => true,
-            ],
-        ]);
-        $response = file_get_contents('https://api.resend.com/emails', false, $context);
-        $statusLine = $http_response_header[0] ?? '';
-        $statusCode = preg_match('/\s(\d{3})\s/', $statusLine, $matches) ? (int) $matches[1] : 0;
-
-        if ($response === false) {
-            $lastError = error_get_last();
-            throw new RuntimeException('Resend API request failed: ' . ($lastError['message'] ?? 'Unknown HTTP error.'));
-        }
-    }
-
-    if ($statusCode < 200 || $statusCode >= 300) {
-        $decoded = json_decode((string) $response, true);
-        $message = is_array($decoded) ? (string) ($decoded['message'] ?? $decoded['error'] ?? $response) : (string) $response;
-        throw new RuntimeException('Resend API returned HTTP ' . $statusCode . ': ' . $message);
-    }
 }
 
 function smtp_send_mail_via_phpmailer(string $to, string $subject, string $htmlBody, string $textBody = ''): void
@@ -254,17 +157,6 @@ function smtp_send_mail_via_phpmailer(string $to, string $subject, string $htmlB
 
 function smtp_send_mail(string $to, string $subject, string $htmlBody, string $textBody = ''): void
 {
-    $provider = strtolower(mail_config_value('MAIL_PROVIDER', 'auto'));
-
-    if ($provider === 'resend' || ($provider === 'auto' && mail_config_value('RESEND_API_KEY') !== '')) {
-        resend_send_mail($to, $subject, $htmlBody, $textBody);
-        return;
-    }
-
-    if ($provider !== 'auto' && $provider !== 'smtp') {
-        throw new RuntimeException('Unsupported mail provider "' . $provider . '". Use "resend", "smtp", or "auto".');
-    }
-
     smtp_send_mail_via_phpmailer($to, $subject, $htmlBody, $textBody);
 }
 
