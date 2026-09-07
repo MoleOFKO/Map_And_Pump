@@ -10,7 +10,7 @@ $user = admin_current_user(true);
 $flash = admin_pull_flash();
 $statusLabel = static function (?string $status): string {
     return match (strtolower(trim((string) $status))) {
-        'approved', 'active' => 'Active',
+        'approved', 'active' => 'Approved',
         'pending', 'pending_verification' => 'Pending',
         'suspended' => 'Suspended',
         'removed' => 'Revoked',

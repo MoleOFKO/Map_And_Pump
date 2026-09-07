@@ -80,8 +80,7 @@ function hq_redirect(string $location = 'view_hq_and_user_account.php'): never
 function hq_status_label(?string $status): string
 {
     return match (strtolower(trim((string) $status))) {
-        'active' => 'Active',
-        'approved' => 'Approved',
+        'active', 'approved' => 'Approved',
         'suspended' => 'Suspended',
         'removed' => 'Removed',
         'rejected' => 'Rejected',
@@ -342,7 +341,7 @@ function hq_manageable_status_sql(string $column): string
 
 function hq_manageable_statuses(): array
 {
-    return ['active', 'approved', 'suspended', 'removed'];
+    return ['approved', 'suspended', 'removed'];
 }
 
 function hq_unique_username(string $ownerName, string $email): string

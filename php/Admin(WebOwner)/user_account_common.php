@@ -28,9 +28,13 @@ function customer_account_rows(string $search = '', string $status = ''): array
     }
 
     if ($status !== '') {
-        $where[] = 'LOWER(u.status) = ?';
-        $params[] = strtolower($status);
-        $types .= 's';
+        if (strtolower($status) === 'approved') {
+            $where[] = "LOWER(u.status) IN ('approved', 'active')";
+        } else {
+            $where[] = 'LOWER(u.status) = ?';
+            $params[] = strtolower($status);
+            $types .= 's';
+        }
     }
 
     $sql = <<<'SQL'

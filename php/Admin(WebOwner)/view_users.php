@@ -64,7 +64,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const date = value => value ? new Date(String(value).replace(' ', 'T')).toLocaleString() : 'Not available';
 
     const statusClass = (status) => ({active:'hq-status-active', approved:'hq-status-active', suspended:'hq-status-suspended', removed:'hq-status-removed'}[String(status || '').toLowerCase()] || 'hq-status-pending');
-    const statusLabel = (status) => ({active:'Active', approved:'Approved', suspended:'Suspended', removed:'Removed', pending:'Pending', pending_verification:'Pending Verification'}[String(status || '').toLowerCase()] || (status ? String(status) : 'Unknown'));
+    const statusLabel = (status) => ({active:'Approved', approved:'Approved', suspended:'Suspended', removed:'Removed', pending:'Pending', pending_verification:'Pending Verification'}[String(status || '').toLowerCase()] || (status ? String(status) : 'Unknown'));
     const card = (label, value) =>
         '<div class="p-3 rounded-3 h-100" style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);">' +
         '<div class="mod-detail-label">' + label + '</div>' +
@@ -159,4 +159,3 @@ document.addEventListener('DOMContentLoaded', () => {
 </script>
 </body>
 </html>
-

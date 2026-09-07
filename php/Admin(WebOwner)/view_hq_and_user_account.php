@@ -47,9 +47,13 @@ if (hq_db_available() && hq_registry_schema_ready()) {
        }
 
        if ($status !== '') {
-           $where[] = 'LOWER(COALESCE(owner.status, \'pending\')) = ?';
-           $params[] = $status;
-           $types .= 's';
+           if ($status === 'approved') {
+               $where[] = "LOWER(COALESCE(owner.status, 'pending')) IN ('approved', 'active')";
+           } else {
+               $where[] = 'LOWER(COALESCE(owner.status, \'pending\')) = ?';
+               $params[] = $status;
+               $types .= 's';
+           }
        }
 
        $sql = "SELECT
@@ -372,7 +376,8 @@ $flashContext = $flash['context'] ?? [];
             const escapeHtml = (value) => String(value ?? '').replace(/[&<>'"]/g, (character) => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#039;','"':'&quot;'}[character]));
             const formatDate = (value) => value ? new Date(String(value).replace(' ', 'T')).toLocaleString() : 'Not available';
             const statusClass = (status) => ({active:'hq-status-active', approved:'hq-status-active', suspended:'hq-status-suspended', removed:'hq-status-removed'}[String(status || '').toLowerCase()] || 'hq-status-pending');
-            const statusLabel = (status) => ({active:'Active', approved:'Approved', suspended:'Suspended', removed:'Removed', pending:'Pending Verification', pending_verification:'Pending Verification', decommissioned:'Decommissioned'}[String(status || '').toLowerCase()] || (status ? String(status) : 'Unknown'));
+            const statusLabel = (status) => ({active:'Approved', approved:'Approved', suspended:'Suspended', removed:'Removed', pending:'Pending Verification', pending_verification:'Pending Verification'}[String(status || '').toLowerCase()] || (status ? String(status) : 'Unknown'));
+            const stationStatusLabel = (status) => ({active:'Active', approved:'Active', decommissioned:'Decommissioned', suspended:'Suspended', removed:'Removed', offline:'Offline'}[String(status || '').toLowerCase()] || (status ? String(status) : 'Unknown'));
 
             actionType.addEventListener('change', () => {
                 const remove = actionType.value === 'remove';
@@ -436,7 +441,7 @@ $flashContext = $flash['context'] ?? [];
                         '<td><div class="fw-semibold text-white">' + escapeHtml(station.station_name || '—') + '</div><div class="text-white-50 small">ID ' + escapeHtml(station.station_id || '') + '</div></td>' +
                         '<td class="text-white-50">' + escapeHtml(station.location || '—') + '</td>' +
                         '<td class="text-white-50">' + escapeHtml(station.manager_name || '—') + '</td>' +
-                        '<td><span class="hq-status ' + statusClass(station.status) + '">' + escapeHtml(statusLabel(station.status)) + '</span></td>' +
+                        '<td><span class="hq-status ' + statusClass(station.status) + '">' + escapeHtml(stationStatusLabel(station.status)) + '</span></td>' +
                         '<td class="text-white-50 small">' + escapeHtml(formatDate(station.created_at)) + '</td>' +
                         '</tr>').join('')
                     : emptyRow(5, 'No stations are linked to this HQ.');

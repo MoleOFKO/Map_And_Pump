@@ -147,7 +147,7 @@ function moderator_role_class(?string $roleName): string
 function moderator_status_label(?string $status): string
 {
     return match (strtolower(trim((string) $status))) {
-        'approved', 'active' => 'Active',
+        'approved', 'active' => 'Approved',
         'pending', 'pending_verification' => 'Pending',
         'suspended' => 'Suspended',
         'removed' => 'Revoked',
