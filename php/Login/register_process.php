@@ -63,30 +63,25 @@ function register_local_mail_fallback_enabled(): bool
         && filter_var($configured, FILTER_VALIDATE_BOOLEAN);
 }
 
+function register_is_render_request(): bool
+{
+    if (filter_var(mail_config_value('RENDER', 'false'), FILTER_VALIDATE_BOOLEAN)) {
+        return true;
+    }
+
+    $host = strtolower((string) ($_SERVER['HTTP_HOST'] ?? $_SERVER['SERVER_NAME'] ?? ''));
+    $host = preg_replace('/:\d+$/', '', $host) ?? $host;
+
+    return str_ends_with($host, '.onrender.com');
+}
+
 function register_mail_setup_message(Throwable $error): string
 {
     $message = strtolower($error->getMessage());
     $username = mail_config_value('SMTP_USERNAME');
     $password = mail_config_value('SMTP_PASSWORD');
-    $provider = strtolower(mail_config_value('MAIL_PROVIDER', 'auto'));
 
-    if ($provider === 'resend' || str_contains($message, 'resend')) {
-        if (mail_config_value('RESEND_API_KEY') === '') {
-            return 'Resend is selected, but RESEND_API_KEY is missing in Render. Add your new Resend API key, then redeploy.';
-        }
-
-        if (mail_config_value('RESEND_FROM_EMAIL') === '') {
-            return 'Resend is selected, but RESEND_FROM_EMAIL is missing in Render. Use an address on your verified domain, for example noreply@map-and-pump.online.';
-        }
-
-        if (str_contains($message, 'not verified') || str_contains($message, 'domain') || str_contains($message, 'sender') || str_contains($message, 'from')) {
-            return 'Resend rejected the sender email. Verify map-and-pump.online in Resend DNS, then set RESEND_FROM_EMAIL to an address on that exact verified domain, for example noreply@map-and-pump.online.';
-        }
-
-        return 'Resend email is not configured correctly. Check RESEND_API_KEY, RESEND_FROM_EMAIL, and the verified domain in Resend, then redeploy.';
-    }
-
-    if (($provider === 'smtp' || $provider === 'auto') && (trim($username) === '' || trim($password) === '')) {
+    if (trim($username) === '' || trim($password) === '') {
         return 'Email is not configured on Render yet. Set SMTP_USERNAME to mapa.and.pump@gmail.com and set SMTP_PASSWORD to a Gmail App Password, then redeploy.';
     }
 
@@ -151,6 +146,14 @@ try {
         'expires_at' => time() + 600,
         'attempts' => 0,
     ];
+
+    if (register_is_render_request()) {
+        error_log(sprintf('[Map&Pump Render registration demo] Verification code for %s: %s', $email, $code));
+        register_json(true, 'Localhost mode: email could not be sent, so use this verification code: ' . $code, [
+            'dev_code' => $code,
+            'mail_warning' => 'Render mode: email sending is disabled.',
+        ]);
+    }
 
     try {
         send_registration_code($email, $code);
