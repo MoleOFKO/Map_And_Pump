@@ -120,7 +120,8 @@ try {
     <meta charset="UTF-8">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-    <link rel="stylesheet" href="../../css/HQstyle.css">
+    <script src="../../js/hq-theme.js"></script>
+<link rel="stylesheet" href="../../css/HQstyle.css">
     <style>
         .table-custom { background-color: transparent !important; color: #dee2e6; }
         .table-custom th { text-transform: uppercase; font-size: 0.74rem; letter-spacing: 0.05em; color: var(--slate-300); padding: 12px 16px; background: rgba(255, 255, 255, 0.05); border-bottom: 1px solid rgba(255, 255, 255, 0.08); }

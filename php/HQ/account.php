@@ -140,27 +140,11 @@ try {
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
+    <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
-    <link rel="stylesheet" href="../../css/HQstyle.css">
-    <style>
-        #accountRoleTabs .nav-link {
-            color: var(--slate-300) !important;
-            border-color: transparent;
-        }
+    <script src="../../js/hq-theme.js"></script>
+<link rel="stylesheet" href="../../css/HQstyle.css">
 
-        #accountRoleTabs .nav-link:hover {
-            color: var(--slate-50) !important;
-            border-color: rgba(56, 189, 248, 0.3);
-        }
-
-        #accountRoleTabs .nav-link.active {
-            color: #06111f !important;
-            background: var(--sky-400) !important;
-            border-color: var(--sky-400) var(--sky-400) transparent;
-            font-weight: 700;
-        }
-    </style>
 </head>
 <body>
     <div class="container">

@@ -31,7 +31,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     }
 }
 
-// Fetch National Fuel Pricing dynamically from the live station inventory
+// Fetch Station fuel prices dynamically from the live station inventory
 $fuelPrices = [];
 $dashboardStations = [];
 $latestInventorySql = map_pump_latest_station_inventory_sql();
@@ -95,13 +95,12 @@ $stations = $stationsStmt->fetchAll(PDO::FETCH_ASSOC);
 
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<script src="../../js/hq-theme.js"></script>
 <link rel="stylesheet" href="../../css/HQstyle.css">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600&display=swap" rel="stylesheet">
 
 <style>
-  body {
-    padding: 30px 32px 60px;
-  }
+
 
   .dashboard-grid {
     display: grid;
@@ -142,7 +141,7 @@ $stations = $stationsStmt->fetchAll(PDO::FETCH_ASSOC);
 
   td {
     padding: 12px 0;
-    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    border-top: 1px solid var(--border);
     font-size: 14px;
   }
 
@@ -150,20 +149,20 @@ $stations = $stationsStmt->fetchAll(PDO::FETCH_ASSOC);
     padding: 4px 8px;
     border-radius: 6px;
     font-size: 11px;
-    background: #064e3b;
-    color: #34d399;
+    background: #e4f4ed;
+    color: #146b4f;
   }
 
-  /* Custom styling for Bootstrap Modal to match HQ dark theme */
+  /* Modal styling shared with the HQ workspace. */
   .modal-content {
     background: linear-gradient(160deg, var(--navy-800, #101a30), var(--navy-900, #0b1220));
     color: var(--slate-50, #f8fafc);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    border: 1px solid var(--border);
     border-radius: 18px;
   }
 
   .modal-header, .modal-footer {
-    border-color: rgba(255, 255, 255, 0.08);
+    border-color: var(--border);
   }
 
   @media (max-width: 900px) {
@@ -178,8 +177,8 @@ $stations = $stationsStmt->fetchAll(PDO::FETCH_ASSOC);
 </style>
 </head>
 <body>
-  <h2 class="title">Headquarters Dashboard</h2>
-  <p class="subtitle">Monitor national pricing, reporting activity, and station health in one place.</p>
+  <h2 class="title">Network overview</h2>
+  <p class="subtitle">A clear view of your stations, fuel prices, and latest manager reports.</p>
 
   <?php
 if (!empty($updateMessage)): ?>
@@ -191,12 +190,19 @@ echo $updateMessage; ?>
   <?php
 endif; ?>
 
+  <div class="hq-eyebrow">Operations at a glance</div>
+  <div class="hq-metrics" aria-label="Station summary">
+    <a class="hq-metric" href="station.php" onclick="event.preventDefault(); navigateTo('station.php')"><i class="fa-solid fa-gas-pump" aria-hidden="true"></i><div><strong><?= count($stations) ?></strong><span>Total stations</span></div></a>
+    <a class="hq-metric" href="station.php" onclick="event.preventDefault(); navigateTo('station.php')"><i class="fa-solid fa-circle-check" aria-hidden="true"></i><div><strong><?= count(array_filter($stations, static fn($s) => ($s['status'] ?: 'Active') === 'Active')) ?></strong><span>Active stations</span></div></a>
+    <a class="hq-metric" href="station.php" onclick="event.preventDefault(); navigateTo('station.php')"><i class="fa-solid fa-wrench" aria-hidden="true"></i><div><strong><?= count(array_filter($stations, static fn($s) => $s['status'] === 'Maintenance')) ?></strong><span>Under maintenance</span></div></a>
+  </div>
+
   <div class="dashboard-grid">
-    <!-- National Fuel Pricing Card -->
+    <!-- Station fuel prices Card -->
     <div class="card card-clickable" onclick="navigateTo('pricing.php')">
       <div class="d-flex justify-content-between align-items-center mb-2">
-        <h3 class="mb-0">National Fuel Pricing</h3>
-        <span class="small text-info">Manage <i class="fa-solid fa-arrow-right ms-1"></i></span>
+        <h3 class="mb-0">Station fuel prices</h3>
+        <a class="small text-info" href="pricing.php" onclick="event.stopPropagation(); event.preventDefault(); navigateTo('pricing.php')">Manage <i class="fa-solid fa-arrow-right ms-1"></i></a>
       </div>
       <table>
         <thead><tr><th>Station</th><th>Type</th><th>Price (MMK)</th><th>Action</th></tr></thead>
@@ -222,18 +228,18 @@ echo htmlspecialchars($fuel['price_per_liter'], ENT_QUOTES); ?>')">Edit</button>
 endforeach; ?>
           <?php
 else: ?>
-            <tr><td colspan="3">No pricing records found.</td></tr>
+            <tr><td colspan="4">No pricing records found.</td></tr>
           <?php
 endif; ?>
         </tbody>
       </table>
     </div>
 
-    <!-- Recent Manager Reports Card -->
+    <!-- Latest manager reports Card -->
     <div class="card card-clickable" onclick="navigateTo('report_from_manager.php')">
       <div class="d-flex justify-content-between align-items-center mb-2">
-        <h3 class="mb-0">Recent Manager Reports</h3>
-        <span class="small text-info">View All <i class="fa-solid fa-arrow-right ms-1"></i></span>
+        <h3 class="mb-0">Latest manager reports</h3>
+        <a class="small text-info" href="report_from_manager.php" onclick="event.stopPropagation(); event.preventDefault(); navigateTo('report_from_manager.php')">View all <i class="fa-solid fa-arrow-right ms-1"></i></a>
       </div>
       <?php
 if (!empty($recentReports)): ?>
@@ -256,16 +262,16 @@ endforeach; ?>
         </table>
       <?php
 else: ?>
-        <p class="subtitle" style="margin-bottom: 0;">No urgent pending reports. Click to review logs.</p>
+        <p class="subtitle" style="margin-bottom: 0;">No manager reports yet. New reports will appear here.</p>
       <?php
 endif; ?>
     </div>
 
-    <!-- Live Station Monitor Card -->
+    <!-- Station network Card -->
     <div class="card card-full full-width card-clickable" onclick="navigateTo('station.php')">
       <div class="d-flex justify-content-between align-items-center mb-2">
-        <h3 class="mb-0">Live Station Monitor</h3>
-        <span class="small text-info">Manage Stations <i class="fa-solid fa-arrow-right ms-1"></i></span>
+        <h3 class="mb-0">Station network</h3>
+        <a class="small text-info" href="station.php" onclick="event.stopPropagation(); event.preventDefault(); navigateTo('station.php')">Manage stations <i class="fa-solid fa-arrow-right ms-1"></i></a>
       </div>
       <table>
         <thead><tr><th>Branch ID</th><th>Branch Name</th><th>Location</th><th>Status</th></tr></thead>
@@ -281,7 +287,7 @@ echo htmlspecialchars($station['station_id']); ?></td>
 echo htmlspecialchars($station['station_name']); ?></td>
                 <td><?php
 echo htmlspecialchars($station['location']); ?></td>
-                <td><span class="badge"><?php
+                <td><span class="badge <?= ($station['status'] ?? '') === 'Maintenance' ? 'bg-warning' : ((($station['status'] ?: 'Active') === 'Active') ? 'bg-success' : 'bg-secondary') ?>"><?php
 echo htmlspecialchars($station['status'] ?: 'Active'); ?></span></td>
               </tr>
             <?php

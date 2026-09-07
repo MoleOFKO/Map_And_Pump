@@ -168,7 +168,8 @@ $profileFallbackUrl = map_pump_profile_initial_svg($profileName, 'H');
 <head>
     <meta charset="UTF-8">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
-    <link rel="stylesheet" href="../../css/HQstyle.css">
+    <script src="../../js/hq-theme.js"></script>
+<link rel="stylesheet" href="../../css/HQstyle.css">
     <style>
         .update-modal-overlay {
             display: none;
@@ -240,7 +241,7 @@ $profileFallbackUrl = map_pump_profile_initial_svg($profileName, 'H');
             width: min(100%, 460px);
             padding: 28px 24px 24px;
             background: linear-gradient(160deg, var(--navy-800), var(--navy-900));
-            border: 1px solid rgba(255, 255, 255, 0.1);
+            border: 1px solid var(--border);
             border-radius: 18px;
             box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
         }

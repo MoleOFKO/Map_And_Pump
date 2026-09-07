@@ -118,7 +118,8 @@ try {
 <head>
     <meta charset="UTF-8">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
-    <link rel="stylesheet" href="../../css/HQstyle.css">
+    <script src="../../js/hq-theme.js"></script>
+<link rel="stylesheet" href="../../css/HQstyle.css">
     <style>
         .pricing-cards {
             display: grid;
@@ -134,7 +135,7 @@ try {
         .form-select {
             background-color: rgba(255, 255, 255, 0.04);
             color: var(--slate-50);
-            border: 1px solid rgba(255, 255, 255, 0.1);
+            border: 1px solid var(--border);
             border-radius: 12px;
             padding: 10px 12px;
             box-shadow: none;
@@ -174,14 +175,14 @@ try {
             font-size: 12px;
             padding: 0 0 12px;
             color: var(--slate-300);
-            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            border-bottom: 1px solid var(--border);
             text-transform: uppercase;
             letter-spacing: 0.05em;
         }
 
         .pricing-table td {
             padding: 12px 0;
-            border-top: 1px solid rgba(255, 255, 255, 0.08);
+            border-top: 1px solid var(--border);
             font-size: 14px;
             color: var(--slate-50);
             vertical-align: middle;
@@ -224,7 +225,7 @@ try {
             font-size: 0.8rem;
             pointer-events: none;
             white-space: nowrap;
-            background: rgba(15, 23, 42, 0.35);
+            background: var(--card-bg);
             padding-left: 8px;
         }
 
