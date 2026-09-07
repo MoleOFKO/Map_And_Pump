@@ -38,10 +38,15 @@ function moderator_redirect(string $location = 'manage_moderators.php'): never
 
 function moderator_schema_ready(): bool
 {
+    static $cached = null;
+    if ($cached !== null) {
+        return $cached;
+    }
+
     global $conn;
 
     if (!hq_db_available()) {
-        return false;
+        return $cached = false;
     }
 
     $requiredColumns = [
@@ -61,7 +66,7 @@ function moderator_schema_ready(): bool
 
     if (!$result) {
         error_log('[Moderator registry] Schema check failed: ' . $conn->error);
-        return false;
+        return $cached = false;
     }
 
     $available = [];
@@ -73,12 +78,12 @@ function moderator_schema_ready(): bool
         foreach ($columns as $column) {
             if (empty($available[$table][$column])) {
                 error_log(sprintf('[Moderator registry] Required schema column is missing: %s.%s', $table, $column));
-                return false;
+                return $cached = false;
             }
         }
     }
 
-    return true;
+    return $cached = true;
 }
 
 /**
@@ -142,7 +147,7 @@ function moderator_role_class(?string $roleName): string
 function moderator_status_label(?string $status): string
 {
     return match (strtolower(trim((string) $status))) {
-        'approved', 'active' => 'Active',
+        'approved', 'active' => 'Approved',
         'pending', 'pending_verification' => 'Pending',
         'suspended' => 'Suspended',
         'removed' => 'Revoked',
@@ -187,8 +192,10 @@ function moderator_hire_target_eligible(int $userId): bool
         "SELECT u.user_id
          FROM users u
          LEFT JOIN roles r ON r.role_id = u.role_id
+         LEFT JOIN roles br ON br.role_id = u.business_role_id
          WHERE u.user_id = ?
            AND LOWER(TRIM(COALESCE(r.role_name, ''))) NOT IN ('admin', 'moderator')
+           AND LOWER(TRIM(COALESCE(br.role_name, ''))) NOT IN ('admin', 'moderator')
          LIMIT 1"
     );
     if (!$statement) {

@@ -2,6 +2,7 @@
 require_once __DIR__ . '/hq_account_common.php';
 
 header('Content-Type: application/json; charset=utf-8');
+header('Cache-Control: no-store, no-cache, must-revalidate');
 
 $headquarterId = filter_var($_GET['id'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
 
@@ -71,7 +72,95 @@ if (hq_action_table_ready()) {
     }
 }
 
+// Linked user accounts for this HQ (any role under headquarter_id).
+$accounts = [];
+$accountQuery = $conn->prepare(
+    "SELECT u.user_id, u.user_name AS username, u.email, u.status, u.created_at,
+            COALESCE(br.role_name, r.role_name) AS role_name
+     FROM users u
+     LEFT JOIN roles r ON r.role_id = u.role_id
+     LEFT JOIN roles br ON br.role_id = u.business_role_id
+     WHERE u.headquarter_id = ?
+     ORDER BY u.created_at DESC, u.user_id DESC
+     LIMIT 100"
+);
+if ($accountQuery) {
+    $accountQuery->bind_param('i', $headquarterId);
+    if ($accountQuery->execute()) {
+        $result = $accountQuery->get_result();
+        while ($result && ($row = $result->fetch_assoc())) {
+            $accounts[] = [
+                'user_id' => (int) ($row['user_id'] ?? 0),
+                'username' => (string) ($row['username'] ?? ''),
+                'email' => (string) ($row['email'] ?? ''),
+                'status' => (string) ($row['status'] ?? ''),
+                'role_name' => (string) ($row['role_name'] ?? ''),
+                'created_at' => $row['created_at'] ?? null,
+            ];
+        }
+    }
+    $accountQuery->close();
+}
+
+// Stations linked via station_business_scope (preferred) or users under this HQ.
 $stations = [];
+$stationQuery = $conn->prepare(
+    "SELECT s.station_id, s.station_name, s.location, s.station_address, s.status, s.created_at,
+            s.business_user_id, manager.user_name AS manager_name
+     FROM stations s
+     INNER JOIN station_business_scope sbs ON sbs.station_id = s.station_id
+     LEFT JOIN users manager ON manager.user_id = s.business_user_id
+     WHERE sbs.headquarter_id = ?
+     ORDER BY s.station_name ASC, s.station_id ASC
+     LIMIT 100"
+);
+if ($stationQuery) {
+    $stationQuery->bind_param('i', $headquarterId);
+    if ($stationQuery->execute()) {
+        $result = $stationQuery->get_result();
+        while ($result && ($row = $result->fetch_assoc())) {
+            $stations[] = [
+                'station_id' => (int) ($row['station_id'] ?? 0),
+                'station_name' => (string) ($row['station_name'] ?? ''),
+                'location' => (string) (($row['station_address'] ?? '') !== '' ? $row['station_address'] : ($row['location'] ?? '')),
+                'status' => (string) ($row['status'] ?? ''),
+                'manager_name' => (string) ($row['manager_name'] ?? ''),
+                'created_at' => $row['created_at'] ?? null,
+            ];
+        }
+    }
+    $stationQuery->close();
+}
+
+// Fallback: stations owned by managers linked to this HQ.
+if (!$stations) {
+    $fallback = $conn->prepare(
+        "SELECT DISTINCT s.station_id, s.station_name, s.location, s.station_address, s.status, s.created_at,
+                s.business_user_id, manager.user_name AS manager_name
+         FROM stations s
+         INNER JOIN users manager ON manager.user_id = s.business_user_id
+         WHERE manager.headquarter_id = ?
+         ORDER BY s.station_name ASC, s.station_id ASC
+         LIMIT 100"
+    );
+    if ($fallback) {
+        $fallback->bind_param('i', $headquarterId);
+        if ($fallback->execute()) {
+            $result = $fallback->get_result();
+            while ($result && ($row = $result->fetch_assoc())) {
+                $stations[] = [
+                    'station_id' => (int) ($row['station_id'] ?? 0),
+                    'station_name' => (string) ($row['station_name'] ?? ''),
+                    'location' => (string) (($row['station_address'] ?? '') !== '' ? $row['station_address'] : ($row['location'] ?? '')),
+                    'status' => (string) ($row['status'] ?? ''),
+                    'manager_name' => (string) ($row['manager_name'] ?? ''),
+                    'created_at' => $row['created_at'] ?? null,
+                ];
+            }
+        }
+        $fallback->close();
+    }
+}
 
 echo json_encode([
     'success' => true,
@@ -88,6 +177,7 @@ echo json_encode([
         'owner_name' => $hq['owner_name'],
         'owner_email' => $hq['owner_email'],
     ],
+    'accounts' => $accounts,
     'stations' => $stations,
     'actions' => $actions,
-]);
+], JSON_UNESCAPED_UNICODE);
