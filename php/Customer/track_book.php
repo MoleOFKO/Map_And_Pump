@@ -3,24 +3,32 @@ include 'share_header.php';
 require_once __DIR__ . '/../business_scope.php';
 $availableOilQuota = max(0.0, (float) ($_SESSION['oil_remaining'] ?? (((float) ($_SESSION['oil_limit'] ?? 35.0)) - ((float) ($_SESSION['oil_used'] ?? 0.0)))));
 
-$stationCoordinateFallbacks = [
-    1 => [21.9588, 96.0891],
-    2 => [21.9800, 96.0836],
-    3 => [16.7792, 96.2033],
-    60003 => [16.8409, 96.2319],
-    60004 => [16.8964, 96.1691],
-    60005 => [16.8630, 96.2350],
-];
+function map_pump_station_coordinates(string $location): ?array
+{
+    if (!preg_match('/^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$/', $location, $matches)) {
+        return null;
+    }
+
+    $latitude = (float) $matches[1];
+    $longitude = (float) $matches[2];
+
+    if ($latitude < -90 || $latitude > 90 || $longitude < -180 || $longitude > 180) {
+        return null;
+    }
+
+    return [$latitude, $longitude];
+}
+
 $customerStationsData = [];
 try {
     $latestInventorySql = map_pump_latest_station_inventory_sql();
     $stationStmt = $pdo->query(
         "SELECT s.station_id, s.station_name, s.location, s.station_address,
-                GROUP_CONCAT(DISTINCT ot.oil_name ORDER BY ot.oil_name SEPARATOR '|') AS fuel_names
+                GROUP_CONCAT(DISTINCT CASE WHEN t.branch_id IS NOT NULL THEN ot.oil_name END ORDER BY ot.oil_name SEPARATOR '|') AS fuel_names
          FROM stations s
-         INNER JOIN ({$latestInventorySql}) soi ON soi.station_id = s.station_id AND soi.is_active = 1
-         INNER JOIN oil_types ot ON ot.oil_type_id = soi.oil_type_id
-         INNER JOIN tanks t ON t.branch_id = s.station_id
+         LEFT JOIN ({$latestInventorySql}) soi ON soi.station_id = s.station_id AND soi.is_active = 1
+         LEFT JOIN oil_types ot ON ot.oil_type_id = soi.oil_type_id
+         LEFT JOIN tanks t ON t.branch_id = s.station_id
             AND t.is_enabled = 1
             AND t.current_l > 0
             AND (
@@ -36,16 +44,13 @@ try {
     );
     foreach ($stationStmt->fetchAll(PDO::FETCH_ASSOC) as $stationRow) {
         $stationId = (int)($stationRow['station_id'] ?? 0);
-        $coords = $stationCoordinateFallbacks[$stationId] ?? [16.8409 + (($stationId % 9) * 0.012), 96.1735 + (($stationId % 7) * 0.011)];
         $location = trim((string)($stationRow['location'] ?? ''));
-        if (preg_match('/(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)/', $location, $matches)) {
-            $coords = [(float)$matches[1], (float)$matches[2]];
+        $coords = map_pump_station_coordinates($location);
+        if ($coords === null) {
+            continue;
         }
 
         $fuels = array_values(array_filter(array_map('trim', explode('|', (string)($stationRow['fuel_names'] ?? '')))));
-        if (!$fuels) {
-            continue;
-        }
 
         $customerStationsData[] = [
             'id' => $stationId,
@@ -54,6 +59,7 @@ try {
             'lat' => $coords[0],
             'lng' => $coords[1],
             'fuels' => $fuels,
+            'isBookable' => !empty($fuels),
             'logo' => '../../images/Logo.png',
         ];
     }
@@ -62,7 +68,7 @@ try {
 }
 ?>
 
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
 
 <section id="station-launch-card" class="dashboard-panel-card customer-map-launch-card">
     <div class="d-flex align-items-center justify-content-between flex-wrap gap-3">
@@ -344,7 +350,7 @@ body.customer-light-mode .customer-map-recenter-btn:hover {
     </section>
 </section>
 
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
     let mapInstance, customerMarker, routeLine, selectedStation;
     let customerLocation = [16.8409, 96.1735]; // Yangon fallback when location permission is unavailable.
@@ -365,9 +371,15 @@ body.customer-light-mode .customer-map-recenter-btn:hover {
             }).addTo(mapInstance);
             stationsData.forEach(station => {
                 const marker = L.marker([station.lat, station.lng]).addTo(mapInstance);
-                marker.bindTooltip(station.name, { direction: 'top' });
-                marker.on('click', () => selectStation(station.id));
+                marker.bindTooltip(station.name, { direction: 'top', offset: [0, -16] });
+                marker.bindPopup(createStationPopup(station));
+                if (station.isBookable) {
+                    marker.on('click', () => selectStation(station.id));
+                }
             });
+            if (stationsData.length && !autoSelectNearest && !preselectStationId) {
+                mapInstance.fitBounds(stationsData.map(station => [station.lat, station.lng]), { padding: [40, 40], maxZoom: 13 });
+            }
             locateCustomer(autoSelectNearest, preselectStationId);
         } else {
             if (preselectStationId) {
@@ -403,7 +415,7 @@ body.customer-light-mode .customer-map-recenter-btn:hover {
     function findNearestStation() {
         let nearest = null;
         let minDist = Infinity;
-        stationsData.forEach(station => {
+        stationsData.filter(station => station.isBookable).forEach(station => {
             const d = distanceKm(customerLocation[0], customerLocation[1], station.lat, station.lng);
             if (d < minDist) {
                 minDist = d;
@@ -414,7 +426,7 @@ body.customer-light-mode .customer-map-recenter-btn:hover {
     }
 
     function getTopNearestStations(limit) {
-        return stationsData
+        return stationsData.filter(station => station.isBookable)
             .map(station => ({
                 ...station,
                 distance: distanceKm(customerLocation[0], customerLocation[1], station.lat, station.lng)
@@ -454,18 +466,18 @@ body.customer-light-mode .customer-map-recenter-btn:hover {
     }
 
     function locateCustomer(autoSelectNearest, preselectStationId) {
-        const afterLocate = () => {
-            drawCustomerLocation(autoSelectNearest, preselectStationId);
+        const afterLocate = (focusCustomerLocation) => {
+            drawCustomerLocation(autoSelectNearest, preselectStationId, focusCustomerLocation);
             renderTop5Stations();
         };
         if (!navigator.geolocation) {
-            afterLocate();
+            afterLocate(false);
             return;
         }
         navigator.geolocation.getCurrentPosition(position => {
             customerLocation = [position.coords.latitude, position.coords.longitude];
-            afterLocate();
-        }, afterLocate, { enableHighAccuracy: true, timeout: 8000 });
+            afterLocate(true);
+        }, () => afterLocate(false), { enableHighAccuracy: true, timeout: 8000 });
     }
 
     function recenterCustomerLocation() {
@@ -485,7 +497,7 @@ body.customer-light-mode .customer-map-recenter-btn:hover {
         }, recenter, { enableHighAccuracy: true, timeout: 8000 });
     }
 
-    function drawCustomerLocation(autoSelectNearest, preselectStationId) {
+    function drawCustomerLocation(autoSelectNearest, preselectStationId, focusCustomerLocation) {
         if (!mapInstance) return;
         if (customerMarker) mapInstance.removeLayer(customerMarker);
         customerMarker = L.circleMarker(customerLocation, { radius: 9, color: '#fff', weight: 2, fillColor: '#00a8ff', fillOpacity: 1 }).addTo(mapInstance).bindTooltip('Your location');
@@ -495,7 +507,7 @@ body.customer-light-mode .customer-map-recenter-btn:hover {
             const nearest = findNearestStation();
             if (nearest) selectStation(nearest.id);
         } else {
-            if (!selectedStation) mapInstance.setView(customerLocation, 12);
+            if (!selectedStation && focusCustomerLocation) mapInstance.setView(customerLocation, 12);
             if (selectedStation) showRoute();
         }
     }
@@ -516,7 +528,7 @@ body.customer-light-mode .customer-map-recenter-btn:hover {
 
     function selectStation(stationId) {
         selectedStation = stationsData.find(station => Number(station.id) === Number(stationId));
-        if (!selectedStation) {
+        if (!selectedStation || !selectedStation.isBookable) {
             alert('This station is not available for booking. Please choose another station.');
             return;
         }
@@ -529,6 +541,24 @@ body.customer-light-mode .customer-map-recenter-btn:hover {
         document.getElementById('station-booking-form').classList.remove('d-none');
         showStationCard();
         showRoute();
+    }
+
+    function createStationPopup(station) {
+        const popup = document.createElement('div');
+        const name = document.createElement('strong');
+        const address = document.createElement('div');
+        const status = document.createElement('div');
+
+        name.textContent = station.name;
+        address.textContent = station.address;
+        status.textContent = station.isBookable ? 'Fuel available' : 'Fuel currently unavailable';
+        address.style.marginTop = '4px';
+        status.style.marginTop = '6px';
+        status.style.fontWeight = '600';
+        status.style.color = station.isBookable ? '#198754' : '#b45309';
+
+        popup.append(name, address, status);
+        return popup;
     }
 
     function showStationCard() {
