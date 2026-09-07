@@ -50,6 +50,7 @@ try {
 }
 
 $linkedBusinessRoleNameHeader = '';
+$pendingInvitation = null;
 try {
     $profileModeStmt = $pdo->prepare(
         'SELECT u.user_name, u.email, u.oauth_avatar_url, u.role_id, u.business_role_id,
@@ -81,6 +82,21 @@ try {
     $linkedBusinessRoleNameHeader = trim((string) ($profileModeRoles['business_role_name'] ?? ''));
 } catch (Throwable $e) {
     error_log('Failed to load customer account profile modes: ' . $e->getMessage());
+}
+
+try {
+    $invitationStmt = $pdo->prepare(
+        "SELECT i.invitation_id, i.business_role_id, h.company_name, s.station_name
+         FROM hq_account_invitations i
+         INNER JOIN headquarter h ON h.headquarter_id = i.headquarter_id
+         INNER JOIN stations s ON s.station_id = i.station_id
+         WHERE i.invited_user_id = ? AND i.status = 'pending'
+         ORDER BY i.created_at ASC LIMIT 1"
+    );
+    $invitationStmt->execute([(int)$_SESSION['user_id']]);
+    $pendingInvitation = $invitationStmt->fetch(PDO::FETCH_ASSOC) ?: null;
+} catch (Throwable $e) {
+    error_log('Failed to load HQ invitation: ' . $e->getMessage());
 }
 
 if ($currentPage !== 'license.php' && !$customerLicenseAccess['is_approved']) {
@@ -148,6 +164,22 @@ if ($currentPage == 'car_license.php') $viewTitle = "Car License Setup";
     </style>
 </head>
 <body>
+
+    <?php if ($pendingInvitation): ?>
+        <div class="modal fade" id="hqInvitationModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false" aria-labelledby="hqInvitationTitle" aria-hidden="true">
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content" style="background:#0a162c;color:#e8f3ff;border:1px solid rgba(13,110,253,.45);border-radius:18px;">
+                    <div class="modal-header border-0"><h5 class="modal-title" id="hqInvitationTitle"><i class="bi bi-building-check me-2 text-info"></i>Business invitation</h5></div>
+                    <div class="modal-body"><p><strong><?= htmlspecialchars((string)$pendingInvitation['company_name'], ENT_QUOTES, 'UTF-8') ?></strong> invited you as a <strong><?= (int)$pendingInvitation['business_role_id'] === 4 ? 'Branch Manager' : 'Staff' ?></strong> for <strong><?= htmlspecialchars((string)$pendingInvitation['station_name'], ENT_QUOTES, 'UTF-8') ?></strong>.</p><p class="text-warning mb-0">You must Accept or Decline this invitation before you can use this account.</p></div>
+                    <div class="modal-footer border-0">
+                        <form method="POST" action="respond_invitation.php"><input type="hidden" name="invitation_id" value="<?= (int)$pendingInvitation['invitation_id'] ?>"><input type="hidden" name="decision" value="decline"><button type="submit" class="btn btn-outline-danger">Decline</button></form>
+                        <form method="POST" action="respond_invitation.php"><input type="hidden" name="invitation_id" value="<?= (int)$pendingInvitation['invitation_id'] ?>"><input type="hidden" name="decision" value="accept"><button type="submit" class="btn btn-primary">Accept invitation</button></form>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <script>document.addEventListener('DOMContentLoaded',function(){new bootstrap.Modal(document.getElementById('hqInvitationModal'),{backdrop:'static',keyboard:false}).show();});</script>
+    <?php endif; ?>
 
     <aside class="sidebar-nav">
         <div>
