@@ -25,6 +25,7 @@ register_shutdown_function(function () {
 define('MAP_PUMP_JSON_RESPONSE', true);
 require_once __DIR__ . '/../conn.php';
 require_once __DIR__ . '/mailer.php';
+require_once __DIR__ . '/../role_state.php';
 
 function register_json(bool $ok, string $message, array $extra = []): never
 {
@@ -73,6 +74,14 @@ function register_is_render_request(): bool
     $host = preg_replace('/:\d+$/', '', $host) ?? $host;
 
     return str_ends_with($host, '.onrender.com');
+}
+
+function customer_role_id(PDO $pdo): int
+{
+    $stmt = $pdo->prepare("SELECT role_id FROM roles WHERE LOWER(role_name) = 'customer' LIMIT 1");
+    $stmt->execute();
+    $roleId = $stmt->fetchColumn();
+    return $roleId ? (int) $roleId : 6;
 }
 
 function register_mail_setup_message(Throwable $error): string
@@ -130,18 +139,50 @@ if (!preg_match('/[a-z]/', $password) || !preg_match('/[A-Z]/', $password) || !p
 }
 
 try {
-    $stmt = $pdo->prepare('SELECT user_id FROM users WHERE LOWER(email) = LOWER(?) LIMIT 1');
+    $stmt = $pdo->prepare('SELECT user_id, status FROM users WHERE LOWER(email) = LOWER(?) LIMIT 1');
     $stmt->execute([$email]);
+    $existingUser = $stmt->fetch(PDO::FETCH_ASSOC);
 
-    if ($stmt->fetchColumn()) {
+    if ($existingUser && strtolower((string) ($existingUser['status'] ?? '')) !== 'pending_verification') {
         register_json(false, 'That email is already registered. Please log in instead.');
+    }
+
+    $roleId = customer_role_id($pdo);
+    $passwordHash = password_hash($password, PASSWORD_DEFAULT);
+    $hasCurrentRole = map_pump_current_role_column_ready($pdo);
+    $userId = 0;
+
+    if ($existingUser) {
+        $userId = (int) $existingUser['user_id'];
+        $updateSql = $hasCurrentRole
+            ? 'UPDATE users SET user_name = ?, hashed_password = ?, role_id = ?, current_role_id = ?, status = ?, updated_at = NOW() WHERE user_id = ?'
+            : 'UPDATE users SET user_name = ?, hashed_password = ?, role_id = ?, status = ?, updated_at = NOW() WHERE user_id = ?';
+        $update = $pdo->prepare($updateSql);
+        $updateParams = [$username, $passwordHash, $roleId];
+        if ($hasCurrentRole) {
+            $updateParams[] = $roleId;
+        }
+        $updateParams[] = 'pending_verification';
+        $updateParams[] = $userId;
+        $update->execute($updateParams);
+    } else {
+        $insertSql = $hasCurrentRole
+            ? 'INSERT INTO users (user_name, email, hashed_password, role_id, current_role_id, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())'
+            : 'INSERT INTO users (user_name, email, hashed_password, role_id, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, NOW(), NOW())';
+        $insert = $pdo->prepare($insertSql);
+        $insertParams = [$username, $email, $passwordHash, $roleId];
+        if ($hasCurrentRole) {
+            $insertParams[] = $roleId;
+        }
+        $insertParams[] = 'pending_verification';
+        $insert->execute($insertParams);
+        $userId = (int) $pdo->lastInsertId();
     }
 
     $code = (string) random_int(1000, 9999);
     $_SESSION['pending_registration'] = [
-        'username' => $username,
+        'user_id' => $userId,
         'email' => $email,
-        'password_hash' => password_hash($password, PASSWORD_DEFAULT),
         'code_hash' => password_hash($code, PASSWORD_DEFAULT),
         'expires_at' => time() + 600,
         'attempts' => 0,

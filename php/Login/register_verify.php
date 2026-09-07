@@ -48,7 +48,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 
 $pending = $_SESSION['pending_registration'] ?? null;
-if (!is_array($pending)) {
+if (!is_array($pending) || empty($pending['user_id'])) {
     verify_json(false, 'Your verification session expired. Please register again.');
 }
 
@@ -75,45 +75,69 @@ if (!password_verify($code, (string) ($pending['code_hash'] ?? ''))) {
 }
 
 try {
-    $email = (string) $pending['email'];
-    $stmt = $pdo->prepare('SELECT user_id FROM users WHERE LOWER(email) = LOWER(?) LIMIT 1');
-    $stmt->execute([$email]);
+    $userId = (int) $pending['user_id'];
+    $email = (string) ($pending['email'] ?? '');
 
-    if ($stmt->fetchColumn()) {
+    $hasCurrentRole = map_pump_current_role_column_ready($pdo);
+    $currentRoleSelect = $hasCurrentRole ? 'current_role_id,' : 'NULL AS current_role_id,';
+    $stmt = $pdo->prepare(
+        "SELECT user_id, user_public_id, user_name, email, role_id, business_role_id,
+                license_id, headquarter_id, branch_id, {$currentRoleSelect} status
+         FROM users
+         WHERE user_id = ? AND LOWER(email) = LOWER(?)
+         LIMIT 1"
+    );
+    $stmt->execute([$userId, $email]);
+    $user = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    if (!$user) {
+        unset($_SESSION['pending_registration']);
+        verify_json(false, 'Your verification session expired. Please register again.');
+    }
+
+    if (strtolower((string) ($user['status'] ?? '')) !== 'pending_verification') {
         unset($_SESSION['pending_registration']);
         verify_json(false, 'That email is already registered. Please log in instead.');
     }
 
     $roleId = customer_role_id($pdo);
-    $hasCurrentRole = map_pump_current_role_column_ready($pdo);
-    $insertSql = $hasCurrentRole
-        ? 'INSERT INTO users (user_name, email, hashed_password, role_id, current_role_id, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())'
-        : 'INSERT INTO users (user_name, email, hashed_password, role_id, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, NOW(), NOW())';
-    $insert = $pdo->prepare($insertSql);
-    $insertParams = [
-        (string) $pending['username'],
-        $email,
-        (string) $pending['password_hash'],
-        $roleId,
-    ];
+    $updateSql = $hasCurrentRole
+        ? 'UPDATE users SET role_id = ?, current_role_id = ?, status = ?, updated_at = NOW() WHERE user_id = ?'
+        : 'UPDATE users SET role_id = ?, status = ?, updated_at = NOW() WHERE user_id = ?';
+    $update = $pdo->prepare($updateSql);
+    $updateParams = [$roleId];
     if ($hasCurrentRole) {
-        $insertParams[] = $roleId;
+        $updateParams[] = $roleId;
     }
-    $insertParams[] = 'active';
-    $insert->execute($insertParams);
-    $userId = (int) $pdo->lastInsertId();
+    $updateParams[] = 'active';
+    $updateParams[] = $userId;
+    $update->execute($updateParams);
+    $lastLoginUpdate = $pdo->prepare('UPDATE users SET last_login_at = NOW(), updated_at = NOW() WHERE user_id = ?');
+    $lastLoginUpdate->execute([$userId]);
 
     unset($_SESSION['pending_registration']);
     $_SESSION['is_logged_in'] = true;
     $_SESSION['user_id'] = $userId;
-    $_SESSION['user_name'] = (string) $pending['username'];
-    $_SESSION['user_email'] = $email;
+    $_SESSION['user_public_id'] = (string) ($user['user_public_id'] ?? '');
+    $_SESSION['user_name'] = (string) $user['user_name'];
+    $_SESSION['user_email'] = (string) $user['email'];
+    $_SESSION['user_status'] = 'active';
     $_SESSION['role_id'] = $roleId;
     $_SESSION['role_name'] = 'customer';
+    $_SESSION['current_role_id'] = $roleId;
+    $_SESSION['current_role_name'] = 'customer';
+    $_SESSION['business_role_id'] = (int) ($user['business_role_id'] ?? 0);
+    $_SESSION['business_role_name'] = '';
+    $_SESSION['headquarter_id'] = (int) ($user['headquarter_id'] ?? 0);
+    $_SESSION['branch_id'] = (int) ($user['branch_id'] ?? 0);
+    $_SESSION['license_id'] = (int) ($user['license_id'] ?? 0);
     $_SESSION['oil_limit'] = 35.0;
     $_SESSION['oil_used'] = 0.0;
     $_SESSION['oil_remaining'] = 35.0;
     $_SESSION['has_business'] = false;
+    $_SESSION['active_profile_mode'] = 'customer';
+    $_SESSION['remember_me'] = false;
+    $_SESSION['last_login_at'] = date('Y-m-d H:i:s');
     verify_json(true, 'Registration complete. Please add your driver license.', [
         'redirect' => '../Customer/license.php',
     ]);
