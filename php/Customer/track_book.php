@@ -359,7 +359,10 @@ body.customer-light-mode .customer-map-recenter-btn:hover {
         document.getElementById('map-experience').classList.remove('d-none');
         if (!mapInstance) {
             mapInstance = L.map('station-map', { scrollWheelZoom: false }).setView(customerLocation, 12);
-            L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', { attribution: '&copy; OpenStreetMap contributors &copy; CARTO', maxZoom: 20 }).addTo(mapInstance);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+                maxZoom: 19
+            }).addTo(mapInstance);
             stationsData.forEach(station => {
                 const marker = L.marker([station.lat, station.lng]).addTo(mapInstance);
                 marker.bindTooltip(station.name, { direction: 'top' });
@@ -604,5 +607,4 @@ body.customer-light-mode .customer-map-recenter-btn:hover {
 </script>
 
 <?php include 'share_footer.php'; ?>
-
 
