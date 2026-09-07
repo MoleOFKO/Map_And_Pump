@@ -40,7 +40,8 @@ try {
     <meta charset="UTF-8">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
-    <link rel="stylesheet" href="../../css/HQstyle.css">
+    <script src="../../js/hq-theme.js"></script>
+<link rel="stylesheet" href="../../css/HQstyle.css">
     <title>Manager Reports & Activity</title>
 </head>
 <body>
@@ -62,7 +63,7 @@ endif; ?>
             
             <?php
 if (empty($reports)): ?>
-                <div style="background: var(--bg); padding: 15px; border-radius: 6px; font-size: 0.9rem; color: #ffffff; text-align: center;">
+                <div style="background: var(--bg); padding: 15px; border-radius: 6px; font-size: 0.9rem; color: var(--slate-50); text-align: center;">
                     No pending daily station reports require evaluation.
                 </div>
             <?php
@@ -94,7 +95,7 @@ foreach ($reports as $rep): ?>
                                         <button onclick="toggleActions(this, <?= htmlspecialchars($rep['report_id']) ?>)" title="More Actions" style="border: none; background: none; color: #6c757d; cursor: pointer; font-size: 1.5rem; box-shadow: none; padding: 5px;">
                                             <i class="bi bi-three-dots-vertical"></i>
                                         </button>
-                                        <div class="action-menu" id="menu-<?= htmlspecialchars($rep['report_id']) ?>" style="display: none; position: absolute; background: #343a40; border: 1px solid #495057; border-radius: 5px; padding: 8px; min-width: 180px; z-index: 1000;">
+                                        <div class="action-menu" id="menu-<?= htmlspecialchars($rep['report_id']) ?>" style="display: none; position: absolute; background: var(--card-bg); border: 1px solid var(--border); border-radius: 5px; padding: 8px; min-width: 180px; z-index: 1000;">
                                             <button onclick="event.stopPropagation(); toggleReadStatus(this, <?= htmlspecialchars($rep['report_id']) ?>)" style="border: none; background: none; color: #0d6efd; cursor: pointer; width: 100%; text-align: left; padding: 8px; display: flex; align-items: center; gap: 10px;">
                                                 <i class="bi bi-envelope" style="font-size: 1rem;"></i> Mark as Read
                                             </button>
@@ -120,17 +121,17 @@ endif; ?>
             <h3>Recent Manager Activity</h3>
             <p class="subtitle" style="margin-bottom: 12px;">Audit trail of critical events occurring at active pumps.</p>
             
-            <ul style="list-style: none; padding-left: 0; font-family: monospace; font-size: 0.9rem; color: #ffffff;">
+            <ul style="list-style: none; padding-left: 0; font-family: monospace; font-size: 0.9rem; color: var(--slate-50);">
                 <?php
 if (empty($logs)): ?>
-                    <li style="border-bottom: 1px solid var(--border); padding: 8px 0; color: #ffffff;">
+                    <li style="border-bottom: 1px solid var(--border); padding: 8px 0; color: var(--slate-50);">
                         No manager activity has been recorded yet.
                     </li>
                 <?php
 else: ?>
                     <?php
 foreach ($logs as $log): ?>
-                        <li style="border-bottom: 1px solid var(--border); padding: 8px 0; color: #ffffff;">
+                        <li style="border-bottom: 1px solid var(--border); padding: 8px 0; color: var(--slate-50);">
                             [<?= htmlspecialchars($log['created_at']) ?>] USER <?= htmlspecialchars($log['user_name'] ?? 'Unknown Manager') ?>: <?= htmlspecialchars($log['action'] ?? 'No action detail') ?>
                         </li>
                     <?php
@@ -144,16 +145,16 @@ endif; ?>
     <!-- Detail Modal -->
     <div class="modal fade" id="detailModal" tabindex="-1" aria-labelledby="detailModalLabel" aria-hidden="true">
         <div class="modal-dialog modal-lg">
-            <div class="modal-content" style="background: var(--bg, #1e1e1e); border: 1px solid var(--border, #495057); color: #ffffff;">
+            <div class="modal-content" style="background: var(--bg, #1e1e1e); border: 1px solid var(--border, #495057); color: var(--slate-50);">
                 <div class="modal-header" style="border-bottom: 1px solid var(--border, #495057);">
-                    <h5 class="modal-title" id="detailModalLabel" style="color: #ffffff;">Report Details</h5>
+                    <h5 class="modal-title" id="detailModalLabel" style="color: var(--slate-50);">Report Details</h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
-                    <p style="color: #ffffff;"><strong>User:</strong> <span id="modalUser" style="color: #e9ecef;"></span></p>
-                    <p style="color: #ffffff;"><strong>Summary:</strong> <span id="modalSummary" style="color: #e9ecef;"></span></p>
-                    <p style="color: #ffffff;"><strong>Description:</strong></p>
-                    <p id="modalDescription" style="background: var(--bg, #2d2d2d); padding: 10px; border-radius: 5px; border: 1px solid var(--border, #495057); color: #e9ecef;"></p>
+                    <p style="color: var(--slate-50);"><strong>User:</strong> <span id="modalUser" style="color: var(--slate-300);"></span></p>
+                    <p style="color: var(--slate-50);"><strong>Summary:</strong> <span id="modalSummary" style="color: var(--slate-300);"></span></p>
+                    <p style="color: var(--slate-50);"><strong>Description:</strong></p>
+                    <p id="modalDescription" style="background: var(--bg, #2d2d2d); padding: 10px; border-radius: 5px; border: 1px solid var(--border, #495057); color: var(--slate-300);"></p>
                 </div>
                 <div class="modal-footer" style="border-top: 1px solid var(--border, #495057);">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
