@@ -24,26 +24,34 @@ $metrics = [
 ];
 $dbError = null;
 
+// Pure moderators (role_id) OR accounts hired via business_role_id.
+$moderatorRolePredicate = "(
+    LOWER(TRIM(COALESCE(r.role_name, ''))) IN ('admin', 'moderator')
+    OR LOWER(TRIM(COALESCE(br.role_name, ''))) IN ('admin', 'moderator')
+)";
+
 if (moderator_schema_ready()) {
     $roles = moderator_role_options();
     $where = [
         'u.headquarter_id IS NULL',
-        "LOWER(TRIM(r.role_name)) IN ('admin', 'moderator')",
+        $moderatorRolePredicate,
     ];
     $params = [];
     $types = '';
 
     if ($search !== '') {
-        $where[] = 'LOWER(u.user_name) LIKE ?';
+        $where[] = '(LOWER(u.user_name) LIKE ? OR LOWER(u.email) LIKE ?)';
         $searchLike = '%' . strtolower($search) . '%';
         $params[] = $searchLike;
-        $types .= 's';
+        $params[] = $searchLike;
+        $types .= 'ss';
     }
 
     if ($roleFilter > 0) {
-        $where[] = 'u.role_id = ?';
+        $where[] = '(u.role_id = ? OR u.business_role_id = ?)';
         $params[] = $roleFilter;
-        $types .= 'i';
+        $params[] = $roleFilter;
+        $types .= 'ii';
     }
 
     if ($statusFilter === 'active') {
@@ -62,9 +70,10 @@ if (moderator_schema_ready()) {
             COALESCE(SUM(CASE WHEN LOWER(u.status) = 'suspended' THEN 1 ELSE 0 END), 0) AS suspended,
             MAX(u.updated_at) AS last_sync
          FROM users u
-         JOIN roles r ON r.role_id = u.role_id
+         LEFT JOIN roles r ON r.role_id = u.role_id
+         LEFT JOIN roles br ON br.role_id = u.business_role_id
          WHERE u.headquarter_id IS NULL
-           AND LOWER(TRIM(r.role_name)) IN ('admin', 'moderator')"
+           AND $moderatorRolePredicate"
     );
     if ($metricQuery) {
         $metrics = array_merge($metrics, $metricQuery->fetch_assoc() ?: []);
@@ -78,12 +87,15 @@ if (moderator_schema_ready()) {
             u.user_name,
             u.email,
             u.role_id,
-            r.role_name,
+            u.business_role_id,
+            COALESCE(br.role_name, r.role_name) AS role_name,
+            COALESCE(u.business_role_id, u.role_id) AS display_role_id,
             u.status,
             u.created_at,
             u.updated_at
          FROM users u
-         JOIN roles r ON r.role_id = u.role_id
+         LEFT JOIN roles r ON r.role_id = u.role_id
+         LEFT JOIN roles br ON br.role_id = u.business_role_id
          WHERE $whereSql
          ORDER BY u.updated_at DESC, u.user_id DESC",
         $types,
@@ -152,6 +164,7 @@ $flashType = (string) ($flash['type'] ?? '');
         }
         .moderator-search-item:hover, .moderator-search-item:focus { background:rgba(0,244,255,.08); }
         .moderator-search-item small { color:rgba(255,255,255,.55); }
+        .moderator-search-item.is-loading, .moderator-search-item.is-error { pointer-events:none; }
         .moderator-selected-chip {
             display:none; align-items:center; gap:.6rem; margin-top:.65rem;
             padding:.55rem .8rem; border-radius:12px;
@@ -219,7 +232,7 @@ $flashType = (string) ($flash['type'] ?? '');
 
         <div class="row g-4">
             <div class="col-12"><div class="dashboard-card py-3 px-4"><form class="row g-3 align-items-center" method="GET" action="manage_moderators.php">
-                <div class="col-12 col-md-5"><div class="input-group"><span class="input-group-text bg-transparent border-end-0" style="border-color:var(--glass-border);color:var(--neon-cyan);border-radius:12px 0 0 12px;"><i class="bi bi-search"></i></span><input type="text" class="form-control glass-input border-start-0" placeholder="Search username or display name..." name="search" value="<?= hq_escape($search) ?>"></div></div>
+                <div class="col-12 col-md-5"><div class="input-group"><span class="input-group-text bg-transparent border-end-0" style="border-color:var(--glass-border);color:var(--neon-cyan);border-radius:12px 0 0 12px;"><i class="bi bi-search"></i></span><input type="text" class="form-control glass-input border-start-0" placeholder="Search username or email..." name="search" value="<?= hq_escape($search) ?>"></div></div>
                 <div class="col-12 col-md-3"><select class="form-select glass-select" name="role_id"><option value="0">All Roles</option><?php foreach ($roles as $role): ?><option value="<?= (int) $role['role_id'] ?>" <?= $roleFilter === (int) $role['role_id'] ? 'selected' : '' ?>><?= hq_escape(moderator_role_label($role['role_name'])) ?></option><?php endforeach; ?></select></div>
                 <div class="col-12 col-md-2"><select class="form-select glass-select" name="status"><option value="">All Statuses</option><?php foreach ($allowedStatuses as $option): ?><option value="<?= hq_escape($option) ?>" <?= $statusFilter === $option ? 'selected' : '' ?>><?= hq_escape(moderator_status_label($option)) ?></option><?php endforeach; ?></select></div>
                 <div class="col-12 col-md-2 d-grid"><button type="submit" class="btn btn-neon">Apply Filter</button></div>
@@ -230,7 +243,11 @@ $flashType = (string) ($flash['type'] ?? '');
                 <tr><td colspan="6" class="text-center text-white-50 py-5">No system administrator or moderator accounts match the current filters.</td></tr>
             <?php else: ?>
                 <?php foreach ($moderatorRows as $row): ?>
-                    <?php $status = (string) ($row['status'] ?? ''); $roleName = (string) ($row['role_name'] ?? ''); ?>
+                    <?php
+                    $status = (string) ($row['status'] ?? '');
+                    $roleName = (string) ($row['role_name'] ?? '');
+                    $displayRoleId = (int) ($row['display_role_id'] ?? $row['role_id'] ?? 0);
+                    ?>
                     <tr>
                         <td><div class="d-flex align-items-center gap-3"><div class="rounded-circle d-flex align-items-center justify-content-center text-white" style="width:42px;height:42px;background:rgba(0,244,255,.1);border:1px solid rgba(0,244,255,.3);flex-shrink:0;"><i class="bi bi-person-badge txt-neon-cyan"></i></div><div><div class="fw-semibold text-white"><?= hq_escape((string) $row['user_name']) ?></div><div class="text-white-50 small">User ID <?= (int) $row['user_id'] ?></div></div></div></td>
                         <td class="text-white-50"><?= hq_escape((string) $row['email']) ?></td>
@@ -238,7 +255,7 @@ $flashType = (string) ($flash['type'] ?? '');
                         <td class="text-white-50"><?= hq_escape(hq_date((string) ($row['updated_at'] ?? ''))) ?></td>
                         <td><span class="moderator-status <?= hq_escape(moderator_status_class($status)) ?>"><?= hq_escape(moderator_status_label($status)) ?></span></td>
                         <td class="text-end"><div class="d-flex gap-2 justify-content-end">
-                            <button type="button" class="btn-action js-edit-moderator" title="Modify Moderator" aria-label="Modify <?= hq_escape((string) $row['user_name']) ?>" data-bs-toggle="modal" data-bs-target="#editAdminModal" data-user-id="<?= (int) $row['user_id'] ?>" data-user-name="<?= hq_escape((string) $row['user_name']) ?>" data-email="<?= hq_escape((string) $row['email']) ?>" data-role-id="<?= (int) $row['role_id'] ?>"><i class="bi bi-pencil-fill"></i></button>
+                            <button type="button" class="btn-action js-edit-moderator" title="Modify Moderator" aria-label="Modify <?= hq_escape((string) $row['user_name']) ?>" data-bs-toggle="modal" data-bs-target="#editAdminModal" data-user-id="<?= (int) $row['user_id'] ?>" data-user-name="<?= hq_escape((string) $row['user_name']) ?>" data-email="<?= hq_escape((string) $row['email']) ?>" data-role-id="<?= $displayRoleId ?>"><i class="bi bi-pencil-fill"></i></button>
                             <button type="button" class="btn-action btn-action-danger js-status-moderator" title="Change Account Status" aria-label="Change status for <?= hq_escape((string) $row['user_name']) ?>" data-bs-toggle="modal" data-bs-target="#statusAdminModal" data-user-id="<?= (int) $row['user_id'] ?>" data-user-name="<?= hq_escape((string) $row['user_name']) ?>" data-status="<?= hq_escape($status) ?>"><i class="bi bi-person-x-fill"></i></button>
                         </div></td>
                     </tr>
@@ -392,6 +409,17 @@ $flashType = (string) ($flash['type'] ?? '');
             const selectedLabel = document.getElementById('hireSelectedLabel');
             let searchTimer = null;
             let lastQuery = '';
+            let searchAbort = null;
+            let searchSeq = 0;
+
+            function escapeHtml(value) {
+                return String(value ?? '')
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;')
+                    .replace(/'/g, '&#39;');
+            }
 
             function setMode(mode) {
                 const isHire = mode === 'hire';
@@ -424,12 +452,17 @@ $flashType = (string) ($flash['type'] ?? '');
                 if (resultsBox) resultsBox.innerHTML = '';
             }
 
+            function renderMessage(text, kind) {
+                if (!resultsBox) return;
+                resultsBox.innerHTML = `<div class="moderator-search-item ${kind || ''}"><small>${escapeHtml(text)}</small></div>`;
+                resultsBox.classList.add('show');
+            }
+
             function renderResults(results) {
                 if (!resultsBox) return;
                 resultsBox.innerHTML = '';
                 if (!Array.isArray(results) || results.length === 0) {
-                    resultsBox.innerHTML = '<div class="moderator-search-item"><small>No matching accounts</small></div>';
-                    resultsBox.classList.add('show');
+                    renderMessage('No matching accounts', 'is-error');
                     return;
                 }
                 results.forEach((row) => {
@@ -437,7 +470,7 @@ $flashType = (string) ($flash['type'] ?? '');
                     button.type = 'button';
                     button.className = 'moderator-search-item';
                     button.setAttribute('role', 'option');
-                    button.innerHTML = `<div class="fw-semibold">${String(row.user_name || '').replace(/</g, '&lt;')}</div><small>${String(row.email || '').replace(/</g, '&lt;')} · ${String(row.role_name || '').replace(/</g, '&lt;')}</small>`;
+                    button.innerHTML = `<div class="fw-semibold">${escapeHtml(row.user_name || '')}</div><small>${escapeHtml(row.email || '')} · ${escapeHtml(row.role_name || '')}</small>`;
                     button.addEventListener('click', () => selectHireTarget(row));
                     resultsBox.appendChild(button);
                 });
@@ -446,23 +479,56 @@ $flashType = (string) ($flash['type'] ?? '');
 
             async function runSearch(query) {
                 if (query.length < 2) {
+                    if (searchAbort) {
+                        searchAbort.abort();
+                        searchAbort = null;
+                    }
                     resultsBox?.classList.remove('show');
                     if (resultsBox) resultsBox.innerHTML = '';
                     return;
                 }
+
+                if (searchAbort) {
+                    searchAbort.abort();
+                }
+                const controller = new AbortController();
+                searchAbort = controller;
+                const seq = ++searchSeq;
+
+                renderMessage('Searching…', 'is-loading');
+
                 try {
-                    const response = await fetch(`moderator_user_search.php?q=${encodeURIComponent(query)}`, {
-                        headers: { 'Accept': 'application/json' },
-                        credentials: 'same-origin',
-                    });
-                    const payload = await response.json();
-                    if (!payload || !payload.ok) {
-                        renderResults([]);
+                    const response = await fetch(
+                        `moderator_user_search.php?q=${encodeURIComponent(query)}`,
+                        {
+                            headers: { 'Accept': 'application/json' },
+                            credentials: 'same-origin',
+                            signal: controller.signal,
+                            cache: 'no-store',
+                        }
+                    );
+                    if (seq !== searchSeq) return;
+
+                    let payload = null;
+                    try {
+                        payload = await response.json();
+                    } catch (parseError) {
+                        renderMessage('Search response was invalid. Try again.', 'is-error');
+                        return;
+                    }
+
+                    if (!response.ok || !payload || !payload.ok) {
+                        const msg = (payload && payload.message) ? payload.message : 'Search failed. Try again.';
+                        renderMessage(msg, 'is-error');
                         return;
                     }
                     renderResults(payload.results || []);
                 } catch (error) {
-                    renderResults([]);
+                    if (error && error.name === 'AbortError') {
+                        return;
+                    }
+                    if (seq !== searchSeq) return;
+                    renderMessage('Network error while searching. Try again.', 'is-error');
                 }
             }
 
@@ -473,6 +539,8 @@ $flashType = (string) ($flash['type'] ?? '');
             document.querySelector('.js-clear-hire-target')?.addEventListener('click', () => {
                 clearHireTarget();
                 if (searchInput) searchInput.value = '';
+                resultsBox?.classList.remove('show');
+                if (resultsBox) resultsBox.innerHTML = '';
             });
 
             searchInput?.addEventListener('input', () => {
@@ -482,7 +550,7 @@ $flashType = (string) ($flash['type'] ?? '');
                 }
                 lastQuery = query;
                 window.clearTimeout(searchTimer);
-                searchTimer = window.setTimeout(() => runSearch(query), 250);
+                searchTimer = window.setTimeout(() => runSearch(query), 280);
             });
 
             searchInput?.addEventListener('focus', () => {

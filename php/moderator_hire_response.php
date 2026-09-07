@@ -91,6 +91,8 @@ try {
         hire_response_redirect();
     }
 
+    // Hire existing accounts as moderator/admin via business_role_id so the
+    // original role_id (e.g. customer) is preserved and account switching works.
     $hasCurrentRole = function_exists('map_pump_current_role_column_ready')
         ? map_pump_current_role_column_ready($pdo)
         : false;
@@ -98,14 +100,14 @@ try {
     if ($hasCurrentRole) {
         $apply = $pdo->prepare(
             "UPDATE users
-             SET role_id = ?, current_role_id = ?, status = 'approved', updated_at = NOW()
+             SET business_role_id = ?, current_role_id = ?, status = 'approved', updated_at = NOW()
              WHERE user_id = ?"
         );
         $apply->execute([$roleId, $roleId, $userId]);
     } else {
         $apply = $pdo->prepare(
             "UPDATE users
-             SET role_id = ?, status = 'approved', updated_at = NOW()
+             SET business_role_id = ?, status = 'approved', updated_at = NOW()
              WHERE user_id = ?"
         );
         $apply->execute([$roleId, $userId]);
@@ -130,8 +132,10 @@ try {
     )->execute([$userId, $inviteId]);
 
     moderator_hire_remove_from_session($inviteId);
+    $_SESSION['business_role_id'] = $roleId;
     $_SESSION['role_id'] = $roleId;
     $_SESSION['role_name'] = (string) $role['role_name'];
+    $_SESSION['has_business'] = true;
     $_SESSION['moderator_hire_flash'] = 'Moderator access accepted. Your account role has been updated.';
 
     $roleName = strtolower(trim((string) $role['role_name']));

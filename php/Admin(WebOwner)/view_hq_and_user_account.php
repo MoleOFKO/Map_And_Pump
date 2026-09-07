@@ -371,10 +371,8 @@ $flashContext = $flash['context'] ?? [];
 
             const escapeHtml = (value) => String(value ?? '').replace(/[&<>'"]/g, (character) => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#039;','"':'&quot;'}[character]));
             const formatDate = (value) => value ? new Date(String(value).replace(' ', 'T')).toLocaleString() : 'Not available';
-            const statusClass = (status) => ({active:'hq-status-active', suspended:'hq-status-suspended', removed:'hq-status-removed'}[String(status || '').toLowerCase()] || 'hq-status-pending');
-            const statusLabel = (status) => ({active:'Active', approved:'Approved', suspended:'Suspended', removed:'Removed', pending:'Pending Verification', pending_verification:'Pending Verification'}[String(status || '').toLowerCase()] || 'Pending Verification');
-            const removeUserSections = () => { detailsBody.querySelectorAll('h6, .hq-detail-label').forEach((heading) => { if (/linked\s+user|linked\s+account/i.test(heading.textContent || '')) { heading.nextElementSibling?.remove(); heading.remove(); } }); };
-            new MutationObserver(removeUserSections).observe(detailsBody, {childList:true, subtree:true});
+            const statusClass = (status) => ({active:'hq-status-active', approved:'hq-status-active', suspended:'hq-status-suspended', removed:'hq-status-removed'}[String(status || '').toLowerCase()] || 'hq-status-pending');
+            const statusLabel = (status) => ({active:'Active', approved:'Approved', suspended:'Suspended', removed:'Removed', pending:'Pending Verification', pending_verification:'Pending Verification', decommissioned:'Decommissioned'}[String(status || '').toLowerCase()] || (status ? String(status) : 'Unknown'));
 
             actionType.addEventListener('change', () => {
                 const remove = actionType.value === 'remove';
@@ -394,38 +392,85 @@ $flashContext = $flash['context'] ?? [];
                 });
             });
 
+            const sectionTitle = (icon, title, count) =>
+                '<div class="d-flex align-items-center justify-content-between mb-2 mt-1">' +
+                '<h6 class="text-white fw-semibold mb-0"><i class="bi ' + icon + ' txt-neon-cyan me-2"></i>' + title + '</h6>' +
+                '<span class="badge rounded-pill" style="background:rgba(0,244,255,.12);color:#7eefff;border:1px solid rgba(0,244,255,.25);font-weight:600;">' + count + '</span></div>';
+
+            const emptyRow = (cols, message) =>
+                '<tr><td colspan="' + cols + '" class="text-center text-white-50 py-4"><i class="bi bi-inbox me-1"></i>' + escapeHtml(message) + '</td></tr>';
+
             const renderDetails = (payload) => {
                 const hq = payload.hq || {};
+                currentHQDetails = hq;
                 const accounts = payload.accounts || [];
                 const stations = payload.stations || [];
                 const actions = payload.actions || [];
                 detailsTitle.innerHTML = '<i class="bi bi-building txt-neon-cyan me-2"></i>' + escapeHtml(hq.company_name || 'HQ Details');
-                const accountRows = accounts.length ? accounts.map((account) => '<tr><td>' + escapeHtml(account.username || '—') + '</td><td>' + escapeHtml(account.email || '—') + '</td><td><span class="hq-status ' + statusClass(account.status) + '">' + escapeHtml(statusLabel(account.status)) + '</span></td><td>' + escapeHtml(formatDate(account.created_at)) + '</td></tr>').join('') : '<tr><td colspan="4" class="text-center text-white-50">No user accounts are linked.</td></tr>';
-                const stationRows = stations.length ? stations.map((station) => '<tr><td>' + escapeHtml(station.station_name || '—') + '</td><td>' + escapeHtml(station.location || '—') + '</td><td>' + escapeHtml(formatDate(station.created_at)) + '</td></tr>').join('') : '<tr><td colspan="3" class="text-center text-white-50">No station is linked in the current database schema.</td></tr>';
-                const actionRows = actions.length ? actions.map((action) => '<tr><td>' + escapeHtml(String(action.action_type || '').toUpperCase()) + '</td><td>' + escapeHtml(action.reason || '—') + '</td><td>' + escapeHtml(formatDate(action.created_at)) + '</td></tr>').join('') : '<tr><td colspan="3" class="text-center text-white-50">No suspend/remove history.</td></tr>';
-                detailsBody.innerHTML = '<div class="row g-3 mb-4"><div class="col-12 col-md-6"><div class="hq-detail-label">HQ location</div><div class="hq-detail-value">' + escapeHtml(hq.location || 'Not available') + '</div></div><div class="col-6 col-md-3"><div class="hq-detail-label">Contact</div><div class="hq-detail-value">' + escapeHtml(hq.contact_number || 'Not available') + '</div></div><div class="col-6 col-md-3"><div class="hq-detail-label">Registered</div><div class="hq-detail-value">' + escapeHtml(formatDate(hq.created_at)) + '</div></div></div><h6 class="text-white fw-semibold mb-2"><i class="bi bi-people-fill txt-neon-cyan me-2"></i>Linked user accounts</h6><div class="table-responsive mb-4"><table class="table hq-modal-table align-middle"><thead><tr><th>Username</th><th>Email</th><th>Status</th><th>Created</th></tr></thead><tbody>' + accountRows + '</tbody></table></div><h6 class="text-white fw-semibold mb-2"><i class="bi bi-fuel-pump-fill txt-neon-cyan me-2"></i>Linked stations</h6><div class="table-responsive mb-4"><table class="table hq-modal-table align-middle"><thead><tr><th>Station</th><th>Location</th><th>Created</th></tr></thead><tbody>' + stationRows + '</tbody></table></div><h6 class="text-white fw-semibold mb-2"><i class="bi bi-clock-history txt-neon-cyan me-2"></i>Account action history</h6><div class="table-responsive"><table class="table hq-modal-table align-middle"><thead><tr><th>Action</th><th>Reason</th><th>Recorded</th></tr></thead><tbody>' + actionRows + '</tbody></table></div>';
-            };
 
-            const renderDetailsHQOnly = (payload) => {
-                const hq = payload.hq || {};
-                currentHQDetails = hq;
-                const actions = payload.actions || [];
-                const actionRows = actions.length ? actions.map((action) => '<tr><td>' + escapeHtml(String(action.action_type || '').toUpperCase()) + '</td><td>' + escapeHtml(action.reason || '—') + '</td><td>' + escapeHtml(formatDate(action.created_at)) + '</td></tr>').join('') : '<tr><td colspan="3" class="text-center text-white-50">No HQ suspend/remove history.</td></tr>';
-                detailsTitle.innerHTML = '<i class="bi bi-building txt-neon-cyan me-2"></i>' + escapeHtml(hq.company_name || 'HQ Details');
-                detailsBody.innerHTML = '<div class="row g-3 mb-4"><div class="col-12"><div class="hq-detail-label">HQ location</div><div class="hq-detail-value">' + escapeHtml(hq.location || 'Not available') + '</div></div><div class="col-6 col-md-3"><div class="hq-detail-label">Contact</div><div class="hq-detail-value">' + escapeHtml(hq.contact_number || 'Not available') + '</div></div><div class="col-6 col-md-3"><div class="hq-detail-label">Email</div><div class="hq-detail-value">' + escapeHtml(hq.headquarter_email || 'Not available') + '</div></div><div class="col-6 col-md-3"><div class="hq-detail-label">Registered</div><div class="hq-detail-value">' + escapeHtml(formatDate(hq.created_at)) + '</div></div><div class="col-6 col-md-3"><div class="hq-detail-label">License expiry</div><div class="hq-detail-value">' + escapeHtml(formatDate(hq.expire_at)) + '</div></div></div><h6 class="text-white fw-semibold mb-2"><i class="bi bi-clock-history txt-neon-cyan me-2"></i>HQ action history</h6><div class="table-responsive"><table class="table hq-modal-table align-middle"><thead><tr><th>Action</th><th>Reason</th><th>Recorded</th></tr></thead><tbody>' + actionRows + '</tbody></table></div>';
+                const metaCards =
+                    '<div class="row g-3 mb-4">' +
+                    '<div class="col-12 col-md-6"><div class="p-3 rounded-3" style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);"><div class="hq-detail-label">HQ location</div><div class="hq-detail-value mt-1">' + escapeHtml(hq.location || 'Not available') + '</div></div></div>' +
+                    '<div class="col-6 col-md-3"><div class="p-3 rounded-3 h-100" style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);"><div class="hq-detail-label">Contact</div><div class="hq-detail-value mt-1">' + escapeHtml(hq.contact_number || '—') + '</div></div></div>' +
+                    '<div class="col-6 col-md-3"><div class="p-3 rounded-3 h-100" style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);"><div class="hq-detail-label">Email</div><div class="hq-detail-value mt-1 text-break">' + escapeHtml(hq.headquarter_email || '—') + '</div></div></div>' +
+                    '<div class="col-6 col-md-3"><div class="p-3 rounded-3 h-100" style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);"><div class="hq-detail-label">Owner</div><div class="hq-detail-value mt-1">' + escapeHtml(hq.owner_name || '—') + '</div></div></div>' +
+                    '<div class="col-6 col-md-3"><div class="p-3 rounded-3 h-100" style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);"><div class="hq-detail-label">Registered</div><div class="hq-detail-value mt-1">' + escapeHtml(formatDate(hq.created_at)) + '</div></div></div>' +
+                    '<div class="col-6 col-md-3"><div class="p-3 rounded-3 h-100" style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);"><div class="hq-detail-label">License expiry</div><div class="hq-detail-value mt-1">' + escapeHtml(formatDate(hq.expire_at)) + '</div></div></div>' +
+                    '<div class="col-6 col-md-3"><div class="p-3 rounded-3 h-100" style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);"><div class="hq-detail-label">Business license</div><div class="hq-detail-value mt-1 text-break">' + escapeHtml(hq.business_license || '—') + '</div></div></div>' +
+                    '</div>';
+
+                const accountRows = accounts.length
+                    ? accounts.map((account) =>
+                        '<tr>' +
+                        '<td><div class="fw-semibold text-white">' + escapeHtml(account.username || '—') + '</div><div class="text-white-50 small">ID ' + escapeHtml(account.user_id || '') + '</div></td>' +
+                        '<td class="text-white-50 text-break">' + escapeHtml(account.email || '—') + '</td>' +
+                        '<td class="text-white-50">' + escapeHtml(account.role_name || '—') + '</td>' +
+                        '<td><span class="hq-status ' + statusClass(account.status) + '">' + escapeHtml(statusLabel(account.status)) + '</span></td>' +
+                        '<td class="text-white-50 small">' + escapeHtml(formatDate(account.created_at)) + '</td>' +
+                        '</tr>').join('')
+                    : emptyRow(5, 'No user accounts are linked to this HQ.');
+
+                const stationRows = stations.length
+                    ? stations.map((station) =>
+                        '<tr>' +
+                        '<td><div class="fw-semibold text-white">' + escapeHtml(station.station_name || '—') + '</div><div class="text-white-50 small">ID ' + escapeHtml(station.station_id || '') + '</div></td>' +
+                        '<td class="text-white-50">' + escapeHtml(station.location || '—') + '</td>' +
+                        '<td class="text-white-50">' + escapeHtml(station.manager_name || '—') + '</td>' +
+                        '<td><span class="hq-status ' + statusClass(station.status) + '">' + escapeHtml(statusLabel(station.status)) + '</span></td>' +
+                        '<td class="text-white-50 small">' + escapeHtml(formatDate(station.created_at)) + '</td>' +
+                        '</tr>').join('')
+                    : emptyRow(5, 'No stations are linked to this HQ.');
+
+                const actionRows = actions.length
+                    ? actions.map((action) =>
+                        '<tr>' +
+                        '<td><span class="badge text-bg-dark border border-secondary border-opacity-25">' + escapeHtml(String(action.action_type || '').toUpperCase()) + '</span></td>' +
+                        '<td class="text-white-50">' + escapeHtml(action.reason || '—') + '</td>' +
+                        '<td class="text-white-50 small">' + escapeHtml(formatDate(action.created_at)) + '</td>' +
+                        '</tr>').join('')
+                    : emptyRow(3, 'No suspend/remove history.');
+
+                detailsBody.innerHTML =
+                    metaCards +
+                    sectionTitle('bi-people-fill', 'Linked user accounts', accounts.length) +
+                    '<div class="table-responsive mb-4"><table class="table hq-modal-table align-middle mb-0"><thead><tr><th>User</th><th>Email</th><th>Role</th><th>Status</th><th>Created</th></tr></thead><tbody>' + accountRows + '</tbody></table></div>' +
+                    sectionTitle('bi-fuel-pump-fill', 'Linked stations', stations.length) +
+                    '<div class="table-responsive mb-4"><table class="table hq-modal-table align-middle mb-0"><thead><tr><th>Station</th><th>Location</th><th>Manager</th><th>Status</th><th>Created</th></tr></thead><tbody>' + stationRows + '</tbody></table></div>' +
+                    sectionTitle('bi-clock-history', 'Account action history', actions.length) +
+                    '<div class="table-responsive"><table class="table hq-modal-table align-middle mb-0"><thead><tr><th>Action</th><th>Reason</th><th>Recorded</th></tr></thead><tbody>' + actionRows + '</tbody></table></div>';
             };
 
             document.querySelectorAll('.js-view-hq').forEach((button) => {
                 button.addEventListener('click', async (event) => {
                     event.preventDefault();
-                    detailsTitle.innerHTML = '<i class="bi bi-building txt-neon-cyan me-2"></i> HQ Details';
-                    detailsBody.innerHTML = '<div class="text-center text-white-50 py-5"><div class="spinner-border spinner-border-sm txt-neon-cyan mb-2" role="status"></div><div>Loading HQ details…</div></div>';
+                    detailsTitle.innerHTML = '<i class="bi bi-building txt-neon-cyan me-2"></i> Stations &amp; Users';
+                    detailsBody.innerHTML = '<div class="text-center text-white-50 py-5"><div class="spinner-border spinner-border-sm txt-neon-cyan mb-2" role="status"></div><div>Loading stations &amp; users…</div></div>';
                     detailsModal.show();
                     try {
-                        const response = await fetch('hq_details.php?id=' + encodeURIComponent(button.dataset.hqId), {headers: {Accept: 'application/json'}});
+                        const response = await fetch('hq_details.php?id=' + encodeURIComponent(button.dataset.hqId), {headers: {Accept: 'application/json'}, cache: 'no-store'});
                         const payload = await response.json();
                         if (!response.ok || !payload.success) throw new Error(payload.message || 'Could not load HQ details.');
-                        renderDetailsHQOnly(payload);
+                        renderDetails(payload);
                     } catch (error) {
                         detailsBody.innerHTML = '<div class="alert hq-flash alert-danger"><i class="bi bi-exclamation-triangle me-2"></i>' + escapeHtml(error.message) + '</div>';
                     }

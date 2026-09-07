@@ -63,19 +63,87 @@ document.addEventListener('DOMContentLoaded', () => {
     const esc = value => String(value ?? '').replace(/[&<>"']/g, character => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[character]));
     const date = value => value ? new Date(String(value).replace(' ', 'T')).toLocaleString() : 'Not available';
 
+    const statusClass = (status) => ({active:'hq-status-active', approved:'hq-status-active', suspended:'hq-status-suspended', removed:'hq-status-removed'}[String(status || '').toLowerCase()] || 'hq-status-pending');
+    const statusLabel = (status) => ({active:'Active', approved:'Approved', suspended:'Suspended', removed:'Removed', pending:'Pending', pending_verification:'Pending Verification'}[String(status || '').toLowerCase()] || (status ? String(status) : 'Unknown'));
+    const card = (label, value) =>
+        '<div class="p-3 rounded-3 h-100" style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);">' +
+        '<div class="mod-detail-label">' + label + '</div>' +
+        '<div class="mod-detail-value mt-1 text-break">' + value + '</div></div>';
+
     document.querySelectorAll('.js-view-user').forEach(button => button.addEventListener('click', async event => {
         event.preventDefault();
         if (!detailsModal) return;
         detailsBody.innerHTML = '<div class="text-center text-white-50 py-5"><span class="spinner-border spinner-border-sm me-2"></span>Loading user details...</div>';
         detailsModal.show();
         try {
-            const response = await fetch('user_details.php?id=' + encodeURIComponent(button.dataset.userId), { headers: { Accept: 'application/json' } });
+            const response = await fetch('user_details.php?id=' + encodeURIComponent(button.dataset.userId), { headers: { Accept: 'application/json' }, cache: 'no-store' });
             const payload = await response.json();
             if (!response.ok || !payload.success) throw new Error(payload.message || 'Unable to load user details.');
             const u = payload.user || {};
+            const license = payload.license || null;
+            const hq = payload.headquarter || null;
             const actions = payload.actions || [];
             currentUserDetails = u;
-            detailsBody.innerHTML = '<div class="row g-4"><div class="col-12 col-md-6"><div class="mod-detail-label">Username</div><div class="mod-detail-value mb-3">'+esc(u.user_name)+'</div><div class="mod-detail-label">Email</div><div class="mod-detail-value mb-3">'+esc(u.email)+'</div><div class="mod-detail-label">Headquarter</div><div class="mod-detail-value mb-3">'+esc(u.headquarter_name || 'No HQ linked')+'</div></div><div class="col-12 col-md-6"><div class="mod-detail-label">Role</div><div class="mod-detail-value mb-3">#'+esc(u.role_id)+' · '+esc(u.role_name || '')+'</div><div class="mod-detail-label">Status</div><div class="mod-detail-value mb-3">'+esc(u.status)+'</div><div class="mod-detail-label">Created / Updated</div><div class="mod-detail-value">'+esc(date(u.created_at))+' / '+esc(date(u.updated_at))+'</div></div><div class="col-12"><div class="mod-detail-label mb-2">Account Action History</div>'+(actions.length ? actions.map(a=>'<div class="border-top border-white border-opacity-10 py-2"><span class="text-danger">'+esc(a.action_type)+'</span> · '+esc(date(a.created_at))+'<br><span class="text-white-50">'+esc(a.reason)+'</span></div>').join('') : '<div class="text-white-50">No action history.</div>')+'</div></div>';
+
+            const profile =
+                '<div class="d-flex align-items-center gap-3 mb-4 pb-3 border-bottom border-white border-opacity-10">' +
+                '<div class="rounded-3 d-flex align-items-center justify-content-center fw-bold" style="width:52px;height:52px;background:rgba(0,244,255,.1);border:1px solid rgba(0,244,255,.28);color:var(--neon-cyan);font-size:1.1rem;">' +
+                esc(String(u.user_name || 'U').slice(0, 2).toUpperCase()) +
+                '</div><div><div class="fw-semibold text-white fs-5">' + esc(u.user_name || 'Unnamed user') + '</div>' +
+                '<div class="text-white-50 small">User ID ' + esc(u.user_id || '') + ' · <span class="hq-status ' + statusClass(u.status) + '">' + esc(statusLabel(u.status)) + '</span></div></div></div>';
+
+            const accountGrid =
+                '<div class="row g-3 mb-4">' +
+                '<div class="col-12 col-md-6">' + card('Email', esc(u.email || '—')) + '</div>' +
+                '<div class="col-12 col-md-6">' + card('Role', '#' + esc(u.role_id || '—') + ' · ' + esc(u.role_name || 'Unassigned')) + '</div>' +
+                '<div class="col-12 col-md-6">' + card('Headquarter', esc(u.headquarter_name || 'No HQ linked')) + '</div>' +
+                '<div class="col-6 col-md-3">' + card('Created', esc(date(u.created_at))) + '</div>' +
+                '<div class="col-6 col-md-3">' + card('Updated', esc(date(u.updated_at))) + '</div>' +
+                '<div class="col-12 col-md-6">' + card('Last login', esc(date(u.last_login_at))) + '</div>' +
+                '</div>';
+
+            let licenseBlock = '';
+            if (license) {
+                licenseBlock =
+                    '<div class="d-flex align-items-center justify-content-between mb-2"><h6 class="text-white fw-semibold mb-0"><i class="bi bi-card-heading txt-neon-cyan me-2"></i>License</h6></div>' +
+                    '<div class="row g-3 mb-4">' +
+                    '<div class="col-12 col-md-6">' + card('License name', esc(license.license_name || '—')) + '</div>' +
+                    '<div class="col-12 col-md-6">' + card('License number', esc(license.license_number || '—')) + '</div>' +
+                    '<div class="col-6 col-md-4">' + card('Phone', esc(license.phone_number || '—')) + '</div>' +
+                    '<div class="col-6 col-md-4">' + card('NRC', esc(license.nrc_number || '—')) + '</div>' +
+                    '<div class="col-6 col-md-4">' + card('Status', esc(license.status || '—')) + '</div>' +
+                    '<div class="col-6 col-md-4">' + card('Date of birth', esc(license.date_of_birth || '—')) + '</div>' +
+                    '<div class="col-6 col-md-4">' + card('Blood type', esc(license.blood_type || '—')) + '</div>' +
+                    '<div class="col-6 col-md-4">' + card('Valid until', esc(license.license_last_valid_date || '—')) + '</div>' +
+                    '</div>';
+            }
+
+            let hqBlock = '';
+            if (hq) {
+                hqBlock =
+                    '<div class="d-flex align-items-center justify-content-between mb-2"><h6 class="text-white fw-semibold mb-0"><i class="bi bi-building txt-neon-cyan me-2"></i>Linked HQ</h6></div>' +
+                    '<div class="row g-3 mb-4">' +
+                    '<div class="col-12 col-md-6">' + card('Company', esc(hq.company_name || '—')) + '</div>' +
+                    '<div class="col-12 col-md-6">' + card('Location', esc(hq.location || '—')) + '</div>' +
+                    '<div class="col-12 col-md-6">' + card('HQ email', esc(hq.headquarter_email || '—')) + '</div>' +
+                    '<div class="col-12 col-md-6">' + card('Contact', esc(hq.contact_number || '—')) + '</div>' +
+                    '</div>';
+            }
+
+            const history =
+                '<div class="d-flex align-items-center justify-content-between mb-2"><h6 class="text-white fw-semibold mb-0"><i class="bi bi-clock-history txt-neon-cyan me-2"></i>Account action history</h6>' +
+                '<span class="badge rounded-pill" style="background:rgba(0,244,255,.12);color:#7eefff;border:1px solid rgba(0,244,255,.25);">' + actions.length + '</span></div>' +
+                (actions.length
+                    ? '<div class="table-responsive"><table class="table hq-modal-table align-middle mb-0"><thead><tr><th>Action</th><th>Reason</th><th>When</th></tr></thead><tbody>' +
+                      actions.map(a =>
+                          '<tr><td><span class="badge text-bg-dark border border-secondary border-opacity-25">' + esc(String(a.action_type || '').toUpperCase()) + '</span></td>' +
+                          '<td class="text-white-50">' + esc(a.reason || '—') + '</td>' +
+                          '<td class="text-white-50 small">' + esc(date(a.created_at)) + '</td></tr>'
+                      ).join('') +
+                      '</tbody></table></div>'
+                    : '<div class="text-white-50 py-3"><i class="bi bi-inbox me-1"></i>No action history.</div>');
+
+            detailsBody.innerHTML = profile + accountGrid + licenseBlock + hqBlock + history;
         } catch (error) {
             detailsBody.innerHTML = '<div class="alert alert-danger">'+esc(error.message)+'</div>';
         }
