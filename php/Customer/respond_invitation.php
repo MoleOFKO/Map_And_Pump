@@ -4,6 +4,15 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
 }
 
 require_once __DIR__ . '/../conn.php';
+require_once __DIR__ . '/../hq_account_invitation_schema.php';
+
+try {
+    map_pump_ensure_hq_account_invitation_schema($pdo);
+} catch (Throwable $error) {
+    $_SESSION['customer_invitation_message'] = $error->getMessage();
+    header('Location: dashboard.php');
+    exit;
+}
 
 if (empty($_SESSION['user_id'])) {
     header('Location: ../Login/login.php');
@@ -35,8 +44,8 @@ try {
     }
 
     if ($decision === 'accept') {
-        $userUpdate = $pdo->prepare('UPDATE users SET business_role_id = ?, headquarter_id = ?, branch_id = ?, status = \'active\', updated_at = NOW() WHERE user_id = ?');
-        $userUpdate->execute([(int)$invitation['business_role_id'], (int)$invitation['headquarter_id'], (int)$invitation['station_id'], $userId]);
+        $userUpdate = $pdo->prepare('UPDATE users SET business_role_id = ?, headquarter_id = ?, branch_id = NULL, status = \'active\', updated_at = NOW() WHERE user_id = ?');
+        $userUpdate->execute([(int)$invitation['business_role_id'], (int)$invitation['headquarter_id'], $userId]);
         $scope = $pdo->prepare(
             "INSERT INTO business_account_scope
                 (user_id, business_role_id, headquarter_id, branch_manager_user_id, station_id, status)

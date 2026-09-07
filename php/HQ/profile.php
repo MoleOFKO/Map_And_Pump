@@ -331,7 +331,7 @@ $profileFallbackUrl = map_pump_profile_initial_svg($profileName, 'H');
                     <h3 class="mb-3">Account Interface Switcher</h3>
                     <p class="subtitle mb-4">Interlink your account proxy with downstream customer interface metrics.</p>
 
-                    <form action="../account_switch.php" method="POST">
+                    <form action="../account_switch.php" method="POST" target="_top">
                         <input type="hidden" name="mode" value="customer">
                         <button type="submit" class="btn btn-outline-primary w-100">Switch to Customer Profile</button>
                     </form>

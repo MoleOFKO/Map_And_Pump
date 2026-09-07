@@ -2,6 +2,7 @@
 require_once __DIR__ . '/hq_guard.php';
 require_once __DIR__ . '/../conn.php';
 require_once __DIR__ . '/../business_scope.php';
+require_once __DIR__ . '/../hq_account_invitation_schema.php';
 require_once __DIR__ . '/../Login/mailer.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
@@ -22,6 +23,8 @@ if ($hqId <= 0 || !filter_var($email, FILTER_VALIDATE_EMAIL) || $roleId <= 0 || 
 }
 
 try {
+    map_pump_ensure_hq_account_invitation_schema($pdo);
+
     $stationStmt = $pdo->prepare(
         'SELECT station_name, location FROM stations s
          INNER JOIN station_business_scope sbs ON sbs.station_id = s.station_id
@@ -36,8 +39,13 @@ try {
     $userStmt = $pdo->prepare(
         "SELECT u.user_id, u.user_name
          FROM users u
-         INNER JOIN roles r ON r.role_id = u.role_id
-         WHERE LOWER(u.email) = LOWER(?) AND LOWER(r.role_name) = 'customer'
+         LEFT JOIN roles primary_role ON primary_role.role_id = u.role_id
+         LEFT JOIN roles active_role ON active_role.role_id = u.current_role_id
+         WHERE LOWER(TRIM(u.email)) = LOWER(TRIM(?))
+           AND (
+               LOWER(TRIM(primary_role.role_name)) = 'customer'
+               OR LOWER(TRIM(active_role.role_name)) = 'customer'
+           )
          LIMIT 1"
     );
     $userStmt->execute([$email]);

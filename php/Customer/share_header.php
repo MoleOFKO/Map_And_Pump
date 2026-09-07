@@ -4,6 +4,7 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
 }
 
 require_once __DIR__ . '/../conn.php';
+require_once __DIR__ . '/../hq_account_invitation_schema.php';
 require_once __DIR__ . '/license_access.php';
 require_once __DIR__ . '/car_access.php';
 require_once __DIR__ . '/../profile_avatar.php';
@@ -52,6 +53,8 @@ try {
 $linkedBusinessRoleNameHeader = '';
 $pendingInvitation = null;
 try {
+    map_pump_ensure_hq_account_invitation_schema($pdo);
+
     $profileModeStmt = $pdo->prepare(
         'SELECT u.user_name, u.email, u.oauth_avatar_url, u.role_id, u.business_role_id,
                 primary_role.role_name AS primary_role_name,
@@ -178,7 +181,6 @@ if ($currentPage == 'car_license.php') $viewTitle = "Car License Setup";
                 </div>
             </div>
         </div>
-        <script>document.addEventListener('DOMContentLoaded',function(){new bootstrap.Modal(document.getElementById('hqInvitationModal'),{backdrop:'static',keyboard:false}).show();});</script>
     <?php endif; ?>
 
     <aside class="sidebar-nav">
