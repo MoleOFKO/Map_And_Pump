@@ -56,6 +56,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             $stmt = $pdo->prepare("UPDATE tanks SET current_l = :l WHERE tank_id = :t");
             $stmt->execute([':l' => $new_level, ':t' => $tank['tank_id']]);
+
+            $oilAliases = $fuelCodeToOilAliases[$fuel_code] ?? [];
+            $placeholders = implode(',', array_fill(0, count($oilAliases), '?'));
+            $oilStmt = $pdo->prepare("SELECT oil_type_id FROM oil_types WHERE LOWER(oil_name) IN ({$placeholders}) LIMIT 1");
+            $oilStmt->execute(array_map('strtolower', $oilAliases));
+            $oilTypeId = (int)($oilStmt->fetchColumn() ?: 0);
+            if ($oilTypeId <= 0) {
+                throw new RuntimeException('Fuel grade is missing in oil_types.');
+            }
+            map_pump_append_station_inventory_snapshot($pdo, $bid, $oilTypeId, (float)$new_level);
             $pdo->commit();
 
             log_activity($pdo, $bid, 'user', $user['user_id'], $user['full_name'],
@@ -98,8 +108,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $oilStmt->execute(array_map('strtolower', $oilAliases));
                 $oilTypeId = (int)($oilStmt->fetchColumn() ?: 0);
                 if ($oilTypeId > 0) {
-                    $invStmt = $pdo->prepare("UPDATE station_oil_inventory SET is_active = :e WHERE station_id = :s AND oil_type_id = :o");
-                    $invStmt->execute([':e' => $enabled, ':s' => $bid, ':o' => $oilTypeId]);
+                    $tankLevelStmt = $pdo->prepare("SELECT current_l FROM tanks WHERE tank_id = :t AND branch_id = :b LIMIT 1");
+                    $tankLevelStmt->execute([':t' => $tank_id, ':b' => $bid]);
+                    map_pump_append_station_inventory_snapshot($pdo, $bid, $oilTypeId, (float)($tankLevelStmt->fetchColumn() ?: 0), $enabled);
                 }
             }
             $pdo->commit();

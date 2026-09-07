@@ -6,6 +6,7 @@ require __DIR__ . '/../conn.php';
 require __DIR__ . '/../usage_history_schema.php';
 require_once __DIR__ . '/../Customer/car_access.php';
 require_once __DIR__ . '/../business_scope.php';
+require_once __DIR__ . '/../booking_rules.php';
 
 $bookingCode = '';
 $ajax = false;
@@ -29,11 +30,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         $stmt = $pdo->prepare(
-            'SELECT b.booking_id, b.user_id, b.station_id, b.oil_type_id, b.qr_code, b.qr_refrence_code,
+            'SELECT b.booking_id, b.user_id, b.station_id, b.oil_type_id, o.oil_name, b.qr_code, b.qr_refrence_code,
                     b.status, b.filled_gas, b.time_of_filled, b.expire_at, b.created_at,
                     b.car_license_id
              FROM booking b
              LEFT JOIN users u ON u.user_id = b.user_id
+             LEFT JOIN oil_types o ON o.oil_type_id = b.oil_type_id
              WHERE b.booking_id = :booking_id
              LIMIT 1'
         );
@@ -93,11 +95,52 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $quota = customer_fuel_quota_for_car($pdo, (int)$row['user_id'], $carLicenseId);
         $remainingLiters = (float)$quota['remaining'];
         if ((float)$amountLiters > $remainingLiters) {
-            respond(['success' => false, 'message' => 'This fill is over the weekly fuel limit. Remaining allowance: ' . rtrim(rtrim(number_format($remainingLiters, 1, '.', ''), '0'), '.') . ' liters.'], $ajax, 422, 'verify_detail.php?booking_id=' . urlencode((string)$bookingId));
+            respond(['success' => false, 'message' => 'This fill is over the ' . map_pump_fuel_quota_period_label() . ' fuel limit. Remaining allowance: ' . rtrim(rtrim(number_format($remainingLiters, 1, '.', ''), '0'), '.') . ' liters.'], $ajax, 422, 'verify_detail.php?booking_id=' . urlencode((string)$bookingId));
         }
 
         $pdo->beginTransaction();
         try {
+            $fuelName = strtolower(str_replace(' ', '', (string)($row['oil_name'] ?? '')));
+            $tankFuelCode = match ($fuelName) {
+                'octane92' => 'p92',
+                'octane95' => 'p95',
+                'disel', 'diesel' => 'dsl',
+                'premiumdisel', 'premiumdiesel' => 'pdsl',
+                default => '',
+            };
+            if ($tankFuelCode === '') {
+                throw new RuntimeException('The booking fuel type is not mapped to a station tank.');
+            }
+
+            // Deduct stock atomically. A fill cannot be confirmed once the
+            // selected station has insufficient live stock for it.
+            $deductTank = $pdo->prepare(
+                'UPDATE tanks
+                 SET current_l = current_l - :amount
+                 WHERE branch_id = :station_id
+                   AND fuel_code = :fuel_code
+                   AND is_enabled = 1
+                   AND current_l >= :amount'
+            );
+            $deductTank->execute([
+                ':amount' => (float)$amountLiters,
+                ':station_id' => (int)$row['station_id'],
+                ':fuel_code' => $tankFuelCode,
+            ]);
+            if ($deductTank->rowCount() !== 1) {
+                throw new RuntimeException('INSUFFICIENT_LIVE_STOCK');
+            }
+
+            $tankLevelStmt = $pdo->prepare(
+                'SELECT current_l FROM tanks WHERE branch_id = :station_id AND fuel_code = :fuel_code LIMIT 1'
+            );
+            $tankLevelStmt->execute([
+                ':station_id' => (int)$row['station_id'],
+                ':fuel_code' => $tankFuelCode,
+            ]);
+            $remainingTankLiters = (float)($tankLevelStmt->fetchColumn() ?: 0);
+            map_pump_append_station_inventory_snapshot($pdo, (int)$row['station_id'], (int)$row['oil_type_id'], $remainingTankLiters);
+
             $updateCar = $pdo->prepare('UPDATE car_license SET filled_gas = filled_gas + :amount, updated_at = NOW() WHERE car_license_id = :car_license_id');
             $updateCar->execute([
                 ':amount' => (float)$amountLiters,
@@ -158,7 +201,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($pdo->inTransaction()) {
                 $pdo->rollBack();
             }
-            respond(['success' => false, 'message' => 'Failed to save fill amount. Please try again.'], $ajax, 500, 'verify_detail.php?booking_id=' . urlencode((string)$bookingId));
+            $message = $e->getMessage() === 'INSUFFICIENT_LIVE_STOCK'
+                ? 'The station no longer has enough live stock for this fill. Ask the branch manager to update stock before confirming.'
+                : 'Failed to save fill amount. Please try again.';
+            $status = $e->getMessage() === 'INSUFFICIENT_LIVE_STOCK' ? 422 : 500;
+            respond(['success' => false, 'message' => $message], $ajax, $status, 'verify_detail.php?booking_id=' . urlencode((string)$bookingId));
         }
 
         respond([

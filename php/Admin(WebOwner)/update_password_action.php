@@ -37,7 +37,20 @@ if (!hash_equals($newPassword, $confirmPassword)) {
 }
 
 global $conn;
+global $pdo;
 $hash = password_hash($newPassword, PASSWORD_DEFAULT);
+if (!hq_db_available() && $pdo instanceof PDO) {
+    $statement = $pdo->prepare('UPDATE users SET hashed_password = ?, updated_at = NOW() WHERE user_id = ?');
+    if (!$statement->execute([$hash, (int) $user['user_id']])) {
+        admin_flash('danger', 'The password could not be updated.');
+        admin_redirect('edit_profile.php');
+    }
+
+    admin_record_log((int) $user['user_id'], 'Updated admin password.');
+    admin_flash('success', 'Password updated successfully.');
+    admin_redirect('edit_profile.php');
+}
+
 $statement = $conn->prepare('UPDATE users SET hashed_password = ?, updated_at = NOW() WHERE user_id = ?');
 if (!$statement) {
     admin_flash('danger', 'The password update could not be prepared.');

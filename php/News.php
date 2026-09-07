@@ -52,6 +52,13 @@ require __DIR__ . '/partials/nav.php';
         </div>
 
         <div class="row g-3">
+            <?php if (empty($FUEL_GRADES)): ?>
+                <div class="col-12" data-reveal>
+                    <div class="alert alert-secondary border-0 mb-0">
+                        No manager-approved fuel prices are live yet. Once branch managers publish station prices, national averages will appear here.
+                    </div>
+                </div>
+            <?php else: ?>
             <?php foreach ($FUEL_GRADES as $i => $grade): $t = mp_trend($grade['avg'], $grade['prev']); ?>
                 <div class="col-6 col-lg-3" data-reveal style="--reveal-delay:<?php echo $i * 80; ?>ms">
                     <div class="price-card price-card-lg">
@@ -68,6 +75,7 @@ require __DIR__ . '/partials/nav.php';
                     </div>
                 </div>
             <?php endforeach; ?>
+            <?php endif; ?>
         </div>
     </div>
 </section>
@@ -106,6 +114,13 @@ require __DIR__ . '/partials/nav.php';
                         </tr>
                     </thead>
                     <tbody>
+                        <?php if (empty($COMPANY_PRICES)): ?>
+                            <tr>
+                                <td colspan="<?php echo max(2, count($FUEL_GRADES) + 2); ?>" class="text-center text-dim py-4">
+                                    No participating companies have published prices yet.
+                                </td>
+                            </tr>
+                        <?php else: ?>
                         <?php foreach ($COMPANY_PRICES as $row): ?>
                             <tr>
                                 <th scope="row">
@@ -136,6 +151,7 @@ require __DIR__ . '/partials/nav.php';
                                 <td class="text-end text-muted-custom"><?php echo (int) $row['stations']; ?></td>
                             </tr>
                         <?php endforeach; ?>
+                        <?php endif; ?>
                     </tbody>
                 </table>
             </div>
@@ -158,6 +174,13 @@ require __DIR__ . '/partials/nav.php';
         </div>
 
         <div class="row g-3">
+            <?php if (empty($REGION_PRICES)): ?>
+                <div class="col-12" data-reveal>
+                    <div class="alert alert-secondary border-0 mb-0">
+                        Regional averages will appear after stations publish Octane 92 prices with location data.
+                    </div>
+                </div>
+            <?php else: ?>
             <?php foreach ($REGION_PRICES as $i => $region): $t = mp_trend($region['avg92'], $region['prev92']); ?>
                 <div class="col-6 col-lg-4" data-reveal style="--reveal-delay:<?php echo $i * 60; ?>ms">
                     <div class="region-card">
@@ -172,6 +195,7 @@ require __DIR__ . '/partials/nav.php';
                     </div>
                 </div>
             <?php endforeach; ?>
+            <?php endif; ?>
         </div>
     </div>
 </section>
@@ -199,6 +223,13 @@ require __DIR__ . '/partials/nav.php';
         </div>
 
         <div class="row g-4">
+            <?php if (empty($NEWS_POSTS)): ?>
+                <div class="col-12" data-reveal>
+                    <div class="alert alert-secondary border-0 mb-0">
+                        Market updates will appear here from live price changes, fuel deliveries, and station activity.
+                    </div>
+                </div>
+            <?php else: ?>
             <?php foreach ($NEWS_POSTS as $i => $post): ?>
                 <div class="col-md-6" data-post-tag="<?php echo $post['tag']; ?>" data-reveal style="--reveal-delay:<?php echo $i * 80; ?>ms">
                     <article class="news-card js-spotlight">
@@ -211,6 +242,7 @@ require __DIR__ . '/partials/nav.php';
                     </article>
                 </div>
             <?php endforeach; ?>
+            <?php endif; ?>
         </div>
     </div>
 </section>

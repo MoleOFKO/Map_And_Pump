@@ -24,7 +24,15 @@ require __DIR__ . '/partials/nav.php';
 
             <div class="col-lg-6 text-center text-lg-start">
                 <div class="badge-status mb-4 d-inline-flex align-items-center gap-2" data-reveal>
-                    <span class="pulse-dot"></span> 340+ stations live &middot; 52,000+ drivers checking daily
+                    <span class="pulse-dot"></span>
+                    <?php if (($PLATFORM_STATS['stations'] ?? 0) > 0): ?>
+                        <?php echo (int) $PLATFORM_STATS['stations']; ?>+ stations live
+                        <?php if (($PLATFORM_STATS['drivers'] ?? 0) > 0): ?>
+                            &middot; <?php echo number_format((int) $PLATFORM_STATS['drivers']); ?>+ registered drivers
+                        <?php endif; ?>
+                    <?php else: ?>
+                        Live station availability from participating fuel companies
+                    <?php endif; ?>
                 </div>
 
                 <h1 class="hero-title" data-reveal style="--reveal-delay:80ms">
@@ -53,16 +61,16 @@ require __DIR__ . '/partials/nav.php';
 
                 <div class="hero-trust" data-reveal style="--reveal-delay:320ms">
                     <div>
-                        <div class="trust-num" data-count="340" data-suffix="+">0</div>
+                        <div class="trust-num" data-count="<?php echo max(1, (int) ($PLATFORM_STATS['stations'] ?? 0)); ?>" data-suffix="+">0</div>
                         <div class="trust-label">Stations listed</div>
                     </div>
                     <div>
-                        <div class="trust-num" data-count="52000" data-suffix="+">0</div>
-                        <div class="trust-label">Drivers reached</div>
+                        <div class="trust-num" data-count="<?php echo max(1, (int) ($PLATFORM_STATS['drivers'] ?? 0)); ?>" data-suffix="+">0</div>
+                        <div class="trust-label">Registered drivers</div>
                     </div>
                     <div>
-                        <div class="trust-num" data-count="34" data-suffix="%">0</div>
-                        <div class="trust-label">Fewer wasted trips</div>
+                        <div class="trust-num" data-count="<?php echo count($FUEL_GRADES); ?>" data-suffix="">0</div>
+                        <div class="trust-label">Fuel grades tracked</div>
                     </div>
                 </div>
             </div>
@@ -125,23 +133,17 @@ require __DIR__ . '/partials/nav.php';
      ========================================================================== -->
 <div class="ticker">
     <div class="ticker-track">
-        <span class="ticker-item"><span class="dot dot-ok"></span> TharKayTa &mdash; 92 Octane in stock</span>
-        <span class="ticker-item"><span class="dot dot-low"></span> Hlaing &mdash; Diesel running low</span>
-        <span class="ticker-item"><span class="dot dot-ok"></span> Insein &mdash; 95 Octane in stock</span>
-        <span class="ticker-item"><span class="dot dot-out"></span> Dagon &mdash; Switched off by operator</span>
-        <span class="ticker-item"><span class="dot dot-ok"></span> Mayangone &mdash; Diesel in stock</span>
-        <span class="ticker-item"><span class="dot dot-low"></span> Tamwe &mdash; 92 Octane low</span>
-        <span class="ticker-item"><span class="dot dot-ok"></span> South Okkalapa &mdash; Restocked 9:14 AM</span>
-        <span class="ticker-item"><span class="dot dot-ok"></span> Bahan &mdash; 95 Octane in stock</span>
-
-        <span class="ticker-item" aria-hidden="true"><span class="dot dot-ok"></span> TharKayTa &mdash; 92 Octane in stock</span>
-        <span class="ticker-item" aria-hidden="true"><span class="dot dot-low"></span> Hlaing &mdash; Diesel running low</span>
-        <span class="ticker-item" aria-hidden="true"><span class="dot dot-ok"></span> Insein &mdash; 95 Octane in stock</span>
-        <span class="ticker-item" aria-hidden="true"><span class="dot dot-out"></span> Dagon &mdash; Switched off by operator</span>
-        <span class="ticker-item" aria-hidden="true"><span class="dot dot-ok"></span> Mayangone &mdash; Diesel in stock</span>
-        <span class="ticker-item" aria-hidden="true"><span class="dot dot-low"></span> Tamwe &mdash; 92 Octane low</span>
-        <span class="ticker-item" aria-hidden="true"><span class="dot dot-ok"></span> South Okkalapa &mdash; Restocked 9:14 AM</span>
-        <span class="ticker-item" aria-hidden="true"><span class="dot dot-ok"></span> Bahan &mdash; 95 Octane in stock</span>
+        <?php if (!empty($LIVE_TICKER_ITEMS)): ?>
+            <?php foreach ($LIVE_TICKER_ITEMS as $item): ?>
+                <span class="ticker-item"><span class="dot <?php echo htmlspecialchars($item['class']); ?>"></span> <?php echo htmlspecialchars($item['text']); ?></span>
+            <?php endforeach; ?>
+            <?php foreach ($LIVE_TICKER_ITEMS as $item): ?>
+                <span class="ticker-item" aria-hidden="true"><span class="dot <?php echo htmlspecialchars($item['class']); ?>"></span> <?php echo htmlspecialchars($item['text']); ?></span>
+            <?php endforeach; ?>
+        <?php else: ?>
+            <span class="ticker-item"><span class="dot dot-out"></span> Live availability updates appear here once branch managers publish stock</span>
+            <span class="ticker-item" aria-hidden="true"><span class="dot dot-out"></span> Live availability updates appear here once branch managers publish stock</span>
+        <?php endif; ?>
     </div>
 </div>
 
@@ -340,6 +342,11 @@ require __DIR__ . '/partials/nav.php';
             </a>
         </div>
 
+        <?php if (empty($FUEL_GRADES)): ?>
+            <div class="alert alert-secondary border-0" data-reveal>
+                No public fuel prices are published yet. Branch managers must set station prices before averages appear here.
+            </div>
+        <?php else: ?>
         <div class="row g-3">
             <?php foreach ($FUEL_GRADES as $i => $grade): $t = mp_trend($grade['avg'], $grade['prev']); ?>
                 <div class="col-6 col-lg-3" data-reveal style="--reveal-delay:<?php echo $i * 80; ?>ms">
@@ -357,6 +364,7 @@ require __DIR__ . '/partials/nav.php';
                 </div>
             <?php endforeach; ?>
         </div>
+        <?php endif; ?>
     </div>
 </section>
 

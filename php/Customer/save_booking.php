@@ -5,6 +5,7 @@ require __DIR__ . '/../conn.php';
 require_once __DIR__ . '/license_access.php';
 require_once __DIR__ . '/car_access.php';
 require_once __DIR__ . '/../business_scope.php';
+require_once __DIR__ . '/../booking_rules.php';
 
 header('Content-Type: application/json');
 
@@ -102,8 +103,23 @@ try {
     $stationName = (string)($stationFuel['station_name'] ?? ('Station #' . $stationId));
     $displayPayload = $bookingCode . '|' . $stationName . '|' . $fuelType . '|' . rtrim(rtrim(number_format($quantity, 1, '.', ''), '0'), '.') . 'L';
 
+    /*
+     * Lock the selected car while checking and creating the booking. This
+     * makes the "one active booking per customer/car" rule reliable even if
+     * the customer submits the form twice or has two browser tabs open.
+     */
+    $pdo->beginTransaction();
+    $carLock = $pdo->prepare(
+        'SELECT uc.car_id
+         FROM user_car uc
+         WHERE uc.user_id = :user_id AND uc.is_active = 1
+         LIMIT 1 FOR UPDATE'
+    );
+    $carLock->execute([':user_id' => $userId]);
+
     $quota = customer_fuel_quota($pdo, $userId);
     if (empty($quota['has_active_car'])) {
+        $pdo->rollBack();
         http_response_code(422);
         echo json_encode([
             'success' => false,
@@ -113,21 +129,45 @@ try {
     }
 
     $activeCarLicenseId = (int) $quota['active_car_id'];
+    $activeStatuses = map_pump_booking_active_statuses();
+    $statusPlaceholders = implode(',', array_fill(0, count($activeStatuses), '?'));
+    $activeBooking = $pdo->prepare(
+        "SELECT booking_id
+         FROM booking
+         WHERE user_id = ?
+           AND car_license_id = ?
+           AND status IN ({$statusPlaceholders})
+           AND (expire_at IS NULL OR expire_at > NOW())
+         LIMIT 1 FOR UPDATE"
+    );
+    $activeBooking->execute(array_merge([$userId, $activeCarLicenseId], $activeStatuses));
+    if ($activeBooking->fetchColumn()) {
+        $pdo->rollBack();
+        http_response_code(409);
+        echo json_encode([
+            'success' => false,
+            'message' => 'This vehicle already has an active fuel booking. Use, cancel, or wait for that booking to expire before creating another one.'
+        ]);
+        exit;
+    }
     $remainingQuota = (float) $quota['remaining'];
+    $quotaLabel = map_pump_fuel_quota_period_label();
     if ($remainingQuota <= 0.0) {
+        $pdo->rollBack();
         http_response_code(422);
         echo json_encode([
             'success' => false,
-            'message' => 'This customer has reached the weekly fuel limit of ' . number_format((float) $quota['limit'], 1) . ' liters. Please try again next week.'
+            'message' => 'This customer has reached the ' . $quotaLabel . ' fuel limit of ' . number_format((float) $quota['limit'], 1) . ' liters. Please try again next ' . rtrim($quotaLabel, 'ly') . '.'
         ]);
         exit;
     }
 
     if ($quantity > $remainingQuota) {
+        $pdo->rollBack();
         http_response_code(422);
         echo json_encode([
             'success' => false,
-            'message' => 'Only ' . number_format($remainingQuota, 1) . ' liters remain from your weekly fuel limit.'
+            'message' => 'Only ' . number_format($remainingQuota, 1) . ' liters remain from your ' . $quotaLabel . ' fuel limit.'
         ]);
         exit;
     }
@@ -136,12 +176,14 @@ try {
     $finalStationCheck = $pdo->prepare('SELECT station_id FROM stations WHERE station_id = :station_id LIMIT 1');
     $finalStationCheck->execute([':station_id' => $stationId]);
     if (!$finalStationCheck->fetchColumn()) {
+        $pdo->rollBack();
         http_response_code(422);
         echo json_encode(['success' => false, 'message' => 'This station is no longer available. Please refresh and choose another station.']);
         exit;
     }
 
-    $insert = $pdo->prepare('INSERT INTO booking (user_id, car_license_id, station_id, oil_type_id, qr_code, qr_refrence_code, status, filled_gas, expire_at, created_at) VALUES (:user_id, :car_license_id, :station_id, :oil_type_id, :qr_code, :qr_refrence_code, :status, :filled_gas, DATE_ADD(NOW(), INTERVAL 1 HOUR), NOW())');
+    $expiryHours = (int) MAP_PUMP_BOOKING_EXPIRY_HOURS;
+    $insert = $pdo->prepare('INSERT INTO booking (user_id, car_license_id, station_id, oil_type_id, qr_code, qr_refrence_code, status, filled_gas, expire_at, created_at) VALUES (:user_id, :car_license_id, :station_id, :oil_type_id, :qr_code, :qr_refrence_code, :status, :filled_gas, DATE_ADD(NOW(), INTERVAL ' . $expiryHours . ' HOUR), NOW())');
     $insert->execute([
         ':user_id' => $userId,
         ':car_license_id' => $activeCarLicenseId,
@@ -153,8 +195,13 @@ try {
         ':filled_gas' => 0
     ]);
 
+    $pdo->commit();
+
     echo json_encode(['success' => true, 'message' => 'Booking saved.', 'booking_code' => $bookingCode, 'payload' => $displayPayload]);
 } catch (PDOException $e) {
+    if ($pdo->inTransaction()) {
+        $pdo->rollBack();
+    }
     $message = $e->getMessage();
     if ($e->getCode() === '23000' && strpos($message, 'fk_booking_station_id') !== false) {
         http_response_code(422);
@@ -165,6 +212,9 @@ try {
     http_response_code(500);
     echo json_encode(['success' => false, 'message' => 'Unable to save booking. Please try again.']);
 } catch (Throwable $e) {
+    if ($pdo->inTransaction()) {
+        $pdo->rollBack();
+    }
     http_response_code(500);
     echo json_encode(['success' => false, 'message' => 'Unable to save booking. Please try again.']);
 }
