@@ -34,7 +34,7 @@ function account_switch_logout_to_login(string $email, string $message): void
         'samesite' => 'Lax',
     ]);
 
-    header('Location: /php/Login/login.php');
+    header('Location: ../php/Login/login.php');
     exit;
 }
 

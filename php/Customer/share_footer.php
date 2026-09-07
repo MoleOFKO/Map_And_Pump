@@ -45,6 +45,19 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <?php if (!empty($_SESSION['customer_invitation_message'])): ?>
+        <div class="alert alert-info position-fixed top-0 start-50 translate-middle-x mt-3 shadow" style="z-index: 2000;" role="alert">
+            <?= htmlspecialchars((string) $_SESSION['customer_invitation_message'], ENT_QUOTES, 'UTF-8') ?>
+        </div>
+        <?php unset($_SESSION['customer_invitation_message']); ?>
+    <?php endif; ?>
+    <?php if (!empty($pendingInvitation)): ?>
+        <script>
+            document.addEventListener('DOMContentLoaded', function () {
+                new bootstrap.Modal(document.getElementById('hqInvitationModal'), {backdrop: 'static', keyboard: false}).show();
+            });
+        </script>
+    <?php endif; ?>
     <script src="/js/customer-theme.js"></script>
 
     <script>

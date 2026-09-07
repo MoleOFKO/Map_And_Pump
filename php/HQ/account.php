@@ -2,6 +2,13 @@
 require_once __DIR__ . '/hq_guard.php';
 require_once __DIR__ . '/../conn.php';
 require_once __DIR__ . '/../business_scope.php';
+require_once __DIR__ . '/../hq_account_invitation_schema.php';
+
+try {
+    map_pump_ensure_hq_account_invitation_schema($pdo);
+} catch (Throwable $e) {
+    error_log('Failed to prepare HQ invitation schema: ' . $e->getMessage());
+}
 
 $managers = [];
 $dbError = '';
@@ -245,7 +252,7 @@ endif; ?>
     <div class="modal fade" id="inviteAccountModal" tabindex="-1" aria-labelledby="inviteAccountModalLabel" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content" style="background: var(--bg, #111827); color: var(--slate-50, #f8fafc); border: 1px solid rgba(255,255,255,0.08); border-radius: 18px;">
-                <form method="POST" action="invite_account.php">
+                <form method="POST" action="./invite_account.php" id="inviteAccountForm">
                     <div class="modal-header border-0"><h5 class="modal-title" id="inviteAccountModalLabel">Add Manager or Staff</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button></div>
                     <div class="modal-body">
                         <p class="small text-white-50">The email must belong to an existing customer account. That customer must Accept or Decline the invitation before continuing.</p>
@@ -255,6 +262,9 @@ endif; ?>
                         <select class="form-select mb-3" id="inviteRole" name="role" required><option value="manager">Branch Manager</option><option value="staff">Staff</option></select>
                         <label class="form-label" for="inviteStation">Station</label>
                         <select class="form-select" id="inviteStation" name="station_id" required><option value="">Select an HQ station</option><?php foreach ($stations as $station): ?><option value="<?= (int)$station['station_id'] ?>"><?= htmlspecialchars((string)$station['station_name'] . ' — ' . (string)$station['location']) ?></option><?php endforeach; ?></select>
+                        <?php if (empty($stations)): ?>
+                            <div class="alert alert-warning mt-2 mb-0" role="alert">No stations are assigned to this HQ. Add a station before sending an invitation.</div>
+                        <?php endif; ?>
                     </div>
                     <div class="modal-footer border-0"><button type="button" class="btn btn-outline-secondary text-white" data-bs-dismiss="modal">Cancel</button><button type="submit" class="btn btn-primary">Send Invitation</button></div>
                 </form>
@@ -350,6 +360,16 @@ endif; ?>
         });
 
         showAccountRole('4');
+
+        const inviteAccountForm = document.getElementById('inviteAccountForm');
+        if (inviteAccountForm) {
+            inviteAccountForm.addEventListener('submit', function (event) {
+                if (!inviteAccountForm.checkValidity()) {
+                    event.preventDefault();
+                    inviteAccountForm.reportValidity();
+                }
+            });
+        }
     </script>
 
 </body>
