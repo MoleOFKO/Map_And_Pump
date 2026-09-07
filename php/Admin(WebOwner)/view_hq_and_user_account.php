@@ -318,7 +318,7 @@ $flashContext = $flash['context'] ?? [];
                 <div class="modal-header"><h5 class="modal-title fw-bold" id="accountActionModalLabel"><i class="bi bi-shield-exclamation text-danger me-2"></i> Suspend or Remove HQ</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button></div>
                 <form action="hq_account_action.php" method="POST">
                     <div class="modal-body d-flex flex-column gap-3">
-                        <input type="hidden" name="headquarter_id" id="actionHQId">
+                        <input type="hidden" name="headquarter_id" id="actionHQId"><input type="hidden" name="return_to" value="view_hq_and_user_account.php">
                         <div class="small text-white-50">Target HQ: <span class="txt-neon-cyan fw-semibold" id="actionHQName">—</span></div>
                         <div><label class="form-label text-white-50 small" for="actionType">Account action</label><select class="form-select glass-select" name="action_type" id="actionType" required><option value="suspend">Suspend account</option><option value="remove">Remove account</option></select></div>
                         <div><label class="form-label text-white-50 small" for="actionReason">Reason to record and notify</label><textarea class="form-control glass-input" name="reason" id="actionReason" rows="5" maxlength="2000" placeholder="Explain why this HQ account is being suspended or removed..." required style="resize:none;"></textarea></div>

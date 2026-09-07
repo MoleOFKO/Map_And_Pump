@@ -223,11 +223,30 @@ function hq_registry_schema_ready(): bool
 function hq_action_table_ready(): bool
 {
     global $conn;
-
-    if (!hq_db_available()) {
-        return false;
+    static $ready = null;
+    if ($ready !== null) {
+        return $ready;
     }
 
+    if (!hq_db_available()) {
+        return $ready = false;
+    }
+
+    try {
+        $exists = $conn->query(
+            "SELECT COUNT(*) AS c
+             FROM information_schema.TABLES
+             WHERE TABLE_SCHEMA = DATABASE()
+               AND TABLE_NAME = 'hq_account_actions'"
+        );
+        if ($exists && (int) ($exists->fetch_assoc()['c'] ?? 0) > 0) {
+            return $ready = true;
+        }
+    } catch (Throwable $e) {
+        error_log('[hq_account_actions] existence check failed: ' . $e->getMessage());
+    }
+
+    // Only attempt DDL when the table is missing.
     $sql = <<<'SQL'
 CREATE TABLE IF NOT EXISTS hq_account_actions (
     action_id INT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -244,8 +263,26 @@ CREATE TABLE IF NOT EXISTS hq_account_actions (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 SQL;
 
-    return (bool) $conn->query($sql);
+    $ok = (bool) @$conn->query($sql);
+    if (!$ok) {
+        error_log('[hq_account_actions] create failed: ' . $conn->error);
+        // Re-check in case another process created it.
+        try {
+            $exists = $conn->query(
+                "SELECT COUNT(*) AS c
+                 FROM information_schema.TABLES
+                 WHERE TABLE_SCHEMA = DATABASE()
+                   AND TABLE_NAME = 'hq_account_actions'"
+            );
+            $ok = $exists && (int) ($exists->fetch_assoc()['c'] ?? 0) > 0;
+        } catch (Throwable $e) {
+            $ok = false;
+        }
+    }
+
+    return $ready = $ok;
 }
+
 
 function hq_send_notification(string $recipient, string $subject, string $body): array
 {
@@ -376,4 +413,3 @@ function hq_unique_username(string $ownerName, string $email): string
     $statement->close();
     return $candidate;
 }
-
