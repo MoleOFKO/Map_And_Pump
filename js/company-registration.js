@@ -91,19 +91,33 @@ const setActive = (index) => {
     if (index > -1) options[index].scrollIntoView({ block: 'nearest' });
 };
 
+/* The menu is inline, so it can only run past the viewport on short screens —
+   nudge the modal scroller just enough to bring it into view. */
+const revealMenu = () => {
+    if (!menu || menu.hidden) return;
+    const box = menu.getBoundingClientRect();
+    const overflow = box.bottom - (window.innerHeight - 12);
+    if (overflow > 0) paymentModal?.scrollBy({ top: overflow, behavior: 'smooth' });
+};
+
+const paymentCard = paymentModal?.querySelector('.payment-card');
+
 const openMenu = () => {
     if (!menu || !select) return;
     menu.hidden = false;
     select.classList.add('is-open');
+    paymentCard?.classList.add('is-menu-open');
     toggle.setAttribute('aria-expanded', 'true');
     const selectedIndex = options.findIndex((o) => o.getAttribute('aria-selected') === 'true');
     setActive(selectedIndex > -1 ? selectedIndex : 0);
+    requestAnimationFrame(revealMenu);
 };
 
 const closeMenu = ({ focusToggle = false } = {}) => {
     if (!menu || !select) return;
     menu.hidden = true;
     select.classList.remove('is-open');
+    paymentCard?.classList.remove('is-menu-open');
     toggle.setAttribute('aria-expanded', 'false');
     setActive(-1);
     if (focusToggle) toggle.focus();
@@ -243,6 +257,8 @@ select?.addEventListener('keydown', (event) => {
 document.addEventListener('click', (event) => {
     if (isMenuOpen() && select && !select.contains(event.target)) closeMenu();
 });
+
+window.addEventListener('resize', revealMenu);
 
 /* ---------- bank logo picker ---------- */
 bankButtons.forEach((button) => {

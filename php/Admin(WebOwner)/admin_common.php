@@ -49,10 +49,7 @@ function admin_redirect(string $location = 'admin_dashboard.php'): never
 function admin_current_user(bool $allowDevelopmentFallback = true): ?array
 {
     global $conn;
-
-    if (!hq_db_available()) {
-        return null;
-    }
+    global $pdo;
 
     $baseSql = <<<'SQL'
 SELECT u.user_id, u.user_name, u.email, u.hashed_password, u.role_id,
@@ -70,6 +67,33 @@ SQL;
     $sessionUserId = 0;
     if (session_status() === PHP_SESSION_ACTIVE) {
         $sessionUserId = (int) ($_SESSION['user_id'] ?? 0);
+    }
+
+    if (!hq_db_available() && !($pdo instanceof PDO)) {
+        return null;
+    }
+
+    if (!hq_db_available() && $pdo instanceof PDO) {
+        $roleFilter = "LOWER(TRIM(COALESCE(active_role.role_name, business_role.role_name, primary_role.role_name))) IN ('admin', 'moderator')";
+        if ($sessionUserId > 0) {
+            $statement = $pdo->prepare($baseSql . " WHERE u.user_id = ? AND {$roleFilter} LIMIT 1");
+            $statement->execute([$sessionUserId]);
+            $user = $statement->fetch(PDO::FETCH_ASSOC);
+            if ($user) {
+                return $user;
+            }
+        }
+
+        if (!$allowDevelopmentFallback) {
+            return null;
+        }
+
+        $statement = $pdo->query(
+            $baseSql . " WHERE u.headquarter_id IS NULL AND {$roleFilter}
+             ORDER BY CASE WHEN LOWER(u.status) IN ('approved', 'active') THEN 0 ELSE 1 END,
+                      u.user_id ASC LIMIT 1"
+        );
+        return $statement ? ($statement->fetch(PDO::FETCH_ASSOC) ?: null) : null;
     }
 
     if ($sessionUserId > 0) {

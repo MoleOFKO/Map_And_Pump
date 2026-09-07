@@ -49,7 +49,39 @@ if (!move_uploaded_file($temporaryPath, $destination)) {
 }
 
 global $conn;
+global $pdo;
 $avatarUrl = '/php/Admin(WebOwner)/uploads/' . $fileName;
+if (!hq_db_available() && $pdo instanceof PDO) {
+    $statement = $pdo->prepare('UPDATE users SET oauth_avatar_url = ?, updated_at = NOW() WHERE user_id = ?');
+    if (!$statement->execute([$avatarUrl, (int) $user['user_id']])) {
+        @unlink($destination);
+        admin_flash('danger', 'The profile image could not be updated.');
+        admin_redirect('edit_profile.php');
+    }
+
+    $oldAvatar = (string) ($user['oauth_avatar_url'] ?? '');
+    $oldPrefixes = [
+        '/php/Admin(WebOwner)/uploads/avatars/' => __DIR__ . '/uploads/avatars',
+        '/php/Admin(WebOwner)/uploads/' => $directory,
+    ];
+    foreach ($oldPrefixes as $prefix => $oldDirectory) {
+        if (!str_starts_with($oldAvatar, $prefix)) {
+            continue;
+        }
+
+        $oldFileName = basename(substr($oldAvatar, strlen($prefix)));
+        $oldPath = $oldDirectory . DIRECTORY_SEPARATOR . $oldFileName;
+        if ($oldFileName !== '' && is_file($oldPath)) {
+            @unlink($oldPath);
+        }
+        break;
+    }
+
+    admin_record_log((int) $user['user_id'], 'Updated admin profile avatar.');
+    admin_flash('success', 'Profile image updated successfully.');
+    admin_redirect('edit_profile.php');
+}
+
 $statement = $conn->prepare('UPDATE users SET oauth_avatar_url = ?, updated_at = NOW() WHERE user_id = ?');
 if (!$statement) {
     @unlink($destination);

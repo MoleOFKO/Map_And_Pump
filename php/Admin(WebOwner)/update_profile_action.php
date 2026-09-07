@@ -29,6 +29,28 @@ if (!filter_var($email, FILTER_VALIDATE_EMAIL) || strlen($email) > 255) {
 }
 
 global $conn;
+global $pdo;
+if (!hq_db_available() && $pdo instanceof PDO) {
+    $duplicate = $pdo->prepare('SELECT user_id FROM users WHERE (user_name = ? OR email = ?) AND user_id <> ? LIMIT 1');
+    $duplicate->execute([$userName, $email, $userId]);
+    if ($duplicate->fetch(PDO::FETCH_ASSOC)) {
+        admin_flash('danger', 'That username or email address is already in use.');
+        admin_redirect('edit_profile.php');
+    }
+
+    $statement = $pdo->prepare('UPDATE users SET user_name = ?, email = ?, updated_at = NOW() WHERE user_id = ?');
+    if (!$statement->execute([$userName, $email, $userId])) {
+        admin_flash('danger', 'The profile could not be updated.');
+        admin_redirect('edit_profile.php');
+    }
+
+    $_SESSION['user_name'] = $userName;
+    $_SESSION['user_email'] = $email;
+    admin_record_log($userId, 'Updated admin profile details.');
+    admin_flash('success', 'Profile details were updated successfully.');
+    admin_redirect('edit_profile.php');
+}
+
 $duplicate = $conn->prepare('SELECT user_id FROM users WHERE (user_name = ? OR email = ?) AND user_id <> ? LIMIT 1');
 if (!$duplicate) {
     admin_flash('danger', 'The profile could not be checked against the database.');

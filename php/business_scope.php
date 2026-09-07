@@ -117,3 +117,43 @@ if (!function_exists('map_pump_append_station_price')) {
         ]);
     }
 }
+
+if (!function_exists('map_pump_append_station_inventory_snapshot')) {
+    /**
+     * Preserve a traceable inventory history. Public queries always read the
+     * newest row, so stock and availability change together without rewriting
+     * older price records.
+     */
+    function map_pump_append_station_inventory_snapshot(PDO $pdo, int $stationId, int $oilTypeId, float $amountLiters, ?int $active = null): void
+    {
+        $stmt = $pdo->prepare(
+            "SELECT price_per_litre, is_active
+             FROM station_oil_inventory
+             WHERE station_id = :station_id AND oil_type_id = :oil_type_id
+             ORDER BY inventory_id DESC
+             LIMIT 1"
+        );
+        $stmt->execute([
+            ':station_id' => $stationId,
+            ':oil_type_id' => $oilTypeId,
+        ]);
+        $latest = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$latest) {
+            throw new RuntimeException('Station fuel inventory has not been initialized.');
+        }
+
+        $insert = $pdo->prepare(
+            "INSERT INTO station_oil_inventory
+                (station_id, oil_type_id, price_per_litre, is_active, current_amount_liters, updated_at)
+             VALUES
+                (:station_id, :oil_type_id, :price_per_litre, :is_active, :current_amount_liters, NOW())"
+        );
+        $insert->execute([
+            ':station_id' => $stationId,
+            ':oil_type_id' => $oilTypeId,
+            ':price_per_litre' => (int) $latest['price_per_litre'],
+            ':is_active' => $active ?? (int) $latest['is_active'],
+            ':current_amount_liters' => max(0, $amountLiters),
+        ]);
+    }
+}
