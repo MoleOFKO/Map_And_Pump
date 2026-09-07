@@ -38,7 +38,8 @@ try {
     $currentRoleJoin = $hasCurrentRole ? 'LEFT JOIN roles cr ON cr.role_id = u.current_role_id' : '';
 
     $stmt = $pdo->prepare(
-        "SELECT u.user_id, u.user_name, u.email, u.hashed_password, u.status, u.role_id, u.business_role_id, u.license_id,
+        "SELECT u.user_id, u.user_public_id, u.user_name, u.email, u.hashed_password, u.status,
+                u.role_id, u.business_role_id, u.license_id, u.headquarter_id, u.branch_id,
                 {$currentRoleSelect}
                 r.role_name, br.role_name AS business_role_name
          FROM users u
@@ -94,24 +95,35 @@ try {
 
     $_SESSION['is_logged_in'] = true;
     $_SESSION['user_id'] = (int) $user['user_id'];
+    $_SESSION['user_public_id'] = (string) ($user['user_public_id'] ?? '');
     $_SESSION['user_name'] = (string) $user['user_name'];
     $_SESSION['user_email'] = (string) $user['email'];
+    $_SESSION['user_status'] = (string) ($user['status'] ?? '');
     $_SESSION['role_id'] = $activeRoleId;
     $_SESSION['role_name'] = $activeRoleName;
     $_SESSION['business_role_id'] = (int) ($user['business_role_id'] ?? 0);
     $_SESSION['business_role_name'] = (string) ($user['business_role_name'] ?? '');
+    $_SESSION['headquarter_id'] = (int) ($user['headquarter_id'] ?? 0);
+    $_SESSION['branch_id'] = (int) ($user['branch_id'] ?? 0);
     $_SESSION['has_business'] = !empty($user['business_role_id']);
     $_SESSION['active_profile_mode'] = ($roleName === 'customer') ? 'customer' : 'business';
     $_SESSION['remember_me'] = $remember;
     map_pump_set_current_role($pdo, (int) $user['user_id'], $activeRoleId);
+    $_SESSION['current_role_id'] = $activeRoleId;
+    $_SESSION['current_role_name'] = $activeRoleName;
     if (!empty($user['license_id'])) {
         $_SESSION['license_id'] = (int) $user['license_id'];
+    } else {
+        $_SESSION['license_id'] = 0;
     }
     if ($roleName === 'customer') {
         customer_refresh_session($pdo, (int) $user['user_id'], $customerLicenseAccess);
     }
 
     map_pump_set_remembered_email((string) $user['email'], $remember);
+    $lastLoginUpdate = $pdo->prepare('UPDATE users SET last_login_at = NOW(), updated_at = NOW() WHERE user_id = ?');
+    $lastLoginUpdate->execute([(int) $user['user_id']]);
+    $_SESSION['last_login_at'] = date('Y-m-d H:i:s');
 
     // Load pending moderator hire invites so destination pages can show a popup.
     $pendingHires = moderator_hire_pending_for_user_pdo($pdo, (int) $user['user_id']);
