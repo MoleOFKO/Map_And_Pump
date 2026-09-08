@@ -37,23 +37,26 @@ if (!function_exists('map_pump_public_pdo')) {
     function map_pump_public_pdo(): ?PDO
     {
         static $resolved = false;
-        static $pdo = null;
+        static $publicPdo = null;
         if ($resolved) {
-            return $pdo;
+            return $publicPdo;
         }
         $resolved = true;
 
         try {
-            if (!isset($GLOBALS['pdo']) || !($GLOBALS['pdo'] instanceof PDO)) {
+            $connection = $GLOBALS['pdo'] ?? null;
+            if (!($connection instanceof PDO)) {
                 require_once __DIR__ . '/../conn.php';
+                // conn.php is included inside this function, so its $pdo is local here.
+                $connection = $pdo ?? ($GLOBALS['pdo'] ?? null);
             }
-            $pdo = $GLOBALS['pdo'] ?? null;
+            $publicPdo = $connection instanceof PDO ? $connection : null;
         } catch (Throwable $e) {
             error_log('Public market data could not connect: ' . $e->getMessage());
-            $pdo = null;
+            $publicPdo = null;
         }
 
-        return $pdo instanceof PDO ? $pdo : null;
+        return $publicPdo;
     }
 }
 
@@ -64,7 +67,7 @@ if (!function_exists('map_pump_load_latest_station_prices')) {
         $stmt = $pdo->query(
             "SELECT s.station_id, s.station_name, s.location, s.station_address,
                     h.headquarter_id, h.company_name,
-                    ot.oil_name, li.price_per_litre, li.is_active, li.updated_at,
+                    ot.oil_type_id, ot.oil_name, li.price_per_litre, li.is_active, li.updated_at,
                     t.fuel_code, t.current_l, t.capacity_l, t.is_enabled
              FROM stations s
              INNER JOIN station_business_scope sbs ON sbs.station_id = s.station_id
@@ -85,9 +88,6 @@ if (!function_exists('map_pump_load_latest_station_prices')) {
         $rows = [];
         foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
             $code = map_pump_oil_name_to_grade_code((string) ($row['oil_name'] ?? ''));
-            if ($code === null) {
-                continue;
-            }
             $rows[] = array_merge($row, ['grade_code' => $code]);
         }
 
@@ -153,6 +153,8 @@ if (!function_exists('map_pump_build_public_market_data')) {
             'source' => 'empty',
             'updated_at' => 'Awaiting manager price updates',
             'fuel_grades' => [],
+            'station_fuel_types' => [],
+            'station_fuel_prices' => [],
             'company_prices' => [],
             'region_prices' => [],
             'news_posts' => [],
@@ -181,10 +183,33 @@ if (!function_exists('map_pump_build_public_market_data')) {
             $gradeUpdated = [];
             $companyMap = [];
             $regionMap = [];
+            $stationMap = [];
+            $stationFuelTypes = [];
 
             foreach ($latestRows as $row) {
                 $code = (string) $row['grade_code'];
                 $price = (int) $row['price_per_litre'];
+                $stationId = (int) ($row['station_id'] ?? 0);
+                $oilTypeId = (int) ($row['oil_type_id'] ?? 0);
+                $oilName = trim((string) ($row['oil_name'] ?? 'Fuel'));
+
+                if ($stationId > 0 && $oilTypeId > 0) {
+                    if (!isset($stationMap[$stationId])) {
+                        $stationMap[$stationId] = [
+                            'station_name' => trim((string) ($row['station_name'] ?? 'Station')),
+                            'prices' => [],
+                        ];
+                    }
+                    $stationMap[$stationId]['prices'][$oilTypeId] = $price;
+                    $stationFuelTypes[$oilTypeId] = [
+                        'id' => $oilTypeId,
+                        'label' => $oilName,
+                    ];
+                }
+
+                if ($code === '') {
+                    continue;
+                }
                 $gradeTotals[$code][] = $price;
                 $gradeUpdated[$code] = max($gradeUpdated[$code] ?? '', (string) ($row['updated_at'] ?? ''));
 
@@ -215,6 +240,28 @@ if (!function_exists('map_pump_build_public_market_data')) {
                     $regionMap[$region]['stations'][(int) $row['station_id']] = true;
                 }
             }
+
+            $standardFuelOrder = [
+                'octane92' => 0,
+                'octane95' => 1,
+                'disel' => 2,
+                'diesel' => 2,
+                'premiumdisel' => 3,
+                'premiumdiesel' => 3,
+            ];
+            $data['station_fuel_types'] = array_values($stationFuelTypes);
+            usort($data['station_fuel_types'], static function (array $a, array $b) use ($standardFuelOrder): int {
+                $aKey = strtolower(str_replace(' ', '', (string) $a['label']));
+                $bKey = strtolower(str_replace(' ', '', (string) $b['label']));
+                $aOrder = $standardFuelOrder[$aKey] ?? 100;
+                $bOrder = $standardFuelOrder[$bKey] ?? 100;
+
+                return $aOrder === $bOrder
+                    ? strnatcasecmp((string) $a['label'], (string) $b['label'])
+                    : $aOrder <=> $bOrder;
+            });
+            $data['station_fuel_prices'] = array_values($stationMap);
+            usort($data['station_fuel_prices'], static fn(array $a, array $b): int => strnatcasecmp($a['station_name'], $b['station_name']));
 
             foreach ($catalog as $code => $meta) {
                 if (empty($gradeTotals[$code])) {

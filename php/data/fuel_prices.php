@@ -14,6 +14,8 @@ $marketData = map_pump_build_public_market_data();
 
 $PRICE_UPDATED_AT = (string) ($marketData['updated_at'] ?? 'Awaiting manager price updates');
 $FUEL_GRADES = $marketData['fuel_grades'] ?? [];
+$STATION_FUEL_TYPES = $marketData['station_fuel_types'] ?? [];
+$STATION_FUEL_PRICES = $marketData['station_fuel_prices'] ?? [];
 $COMPANY_PRICES = $marketData['company_prices'] ?? [];
 $REGION_PRICES = $marketData['region_prices'] ?? [];
 $NEWS_POSTS = $marketData['news_posts'] ?? [];

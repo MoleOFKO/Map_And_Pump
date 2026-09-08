@@ -81,6 +81,58 @@ require __DIR__ . '/partials/nav.php';
 </section>
 
 <!-- ==========================================================================
+     LIVE STATION PRICES
+     ========================================================================== -->
+<section id="station-prices" class="section-pad pt-0">
+    <div class="container">
+        <div class="mb-4" data-reveal>
+            <h2 class="section-title-sm">Live prices by station</h2>
+            <p class="section-lead mb-0">Current manager-published prices in MMK per litre.</p>
+        </div>
+
+        <div class="table-shell" data-reveal>
+            <div class="table-responsive">
+                <table class="table price-table mb-0">
+                    <thead>
+                        <tr>
+                            <th scope="col">Station name</th>
+                            <?php foreach ($STATION_FUEL_TYPES as $fuelType): ?>
+                                <th scope="col" class="text-end"><?php echo htmlspecialchars($fuelType['label']); ?></th>
+                            <?php endforeach; ?>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php if (empty($STATION_FUEL_PRICES) || empty($STATION_FUEL_TYPES)): ?>
+                            <tr>
+                                <td colspan="<?php echo max(1, count($STATION_FUEL_TYPES) + 1); ?>" class="text-center text-dim py-4">
+                                    No manager-approved fuel prices are live yet.
+                                </td>
+                            </tr>
+                        <?php else: ?>
+                            <?php foreach ($STATION_FUEL_PRICES as $station): ?>
+                                <tr>
+                                    <th scope="row"><?php echo htmlspecialchars($station['station_name']); ?></th>
+                                    <?php foreach ($STATION_FUEL_TYPES as $fuelType): ?>
+                                        <?php $price = $station['prices'][$fuelType['id']] ?? null; ?>
+                                        <td class="text-end">
+                                            <?php if ($price === null): ?>
+                                                <span class="text-dim">—</span>
+                                            <?php else: ?>
+                                                <span class="cell-price"><?php echo mp_money($price); ?></span>
+                                            <?php endif; ?>
+                                        </td>
+                                    <?php endforeach; ?>
+                                </tr>
+                            <?php endforeach; ?>
+                        <?php endif; ?>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- ==========================================================================
      PRICE BY COMPANY
      ========================================================================== -->
 <section id="by-company" class="section-pad pt-0">
