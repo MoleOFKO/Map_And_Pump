@@ -11,6 +11,16 @@ services:
         value: production
       - key: APP_BASE_URL
         value: https://map-and-pump.online
+      - key: DB_HOST
+        value: gateway01.ap-southeast-1.prod.aws.tidbcloud.com
+      - key: DB_PORT
+        value: "4000"
+      - key: DB_NAME
+        value: map_and_pump
+      - key: DB_USERNAME
+        sync: false
+      - key: DB_PASSWORD
+        sync: false
       - key: MAIL_LOCAL_FALLBACK
         value: false
       - key: MAIL_PROVIDER

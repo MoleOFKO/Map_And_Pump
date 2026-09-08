@@ -2,18 +2,67 @@
 /**
  * Shared database connection.
  *
- * Environment variables can override the checked-in development defaults on
- * deployment. Callers decide how to present a connection failure so that a
- * database outage does not corrupt a page with an unsolicited success.
+ * Database credentials are supplied through environment variables. For local
+ * development, values from the ignored .env.local file are loaded when a
+ * matching system environment variable is not already set.
  */
-// 
-$host = 'gateway01.ap-southeast-1.prod.aws.tidbcloud.com'; // e.g., gateway01.us-west-2.prod.aws.tidbcloud.com
-$dbname = 'map_and_pump';
-$username = '3sdV1BWxtCzY7YS.root';
-$password = 'GNfDltJeN7paYMLq';
-$port = 4000; // Usually 4000 for TiDB, or 3306 for standard MySQL secure ports
+
+if (!function_exists('map_pump_load_local_env')) {
+    function map_pump_load_local_env(): void
+    {
+        static $loaded = false;
+        if ($loaded) {
+            return;
+        }
+        $loaded = true;
+
+        $envPath = dirname(__DIR__) . '/.env.local';
+        if (!is_file($envPath)) {
+            return;
+        }
+
+        $values = parse_ini_file($envPath, false, INI_SCANNER_RAW);
+        if (!is_array($values)) {
+            error_log('Unable to parse .env.local.');
+            return;
+        }
+
+        foreach ($values as $key => $value) {
+            if (getenv($key) !== false) {
+                continue;
+            }
+            $value = (string) $value;
+            putenv($key . '=' . $value);
+            $_ENV[$key] = $value;
+        }
+    }
+}
+
+if (!function_exists('map_pump_env')) {
+    function map_pump_env(string $key, ?string $default = null): ?string
+    {
+        $value = getenv($key);
+        if ($value !== false) {
+            return $value;
+        }
+
+        return $_ENV[$key] ?? $default;
+    }
+}
+
+map_pump_load_local_env();
+
+$host = map_pump_env('DB_HOST');
+$dbname = map_pump_env('DB_NAME');
+$username = map_pump_env('DB_USERNAME');
+$password = map_pump_env('DB_PASSWORD');
+$port = (int) (map_pump_env('DB_PORT', '4000'));
 
 try {
+    if (!$host || !$dbname || !$username || !$password || $port <= 0) {
+        throw new RuntimeException('Database configuration is incomplete.');
+    }
+
     $dsn = "mysql:host=$host;port=$port;dbname=$dbname;charset=utf8mb4";
 
     $certPath = __DIR__ . '/isrgrootx1.pem';
@@ -60,9 +109,10 @@ try {
             }
         }
     }
-} catch (PDOException $e) {
+} catch (Throwable $e) {
+    error_log('Database connection failed: ' . $e->getMessage());
     if (defined('MAP_PUMP_JSON_RESPONSE') && MAP_PUMP_JSON_RESPONSE) {
-        http_response_code(500);
+        http_response_code(503);
         header('Content-Type: application/json');
         echo json_encode([
             'ok' => false,
@@ -72,7 +122,8 @@ try {
         exit;
     }
 
-    die("Database connection failed: " . $e->getMessage());
+    http_response_code(503);
+    exit('Database connection is temporarily unavailable. Please try again later.');
 }
 
 ?>
