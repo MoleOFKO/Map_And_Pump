@@ -20,7 +20,7 @@ if ($code === '') {
 }
  
 try {
-    $tokenRequestMethod = $provider === 'facebook' ? 'GET' : 'POST';
+    $tokenRequestMethod = 'POST';
     $token = social_http_request($config['token_url'], $tokenRequestMethod, [
         'client_id' => $config['client_id'],
         'client_secret' => $config['client_secret'],

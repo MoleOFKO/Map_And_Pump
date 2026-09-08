@@ -58,25 +58,17 @@ if (!empty($_COOKIE[MAP_PUMP_LOGIN_PREFILL_EMAIL_COOKIE])) {
     <!-- Left Side: Login Form -->
     <div class="form-container">
       <div class="header">
-        <span class="welcome-text">Welcome!</span>
         <h1 class="title">LOGIN</h1>
       </div>
 
-      <?php if ($loginError): ?>
-        <div class="alert alert-danger" role="alert" style="margin-bottom: 1rem; padding: 0.85rem 1rem; border-radius: 12px; background: rgba(248, 113, 113, 0.12); border: 1px solid rgba(248, 113, 113, 0.35); color: #fdd;">
-          <?= htmlspecialchars($loginError, ENT_QUOTES, 'UTF-8') ?>
-        </div>
-      <?php endif; ?>
-      <?php if ($socialDebug === 'Unable to contact login provider.'): ?>
-        <div class="alert alert-warning" role="alert" style="margin-bottom: 1rem; padding: 0.85rem 1rem; border-radius: 12px; background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.35); color: #fef3c7;">
-          <strong>OAuth debug:</strong> <?= htmlspecialchars($socialDebug, ENT_QUOTES, 'UTF-8') ?>
-        </div>
-      <?php endif; ?>
-      <?php if ($loginSuccess): ?>
-        <div class="alert alert-success" role="alert" style="margin-bottom: 1rem; padding: 0.85rem 1rem; border-radius: 12px; background: rgba(34, 197, 94, 0.12); border: 1px solid rgba(34, 197, 94, 0.35); color: #d1fae5;">
-          <?= htmlspecialchars($loginSuccess, ENT_QUOTES, 'UTF-8') ?>
-        </div>
-      <?php endif; ?>
+      <!-- Compact popup for server-side messages (OAuth / login) - populated via data attrs -->
+      <div id="mini-popup" class="mini-popup" aria-hidden="true"
+           data-login="<?= htmlspecialchars($loginError, ENT_QUOTES, 'UTF-8') ?>"
+           data-social="<?= htmlspecialchars($socialDebug, ENT_QUOTES, 'UTF-8') ?>"
+           data-success="<?= htmlspecialchars($loginSuccess, ENT_QUOTES, 'UTF-8') ?>">
+        <div class="mini-msg"></div>
+        <button type="button" class="close-btn" aria-label="Close">×</button>
+      </div>
 
       <form id="login-form" action="login_process.php" method="POST">
         
@@ -181,6 +173,40 @@ if (!empty($_COOKIE[MAP_PUMP_LOGIN_PREFILL_EMAIL_COOKIE])) {
       if ('disabled' in button) button.disabled = false;
       button.innerHTML = button.dataset.originalHtml;
     }
+
+    // Show compact server-side popup when a message is present to avoid expanding the card
+    (function () {
+      try {
+        const popup = document.getElementById('mini-popup');
+        if (!popup) return;
+
+        const msgEl = popup.querySelector('.mini-msg');
+        const closeBtn = popup.querySelector('.close-btn');
+        const messages = [
+          popup.dataset.social,
+          popup.dataset.login,
+          popup.dataset.success
+        ].filter((value) => typeof value === 'string' && value.trim() !== '');
+
+        const text = messages[0] || '';
+        if (text) {
+          msgEl.textContent = popup.dataset.social ? `OAuth: ${popup.dataset.social}` : text;
+          popup.classList.add('show');
+          popup.setAttribute('aria-hidden', 'false');
+          setTimeout(() => {
+            popup.classList.remove('show');
+            popup.setAttribute('aria-hidden', 'true');
+          }, 5000);
+        }
+
+        closeBtn?.addEventListener('click', function () {
+          popup.classList.remove('show');
+          popup.setAttribute('aria-hidden', 'true');
+        });
+      } catch (e) {
+        console.error(e);
+      }
+    })();
     const passwordInput = document.getElementById('password');
     const togglePasswordBtn = document.getElementById('togglePassword');
     const eyeIcon = document.getElementById('eyeIcon');

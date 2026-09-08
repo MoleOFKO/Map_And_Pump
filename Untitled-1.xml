@@ -1,0 +1,81 @@
+<svg width="300" height="350" viewBox="0 0 300 350" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- Gradient for Shield Base -->
+    <linearGradient id="shieldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00A3FF" />
+      <stop offset="100%" stop-color="#0047BA" />
+    </linearGradient>
+
+    <!-- Gradient for Fuel Nozzle -->
+    <linearGradient id="nozzleGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#0072FF" />
+      <stop offset="100%" stop-color="#002C8A" />
+    </linearGradient>
+  </defs>
+
+  <style>
+    /* Float animation for the main shield */
+    .animated-shield {
+      animation: float 4s ease-in-out infinite;
+      transform-origin: center;
+    }
+
+    /* Pulse glow on the double checkmark circle */
+    .pulse-check {
+      animation: pulse 2.5s ease-in-out infinite;
+      transform-origin: 150px 130px;
+    }
+
+    /* Subtle movement for the fuel hose */
+    .pump-hose {
+      animation: nozzleMove 3s ease-in-out infinite alternate;
+      transform-origin: bottom right;
+    }
+
+    @keyframes float {
+      0%, 100% { transform: translateY(0px); }
+      50% { transform: translateY(-8px); }
+    }
+
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); opacity: 1; }
+      50% { transform: scale(1.04); opacity: 0.85; }
+    }
+
+    @keyframes nozzleMove {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(1.5deg); }
+    }
+  </style>
+
+  <g class="animated-shield">
+    <!-- Shield Background -->
+    <path d="M 150 20 C 220 20, 260 50, 260 140 C 260 230, 180 280, 150 300 C 120 280, 40 230, 40 140 C 40 50, 80 20, 150 20 Z" fill="url(#shieldGrad)" />
+    
+    <!-- Shield Shadow Divider (Right Half Darker Overlay) -->
+    <path d="M 150 20 C 220 20, 260 50, 260 140 C 260 230, 180 280, 150 300 Z" fill="#000" opacity="0.12" />
+
+    <!-- Circular Checkmark Symbol -->
+    <g class="pulse-check">
+      <!-- Outer Dial/Circle -->
+      <circle cx="150" cy="130" r="65" fill="none" stroke="#FFFFFF" stroke-width="12" stroke-linecap="round" stroke-dasharray="320" stroke-dashoffset="30" />
+      
+      <!-- Top Indicator Notch -->
+      <line x1="150" y1="65" x2="150" y2="77" stroke="#FFFFFF" stroke-width="6" stroke-linecap="round" />
+
+      <!-- Double Checkmark inside -->
+      <path d="M 115 130 L 138 152 L 188 102" fill="none" stroke="#FFFFFF" stroke-width="12" stroke-linecap="round" stroke-linejoin="round" />
+      <path d="M 128 112 L 142 126 L 170 98" fill="none" stroke="#FFFFFF" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" />
+    </g>
+
+    <!-- Fuel Nozzle & Hose Line -->
+    <g class="pump-hose">
+      <!-- Hose Loop -->
+      <path d="M 120 265 C 80 270, 50 320, 110 340 C 170 360, 210 290, 210 250" fill="none" stroke="url(#nozzleGrad)" stroke-width="16" stroke-linecap="round" />
+      
+      <!-- Nozzle Body -->
+      <path d="M 195 260 L 255 210 C 265 200, 280 205, 275 220 L 215 285 Z" fill="url(#nozzleGrad)" />
+      <rect x="205" y="245" width="28" height="20" rx="4" transform="rotate(-40 205 245)" fill="#FFFFFF" />
+    </g>
+  </g>
+</svg>

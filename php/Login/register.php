@@ -36,9 +36,14 @@
       <!-- STEP 1: Registration Form -->
       <div class="auth-step active" id="step-1">
         <div class="header">
-          <span class="welcome-text">Join us today!</span>
           <h1 class="title">REGISTER</h1>
         </div>
+
+        <div id="mini-popup" class="mini-popup" aria-hidden="true">
+          <div class="mini-msg"></div>
+          <button type="button" class="close-btn" aria-label="Close">×</button>
+        </div>
+
         <div id="register-status" role="alert" style="display:none; margin-bottom: 1rem; padding: 0.85rem 1rem; border-radius: 12px;"></div>
 
         <form id="form-step-1" onsubmit="return false;">
@@ -190,6 +195,49 @@
   </div>
 
   <script>
+    // Helper utilities
+    function setButtonLoading(button, loading, label = '') {
+      if (!button) return;
+      if (!button.dataset.originalHtml) button.dataset.originalHtml = button.innerHTML;
+      if (loading) {
+        button.classList.add('is-loading');
+        try { button.disabled = true; } catch (e) {}
+        button.innerHTML = `<span class="btn-spinner" aria-hidden="true"></span><span class="btn-loading-label">${label || 'Loading...'}</span>`;
+        return;
+      }
+      button.classList.remove('is-loading');
+      try { button.disabled = false; } catch (e) {}
+      if (button.dataset.originalHtml) button.innerHTML = button.dataset.originalHtml;
+    }
+
+    async function postForm(url, formData) {
+      const response = await fetch(url, { method: 'POST', body: formData, credentials: 'same-origin' });
+      const text = await response.text();
+      const contentType = response.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        return { ok: false, message: text || 'Server returned an invalid response.' };
+      }
+      try { return JSON.parse(text); } catch (e) { return { ok: false, message: text || 'Server returned invalid JSON.' }; }
+    }
+
+    function registrationFormData() {
+      const data = new FormData();
+      data.append('username', (document.getElementById('username')?.value || '').trim());
+      data.append('email', (document.getElementById('register-email')?.value || '').trim());
+      data.append('password', document.getElementById('new-password')?.value || '');
+      data.append('confirm_password', document.getElementById('confirm-password')?.value || '');
+      return data;
+    }
+
+    function showStatus(element, message, ok = false) {
+      if (!element) return;
+      element.textContent = message;
+      element.style.display = message ? 'block' : 'none';
+      element.style.background = ok ? 'rgba(34, 197, 94, 0.12)' : 'rgba(248, 113, 113, 0.12)';
+      element.style.border = ok ? '1px solid rgba(34, 197, 94, 0.35)' : '1px solid rgba(248, 113, 113, 0.35)';
+      element.style.color = ok ? '#d1fae5' : '#fdd';
+    }
+
     const step1 = document.getElementById('step-1');
     const step2 = document.getElementById('step-2');
     const step3 = document.getElementById('step-3');
@@ -210,93 +258,51 @@
     const pwPopover = document.getElementById('pw-popover');
     const pbars = document.querySelectorAll('.pbar');
     const strengthText = document.getElementById('strength-text');
-    const passwordError = document.getElementById('password-error');
 
     const ruleLength = document.getElementById('rule-length');
     const ruleCases = document.getElementById('rule-cases');
     const ruleNumber = document.getElementById('rule-number');
     const ruleSymbol = document.getElementById('rule-symbol');
 
-    function setButtonLoading(button, loading, label = '') {
-      if (!button) return;
-      if (!button.dataset.originalHtml) {
-        button.dataset.originalHtml = button.innerHTML;
-      }
+    const miniPopup = document.getElementById('mini-popup');
+    const miniMsg = miniPopup?.querySelector('.mini-msg');
+    const miniClose = miniPopup?.querySelector('.close-btn');
 
-      if (loading) {
-        button.classList.add('is-loading');
-        button.setAttribute('aria-busy', 'true');
-        if ('disabled' in button) button.disabled = true;
-        button.innerHTML = `<span class="btn-spinner" aria-hidden="true"></span><span class="btn-loading-label">${label || button.dataset.loadingText || 'Loading...'}</span>`;
-        return;
-      }
-
-      button.classList.remove('is-loading');
-      button.removeAttribute('aria-busy');
-      if ('disabled' in button) button.disabled = false;
-      button.innerHTML = button.dataset.originalHtml;
-    }
-    function showStatus(element, message, ok = false) {
-      element.textContent = message;
-      element.style.display = message ? 'block' : 'none';
-      element.style.background = ok ? 'rgba(34, 197, 94, 0.12)' : 'rgba(248, 113, 113, 0.12)';
-      element.style.border = ok ? '1px solid rgba(34, 197, 94, 0.35)' : '1px solid rgba(248, 113, 113, 0.35)';
-      element.style.color = ok ? '#d1fae5' : '#fdd';
-    }
-
-    async function postForm(url, formData) {
-      const response = await fetch(url, {
-        method: 'POST',
-        body: formData,
-        credentials: 'same-origin'
-      });
-      const text = await response.text();
-      const contentType = response.headers.get('content-type') || '';
-      if (!contentType.includes('application/json')) {
-        console.error('Unexpected response from', url, response.status, text);
-        return {
-          ok: false,
-          message: text.trim() || 'Server returned an invalid response.'
-        };
-      }
+    function showMiniPopup(message) {
       try {
-        return JSON.parse(text);
-      } catch (error) {
-        console.error('JSON parse error from', url, text, error);
-        return {
-          ok: false,
-          message: text.trim() || 'Server returned an invalid response.'
-        };
+        if (!miniPopup || !miniMsg) return;
+        miniMsg.textContent = message;
+        miniPopup.classList.add('show');
+        miniPopup.setAttribute('aria-hidden', 'false');
+        clearTimeout(miniPopup._hideTimer);
+        miniPopup._hideTimer = setTimeout(() => {
+          miniPopup.classList.remove('show');
+          miniPopup.setAttribute('aria-hidden', 'true');
+        }, 5000);
+      } catch (e) {
+        console.error(e);
       }
     }
 
-    function registrationFormData() {
-      const data = new FormData();
-      data.append('username', usernameInput.value.trim());
-      data.append('email', registerEmail.value.trim());
-      data.append('password', newPassword.value);
-      data.append('confirm_password', confirmPassword.value);
-      return data;
+    function hideMiniPopup() {
+      if (!miniPopup) return;
+      clearTimeout(miniPopup._hideTimer);
+      miniPopup.classList.remove('show');
+      miniPopup.setAttribute('aria-hidden', 'true');
     }
 
-    newPassword.addEventListener('focus', () => {
-      pwPopover.classList.add('visible');
-    });
-
-    newPassword.addEventListener('blur', () => {
-      if (!newPassword.value) {
-        pwPopover.classList.remove('visible');
-      }
-    });
+    miniClose?.addEventListener('click', hideMiniPopup);
 
     function updateRule(elem, isValid) {
       const bullet = elem.querySelector('.bullet');
       if (isValid) {
         elem.classList.add('valid');
         bullet.textContent = '✓';
+        elem.style.display = 'none';
       } else {
         elem.classList.remove('valid');
         bullet.textContent = '✕';
+        elem.style.display = 'flex';
       }
     }
 
@@ -334,19 +340,29 @@
       if (!val1) {
         strengthText.textContent = '';
         strengthText.classList.remove('visible');
-        passwordError.textContent = '';
       } else {
         strengthText.textContent = labels[score] || 'Weak';
         strengthText.style.color = colors[score] || '#ef4444';
         strengthText.classList.add('visible');
       }
 
-      if (val1 && !isLength) {
-        passwordError.textContent = 'Must be 8~15 characters.';
-      } else if (val1 && val2 && val1 !== val2) {
-        passwordError.textContent = 'Passwords do not match.';
+      const failedRules = [
+        !isLength,
+        !isCases,
+        !isNumber,
+        !isSymbol
+      ].filter(Boolean);
+
+      if (val1 && failedRules.length > 0) {
+        pwPopover.classList.add('visible');
+        pwPopover.setAttribute('aria-hidden', 'false');
       } else {
-        passwordError.textContent = '';
+        pwPopover.classList.remove('visible');
+        pwPopover.setAttribute('aria-hidden', 'true');
+      }
+
+      if (val1 && val2 && val1 !== val2) {
+        // leave mismatch handling to submit validation so the popup is consistent with login page behavior
       }
     }
 
@@ -363,25 +379,28 @@
       const val1 = newPassword.value;
       const val2 = confirmPassword.value;
       const isLength = val1.length >= 8 && val1.length <= 15;
+      const isCases = /[a-z]/.test(val1) && /[A-Z]/.test(val1);
+      const isNumber = /\d/.test(val1);
+      const isSymbol = /[^a-zA-Z0-9]/.test(val1);
 
-      if (!isLength) {
-        passwordError.textContent = 'Must be 8~15 characters.';
+      if (!isLength || !isCases || !isNumber || !isSymbol) {
+        // Show inline popover rules; do not show mismatch popup for complexity failures
+        evaluatePassword();
         return;
       }
 
       if (val1 !== val2) {
-        passwordError.textContent = 'Passwords do not match.';
+        showMiniPopup('Password Does Not Match, Please Try Again');
         return;
       }
 
-      passwordError.textContent = '';
       showStatus(registerStatus, '');
       setButtonLoading(toStep2, true, 'SENDING...');
 
       try {
         const result = await postForm('register_process.php', registrationFormData());
         if (!result.ok) {
-          showStatus(registerStatus, result.message || 'Could not send verification email.');
+          showMiniPopup(result.message || 'Email Does Not Exist, Please Try Again');
           return;
         }
 
@@ -392,7 +411,7 @@
         step2.classList.add('active');
         document.querySelector('.otp-digit')?.focus();
       } catch (error) {
-        showStatus(registerStatus, 'Could not contact the server. Please try again.');
+        showMiniPopup('Could not contact the server. Please try again.');
       } finally {
         setButtonLoading(toStep2, false);
       }
