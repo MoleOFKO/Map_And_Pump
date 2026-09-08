@@ -111,6 +111,7 @@ if ($currentPage !== 'license.php' && !$customerLicenseAccess['is_approved']) {
 $viewTitle = "Dashboard Overview";
 if ($currentPage == 'track_book.php') $viewTitle = "Active Reservation Hub";
 if ($currentPage == 'usage_history.php') $viewTitle = "Usage Reports Log";
+if ($currentPage == 'feedback.php') $viewTitle = "Feedback & Replies";
 if ($currentPage == 'profile_page.php') $viewTitle = "Portal Profile Settings";
 if ($currentPage == 'license.php') $viewTitle = "Driver License Setup";
 if ($currentPage == 'car_license.php') $viewTitle = "Car License Setup";
@@ -205,6 +206,9 @@ if ($currentPage == 'car_license.php') $viewTitle = "Car License Setup";
                     </a>
                     <a href="usage_history.php" class="nav-item-link <?php echo ($currentPage == 'usage_history.php') ? 'active' : ''; ?>">
                         <i class="bi bi-clipboard2-pulse-fill"></i> Usage History
+                    </a>
+                    <a href="feedback.php" class="nav-item-link <?php echo ($currentPage == 'feedback.php') ? 'active' : ''; ?>">
+                        <i class="bi bi-chat-square-text-fill"></i> Feedback & Replies
                     </a>
                     <a href="profile_page.php" class="nav-item-link <?php echo ($currentPage == 'profile_page.php') ? 'active' : ''; ?>">
                         <i class="bi bi-person-fill-gear"></i> Edit Profile

@@ -29,6 +29,19 @@ function map_pump_usage_history_schema_ready(PDO $pdo): bool
                 KEY idx_usage_history_car (car_license_id)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
         );
+
+        $staffColumn = $pdo->prepare(
+            "SELECT COUNT(*)
+             FROM INFORMATION_SCHEMA.COLUMNS
+             WHERE TABLE_SCHEMA = DATABASE()
+               AND TABLE_NAME = 'usage_history'
+               AND COLUMN_NAME = 'staff_user_id'"
+        );
+        $staffColumn->execute();
+        if ((int)$staffColumn->fetchColumn() === 0) {
+            $pdo->exec("ALTER TABLE usage_history ADD COLUMN staff_user_id int DEFAULT NULL AFTER filled_at");
+        }
+
         return true;
     } catch (Throwable $e) {
         error_log('Could not prepare usage_history table: ' . $e->getMessage());

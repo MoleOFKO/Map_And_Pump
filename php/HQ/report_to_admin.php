@@ -3,15 +3,33 @@ require_once __DIR__ . '/hq_guard.php';
 require_once __DIR__ . '/../conn.php';
 // 2. Handle Form Submission
 $alertMessage = "";
+$user_id = (int) ($_SESSION['user_id'] ?? 0);
+$reports = [];
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $topic = $_POST['topic'] ?? '';
-    $urgency = $_POST['urgency'] ?? '';
-    $description = $_POST['description'] ?? '';
-
-    $user_id = (int) ($_SESSION['user_id'] ?? 0);
+    $topic = trim((string) ($_POST['topic'] ?? ''));
+    $urgency = trim((string) ($_POST['urgency'] ?? ''));
+    $description = trim((string) ($_POST['description'] ?? ''));
     $role_id = (int) ($_SESSION['role_id'] ?? $_SESSION['current_role_id'] ?? 3);
 
-    if (!empty($topic) && !empty($urgency) && !empty($description)) {
+    if (isset($_POST['edit_report_id'])) {
+        $reportId = (int) $_POST['edit_report_id'];
+        if ($reportId > 0 && $topic !== '' && in_array($urgency, ['low', 'normal', 'high'], true) && $description !== '') {
+            try {
+                $stmt = $pdo->prepare(
+                    'UPDATE report
+                     SET importance = ?, short_summery = ?, message = ?
+                     WHERE report_id = ? AND user_id = ?'
+                );
+                $summary = ucfirst($topic) . ' Issue';
+                $stmt->execute([$urgency, $summary, $description, $reportId, $user_id]);
+                $alertMessage = $stmt->rowCount() > 0 ? 'Your report was updated successfully.' : 'The report was not found or is unchanged.';
+            } catch (PDOException $e) {
+                $alertMessage = 'Error updating report: ' . $e->getMessage();
+            }
+        } else {
+            $alertMessage = 'Please provide valid report details.';
+        }
+    } elseif ($topic !== '' && $urgency !== '' && $description !== '') {
         try {
             $stmt = $pdo->prepare("INSERT INTO report (user_id, role_id, importance, short_summery, message, created_at) VALUES (?, ?, ?, ?, ?, NOW())");
             
@@ -19,13 +37,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $summary = ucfirst($topic) . " Issue";
             
             $stmt->execute([$user_id, $role_id, $importance, $summary, $description]);
-            $alertMessage = "Your escalation has been successfully dispatched to the admin!";
+            $alertMessage = "Your report has been successfully sent to the admin and moderator team!";
         } catch (PDOException $e) {
             $alertMessage = "Error dispatching report: " . $e->getMessage();
         }
     } else {
         $alertMessage = "Please fill in all required fields.";
     }
+}
+
+try {
+    $stmt = $pdo->prepare(
+        'SELECT report_id, importance, short_summery, message, created_at
+         FROM report
+         WHERE user_id = ?
+         ORDER BY created_at DESC, report_id DESC'
+    );
+    $stmt->execute([$user_id]);
+    $reports = $stmt->fetchAll(PDO::FETCH_ASSOC);
+} catch (PDOException $e) {
+    $alertMessage = $alertMessage !== '' ? $alertMessage : 'Your reports could not be loaded.';
 }
 ?>
 <!DOCTYPE html>
@@ -37,8 +68,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <link rel="stylesheet" href="../../css/HQstyle.css">
 </head>
 <body>
-    <h2 class="title">Report to Admin</h2>
-    <p class="subtitle">Submit incident files, request technical help, or escalate critical terminal operational issues directly to global system administrators.</p>
+    <h2 class="title">Report to Admin and Moderator</h2>
+    <p class="subtitle">Submit an issue for review by the admin and moderator team. You can view and edit your submitted reports below.</p>
 
     <?php
 if (!empty($alertMessage)): ?>
@@ -85,8 +116,48 @@ endif; ?>
                 <input type="file" accept="image/*,application/pdf">
             </div>
 
-            <button type="submit" class="btn btn-danger">Send Report to Admin</button>
+            <button type="submit" class="btn btn-danger">Send Report to Admin and Moderator</button>
         </form>
+    </div>
+
+    <div class="card" style="margin-top: 24px;">
+        <h3>My Submitted Reports</h3>
+        <?php if (!$reports): ?>
+            <p class="subtitle">You have not submitted any reports yet.</p>
+        <?php else: ?>
+            <?php foreach ($reports as $report): ?>
+                <details style="margin-top: 14px; padding: 12px; border: 1px solid var(--border); border-radius: 6px;">
+                    <summary style="cursor: pointer;">
+                        <strong><?= htmlspecialchars($report['short_summery']) ?></strong>
+                        <span style="margin-left: 10px; color: var(--slate-400);"> <?= htmlspecialchars($report['importance']) ?> · <?= htmlspecialchars($report['created_at']) ?></span>
+                    </summary>
+                    <form method="POST" action="" style="margin-top: 14px;">
+                        <input type="hidden" name="edit_report_id" value="<?= (int) $report['report_id'] ?>">
+                        <div class="form-group">
+                            <label>Issue Classification / Topic</label>
+                            <select name="topic" required>
+                                <?php foreach (['pricing' => 'Pricing Sync Error', 'access' => 'Access Control & Credentials', 'dispute' => 'Transaction / Settlement Dispute', 'other' => 'Other Technical Request'] as $topicKey => $topicLabel): ?>
+                                    <option value="<?= htmlspecialchars($topicKey) ?>" <?= stripos((string) $report['short_summery'], $topicKey) !== false ? 'selected' : '' ?>><?= htmlspecialchars($topicLabel) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Impact Urgency Level</label>
+                            <select name="urgency" required>
+                                <?php foreach (['low', 'normal', 'high'] as $urgency): ?>
+                                    <option value="<?= $urgency ?>" <?= strtolower((string) $report['importance']) === $urgency ? 'selected' : '' ?>><?= ucfirst($urgency) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Detailed Description</label>
+                            <textarea name="description" rows="4" required><?= htmlspecialchars((string) $report['message']) ?></textarea>
+                        </div>
+                        <button type="submit" class="btn btn-danger">Update My Report</button>
+                    </form>
+                </details>
+            <?php endforeach; ?>
+        <?php endif; ?>
     </div>
 </body>
 <footer class="text-white-50 text-center py-4 mt-5 small">&copy; 2026 Map & Pump | All Rights Reserved</footer>

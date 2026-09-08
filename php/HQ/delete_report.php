@@ -7,6 +7,7 @@
 header('Content-Type: application/json');
 
 require_once __DIR__ . '/../conn.php';
+require_once __DIR__ . '/hq_guard.php';
 
 try {
     if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
@@ -26,9 +27,9 @@ try {
         throw new Exception('Database connection error');
     }
 
-    // Delete the report
-    $stmt = $pdo->prepare("DELETE FROM report WHERE report_id = ?");
-    $result = $stmt->execute([$reportId]);
+    $userId = (int) ($_SESSION['user_id'] ?? 0);
+    $stmt = $pdo->prepare("DELETE FROM report WHERE report_id = ? AND user_id = ?");
+    $result = $stmt->execute([$reportId, $userId]);
 
     if ($result) {
         echo json_encode(['success' => true, 'message' => 'Report deleted successfully']);

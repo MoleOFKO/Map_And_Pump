@@ -9,6 +9,21 @@ $message = '';
 $error = '';
 $hqId = map_pump_current_hq_id($pdo);
 
+function map_pump_normalize_station_location(string $location): ?string
+{
+    if (!preg_match('/^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$/', $location, $matches)) {
+        return null;
+    }
+
+    $latitude = (float) $matches[1];
+    $longitude = (float) $matches[2];
+    if ($latitude < -90 || $latitude > 90 || $longitude < -180 || $longitude > 180) {
+        return null;
+    }
+
+    return number_format($latitude, 6, '.', '') . ', ' . number_format($longitude, 6, '.', '');
+}
+
 // Handle Form Submissions & AJAX requests via PDO
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
@@ -20,7 +35,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $station_address = trim($_POST['station_address'] ?? '');
         $manager_email   = trim($_POST['manager_email'] ?? '');
 
-        if (!empty($station_name) && !empty($location) && !empty($manager_email)) {
+        $location = map_pump_normalize_station_location($location);
+
+        if (!empty($station_name) && $location !== null && !empty($manager_email)) {
             try {
                 $managerStmt = $pdo->prepare(
                     "SELECT u.user_id
@@ -101,7 +118,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $error = $e->getMessage();
             }
         } else {
-            $error = "Station Name, branch manager email, and location are required.";
+            $error = "Station name, branch manager email, and a valid map location are required.";
         }
     }
 
@@ -114,6 +131,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $manager_email   = trim($_POST['manager_email'] ?? '');
 
         try {
+            $location = map_pump_normalize_station_location($location);
+            if ($location === null) {
+                throw new RuntimeException('Choose a valid station location from the map.');
+            }
+
             // Find user_id based on manager email
             if (!map_pump_station_in_hq($pdo, (int)$station_id, $hqId)) {
                 throw new RuntimeException('You can only configure stations under your own HQ.');
@@ -506,28 +528,52 @@ endforeach; ?>
         let stationMap, stationMarker;
         let configMap, configMarker;
 
+        function formatCoordinates(lat, lng) {
+            return lat.toFixed(6) + ', ' + lng.toFixed(6);
+        }
+
+        function parseCoordinates(value) {
+            if (!value || !value.includes(',')) return null;
+            const parts = value.split(',');
+            const lat = parseFloat(parts[0]);
+            const lng = parseFloat(parts[1]);
+            if (!Number.isFinite(lat) || !Number.isFinite(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+                return null;
+            }
+            return [lat, lng];
+        }
+
+        function createLocationMarker(map, latLng, onMove) {
+            const marker = L.marker(latLng, { draggable: true }).addTo(map);
+            marker.on('dragend', function () {
+                const point = marker.getLatLng();
+                onMove(point.lat, point.lng, false);
+            });
+            return marker;
+        }
+
         // Helper function for Register Modal location
-        function updateStationLocation(lat, lng) {
+        function updateStationLocation(lat, lng, shouldCenter = true) {
             const latLng = [lat, lng];
             if (stationMarker) {
                 stationMarker.setLatLng(latLng);
             } else {
-                stationMarker = L.marker(latLng).addTo(stationMap);
+                stationMarker = createLocationMarker(stationMap, latLng, updateStationLocation);
             }
-            stationMap.setView(latLng, 15);
-            document.getElementById('stationLocation').value = lat.toFixed(6) + ', ' + lng.toFixed(6);
+            if (shouldCenter) stationMap.setView(latLng, 15);
+            document.getElementById('stationLocation').value = formatCoordinates(lat, lng);
         }
 
         // Helper function for Configure Modal location
-        function updateConfigLocation(lat, lng) {
+        function updateConfigLocation(lat, lng, shouldCenter = true) {
             const latLng = [lat, lng];
             if (configMarker) {
                 configMarker.setLatLng(latLng);
             } else {
-                configMarker = L.marker(latLng).addTo(configMap);
+                configMarker = createLocationMarker(configMap, latLng, updateConfigLocation);
             }
-            configMap.setView(latLng, 15);
-            document.getElementById('configLocation').value = lat.toFixed(6) + ', ' + lng.toFixed(6);
+            if (shouldCenter) configMap.setView(latLng, 15);
+            document.getElementById('configLocation').value = formatCoordinates(lat, lng);
         }
 
         // Register Modal Map
@@ -576,15 +622,11 @@ endforeach; ?>
             const coordsVal = document.getElementById('configLocation').value;
             let initialLatLng = [21.9588, 96.0891];
             let zoomLevel = 6;
+            const savedCoords = parseCoordinates(coordsVal);
 
-            if (coordsVal && coordsVal.includes(',')) {
-                const parts = coordsVal.split(',');
-                const parsedLat = parseFloat(parts[0]);
-                const parsedLng = parseFloat(parts[1]);
-                if (!isNaN(parsedLat) && !isNaN(parsedLng)) {
-                    initialLatLng = [parsedLat, parsedLng];
-                    zoomLevel = 15;
-                }
+            if (savedCoords) {
+                initialLatLng = savedCoords;
+                zoomLevel = 15;
             }
 
             if (!configMap) {
@@ -626,15 +668,12 @@ endforeach; ?>
                 configMap.setView(initialLatLng, zoomLevel);
             }
 
-            // Set marker if coords exist
-            if (coordsVal && coordsVal.includes(',')) {
-                const parts = coordsVal.split(',');
-                const latLngObj = L.latLng(parseFloat(parts[0]), parseFloat(parts[1]));
-                if (configMarker) {
-                    configMarker.setLatLng(latLngObj);
-                } else {
-                    configMarker = L.marker(latLngObj).addTo(configMap);
-                }
+            // Set marker if saved coordinates exist, otherwise clear the prior station pin.
+            if (savedCoords) {
+                updateConfigLocation(savedCoords[0], savedCoords[1], false);
+            } else if (configMarker) {
+                configMap.removeLayer(configMarker);
+                configMarker = null;
             }
 
             setTimeout(() => configMap.invalidateSize(), 100);

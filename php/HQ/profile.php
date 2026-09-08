@@ -28,6 +28,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 exit;
             }
 
+            $emailCheck = $pdo->prepare('SELECT user_id FROM users WHERE LOWER(email) = LOWER(?) AND user_id <> ? LIMIT 1');
+            $emailCheck->execute([$email, $userId]);
+            if ($emailCheck->fetchColumn()) {
+                http_response_code(422);
+                echo json_encode(['ok' => false, 'message' => 'That email address is already in use.']);
+                exit;
+            }
+
             $update = $pdo->prepare(
                 'UPDATE users SET user_name = ?, email = ?, updated_at = NOW() WHERE user_id = ?'
             );
@@ -35,7 +43,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $_SESSION['user_name'] = $name;
             $_SESSION['user_email'] = $email;
 
-            echo json_encode(['ok' => true, 'message' => 'Profile details updated successfully.', 'name' => $name, 'email' => $email]);
+            $avatarStmt = $pdo->prepare('SELECT oauth_avatar_url FROM users WHERE user_id = ? LIMIT 1');
+            $avatarStmt->execute([$userId]);
+            $avatarUrl = map_pump_profile_avatar_url((string)$avatarStmt->fetchColumn(), '');
+
+            echo json_encode(['ok' => true, 'message' => 'Profile details updated successfully.', 'name' => $name, 'email' => $email, 'avatar_url' => $avatarUrl]);
             exit;
         }
 
@@ -142,6 +154,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         http_response_code(400);
         echo json_encode(['ok' => false, 'message' => 'Invalid account update action.']);
     } catch (Throwable $exception) {
+        error_log('HQ profile update failed: ' . $exception->getMessage());
         http_response_code(500);
         echo json_encode(['ok' => false, 'message' => 'The account update could not be saved.']);
     }
@@ -417,6 +430,7 @@ $profileFallbackUrl = map_pump_profile_initial_svg($profileName, 'H');
                         localStorage.removeItem('profile_image');
                         document.getElementById('profilePreview').src = result.avatar_url;
                     }
+                    notifyParentProfileChange({ avatarUrl: result.avatar_url || '' });
                 })
                 .catch(error => {
                     alert(error.message || 'Profile picture could not be saved.');
@@ -466,6 +480,13 @@ $profileFallbackUrl = map_pump_profile_initial_svg($profileName, 'H');
                     closePasswordModal();
                     document.querySelector('#passwordModal form').reset();
                 }
+                if (formData.get('action') === 'update_profile') {
+                    notifyParentProfileChange({
+                        name: result.name || document.getElementById('profileName').value,
+                        email: result.email || document.getElementById('profileEmail').value,
+                        avatarUrl: result.avatar_url || ''
+                    });
+                }
                 openUpdateModal(result.message);
             } catch (error) {
                 alert(error.message);
@@ -496,6 +517,11 @@ $profileFallbackUrl = map_pump_profile_initial_svg($profileName, 'H');
             const modal = document.getElementById('updateModal');
             modal.classList.remove('is-visible');
             modal.setAttribute('aria-hidden', 'true');
+        }
+
+        function notifyParentProfileChange(profile) {
+            if (window.parent === window) return;
+            window.parent.postMessage({ type: 'map-pump-profile-updated', profile }, window.location.origin);
         }
 
         document.getElementById('updateModal').addEventListener('click', (event) => {

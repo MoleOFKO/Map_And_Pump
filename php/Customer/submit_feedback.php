@@ -48,10 +48,13 @@ try {
     $usageStmt = $pdo->prepare(
         'SELECT uh.usage_id, uh.booking_id, uh.user_id, uh.station_id, uh.oil_type_id, uh.qr_refrence_code,
                 uh.filled_liters, uh.status, uh.filled_at, s.station_name, o.oil_name
-         FROM usage_history uh
+                 FROM usage_history uh
          LEFT JOIN stations s ON s.station_id = uh.station_id
          LEFT JOIN oil_types o ON o.oil_type_id = uh.oil_type_id
-         WHERE uh.usage_id = :usage_id AND uh.user_id = :user_id
+                 WHERE uh.usage_id = :usage_id
+                     AND uh.user_id = :user_id
+                     AND LOWER(uh.status) = \'filled\'
+                     AND uh.staff_user_id IS NOT NULL
          LIMIT 1'
     );
     $usageStmt->execute([
@@ -60,7 +63,7 @@ try {
     ]);
     $usage = $usageStmt->fetch(PDO::FETCH_ASSOC);
 
-    if (!$usage || strtolower((string)($usage['status'] ?? '')) !== 'filled') {
+    if (!$usage) {
         customer_feedback_redirect('feedback_error=not_filled');
     }
 
