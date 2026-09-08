@@ -1,0 +1,16 @@
+{
+	"folders": [
+		{
+			"path": "F:/Python"
+		},
+		{
+			"path": "E:/Programming/Web Developing"
+		},
+		{
+			"path": "../.."
+		}
+	],
+	"settings": {
+		"liveServer.settings.multiRootWorkspaceName": "Map&Pump"
+	}
+}

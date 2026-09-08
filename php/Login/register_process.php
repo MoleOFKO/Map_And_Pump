@@ -126,8 +126,30 @@ if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
     register_json(false, 'Please enter a valid email address.');
 }
 
+$domain = strtolower((string) substr(strrchr($email, '@') ?: '', 1));
+if ($domain !== '' && !register_is_local_request()) {
+    $exists = false;
+
+    if (function_exists('dns_get_record')) {
+        $dnsRecords = @dns_get_record($domain, DNS_MX);
+        if (!empty($dnsRecords)) {
+            $exists = true;
+        }
+    }
+
+    if (!$exists && function_exists('checkdnsrr')) {
+        if (@checkdnsrr($domain, 'MX') || @checkdnsrr($domain, 'A') || @checkdnsrr($domain, 'AAAA')) {
+            $exists = true;
+        }
+    }
+
+    if (!$exists) {
+        register_json(false, 'Email Does Not Exist, Please Try Again');
+    }
+}
+
 if ($password !== $confirmPassword) {
-    register_json(false, 'Passwords do not match.');
+    register_json(false, 'Password Does Not Match, Please Try Again');
 }
 
 if (strlen($password) < 8 || strlen($password) > 15) {
