@@ -31,6 +31,7 @@ if ($userId > 0 && $usageHistoryReady) {
              ) fb ON fb.usage_id = uh.usage_id
              WHERE uh.user_id = ?
                AND LOWER(uh.status) = \'filled\'
+                             AND uh.staff_user_id IS NOT NULL
              ORDER BY uh.filled_at DESC, uh.usage_id DESC'
         );
         $stmt->execute([$userId]);

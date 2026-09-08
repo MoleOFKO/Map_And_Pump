@@ -373,6 +373,39 @@ echo $user_email_display; ?></p>
         const popup = document.getElementById('userDropdownPopup');
         popup.classList.toggle('active');
     }
+
+    window.addEventListener('message', function (event) {
+        if (event.origin !== window.location.origin || event.data?.type !== 'map-pump-profile-updated') return;
+
+        const profile = event.data.profile || {};
+        if (profile.name) {
+            document.getElementById('headerUserName').textContent = profile.name;
+            document.getElementById('dropdownUserName').textContent = profile.name;
+        }
+        if (profile.email) {
+            document.getElementById('dropdownUserEmail').textContent = profile.email;
+        }
+        if (profile.avatarUrl) {
+            ['headerUserAvatar', 'dropdownUserAvatar'].forEach(function (id) {
+                const currentAvatar = document.getElementById(id);
+                if (!currentAvatar) return;
+                const image = document.createElement('img');
+                image.id = id;
+                image.className = currentAvatar.className.replace('user-avatar-initial', '').trim();
+                image.src = profile.avatarUrl + (profile.avatarUrl.includes('?') ? '&' : '?') + 'v=' + Date.now();
+                image.alt = 'User Avatar';
+                currentAvatar.replaceWith(image);
+            });
+        } else if (profile.name) {
+            const initial = Array.from(profile.name.trim())[0]?.toUpperCase() || 'H';
+            ['headerUserAvatar', 'dropdownUserAvatar'].forEach(function (id) {
+                const currentAvatar = document.getElementById(id);
+                if (currentAvatar?.classList.contains('user-avatar-initial')) {
+                    currentAvatar.textContent = initial;
+                }
+            });
+        }
+    });
     </script>
 <?php require_once __DIR__ . '/../moderator_hire_popup.php'; ?>
 </body>

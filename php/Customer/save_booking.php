@@ -76,7 +76,7 @@ try {
                 OR (t.fuel_code = 'pdsl' AND LOWER(REPLACE(ot.oil_name, ' ', '')) IN ('premiumdisel', 'premiumdiesel'))
             )
          WHERE s.station_id = :station_id
-           AND COALESCE(s.status, 'Active') <> 'Decommissioned'
+           AND LOWER(COALESCE(s.status, 'Active')) = 'active'
          ORDER BY soi.updated_at DESC, soi.inventory_id DESC
          LIMIT 1"
     );

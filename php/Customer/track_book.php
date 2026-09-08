@@ -23,15 +23,15 @@ $customerStationsData = [];
 try {
     $latestInventorySql = map_pump_latest_station_inventory_sql();
     $stationStmt = $pdo->query(
-        "SELECT s.station_id, s.station_name, s.location, s.station_address,
+        "SELECT s.station_id, s.station_name, s.location, s.station_address, s.status,
                 GROUP_CONCAT(DISTINCT CASE
                     WHEN soi.station_id IS NOT NULL AND soi.current_amount_liters > 0 THEN ot.oil_name
                 END ORDER BY ot.oil_name SEPARATOR '|') AS fuel_names
          FROM stations s
          LEFT JOIN ({$latestInventorySql}) soi ON soi.station_id = s.station_id AND soi.is_active = 1
          LEFT JOIN oil_types ot ON ot.oil_type_id = soi.oil_type_id
-         WHERE COALESCE(s.status, 'Active') <> 'Decommissioned'
-         GROUP BY s.station_id, s.station_name, s.location, s.station_address
+         WHERE LOWER(COALESCE(s.status, 'Active')) <> 'decommissioned'
+         GROUP BY s.station_id, s.station_name, s.location, s.station_address, s.status
          ORDER BY s.station_id ASC"
     );
     foreach ($stationStmt->fetchAll(PDO::FETCH_ASSOC) as $stationRow) {
@@ -44,14 +44,22 @@ try {
 
         $fuels = array_values(array_filter(array_map('trim', explode('|', (string)($stationRow['fuel_names'] ?? '')))));
 
+        $stationStatus = trim((string)($stationRow['status'] ?? 'Active'));
+        if ($stationStatus === '') {
+            $stationStatus = 'Active';
+        }
+        $isStationActive = strcasecmp($stationStatus, 'Active') === 0;
+
         $customerStationsData[] = [
             'id' => $stationId,
             'name' => (string)($stationRow['station_name'] ?? ('Station #' . $stationId)),
             'address' => (string)($stationRow['station_address'] ?: $location ?: 'Address not set'),
             'lat' => $coords[0],
             'lng' => $coords[1],
+            'status' => $stationStatus,
+            'isActive' => $isStationActive,
             'fuels' => $fuels,
-            'isBookable' => !empty($fuels),
+            'isBookable' => $isStationActive && !empty($fuels),
             'logo' => '../../images/Logo.png',
         ];
     }
@@ -266,6 +274,20 @@ body.customer-light-mode .customer-map-back-btn:hover {
     color: #fff;
     box-shadow: 0 10px 24px rgba(13, 110, 253, 0.15);
 }
+.customer-station-marker {
+    display: block;
+    width: 18px;
+    height: 18px;
+    border: 3px solid #fff;
+    border-radius: 50%;
+    box-shadow: 0 1px 6px rgba(0, 0, 0, 0.45);
+}
+.customer-station-marker.active { background: #198754; }
+.customer-station-marker.inactive { background: #6c757d; }
+.customer-station-tooltip { min-width: 160px; }
+.customer-station-tooltip .station-tooltip-name { font-weight: 700; }
+.customer-station-tooltip .station-tooltip-status { margin-top: 2px; font-weight: 600; }
+.customer-station-tooltip .station-tooltip-fuels { margin-top: 4px; white-space: normal; }
 body.customer-light-mode .customer-map-recenter-btn {
     color: #102033;
     background: rgba(255, 255, 255, 0.92);
@@ -362,8 +384,12 @@ body.customer-light-mode .customer-map-recenter-btn:hover {
                 maxZoom: 19
             }).addTo(mapInstance);
             stationsData.forEach(station => {
-                const marker = L.marker([station.lat, station.lng]).addTo(mapInstance);
-                marker.bindTooltip(station.name, { direction: 'top', offset: [0, -16] });
+                const marker = L.marker([station.lat, station.lng], { icon: createStationIcon(station) }).addTo(mapInstance);
+                marker.bindTooltip(createStationTooltip(station), {
+                    className: 'customer-station-tooltip',
+                    direction: 'top',
+                    offset: [0, -16]
+                });
                 marker.bindPopup(createStationPopup(station));
                 if (station.isBookable) {
                     marker.on('click', () => selectStation(station.id));
@@ -521,7 +547,7 @@ body.customer-light-mode .customer-map-recenter-btn:hover {
     function selectStation(stationId) {
         selectedStation = stationsData.find(station => Number(station.id) === Number(stationId));
         if (!selectedStation || !selectedStation.isBookable) {
-            alert('This station is not available for booking. Please choose another station.');
+            alert('This station is not active or has no active fuel available. Please choose another station.');
             return;
         }
         document.getElementById('selected-station-name').textContent = selectedStation.name;
@@ -540,17 +566,46 @@ body.customer-light-mode .customer-map-recenter-btn:hover {
         const name = document.createElement('strong');
         const address = document.createElement('div');
         const status = document.createElement('div');
+        const fuels = document.createElement('div');
 
         name.textContent = station.name;
         address.textContent = station.address;
-        status.textContent = station.isBookable ? 'Fuel available' : 'Fuel currently unavailable';
+        status.textContent = `Station status: ${station.status}`;
+        fuels.textContent = station.fuels.length ? `Active fuels: ${station.fuels.join(', ')}` : 'No active fuel available';
         address.style.marginTop = '4px';
         status.style.marginTop = '6px';
         status.style.fontWeight = '600';
-        status.style.color = station.isBookable ? '#198754' : '#b45309';
+        status.style.color = station.isActive ? '#198754' : '#b45309';
+        fuels.style.marginTop = '4px';
 
-        popup.append(name, address, status);
+        popup.append(name, address, status, fuels);
         return popup;
+    }
+
+    function createStationIcon(station) {
+        return L.divIcon({
+            className: '',
+            html: `<span class="customer-station-marker ${station.isActive ? 'active' : 'inactive'}" aria-label="Station marker"></span>`,
+            iconSize: [18, 18],
+            iconAnchor: [9, 9],
+            tooltipAnchor: [0, -12]
+        });
+    }
+
+    function createStationTooltip(station) {
+        const tooltip = document.createElement('div');
+        const name = document.createElement('div');
+        const status = document.createElement('div');
+        const fuels = document.createElement('div');
+
+        name.className = 'station-tooltip-name';
+        status.className = 'station-tooltip-status';
+        fuels.className = 'station-tooltip-fuels';
+        name.textContent = station.name;
+        status.textContent = `Status: ${station.status}`;
+        fuels.textContent = station.fuels.length ? `Active fuels: ${station.fuels.join(', ')}` : 'Active fuels: None';
+        tooltip.append(name, status, fuels);
+        return tooltip;
     }
 
     function showStationCard() {

@@ -20,14 +20,22 @@ if ($roleName !== 'staff') {
     redirect_to_login('This page is only available to staff accounts.');
 }
 
-// Load current staff user name
+// Load the signed-in staff member and their assigned station.
 $displayName = '';
+$staffStationId = 0;
 try {
     if (isset($pdo)) {
-        $stmtUser = $pdo->prepare('SELECT user_name FROM users WHERE user_id = ? LIMIT 1');
+        $stmtUser = $pdo->prepare(
+            'SELECT u.user_name, COALESCE(u.branch_id, bas.station_id) AS station_id
+             FROM users u
+             LEFT JOIN business_account_scope bas ON bas.user_id = u.user_id
+             WHERE u.user_id = ?
+             LIMIT 1'
+        );
         $stmtUser->execute([(int)$_SESSION['user_id']]);
         $uRow = $stmtUser->fetch(PDO::FETCH_ASSOC);
         $displayName = trim((string)($uRow['user_name'] ?? ''));
+        $staffStationId = (int)($uRow['station_id'] ?? 0);
     }
 } catch (Throwable $e) {
     // ignore — displayName remains empty
@@ -36,21 +44,68 @@ try {
 map_pump_feedback_schema_ready($pdo);
 map_pump_usage_history_schema_ready($pdo);
 
-// Load recent feedback (most recent 10)
+// Inbox tabs are server-side so unread/read state also works without JavaScript.
+$activeTab = (string)($_GET['tab'] ?? 'all');
+if (!in_array($activeTab, ['all', 'read', 'unread', 'replies'], true)) {
+    $activeTab = 'all';
+}
 $recentFeedback = [];
+$staffReplies = [];
+$feedbackCounts = ['all' => 0, 'read' => 0, 'unread' => 0, 'replies' => 0];
 try {
-    $stmt = $pdo->query(
-        'SELECT f.feedback_id, f.feedback, f.created_at, f.usage_id, f.rating,
-                u.user_name, uh.qr_refrence_code, s.station_name, o.oil_name
+    $countStmt = $pdo->prepare(
+        'SELECT COUNT(*) AS all_count,
+                SUM(CASE WHEN f.staff_read_at IS NOT NULL THEN 1 ELSE 0 END) AS read_count,
+                SUM(CASE WHEN f.staff_read_at IS NULL THEN 1 ELSE 0 END) AS unread_count
          FROM feedback f
-         LEFT JOIN users u ON u.user_id = f.user_id
-         LEFT JOIN usage_history uh ON uh.usage_id = f.usage_id
-         LEFT JOIN stations s ON s.station_id = f.station_id
-         LEFT JOIN oil_types o ON o.oil_type_id = uh.oil_type_id
-         ORDER BY f.created_at DESC
-         LIMIT 10'
+                 INNER JOIN usage_history uh ON uh.usage_id = f.usage_id
+                 WHERE f.station_id = ?
+                     AND uh.station_id = f.station_id'
     );
-    $recentFeedback = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    $countStmt->execute([$staffStationId]);
+    $counts = $countStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+    $feedbackCounts['all'] = (int)($counts['all_count'] ?? 0);
+    $feedbackCounts['read'] = (int)($counts['read_count'] ?? 0);
+    $feedbackCounts['unread'] = (int)($counts['unread_count'] ?? 0);
+
+    $replyCountStmt = $pdo->prepare(
+        'SELECT COUNT(*)
+         FROM feedback_replies fr
+         INNER JOIN feedback f ON f.feedback_id = fr.feedback_id
+         WHERE fr.staff_id = ? AND f.station_id = ?'
+    );
+    $replyCountStmt->execute([(int)$_SESSION['user_id'], $staffStationId]);
+    $feedbackCounts['replies'] = (int)$replyCountStmt->fetchColumn();
+
+    if ($activeTab === 'replies') {
+        $replyStmt = $pdo->prepare(
+                        'SELECT fr.reply_id, fr.reply_text, fr.created_at, f.feedback_id, f.feedback, f.user_id, f.usage_id
+             FROM feedback_replies fr
+             INNER JOIN feedback f ON f.feedback_id = fr.feedback_id
+                         INNER JOIN usage_history uh ON uh.usage_id = f.usage_id
+             WHERE fr.staff_id = ? AND f.station_id = ?
+                             AND uh.station_id = f.station_id
+             ORDER BY fr.created_at DESC, fr.reply_id DESC'
+        );
+        $replyStmt->execute([(int)$_SESSION['user_id'], $staffStationId]);
+        $staffReplies = $replyStmt->fetchAll(PDO::FETCH_ASSOC);
+    } else {
+        $stateFilter = $activeTab === 'read' ? ' AND f.staff_read_at IS NOT NULL' : ($activeTab === 'unread' ? ' AND f.staff_read_at IS NULL' : '');
+        $stmt = $pdo->prepare(
+                'SELECT f.feedback_id, f.user_id, f.feedback, f.created_at, f.usage_id, f.station_id, f.rating, f.staff_read_at,
+                    uh.qr_refrence_code, s.station_name, o.oil_name,
+                    (SELECT COUNT(*) FROM feedback_replies fr WHERE fr.feedback_id = f.feedback_id) AS reply_count
+             FROM feedback f
+             INNER JOIN usage_history uh ON uh.usage_id = f.usage_id
+             LEFT JOIN stations s ON s.station_id = f.station_id
+             LEFT JOIN oil_types o ON o.oil_type_id = uh.oil_type_id
+                         WHERE f.station_id = ?
+                             AND uh.station_id = f.station_id' . $stateFilter . '
+             ORDER BY f.created_at DESC, f.feedback_id DESC'
+        );
+        $stmt->execute([$staffStationId]);
+        $recentFeedback = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
 } catch (Throwable $e) {
     error_log('Failed to load staff feedback: ' . $e->getMessage());
     $recentFeedback = [];
@@ -74,6 +129,20 @@ $showReplySuccess = isset($_GET['reply_sent']) && $_GET['reply_sent'] === '1';
     <style>
         .badge-resolved { background-color: rgba(27, 228, 148, 0.15); color: #1be494; border: 1px solid rgba(27, 228, 148, 0.25); }
         .badge-pending { background-color: rgba(255, 193, 7, 0.15); color: #ffc107; border: 1px solid rgba(255, 193, 7, 0.25); }
+        .feedback-tabs { display:flex; gap:8px; flex-wrap:wrap; border-bottom:1px solid rgba(255,255,255,.12); margin:28px 0 20px; padding-bottom:12px; }
+        .feedback-tab { color:rgba(255,255,255,.66); text-decoration:none; border:1px solid rgba(255,255,255,.14); border-radius:7px; padding:8px 12px; font-size:.85rem; font-weight:700; }
+        .feedback-tab:hover { color:#fff; border-color:rgba(0,200,255,.55); }
+        .feedback-tab.active { color:#06111d; background:#55d8ff; border-color:#55d8ff; }
+        .feedback-tab .count { display:inline-flex; min-width:20px; justify-content:center; margin-left:5px; padding:0 5px; border-radius:999px; background:rgba(0,0,0,.16); font-size:.72rem; }
+        .feedback-card { border-left:4px solid rgba(255,255,255,.2); }
+        .feedback-card.is-unread { border-left-color:#ffc107; box-shadow:0 0 0 1px rgba(255,193,7,.16); }
+        .feedback-status { display:inline-flex; align-items:center; gap:6px; font-size:.76rem; font-weight:800; text-transform:uppercase; letter-spacing:.04em; }
+        .feedback-status.unread { color:#ffc107; }
+        .feedback-status.read { color:#61e6b0; }
+        .feedback-status .dot { width:8px; height:8px; border-radius:50%; background:currentColor; box-shadow:0 0 10px currentColor; }
+        .feedback-meta { display:flex; flex-wrap:wrap; gap:7px 14px; color:rgba(255,255,255,.6); font-size:.8rem; }
+        .feedback-meta strong { color:#fff; }
+        .reply-preview { margin-top:12px; padding:10px 12px; border-radius:7px; background:rgba(27,228,148,.08); border:1px solid rgba(27,228,148,.15); color:#c9d2e3; font-size:.84rem; }
     </style>
 </head>
 <body class="background_color" id="background_color">
@@ -141,7 +210,7 @@ $showReplySuccess = isset($_GET['reply_sent']) && $_GET['reply_sent'] === '1';
                     </div>
                     <div class="d-flex gap-2 align-items-center">
                         <button class="btn menu-pill-btn" type="button" data-bs-toggle="modal" data-bs-target="#createReportModal"><i class="bi bi-file-earmark-plus-fill me-1"></i> Create Report</button>
-                        <span class="stat-chip" style="color:#ffc107; border-color: rgba(255,193,7,0.3); background: rgba(255,193,7,0.05);"><i class="bi bi-exclamation-circle me-1"></i> Total Unresolved: 1</span>
+                        <span class="stat-chip" style="color:#ffc107; border-color: rgba(255,193,7,0.3); background: rgba(255,193,7,0.05);"><i class="bi bi-envelope-exclamation me-1"></i> Unread: <?= $feedbackCounts['unread'] ?></span>
                     </div>
                 </div>
             </div>
@@ -150,34 +219,64 @@ $showReplySuccess = isset($_GET['reply_sent']) && $_GET['reply_sent'] === '1';
             <div class="alert alert-success border-0">Report was created and sent to Branch Manager.</div>
         <?php endif; ?>
         <?php if ($showReplySuccess): ?>
-            <div class="alert alert-success border-0">Reply was saved and delivered to the user (internal record).</div>
+            <div class="alert alert-success border-0">Reply sent. The customer can now see it in Feedback &amp; Replies.</div>
+        <?php endif; ?>
+        <?php if (isset($_GET['reply_error'])): ?>
+            <div class="alert alert-warning border-0">The feedback could not be updated. It may belong to another station.</div>
         <?php endif; ?>
 
+        <nav class="feedback-tabs" aria-label="Feedback inbox filters">
+            <?php foreach (['all' => 'All', 'read' => 'Read', 'unread' => 'Unread', 'replies' => 'My replies'] as $tabKey => $tabLabel): ?>
+                <a class="feedback-tab <?= $activeTab === $tabKey ? 'active' : '' ?>" href="feedback_manage.php?tab=<?= $tabKey ?>">
+                    <?= $tabLabel ?><span class="count"><?= $feedbackCounts[$tabKey] ?></span>
+                </a>
+            <?php endforeach; ?>
+        </nav>
+
         <div class="row g-4 px-2">
-            <?php if (empty($recentFeedback)): ?>
-                <div class="col-12"><div class="dashboard-card text-center text-white-50 py-5">No recent feedback available.</div></div>
+            <?php if ($activeTab === 'replies'): ?>
+                <?php if (empty($staffReplies)): ?>
+                    <div class="col-12"><div class="dashboard-card text-center text-white-50 py-5">You have not sent any replies yet.</div></div>
+                <?php else: foreach ($staffReplies as $reply): ?>
+                    <div class="col-12"><article class="dashboard-card feedback-card">
+                        <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-2">
+                            <div>
+                                <h5 class="mb-1 text-white fw-semibold">Your reply</h5>
+                                <div class="feedback-meta"><span>Customer UID <strong>#<?= (int)$reply['user_id'] ?></strong></span><span>Type: Staff reply</span><span><?= htmlspecialchars((new DateTime($reply['created_at']))->format('M j, Y \\a\\t H:i')) ?></span></div>
+                            </div>
+                            <span class="feedback-status read"><span class="dot"></span> Sent</span>
+                        </div>
+                        <p class="text-white mb-2 small"><?= nl2br(htmlspecialchars($reply['reply_text'])) ?></p>
+                        <div class="reply-preview"><strong>Original customer feedback:</strong> <?= htmlspecialchars($reply['feedback']) ?></div>
+                    </article></div>
+                <?php endforeach; endif; ?>
+            <?php elseif (empty($recentFeedback)): ?>
+                <div class="col-12"><div class="dashboard-card text-center text-white-50 py-5">No <?= htmlspecialchars($activeTab) ?> feedback is available.</div></div>
             <?php else: ?>
                 <?php foreach ($recentFeedback as $fb): ?>
                     <?php
                         $isUsageFeedback = !empty($fb['usage_id']);
-                        $feedbackTitle = $isUsageFeedback ? 'Fuel fill feedback' : (substr((string)$fb['feedback'], 0, 80) . (strlen((string)$fb['feedback']) > 80 ? '…' : ''));
+                        $feedbackTitle = $isUsageFeedback ? 'Fuel fill feedback' : 'General feedback';
                         $feedbackMeta = $isUsageFeedback ? ('Usage #' . (int)$fb['usage_id'] . (!empty($fb['qr_refrence_code']) ? ' / ' . $fb['qr_refrence_code'] : '')) : 'General feedback';
+                        $isUnread = empty($fb['staff_read_at']);
                     ?>
                     <div class="col-12">
-                        <div class="dashboard-card">
+                        <article class="dashboard-card feedback-card <?= $isUnread ? 'is-unread' : '' ?>">
                             <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
                                 <div>
                                     <h5 class="mb-1 text-white fw-semibold"><?= htmlspecialchars($feedbackTitle) ?></h5>
-                                    <small class="text-white-50">By: <strong class="text-white"><?= htmlspecialchars($fb['user_name'] ?: 'Anonymous') ?></strong> • <?= htmlspecialchars($feedbackMeta) ?> • <?= htmlspecialchars((new DateTime($fb['created_at']))->format('M j, Y \\a\\t H:i')) ?></small>
+                                    <div class="feedback-meta"><span>Customer UID <strong>#<?= (int)$fb['user_id'] ?></strong></span><span>Type: <?= $isUsageFeedback ? 'Fuel fill feedback' : 'General feedback' ?></span><span><?= htmlspecialchars($feedbackMeta) ?></span><span><?= htmlspecialchars((new DateTime($fb['created_at']))->format('M j, Y \\a\\t H:i')) ?></span></div>
                                 </div>
-                                <span class="badge <?= 'badge-pending' ?> px-3 py-2 rounded-pill small fw-medium"><?= !empty($fb['rating']) ? ((int)$fb['rating'] . '/5') : 'Recent' ?></span>
+                                <div class="d-flex align-items-center gap-2"><span class="feedback-status <?= $isUnread ? 'unread' : 'read' ?>"><span class="dot"></span><?= $isUnread ? 'Unread' : 'Read' ?></span><span class="badge <?= $isUnread ? 'badge-pending' : 'badge-resolved' ?> px-3 py-2 rounded-pill small fw-medium"><?= !empty($fb['rating']) ? ((int)$fb['rating'] . '/5') : 'Feedback' ?></span></div>
                             </div>
                             <p class="text-white-70 mb-4 small" style="opacity: 0.85;"><?= nl2br(htmlspecialchars(substr($fb['feedback'], 0, 240))) ?><?= strlen($fb['feedback']) > 240 ? '…' : '' ?></p>
+                            <?php if ((int)$fb['reply_count'] > 0): ?><div class="reply-preview"><i class="bi bi-reply-fill me-1"></i><?= (int)$fb['reply_count'] ?> staff repl<?= (int)$fb['reply_count'] === 1 ? 'y' : 'ies' ?> recorded for this feedback.</div><?php endif; ?>
                             <div class="d-flex justify-content-end gap-2 flex-wrap">
-                                <button class="btn menu-pill-btn px-4" data-bs-toggle="modal" data-bs-target="#replyModal" data-feedback-id="<?= (int)$fb['feedback_id'] ?>" data-staff-id="<?= (int)($_SESSION['user_id'] ?? 0) ?>"><i class="bi bi-reply-fill me-1"></i> Reply</button>
+                                <?php if ($isUnread): ?><form action="feedback_process.php" method="POST"><input type="hidden" name="action" value="mark_read"><input type="hidden" name="feedback_id" value="<?= (int)$fb['feedback_id'] ?>"><input type="hidden" name="return_tab" value="<?= htmlspecialchars($activeTab) ?>"><button class="btn btn-outline-light px-4" type="submit"><i class="bi bi-check2 me-1"></i> Mark read</button></form><?php endif; ?>
+                                <button class="btn menu-pill-btn px-4" data-bs-toggle="modal" data-bs-target="#replyModal" data-feedback-id="<?= (int)$fb['feedback_id'] ?>"><i class="bi bi-reply-fill me-1"></i> Reply</button>
                                 <button class="btn btn-outline-light px-4" data-feedback-id="<?= (int)$fb['feedback_id'] ?>" onclick="attachToReport(<?= (int)$fb['feedback_id'] ?>)"><i class="bi bi-pin-angle me-1"></i> Attach to Report</button>
                             </div>
-                        </div>
+                        </article>
                     </div>
                 <?php endforeach; ?>
             <?php endif; ?>
@@ -197,8 +296,9 @@ $showReplySuccess = isset($_GET['reply_sent']) && $_GET['reply_sent'] === '1';
                 <form action="feedback_process.php" method="POST">
                     <div class="modal-body">
                     
-                        <input type="hidden" id="modalFeedbackId" name="feedback_id" value="1"> 
-                        <input type="hidden" id="modalStaffId" name="staff_id" value="CURRENT_STAFF_ID">
+                        <input type="hidden" name="action" value="reply">
+                        <input type="hidden" id="modalFeedbackId" name="feedback_id" value="">
+                        <input type="hidden" name="return_tab" value="<?= htmlspecialchars($activeTab) ?>">
 
                         <div class="mb-3">
                             <label for="responseTextarea" class="form-label text-white-50 small">Message Body</label>
@@ -243,7 +343,7 @@ $showReplySuccess = isset($_GET['reply_sent']) && $_GET['reply_sent'] === '1';
                                         <select id="attachFeedbackSelect" name="attach_feedback_id" class="form-select glass-select">
                                             <option value="">-- None --</option>
                                             <?php foreach ($recentFeedback as $fbOpt): ?>
-                                                <option value="<?= (int)$fbOpt['feedback_id'] ?>"><?= htmlspecialchars(substr($fbOpt['feedback'], 0, 80)) ?><?= strlen($fbOpt['feedback']) > 80 ? '…' : '' ?> — <?= htmlspecialchars($fbOpt['user_name'] ?: 'Anonymous') ?></option>
+                                                <option value="<?= (int)$fbOpt['feedback_id'] ?>"><?= htmlspecialchars(substr($fbOpt['feedback'], 0, 80)) ?><?= strlen($fbOpt['feedback']) > 80 ? '…' : '' ?> — Customer UID #<?= (int)$fbOpt['user_id'] ?></option>
                                             <?php endforeach; ?>
                                         </select>
                                     </div>
@@ -341,11 +441,8 @@ $showReplySuccess = isset($_GET['reply_sent']) && $_GET['reply_sent'] === '1';
             replyModalEl.addEventListener('show.bs.modal', function (event) {
                 var button = event.relatedTarget;
                 var feedbackId = button.getAttribute('data-feedback-id');
-                var staffId = button.getAttribute('data-staff-id');
                 var inputFb = document.getElementById('modalFeedbackId');
-                var inputStaff = document.getElementById('modalStaffId');
                 if (inputFb && feedbackId) inputFb.value = feedbackId;
-                if (inputStaff && staffId) inputStaff.value = staffId;
             });
         }
     </script>
