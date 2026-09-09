@@ -6,7 +6,7 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
 }
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    hq_redirect();
+    hq_redirect('view_hq_and_user_account.php');
 }
 
 $headquarterId = filter_var($_POST['headquarter_id'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
@@ -15,18 +15,21 @@ $reason = trim((string) ($_POST['reason'] ?? ''));
 
 if (!$headquarterId || !in_array($actionType, ['suspend', 'remove'], true) || $reason === '') {
     hq_flash('danger', 'Choose suspend or remove and provide a reason before submitting.');
-    hq_redirect();
+    hq_redirect('view_hq_and_user_account.php');
 }
 
 if (mb_strlen($reason) > 2000) {
     hq_flash('danger', 'The reason must be 2,000 characters or fewer.');
-    hq_redirect();
+    hq_redirect('view_hq_and_user_account.php');
 }
 
-if (!hq_db_available() || !hq_registry_schema_ready() || !hq_action_table_ready()) {
+if (!hq_db_available() || !hq_registry_schema_ready()) {
     hq_flash('danger', hq_db_error_message());
-    hq_redirect();
+    hq_redirect('view_hq_and_user_account.php');
 }
+
+// Action history is preferred but must not block the status change if DDL is restricted.
+$historyReady = hq_action_table_ready();
 
 global $conn;
 $targetQuery = $conn->prepare(
@@ -44,7 +47,7 @@ $targetQuery = $conn->prepare(
 
 if (!$targetQuery) {
     hq_flash('danger', hq_db_error_message());
-    hq_redirect();
+    hq_redirect('view_hq_and_user_account.php');
 }
 
 $targetQuery->bind_param('i', $headquarterId);
@@ -54,7 +57,7 @@ $targetQuery->close();
 
 if (!$target) {
     hq_flash('danger', 'That HQ account could not be found.');
-    hq_redirect();
+    hq_redirect('view_hq_and_user_account.php');
 }
 
 $newStatus = $actionType === 'remove' ? 'removed' : 'suspended';
@@ -76,54 +79,90 @@ $notification = !empty($target['email'])
 try {
     $conn->begin_transaction();
 
-    $statusUpdate = $conn->prepare('UPDATE users SET status = ?, updated_at = NOW() WHERE headquarter_id = ? AND (role_id = 3 OR business_role_id = 3)');
+    // Update all HQ-role accounts under this headquarter (role_id or business_role_id).
+    $statusUpdate = $conn->prepare(
+        'UPDATE users
+         SET status = ?, updated_at = NOW()
+         WHERE headquarter_id = ?
+           AND (role_id = 3 OR business_role_id = 3)'
+    );
     if (!$statusUpdate) {
-        throw new RuntimeException('Could not prepare the HQ status update.');
+        throw new RuntimeException('Could not prepare the HQ status update: ' . $conn->error);
     }
 
     $statusUpdate->bind_param('si', $newStatus, $headquarterId);
     if (!$statusUpdate->execute()) {
-        throw new RuntimeException('Could not update the HQ account status.');
+        throw new RuntimeException('Could not update the HQ account status: ' . $statusUpdate->error);
     }
+    $affected = $statusUpdate->affected_rows;
     $statusUpdate->close();
 
-    $actionInsert = $conn->prepare(
-        'INSERT INTO hq_account_actions (headquarter_id, user_id, action_type, reason, notification_status, notification_note)
-         VALUES (?, ?, ?, ?, ?, ?)'
-    );
-    if (!$actionInsert) {
-        throw new RuntimeException('Could not prepare the HQ action history insert.');
-    }
+    if ($historyReady) {
+        $targetUserId = isset($target['user_id']) && $target['user_id'] !== null
+            ? (int) $target['user_id']
+            : null;
+        $notificationStatus = (string) ($notification['status'] ?? 'not_configured');
+        $notificationNote = (string) ($notification['note'] ?? '');
 
-    $targetUserId = $target['user_id'] !== null ? (int) $target['user_id'] : null;
-    $notificationStatus = $notification['status'];
-    $notificationNote = $notification['note'];
-    $actionInsert->bind_param(
-        'iissss',
-        $headquarterId,
-        $targetUserId,
-        $actionType,
-        $reason,
-        $notificationStatus,
-        $notificationNote
-    );
-    if (!$actionInsert->execute()) {
-        throw new RuntimeException('Could not record the HQ action history.');
+        if ($targetUserId !== null && $targetUserId > 0) {
+            $actionInsert = $conn->prepare(
+                'INSERT INTO hq_account_actions
+                    (headquarter_id, user_id, action_type, reason, notification_status, notification_note)
+                 VALUES (?, ?, ?, ?, ?, ?)'
+            );
+            if (!$actionInsert) {
+                throw new RuntimeException('Could not prepare the HQ action history insert: ' . $conn->error);
+            }
+            $actionInsert->bind_param(
+                'iissss',
+                $headquarterId,
+                $targetUserId,
+                $actionType,
+                $reason,
+                $notificationStatus,
+                $notificationNote
+            );
+        } else {
+            $actionInsert = $conn->prepare(
+                'INSERT INTO hq_account_actions
+                    (headquarter_id, user_id, action_type, reason, notification_status, notification_note)
+                 VALUES (?, NULL, ?, ?, ?, ?)'
+            );
+            if (!$actionInsert) {
+                throw new RuntimeException('Could not prepare the HQ action history insert: ' . $conn->error);
+            }
+            $actionInsert->bind_param(
+                'issss',
+                $headquarterId,
+                $actionType,
+                $reason,
+                $notificationStatus,
+                $notificationNote
+            );
+        }
+
+        if (!$actionInsert->execute()) {
+            throw new RuntimeException('Could not record the HQ action history: ' . $actionInsert->error);
+        }
+        $actionInsert->close();
     }
-    $actionInsert->close();
 
     $conn->commit();
 
     $message = $actionType === 'remove'
         ? 'The HQ account was marked as removed.'
         : 'The HQ account was suspended.';
-    hq_flash('success', $message . ' The reason was recorded; email delivery status: ' . ($notification['status'] ?? 'unknown') . '.');
+    if ($affected <= 0) {
+        $message .= ' (No linked HQ-role user rows matched; history may still be recorded.)';
+    }
+    if (!$historyReady) {
+        $message .= ' Action history table was unavailable, so only the status was updated.';
+    }
+    hq_flash('success', $message . ' Email delivery status: ' . ($notification['status'] ?? 'unknown') . '.');
 } catch (Throwable $exception) {
     $conn->rollback();
     error_log('[HQ registry] Account action failed: ' . $exception->getMessage());
     hq_flash('danger', 'The HQ action could not be completed. The account status was not changed.');
 }
 
-hq_redirect();
-
-
+hq_redirect('view_hq_and_user_account.php');

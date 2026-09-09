@@ -13,6 +13,9 @@ $userId = filter_var($_POST['user_id'] ?? null, FILTER_VALIDATE_INT, ['options' 
 $actionType = strtolower(trim((string) ($_POST['action_type'] ?? '')));
 $reason = trim((string) ($_POST['reason'] ?? ''));
 $redirect = trim((string) ($_POST['return_to'] ?? 'view_users.php'));
+if ($redirect === '') {
+    $redirect = 'view_users.php';
+}
 
 if (!$userId || !in_array($actionType, ['suspend', 'remove'], true) || $reason === '') {
     hq_flash('danger', 'Choose suspend or remove and provide a reason before submitting.');
@@ -24,22 +27,29 @@ if (mb_strlen($reason) > 2000) {
     hq_redirect($redirect);
 }
 
-if (!hq_db_available() || !hq_registry_schema_ready() || !user_action_table_ready()) {
+if (!hq_db_available() || !hq_registry_schema_ready()) {
     hq_flash('danger', hq_db_error_message());
     hq_redirect($redirect);
 }
 
+$historyReady = user_action_table_ready();
+
 global $conn;
+
+// Match the same effective role the list uses (current → business → base).
 $targetQuery = $conn->prepare(
-    "SELECT u.user_id, u.user_name, u.email, u.status, r.role_id, r.role_name
+    "SELECT u.user_id, u.user_name, u.email, u.status, u.role_id, u.business_role_id, u.current_role_id,
+            COALESCE(cr.role_name, br.role_name, r.role_name) AS role_name
      FROM users u
-     INNER JOIN roles r ON r.role_id = u.role_id
-     WHERE u.user_id = ? AND LOWER(TRIM(r.role_name)) NOT IN ('admin', 'moderator', 'hq', 'headquarter', 'headquarters')
+     LEFT JOIN roles r ON r.role_id = u.role_id
+     LEFT JOIN roles br ON br.role_id = u.business_role_id
+     LEFT JOIN roles cr ON cr.role_id = u.current_role_id
+     WHERE u.user_id = ?
      LIMIT 1"
 );
 
 if (!$targetQuery) {
-    hq_flash('danger', 'The selected Customer account could not be loaded.');
+    hq_flash('danger', 'The selected account could not be loaded.');
     hq_redirect($redirect);
 }
 
@@ -49,6 +59,13 @@ $target = $targetQuery->get_result()?->fetch_assoc();
 $targetQuery->close();
 
 if (!$target) {
+    hq_flash('danger', 'The selected account could not be found.');
+    hq_redirect($redirect);
+}
+
+$blockedRoles = ['admin', 'moderator', 'hq', 'headquarter', 'headquarters'];
+$effectiveRole = strtolower(trim((string) ($target['role_name'] ?? '')));
+if (in_array($effectiveRole, $blockedRoles, true)) {
     hq_flash('danger', 'The selected account is not a manageable non-HQ user account.');
     hq_redirect($redirect);
 }
@@ -56,57 +73,79 @@ if (!$target) {
 $newStatus = $actionType === 'remove' ? 'removed' : 'suspended';
 $notification = hq_send_notification(
     (string) $target['email'],
-    'Map & Pump Customer account ' . ucfirst($actionType),
-    sprintf("Your Map & Pump Customer account has been %s.\n\nReason:\n%s", $actionType === 'remove' ? 'removed' : 'suspended', $reason)
+    'Map & Pump account ' . ucfirst($actionType),
+    sprintf(
+        "Your Map & Pump account has been %s.\n\nReason:\n%s",
+        $actionType === 'remove' ? 'removed' : 'suspended',
+        $reason
+    )
 );
 
 try {
     $conn->begin_transaction();
 
+    // Direct update by user_id; role guard already applied above.
     $statusUpdate = $conn->prepare(
-        "UPDATE users
+        'UPDATE users
          SET status = ?, updated_at = NOW()
-         WHERE user_id = ?
-           AND role_id IN (
-               SELECT role_id FROM roles
-               WHERE LOWER(TRIM(role_name)) NOT IN ('admin', 'moderator', 'hq', 'headquarter', 'headquarters')
-           )"
+         WHERE user_id = ?'
     );
     if (!$statusUpdate) {
-        throw new RuntimeException('Could not prepare the Customer status update.');
+        throw new RuntimeException('Could not prepare the status update: ' . $conn->error);
     }
     $statusUpdate->bind_param('si', $newStatus, $userId);
     if (!$statusUpdate->execute()) {
-        throw new RuntimeException('Could not update the Customer account status.');
+        throw new RuntimeException('Could not update the account status: ' . $statusUpdate->error);
+    }
+    if ($statusUpdate->affected_rows < 0) {
+        throw new RuntimeException('Status update reported a failure.');
     }
     $statusUpdate->close();
 
-    $actionInsert = $conn->prepare(
-        'INSERT INTO user_account_actions (user_id, action_type, reason, notification_status, notification_note)
-         VALUES (?, ?, ?, ?, ?)'
-    );
-    if (!$actionInsert) {
-        throw new RuntimeException('Could not prepare the Customer action history insert.');
+    if ($historyReady) {
+        $actionInsert = $conn->prepare(
+            'INSERT INTO user_account_actions (user_id, action_type, reason, notification_status, notification_note)
+             VALUES (?, ?, ?, ?, ?)'
+        );
+        if (!$actionInsert) {
+            throw new RuntimeException('Could not prepare the action history insert: ' . $conn->error);
+        }
+        $notificationStatus = (string) ($notification['status'] ?? 'not_configured');
+        $notificationNote = (string) ($notification['note'] ?? 'Email delivery is not configured.');
+        $actionInsert->bind_param('issss', $userId, $actionType, $reason, $notificationStatus, $notificationNote);
+        if (!$actionInsert->execute()) {
+            throw new RuntimeException('Could not record the action history: ' . $actionInsert->error);
+        }
+        $actionInsert->close();
     }
-    $notificationStatus = (string) ($notification['status'] ?? 'not_configured');
-    $notificationNote = (string) ($notification['note'] ?? 'Email delivery is not configured.');
-    $actionInsert->bind_param('issss', $userId, $actionType, $reason, $notificationStatus, $notificationNote);
-    if (!$actionInsert->execute()) {
-        throw new RuntimeException('Could not record the Customer action history.');
-    }
-    $actionInsert->close();
 
-    $reviewer = admin_current_user(false);
-    admin_record_log((int) ($reviewer['user_id'] ?? 0), 'Marked Customer user #' . $userId . ' as ' . $newStatus . '.');
     $conn->commit();
-    hq_flash('success', 'The Customer account was marked as ' . $newStatus . '. The reason was recorded; email delivery status: ' . ($notification['status'] ?? 'unknown') . '.');
+
+    // Logging is best-effort and must not undo a successful status change.
+    try {
+        if (function_exists('admin_current_user') && function_exists('admin_record_log')) {
+            $reviewer = admin_current_user(false);
+            admin_record_log(
+                (int) ($reviewer['user_id'] ?? 0),
+                'Marked user #' . $userId . ' as ' . $newStatus . '.'
+            );
+        }
+    } catch (Throwable $logError) {
+        error_log('[Customer registry] Action log skipped: ' . $logError->getMessage());
+    }
+
+    $message = 'The account was marked as ' . $newStatus . '.';
+    if (!$historyReady) {
+        $message .= ' Action history table was unavailable, so only the status was updated.';
+    }
+    hq_flash(
+        'success',
+        $message . ' Email delivery status: ' . ($notification['status'] ?? 'unknown') . '.'
+    );
 } catch (Throwable $exception) {
     $conn->rollback();
     error_log('[Customer registry] Account action failed: ' . $exception->getMessage());
-    hq_flash('danger', 'The Customer account action could not be completed. The account status was not changed.');
+    hq_flash('danger', 'The account action could not be completed. The account status was not changed.');
 }
 
 hq_redirect($redirect);
-
-
-

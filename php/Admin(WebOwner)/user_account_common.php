@@ -127,11 +127,30 @@ SQL;
 function user_action_table_ready(): bool
 {
     global $conn;
-
-    if (!hq_db_available()) {
-        return false;
+    static $ready = null;
+    if ($ready !== null) {
+        return $ready;
     }
 
+    if (!hq_db_available()) {
+        return $ready = false;
+    }
+
+    try {
+        $exists = $conn->query(
+            "SELECT COUNT(*) AS c
+             FROM information_schema.TABLES
+             WHERE TABLE_SCHEMA = DATABASE()
+               AND TABLE_NAME = 'user_account_actions'"
+        );
+        if ($exists && (int) ($exists->fetch_assoc()['c'] ?? 0) > 0) {
+            return $ready = true;
+        }
+    } catch (Throwable $e) {
+        error_log('[user_account_actions] existence check failed: ' . $e->getMessage());
+    }
+
+    // Only attempt DDL when the table is missing.
     $sql = <<<'SQL'
 CREATE TABLE IF NOT EXISTS user_account_actions (
     action_id INT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -147,8 +166,26 @@ CREATE TABLE IF NOT EXISTS user_account_actions (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 SQL;
 
-    return (bool) $conn->query($sql);
+    $ok = (bool) @$conn->query($sql);
+    if (!$ok) {
+        error_log('[user_account_actions] create failed: ' . $conn->error);
+        // Re-check in case another process created it.
+        try {
+            $exists = $conn->query(
+                "SELECT COUNT(*) AS c
+                 FROM information_schema.TABLES
+                 WHERE TABLE_SCHEMA = DATABASE()
+                   AND TABLE_NAME = 'user_account_actions'"
+            );
+            $ok = $exists && (int) ($exists->fetch_assoc()['c'] ?? 0) > 0;
+        } catch (Throwable $e) {
+            $ok = false;
+        }
+    }
+
+    return $ready = $ok;
 }
+
 
 function user_action_rows(int $userId): array
 {
