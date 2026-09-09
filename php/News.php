@@ -257,47 +257,7 @@ require __DIR__ . '/partials/nav.php';
 <!-- ==========================================================================
      ANNOUNCEMENTS / ARTICLES
      ========================================================================== -->
-<section id="updates" class="section-pad">
-    <div class="container">
-        <div class="d-lg-flex justify-content-between align-items-end gap-4 mb-4" data-reveal>
-            <div>
-                <span class="eyebrow">Updates</span>
-                <h2 class="section-title-sm mt-2">Supply, policy and station news</h2>
-            </div>
 
-            <div class="grade-tabs mt-3 mt-lg-0" id="tag-filter">
-                <button type="button" data-tag="all" class="is-active">Everything</button>
-                <button type="button" data-tag="price">Prices</button>
-                <button type="button" data-tag="supply">Supply</button>
-                <button type="button" data-tag="policy">Policy</button>
-                <button type="button" data-tag="station">Stations</button>
-            </div>
-        </div>
-
-        <div class="row g-4">
-            <?php if (empty($NEWS_POSTS)): ?>
-                <div class="col-12" data-reveal>
-                    <div class="alert alert-secondary border-0 mb-0">
-                        Market updates will appear here from live price changes, fuel deliveries, and station activity.
-                    </div>
-                </div>
-            <?php else: ?>
-            <?php foreach ($NEWS_POSTS as $i => $post): ?>
-                <div class="col-md-6" data-post-tag="<?php echo $post['tag']; ?>" data-reveal style="--reveal-delay:<?php echo $i * 80; ?>ms">
-                    <article class="news-card js-spotlight">
-                        <div class="news-top">
-                            <span class="tag-pill tag-<?php echo $post['tag']; ?>"><?php echo mp_tag_label($post['tag']); ?></span>
-                            <span class="news-date"><?php echo htmlspecialchars($post['date']); ?></span>
-                        </div>
-                        <h3 class="news-title"><?php echo htmlspecialchars($post['title']); ?></h3>
-                        <p class="news-body"><?php echo htmlspecialchars($post['body']); ?></p>
-                    </article>
-                </div>
-            <?php endforeach; ?>
-            <?php endif; ?>
-        </div>
-    </div>
-</section>
 
 <!-- ==========================================================================
      CTA
