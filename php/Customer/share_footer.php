@@ -35,9 +35,13 @@
                     <form action="../account_switch.php" method="POST" class="mb-3">
                         <input type="hidden" name="mode" value="business">
                         <button type="submit" class="btn btn-outline-info w-100 py-2">
-                            <i class="bi bi-arrow-left-right me-1"></i> Switch to <?php echo htmlspecialchars($linkedBusinessRoleNameHeader); ?>
+                            <i class="bi bi-arrow-left-right me-1"></i> Switch Account
                         </button>
                     </form>
+                <?php else: ?>
+                    <a href="profile_page.php" class="btn btn-outline-info w-100 py-2 mb-3">
+                        <i class="bi bi-arrow-left-right me-1"></i> Switch Account
+                    </a>
                 <?php endif; ?>
                 <a href="../Login/logout.php" class="btn btn-danger w-100 py-2">Sign Out</a>
             </div>

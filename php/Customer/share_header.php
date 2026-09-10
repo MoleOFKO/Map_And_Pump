@@ -243,9 +243,13 @@ if ($currentPage == 'car_license.php') $viewTitle = "Car License Setup";
                 <form action="../account_switch.php" method="POST" class="mb-3">
                     <input type="hidden" name="mode" value="business">
                     <button type="submit" class="btn btn-outline-info btn-sm w-100 py-2 border-opacity-25" style="border-radius:10px;">
-                        <i class="bi bi-arrow-left-right me-1"></i> Switch to <?= htmlspecialchars($linkedBusinessRoleNameHeader) ?>
+                        <i class="bi bi-arrow-left-right me-1"></i> Switch Account
                     </button>
                 </form>
+            <?php else: ?>
+                <a href="profile_page.php" class="btn btn-outline-info btn-sm w-100 py-2 border-opacity-25 mb-3" style="border-radius:10px;">
+                    <i class="bi bi-arrow-left-right me-1"></i> Switch Account
+                </a>
             <?php endif; ?>
             <a href="../Login/logout.php" class="btn btn-outline-danger btn-sm w-100 py-2 border-opacity-10" style="border-radius:10px;">
                 <i class="bi bi-box-arrow-right me-1"></i> Sign Out Session
