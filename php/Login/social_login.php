@@ -4,6 +4,10 @@ session_start();
 require_once __DIR__ . '/social_auth.php';
 
 $provider = strtolower(trim((string) ($_GET['provider'] ?? '')));
+if ($provider !== 'google') {
+    social_login_fail('Google login is the only supported social login provider.');
+}
+
 $config = social_require_config($provider);
 
 $state = bin2hex(random_bytes(32));

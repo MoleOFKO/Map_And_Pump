@@ -76,6 +76,55 @@ function register_is_render_request(): bool
     return str_ends_with($host, '.onrender.com');
 }
 
+function register_validate_email_domain(string $domain): bool
+{
+    $domain = strtolower(trim($domain));
+    if ($domain === '') {
+        return false;
+    }
+
+    if (function_exists('dns_get_record')) {
+        $mxRecords = @dns_get_record($domain, DNS_MX);
+        if (is_array($mxRecords) && !empty($mxRecords)) {
+            return true;
+        }
+    }
+
+    if (function_exists('checkdnsrr')) {
+        if (@checkdnsrr($domain, 'MX') || @checkdnsrr($domain, 'A') || @checkdnsrr($domain, 'AAAA')) {
+            return true;
+        }
+    }
+
+    if (function_exists('curl_init')) {
+        $requestUrl = 'https://dns.google/resolve?name=' . rawurlencode($domain) . '&type=MX';
+        $ch = curl_init($requestUrl);
+        if ($ch !== false) {
+            curl_setopt_array($ch, [
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_TIMEOUT => 3,
+                CURLOPT_CONNECTTIMEOUT => 3,
+                CURLOPT_SSL_VERIFYPEER => true,
+                CURLOPT_SSL_VERIFYHOST => 2,
+                CURLOPT_USERAGENT => 'MapPump-EmailDomainCheck/1.0',
+            ]);
+
+            $payload = curl_exec($ch);
+            $curlError = curl_errno($ch);
+            curl_close($ch);
+
+            if ($payload !== false && $curlError === CURLE_OK) {
+                $decoded = json_decode((string) $payload, true);
+                if (is_array($decoded) && ((int) ($decoded['Status'] ?? -1) === 0) && isset($decoded['Answer']) && is_array($decoded['Answer']) && !empty($decoded['Answer'])) {
+                    return true;
+                }
+            }
+        }
+    }
+
+    return false;
+}
+
 function customer_role_id(PDO $pdo): int
 {
     $stmt = $pdo->prepare("SELECT role_id FROM roles WHERE LOWER(role_name) = 'customer' LIMIT 1");
@@ -128,22 +177,7 @@ if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
 
 $domain = strtolower((string) substr(strrchr($email, '@') ?: '', 1));
 if ($domain !== '' && !register_is_local_request()) {
-    $exists = false;
-
-    if (function_exists('dns_get_record')) {
-        $dnsRecords = @dns_get_record($domain, DNS_MX);
-        if (!empty($dnsRecords)) {
-            $exists = true;
-        }
-    }
-
-    if (!$exists && function_exists('checkdnsrr')) {
-        if (@checkdnsrr($domain, 'MX') || @checkdnsrr($domain, 'A') || @checkdnsrr($domain, 'AAAA')) {
-            $exists = true;
-        }
-    }
-
-    if (!$exists) {
+    if (!register_validate_email_domain($domain)) {
         register_json(false, 'Email Does Not Exist, Please Try Again');
     }
 }

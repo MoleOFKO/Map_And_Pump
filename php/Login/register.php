@@ -198,16 +198,25 @@
     // Helper utilities
     function setButtonLoading(button, loading, label = '') {
       if (!button) return;
-      if (!button.dataset.originalHtml) button.dataset.originalHtml = button.innerHTML;
+      const originalText = (button.dataset.originalText || button.textContent || '').trim();
+      if (!button.dataset.originalText) {
+        button.dataset.originalText = originalText || (button.dataset.defaultText || button.getAttribute('data-label') || '');
+      }
+      if (!button.dataset.originalHtml) {
+        button.dataset.originalHtml = button.innerHTML;
+      }
+
       if (loading) {
         button.classList.add('is-loading');
         try { button.disabled = true; } catch (e) {}
-        button.innerHTML = `<span class="btn-spinner" aria-hidden="true"></span><span class="btn-loading-label">${label || 'Loading...'}</span>`;
+        button.innerHTML = '<span class="btn-pulse" aria-label="Loading"><span class="btn-pulse-dot"></span><span class="btn-pulse-dot"></span><span class="btn-pulse-dot"></span></span>';
         return;
       }
+
       button.classList.remove('is-loading');
       try { button.disabled = false; } catch (e) {}
-      if (button.dataset.originalHtml) button.innerHTML = button.dataset.originalHtml;
+      const restoreText = button.dataset.originalText || button.dataset.defaultText || 'Submit';
+      button.innerHTML = restoreText;
     }
 
     async function postForm(url, formData) {
@@ -373,6 +382,7 @@
       const form = document.getElementById('form-step-1');
       if (!form.checkValidity()) {
         form.reportValidity();
+        setButtonLoading(toStep2, false);
         return;
       }
 
@@ -384,18 +394,19 @@
       const isSymbol = /[^a-zA-Z0-9]/.test(val1);
 
       if (!isLength || !isCases || !isNumber || !isSymbol) {
-        // Show inline popover rules; do not show mismatch popup for complexity failures
         evaluatePassword();
+        setButtonLoading(toStep2, false);
         return;
       }
 
       if (val1 !== val2) {
         showMiniPopup('Password Does Not Match, Please Try Again');
+        setButtonLoading(toStep2, false);
         return;
       }
 
       showStatus(registerStatus, '');
-      setButtonLoading(toStep2, true, 'SENDING...');
+      setButtonLoading(toStep2, true);
 
       try {
         const result = await postForm('register_process.php', registrationFormData());
@@ -431,7 +442,7 @@
       }
 
       showStatus(verifyStatus, '');
-      setButtonLoading(toStep3, true, 'CONFIRMING...');
+      setButtonLoading(toStep3, true);
 
       try {
         const data = new FormData();
@@ -460,7 +471,7 @@
     resendLink.addEventListener('click', async function(e) {
       e.preventDefault();
       showStatus(verifyStatus, '');
-      setButtonLoading(resendLink, true, 'Sending...');
+      setButtonLoading(resendLink, true);
 
       try {
         const result = await postForm('register_process.php', registrationFormData());
