@@ -4,10 +4,10 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
 }
 
 require_once __DIR__ . '/../conn.php';
-require_once __DIR__ . '/../hq_account_invitation_schema.php';
+require_once __DIR__ . '/../invitations_schema.php';
 
 try {
-    map_pump_ensure_hq_account_invitation_schema($pdo);
+    map_pump_ensure_invitation_schema($pdo);
 } catch (Throwable $error) {
     $_SESSION['customer_invitation_message'] = $error->getMessage();
     header('Location: dashboard.php');
@@ -33,7 +33,7 @@ try {
     $pdo->beginTransaction();
     $stmt = $pdo->prepare(
         "SELECT invitation_id, headquarter_id, invited_email, business_role_id, station_id
-         FROM hq_account_invitations
+         FROM invitations
          WHERE invitation_id = ? AND invited_user_id = ? AND status = 'pending'
          FOR UPDATE"
     );
@@ -55,7 +55,7 @@ try {
         $scope->execute([$userId, (int)$invitation['business_role_id'], (int)$invitation['headquarter_id'], (int)$invitation['station_id']]);
     }
 
-    $update = $pdo->prepare('UPDATE hq_account_invitations SET status = ?, responded_at = NOW() WHERE invitation_id = ?');
+    $update = $pdo->prepare('UPDATE invitations SET status = ?, responded_at = NOW() WHERE invitation_id = ?');
     $update->execute([$decision === 'accept' ? 'accepted' : 'declined', $invitationId]);
     $pdo->commit();
     $_SESSION['customer_invitation_message'] = $decision === 'accept' ? 'Invitation accepted. Your business account is now active.' : 'Invitation declined.';

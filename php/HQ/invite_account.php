@@ -2,7 +2,7 @@
 require_once __DIR__ . '/hq_guard.php';
 require_once __DIR__ . '/../conn.php';
 require_once __DIR__ . '/../business_scope.php';
-require_once __DIR__ . '/../hq_account_invitation_schema.php';
+require_once __DIR__ . '/../invitations_schema.php';
 require_once __DIR__ . '/../Login/mailer.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
@@ -23,7 +23,7 @@ if ($hqId <= 0 || !filter_var($email, FILTER_VALIDATE_EMAIL) || $roleId <= 0 || 
 }
 
 try {
-    map_pump_ensure_hq_account_invitation_schema($pdo);
+    map_pump_ensure_invitation_schema($pdo);
 
     $stationStmt = $pdo->prepare(
         'SELECT station_name, location FROM stations s
@@ -55,7 +55,7 @@ try {
     }
 
     $pendingStmt = $pdo->prepare(
-        "SELECT invitation_id FROM hq_account_invitations
+        "SELECT invitation_id FROM invitations
          WHERE invited_user_id = ? AND headquarter_id = ? AND status = 'pending' LIMIT 1"
     );
     $pendingStmt->execute([(int)$invitee['user_id'], $hqId]);
@@ -77,7 +77,7 @@ try {
 
     $pdo->beginTransaction();
     $insert = $pdo->prepare(
-        'INSERT INTO hq_account_invitations
+        'INSERT INTO invitations
          (headquarter_id, invited_user_id, invited_email, business_role_id, station_id, status)
          VALUES (?, ?, ?, ?, ?, \'pending\')'
     );
@@ -92,7 +92,7 @@ try {
     $subject = 'New Map & Pump HQ invitation';
     $notification->execute([(int)$invitee['user_id'], $email, $subject, $message]);
     $notificationId = (int)$pdo->lastInsertId();
-    $pdo->prepare('UPDATE hq_account_invitations SET notification_id = ? WHERE invitation_id = ?')->execute([$notificationId, $invitationId]);
+    $pdo->prepare('UPDATE invitations SET notification_id = ? WHERE invitation_id = ?')->execute([$notificationId, $invitationId]);
     $pdo->commit();
 
     $deliveryStatus = 'failed';

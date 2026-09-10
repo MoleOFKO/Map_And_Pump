@@ -58,15 +58,14 @@ try {
     }
 
     $stationStmt = $pdo->prepare(
-        "SELECT s.station_id, s.station_name, ot.oil_type_id, ot.oil_name
-         FROM stations s
-         LEFT JOIN branches b ON b.branch_id = s.branch_id
+        "SELECT b.branch_id AS station_id, b.branch_name AS station_name, ot.oil_type_id, ot.oil_name
+         FROM branches b
          LEFT JOIN (
              SELECT station_id, oil_type_id, MAX(inventory_id) AS inventory_id
              FROM station_oil_inventory
              GROUP BY station_id, oil_type_id
-         ) latest_inventory ON latest_inventory.station_id = s.station_id
-         INNER JOIN tanks t ON t.branch_id = s.station_id
+         ) latest_inventory ON latest_inventory.station_id = b.branch_id
+         INNER JOIN tanks t ON t.branch_id = b.branch_id
             AND t.is_enabled = 1
             AND t.current_l > 0
          INNER JOIN oil_types ot ON LOWER(REPLACE(ot.oil_name, ' ', '')) = LOWER(REPLACE(:fuel_type, ' ', ''))
@@ -76,16 +75,15 @@ try {
                 OR (t.fuel_code = 'dsl' AND LOWER(REPLACE(ot.oil_name, ' ', '')) IN ('disel', 'diesel'))
                 OR (t.fuel_code = 'pdsl' AND LOWER(REPLACE(ot.oil_name, ' ', '')) IN ('premiumdisel', 'premiumdiesel'))
             )
-         WHERE s.station_id = :station_id
-           AND LOWER(COALESCE(s.status, 'Active')) = 'active'
-                     AND (
-                             b.branch_id IS NULL
-                             OR b.is_24hr = 1
-                             OR (
-                                     (b.opening_time <= b.closing_time AND CURRENT_TIME() BETWEEN b.opening_time AND b.closing_time)
-                                     OR (b.opening_time > b.closing_time AND (CURRENT_TIME() >= b.opening_time OR CURRENT_TIME() <= b.closing_time))
-                             )
-                     )
+         WHERE b.branch_id = :station_id
+           AND LOWER(COALESCE(b.status, 'active')) = 'active'
+           AND (
+               b.is_24hr = 1
+               OR b.opening_time IS NULL
+               OR b.closing_time IS NULL
+               OR (b.opening_time <= b.closing_time AND CURRENT_TIME() BETWEEN b.opening_time AND b.closing_time)
+               OR (b.opening_time > b.closing_time AND (CURRENT_TIME() >= b.opening_time OR CURRENT_TIME() <= b.closing_time))
+           )
          ORDER BY latest_inventory.inventory_id DESC
          LIMIT 1"
     );
@@ -182,7 +180,7 @@ try {
     }
 
     $stationId = (int)$stationFuel['station_id'];
-    $finalStationCheck = $pdo->prepare('SELECT station_id FROM stations WHERE station_id = :station_id LIMIT 1');
+    $finalStationCheck = $pdo->prepare('SELECT branch_id FROM branches WHERE branch_id = :station_id LIMIT 1');
     $finalStationCheck->execute([':station_id' => $stationId]);
     if (!$finalStationCheck->fetchColumn()) {
         $pdo->rollBack();
