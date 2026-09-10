@@ -63,10 +63,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
 
                 $pdo->beginTransaction();
-                $stmt = $pdo->prepare("INSERT INTO stations (station_name, location, station_address, business_user_id, status) VALUES (?, ?, ?, ?, 'Active')");
-                $stmt->execute([$station_name, $location, $station_address, $manager_id]);
+                $branchCodeStmt = $pdo->prepare("SELECT CONCAT('BR-', LPAD(COALESCE(MAX(branch_id), 0) + 1, 5, '0')) FROM branches");
+                $branchCodeStmt->execute();
+                $branchCode = (string)$branchCodeStmt->fetchColumn();
+                $branchStmt = $pdo->prepare(
+                    "INSERT INTO branches (branch_code, branch_name, city, township, address, opening_time, closing_time, status, hq_region)
+                     VALUES (?, ?, ?, ?, ?, '06:00:00', '22:00:00', 'active', ? )"
+                );
+                $branchStmt->execute([$branchCode, $station_name, 'Unknown', null, $station_address, null]);
+                $branchId = (int)$pdo->lastInsertId();
+
+                $stmt = $pdo->prepare("INSERT INTO stations (branch_id, station_name, location, station_address, station_township, business_user_id, status) VALUES (?, ?, ?, ?, ?, ?, 'Active')");
+                $stmt->execute([$branchId, $station_name, $location, $station_address, 'Unknown', $manager_id]);
                 $stationId = (int)$pdo->lastInsertId();
 
+                $pdo->prepare("DELETE FROM station_business_scope WHERE branch_manager_user_id = ?")->execute([$manager_id]);
                 $scopeStmt = $pdo->prepare(
                     "INSERT INTO station_business_scope (station_id, headquarter_id, branch_manager_user_id)
                      VALUES (?, ?, ?)"
@@ -82,7 +93,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $accountScopeStmt->execute([$manager_id, $hqId, $stationId]);
 
                 $userScopeStmt = $pdo->prepare("UPDATE users SET headquarter_id = ?, branch_id = ?, business_role_id = 4 WHERE user_id = ?");
-                $userScopeStmt->execute([$hqId, $stationId, $manager_id]);
+                $userScopeStmt->execute([$hqId, $branchId, $manager_id]);
 
                 $fuelStmt = $pdo->query("SELECT oil_type_id FROM oil_types ORDER BY oil_type_id LIMIT 4");
                 $inventoryStmt = $pdo->prepare(
@@ -176,8 +187,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                  ON DUPLICATE KEY UPDATE headquarter_id = VALUES(headquarter_id), station_id = VALUES(station_id), status = 'active'"
             );
             $accountScopeStmt->execute([$manager_id, $hqId, $station_id]);
+            $branchIdStmt = $pdo->prepare("SELECT branch_id FROM stations WHERE station_id = ? LIMIT 1");
+            $branchIdStmt->execute([$station_id]);
+            $branchId = (int)$branchIdStmt->fetchColumn();
             $userScopeStmt = $pdo->prepare("UPDATE users SET headquarter_id = ?, branch_id = ?, business_role_id = 4 WHERE user_id = ?");
-            $userScopeStmt->execute([$hqId, $station_id, $manager_id]);
+            $userScopeStmt->execute([$hqId, $branchId ?: null, $manager_id]);
             $pdo->commit();
             $message = "Configuration saved successfully!";
         } catch (PDOException $e) {
