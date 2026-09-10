@@ -4,6 +4,10 @@ session_start();
 require_once __DIR__ . '/social_auth.php';
 
 $provider = strtolower(trim((string) ($_GET['provider'] ?? $_POST['provider'] ?? '')));
+if ($provider !== 'google') {
+    social_login_fail('Google login is the only supported social login provider.');
+}
+
 $config = social_require_config($provider);
 $state = (string) ($_GET['state'] ?? $_POST['state'] ?? '');
 $expectedState = (string) ($_SESSION['social_oauth_state'][$provider] ?? '');
@@ -44,27 +48,6 @@ try {
             (string) ($profile['email'] ?? ''),
             (string) ($profile['name'] ?? ''),
             isset($profile['picture']) ? (string) $profile['picture'] : null
-        );
-    }
-
-    if ($provider === 'facebook') {
-        $profile = social_http_request('https://graph.facebook.com/me', 'GET', [
-            'fields' => 'id,name,email,picture.type(large)',
-            'access_token' => $accessToken,
-        ]);
-
-        $avatarUrl = null;
-        if (isset($profile['picture']['data']['url'])) {
-            $avatarUrl = (string) $profile['picture']['data']['url'];
-        }
-
-        social_sign_in_user(
-            $pdo,
-            $provider,
-            (string) ($profile['id'] ?? ''),
-            (string) ($profile['email'] ?? ''),
-            (string) ($profile['name'] ?? ''),
-            $avatarUrl
         );
     }
 

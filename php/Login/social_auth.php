@@ -88,9 +88,10 @@ function social_http_request(string $url, string $method = 'GET', array $data = 
         }
         curl_setopt($ch, CURLOPT_HTTPHEADER, $requestHeaders);
         // Respect system proxy environment variables if present (e.g., in corp networks)
-        $proxy = getenv('HTTPS_PROXY') ?: getenv('https_proxy') ?: getenv('HTTP_PROXY') ?: getenv('http_proxy');
+        $proxy = getenv('HTTPS_PROXY') ?: getenv('https_proxy') ?: getenv('HTTP_PROXY') ?: getenv('http_proxy') ?: getenv('ALL_PROXY') ?: getenv('all_proxy');
         if ($proxy) {
             curl_setopt($ch, CURLOPT_PROXY, $proxy);
+            curl_setopt($ch, CURLOPT_PROXYTYPE, stripos($proxy, 'socks5') === 0 ? CURLPROXY_SOCKS5_HOSTNAME : CURLPROXY_HTTP);
         }
 
         if ($method === 'POST') {
@@ -98,14 +99,14 @@ function social_http_request(string $url, string $method = 'GET', array $data = 
             curl_setopt($ch, CURLOPT_POSTFIELDS, $content);
         }
 
-        $response = curl_exec($ch);
-        $curlErr = curl_error($ch);
-        $httpStatus = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        // curl_close($ch);
-
+        $response = curl_exec_universal_vpn($ch);
         if ($response === false) {
+            $curlErr = curl_error($ch);
             throw new RuntimeException('Unable to contact login provider: ' . $curlErr);
         }
+
+        $httpStatus = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        // curl_close($ch);
 
         if ($httpStatus >= 400) {
             // Try to extract JSON error message
@@ -203,22 +204,19 @@ function social_provider_config(string $provider): array
             'token_url' => 'https://oauth2.googleapis.com/token',
             'scope' => 'openid email profile',
         ],
-        'facebook' => [
-            'client_id' => social_env('FACEBOOK_CLIENT_ID') ?: '1742682880362444',
-            'client_secret' => social_env('FACEBOOK_CLIENT_SECRET') ?: 'ba0b03b4e0a4df1bfe75b11e9dbb122d',
-            'auth_url' => 'https://www.facebook.com/v18.0/dialog/oauth',
-            'token_url' => 'https://graph.facebook.com/v18.0/oauth/access_token',
-            'scope' => 'email,public_profile',
-        ],
         default => [],
     };
 }
 
 function social_require_config(string $provider): array
 {
+    if ($provider !== 'google') {
+        social_login_fail('Google login is the only supported social login provider.');
+    }
+
     $config = social_provider_config($provider);
     if (!$config || $config['client_id'] === '' || $config['client_secret'] === '') {
-        social_login_fail(ucfirst($provider) . ' login is not configured yet.');
+        social_login_fail('Google login is not configured yet.');
     }
 
     return $config;
@@ -358,4 +356,96 @@ function social_sign_in_user(PDO $pdo, string $provider, string $providerId, str
 
     header('Location: ' . $destination);
     exit;
+}
+
+function social_local_proxy_candidates(): array
+{
+    $urls = [];
+
+    // Check system environment variables first
+    foreach (['HTTPS_PROXY', 'https_proxy', 'HTTP_PROXY', 'http_proxy', 'ALL_PROXY', 'all_proxy'] as $key) {
+        $proxy = getenv($key);
+        if (is_string($proxy) && trim($proxy) !== '') {
+            $urls[] = trim($proxy);
+        }
+    }
+
+    // Common local VPN proxy candidate tuples
+    $knownLocal = [
+        ['host' => '127.0.0.1', 'port' => 7890,  'type' => CURLPROXY_HTTP],
+        ['host' => '127.0.0.1', 'port' => 10808, 'type' => CURLPROXY_SOCKS5_HOSTNAME],
+        ['host' => '127.0.0.1', 'port' => 10809, 'type' => CURLPROXY_HTTP],
+        ['host' => '127.0.0.1', 'port' => 1080,  'type' => CURLPROXY_SOCKS5_HOSTNAME],
+        ['host' => '127.0.0.1', 'port' => 8080,  'type' => CURLPROXY_HTTP],
+        ['host' => '127.0.0.1', 'port' => 8888,  'type' => CURLPROXY_HTTP],
+        ['host' => '127.0.0.1', 'port' => 9050,  'type' => CURLPROXY_SOCKS5_HOSTNAME],
+    ];
+
+    foreach ($knownLocal as $item) {
+        $fp = @fsockopen($item['host'], $item['port'], $errno, $errstr, 0.2);
+        if ($fp !== false) {
+            fclose($fp);
+            $urls[] = $item;
+        }
+    }
+
+    return $urls;
+}
+
+function curl_exec_universal_vpn($ch)
+{
+    if (!is_resource($ch) && !($ch instanceof CURLHandle)) {
+        return false;
+    }
+
+    $isLocalhost = str_contains($_SERVER['HTTP_HOST'] ?? '', 'localhost') 
+        || in_array($_SERVER['REMOTE_ADDR'] ?? '', ['127.0.0.1', '::1'], true);
+
+    // Fast initial connect timeout on localhost to quickly trigger proxy fallback
+    $initialConnectTimeout = $isLocalhost ? 3 : 10;
+
+    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, $initialConnectTimeout);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 30);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+
+    // Disable SSL verification on localhost to prevent proxy TLS handshake failures
+    if ($isLocalhost) {
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 0);
+    }
+
+    $envProxy = getenv('HTTPS_PROXY') ?: getenv('https_proxy') ?: getenv('HTTP_PROXY') ?: getenv('http_proxy') ?: getenv('ALL_PROXY') ?: getenv('all_proxy');
+    if (is_string($envProxy) && trim($envProxy) !== '') {
+        curl_setopt($ch, CURLOPT_PROXY, trim($envProxy));
+    }
+
+    // Attempt 1: Direct or Environment Execution
+    $response = curl_exec($ch);
+    if ($response !== false && curl_errno($ch) === CURLE_OK) {
+        return $response;
+    }
+
+    // Attempt Fallbacks via Local Proxies
+    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 10);
+    $proxyCandidates = social_local_proxy_candidates();
+
+    foreach ($proxyCandidates as $candidate) {
+        curl_setopt($ch, CURLOPT_FRESH_CONNECT, true);
+        curl_setopt($ch, CURLOPT_FORBID_REUSE, true);
+
+        if (is_string($candidate)) {
+            curl_setopt($ch, CURLOPT_PROXY, $candidate);
+        } else if (is_array($candidate)) {
+            curl_setopt($ch, CURLOPT_PROXY, $candidate['host'] . ':' . $candidate['port']);
+            curl_setopt($ch, CURLOPT_PROXYTYPE, $candidate['type']);
+        }
+
+        $response = curl_exec($ch);
+        if ($response !== false && curl_errno($ch) === CURLE_OK) {
+            return $response;
+        }
+    }
+
+    return false;
 }
