@@ -57,18 +57,19 @@ try {
         exit;
     }
 
-    $latestInventorySql = map_pump_latest_station_inventory_sql();
     $stationStmt = $pdo->prepare(
         "SELECT s.station_id, s.station_name, ot.oil_type_id, ot.oil_name
          FROM stations s
-         INNER JOIN ({$latestInventorySql}) soi ON soi.station_id = s.station_id
-            AND soi.is_active = 1
-         INNER JOIN station_business_scope sbs ON sbs.station_id = s.station_id
-         INNER JOIN oil_types ot ON ot.oil_type_id = soi.oil_type_id
-            AND LOWER(REPLACE(ot.oil_name, ' ', '')) = LOWER(REPLACE(:fuel_type, ' ', ''))
+         LEFT JOIN branches b ON b.branch_id = s.branch_id
+         LEFT JOIN (
+             SELECT station_id, oil_type_id, MAX(inventory_id) AS inventory_id
+             FROM station_oil_inventory
+             GROUP BY station_id, oil_type_id
+         ) latest_inventory ON latest_inventory.station_id = s.station_id
          INNER JOIN tanks t ON t.branch_id = s.station_id
             AND t.is_enabled = 1
             AND t.current_l > 0
+         INNER JOIN oil_types ot ON LOWER(REPLACE(ot.oil_name, ' ', '')) = LOWER(REPLACE(:fuel_type, ' ', ''))
             AND (
                 (t.fuel_code = 'p92' AND LOWER(REPLACE(ot.oil_name, ' ', '')) = 'octane92')
                 OR (t.fuel_code = 'p95' AND LOWER(REPLACE(ot.oil_name, ' ', '')) = 'octane95')
@@ -77,7 +78,15 @@ try {
             )
          WHERE s.station_id = :station_id
            AND LOWER(COALESCE(s.status, 'Active')) = 'active'
-         ORDER BY soi.updated_at DESC, soi.inventory_id DESC
+                     AND (
+                             b.branch_id IS NULL
+                             OR b.is_24hr = 1
+                             OR (
+                                     (b.opening_time <= b.closing_time AND CURRENT_TIME() BETWEEN b.opening_time AND b.closing_time)
+                                     OR (b.opening_time > b.closing_time AND (CURRENT_TIME() >= b.opening_time OR CURRENT_TIME() <= b.closing_time))
+                             )
+                     )
+         ORDER BY latest_inventory.inventory_id DESC
          LIMIT 1"
     );
     $stationStmt->execute([

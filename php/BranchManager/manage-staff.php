@@ -44,9 +44,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $shift     = 'Morning';
 
             if ($full_name === '') json_out(['ok' => false, 'error' => 'Name required']);
-            if ($email !== '' && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
                 json_out(['ok' => false, 'error' => 'Invalid email address']);
             }
+
+            $roleStmt = $pdo->query("SELECT role_id FROM roles WHERE LOWER(role_name) = 'staff' LIMIT 1");
+            $staffRoleId = (int) $roleStmt->fetchColumn();
+            if ($staffRoleId <= 0) json_out(['ok' => false, 'error' => 'Staff role is not configured']);
+
+            $pdo->beginTransaction();
+            $userStmt = $pdo->prepare(
+              "INSERT INTO users (user_name, email, hashed_password, role_id, business_role_id, current_role_id, headquarter_id, branch_id, status)
+               SELECT :name, :email, :password, :role_id, :role_id, :customer_role, u.headquarter_id, u.branch_id, 'active'
+               FROM users u WHERE u.user_id = :manager_id"
+            );
+            $customerRoleId = (int) $pdo->query("SELECT role_id FROM roles WHERE LOWER(role_name) = 'customer' LIMIT 1")->fetchColumn();
+            $userStmt->execute([
+              ':name' => $full_name, ':email' => $email,
+              ':password' => password_hash(bin2hex(random_bytes(16)), PASSWORD_DEFAULT),
+              ':role_id' => $staffRoleId, ':customer_role' => $customerRoleId,
+              ':manager_id' => $user['user_id'],
+            ]);
+            $staffUserId = (int) $pdo->lastInsertId();
 
             // generate ST-#### code (starts from 2100 or next after existing)
             $stmt = $pdo->prepare("
@@ -66,17 +85,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             if ($hasEmailColumn) {
                 $stmt = $pdo->prepare("
-                    INSERT INTO staff (staff_code, branch_id, full_name, role, shift, contact, email, is_active, duty_status, hired_at)
-                    VALUES (:c, :b, :n, :r, :s, :p, :e, 1, 'Off Duty', CURDATE())
+                    INSERT INTO staff (user_id, staff_code, branch_id, full_name, role, shift, contact, email, is_active, duty_status, hired_at)
+                    VALUES (:u, :c, :b, :n, :r, :s, :p, :e, 1, 'Off Duty', CURDATE())
                 ");
-                $stmt->execute([':c'=>$code, ':b'=>$bid, ':n'=>$full_name, ':r'=>$role, ':s'=>$shift, ':p'=>$contact, ':e'=>$email]);
+                  $stmt->execute([':u'=>$staffUserId, ':c'=>$code, ':b'=>$bid, ':n'=>$full_name, ':r'=>$role, ':s'=>$shift, ':p'=>$contact, ':e'=>$email]);
             } else {
                 $stmt = $pdo->prepare("
-                    INSERT INTO staff (staff_code, branch_id, full_name, role, shift, contact, is_active, duty_status, hired_at)
-                    VALUES (:c, :b, :n, :r, :s, :p, 1, 'Off Duty', CURDATE())
+                    INSERT INTO staff (user_id, staff_code, branch_id, full_name, role, shift, contact, is_active, duty_status, hired_at)
+                    VALUES (:u, :c, :b, :n, :r, :s, :p, 1, 'Off Duty', CURDATE())
                 ");
-                $stmt->execute([':c'=>$code, ':b'=>$bid, ':n'=>$full_name, ':r'=>$role, ':s'=>$shift, ':p'=>$contact]);
+                  $stmt->execute([':u'=>$staffUserId, ':c'=>$code, ':b'=>$bid, ':n'=>$full_name, ':r'=>$role, ':s'=>$shift, ':p'=>$contact]);
             }
+
+                $pdo->commit();
 
             log_activity($pdo, $bid, 'user', $user['user_id'], $user['full_name'], "Added new staff: {$full_name} ({$code})");
             json_out(['ok' => true, 'staff_id' => (int)$pdo->lastInsertId(), 'staff_code' => $code]);
@@ -142,6 +163,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         json_out(['ok' => false, 'error' => 'Unknown action'], 400);
     } catch (PDOException $e) {
+      if ($pdo->inTransaction()) {
+        $pdo->rollBack();
+      }
         json_out(['ok' => false, 'error' => $e->getMessage()], 500);
     }
 }

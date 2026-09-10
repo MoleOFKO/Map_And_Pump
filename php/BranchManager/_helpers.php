@@ -34,19 +34,35 @@ function current_context($db = null) {
     global $pdo, $conn;
     $dbHandle = $db ?? $pdo ?? $conn;
 
+    $hasStationBranch = false;
+    try {
+        $columnCheck = $dbHandle->query(
+            "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+             WHERE TABLE_SCHEMA = DATABASE()
+               AND TABLE_NAME = 'stations'
+               AND COLUMN_NAME = 'branch_id'"
+        );
+        $hasStationBranch = (int)$columnCheck->fetchColumn() > 0;
+    } catch (Throwable $e) {
+        $hasStationBranch = false;
+    }
+    $branchExpression = $hasStationBranch
+        ? 'COALESCE(u.branch_id, s.branch_id, s.station_id)'
+        : 'COALESCE(u.branch_id, s.station_id)';
+
     $stmt = $dbHandle->prepare("
         SELECT u.user_id,
-               COALESCE(u.branch_id, managed.station_id) AS branch_id,
+               {$branchExpression} AS branch_id,
                u.user_name AS full_name,
                u.email,
                u.oauth_avatar_url AS avatar_url,
                NULL AS phone,
                NULL AS nrc,
                COALESCE(r.role_name, 'BranchManager') AS role,
-               COALESCE(b.branch_code, CONCAT('ST-', s.station_id)) AS branch_code,
-               COALESCE(b.branch_name, s.station_name) AS branch_name,
+               b.branch_code AS branch_code,
+               b.branch_name AS branch_name,
                b.city, b.township,
-               COALESCE(b.address, s.station_address, s.location) AS address,
+               b.address AS address,
                b.phone AS branch_phone, b.email AS branch_email,
                b.opening_time, b.closing_time, b.is_24hr,
                b.pump_count, b.tank_count, b.hq_region, b.established_at,
@@ -60,9 +76,9 @@ function current_context($db = null) {
             FROM station_business_scope
             GROUP BY branch_manager_user_id
         ) managed ON managed.branch_manager_user_id = u.user_id
-        LEFT JOIN stations s ON s.station_id = COALESCE(u.branch_id, managed.station_id)
-        LEFT JOIN branches b ON b.branch_id = COALESCE(u.branch_id, managed.station_id)
-        LEFT JOIN headquarter hq ON hq.headquarter_id = managed.headquarter_id
+        LEFT JOIN stations s ON s.station_id = managed.station_id
+        LEFT JOIN branches b ON b.branch_id = {$branchExpression}
+        LEFT JOIN headquarter hq ON hq.headquarter_id = COALESCE(u.headquarter_id, managed.headquarter_id)
         WHERE u.user_id = :uid
         LIMIT 1
     ");

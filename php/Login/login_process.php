@@ -39,6 +39,7 @@ try {
 
     $stmt = $pdo->prepare(
         "SELECT u.user_id, u.user_public_id, u.user_name, u.email, u.hashed_password, u.status,
+            u.oauth_avatar_url,
                 u.role_id, u.business_role_id, u.license_id, u.headquarter_id, u.branch_id,
                 {$currentRoleSelect}
                 r.role_name, br.role_name AS business_role_name
@@ -98,6 +99,7 @@ try {
     $_SESSION['user_public_id'] = (string) ($user['user_public_id'] ?? '');
     $_SESSION['user_name'] = (string) $user['user_name'];
     $_SESSION['user_email'] = (string) $user['email'];
+    $_SESSION['oauth_avatar_url'] = (string) ($user['oauth_avatar_url'] ?? '');
     $_SESSION['user_status'] = (string) ($user['status'] ?? '');
     $_SESSION['role_id'] = $activeRoleId;
     $_SESSION['role_name'] = $activeRoleName;

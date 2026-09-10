@@ -21,15 +21,20 @@ function map_pump_station_coordinates(string $location): ?array
 
 $customerStationsData = [];
 try {
-    $latestInventorySql = map_pump_latest_station_inventory_sql();
     $stationStmt = $pdo->query(
         "SELECT s.station_id, s.station_name, s.location, s.station_address, s.status,
-                GROUP_CONCAT(DISTINCT CASE
-                    WHEN soi.station_id IS NOT NULL AND soi.current_amount_liters > 0 THEN ot.oil_name
-                END ORDER BY ot.oil_name SEPARATOR '|') AS fuel_names
+            b.opening_time, b.closing_time, b.is_24hr,
+                GROUP_CONCAT(DISTINCT ot.oil_name ORDER BY ot.oil_name SEPARATOR '|') AS fuel_names
          FROM stations s
-         LEFT JOIN ({$latestInventorySql}) soi ON soi.station_id = s.station_id AND soi.is_active = 1
-         LEFT JOIN oil_types ot ON ot.oil_type_id = soi.oil_type_id
+         LEFT JOIN branches b ON b.branch_id = s.branch_id
+         LEFT JOIN tanks t ON t.branch_id = s.station_id
+            AND t.is_enabled = 1
+            AND t.current_l > 0
+         LEFT JOIN oil_types ot ON
+            (t.fuel_code = 'p92' AND LOWER(REPLACE(ot.oil_name, ' ', '')) = 'octane92')
+            OR (t.fuel_code = 'p95' AND LOWER(REPLACE(ot.oil_name, ' ', '')) = 'octane95')
+            OR (t.fuel_code = 'dsl' AND LOWER(REPLACE(ot.oil_name, ' ', '')) IN ('disel', 'diesel'))
+            OR (t.fuel_code = 'pdsl' AND LOWER(REPLACE(ot.oil_name, ' ', '')) IN ('premiumdisel', 'premiumdiesel'))
          WHERE LOWER(COALESCE(s.status, 'Active')) <> 'decommissioned'
          GROUP BY s.station_id, s.station_name, s.location, s.station_address, s.status
          ORDER BY s.station_id ASC"
@@ -49,6 +54,15 @@ try {
             $stationStatus = 'Active';
         }
         $isStationActive = strcasecmp($stationStatus, 'Active') === 0;
+        $isOpen = (int)($stationRow['is_24hr'] ?? 0) === 1;
+        if (!$isOpen && !empty($stationRow['opening_time']) && !empty($stationRow['closing_time'])) {
+            $now = date('H:i:s');
+            $opening = (string)$stationRow['opening_time'];
+            $closing = (string)$stationRow['closing_time'];
+            $isOpen = $opening <= $closing
+                ? ($now >= $opening && $now <= $closing)
+                : ($now >= $opening || $now <= $closing);
+        }
 
         $customerStationsData[] = [
             'id' => $stationId,
@@ -59,7 +73,7 @@ try {
             'status' => $stationStatus,
             'isActive' => $isStationActive,
             'fuels' => $fuels,
-            'isBookable' => $isStationActive && !empty($fuels),
+            'isBookable' => $isStationActive && $isOpen && !empty($fuels),
             'logo' => '../../images/Logo.png',
         ];
     }
@@ -349,7 +363,7 @@ body.customer-light-mode .customer-map-recenter-btn:hover {
                 <input id="station-volume-input" type="number" min="0.1" step="0.1" value="20" class="form-control custom-form-field">
                 <small class="text-secondary d-block mt-2">Remaining allowance: <strong id="station-quota" class="text-sky-400"></strong></small>
             </div>
-            <button type="button" class="btn btn-info w-100 py-3 fw-bold rounded-4" onclick="confirmBooking()">Book this station <i class="bi bi-qr-code ms-1"></i></button>
+            <button id="confirm-booking-btn" type="button" class="btn btn-info w-100 py-3 fw-bold rounded-4" onclick="confirmBooking()">Book this station <i class="bi bi-qr-code ms-1"></i></button>
         </div>
 
         <div id="booking-pass" class="d-none text-center py-1">
@@ -391,7 +405,7 @@ body.customer-light-mode .customer-map-recenter-btn:hover {
                     offset: [0, -16]
                 });
                 marker.bindPopup(createStationPopup(station));
-                if (station.isBookable) {
+                if (station.isActive) {
                     marker.on('click', () => selectStation(station.id));
                 }
             });
@@ -546,13 +560,23 @@ body.customer-light-mode .customer-map-recenter-btn:hover {
 
     function selectStation(stationId) {
         selectedStation = stationsData.find(station => Number(station.id) === Number(stationId));
-        if (!selectedStation || !selectedStation.isBookable) {
-            alert('This station is not active or has no active fuel available. Please choose another station.');
+        if (!selectedStation || !selectedStation.isActive) {
+            alert('This station is not active. Please choose another station.');
             return;
         }
         document.getElementById('selected-station-name').textContent = selectedStation.name;
         document.getElementById('selected-station-address').textContent = selectedStation.address;
-        document.getElementById('station-fuel-select').innerHTML = selectedStation.fuels.map(fuel => `<option value="${fuel}">${fuel}</option>`).join('');
+        const fuelSelect = document.getElementById('station-fuel-select');
+        const bookingButton = document.getElementById('confirm-booking-btn');
+        if (selectedStation.fuels.length) {
+            fuelSelect.innerHTML = selectedStation.fuels.map(fuel => `<option value="${fuel}">${fuel}</option>`).join('');
+            fuelSelect.disabled = false;
+            bookingButton.disabled = false;
+        } else {
+            fuelSelect.innerHTML = '<option value="">No fuel currently available</option>';
+            fuelSelect.disabled = true;
+            bookingButton.disabled = true;
+        }
         document.getElementById('station-quota').textContent = availableOilQuota + ' L';
         document.getElementById('station-volume-input').value = Math.min(20, availableOilQuota);
         document.getElementById('booking-pass').classList.add('d-none');
