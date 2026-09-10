@@ -1,9 +1,13 @@
 <?php
 require_once __DIR__ . '/moderator_common.php';
+require_once __DIR__ . '/admin_common.php';
 
 if (session_status() !== PHP_SESSION_ACTIVE) {
     session_start();
 }
+
+// Create / hire / update / suspend moderators is admin-only.
+admin_require_admin();
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     moderator_redirect();

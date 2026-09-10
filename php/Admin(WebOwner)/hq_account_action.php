@@ -98,49 +98,25 @@ try {
     $statusUpdate->close();
 
     if ($historyReady) {
-        $targetUserId = isset($target['user_id']) && $target['user_id'] !== null
-            ? (int) $target['user_id']
-            : null;
+        // Live schema (db.sql): hq_account_actions has no user_id column.
         $notificationStatus = (string) ($notification['status'] ?? 'not_configured');
         $notificationNote = (string) ($notification['note'] ?? '');
-
-        if ($targetUserId !== null && $targetUserId > 0) {
-            $actionInsert = $conn->prepare(
-                'INSERT INTO hq_account_actions
-                    (headquarter_id, user_id, action_type, reason, notification_status, notification_note)
-                 VALUES (?, ?, ?, ?, ?, ?)'
-            );
-            if (!$actionInsert) {
-                throw new RuntimeException('Could not prepare the HQ action history insert: ' . $conn->error);
-            }
-            $actionInsert->bind_param(
-                'iissss',
-                $headquarterId,
-                $targetUserId,
-                $actionType,
-                $reason,
-                $notificationStatus,
-                $notificationNote
-            );
-        } else {
-            $actionInsert = $conn->prepare(
-                'INSERT INTO hq_account_actions
-                    (headquarter_id, user_id, action_type, reason, notification_status, notification_note)
-                 VALUES (?, NULL, ?, ?, ?, ?)'
-            );
-            if (!$actionInsert) {
-                throw new RuntimeException('Could not prepare the HQ action history insert: ' . $conn->error);
-            }
-            $actionInsert->bind_param(
-                'issss',
-                $headquarterId,
-                $actionType,
-                $reason,
-                $notificationStatus,
-                $notificationNote
-            );
+        $actionInsert = $conn->prepare(
+            'INSERT INTO hq_account_actions
+                (headquarter_id, action_type, reason, notification_status, notification_note)
+             VALUES (?, ?, ?, ?, ?)'
+        );
+        if (!$actionInsert) {
+            throw new RuntimeException('Could not prepare the HQ action history insert: ' . $conn->error);
         }
-
+        $actionInsert->bind_param(
+            'issss',
+            $headquarterId,
+            $actionType,
+            $reason,
+            $notificationStatus,
+            $notificationNote
+        );
         if (!$actionInsert->execute()) {
             throw new RuntimeException('Could not record the HQ action history: ' . $actionInsert->error);
         }
