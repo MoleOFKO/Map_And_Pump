@@ -44,7 +44,7 @@ if (hq_db_available()) {
     }
 
     $reportQuery = $conn->query(
-        'SELECT p.report_id, p.short_summery, p.message, p.importance, p.created_at,
+        'SELECT p.report_id, p.short_summery, p.message, p.importance, p.created_at, p.role_id,
                 u.user_name, r.role_name
          FROM report p
          LEFT JOIN users u ON u.user_id = p.user_id
@@ -53,7 +53,13 @@ if (hq_db_available()) {
     );
     if ($reportQuery) {
         while ($row = $reportQuery->fetch_assoc()) {
-            $row['metadata'] = admin_report_metadata((string) $row['message']);
+            $meta = admin_report_metadata((string) $row['message'], [
+                'short_summery' => (string) ($row['short_summery'] ?? ''),
+                'role_id' => $row['role_id'] ?? null,
+                'role_name' => (string) ($row['role_name'] ?? ''),
+            ]);
+            $meta['scope'] = admin_normalize_report_scope((string) $meta['scope']);
+            $row['metadata'] = $meta;
             $allReports[] = $row;
         }
     } else {
@@ -65,7 +71,10 @@ if (hq_db_available()) {
 
 foreach ($allReports as $row) {
     $metadata = $row['metadata'];
-    $scope = (string) $metadata['scope'];
+    $scope = admin_normalize_report_scope((string) $metadata['scope']);
+    if (!array_key_exists($scope, $scopeCounts)) {
+        $scope = 'system';
+    }
     $scopeCounts[$scope] = ($scopeCounts[$scope] ?? 0) + 1;
     $haystack = strtolower(implode(' ', [(string) $row['report_id'], (string) $row['short_summery'], (string) $row['user_name']]));
     if ($search !== '' && !str_contains($haystack, strtolower($search))) {

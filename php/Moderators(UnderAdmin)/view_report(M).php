@@ -21,9 +21,21 @@ if (hq_db_available()) {
             $metrics[$key] = (int) (($query->fetch_assoc()['value'] ?? 0));
         }
     }
-    $query = $conn->query('SELECT p.report_id,p.short_summery,p.message,p.importance,p.created_at,u.user_name,r.role_name FROM report p LEFT JOIN users u ON u.user_id=p.user_id LEFT JOIN roles r ON r.role_id=p.role_id ORDER BY p.created_at DESC,p.report_id DESC');
+    $query = $conn->query(
+        'SELECT p.report_id, p.short_summery, p.message, p.importance, p.created_at, p.role_id,
+                u.user_name, r.role_name
+         FROM report p
+         LEFT JOIN users u ON u.user_id = p.user_id
+         LEFT JOIN roles r ON r.role_id = p.role_id
+         ORDER BY p.created_at DESC, p.report_id DESC'
+    );
     while ($query && ($row = $query->fetch_assoc())) {
-        $metadata = admin_report_metadata((string) $row['message']);
+        $metadata = admin_report_metadata((string) $row['message'], [
+            'short_summery' => (string) ($row['short_summery'] ?? ''),
+            'role_id' => $row['role_id'] ?? null,
+            'role_name' => (string) ($row['role_name'] ?? ''),
+        ]);
+        $metadata['scope'] = admin_normalize_report_scope((string) $metadata['scope']);
         $haystack = strtolower(implode(' ', [(string) $row['report_id'], (string) $row['short_summery'], (string) $row['user_name']]));
         if ($search !== '' && !str_contains($haystack, strtolower($search))) {
             continue;

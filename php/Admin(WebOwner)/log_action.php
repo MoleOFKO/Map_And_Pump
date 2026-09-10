@@ -5,8 +5,18 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
     session_start();
 }
 
+// Clear/export are admin-only. View remains available to moderators via their pages.
+$user = admin_current_user(false);
+$role = strtolower(trim((string) ($user['role_name'] ?? '')));
+$isStaff = $user && in_array($role, ['admin', 'moderator'], true);
+$isAdmin = admin_is_admin($user);
+
 global $conn;
 $action = strtolower(trim((string) ($_POST['action'] ?? $_GET['action'] ?? '')));
+$returnTo = trim((string) ($_POST['return_to'] ?? $_GET['return_to'] ?? 'view_logs.php'));
+if ($returnTo === '') {
+    $returnTo = 'view_logs.php';
+}
 
 function admin_load_logs(string $search = '', string $level = 'all'): array
 {
@@ -36,7 +46,17 @@ function admin_load_logs(string $search = '', string $level = 'all'): array
     return $logs;
 }
 
+if (!$isStaff) {
+    header('Location: ../Login/login.php');
+    exit;
+}
+
 if ($action === 'export') {
+    if (!$isAdmin) {
+        http_response_code(403);
+        header('Content-Type: text/plain; charset=UTF-8');
+        exit('Only administrators can export audit logs.');
+    }
     if (!hq_db_available()) {
         http_response_code(503);
         exit('The log database is unavailable.');
@@ -59,25 +79,29 @@ if ($action === 'export') {
 }
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    admin_redirect('view_logs.php');
+    admin_redirect($returnTo);
 }
 
 if ($action === 'clear') {
+    if (!$isAdmin) {
+        admin_flash('danger', 'Only administrators can clear audit logs.');
+        admin_redirect($returnTo);
+    }
     if (!hq_db_available()) {
         admin_flash('danger', 'The log database is unavailable.');
-        admin_redirect('view_logs.php');
+        admin_redirect($returnTo);
     }
     $statement = $conn->prepare('DELETE FROM log');
     if (!$statement || !$statement->execute()) {
         $statement?->close();
         admin_flash('danger', 'The audit log could not be cleared.');
-        admin_redirect('view_logs.php');
+        admin_redirect($returnTo);
     }
     $deleted = $statement->affected_rows;
     $statement->close();
     admin_flash('success', $deleted . ' audit log entries were cleared.');
-    admin_redirect('view_logs.php');
+    admin_redirect($returnTo);
 }
 
 admin_flash('danger', 'The requested log action is not supported.');
-admin_redirect('view_logs.php');
+admin_redirect($returnTo);

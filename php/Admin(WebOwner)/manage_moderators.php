@@ -1,9 +1,13 @@
 <?php
 require_once __DIR__ . '/moderator_common.php';
+require_once __DIR__ . '/admin_common.php';
 
 if (session_status() !== PHP_SESSION_ACTIVE) {
     session_start();
 }
+
+// Manage Moderators (create/hire/suspend staff) is admin-only.
+admin_require_admin();
 
 $flash = moderator_pull_flash();
 $search = trim((string) ($_GET['search'] ?? ''));

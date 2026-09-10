@@ -251,7 +251,6 @@ function hq_action_table_ready(): bool
 CREATE TABLE IF NOT EXISTS hq_account_actions (
     action_id INT UNSIGNED NOT NULL AUTO_INCREMENT,
     headquarter_id INT NOT NULL,
-    user_id INT NULL,
     action_type VARCHAR(20) NOT NULL,
     reason TEXT NOT NULL,
     notification_status VARCHAR(30) NOT NULL DEFAULT 'not_configured',

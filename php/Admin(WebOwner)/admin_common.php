@@ -38,12 +38,65 @@ function admin_redirect(string $location = 'admin_dashboard.php'): never
         'view_report(M).php',
         'edit_profile(M).php',
         'view_logs(M).php',
+        'view_logs.php',
+        'manage_moderators.php',
     ];
     if (in_array($returnTo, $allowedReturnTargets, true)) {
         $location = $returnTo;
     }
     header('Location: ' . $location);
     exit;
+}
+
+/**
+ * True when the signed-in account's effective role is admin
+ * (current_role → business_role → base role).
+ */
+function admin_is_admin(?array $user = null): bool
+{
+    if ($user === null) {
+        $user = admin_current_user(false);
+    }
+    if (!$user) {
+        return false;
+    }
+
+    $role = strtolower(trim((string) ($user['role_name'] ?? '')));
+    if ($role === 'admin') {
+        return true;
+    }
+
+    if (session_status() === PHP_SESSION_ACTIVE) {
+        $sessionRole = strtolower(trim((string) ($_SESSION['role_name'] ?? '')));
+        $sessionBusiness = strtolower(trim((string) ($_SESSION['business_role_name'] ?? '')));
+        if ($sessionRole === 'admin' || $sessionBusiness === 'admin') {
+            return true;
+        }
+        if ((int) ($_SESSION['role_id'] ?? 0) === 1 || (int) ($_SESSION['business_role_id'] ?? 0) === 1) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/**
+ * Require a signed-in admin. Moderators and anonymous users are redirected.
+ */
+function admin_require_admin(string $redirect = '../Login/login.php'): array
+{
+    if (session_status() !== PHP_SESSION_ACTIVE) {
+        session_start();
+    }
+
+    $user = admin_current_user(false);
+    $status = strtolower(trim((string) ($user['status'] ?? '')));
+    if (!$user || !admin_is_admin($user) || in_array($status, ['suspended', 'removed', 'rejected'], true)) {
+        header('Location: ' . $redirect);
+        exit;
+    }
+
+    return $user;
 }
 
 function admin_current_user(bool $allowDevelopmentFallback = true): ?array
@@ -148,33 +201,110 @@ function admin_date(?string $value): string
     return $timestamp ? date('M j, Y · g:i A', $timestamp) : $value;
 }
 
-function admin_report_metadata(?string $message): array
+/**
+ * Normalize a free-form or legacy scope token into dashboard buckets.
+ */
+function admin_normalize_report_scope(string $scope): string
+{
+    $scope = strtolower(trim($scope));
+    return match ($scope) {
+        'hq', 'hq_performance', 'headquarter', 'headquarters', 'hq_report' => 'hq_performance',
+        'station', 'stations', 'station_status', 'station_logs', 'pump', 'pumps' => 'stations',
+        'request', 'requests', 'approvals', 'rejections' => 'requests',
+        'system', 'security', 'system_security' => 'system',
+        'audit', 'audit_logs', 'logs', 'log' => 'audit_logs',
+        default => $scope !== '' ? $scope : 'system',
+    };
+}
+
+/**
+ * Infer report scope from structured message tags, title text, body text, and optional role.
+ *
+ * @param array{short_summery?:string,short_summary?:string,role_id?:int|string|null,role_name?:string|null} $context
+ */
+function admin_report_metadata(?string $message, array $context = []): array
 {
     $message = (string) $message;
+    $title = trim((string) ($context['short_summery'] ?? $context['short_summary'] ?? ''));
+    $roleId = (int) ($context['role_id'] ?? 0);
+    $roleName = strtolower(trim((string) ($context['role_name'] ?? '')));
+
     $metadata = [
-        'scope' => 'audit_logs',
+        'scope' => 'system',
         'format' => 'record',
         'start_date' => null,
         'end_date' => null,
-        'summary' => $message,
+        'summary' => $message !== '' ? $message : $title,
     ];
 
-    if (preg_match('/\[scope=([a-z_]+)\]\[format=([a-z]+)\]\[start=([^\]]*)\]\[end=([^\]]*)\]\s*(.*)/s', $message, $matches)) {
-        $metadata['scope'] = $matches[1];
-        $metadata['format'] = $matches[2];
+    // Structured admin/moderator generated reports:
+    // [scope=hq_performance][format=pdf][start=...][end=...] summary text
+    if (preg_match('/\[scope=([a-z_]+)\]\[format=([a-z]+)\]\[start=([^\]]*)\]\[end=([^\]]*)\]\s*(.*)/is', $message, $matches)) {
+        $metadata['scope'] = admin_normalize_report_scope((string) $matches[1]);
+        $metadata['format'] = strtolower((string) $matches[2]);
         $metadata['start_date'] = $matches[3] !== '' ? $matches[3] : null;
         $metadata['end_date'] = $matches[4] !== '' ? $matches[4] : null;
-        $metadata['summary'] = trim($matches[5]);
+        $metadata['summary'] = trim((string) $matches[5]);
+        return $metadata;
     }
 
+    // Partial tag: [scope=stations] anywhere in the message
+    if (preg_match('/\[scope=([a-z_]+)\]/i', $message, $matches)) {
+        $metadata['scope'] = admin_normalize_report_scope((string) $matches[1]);
+        $metadata['summary'] = trim(preg_replace('/\[scope=[a-z_]+\]/i', '', $message) ?? $message);
+        return $metadata;
+    }
+
+    $haystack = strtolower(trim($title . ' ' . $message));
+
+    if ($haystack !== '') {
+        if (preg_match('/\b(hq|headquarter|headquarters|company performance|hq performance)\b/', $haystack)) {
+            $metadata['scope'] = 'hq_performance';
+            return $metadata;
+        }
+        if (preg_match('/\b(station|stations|pump|pumps|fuel stock|inventory)\b/', $haystack)) {
+            $metadata['scope'] = 'stations';
+            return $metadata;
+        }
+        if (preg_match('/\b(request|requests|approval|approvals|rejection|rejections|pending account)\b/', $haystack)) {
+            $metadata['scope'] = 'requests';
+            return $metadata;
+        }
+        if (preg_match('/\b(audit|security|system log|login|password|permission)\b/', $haystack)) {
+            $metadata['scope'] = 'system';
+            return $metadata;
+        }
+    }
+
+    // Role-based fallback for operational reports that omit tags.
+    if ($roleName !== '') {
+        if (in_array($roleName, ['hq', 'headquarter', 'headquarters'], true) || $roleId === 3) {
+            $metadata['scope'] = 'hq_performance';
+            return $metadata;
+        }
+        if (in_array($roleName, ['branch_manager', 'branch manager', 'manager', 'staff'], true) || in_array($roleId, [4, 5], true)) {
+            // Branch/staff feedback is usually station-level unless title said otherwise.
+            $metadata['scope'] = 'stations';
+            return $metadata;
+        }
+    } elseif (in_array($roleId, [3], true)) {
+        $metadata['scope'] = 'hq_performance';
+        return $metadata;
+    } elseif (in_array($roleId, [4, 5], true)) {
+        $metadata['scope'] = 'stations';
+        return $metadata;
+    }
+
+    $metadata['scope'] = 'system';
     return $metadata;
 }
 
 function admin_scope_label(string $scope): string
 {
+    $scope = admin_normalize_report_scope($scope);
     return match ($scope) {
         'hq_performance' => 'HQ Performance',
-        'station_status', 'stations' => 'Station Logs',
+        'stations' => 'Station Logs',
         'audit_logs', 'requests' => 'Audit & Request Logs',
         'system' => 'System Security',
         default => 'Stored Report',
