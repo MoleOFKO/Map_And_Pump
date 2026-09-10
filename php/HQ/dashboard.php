@@ -145,6 +145,72 @@ $stations = $stationsStmt->fetchAll(PDO::FETCH_ASSOC);
     font-size: 14px;
   }
 
+  /* ---- 5-row scrollable tables ---- */
+  .dash-scroll {
+    --dash-rows: 5;
+    --dash-row-h: 46px;   /* CSS fallback; JS measures the real height */
+    --dash-head-h: 30px;
+    max-height: calc((var(--dash-row-h) * var(--dash-rows)) + var(--dash-head-h));
+    overflow-y: auto;
+    overflow-x: auto;
+    margin-top: 16px;
+  }
+
+  /* rows with an Edit button are taller */
+  .dash-scroll.dash-scroll-tall {
+    --dash-row-h: 62px;
+  }
+
+  .dash-scroll table {
+    margin-top: 0;
+    border-collapse: separate; /* keeps borders visible under the sticky header */
+    border-spacing: 0;
+  }
+
+  .dash-scroll thead th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: var(--card-bg, #0f172a);
+    padding-top: 4px;
+  }
+
+  /* ---- Scrollbar styling (matches page theme) ---- */
+  html,
+  body,
+  .dash-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(56, 189, 248, 0.35) transparent;
+  }
+
+  body::-webkit-scrollbar,
+  .dash-scroll::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  body::-webkit-scrollbar-track,
+  .dash-scroll::-webkit-scrollbar-track {
+    background: transparent;
+    border-radius: 8px;
+  }
+
+  body::-webkit-scrollbar-thumb,
+  .dash-scroll::-webkit-scrollbar-thumb {
+    background: rgba(56, 189, 248, 0.35);
+    border-radius: 8px;
+    border: none;
+  }
+
+  body::-webkit-scrollbar-thumb:hover,
+  .dash-scroll::-webkit-scrollbar-thumb:hover {
+    background: rgba(56, 189, 248, 0.55);
+  }
+
+  .dash-scroll::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+
   .badge {
     padding: 4px 8px;
     border-radius: 6px;
@@ -204,6 +270,7 @@ endif; ?>
         <h3 class="mb-0">Station fuel prices</h3>
         <a class="small text-info" href="pricing.php" onclick="event.stopPropagation(); event.preventDefault(); navigateTo('pricing.php')">Manage <i class="fa-solid fa-arrow-right ms-1"></i></a>
       </div>
+      <div class="dash-scroll dash-scroll-tall">
       <table>
         <thead><tr><th>Station</th><th>Type</th><th>Price (MMK)</th><th>Action</th></tr></thead>
         <tbody>
@@ -233,6 +300,7 @@ else: ?>
 endif; ?>
         </tbody>
       </table>
+      </div>
     </div>
 
     <!-- Latest manager reports Card -->
@@ -243,6 +311,7 @@ endif; ?>
       </div>
       <?php
 if (!empty($recentReports)): ?>
+        <div class="dash-scroll">
         <table>
           <thead><tr><th>Branch</th><th>Summary</th><th>Date</th></tr></thead>
           <tbody>
@@ -260,6 +329,7 @@ echo htmlspecialchars($report['created_at']); ?></td>
 endforeach; ?>
           </tbody>
         </table>
+        </div>
       <?php
 else: ?>
         <p class="subtitle" style="margin-bottom: 0;">No manager reports yet. New reports will appear here.</p>
@@ -273,6 +343,7 @@ endif; ?>
         <h3 class="mb-0">Station network</h3>
         <a class="small text-info" href="station.php" onclick="event.stopPropagation(); event.preventDefault(); navigateTo('station.php')">Manage stations <i class="fa-solid fa-arrow-right ms-1"></i></a>
       </div>
+      <div class="dash-scroll">
       <table>
         <thead><tr><th>Branch ID</th><th>Branch Name</th><th>Location</th><th>Status</th></tr></thead>
         <tbody>
@@ -299,6 +370,7 @@ else: ?>
 endif; ?>
         </tbody>
       </table>
+      </div>
     </div>
   </div>
 
@@ -346,6 +418,33 @@ endif; ?>
         window.location.href = page;
       }
     }
+
+    // Size each scroll box to exactly 5 rows + header, measured from real rendered rows
+    function sizeDashScrollers() {
+      var VISIBLE_ROWS = 5;
+      document.querySelectorAll('.dash-scroll').forEach(function (box) {
+        var rows = box.querySelectorAll('tbody tr');
+        if (rows.length <= VISIBLE_ROWS) {
+          box.style.maxHeight = 'none';
+          return;
+        }
+        var head = box.querySelector('thead');
+        var total = head ? head.getBoundingClientRect().height : 0;
+        for (var i = 0; i < VISIBLE_ROWS; i++) {
+          total += rows[i].getBoundingClientRect().height;
+        }
+        box.style.maxHeight = Math.ceil(total) + 'px';
+      });
+    }
+
+    document.addEventListener('DOMContentLoaded', sizeDashScrollers);
+    window.addEventListener('load', sizeDashScrollers);
+
+    var dashResizeTimer;
+    window.addEventListener('resize', function () {
+      clearTimeout(dashResizeTimer);
+      dashResizeTimer = setTimeout(sizeDashScrollers, 150);
+    });
 
     function openEditModal(event, stationId, oilTypeId, label, currentPrice) {
       event.stopPropagation();

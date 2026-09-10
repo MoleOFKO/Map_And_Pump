@@ -99,7 +99,7 @@ foreach ($reports as $rep): ?>
                                             <button onclick="event.stopPropagation(); toggleReadStatus(this, <?= htmlspecialchars($rep['report_id']) ?>)" style="border: none; background: none; color: #0d6efd; cursor: pointer; width: 100%; text-align: left; padding: 8px; display: flex; align-items: center; gap: 10px;">
                                                 <i class="bi bi-envelope" style="font-size: 1rem;"></i> Mark as Read
                                             </button>
-                                            <button onclick="event.stopPropagation(); showDetail(this)" data-report-id="<?= htmlspecialchars($rep['report_id']) ?>" data-user="<?= htmlspecialchars($rep['user_name']) ?>" data-summary="<?= htmlspecialchars($rep['short_summery']) ?>" data-description="<?= htmlspecialchars($rep['message'] ?? '') ?>" style="border: none; background: none; color: #0d6efd; cursor: pointer; width: 100%; text-align: left; padding: 8px; display: flex; align-items: center; gap: 10px;">
+                                            <button onclick="event.stopPropagation(); showDetail(this)" data-report-id="<?= htmlspecialchars($rep['report_id']) ?>" data-user="<?= htmlspecialchars($rep['user_name']) ?>" data-summary="<?= htmlspecialchars($rep['short_summery']) ?>" data-description="<?= htmlspecialchars($rep['message'] ?? '') ?>" data-status="unread" style="border: none; background: none; color: #0d6efd; cursor: pointer; width: 100%; text-align: left; padding: 8px; display: flex; align-items: center; gap: 10px;">
                                                 <i class="bi bi-eye" style="font-size: 1rem;"></i> See Detail
                                             </button>
                                             <button onclick="event.stopPropagation(); deleteReport(this, <?= htmlspecialchars($rep['report_id']) ?>)" style="border: none; background: none; color: #dc3545; cursor: pointer; width: 100%; text-align: left; padding: 8px; display: flex; align-items: center; gap: 10px;">
@@ -153,11 +153,13 @@ endif; ?>
                 <div class="modal-body">
                     <p style="color: var(--slate-50);"><strong>User:</strong> <span id="modalUser" style="color: var(--slate-300);"></span></p>
                     <p style="color: var(--slate-50);"><strong>Summary:</strong> <span id="modalSummary" style="color: var(--slate-300);"></span></p>
+                    <p style="color: var(--slate-50);"><strong>Status:</strong> <span id="modalStatus" class="badge" style="margin-left: 8px;"></span></p>
                     <p style="color: var(--slate-50);"><strong>Description:</strong></p>
                     <p id="modalDescription" style="background: var(--bg, #2d2d2d); padding: 10px; border-radius: 5px; border: 1px solid var(--border, #495057); color: var(--slate-300);"></p>
                 </div>
                 <div class="modal-footer" style="border-top: 1px solid var(--border, #495057);">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    <button type="button" class="btn btn-primary" id="modalToggleStatusBtn" onclick="handleModalToggleStatus()" style="display: none;"></button>
                 </div>
             </div>
         </div>
@@ -224,13 +226,71 @@ endif; ?>
             const userName = button.dataset.user;
             const summary = button.dataset.summary;
             const description = button.dataset.description;
+            const status = button.dataset.status || 'unread';
             
             document.getElementById('modalUser').textContent = userName;
             document.getElementById('modalSummary').textContent = summary;
             document.getElementById('modalDescription').textContent = description || 'No description available.';
             
+            // Set status badge
+            const statusBadge = document.getElementById('modalStatus');
+            if (status === 'read') {
+                statusBadge.className = 'badge bg-success';
+                statusBadge.textContent = 'Read';
+            } else {
+                statusBadge.className = 'badge bg-warning text-dark';
+                statusBadge.textContent = 'Unread';
+            }
+            
+            // Set up toggle button
+            const toggleBtn = document.getElementById('modalToggleStatusBtn');
+            toggleBtn.style.display = 'block';
+            toggleBtn.dataset.reportId = reportId;
+            toggleBtn.dataset.currentStatus = status;
+            toggleBtn.textContent = status === 'read' ? 'Mark as Unread' : 'Mark as Read';
+            
             const modal = new bootstrap.Modal(document.getElementById('detailModal'));
             modal.show();
+        }
+
+        // Handle toggle status from modal
+        function handleModalToggleStatus() {
+            const toggleBtn = document.getElementById('modalToggleStatusBtn');
+            const reportId = toggleBtn.dataset.reportId;
+            const currentStatus = toggleBtn.dataset.currentStatus;
+            const row = document.getElementById('report-' + reportId);
+            
+            if (!row) return;
+            
+            const statusBadge = row.querySelector('.status-badge');
+            const isRead = currentStatus === 'read';
+            
+            // Update status badge in table
+            if (isRead) {
+                statusBadge.classList.remove('bg-success', 'text-white');
+                statusBadge.classList.add('bg-warning', 'text-dark');
+                statusBadge.dataset.status = 'unread';
+                statusBadge.textContent = 'Unread';
+                toggleBtn.dataset.currentStatus = 'unread';
+                toggleBtn.textContent = 'Mark as Read';
+            } else {
+                statusBadge.classList.remove('bg-warning', 'text-dark');
+                statusBadge.classList.add('bg-success', 'text-white');
+                statusBadge.dataset.status = 'read';
+                statusBadge.textContent = 'Read';
+                toggleBtn.dataset.currentStatus = 'read';
+                toggleBtn.textContent = 'Mark as Unread';
+            }
+            
+            // Update modal status badge
+            const modalStatusBadge = document.getElementById('modalStatus');
+            if (toggleBtn.dataset.currentStatus === 'read') {
+                modalStatusBadge.className = 'badge bg-success';
+                modalStatusBadge.textContent = 'Read';
+            } else {
+                modalStatusBadge.className = 'badge bg-warning text-dark';
+                modalStatusBadge.textContent = 'Unread';
+            }
         }
 
         // Delete Report

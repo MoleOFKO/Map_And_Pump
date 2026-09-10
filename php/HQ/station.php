@@ -147,7 +147,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 throw new RuntimeException('Choose a valid station location from the map.');
             }
 
-            // Find user_id based on manager email
             if (!map_pump_station_in_hq($pdo, (int)$station_id, $hqId)) {
                 throw new RuntimeException('You can only configure stations under your own HQ.');
             }
@@ -293,7 +292,7 @@ try {
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
     <script src="../../js/hq-theme.js"></script>
-<link rel="stylesheet" href="../../css/HQstyle.css">
+    <link rel="stylesheet" href="../../css/HQstyle.css">
     <style>
         .table-custom { background-color: transparent !important; color: var(--slate-50); }
         .table-custom th { text-transform: uppercase; font-size: 0.74rem; letter-spacing: 0.05em; color: var(--slate-300); padding: 12px 16px; background: rgba(255, 255, 255, 0.05); border-bottom: 1px solid var(--border); }
@@ -301,6 +300,87 @@ try {
         .table-actions { white-space: nowrap; }
         .modal-content-custom { background-color: var(--card-bg) !important; border: 1px solid var(--border) !important; box-shadow: 0 1rem 3rem rgba(0, 0, 0, 0.5); }
         .modal-content-decommission { background-color: var(--card-bg) !important; border: 1px solid #842029 !important; box-shadow: 0 1rem 3rem rgba(220, 53, 69, 0.15); }
+        .station-toolbar { flex-wrap: wrap; justify-content: flex-end; }
+        .station-search {
+            position: relative;
+            flex: 0 0 auto;
+            width: 260px;
+            max-width: 100%;
+        }
+
+        .station-search .station-search-icon {
+            position: absolute;
+            left: 13px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--slate-300);
+            font-size: 0.82rem;
+            line-height: 1;
+            opacity: 0.85;
+            pointer-events: none;
+        }
+
+        .station-search #stationSearch {
+            display: block;
+            width: 100%;
+            height: 36px;
+            padding: 0 34px 0 34px;
+            font-size: 0.85rem;
+            color: var(--slate-50);
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border);
+            border-radius: 999px;
+            box-shadow: none;
+            outline: none;
+            appearance: none;
+            -webkit-appearance: none;
+        }
+
+        .station-search #stationSearch::placeholder {
+            color: var(--slate-300);
+            opacity: 0.7;
+        }
+
+        .station-search #stationSearch:focus {
+            background: rgba(255, 255, 255, 0.08);
+            border-color: rgba(56, 189, 248, 0.45);
+            box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.16);
+        }
+
+        .station-search #stationSearch::-webkit-search-cancel-button,
+        .station-search #stationSearch::-webkit-search-decoration {
+            -webkit-appearance: none;
+            appearance: none;
+        }
+
+        .station-search .station-search-clear {
+            position: absolute;
+            right: 6px;
+            top: 50%;
+            transform: translateY(-50%);
+            display: none;
+            width: 22px;
+            height: 22px;
+            padding: 0;
+            border: none;
+            border-radius: 50%;
+            background: transparent;
+            color: var(--slate-300);
+            font-size: 0.7rem;
+            line-height: 1;
+            cursor: pointer;
+        }
+
+        .station-search .station-search-clear:hover {
+            color: var(--slate-50);
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        .station-search.has-value .station-search-clear {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
         #stationMap, #configMap { height: 220px; border-radius: 8px; border: 1px solid #373b3e; }
     </style>
 </head>
@@ -309,23 +389,19 @@ try {
         <h2 class="title">Station Network</h2>
         <p class="subtitle">Onboard physical station nodes and set up terminal operating profiles.</p>
 
-        <?php
-if (!empty($message)): ?>
+        <?php if (!empty($message)): ?>
             <div class="alert alert-success alert-dismissible fade show" role="alert">
                 <?= htmlspecialchars($message) ?>
                 <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
             </div>
-        <?php
-endif; ?>
+        <?php endif; ?>
 
-        <?php
-if (!empty($error)): ?>
+        <?php if (!empty($error)): ?>
             <div class="alert alert-danger alert-dismissible fade show" role="alert">
                 <?= htmlspecialchars($error) ?>
                 <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
             </div>
-        <?php
-endif; ?>
+        <?php endif; ?>
 
         <div class="card p-4 bg-dark text-light border-secondary">
             <div class="d-flex justify-content-between align-items-center mb-3">
@@ -333,7 +409,17 @@ endif; ?>
                     <h3>Manage Deployed Stations</h3>
                     <p class="subtitle mb-0">Monitor active nodes, update operational status, or remove configurations.</p>
                 </div>
-                <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#registerModal">+Add Station</button>
+                <div class="d-flex align-items-center gap-2 station-toolbar">
+                    <div class="station-search" id="stationSearchWrap">
+                        <i class="bi bi-search station-search-icon" aria-hidden="true"></i>
+                        <input type="search" id="stationSearch" placeholder="Search stations..."
+                            autocomplete="off" aria-label="Search stations by ID, name, address, manager or status">
+                        <button type="button" id="stationSearchClear" class="station-search-clear" title="Clear search" aria-label="Clear search">
+                            <i class="bi bi-x-lg" aria-hidden="true"></i>
+                        </button>
+                    </div>
+                    <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#registerModal">+Add Station</button>
+                </div>
             </div>
             <div class="table-responsive">
                 <table class="table table-custom align-middle">
@@ -347,23 +433,27 @@ endif; ?>
                             <th class="text-end">Actions</th>
                         </tr>
                     </thead>
-                    <tbody>
-                        <?php
-if (empty($stations)): ?>
-                            <tr><td colspan="6" class="text-center text-muted">No station nodes found.</td></tr>
-                        <?php
-else: ?>
-                            <?php
-foreach ($stations as $row): ?>
+                    <tbody id="stationsTableBody">
+                        <?php if (empty($stations)): ?>
+                            <tr class="station-empty-row"><td colspan="6" class="text-center text-muted">No station nodes found.</td></tr>
+                        <?php else: ?>
+                            <?php foreach ($stations as $row): ?>
                                 <?php
-$isMaintenance = ($row['status'] === 'Maintenance');
+                                    $isMaintenance = ($row['status'] === 'Maintenance');
                                     $badgeClass = $isMaintenance ? 'badge bg-warning text-dark' : 'badge bg-success';
                                     $statusText = $isMaintenance ? 'Maintenance' : 'Active';
-                                    $btnClass = $isMaintenance ? 'btn btn-sm me-1' : 'btn btn-sm me-1';
+                                    $btnClass = $isMaintenance ? 'btn btn-sm me-1 btn-outline-warning' : 'btn btn-sm me-1 btn-outline-info';
                                     $btnText = $isMaintenance ? 'Set Active' : 'Set Maintenance';
                                     $targetStatus = $isMaintenance ? 'Active' : 'Maintenance';
                                 ?>
-                                <tr>
+                                <tr class="station-row" data-search="<?= htmlspecialchars(strtolower(trim(
+                                        '#' . $row['station_id'] . ' ' .
+                                        ($row['station_name'] ?? '') . ' ' .
+                                        ($row['station_address'] ?? '') . ' ' .
+                                        ($row['manager_name'] ?? 'Not assigned') . ' ' .
+                                        ($row['manager_email'] ?? '') . ' ' .
+                                        $statusText
+                                    )), ENT_QUOTES) ?>">
                                     <td>#<?= htmlspecialchars($row['station_id']) ?></td>
                                     <td><?= htmlspecialchars($row['station_name']) ?></td>
                                     <td><?= htmlspecialchars($row['station_address']) ?></td>
@@ -377,17 +467,18 @@ $isMaintenance = ($row['status'] === 'Maintenance');
                                         <button type="button" id="toggle-btn-<?= $row['station_id'] ?>" class="<?= $btnClass ?>" onclick="toggleStatus(<?= $row['station_id'] ?>, '<?= $targetStatus ?>')">
                                             <?= $btnText ?>
                                         </button>
-                                        <button type="button" class="btn btn-sm me-1" data-bs-toggle="modal" data-bs-target="#configureModal" 
+                                        <button type="button" class="btn btn-sm me-1 btn-outline-light" data-bs-toggle="modal" data-bs-target="#configureModal" 
                                             onclick="setConfigureData('<?= htmlspecialchars($row['station_id'], ENT_QUOTES) ?>', '<?= htmlspecialchars($row['station_name'], ENT_QUOTES) ?>', '<?= htmlspecialchars($row['station_address'], ENT_QUOTES) ?>', '<?= htmlspecialchars($row['manager_email'], ENT_QUOTES) ?>', '<?= htmlspecialchars($row['location'], ENT_QUOTES) ?>')">
                                             Configure
                                         </button>
                                         <button type="button" class="btn btn-sm btn-danger" data-bs-toggle="modal" data-bs-target="#decommissionModal" onclick="setDecommissionData('<?= htmlspecialchars($row['station_id']) ?>', 'Station #<?= htmlspecialchars($row['station_id']) ?> - <?= htmlspecialchars($row['station_name']) ?>')">Decommission</button>
                                     </td>
                                 </tr>
-                            <?php
-endforeach; ?>
-                        <?php
-endif; ?>
+                            <?php endforeach; ?>
+                        <?php endif; ?>
+                        <tr id="stationsNoResults" class="d-none">
+                            <td colspan="6" class="text-center text-muted">No stations match your search.</td>
+                        </tr>
                     </tbody>
                 </table>
             </div>
@@ -414,13 +505,11 @@ endif; ?>
                                 <label class="form-label text-light">Branch Manager Email</label>
                                 <select name="manager_email" class="form-select bg-dark text-light border-secondary" required>
                                     <option value="">Choose a branch manager</option>
-                                    <?php
-foreach ($branchManagers as $manager): ?>
+                                    <?php foreach ($branchManagers as $manager): ?>
                                         <option value="<?= htmlspecialchars($manager['email'], ENT_QUOTES, 'UTF-8') ?>">
                                             <?= htmlspecialchars($manager['email']) ?>
                                         </option>
-                                    <?php
-endforeach; ?>
+                                    <?php endforeach; ?>
                                 </select>
                             </div>
                             <div class="col-12 mb-3">
@@ -475,13 +564,11 @@ endforeach; ?>
                                 <label class="form-label text-light">Branch Manager Email</label>
                                 <select id="configManagerEmail" name="manager_email" class="form-select bg-dark text-light border-secondary" required>
                                     <option value="">Choose a branch manager</option>
-                                    <?php
-foreach ($branchManagers as $manager): ?>
+                                    <?php foreach ($branchManagers as $manager): ?>
                                         <option value="<?= htmlspecialchars($manager['email'], ENT_QUOTES, 'UTF-8') ?>">
                                             <?= htmlspecialchars($manager['email']) ?>
                                         </option>
-                                    <?php
-endforeach; ?>
+                                    <?php endforeach; ?>
                                 </select>
                             </div>
                             <div class="col-md-6 mb-3">
@@ -525,11 +612,11 @@ endforeach; ?>
                     </div>
                     <div class="modal-body">
                         <p>Are you sure you want to decommission <strong id="decommissionTarget" class="text-warning"></strong>?</p>
-                        <p class="small text-muted">This action will hide the station from the active table without deleting its record from the database.</p>
-                        <div class="text-end mt-4">
-                            <button type="button" class="btn btn-outline-light me-2" data-bs-dismiss="modal">Cancel</button>
-                            <button type="submit" class="btn btn-danger">Confirm Decommission</button>
-                        </div>
+                        <p class="small text-muted mb-0">This action will hide the station from the active table without deleting its historical records from the system.</p>
+                    </div>
+                    <div class="modal-footer border-danger">
+                        <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-danger">Decommission</button>
                     </div>
                 </form>
             </div>
@@ -539,212 +626,81 @@ endforeach; ?>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
-        let stationMap, stationMarker;
-        let configMap, configMarker;
+        document.addEventListener('DOMContentLoaded', () => {
+            const searchWrap = document.getElementById('stationSearchWrap');
+            const searchInput = document.getElementById('stationSearch');
+            const clearBtn = document.getElementById('stationSearchClear');
+            const rows = document.querySelectorAll('.station-row');
+            const noResultsRow = document.getElementById('stationsNoResults');
 
-        function formatCoordinates(lat, lng) {
-            return lat.toFixed(6) + ', ' + lng.toFixed(6);
-        }
+            function filterStations() {
+                const query = searchInput.value.toLowerCase().trim();
+                let visibleCount = 0;
 
-        function parseCoordinates(value) {
-            if (!value || !value.includes(',')) return null;
-            const parts = value.split(',');
-            const lat = parseFloat(parts[0]);
-            const lng = parseFloat(parts[1]);
-            if (!Number.isFinite(lat) || !Number.isFinite(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
-                return null;
-            }
-            return [lat, lng];
-        }
-
-        function createLocationMarker(map, latLng, onMove) {
-            const marker = L.marker(latLng, { draggable: true }).addTo(map);
-            marker.on('dragend', function () {
-                const point = marker.getLatLng();
-                onMove(point.lat, point.lng, false);
-            });
-            return marker;
-        }
-
-        // Helper function for Register Modal location
-        function updateStationLocation(lat, lng, shouldCenter = true) {
-            const latLng = [lat, lng];
-            if (stationMarker) {
-                stationMarker.setLatLng(latLng);
-            } else {
-                stationMarker = createLocationMarker(stationMap, latLng, updateStationLocation);
-            }
-            if (shouldCenter) stationMap.setView(latLng, 15);
-            document.getElementById('stationLocation').value = formatCoordinates(lat, lng);
-        }
-
-        // Helper function for Configure Modal location
-        function updateConfigLocation(lat, lng, shouldCenter = true) {
-            const latLng = [lat, lng];
-            if (configMarker) {
-                configMarker.setLatLng(latLng);
-            } else {
-                configMarker = createLocationMarker(configMap, latLng, updateConfigLocation);
-            }
-            if (shouldCenter) configMap.setView(latLng, 15);
-            document.getElementById('configLocation').value = formatCoordinates(lat, lng);
-        }
-
-        // Register Modal Map
-        document.getElementById('registerModal').addEventListener('shown.bs.modal', function () {
-            if (!stationMap) {
-                stationMap = L.map('stationMap').setView([21.9588, 96.0891], 6);
-                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                    maxZoom: 19
-                }).addTo(stationMap);
-
-                stationMap.on('click', function (event) {
-                    updateStationLocation(event.latlng.lat, event.latlng.lng);
-                });
-
-                // Track My Location Button Functionality for Register
-                document.getElementById('trackLocBtn').addEventListener('click', function () {
-                    const btn = this;
-
-                    if ("geolocation" in navigator) {
-                        btn.disabled = true;
-                        btn.textContent = "Locating...";
-
-                        navigator.geolocation.getCurrentPosition(
-                            function (position) {
-                                updateStationLocation(position.coords.latitude, position.coords.longitude);
-                                btn.disabled = false;
-                                btn.innerHTML = '<i class="bi bi-geo-alt-fill"></i> Track My Location';
-                            },
-                            function (error) {
-                                btn.disabled = false;
-                                btn.innerHTML = '<i class="bi bi-geo-alt-fill"></i> Track My Location';
-                                alert("Unable to retrieve your location.");
-                            },
-                            { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
-                        );
-                    } else {
-                        alert("Geolocation is not supported by your web browser.");
-                    }
-                });
-            }
-            setTimeout(() => stationMap.invalidateSize(), 100);
-        });
-
-        // Configure Modal Map
-        document.getElementById('configureModal').addEventListener('shown.bs.modal', function () {
-            const coordsVal = document.getElementById('configLocation').value;
-            let initialLatLng = [21.9588, 96.0891];
-            let zoomLevel = 6;
-            const savedCoords = parseCoordinates(coordsVal);
-
-            if (savedCoords) {
-                initialLatLng = savedCoords;
-                zoomLevel = 15;
-            }
-
-            if (!configMap) {
-                configMap = L.map('configMap').setView(initialLatLng, zoomLevel);
-                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                    maxZoom: 19
-                }).addTo(configMap);
-
-                configMap.on('click', function (event) {
-                    updateConfigLocation(event.latlng.lat, event.latlng.lng);
-                });
-
-                // Track My Location Button Functionality for Configure
-                document.getElementById('configTrackLocBtn').addEventListener('click', function () {
-                    const btn = this;
-
-                    if ("geolocation" in navigator) {
-                        btn.disabled = true;
-                        btn.textContent = "Locating...";
-
-                        navigator.geolocation.getCurrentPosition(
-                            function (position) {
-                                updateConfigLocation(position.coords.latitude, position.coords.longitude);
-                                btn.disabled = false;
-                                btn.innerHTML = '<i class="bi bi-geo-alt-fill"></i> Track My Location';
-                            },
-                            function (error) {
-                                btn.disabled = false;
-                                btn.innerHTML = '<i class="bi bi-geo-alt-fill"></i> Track My Location';
-                                alert("Unable to retrieve your location.");
-                            },
-                            { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
-                        );
-                    } else {
-                        alert("Geolocation is not supported by your web browser.");
-                    }
-                });
-            } else {
-                configMap.setView(initialLatLng, zoomLevel);
-            }
-
-            // Set marker if saved coordinates exist, otherwise clear the prior station pin.
-            if (savedCoords) {
-                updateConfigLocation(savedCoords[0], savedCoords[1], false);
-            } else if (configMarker) {
-                configMap.removeLayer(configMarker);
-                configMarker = null;
-            }
-
-            setTimeout(() => configMap.invalidateSize(), 100);
-        });
-
-        function setConfigureData(stationId, stationName, stationAddress, managerEmail, location) {
-            document.getElementById('configStationId').value = stationId;
-            document.getElementById('configStationName').value = stationName;
-            document.getElementById('configStationAddress').value = stationAddress;
-            document.getElementById('configManagerEmail').value = managerEmail;
-            document.getElementById('configLocation').value = location;
-        }
-
-        function setDecommissionData(stationId, stationText) {
-            document.getElementById('decommissionStationId').value = stationId;
-            document.getElementById('decommissionTarget').textContent = stationText;
-        }
-
-        function toggleStatus(id, newStatus) {
-            const formData = new URLSearchParams();
-            formData.append('action', 'toggle_status');
-            formData.append('station_id', id);
-            formData.append('status', newStatus);
-
-            fetch('', {
-                method: 'POST',
-                body: formData
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    const badge = document.getElementById('status-badge-' + id);
-                    const btn = document.getElementById('toggle-btn-' + id);
-
-                    if (newStatus === 'Maintenance') {
-                        badge.className = 'badge bg-warning text-dark';
-                        badge.textContent = 'Maintenance';
-                        btn.className = 'btn btn-sm btn-outline-success me-1';
-                        btn.textContent = 'Set Active';
-                        btn.setAttribute('onclick', `toggleStatus(${id}, 'Active')`);
-                    } else {
-                        badge.className = 'badge bg-success';
-                        badge.textContent = 'Active';
-                        btn.className = 'btn btn-sm btn-outline-warning me-1';
-                        btn.textContent = 'Set Maintenance';
-                        btn.setAttribute('onclick', `toggleStatus(${id}, 'Maintenance')`);
-                    }
+                if (query.length > 0) {
+                    searchWrap.classList.add('has-value');
                 } else {
-                    alert('Failed to update status: ' + (data.message || 'Unknown error'));
+                    searchWrap.classList.remove('has-value');
                 }
-            })
-            .catch(error => {
-                console.error('Error:', error);
-                alert('An error occurred while updating the status.');
+
+                rows.forEach(row => {
+                    const searchData = row.getAttribute('data-search') || '';
+                    if (searchData.includes(query)) {
+                        row.classList.remove('d-none');
+                        visibleCount++;
+                    } else {
+                        row.classList.add('d-none');
+                    }
+                });
+
+                if (noResultsRow) {
+                    if (visibleCount === 0 && rows.length > 0) {
+                        noResultsRow.classList.remove('d-none');
+                    } else {
+                        noResultsRow.classList.add('d-none');
+                    }
+                }
+            }
+
+            searchInput.addEventListener('input', filterStations);
+
+            clearBtn.addEventListener('click', () => {
+                searchInput.value = '';
+                filterStations();
+                searchInput.focus();
             });
+        });
+
+        function toggleStatus(stationId, targetStatus) {
+            const formData = new FormData();
+            formData.append('action', 'toggle_status');
+            formData.append('station_id', stationId);
+            formData.append('status', targetStatus);
+
+            fetch('station.php', { method: 'POST', body: formData })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) {
+                        location.reload();
+                    } else {
+                        alert(data.message || 'Failed to update station status.');
+                    }
+                })
+                .catch(() => alert('Network error. Failed to execute action.'));
+        }
+
+        function setConfigureData(id, name, address, managerEmail, locationStr) {
+            document.getElementById('configStationId').value = id;
+            document.getElementById('configStationName').value = name;
+            document.getElementById('configStationAddress').value = address;
+            document.getElementById('configManagerEmail').value = managerEmail;
+            document.getElementById('configLocation').value = locationStr;
+        }
+
+        function setDecommissionData(id, targetName) {
+            document.getElementById('decommissionStationId').value = id;
+            document.getElementById('decommissionTarget').innerText = targetName;
         }
     </script>
 </body>
-<footer class="text-white-50 text-center py-4 mt-5 small">&copy; 2026 Map & Pump | All Rights Reserved</footer>
 </html>

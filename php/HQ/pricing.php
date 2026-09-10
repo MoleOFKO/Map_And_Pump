@@ -229,6 +229,113 @@ try {
             padding-left: 8px;
         }
 
+        /* Pricing search bar styling */
+        .pricing-search {
+            position: relative;
+            flex: 0 0 auto;
+            width: 260px;
+            max-width: 100%;
+        }
+
+        .pricing-search .pricing-search-icon {
+            position: absolute;
+            left: 13px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--slate-300);
+            font-size: 0.82rem;
+            line-height: 1;
+            opacity: 0.85;
+            pointer-events: none;
+        }
+
+        .pricing-search #pricingSearch {
+            display: block;
+            width: 100%;
+            height: 36px;
+            padding: 0 34px 0 34px;
+            font-size: 0.85rem;
+            color: var(--slate-50);
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border);
+            border-radius: 999px;
+            box-shadow: none;
+            outline: none;
+            appearance: none;
+            -webkit-appearance: none;
+        }
+
+        .pricing-search #pricingSearch::placeholder {
+            color: var(--slate-300);
+            opacity: 0.7;
+        }
+
+        .pricing-search #pricingSearch:focus {
+            background: rgba(255, 255, 255, 0.08);
+            border-color: rgba(56, 189, 248, 0.45);
+            box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.16);
+        }
+
+        .pricing-search #pricingSearch::-webkit-search-cancel-button,
+        .pricing-search #pricingSearch::-webkit-search-decoration {
+            -webkit-appearance: none;
+            appearance: none;
+        }
+
+        .pricing-search .pricing-search-clear {
+            position: absolute;
+            right: 6px;
+            top: 50%;
+            transform: translateY(-50%);
+            display: none;
+            width: 22px;
+            height: 22px;
+            padding: 0;
+            border: none;
+            border-radius: 50%;
+            background: transparent;
+            color: var(--slate-300);
+            font-size: 0.7rem;
+            line-height: 1;
+            cursor: pointer;
+        }
+
+        .pricing-search .pricing-search-clear:hover {
+            color: var(--slate-50);
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        .pricing-search.has-value .pricing-search-clear {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        /* Pricing table scrollable container */
+        .pricing-table-container {
+            max-height: 420px;
+            overflow-y: auto;
+            border-radius: 6px;
+        }
+
+        .pricing-table-container::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .pricing-table-container::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 4px;
+        }
+
+        .pricing-table-container::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.15);
+            border-radius: 4px;
+        }
+
+        .pricing-table-container::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.25);
+        }
+
         @media (max-width: 900px) {
             .pricing-cards {
                 grid-template-columns: 1fr;
@@ -319,8 +426,17 @@ endforeach; ?>
         </div>
 
         <div class="card p-4">
-            <h3>Current Fuel Grades</h3>
-            <div class="table-responsive">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h3 class="mb-0">Current Fuel Grades</h3>
+                <div class="pricing-search" id="pricingSearchWrap">
+                    <i class="bi bi-search pricing-search-icon"></i>
+                    <input type="search" id="pricingSearch" class="form-control" placeholder="Search prices..." autocomplete="off" aria-label="Search fuel grades and prices">
+                    <button type="button" class="pricing-search-clear" id="pricingSearchClear" title="Clear search" aria-label="Clear search">
+                        <i class="bi bi-x-lg"></i>
+                    </button>
+                </div>
+            </div>
+            <div class="pricing-table-container">
                 <table class="pricing-table table-borderless align-middle">
                     <thead>
                         <tr>
@@ -359,6 +475,66 @@ endif; ?>
             </div>
         </div>
     </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Live search filter for the pricing table
+        (function () {
+            const input = document.getElementById('pricingSearch');
+            const clearBtn = document.getElementById('pricingSearchClear');
+            const searchWrap = document.getElementById('pricingSearchWrap');
+            if (!input) return;
+
+            const rows = Array.prototype.slice.call(document.querySelectorAll('.pricing-table tbody tr'));
+            const noResults = document.createElement('tr');
+            noResults.id = 'pricingNoResults';
+            noResults.className = 'd-none';
+            noResults.innerHTML = '<td colspan="4" class="text-center text-muted" style="padding: 24px 0;">No prices match your search.</td>';
+            document.querySelector('.pricing-table tbody').appendChild(noResults);
+
+            function updateClearButton() {
+                if (input.value.trim() !== '') {
+                    searchWrap.classList.add('has-value');
+                } else {
+                    searchWrap.classList.remove('has-value');
+                }
+            }
+
+            function applyFilter() {
+                const term = input.value.trim().toLowerCase();
+                let visible = 0;
+
+                rows.forEach(function (row) {
+                    const haystack = row.textContent.toLowerCase();
+                    const match = term === '' || haystack.indexOf(term) !== -1;
+                    row.classList.toggle('d-none', !match);
+                    if (match) visible++;
+                });
+
+                if (noResults) {
+                    noResults.classList.toggle('d-none', !(rows.length > 0 && visible === 0));
+                }
+                updateClearButton();
+            }
+
+            input.addEventListener('input', applyFilter);
+            input.addEventListener('search', applyFilter);
+            input.addEventListener('keydown', function (event) {
+                if (event.key === 'Escape') {
+                    input.value = '';
+                    applyFilter();
+                }
+            });
+            if (clearBtn) {
+                clearBtn.addEventListener('click', function () {
+                    input.value = '';
+                    applyFilter();
+                    input.focus();
+                });
+            }
+            applyFilter();
+        })();
+    </script>
 </body>
 <footer class="text-white-50 text-center py-4 mt-5 small">&copy; 2026 Map & Pump | All Rights Reserved</footer>
 </html>
