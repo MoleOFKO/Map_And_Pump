@@ -2,12 +2,14 @@
 /**
  * manage-staff.php  —  Staff CRUD + status toggle + activity log
  * Actions handled here (form-post):
- *   ?action=add         -> POST full_name, role, shift, contact
- *   ?action=edit        -> POST staff_id, full_name, role, shift, contact
+ *   ?action=add         -> POST full_name, email, contact
+ *   ?action=edit        -> POST staff_id, full_name, email, contact
  *   ?action=delete      -> POST staff_id
  *   ?action=activate    -> POST staff_id
  *   ?action=disable     -> POST staff_id
  * Each returns JSON so the existing JS can keep working (AJAX-friendly).
+ * Role is always 'Pump Attendant' and shift defaults to 'Morning'
+ * (kept in DB for schema compatibility but not user-editable here).
  */
 if (session_status() !== PHP_SESSION_ACTIVE) {
     session_start();
@@ -34,10 +36,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
         if ($action === 'add') {
             $full_name = trim($_POST['full_name'] ?? '');
-            $role      = $_POST['role']    ?? 'Pump Attendant';
-            $shift     = $_POST['shift']   ?? 'Morning';
+            $email     = trim($_POST['email'] ?? '');
             $contact   = trim($_POST['contact'] ?? '');
+            // role is always Pump Attendant (only staff role at branch level)
+            // shift kept for schema compatibility, defaults to Morning
+            $role      = 'Pump Attendant';
+            $shift     = 'Morning';
+
             if ($full_name === '') json_out(['ok' => false, 'error' => 'Name required']);
+            if ($email !== '' && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                json_out(['ok' => false, 'error' => 'Invalid email address']);
+            }
 
             // generate ST-#### code (starts from 2100 or next after existing)
             $stmt = $pdo->prepare("
@@ -47,29 +56,68 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $next = ((int)$stmt->fetchColumn() ?: 2090) + 1;
             $code = 'ST-' . $next;
 
-            $stmt = $pdo->prepare("
-                INSERT INTO staff (staff_code, branch_id, full_name, role, shift, contact, is_active, duty_status, hired_at)
-                VALUES (:c, :b, :n, :r, :s, :p, 1, 'Off Duty', CURDATE())
-            ");
-            $stmt->execute([':c'=>$code, ':b'=>$bid, ':n'=>$full_name, ':r'=>$role, ':s'=>$shift, ':p'=>$contact]);
+            // Detect whether the `email` column exists on the staff table.
+            // If the migration in migrations.sql has been run, we save it; otherwise skip it silently.
+            $hasEmailColumn = false;
+            try {
+                $chk = $pdo->query("SHOW COLUMNS FROM staff LIKE 'email'");
+                $hasEmailColumn = ($chk && $chk->fetchColumn());
+            } catch (Throwable $e) { $hasEmailColumn = false; }
+
+            if ($hasEmailColumn) {
+                $stmt = $pdo->prepare("
+                    INSERT INTO staff (staff_code, branch_id, full_name, role, shift, contact, email, is_active, duty_status, hired_at)
+                    VALUES (:c, :b, :n, :r, :s, :p, :e, 1, 'Off Duty', CURDATE())
+                ");
+                $stmt->execute([':c'=>$code, ':b'=>$bid, ':n'=>$full_name, ':r'=>$role, ':s'=>$shift, ':p'=>$contact, ':e'=>$email]);
+            } else {
+                $stmt = $pdo->prepare("
+                    INSERT INTO staff (staff_code, branch_id, full_name, role, shift, contact, is_active, duty_status, hired_at)
+                    VALUES (:c, :b, :n, :r, :s, :p, 1, 'Off Duty', CURDATE())
+                ");
+                $stmt->execute([':c'=>$code, ':b'=>$bid, ':n'=>$full_name, ':r'=>$role, ':s'=>$shift, ':p'=>$contact]);
+            }
 
             log_activity($pdo, $bid, 'user', $user['user_id'], $user['full_name'], "Added new staff: {$full_name} ({$code})");
             json_out(['ok' => true, 'staff_id' => (int)$pdo->lastInsertId(), 'staff_code' => $code]);
         }
 
         if ($action === 'edit') {
-            $sid = (int)($_POST['staff_id'] ?? 0);
-            $stmt = $pdo->prepare("
-                UPDATE staff SET full_name = :n, role = :r, shift = :s, contact = :p
-                WHERE staff_id = :sid AND branch_id = :b
-            ");
-            $stmt->execute([
-                ':n' => trim($_POST['full_name'] ?? ''),
-                ':r' => $_POST['role'] ?? 'Pump Attendant',
-                ':s' => $_POST['shift'] ?? 'Morning',
-                ':p' => trim($_POST['contact'] ?? ''),
-                ':sid' => $sid, ':b' => $bid,
-            ]);
+            $sid       = (int)($_POST['staff_id'] ?? 0);
+            $full_name = trim($_POST['full_name'] ?? '');
+            $email     = trim($_POST['email'] ?? '');
+            $contact   = trim($_POST['contact'] ?? '');
+
+            if ($full_name === '') json_out(['ok' => false, 'error' => 'Name required']);
+            if ($email !== '' && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                json_out(['ok' => false, 'error' => 'Invalid email address']);
+            }
+
+            $hasEmailColumn = false;
+            try {
+                $chk = $pdo->query("SHOW COLUMNS FROM staff LIKE 'email'");
+                $hasEmailColumn = ($chk && $chk->fetchColumn());
+            } catch (Throwable $e) { $hasEmailColumn = false; }
+
+            if ($hasEmailColumn) {
+                $stmt = $pdo->prepare("
+                    UPDATE staff SET full_name = :n, contact = :p, email = :e
+                    WHERE staff_id = :sid AND branch_id = :b
+                ");
+                $stmt->execute([
+                    ':n' => $full_name, ':p' => $contact, ':e' => $email,
+                    ':sid' => $sid, ':b' => $bid,
+                ]);
+            } else {
+                $stmt = $pdo->prepare("
+                    UPDATE staff SET full_name = :n, contact = :p
+                    WHERE staff_id = :sid AND branch_id = :b
+                ");
+                $stmt->execute([
+                    ':n' => $full_name, ':p' => $contact,
+                    ':sid' => $sid, ':b' => $bid,
+                ]);
+            }
             log_activity($pdo, $bid, 'user', $user['user_id'], $user['full_name'], "Edited staff #{$sid}");
             json_out(['ok' => true]);
         }
@@ -107,21 +155,74 @@ $total_staff    = count($staff);
 $active_staff   = count(array_filter($staff, fn($s) => (int)$s['is_active'] === 1));
 $disabled_staff = $total_staff - $active_staff;
 
-// activity log (latest 20)
+// activity log — focus on STAFF activities (actions performed on staff at this branch).
+// We show WHICH staff was affected + WHAT was done. Manager name is available in the action text
+// already; the primary subject of each row is the staff member.
 $stmt = $pdo->prepare("
     SELECT l.log_id,
-           'user' AS actor_type,
-           l.user_id AS actor_id,
-           COALESCE(u.user_name, 'Branch Manager') AS actor_name,
+           l.user_id  AS manager_id,
+           COALESCE(mgr.user_name, 'Branch Manager') AS manager_name,
            l.action,
            l.created_at
     FROM log l
-    LEFT JOIN users u ON u.user_id = l.user_id
-    WHERE l.user_id = :manager_id AND l.role_id = 4
-    ORDER BY l.created_at DESC LIMIT 20
+    LEFT JOIN users mgr ON mgr.user_id = l.user_id
+    WHERE l.user_id = :manager_id
+      AND l.role_id = 4
+      AND l.action LIKE '%staff%'
+    ORDER BY l.created_at DESC LIMIT 30
 ");
 $stmt->execute([':manager_id' => $user['user_id']]);
-$activities = $stmt->fetchAll();
+$raw_activities = $stmt->fetchAll();
+
+// Build a quick lookup of staff by ID for the current branch so we can resolve "staff #123"
+// into a readable name + code.
+$staff_lookup = [];
+foreach ($staff as $s) {
+    $staff_lookup[(int)$s['staff_id']] = [
+        'name' => $s['full_name'],
+        'code' => $s['staff_code'],
+    ];
+}
+
+// Parse each log entry: extract staff_id (from "staff #123") and turn the action into a short verb
+$activities = [];
+foreach ($raw_activities as $row) {
+    $action_text = (string)$row['action'];
+    $target_id   = 0;
+    $target_name = null;
+    $target_code = null;
+    $verb        = $action_text;
+
+    if (preg_match('/staff\s+#(\d+)/i', $action_text, $m)) {
+        $target_id = (int)$m[1];
+        if (isset($staff_lookup[$target_id])) {
+            $target_name = $staff_lookup[$target_id]['name'];
+            $target_code = $staff_lookup[$target_id]['code'];
+        }
+    }
+    // Extract just the verb (Added / Edited / Deleted / Activated / Disabled)
+    if (preg_match('/^(Added|Edited|Deleted|Activated|Disabled)/i', $action_text, $vm)) {
+        $verb = ucfirst(strtolower($vm[1]));
+    }
+    // For "Added new staff: Name (ST-####)" pattern, capture name+code directly
+    if (preg_match('/Added new staff:\s*(.+?)\s*\((ST-\d+)\)/i', $action_text, $am)) {
+        $target_name = $am[1];
+        $target_code = $am[2];
+        $verb        = 'Added';
+    }
+
+    $activities[] = [
+        'log_id'        => $row['log_id'],
+        'manager_name'  => $row['manager_name'],
+        'verb'          => $verb,
+        'target_name'   => $target_name,
+        'target_code'   => $target_code,
+        'target_id'     => $target_id,
+        'raw_action'    => $action_text,
+        'created_at'    => $row['created_at'],
+    ];
+}
+$activities = array_slice($activities, 0, 20);
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -171,12 +272,18 @@ $activities = $stmt->fetchAll();
     margin:20px 8px 0; padding:10px 12px; background:var(--navy-800); border-radius:12px; 
     border:1px solid rgba(255,255,255,0.06); font-size:12.5px;
     transition: background 0.3s, border-color 0.3s;
+    display:flex; align-items:center; gap:10px;
   }
   .side-branch:hover{
     background: var(--navy-700);
     border-color: rgba(251,191,36,0.25);
   }
-  .side-branch b{display:block; font-size:14px; font-family:'Space Grotesk'; margin-bottom:2px;}
+  .side-branch .hq-logo{
+    width:36px; height:36px; border-radius:8px; object-fit:cover; flex-shrink:0;
+    background:var(--navy-950); border:1px solid rgba(255,255,255,0.08);
+  }
+  .side-branch .txt{min-width:0; flex:1;}
+  .side-branch b{display:block; font-size:14px; font-family:'Space Grotesk'; margin-bottom:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
   .side-branch span{color:var(--slate-400);}
   .side-nav{margin-top:22px; display:flex; flex-direction:column; gap:4px; flex:1;}
   .side-link{
@@ -436,9 +543,17 @@ $activities = $stmt->fetchAll();
     </a>
     <div class="side-role">Branch Manager Console</div>
 
+    <?php $hqLogoSrc = hq_logo_src($branch['hq_logo'] ?? null); ?>
     <div class="side-branch">
-      <b><?= h($branch['branch_name']) ?></b>
-      <span>Branch ID: <?= h($branch['branch_code']) ?></span>
+      <?php if ($hqLogoSrc): ?>
+        <img src="<?= h($hqLogoSrc) ?>" alt="HQ Logo" class="hq-logo" onerror="this.style.display='none'">
+      <?php else: ?>
+        <div class="hq-logo" style="display:flex; align-items:center; justify-content:center; color:var(--slate-400);"><i class="fa-solid fa-building"></i></div>
+      <?php endif; ?>
+      <div class="txt">
+        <b><?= h($branch['branch_name']) ?></b>
+        <span>Branch ID: <?= h($branch['branch_code']) ?></span>
+      </div>
     </div>
 
     <nav class="side-nav">
@@ -533,41 +648,36 @@ $activities = $stmt->fetchAll();
         <div class="toolbar">
           <div class="search">
             <i class="fa-solid fa-magnifying-glass"></i> 
-            <input type="text" id="directory-search" placeholder="Search by name or Staff ID...">
+            <input type="text" id="directory-search" placeholder="Search by name, email, or Staff ID...">
           </div>
-          <span class="chip active" data-shift="All">All</span>
-          <span class="chip" data-shift="Morning">Morning</span>
-          <span class="chip" data-shift="Afternoon">Afternoon</span>
-          <span class="chip" data-shift="Night">Night</span>
         </div>
         <div class="panel">
           <table id="staff-directory-table">
-            <thead><tr><th>Staff</th><th>Role</th><th>Shift</th><th>Status</th><th>Contact</th><th></th></tr></thead>
+            <thead><tr><th>Staff</th><th>Email</th><th>Contact</th><th>Status</th><th></th></tr></thead>
             <tbody>
               <?php
-              $shift_hours = ['Morning' => '6AM–2PM', 'Afternoon' => '2PM–10PM', 'Night' => '10PM–6AM'];
               $duty_class  = ['On Duty' => 'on', 'Off Duty' => 'off', 'Leave' => 'leave'];
               foreach ($staff as $s):
+                $staff_email = $s['email'] ?? '';
               ?>
-              <tr data-shift="<?= h($s['shift']) ?>" data-id="<?= (int)$s['staff_id'] ?>">
+              <tr data-id="<?= (int)$s['staff_id'] ?>">
                 <td>
                   <div class="staff-name">
                     <div class="mini-avatar"><?= h(initials($s['full_name'])) ?></div>
                     <div><b><?= h($s['full_name']) ?></b><span>ID: <?= h($s['staff_code']) ?></span></div>
                   </div>
                 </td>
-                <td><span class="role-pill"><?= h($s['role']) ?></span></td>
-                <td><?= h($s['shift']) ?> (<?= h($shift_hours[$s['shift']] ?? '') ?>)</td>
-                <td><span class="status-pill <?= h($duty_class[$s['duty_status']] ?? 'off') ?>"><span class="d"></span> <?= h($s['duty_status']) ?></span></td>
+                <td><?= $staff_email !== '' ? h($staff_email) : '<span style="color:var(--slate-400);">—</span>' ?></td>
                 <td><?= h($s['contact']) ?></td>
+                <td><span class="status-pill <?= h($duty_class[$s['duty_status']] ?? 'off') ?>"><span class="d"></span> <?= h($s['duty_status']) ?></span></td>
                 <td class="actions">
-                  <a class="edit-action" data-id="<?= (int)$s['staff_id'] ?>">Edit</a>
-                  <a class="danger delete-action" data-id="<?= (int)$s['staff_id'] ?>">Delete</a>
+                  <a class="edit-action" data-id="<?= (int)$s['staff_id'] ?>" data-email="<?= h($staff_email) ?>">Edit</a>
+                  <a class="danger delete-action" data-id="<?= (int)$s['staff_id'] ?>" data-name="<?= h($s['full_name']) ?>" data-code="<?= h($s['staff_code']) ?>">Delete</a>
                 </td>
               </tr>
               <?php endforeach; ?>
               <?php if (!$staff): ?>
-                <tr><td colspan="6" style="text-align:center; color:var(--slate-400); padding:22px;">No staff registered yet.</td></tr>
+                <tr><td colspan="5" style="text-align:center; color:var(--slate-400); padding:22px;">No staff registered yet.</td></tr>
               <?php endif; ?>
             </tbody>
           </table>
@@ -578,7 +688,7 @@ $activities = $stmt->fetchAll();
       <div class="tab-panel" id="tab-status">
         <div class="panel">
           <table id="status-management-table">
-            <thead><tr><th>Staff</th><th>Role</th><th>Account Status</th><th></th></tr></thead>
+            <thead><tr><th>Staff</th><th>Contact</th><th>Account Status</th><th></th></tr></thead>
             <tbody>
               <?php foreach ($staff as $s): $on = (int)$s['is_active'] === 1; ?>
               <tr data-id="<?= (int)$s['staff_id'] ?>">
@@ -588,7 +698,7 @@ $activities = $stmt->fetchAll();
                     <div><b><?= h($s['full_name']) ?></b><span>ID: <?= h($s['staff_code']) ?></span></div>
                   </div>
                 </td>
-                <td><span class="role-pill"><?= h($s['role']) ?></span></td>
+                <td><?= h($s['contact']) ?></td>
                 <td>
                   <span class="status-pill <?= $on ? 'on' : 'off' ?>"><span class="d"></span> <?= $on ? 'Active' : 'Disabled' ?></span>
                 </td>
@@ -601,22 +711,55 @@ $activities = $stmt->fetchAll();
                 </td>
               </tr>
               <?php endforeach; ?>
+              <?php if (!$staff): ?>
+                <tr><td colspan="4" style="text-align:center; color:var(--slate-400); padding:22px;">No staff registered yet.</td></tr>
+              <?php endif; ?>
             </tbody>
           </table>
         </div>
       </div>
 
-      <!-- TAB 3: STAFF ACTIVITY LOG -->
+      <!-- TAB 3: STAFF ACTIVITY LOG (focused on the staff being affected) -->
       <div class="tab-panel" id="tab-activity">
         <div class="panel">
           <?php if (!$activities): ?>
-            <div style="text-align:center; padding:22px; color:var(--slate-400); font-size:12.5px;">No activity yet.</div>
-          <?php else: foreach ($activities as $a): ?>
-            <div class="activity-row">
-              <span class="t"><?= h(date('h:i A', strtotime($a['created_at']))) ?></span>
-              <span><b><?= h($a['actor_name']) ?></b> — <?= h($a['action']) ?></span>
-            </div>
-          <?php endforeach; endif; ?>
+            <div style="text-align:center; padding:22px; color:var(--slate-400); font-size:12.5px;">No staff activity yet.</div>
+          <?php else: ?>
+            <?php
+              // colour per verb — makes the log skim-able
+              $verb_color = [
+                'Added'     => 'var(--mint-400)',
+                'Edited'    => 'var(--sky-400)',
+                'Activated' => 'var(--mint-400)',
+                'Disabled'  => 'var(--amber-400)',
+                'Deleted'   => 'var(--red-400)',
+              ];
+              $verb_icon = [
+                'Added'     => 'fa-user-plus',
+                'Edited'    => 'fa-pen-to-square',
+                'Activated' => 'fa-toggle-on',
+                'Disabled'  => 'fa-toggle-off',
+                'Deleted'   => 'fa-user-minus',
+              ];
+            ?>
+            <?php foreach ($activities as $a):
+              $vcolor = $verb_color[$a['verb']] ?? 'var(--slate-300)';
+              $vicon  = $verb_icon[$a['verb']] ?? 'fa-clock-rotate-left';
+              $subject = $a['target_name']
+                          ? $a['target_name'] . ($a['target_code'] ? ' (' . $a['target_code'] . ')' : '')
+                          : ($a['target_id'] ? 'Staff #' . $a['target_id'] . ' (removed)' : 'Staff record');
+            ?>
+              <div class="activity-row">
+                <span class="t"><?= h(date('M j · h:i A', strtotime($a['created_at']))) ?></span>
+                <span>
+                  <i class="fa-solid <?= h($vicon) ?>" style="color:<?= $vcolor ?>; margin-right:6px;"></i>
+                  <b style="color:<?= $vcolor ?>"><?= h($a['verb']) ?></b>
+                  — <b><?= h($subject) ?></b>
+                  <span style="color:var(--slate-400); font-size:11.5px;"> by <?= h($a['manager_name']) ?></span>
+                </span>
+              </div>
+            <?php endforeach; ?>
+          <?php endif; ?>
         </div>
       </div>
 
@@ -641,20 +784,8 @@ $activities = $stmt->fetchAll();
         <input type="text" id="staff-name-input" name="full_name" class="form-control-custom" required placeholder="e.g. Aung Ko Latt">
       </div>
       <div class="form-group">
-        <label for="staff-role-input">Role</label>
-        <select id="staff-role-input" name="role" class="form-control-custom">
-          <option>Pump Attendant</option>
-          <option>Cashier</option>
-          <option>Supervisor</option>
-        </select>
-      </div>
-      <div class="form-group">
-        <label for="staff-shift-input">Shift</label>
-        <select id="staff-shift-input" name="shift" class="form-control-custom">
-          <option value="Morning">Morning (6AM–2PM)</option>
-          <option value="Afternoon">Afternoon (2PM–10PM)</option>
-          <option value="Night">Night (10PM–6AM)</option>
-        </select>
+        <label for="staff-email-input">Email Address</label>
+        <input type="email" id="staff-email-input" name="email" class="form-control-custom" placeholder="e.g. aungkolatt@mappump.mm">
       </div>
       <div class="form-group">
         <label for="staff-contact-input">Contact Phone</label>
@@ -665,6 +796,26 @@ $activities = $stmt->fetchAll();
         <button type="submit" class="btn-primary" style="box-shadow: none; padding: 10px 18px;">Save Staff</button>
       </div>
     </form>
+  </div>
+</div>
+
+<!-- ---------- Delete Confirmation Modal (custom red danger dialog) ---------- -->
+<div class="modal-overlay" id="delete-modal">
+  <div class="modal-card-custom" style="max-width:440px; border:1px solid rgba(248,113,113,0.25);">
+    <div style="width:52px; height:52px; border-radius:50%; background:rgba(248,113,113,0.14); color:var(--red-400); display:flex; align-items:center; justify-content:center; font-size:22px; margin-bottom:16px;">
+      <i class="fa-solid fa-triangle-exclamation"></i>
+    </div>
+    <h3 style="font-size:17px; font-weight:700; margin-bottom:8px;">Delete Staff Account?</h3>
+    <p id="delete-modal-msg" style="font-size:13px; color:var(--slate-300); line-height:1.6; margin-bottom:22px;">
+      This will permanently remove this staff member and cannot be undone.
+    </p>
+    <div class="modal-actions">
+      <button type="button" class="btn-secondary-custom" id="delete-cancel-btn">Cancel</button>
+      <button type="button" id="delete-confirm-btn"
+        style="background:linear-gradient(135deg,#f87171,#b91c1c); color:#fff; font-weight:700; font-size:13px; padding:10px 18px; border-radius:10px; border:none; cursor:pointer;">
+        Delete Permanently
+      </button>
+    </div>
   </div>
 </div>
 
@@ -722,35 +873,18 @@ $activities = $stmt->fetchAll();
       if (notifPing) notifPing.remove();
     });
 
-    // 3. Client Side Dynamic Search Filtering System
+    // 3. Client Side Dynamic Search Filtering (name, email, staff ID)
     const searchInput = document.getElementById('directory-search');
     const directoryRows = document.querySelectorAll('#staff-directory-table tbody tr');
-
     searchInput.addEventListener('input', filterDirectory);
-
-    // 4. Shift Selection Filtering System
-    const chips = document.querySelectorAll('.chip');
-    let activeShift = 'All';
-
-    chips.forEach(chip => {
-      chip.addEventListener('click', () => {
-        chips.forEach(c => c.classList.remove('active'));
-        chip.classList.add('active');
-        activeShift = chip.getAttribute('data-shift');
-        filterDirectory();
-      });
-    });
 
     function filterDirectory() {
       const query = searchInput.value.toLowerCase().trim();
       directoryRows.forEach(row => {
-        const nameAndId = row.querySelector('.staff-name').textContent.toLowerCase();
-        const rowShift = row.getAttribute('data-shift');
-
-        const matchesSearch = nameAndId.includes(query);
-        const matchesShift = (activeShift === 'All' || rowShift === activeShift);
-
-        if (matchesSearch && matchesShift) {
+        // search across whole row text so email column is included
+        const rowText = row.textContent.toLowerCase();
+        const matchesSearch = query === '' || rowText.includes(query);
+        if (matchesSearch) {
           row.style.display = '';
           setTimeout(() => { row.style.opacity = '1'; row.style.transform = 'translateY(0)'; }, 20);
         } else {
@@ -761,32 +895,64 @@ $activities = $stmt->fetchAll();
       });
     }
 
-    // 5. Server-side Delete Action
+    // 5. Server-side Delete Action (uses the custom danger modal instead of window.confirm)
     const csrfToken = '<?= h(csrf_token()) ?>';
     const directoryTable = document.getElementById('staff-directory-table');
-    directoryTable.addEventListener('click', async (e) => {
+    const deleteModal   = document.getElementById('delete-modal');
+    const deleteMsg     = document.getElementById('delete-modal-msg');
+    const deleteCancel  = document.getElementById('delete-cancel-btn');
+    const deleteConfirm = document.getElementById('delete-confirm-btn');
+    let pendingDeleteRow = null;
+
+    function openDeleteModal(row) {
+      pendingDeleteRow = row;
+      const name = row.querySelector('.delete-action')?.dataset.name || 'this staff member';
+      const code = row.querySelector('.delete-action')?.dataset.code || '';
+      deleteMsg.innerHTML = `You are about to permanently remove <b>${name}</b>${code ? ` (<b>${code}</b>)` : ''}. This action cannot be undone.`;
+      deleteModal.classList.add('active');
+    }
+    function closeDeleteModal() {
+      deleteModal.classList.remove('active');
+      pendingDeleteRow = null;
+    }
+    deleteCancel.addEventListener('click', closeDeleteModal);
+    deleteModal.addEventListener('click', (e) => { if (e.target === deleteModal) closeDeleteModal(); });
+
+    directoryTable.addEventListener('click', (e) => {
       if (e.target.classList.contains('delete-action')) {
         e.preventDefault();
-        const row = e.target.closest('tr');
-        const sid = row.dataset.id;
-        if (!confirm(`Are you sure you want to delete this account?`)) return;
+        openDeleteModal(e.target.closest('tr'));
+      }
+    });
 
-        const fd = new FormData();
-        fd.append('csrf', csrfToken);
-        fd.append('action', 'delete');
-        fd.append('staff_id', sid);
-        try {
-          const res = await fetch('manage-staff.php', { method: 'POST', body: fd });
-          const data = await res.json();
-          if (!data.ok) { alert('Delete failed: ' + (data.error || 'unknown')); return; }
-          row.style.opacity = '0';
-          row.style.transform = 'translateX(-20px)';
-          setTimeout(() => {
-            row.remove();
-            document.querySelector(`#status-management-table tr[data-id="${sid}"]`)?.remove();
-            updateTotalMetrics();
-          }, 300);
-        } catch (err) { alert('Network error: ' + err.message); }
+    deleteConfirm.addEventListener('click', async () => {
+      if (!pendingDeleteRow) return;
+      const row = pendingDeleteRow;
+      const sid = row.dataset.id;
+      deleteConfirm.disabled = true;
+      deleteConfirm.textContent = 'Deleting...';
+
+      const fd = new FormData();
+      fd.append('csrf', csrfToken);
+      fd.append('action', 'delete');
+      fd.append('staff_id', sid);
+      try {
+        const res = await fetch('manage-staff.php', { method: 'POST', body: fd });
+        const data = await res.json();
+        if (!data.ok) { alert('Delete failed: ' + (data.error || 'unknown')); return; }
+        closeDeleteModal();
+        row.style.opacity = '0';
+        row.style.transform = 'translateX(-20px)';
+        setTimeout(() => {
+          row.remove();
+          document.querySelector(`#status-management-table tr[data-id="${sid}"]`)?.remove();
+          updateTotalMetrics();
+        }, 300);
+      } catch (err) {
+        alert('Network error: ' + err.message);
+      } finally {
+        deleteConfirm.disabled = false;
+        deleteConfirm.textContent = 'Delete Permanently';
       }
     });
 
@@ -848,16 +1014,14 @@ $activities = $stmt->fetchAll();
     let editTargetRow = null;
 
     const nameInput = document.getElementById('staff-name-input');
-    const roleSelect = document.getElementById('staff-role-input');
-    const shiftSelect = document.getElementById('staff-shift-input');
+    const emailInput = document.getElementById('staff-email-input');
     const contactInput = document.getElementById('staff-contact-input');
 
-    function openModal(isEdit = false, name="", role="", shift="Morning", contact="") {
+    function openModal(isEdit = false, name = "", email = "", contact = "") {
       if (isEdit) {
         document.getElementById('modal-title').textContent = "Edit Staff Member Details";
         nameInput.value = name;
-        roleSelect.value = role;
-        shiftSelect.value = shift;
+        emailInput.value = email;
         contactInput.value = contact;
       } else {
         document.getElementById('modal-title').textContent = "Add New Staff Member";
@@ -871,35 +1035,29 @@ $activities = $stmt->fetchAll();
       editTargetRow = null;
     }
 
-    openAddBtn.addEventListener('click', () => openModal(false));
+    openAddBtn.addEventListener('click', () => {
+      document.getElementById('staff-form-action').value = 'add';
+      document.getElementById('staff-form-id').value = '';
+      openModal(false);
+    });
     cancelBtn.addEventListener('click', closeModal);
     closeBtn.addEventListener('click', closeModal);
+    modal.addEventListener('click', (e) => { if (e.target === modal) closeModal(); });
 
     // Edit actions
     directoryTable.addEventListener('click', (e) => {
       if (e.target.classList.contains('edit-action')) {
         e.preventDefault();
         editTargetRow = e.target.closest('tr');
-        const name = editTargetRow.querySelector('.staff-name b').textContent;
-        const role = editTargetRow.querySelector('.role-pill').textContent;
-        const shiftText = editTargetRow.cells[2].textContent;
-        const contact = editTargetRow.cells[4].textContent;
+        const name    = editTargetRow.querySelector('.staff-name b').textContent.trim();
+        const email   = e.target.dataset.email || '';
+        // Contact is now column index 2 (Staff | Email | Contact | Status | Actions)
+        const contact = editTargetRow.cells[2].textContent.trim();
 
-        let shiftVal = 'Morning';
-        if (shiftText.includes('Afternoon')) shiftVal = 'Afternoon';
-        if (shiftText.includes('Night')) shiftVal = 'Night';
-
-        // set hidden form fields for edit
         document.getElementById('staff-form-action').value = 'edit';
         document.getElementById('staff-form-id').value = editTargetRow.dataset.id;
-        openModal(true, name, role, shiftVal, contact);
+        openModal(true, name, email, contact);
       }
-    });
-
-    // reset action=add when opening via "Add New"
-    openAddBtn.addEventListener('click', () => {
-      document.getElementById('staff-form-action').value = 'add';
-      document.getElementById('staff-form-id').value = '';
     });
 
     // Server-side Form Submit

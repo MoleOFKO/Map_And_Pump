@@ -39,6 +39,7 @@ function current_context($db = null) {
                COALESCE(u.branch_id, managed.station_id) AS branch_id,
                u.user_name AS full_name,
                u.email,
+               u.oauth_avatar_url AS avatar_url,
                NULL AS phone,
                NULL AS nrc,
                COALESCE(r.role_name, 'BranchManager') AS role,
@@ -49,16 +50,19 @@ function current_context($db = null) {
                b.phone AS branch_phone, b.email AS branch_email,
                b.opening_time, b.closing_time, b.is_24hr,
                b.pump_count, b.tank_count, b.hq_region, b.established_at,
-               COALESCE(b.status, LOWER(s.status), 'active') AS branch_status
+               COALESCE(b.status, LOWER(s.status), 'active') AS branch_status,
+               hq.company_name AS hq_name,
+               hq.company_logo AS hq_logo
         FROM users u
         LEFT JOIN roles r ON r.role_id = COALESCE(u.current_role_id, u.business_role_id, u.role_id)
         LEFT JOIN (
-            SELECT branch_manager_user_id, MIN(station_id) AS station_id
+            SELECT branch_manager_user_id, MIN(station_id) AS station_id, MIN(headquarter_id) AS headquarter_id
             FROM station_business_scope
             GROUP BY branch_manager_user_id
         ) managed ON managed.branch_manager_user_id = u.user_id
         LEFT JOIN stations s ON s.station_id = COALESCE(u.branch_id, managed.station_id)
         LEFT JOIN branches b ON b.branch_id = COALESCE(u.branch_id, managed.station_id)
+        LEFT JOIN headquarter hq ON hq.headquarter_id = managed.headquarter_id
         WHERE u.user_id = :uid
         LIMIT 1
     ");
@@ -71,6 +75,7 @@ function current_context($db = null) {
         'branch_id' => $row['branch_id'],
         'full_name' => $row['full_name'],
         'email'     => $row['email'],
+        'avatar_url'=> $row['avatar_url'],
         'phone'     => $row['phone'],
         'nrc'       => $row['nrc'],
         'role'      => $row['role'],
@@ -94,8 +99,23 @@ function current_context($db = null) {
         'hq_region'      => $row['hq_region'],
         'established_at' => $row['established_at'],
         'status'         => $row['branch_status'],
+        'hq_name'        => $row['hq_name'],
+        'hq_logo'        => $row['hq_logo'],
     ];
     return ['user' => $user, 'branch' => $branch];
+}
+
+/** Resolve HQ logo path to a usable URL — handles absolute URLs and relative uploads/ paths */
+function hq_logo_src(?string $logo): ?string {
+    if (!$logo) return null;
+    $logo = trim($logo);
+    if ($logo === '') return null;
+    // Already an absolute URL
+    if (preg_match('#^https?://#i', $logo)) return $logo;
+    // Root-relative path
+    if (str_starts_with($logo, '/')) return $logo;
+    // Relative to HQ uploads folder
+    return '/' . ltrim($logo, '/');
 }
 
 // -------- View helpers --------

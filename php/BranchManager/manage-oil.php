@@ -271,12 +271,18 @@ function tank_flag(?array $t): string {
     margin:20px 8px 0; padding:10px 12px; background:var(--navy-800); border-radius:12px; 
     border:1px solid rgba(255,255,255,0.06); font-size:12.5px;
     transition: background 0.3s, border-color 0.3s;
+    display:flex; align-items:center; gap:10px;
   }
   .side-branch:hover{
     background: var(--navy-700);
     border-color: rgba(251,191,36,0.25);
   }
-  .side-branch b{display:block; font-size:14px; font-family:'Space Grotesk'; margin-bottom:2px;}
+  .side-branch .hq-logo{
+    width:36px; height:36px; border-radius:8px; object-fit:cover; flex-shrink:0;
+    background:var(--navy-950); border:1px solid rgba(255,255,255,0.08);
+  }
+  .side-branch .txt{min-width:0; flex:1;}
+  .side-branch b{display:block; font-size:14px; font-family:'Space Grotesk'; margin-bottom:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
   .side-branch span{color:var(--slate-400);}
   .side-nav{margin-top:22px; display:flex; flex-direction:column; gap:4px; flex:1;}
   .side-link{
@@ -555,9 +561,17 @@ function tank_flag(?array $t): string {
     </a>
     <div class="side-role">Branch Manager Console</div>
 
+    <?php $hqLogoSrc = function_exists('hq_logo_src') ? hq_logo_src($branch['hq_logo'] ?? null) : null; ?>
     <div class="side-branch">
-      <b><?= h($branch['branch_name'] ?? 'Denko - Sanchaung') ?></b>
-      <span>Branch ID: <?= h($branch['branch_code'] ?? 'YGN-014') ?></span>
+      <?php if ($hqLogoSrc): ?>
+        <img src="<?= h($hqLogoSrc) ?>" alt="HQ Logo" class="hq-logo" onerror="this.style.display='none'">
+      <?php else: ?>
+        <div class="hq-logo" style="display:flex; align-items:center; justify-content:center; color:var(--slate-400);"><i class="fa-solid fa-building"></i></div>
+      <?php endif; ?>
+      <div class="txt">
+        <b><?= h($branch['branch_name'] ?? 'Denko - Sanchaung') ?></b>
+        <span>Branch ID: <?= h($branch['branch_code'] ?? 'YGN-014') ?></span>
+      </div>
     </div>
 
     <nav class="side-nav">
