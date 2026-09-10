@@ -17,6 +17,73 @@ require_branch_manager();
 $message = '';
 $message_type = '';
 
+// ------- Avatar upload endpoint (multipart) --------
+// Handled separately so we can respond as JSON to the client-side uploader.
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'upload_avatar') {
+    header('Content-Type: application/json; charset=utf-8');
+    if (!csrf_check($_POST['csrf'] ?? null)) {
+        echo json_encode(['ok' => false, 'error' => 'Invalid CSRF token']);
+        exit;
+    }
+    if (empty($_FILES['avatar']) || $_FILES['avatar']['error'] !== UPLOAD_ERR_OK) {
+        echo json_encode(['ok' => false, 'error' => 'No file uploaded']);
+        exit;
+    }
+
+    $file = $_FILES['avatar'];
+    // Size cap: 3 MB
+    if ($file['size'] > 3 * 1024 * 1024) {
+        echo json_encode(['ok' => false, 'error' => 'File too large (max 3MB)']);
+        exit;
+    }
+    // Verify actual mime type
+    $finfo = finfo_open(FILEINFO_MIME_TYPE);
+    $mime  = finfo_file($finfo, $file['tmp_name']);
+    finfo_close($finfo);
+    $allowedMime = ['image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp', 'image/gif' => 'gif'];
+    if (!isset($allowedMime[$mime])) {
+        echo json_encode(['ok' => false, 'error' => 'Only JPG, PNG, WebP, or GIF images are allowed']);
+        exit;
+    }
+    $ext = $allowedMime[$mime];
+
+    // Ensure destination folder exists (relative to this file)
+    $uploadDir = __DIR__ . '/uploads';
+    if (!is_dir($uploadDir)) { @mkdir($uploadDir, 0775, true); }
+    if (!is_writable($uploadDir)) {
+        echo json_encode(['ok' => false, 'error' => 'Upload folder is not writable']);
+        exit;
+    }
+
+    $uid      = (int)$_SESSION['user_id'];
+    $filename = 'branchmgr-' . $uid . '-' . bin2hex(random_bytes(6)) . '.' . $ext;
+    $destPath = $uploadDir . '/' . $filename;
+
+    if (!move_uploaded_file($file['tmp_name'], $destPath)) {
+        echo json_encode(['ok' => false, 'error' => 'Could not save the uploaded file']);
+        exit;
+    }
+
+    // Web-accessible URL (relative to project root — BranchManager/uploads/…)
+    $publicUrl = 'BranchManager/uploads/' . $filename;
+
+    try {
+        // Reuse oauth_avatar_url column since the app already uses it for local avatars.
+        $stmt = $pdo->prepare("UPDATE users SET oauth_avatar_url = :u, updated_at = NOW() WHERE user_id = :uid");
+        $stmt->execute([':u' => $publicUrl, ':uid' => $uid]);
+        $_SESSION['user_avatar_url'] = $publicUrl;
+
+        // Best-effort log
+        try { log_activity($pdo, 0, 'user', $uid, $_SESSION['user_name'] ?? '', 'Updated branch manager profile avatar'); } catch (Throwable $e) {}
+
+        echo json_encode(['ok' => true, 'url' => '/' . ltrim($publicUrl, '/')]);
+    } catch (PDOException $e) {
+        @unlink($destPath);
+        echo json_encode(['ok' => false, 'error' => 'Database error saving avatar']);
+    }
+    exit;
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!csrf_check($_POST['csrf'] ?? null)) {
         $message = 'Invalid CSRF token. Please refresh and try again.';
@@ -67,6 +134,19 @@ $managerDisplayName = !empty($user['full_name']) ? $user['full_name'] : 'Manager
 $initials           = function_exists('map_pump_profile_initial') 
                       ? map_pump_profile_initial($managerDisplayName, 'M') 
                       : initials($managerDisplayName);
+
+// Resolve avatar URL (may live under BranchManager/uploads/, /php/…, or an OAuth CDN)
+$avatarRaw = $user['avatar_url'] ?? ($_SESSION['user_avatar_url'] ?? '');
+$avatarUrl = '';
+if ($avatarRaw) {
+    if (preg_match('#^https?://#i', $avatarRaw)) {
+        $avatarUrl = $avatarRaw;                       // absolute URL (Google, etc.)
+    } elseif (str_starts_with($avatarRaw, '/')) {
+        $avatarUrl = $avatarRaw;                       // already root-relative
+    } else {
+        $avatarUrl = '/' . ltrim($avatarRaw, '/');     // make it root-relative
+    }
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -110,9 +190,15 @@ $initials           = function_exists('map_pump_profile_initial')
       margin:20px 8px 0; padding:10px 12px; background:var(--navy-800); border-radius:12px;
       border:1px solid rgba(255,255,255,0.06); font-size:12.5px;
       transition: background 0.3s, border-color 0.3s;
+      display:flex; align-items:center; gap:10px;
     }
     .side-branch:hover{ background: var(--navy-700); border-color: rgba(52,211,153,0.2); }
-    .side-branch b{display:block; font-size:14px; font-family:'Space Grotesk'; margin-bottom:2px;}
+    .side-branch .hq-logo{
+      width:36px; height:36px; border-radius:8px; object-fit:cover; flex-shrink:0;
+      background:var(--navy-950); border:1px solid rgba(255,255,255,0.08);
+    }
+    .side-branch .txt{min-width:0; flex:1;}
+    .side-branch b{display:block; font-size:14px; font-family:'Space Grotesk'; margin-bottom:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
     .side-branch span{color:var(--slate-400);}
     .side-nav{margin-top:22px; display:flex; flex-direction:column; gap:4px; flex:1;}
     .side-link{
@@ -261,9 +347,17 @@ $initials           = function_exists('map_pump_profile_initial')
     </a>
     <div class="side-role">Branch Manager Console</div>
 
+    <?php $hqLogoSrc = function_exists('hq_logo_src') ? hq_logo_src($branch['hq_logo'] ?? null) : null; ?>
     <div class="side-branch">
-      <b><?= htmlspecialchars($branch['branch_name'] ?? $user['branch_name'] ?? 'Unassigned Branch') ?></b>
-      <span>Branch ID: <?= htmlspecialchars($branch['branch_code'] ?? $user['branch_code'] ?? 'N/A') ?></span>
+      <?php if ($hqLogoSrc): ?>
+        <img src="<?= htmlspecialchars($hqLogoSrc) ?>" alt="HQ Logo" class="hq-logo" onerror="this.style.display='none'">
+      <?php else: ?>
+        <div class="hq-logo" style="display:flex; align-items:center; justify-content:center; color:var(--slate-400);"><i class="fa-solid fa-building"></i></div>
+      <?php endif; ?>
+      <div class="txt">
+        <b><?= htmlspecialchars($branch['branch_name'] ?? $user['branch_name'] ?? 'Unassigned Branch') ?></b>
+        <span>Branch ID: <?= htmlspecialchars($branch['branch_code'] ?? $user['branch_code'] ?? 'N/A') ?></span>
+      </div>
     </div>
 
     <nav class="side-nav">
@@ -310,9 +404,23 @@ $initials           = function_exists('map_pump_profile_initial')
 
       <div class="layout-2col">
         <div class="panel profile-card-center">
-          <div class="avatar-big"><?= htmlspecialchars($initials, ENT_QUOTES, 'UTF-8') ?>
-            <div class="avatar-edit-btn"><i class="fa-solid fa-camera"></i></div>
+          <div class="avatar-big" id="avatar-big" style="overflow:hidden; cursor:pointer;">
+            <?php if ($avatarUrl): ?>
+              <img id="avatar-img" src="<?= htmlspecialchars($avatarUrl, ENT_QUOTES) ?>" alt="Profile"
+                   style="width:100%; height:100%; object-fit:cover; border-radius:50%;">
+              <span id="avatar-initials" style="display:none;"><?= htmlspecialchars($initials, ENT_QUOTES, 'UTF-8') ?></span>
+            <?php else: ?>
+              <img id="avatar-img" alt="Profile" style="display:none; width:100%; height:100%; object-fit:cover; border-radius:50%;">
+              <span id="avatar-initials"><?= htmlspecialchars($initials, ENT_QUOTES, 'UTF-8') ?></span>
+            <?php endif; ?>
+            <div class="avatar-edit-btn" id="avatar-edit-btn" title="Change profile picture">
+              <i class="fa-solid fa-camera"></i>
+            </div>
           </div>
+          <!-- Hidden file input used by the camera button above -->
+          <input type="file" id="avatar-file-input" accept="image/jpeg,image/png,image/webp,image/gif" style="display:none;">
+          <div id="avatar-status" style="min-height:16px; font-size:11.5px; color:var(--slate-400); margin:6px 0 8px;"></div>
+
           <h4><?= htmlspecialchars($user['full_name'] ?? 'Manager') ?></h4>
           <span>Branch Manager</span>
           <div class="profile-tag"><i class="fa-solid fa-shield-halved"></i> Verified Manager Account</div>
@@ -408,6 +516,74 @@ $initials           = function_exists('map_pump_profile_initial')
     bellBtn.addEventListener('click', () => {
       const ping = bellBtn.querySelector('.ping');
       if (ping) { ping.style.transform = 'scale(0)'; setTimeout(() => ping.remove(), 200); }
+    });
+
+    // ----- Avatar upload -----
+    // Clicking the camera icon (or the avatar itself) opens the hidden file picker;
+    // once a file is chosen it is uploaded straight to edit-profile.php via FormData.
+    const avatarBig   = document.getElementById('avatar-big');
+    const editBtn     = document.getElementById('avatar-edit-btn');
+    const fileInput   = document.getElementById('avatar-file-input');
+    const avatarImg   = document.getElementById('avatar-img');
+    const avatarInit  = document.getElementById('avatar-initials');
+    const statusLine  = document.getElementById('avatar-status');
+    const csrfToken   = '<?= htmlspecialchars(csrf_token(), ENT_QUOTES) ?>';
+
+    function openPicker(e) {
+      if (e) { e.preventDefault(); e.stopPropagation(); }
+      fileInput.value = ''; // allow re-picking the same file
+      fileInput.click();
+    }
+    editBtn.addEventListener('click', openPicker);
+    avatarBig.addEventListener('click', openPicker);
+
+    fileInput.addEventListener('change', async () => {
+      const file = fileInput.files && fileInput.files[0];
+      if (!file) return;
+
+      // Client-side guardrails (backend also validates)
+      if (!/^image\/(jpeg|png|webp|gif)$/i.test(file.type)) {
+        statusLine.textContent = 'Please pick a JPG, PNG, WebP, or GIF image.';
+        statusLine.style.color = 'var(--red-400)';
+        return;
+      }
+      if (file.size > 3 * 1024 * 1024) {
+        statusLine.textContent = 'Image is too large (max 3MB).';
+        statusLine.style.color = 'var(--red-400)';
+        return;
+      }
+
+      // Instant local preview while the upload runs
+      const previewUrl = URL.createObjectURL(file);
+      if (avatarImg) {
+        avatarImg.src = previewUrl;
+        avatarImg.style.display = 'block';
+      }
+      if (avatarInit) avatarInit.style.display = 'none';
+
+      statusLine.textContent = 'Uploading...';
+      statusLine.style.color = 'var(--slate-400)';
+
+      const fd = new FormData();
+      fd.append('csrf', csrfToken);
+      fd.append('action', 'upload_avatar');
+      fd.append('avatar', file);
+      try {
+        const res  = await fetch('edit-profile.php', { method: 'POST', body: fd });
+        const data = await res.json();
+        if (!data.ok) {
+          statusLine.textContent = 'Upload failed: ' + (data.error || 'unknown');
+          statusLine.style.color = 'var(--red-400)';
+          return;
+        }
+        // Swap the preview for the final saved URL (also causes a fresh cache-busted fetch)
+        avatarImg.src = data.url + '?v=' + Date.now();
+        statusLine.textContent = 'Profile picture updated.';
+        statusLine.style.color = 'var(--mint-400)';
+      } catch (err) {
+        statusLine.textContent = 'Network error: ' + err.message;
+        statusLine.style.color = 'var(--red-400)';
+      }
     });
   });
 </script>

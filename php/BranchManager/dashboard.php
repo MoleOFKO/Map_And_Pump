@@ -77,27 +77,6 @@ $stmt = $pdo->prepare("
 $stmt->execute([':b' => $bid]);
 $low_stock_fuel = $stmt->fetchColumn() ?: null;
 
-// staff on duty
-$stmt = $pdo->prepare("
-    SELECT COUNT(*) FROM staff WHERE branch_id = :b AND is_active = 1
-");
-$stmt->execute([':b' => $bid]);
-$staff_total = (int)$stmt->fetchColumn();
-
-$stmt = $pdo->prepare("
-    SELECT COUNT(*) FROM staff
-    WHERE branch_id = :b AND is_active = 1 AND duty_status = 'On Duty'
-");
-$stmt->execute([':b' => $bid]);
-$staff_on_duty = (int)$stmt->fetchColumn();
-
-$stmt = $pdo->prepare("
-    SELECT COUNT(*) FROM staff
-    WHERE branch_id = :b AND is_active = 1 AND duty_status = 'Leave'
-");
-$stmt->execute([':b' => $bid]);
-$staff_on_leave = (int)$stmt->fetchColumn();
-
 // current live queue (top 5)
 $stmt = $pdo->prepare("
     SELECT bk.qr_refrence_code AS token_code,
@@ -181,12 +160,18 @@ $has_unread = count($alerts) > 0;
     margin:20px 8px 0; padding:10px 12px; background:var(--navy-800); border-radius:12px;
     border:1px solid rgba(255,255,255,0.06); font-size:12.5px;
     transition: background 0.3s, border-color 0.3s;
+    display:flex; align-items:center; gap:10px;
   }
   .side-branch:hover{
     background: var(--navy-700);
     border-color: rgba(56,189,248,0.2);
   }
-  .side-branch b{display:block; font-size:14px; font-family:'Space Grotesk'; margin-bottom:2px;}
+  .side-branch .hq-logo{
+    width:36px; height:36px; border-radius:8px; object-fit:cover; flex-shrink:0;
+    background:var(--navy-950); border:1px solid rgba(255,255,255,0.08);
+  }
+  .side-branch .txt{min-width:0; flex:1;}
+  .side-branch b{display:block; font-size:14px; font-family:'Space Grotesk'; margin-bottom:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
   .side-branch span{color:var(--slate-400);}
   .side-nav{margin-top:22px; display:flex; flex-direction:column; gap:4px; flex:1;}
   .side-link{
@@ -325,8 +310,9 @@ $has_unread = count($alerts) > 0;
   .hello{font-size:22px; font-weight:700; margin-bottom:4px;}
   .hello-sub{font-size:13.5px; color:var(--slate-400); margin-bottom:26px;}
 
-  .kpi-grid{display:grid; grid-template-columns:repeat(4,1fr); gap:16px; margin-bottom:34px;}
+  .kpi-grid{display:grid; grid-template-columns:repeat(3,1fr); gap:16px; margin-bottom:34px;}
   @media (max-width:1100px){.kpi-grid{grid-template-columns:repeat(2,1fr);}}
+  @media (max-width:640px){.kpi-grid{grid-template-columns:1fr;}}
   
   .kpi{
     background:linear-gradient(160deg, var(--navy-800), var(--navy-900)); border:1px solid rgba(255,255,255,0.07);
@@ -440,9 +426,17 @@ $has_unread = count($alerts) > 0;
     </a>
     <div class="side-role">Branch Manager Console</div>
 
+    <?php $hqLogoSrc = hq_logo_src($branch['hq_logo'] ?? null); ?>
     <div class="side-branch">
-      <b><?= h($branch['branch_name']) ?></b>
-      <span>Branch ID: <?= h($branch['branch_code']) ?></span>
+      <?php if ($hqLogoSrc): ?>
+        <img src="<?= h($hqLogoSrc) ?>" alt="HQ Logo" class="hq-logo" onerror="this.style.display='none'">
+      <?php else: ?>
+        <div class="hq-logo" style="display:flex; align-items:center; justify-content:center; color:var(--slate-400);"><i class="fa-solid fa-building"></i></div>
+      <?php endif; ?>
+      <div class="txt">
+        <b><?= h($branch['branch_name']) ?></b>
+        <span>Branch ID: <?= h($branch['branch_code']) ?></span>
+      </div>
     </div>
 
     <nav class="side-nav">
@@ -537,15 +531,6 @@ $has_unread = count($alerts) > 0;
             <div class="trend down"><i class="fa-solid fa-caret-down"></i> <?= h($low_stock_fuel) ?> running low</div>
           <?php else: ?>
             <div class="trend ok" style="color:var(--mint-400)">All tanks healthy</div>
-          <?php endif; ?>
-        </div>
-        <div class="kpi">
-          <div class="lbl">Staff On Duty Today</div>
-          <div class="val"><?= $staff_on_duty ?> / <?= $staff_total ?></div>
-          <?php if ($staff_on_leave > 0): ?>
-            <div class="trend ok" style="color:var(--mint-400)"><?= $staff_on_leave ?> on leave</div>
-          <?php else: ?>
-            <div class="trend flat">No one on leave</div>
           <?php endif; ?>
         </div>
       </div>
