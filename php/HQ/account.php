@@ -2,10 +2,10 @@
 require_once __DIR__ . '/hq_guard.php';
 require_once __DIR__ . '/../conn.php';
 require_once __DIR__ . '/../business_scope.php';
-require_once __DIR__ . '/../hq_account_invitation_schema.php';
+require_once __DIR__ . '/../invitations_schema.php';
 
 try {
-    map_pump_ensure_hq_account_invitation_schema($pdo);
+    map_pump_ensure_invitation_schema($pdo);
 } catch (Throwable $e) {
     error_log('Failed to prepare HQ invitation schema: ' . $e->getMessage());
 }

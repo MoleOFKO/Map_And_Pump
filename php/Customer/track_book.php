@@ -22,12 +22,13 @@ function map_pump_station_coordinates(string $location): ?array
 $customerStationsData = [];
 try {
     $stationStmt = $pdo->query(
-        "SELECT s.station_id, s.station_name, s.location, s.station_address, s.status,
-            b.opening_time, b.closing_time, b.is_24hr,
+        "SELECT b.branch_id AS station_id, b.branch_name AS station_name,
+                CASE WHEN b.latitude IS NOT NULL AND b.longitude IS NOT NULL
+                    THEN CONCAT(b.latitude, ', ', b.longitude) ELSE '' END AS location,
+                b.address AS station_address, b.status,
                 GROUP_CONCAT(DISTINCT ot.oil_name ORDER BY ot.oil_name SEPARATOR '|') AS fuel_names
-         FROM stations s
-         LEFT JOIN branches b ON b.branch_id = s.branch_id
-         LEFT JOIN tanks t ON t.branch_id = s.station_id
+         FROM branches b
+         LEFT JOIN tanks t ON t.branch_id = b.branch_id
             AND t.is_enabled = 1
             AND t.current_l > 0
          LEFT JOIN oil_types ot ON
@@ -35,9 +36,9 @@ try {
             OR (t.fuel_code = 'p95' AND LOWER(REPLACE(ot.oil_name, ' ', '')) = 'octane95')
             OR (t.fuel_code = 'dsl' AND LOWER(REPLACE(ot.oil_name, ' ', '')) IN ('disel', 'diesel'))
             OR (t.fuel_code = 'pdsl' AND LOWER(REPLACE(ot.oil_name, ' ', '')) IN ('premiumdisel', 'premiumdiesel'))
-         WHERE LOWER(COALESCE(s.status, 'Active')) <> 'decommissioned'
-         GROUP BY s.station_id, s.station_name, s.location, s.station_address, s.status
-         ORDER BY s.station_id ASC"
+         WHERE LOWER(COALESCE(b.status, 'active')) <> 'closed'
+         GROUP BY b.branch_id, b.branch_name, b.latitude, b.longitude, b.address, b.status
+         ORDER BY b.branch_id ASC"
     );
     foreach ($stationStmt->fetchAll(PDO::FETCH_ASSOC) as $stationRow) {
         $stationId = (int)($stationRow['station_id'] ?? 0);
@@ -54,15 +55,7 @@ try {
             $stationStatus = 'Active';
         }
         $isStationActive = strcasecmp($stationStatus, 'Active') === 0;
-        $isOpen = (int)($stationRow['is_24hr'] ?? 0) === 1;
-        if (!$isOpen && !empty($stationRow['opening_time']) && !empty($stationRow['closing_time'])) {
-            $now = date('H:i:s');
-            $opening = (string)$stationRow['opening_time'];
-            $closing = (string)$stationRow['closing_time'];
-            $isOpen = $opening <= $closing
-                ? ($now >= $opening && $now <= $closing)
-                : ($now >= $opening || $now <= $closing);
-        }
+        $isOpen = true;
 
         $customerStationsData[] = [
             'id' => $stationId,
@@ -72,6 +65,7 @@ try {
             'lng' => $coords[1],
             'status' => $stationStatus,
             'isActive' => $isStationActive,
+            'isOpen' => $isOpen,
             'fuels' => $fuels,
             'isBookable' => $isStationActive && $isOpen && !empty($fuels),
             'logo' => '../../images/Logo.png',
@@ -458,7 +452,7 @@ body.customer-light-mode .customer-map-recenter-btn:hover {
     }
 
     function getTopNearestStations(limit) {
-        return stationsData.filter(station => station.isBookable)
+        return stationsData.filter(station => station.isActive)
             .map(station => ({
                 ...station,
                 distance: distanceKm(customerLocation[0], customerLocation[1], station.lat, station.lng)
@@ -568,12 +562,12 @@ body.customer-light-mode .customer-map-recenter-btn:hover {
         document.getElementById('selected-station-address').textContent = selectedStation.address;
         const fuelSelect = document.getElementById('station-fuel-select');
         const bookingButton = document.getElementById('confirm-booking-btn');
-        if (selectedStation.fuels.length) {
+        if (selectedStation.isBookable && selectedStation.fuels.length) {
             fuelSelect.innerHTML = selectedStation.fuels.map(fuel => `<option value="${fuel}">${fuel}</option>`).join('');
             fuelSelect.disabled = false;
             bookingButton.disabled = false;
         } else {
-            fuelSelect.innerHTML = '<option value="">No fuel currently available</option>';
+            fuelSelect.innerHTML = `<option value="">${selectedStation.isOpen ? 'No fuel currently available' : 'Station is currently closed'}</option>`;
             fuelSelect.disabled = true;
             bookingButton.disabled = true;
         }
@@ -662,7 +656,7 @@ body.customer-light-mode .customer-map-recenter-btn:hover {
 
     async function confirmBooking() {
         const quantity = Number(document.getElementById('station-volume-input').value);
-        if (!selectedStation || !quantity || quantity <= 0 || quantity > availableOilQuota) { alert(`Enter an amount between 0.1 and ${availableOilQuota} liters.`); return; }
+        if (!selectedStation || !selectedStation.isBookable || !quantity || quantity <= 0 || quantity > availableOilQuota) { alert(`Enter an amount between 0.1 and ${availableOilQuota} liters.`); return; }
         const fuel = document.getElementById('station-fuel-select').value;
         const code = `MP-${Math.floor(100 + Math.random() * 900)}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
         const displayPayload = `${code}|${selectedStation.name}|${fuel}|${quantity}L`;

@@ -4,7 +4,7 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
 }
 
 require_once __DIR__ . '/../conn.php';
-require_once __DIR__ . '/../hq_account_invitation_schema.php';
+require_once __DIR__ . '/../invitations_schema.php';
 require_once __DIR__ . '/license_access.php';
 require_once __DIR__ . '/car_access.php';
 require_once __DIR__ . '/../profile_avatar.php';
@@ -53,7 +53,7 @@ try {
 $linkedBusinessRoleNameHeader = '';
 $pendingInvitation = null;
 try {
-    map_pump_ensure_hq_account_invitation_schema($pdo);
+    map_pump_ensure_invitation_schema($pdo);
 
     $profileModeStmt = $pdo->prepare(
         'SELECT u.user_name, u.email, u.oauth_avatar_url, u.role_id, u.business_role_id,
@@ -90,7 +90,7 @@ try {
 try {
     $invitationStmt = $pdo->prepare(
         "SELECT i.invitation_id, i.business_role_id, h.company_name, s.station_name
-         FROM hq_account_invitations i
+         FROM invitations i
          INNER JOIN headquarter h ON h.headquarter_id = i.headquarter_id
          INNER JOIN stations s ON s.station_id = i.station_id
          WHERE i.invited_user_id = ? AND i.status = 'pending'

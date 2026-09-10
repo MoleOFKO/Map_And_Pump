@@ -66,16 +66,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $branchCodeStmt = $pdo->prepare("SELECT CONCAT('BR-', LPAD(COALESCE(MAX(branch_id), 0) + 1, 5, '0')) FROM branches");
                 $branchCodeStmt->execute();
                 $branchCode = (string)$branchCodeStmt->fetchColumn();
+                [$latitude, $longitude] = array_map('trim', explode(',', $location, 2));
                 $branchStmt = $pdo->prepare(
-                    "INSERT INTO branches (branch_code, branch_name, city, township, address, opening_time, closing_time, status, hq_region)
-                     VALUES (?, ?, ?, ?, ?, '06:00:00', '22:00:00', 'active', ? )"
+                    "INSERT INTO branches (branch_code, branch_name, city, township, address, latitude, longitude, manager_user_id, opening_time, closing_time, status, hq_region)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, '06:00:00', '22:00:00', 'active', ? )"
                 );
-                $branchStmt->execute([$branchCode, $station_name, 'Unknown', null, $station_address, null]);
+                $branchStmt->execute([$branchCode, $station_name, 'Unknown', null, $station_address, $latitude, $longitude, $manager_id, null]);
                 $branchId = (int)$pdo->lastInsertId();
-
-                $stmt = $pdo->prepare("INSERT INTO stations (branch_id, station_name, location, station_address, station_township, business_user_id, status) VALUES (?, ?, ?, ?, ?, ?, 'Active')");
-                $stmt->execute([$branchId, $station_name, $location, $station_address, 'Unknown', $manager_id]);
-                $stationId = (int)$pdo->lastInsertId();
+                $stationId = $branchId;
 
                 $pdo->prepare("DELETE FROM station_business_scope WHERE branch_manager_user_id = ?")->execute([$manager_id]);
                 $scopeStmt = $pdo->prepare(
@@ -175,8 +173,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
 
             $pdo->beginTransaction();
-            $stmt = $pdo->prepare("UPDATE stations SET station_name = ?, station_address = ?, location = ?, business_user_id = ? WHERE station_id = ?");
-            $stmt->execute([$station_name, $station_address, $location, $manager_id, $station_id]);
+            [$latitude, $longitude] = array_map('trim', explode(',', $location, 2));
+            $stmt = $pdo->prepare("UPDATE branches SET branch_name = ?, address = ?, latitude = ?, longitude = ?, manager_user_id = ? WHERE branch_id = ?");
+            $stmt->execute([$station_name, $station_address, $latitude, $longitude, $manager_id, $station_id]);
             $scopeStmt = $pdo->prepare("UPDATE station_business_scope SET branch_manager_user_id = ? WHERE station_id = ? AND headquarter_id = ?");
             $scopeStmt->execute([$manager_id, $station_id, $hqId]);
             $accountScopeStmt = $pdo->prepare(
@@ -186,11 +185,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                  ON DUPLICATE KEY UPDATE headquarter_id = VALUES(headquarter_id), station_id = VALUES(station_id), status = 'active'"
             );
             $accountScopeStmt->execute([$manager_id, $hqId, $station_id]);
-            $branchIdStmt = $pdo->prepare("SELECT branch_id FROM stations WHERE station_id = ? LIMIT 1");
-            $branchIdStmt->execute([$station_id]);
-            $branchId = (int)$branchIdStmt->fetchColumn();
             $userScopeStmt = $pdo->prepare("UPDATE users SET headquarter_id = ?, branch_id = ?, business_role_id = 4 WHERE user_id = ?");
-            $userScopeStmt->execute([$hqId, $branchId ?: null, $manager_id]);
+            $userScopeStmt->execute([$hqId, $station_id, $manager_id]);
             $pdo->commit();
             $message = "Configuration saved successfully!";
         } catch (PDOException $e) {
@@ -211,10 +207,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (!empty($station_id) && in_array($new_status, ['Active', 'Maintenance'])) {
             try {
                 $stmt = $pdo->prepare(
-                    "UPDATE stations s
-                     INNER JOIN station_business_scope sbs ON sbs.station_id = s.station_id
-                     SET s.status = ?
-                     WHERE s.station_id = ? AND sbs.headquarter_id = ?"
+                    "UPDATE branches b
+                     INNER JOIN station_business_scope sbs ON sbs.station_id = b.branch_id
+                     SET b.status = LOWER(?)
+                     WHERE b.branch_id = ? AND sbs.headquarter_id = ?"
                 );
                 $stmt->execute([$new_status, $station_id, $hqId]);
                 echo json_encode(['success' => true]);
@@ -233,10 +229,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         try {
             $stmt = $pdo->prepare(
-                "UPDATE stations s
-                 INNER JOIN station_business_scope sbs ON sbs.station_id = s.station_id
-                 SET s.status = 'Decommissioned'
-                 WHERE s.station_id = ? AND sbs.headquarter_id = ?"
+                "UPDATE branches b
+                 INNER JOIN station_business_scope sbs ON sbs.station_id = b.branch_id
+                 SET b.status = 'closed'
+                 WHERE b.branch_id = ? AND sbs.headquarter_id = ?"
             );
             $stmt->execute([$station_id, $hqId]);
             $message = "Station successfully decommissioned and hidden.";
@@ -251,13 +247,17 @@ $stations = [];
 $branchManagers = [];
 try {
     $stmt = $pdo->prepare(
-        "SELECT s.*, u.user_name AS manager_name, u.email AS manager_email
-         FROM stations s
-         INNER JOIN station_business_scope sbs ON sbs.station_id = s.station_id
-         LEFT JOIN users u ON u.user_id = s.business_user_id
+        "SELECT b.branch_id AS station_id, b.branch_name AS station_name, b.address AS station_address,
+                b.manager_user_id AS business_user_id,
+                CASE WHEN b.latitude IS NOT NULL AND b.longitude IS NOT NULL THEN CONCAT(b.latitude, ', ', b.longitude) ELSE '' END AS location,
+                CASE b.status WHEN 'active' THEN 'Active' WHEN 'maintenance' THEN 'Maintenance' ELSE 'Decommissioned' END AS status,
+                u.user_name AS manager_name, u.email AS manager_email
+         FROM branches b
+         INNER JOIN station_business_scope sbs ON sbs.station_id = b.branch_id
+         LEFT JOIN users u ON u.user_id = b.manager_user_id
          WHERE sbs.headquarter_id = ?
-           AND (s.status != 'Decommissioned' OR s.status IS NULL)
-         ORDER BY s.station_id DESC"
+           AND b.status <> 'closed'
+         ORDER BY b.branch_id DESC"
     );
     $stmt->execute([$hqId]);
     $stations = $stmt->fetchAll();
