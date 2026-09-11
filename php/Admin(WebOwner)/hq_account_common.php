@@ -186,7 +186,7 @@ function hq_registry_schema_ready(): bool
         ],
         'users' => [
             'user_id', 'user_name', 'email', 'hashed_password', 'headquarter_id',
-            'role_id', 'status', 'created_at', 'updated_at',
+            'role_id', 'business_role_id', 'status', 'created_at', 'updated_at',
         ],
     ];
 

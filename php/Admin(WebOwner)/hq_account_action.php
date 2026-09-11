@@ -32,15 +32,22 @@ if (!hq_db_available() || !hq_registry_schema_ready()) {
 $historyReady = hq_action_table_ready();
 
 global $conn;
+$hqRoleId = hq_hq_role_id();
+if ($hqRoleId <= 0) {
+    hq_flash('danger', 'The HQ role could not be identified. The account status was not changed.');
+    hq_redirect('view_hq_and_user_account.php');
+}
+
 $targetQuery = $conn->prepare(
-    "SELECT h.company_name, u.user_id, u.email
+    "SELECT h.company_name, owner.user_id, owner.email
      FROM headquarter h
-     LEFT JOIN users u ON u.user_id = (
-         SELECT MIN(u2.user_id)
-         FROM users u2
-         WHERE u2.headquarter_id = h.headquarter_id
-           AND (u2.role_id = 3 OR u2.business_role_id = 3)
-     )
+     LEFT JOIN (
+         SELECT u.headquarter_id, MIN(u.user_id) AS owner_user_id
+         FROM users u
+         WHERE u.role_id = ? OR u.business_role_id = ?
+         GROUP BY u.headquarter_id
+     ) owner_link ON owner_link.headquarter_id = h.headquarter_id
+     LEFT JOIN users owner ON owner.user_id = owner_link.owner_user_id
      WHERE h.headquarter_id = ?
      LIMIT 1"
 );
@@ -50,7 +57,7 @@ if (!$targetQuery) {
     hq_redirect('view_hq_and_user_account.php');
 }
 
-$targetQuery->bind_param('i', $headquarterId);
+$targetQuery->bind_param('iii', $hqRoleId, $hqRoleId, $headquarterId);
 $targetQuery->execute();
 $target = $targetQuery->get_result()?->fetch_assoc();
 $targetQuery->close();
@@ -79,18 +86,18 @@ $notification = !empty($target['email'])
 try {
     $conn->begin_transaction();
 
-    // Update all HQ-role accounts under this headquarter (role_id or business_role_id).
+    // Update only HQ-role accounts under this HQ. Either role column can identify an HQ account.
     $statusUpdate = $conn->prepare(
         'UPDATE users
          SET status = ?, updated_at = NOW()
          WHERE headquarter_id = ?
-           AND (role_id = 3 OR business_role_id = 3)'
+           AND (role_id = ? OR business_role_id = ?)'
     );
     if (!$statusUpdate) {
         throw new RuntimeException('Could not prepare the HQ status update: ' . $conn->error);
     }
 
-    $statusUpdate->bind_param('si', $newStatus, $headquarterId);
+    $statusUpdate->bind_param('siii', $newStatus, $headquarterId, $hqRoleId, $hqRoleId);
     if (!$statusUpdate->execute()) {
         throw new RuntimeException('Could not update the HQ account status: ' . $statusUpdate->error);
     }
