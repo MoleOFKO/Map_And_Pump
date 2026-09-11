@@ -30,7 +30,7 @@ $flashType = (string) ($flash['type'] ?? '');
     <?php if ($dbError): ?><div class="alert hq-flash alert-danger mb-4"><i class="bi bi-database-exclamation me-2"></i><?= hq_escape($dbError) ?></div><?php endif; ?>
     <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3"><div><span class="stat-chip mb-2"><i class="bi bi-person-vcard-fill txt-neon-cyan"></i> User Administration</span><h1 class="fw-bold m-0 h4 text-white mt-2">View/Manage Users</h1><p class="text-white-50 m-0 small mt-1">View and manage approved, active, suspended, or removed non-HQ accounts.</p></div></div>
     <div class="dashboard-card py-3 px-4 mb-4"><form class="row g-3 align-items-center" method="GET" action="view_users.php"><div class="col-12 col-md-7"><div class="input-group"><span class="input-group-text bg-transparent border-end-0" style="border-color:var(--glass-border);color:var(--neon-cyan);border-radius:12px 0 0 12px"><i class="bi bi-search"></i></span><input type="search" class="form-control glass-input border-start-0" placeholder="Search by user name, email, or HQ..." name="search" value="<?= hq_escape($search) ?>"></div></div><div class="col-12 col-md-3"><select class="form-select glass-select" name="status"><option value="">All Status</option><?php foreach ($allowedStatuses as $option): ?><option value="<?= $option ?>" <?= $status === $option ? 'selected' : '' ?>><?= hq_escape(hq_status_label($option)) ?></option><?php endforeach; ?></select></div><div class="col-12 col-md-2 d-grid"><button type="submit" class="btn btn-neon">Apply Filter</button></div></form></div>
-    <div class="analytics-card"><div class="table-responsive"><table class="table table-dark-custom align-middle m-0"><thead><tr><th>User Account</th><th>Email</th><th>HQ</th><th>Role</th><th>Status</th><th class="text-end">Command</th></tr></thead><tbody>
+    <div class="analytics-card"><div class="table-responsive user-table-scroll"><table class="table table-dark-custom align-middle m-0"><thead><tr><th>User Account</th><th>Email</th><th>HQ</th><th>Role</th><th>Status</th><th class="text-end">Command</th></tr></thead><tbody>
     <?php if (!$userRows): ?><tr><td colspan="6" class="text-center text-white-50 py-5"><i class="bi bi-person-x fs-3 d-block mb-2"></i>No user accounts match the current filter.</td></tr><?php endif; ?>
     <?php foreach ($userRows as $row): $userStatus = (string) ($row['status'] ?? 'pending'); ?><tr><td><div class="d-flex align-items-center gap-3"><div class="rounded-3 d-flex align-items-center justify-content-center fw-bold" style="width:44px;height:44px;background:rgba(0,244,255,.1);border:1px solid rgba(0,244,255,.28);color:var(--neon-cyan)"><?= hq_escape(hq_initials((string) ($row['user_name'] ?? 'User'))) ?></div><div><div class="fw-semibold text-white"><?= hq_escape((string) ($row['user_name'] ?? 'Unnamed User')) ?></div><div class="text-white-50 small">User ID: <?= (int) $row['user_id'] ?></div></div></div></td><td class="text-white-50"><?= hq_escape((string) ($row['email'] ?? 'No email')) ?></td><td class="text-white-50"><?= hq_escape((string) ($row['headquarter_name'] ?? 'No HQ linked')) ?></td><td class="text-white-50">#<?= (int) $row['role_id'] ?> · <?= hq_escape((string) $row['role_name']) ?></td><td><span class="hq-status <?= hq_escape(hq_status_class($userStatus)) ?>"><?= hq_escape(hq_status_label($userStatus)) ?></span></td><td class="text-end"><div class="d-flex gap-2 justify-content-end"><a href="#" class="btn-action js-view-user" title="View User Details" data-user-id="<?= (int) $row['user_id'] ?>"><i class="bi bi-eye-fill"></i></a><button type="button" class="btn-action btn-action-danger js-user-action" title="Suspend/Remove User" data-user-id="<?= (int) $row['user_id'] ?>" data-user-name="<?= hq_escape((string) $row['user_name']) ?>"><i class="bi bi-trash3-fill"></i></button></div></td></tr><?php endforeach; ?>
     </tbody></table></div></div>
@@ -94,12 +94,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const accountGrid =
                 '<div class="row g-3 mb-4">' +
-                '<div class="col-12 col-md-6">' + card('Email', esc(u.email || '—')) + '</div>' +
-                '<div class="col-12 col-md-6">' + card('Role', '#' + esc(u.role_id || '—') + ' · ' + esc(u.role_name || 'Unassigned')) + '</div>' +
-                '<div class="col-12 col-md-6">' + card('Headquarter', esc(u.headquarter_name || 'No HQ linked')) + '</div>' +
-                '<div class="col-6 col-md-3">' + card('Created', esc(date(u.created_at))) + '</div>' +
-                '<div class="col-6 col-md-3">' + card('Updated', esc(date(u.updated_at))) + '</div>' +
-                '<div class="col-12 col-md-6">' + card('Last login', esc(date(u.last_login_at))) + '</div>' +
+                '<div class="col-12 col-sm-6 col-lg-4">' + card('Email', esc(u.email || '—')) + '</div>' +
+                '<div class="col-12 col-sm-6 col-lg-4">' + card('Role', '#' + esc(u.role_id || '—') + ' · ' + esc(u.role_name || 'Unassigned')) + '</div>' +
+                '<div class="col-12 col-sm-6 col-lg-4">' + card('Headquarter', esc(u.headquarter_name || 'No HQ linked')) + '</div>' +
+                '<div class="col-6 col-sm-4 col-lg-4">' + card('Created', esc(date(u.created_at))) + '</div>' +
+                '<div class="col-6 col-sm-4 col-lg-4">' + card('Updated', esc(date(u.updated_at))) + '</div>' +
+                '<div class="col-12 col-sm-4 col-lg-4">' + card('Last login', esc(date(u.last_login_at))) + '</div>' +
                 '</div>';
 
             let licenseBlock = '';
@@ -107,14 +107,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 licenseBlock =
                     '<div class="d-flex align-items-center justify-content-between mb-2"><h6 class="text-white fw-semibold mb-0"><i class="bi bi-card-heading txt-neon-cyan me-2"></i>License</h6></div>' +
                     '<div class="row g-3 mb-4">' +
-                    '<div class="col-12 col-md-6">' + card('License name', esc(license.license_name || '—')) + '</div>' +
-                    '<div class="col-12 col-md-6">' + card('License number', esc(license.license_number || '—')) + '</div>' +
-                    '<div class="col-6 col-md-4">' + card('Phone', esc(license.phone_number || '—')) + '</div>' +
-                    '<div class="col-6 col-md-4">' + card('NRC', esc(license.nrc_number || '—')) + '</div>' +
-                    '<div class="col-6 col-md-4">' + card('Status', esc(license.status || '—')) + '</div>' +
-                    '<div class="col-6 col-md-4">' + card('Date of birth', esc(license.date_of_birth || '—')) + '</div>' +
-                    '<div class="col-6 col-md-4">' + card('Blood type', esc(license.blood_type || '—')) + '</div>' +
-                    '<div class="col-6 col-md-4">' + card('Valid until', esc(license.license_last_valid_date || '—')) + '</div>' +
+                    '<div class="col-12 col-sm-6 col-lg-4">' + card('License name', esc(license.license_name || '—')) + '</div>' +
+                    '<div class="col-12 col-sm-6 col-lg-4">' + card('License number', esc(license.license_number || '—')) + '</div>' +
+                    '<div class="col-6 col-sm-4 col-lg-4">' + card('Phone', esc(license.phone_number || '—')) + '</div>' +
+                    '<div class="col-6 col-sm-4 col-lg-4">' + card('NRC', esc(license.nrc_number || '—')) + '</div>' +
+                    '<div class="col-6 col-sm-4 col-lg-4">' + card('Status', esc(license.status || '—')) + '</div>' +
+                    '<div class="col-6 col-sm-4 col-lg-4">' + card('Date of birth', esc(license.date_of_birth || '—')) + '</div>' +
+                    '<div class="col-6 col-sm-4 col-lg-4">' + card('Blood type', esc(license.blood_type || '—')) + '</div>' +
+                    '<div class="col-6 col-sm-4 col-lg-4">' + card('Valid until', esc(license.license_last_valid_date || '—')) + '</div>' +
                     '</div>';
             }
 
@@ -123,10 +123,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 hqBlock =
                     '<div class="d-flex align-items-center justify-content-between mb-2"><h6 class="text-white fw-semibold mb-0"><i class="bi bi-building txt-neon-cyan me-2"></i>Linked HQ</h6></div>' +
                     '<div class="row g-3 mb-4">' +
-                    '<div class="col-12 col-md-6">' + card('Company', esc(hq.company_name || '—')) + '</div>' +
-                    '<div class="col-12 col-md-6">' + card('Location', esc(hq.location || '—')) + '</div>' +
-                    '<div class="col-12 col-md-6">' + card('HQ email', esc(hq.headquarter_email || '—')) + '</div>' +
-                    '<div class="col-12 col-md-6">' + card('Contact', esc(hq.contact_number || '—')) + '</div>' +
+                    '<div class="col-12 col-sm-6 col-lg-3">' + card('Company', esc(hq.company_name || '—')) + '</div>' +
+                    '<div class="col-12 col-sm-6 col-lg-3">' + card('Location', esc(hq.location || '—')) + '</div>' +
+                    '<div class="col-12 col-sm-6 col-lg-3">' + card('HQ email', esc(hq.headquarter_email || '—')) + '</div>' +
+                    '<div class="col-12 col-sm-6 col-lg-3">' + card('Contact', esc(hq.contact_number || '—')) + '</div>' +
                     '</div>';
             }
 
