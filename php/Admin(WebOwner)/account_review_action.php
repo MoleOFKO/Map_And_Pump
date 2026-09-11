@@ -11,7 +11,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     request_redirect('view_requests.php');
 }
 
-$adminUser = admin_require_user();
+$adminUser = admin_require_admin();
 $userId = filter_var($_POST['user_id'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
 $action = strtolower(trim((string) ($_POST['action'] ?? '')));
 $reason = trim((string) ($_POST['reason'] ?? ''));
@@ -31,7 +31,7 @@ if (mb_strlen($reason) > 2000) {
     request_redirect('view_requests.php');
 }
 
-if (!hq_db_available() || !hq_registry_schema_ready()) {
+if (!hq_db_available() || !request_schema_ready()) {
     request_flash('danger', hq_db_error_message());
     request_redirect('view_requests.php');
 }
@@ -59,7 +59,7 @@ try {
     if (!$target) {
         throw new RuntimeException('That account could not be found.');
     }
-    if (!in_array(strtolower(trim((string) $target['status'])), ['pending', 'pending_verification'], true)) {
+    if (strtolower(trim((string) $target['status'])) !== 'pending_verification') {
         throw new RuntimeException('Only pending verification accounts can be approved or rejected.');
     }
 
@@ -88,11 +88,51 @@ try {
         $licenseUpdate->close();
     }
 
+    $notificationSubject = 'Map & Pump account verification: ' . ucfirst($newStatus);
+    $notificationMessage = $action === 'approve'
+        ? 'Your Map & Pump account verification has been approved. You can now use the account.'
+        : "Your Map & Pump account verification was rejected.\n\nReason:\n" . $reason;
+    $notification = request_send_notification((string) $target['email'], $notificationSubject, $notificationMessage);
+
+    // Account verification is not represented by a system_requests row, so request_id is intentionally NULL.
+    $notificationInsert = $conn->prepare(
+        'INSERT INTO notifications
+            (request_id, recipient_user_id, recipient_email, notification_type, subject, message, delivery_status, delivery_note)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+    );
+    if (!$notificationInsert) {
+        throw new RuntimeException('Could not prepare the account notification record.');
+    }
+    $accountRequestId = null;
+    $notificationType = 'account_' . $newStatus;
+    $notificationStatus = (string) ($notification['status'] ?? 'not_configured');
+    $notificationNote = (string) ($notification['note'] ?? 'Notification delivery was not configured.');
+    $notificationInsert->bind_param(
+        'iissssss',
+        $accountRequestId,
+        $userId,
+        $target['email'],
+        $notificationType,
+        $notificationSubject,
+        $notificationMessage,
+        $notificationStatus,
+        $notificationNote
+    );
+    if (!$notificationInsert->execute()) {
+        throw new RuntimeException('Could not record the account notification.');
+    }
+    $notificationInsert->close();
+
     $logVerb = $action === 'approve' ? 'Approved' : 'Rejected';
     admin_record_log((int) $adminUser['user_id'], $logVerb . ' pending account #' . $userId . ' (' . $target['user_name'] . ').');
     $conn->commit();
 
-    request_flash('success', 'Account ACCT-' . $userId . ' was ' . $newStatus . '.');
+    $actionLabel = $action === 'approve' ? 'approval' : 'rejection';
+    $_SESSION['account_review_success'] = [
+        'action' => $actionLabel,
+        'account_id' => $userId,
+    ];
+    request_flash('success', 'The ' . $actionLabel . ' is executed successfully!');
 } catch (Throwable $exception) {
     $conn->rollback();
     error_log('[Admin account review] Review failed: ' . $exception->getMessage());

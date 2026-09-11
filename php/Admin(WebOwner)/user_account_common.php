@@ -77,7 +77,9 @@ function pending_account_rows(string $search = ''): array
         return $rows;
     }
 
-    $where = [hq_pending_status_sql('u.status')];
+    // Account Verification is reserved for accounts awaiting the explicit verification state.
+    // Legacy generic "pending" accounts must not be shown or actioned from this review queue.
+    $where = ["LOWER(TRIM(u.status)) = 'pending_verification'"];
     $params = [];
     $types = '';
 
