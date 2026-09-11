@@ -429,7 +429,7 @@ $flashContext = $flash['context'] ?? [];
                         '<tr>' +
                         '<td><div class="fw-semibold text-white">' + escapeHtml(account.username || '—') + '</div><div class="text-white-50 small">ID ' + escapeHtml(account.user_id || '') + '</div></td>' +
                         '<td class="text-white-50 text-break">' + escapeHtml(account.email || '—') + '</td>' +
-                        '<td class="text-white-50">' + escapeHtml(account.role_name || '—') + '</td>' +
+                        '<td class="text-white-50"><div>' + escapeHtml(account.role_name || '—') + '</div><div class="small text-white-50">Base #' + escapeHtml(account.role_id ?? '—') + ' · Business #' + escapeHtml(account.business_role_id ?? '—') + '</div></td>' +
                         '<td><span class="hq-status ' + statusClass(account.status) + '">' + escapeHtml(statusLabel(account.status)) + '</span></td>' +
                         '<td class="text-white-50 small">' + escapeHtml(formatDate(account.created_at)) + '</td>' +
                         '</tr>').join('')
