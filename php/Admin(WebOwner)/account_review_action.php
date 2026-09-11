@@ -59,7 +59,7 @@ try {
     if (!$target) {
         throw new RuntimeException('That account could not be found.');
     }
-    if (!in_array(strtolower(trim((string) $target['status'])), ['pending', 'pending_verification'], true)) {
+    if (strtolower(trim((string) $target['status'])) !== 'pending_verification') {
         throw new RuntimeException('Only pending verification accounts can be approved or rejected.');
     }
 
@@ -127,7 +127,12 @@ try {
     admin_record_log((int) $adminUser['user_id'], $logVerb . ' pending account #' . $userId . ' (' . $target['user_name'] . ').');
     $conn->commit();
 
-    request_flash('success', 'Account ACCT-' . $userId . ' was ' . $newStatus . '.');
+    $actionLabel = $action === 'approve' ? 'approval' : 'rejection';
+    $_SESSION['account_review_success'] = [
+        'action' => $actionLabel,
+        'account_id' => $userId,
+    ];
+    request_flash('success', 'The ' . $actionLabel . ' is executed successfully!');
 } catch (Throwable $exception) {
     $conn->rollback();
     error_log('[Admin account review] Review failed: ' . $exception->getMessage());

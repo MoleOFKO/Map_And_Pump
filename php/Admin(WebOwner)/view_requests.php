@@ -7,6 +7,11 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
 }
 
 $flash = request_pull_flash();
+$accountReviewSuccess = $_SESSION['account_review_success'] ?? null;
+unset($_SESSION['account_review_success']);
+if (!is_array($accountReviewSuccess) || !in_array($accountReviewSuccess['action'] ?? '', ['approval', 'rejection'], true)) {
+    $accountReviewSuccess = null;
+}
 $search = trim((string) ($_GET['search'] ?? ''));
 $requestType = strtolower(trim((string) ($_GET['type'] ?? '')));
 $status = strtolower(trim((string) ($_GET['status'] ?? '')));
@@ -155,6 +160,32 @@ $flashType = $flash['type'] ?? '';
         .request-modal-table th { color:var(--text-muted); font-size:.72rem; text-transform:uppercase; letter-spacing:.05em; }
         .request-detail-label { color:var(--text-muted); font-size:.72rem; text-transform:uppercase; letter-spacing:.07em; }
         .request-detail-value { color:var(--text-primary); word-break:break-word; white-space:pre-wrap; }
+        .request-detail-modal .modal-content { overflow:hidden; }
+        .request-detail-modal .modal-header { padding:1.1rem 1.35rem; border-bottom-color:rgba(0,244,255,.16); background:linear-gradient(120deg,rgba(0,244,255,.09),rgba(37,99,235,.035) 58%,transparent); }
+        .request-detail-modal .modal-body { padding:1.35rem; }
+        .request-detail-modal .modal-footer { padding:1rem 1.35rem; border-top-color:rgba(255,255,255,.09); background:rgba(4,13,30,.34); }
+        .request-account-hero { display:flex; align-items:center; gap:1rem; padding:1rem 1.1rem; border:1px solid rgba(0,244,255,.2); border-radius:16px; background:linear-gradient(135deg,rgba(0,244,255,.1),rgba(27,228,148,.035)); box-shadow:inset 0 1px 0 rgba(255,255,255,.05); }
+        .request-account-avatar { width:3.15rem; height:3.15rem; flex:0 0 3.15rem; display:grid; place-items:center; border:1px solid rgba(0,244,255,.35); border-radius:13px; color:var(--neon-cyan); background:rgba(0,244,255,.09); font-weight:800; letter-spacing:.03em; }
+        .request-account-kicker { color:var(--text-muted); font-size:.7rem; letter-spacing:.09em; text-transform:uppercase; }
+        .request-account-name { color:var(--text-primary); font-size:1.05rem; font-weight:700; line-height:1.25; word-break:break-word; }
+        .request-detail-section + .request-detail-section { margin-top:1.45rem; padding-top:1.45rem; border-top:1px solid rgba(255,255,255,.09); }
+        .request-detail-section-title { display:flex; align-items:center; gap:.55rem; margin:0 0 .85rem; color:var(--text-primary); font-size:.78rem; font-weight:700; letter-spacing:.07em; text-transform:uppercase; }
+        .request-detail-section-title i { color:var(--neon-cyan); font-size:.95rem; }
+        .request-detail-grid { display:grid; gap:.75rem; grid-template-columns:repeat(3,minmax(0,1fr)); }
+        .request-detail-grid--two { grid-template-columns:repeat(2,minmax(0,1fr)); }
+        .request-detail-card { min-width:0; padding:.85rem .9rem; border:1px solid rgba(255,255,255,.1); border-radius:12px; background:rgba(255,255,255,.025); }
+        .request-detail-card--wide { grid-column:span 2; }
+        .request-detail-card--full { grid-column:1 / -1; }
+        .request-detail-card .request-detail-label { margin-bottom:.35rem; }
+        .request-detail-card .request-detail-value { font-size:.9rem; line-height:1.45; }
+        .request-detail-callout { padding:1rem; border:1px solid rgba(0,244,255,.18); border-radius:12px; background:rgba(0,244,255,.045); }
+        .request-review-success .modal-content { border-color:rgba(27,228,148,.35); }
+        .request-review-success-icon { width:4.25rem; height:4.25rem; display:grid; place-items:center; margin:0 auto 1rem; border:1px solid rgba(27,228,148,.45); border-radius:50%; background:rgba(27,228,148,.12); color:#1be494; font-size:1.85rem; box-shadow:0 0 24px rgba(27,228,148,.12); }
+        body.background_color.light-mode .request-detail-modal .modal-header { background:linear-gradient(120deg,rgba(0,164,180,.1),rgba(37,99,235,.04) 58%,transparent); }
+        body.background_color.light-mode .request-detail-modal .modal-footer { background:rgba(255,255,255,.55); }
+        body.background_color.light-mode .request-account-hero { background:linear-gradient(135deg,rgba(0,190,210,.1),rgba(27,228,148,.045)); }
+        body.background_color.light-mode .request-detail-card { background:rgba(255,255,255,.62); }
+        @media (max-width:767.98px) { .request-detail-modal .modal-body { padding:1rem; } .request-detail-grid, .request-detail-grid--two { grid-template-columns:1fr; } .request-detail-card--wide, .request-detail-card--full { grid-column:auto; } }
         body.background_color.light-mode .request-flash { background:rgba(255,255,255,.9); }
         body.background_color.light-mode .request-status { color:var(--text-muted); }
     </style>
@@ -180,7 +211,7 @@ $flashType = $flash['type'] ?? '';
     </div>
 
     <main class="container my-5">
-        <?php if ($flash && $flashType): ?>
+        <?php if ($flash && $flashType && !$accountReviewSuccess): ?>
             <div class="alert request-flash alert-<?= hq_escape($flashType) ?> alert-dismissible fade show mb-4" role="alert">
                 <i class="bi <?= $flashType === 'success' ? 'bi-check-circle-fill text-success' : 'bi-exclamation-triangle-fill text-danger' ?> me-2"></i><?= hq_escape($flash['message'] ?? '') ?>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="alert" aria-label="Close"></button>
@@ -246,7 +277,11 @@ $flashType = $flash['type'] ?? '';
 
     <form action="request_action.php" method="POST" id="approveRequestForm" class="d-none"><input type="hidden" name="request_id" id="approveRequestId"><input type="hidden" name="action" value="approve"></form>
 
-    <div class="modal fade glass-modal" id="viewReqModal" tabindex="-1" aria-labelledby="viewReqModalLabel" aria-hidden="true"><div class="modal-dialog modal-dialog-centered modal-lg"><div class="modal-content"><div class="modal-header"><h5 class="modal-title fw-bold" id="viewReqModalLabel"><i class="bi bi-file-earmark-text txt-neon-cyan me-2"></i> Request Details</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button></div><div class="modal-body" id="requestDetailsBody"><div class="text-center text-white-50 py-5"><div class="spinner-border spinner-border-sm txt-neon-cyan mb-2" role="status"></div><div>Loading request details…</div></div></div><div class="modal-footer" id="requestDetailsFooter"><button type="button" class="btn btn-outline-secondary rounded-3 text-white-50 border-secondary border-opacity-20" data-bs-dismiss="modal">Close</button></div></div></div></div>
+    <div class="modal fade glass-modal request-detail-modal" id="viewReqModal" tabindex="-1" aria-labelledby="viewReqModalLabel" aria-hidden="true"><div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-xl"><div class="modal-content"><div class="modal-header"><h5 class="modal-title fw-bold" id="viewReqModalLabel"><i class="bi bi-file-earmark-text txt-neon-cyan me-2"></i> Request Details</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button></div><div class="modal-body" id="requestDetailsBody"><div class="text-center text-white-50 py-5"><div class="spinner-border spinner-border-sm txt-neon-cyan mb-2" role="status"></div><div>Loading request details…</div></div></div><div class="modal-footer" id="requestDetailsFooter"><button type="button" class="btn btn-outline-secondary rounded-3 text-white-50 border-secondary border-opacity-20" data-bs-dismiss="modal">Close</button></div></div></div></div>
+
+    <?php if ($accountReviewSuccess): ?>
+        <div class="modal fade glass-modal request-review-success" id="accountReviewSuccessModal" tabindex="-1" aria-labelledby="accountReviewSuccessLabel" aria-hidden="true"><div class="modal-dialog modal-dialog-centered modal-sm"><div class="modal-content"><div class="modal-body text-center py-4 px-4"><div class="request-review-success-icon"><i class="bi bi-check-lg"></i></div><h5 class="fw-bold text-white mb-2" id="accountReviewSuccessLabel">Action completed</h5><p class="text-white-50 mb-1">The <?= hq_escape((string) $accountReviewSuccess['action']) ?> is executed successfully!</p><p class="small text-white-50 mb-0">Account ACCT-<?= (int) ($accountReviewSuccess['account_id'] ?? 0) ?></p></div><div class="modal-footer justify-content-center"><button type="button" class="btn btn-neon px-4" data-bs-dismiss="modal">Done</button></div></div></div></div>
+    <?php endif; ?>
 
     <div class="modal fade glass-modal" id="rejectReqModal" tabindex="-1" aria-labelledby="rejectReqModalLabel" aria-hidden="true"><div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-header"><h5 class="modal-title fw-bold" id="rejectReqModalLabel"><i class="bi bi-shield-x text-danger me-2"></i> Reject Request</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button></div><form action="request_action.php" method="POST" id="rejectReqForm"><div class="modal-body d-flex flex-column gap-3"><input type="hidden" name="request_id" id="rejectRequestId"><input type="hidden" name="user_id" id="rejectUserId"><input type="hidden" name="action" value="reject"><input type="hidden" name="return_to" value="view_requests.php"><div class="small text-white-50">Target request: <span class="txt-neon-cyan fw-semibold" id="rejectRequestReference">—</span></div><div class="small text-white-50">Sender: <span class="text-white" id="rejectRequestSender">—</span></div><div><label class="form-label text-white-50 small" for="rejectReason">Reason for rejection</label><textarea class="form-control glass-input" name="reason" id="rejectReason" rows="5" maxlength="2000" placeholder="Explain why this request is being rejected..." required style="resize:none;"></textarea></div><div class="small text-white-50"><i class="bi bi-envelope me-1 txt-neon-cyan"></i>The reason is recorded and a notification is created for the request account. Email delivery uses the configured placeholder until SMTP is added.</div></div><div class="modal-footer"><button type="button" class="btn btn-outline-secondary rounded-3 text-white-50 border-secondary border-opacity-20" data-bs-dismiss="modal">Cancel</button><button type="submit" class="btn btn-danger">Confirm Rejection</button></div></form></div></div></div>
 
@@ -275,6 +310,11 @@ $flashType = $flash['type'] ?? '';
             const defaultFooter = '<button type="button" class="btn btn-outline-secondary rounded-3 text-white-50 border-secondary border-opacity-20" data-bs-dismiss="modal">Close</button>';
             const setFooter = (html = defaultFooter) => { detailsFooter.innerHTML = html; };
             const fileLink = (path, label) => path ? '<a href="' + escapeHtml(path) + '" target="_blank" rel="noopener" class="txt-neon-blue text-decoration-none"><i class="bi bi-box-arrow-up-right me-1"></i>' + escapeHtml(label || 'Open file') + '</a>' : '<span class="text-white-50">Not uploaded</span>';
+            const detailCard = (label, value, className = '') =>
+                '<div class="request-detail-card ' + className + '"><div class="request-detail-label">' + escapeHtml(label) + '</div><div class="request-detail-value">' + value + '</div></div>';
+            const detailSection = (icon, title, content) =>
+                '<section class="request-detail-section"><h6 class="request-detail-section-title"><i class="bi ' + icon + '"></i>' + escapeHtml(title) + '</h6>' + content + '</section>';
+            const accountInitials = (name) => String(name || 'A').trim().split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase() || 'A';
             const rejectTarget = (targetType, id, label, sender) => {
                 rejectForm.action = targetType === 'account' ? 'account_review_action.php' : 'request_action.php';
                 rejectId.value = targetType === 'request' ? id : '';
@@ -349,7 +389,51 @@ $flashType = $flash['type'] ?? '';
                         const licenseBlock = l ? '<div class="col-12"><h6 class="fw-semibold text-white mb-3" style="letter-spacing:.5px;font-size:.78rem;text-transform:uppercase;">Customer License Details</h6><div class="row g-3"><div class="col-12 col-md-4"><div class="request-detail-label">License Number</div><div class="request-detail-value">' + escapeHtml(l.license_number || 'Not provided') + '</div></div><div class="col-12 col-md-4"><div class="request-detail-label">License Name</div><div class="request-detail-value">' + escapeHtml(l.license_name || 'Not provided') + '</div></div><div class="col-12 col-md-4"><div class="request-detail-label">Phone</div><div class="request-detail-value">' + escapeHtml(l.phone_number || 'Not provided') + '</div></div><div class="col-12 col-md-4"><div class="request-detail-label">NRC</div><div class="request-detail-value">' + escapeHtml(l.nrc_number || 'Not provided') + '</div></div><div class="col-12 col-md-4"><div class="request-detail-label">Date of Birth</div><div class="request-detail-value">' + escapeHtml(l.date_of_birth || 'Not provided') + '</div></div><div class="col-12 col-md-4"><div class="request-detail-label">Blood Type</div><div class="request-detail-value">' + escapeHtml(l.blood_type || 'Not provided') + '</div></div><div class="col-12 col-md-4"><div class="request-detail-label">Valid Until</div><div class="request-detail-value">' + escapeHtml(l.license_last_valid_date || 'Not provided') + '</div></div><div class="col-12 col-md-4"><div class="request-detail-label">License Image</div><div class="request-detail-value">' + fileLink(l.license_image, 'Open license image') + '</div></div><div class="col-12 col-md-4"><div class="request-detail-label">Face Image</div><div class="request-detail-value">' + fileLink(l.face_image, 'Open face image') + '</div></div></div></div>' : '<div class="col-12"><div class="alert request-flash text-white-50">No driver license has been linked to this account yet.</div></div>';
                         const companyBlock = h ? '<div class="col-12"><h6 class="fw-semibold text-white mb-3" style="letter-spacing:.5px;font-size:.78rem;text-transform:uppercase;">Company Details</h6><div class="row g-3"><div class="col-12 col-md-4"><div class="request-detail-label">Company</div><div class="request-detail-value">' + escapeHtml(h.company_name || u.headquarter_name || 'Not provided') + '</div></div><div class="col-12 col-md-4"><div class="request-detail-label">HQ Email</div><div class="request-detail-value">' + escapeHtml(h.headquarter_email || 'Not provided') + '</div></div><div class="col-12 col-md-4"><div class="request-detail-label">Contact</div><div class="request-detail-value">' + escapeHtml(h.contact_number || 'Not provided') + '</div></div><div class="col-12 col-md-4"><div class="request-detail-label">Company Logo</div><div class="request-detail-value">' + fileLink(h.company_logo, 'Open company logo') + '</div></div><div class="col-12"><div class="request-detail-label">Location</div><div class="request-detail-value">' + escapeHtml(h.location || u.headquarter_location || 'Not provided') + '</div></div><div class="col-12 col-md-4"><div class="request-detail-label">Business License</div><div class="request-detail-value">' + escapeHtml(h.business_license || 'Not provided') + '</div></div><div class="col-12 col-md-4"><div class="request-detail-label">License Image / Receipt</div><div class="request-detail-value">' + fileLink(h.business_license_image, 'Open company document') + '</div></div><div class="col-12 col-md-4"><div class="request-detail-label">License Expiry</div><div class="request-detail-value">' + escapeHtml(h.business_license_expire_date || h.expire_at || 'Not provided') + '</div></div><div class="col-12"><div class="request-detail-label">Company Bio</div><div class="request-detail-value">' + escapeHtml(h.headquarter_bio || 'Not provided') + '</div></div></div></div>' : '';
                         detailsBody.innerHTML = '<div class="row g-4"><div class="col-12 col-md-6"><h6 class="fw-semibold text-white mb-3" style="letter-spacing:.5px;font-size:.78rem;text-transform:uppercase;">Account Info</h6><div class="mb-3"><div class="request-detail-label">Name</div><div class="request-detail-value">' + escapeHtml(u.user_name || 'Not available') + '</div></div><div class="mb-3"><div class="request-detail-label">Email</div><div class="request-detail-value">' + escapeHtml(u.email || 'Not available') + '</div></div><div class="mb-3"><div class="request-detail-label">Role</div><div class="request-detail-value">#' + escapeHtml(u.role_id || '') + ' · ' + escapeHtml(u.role_name || '') + '</div></div></div><div class="col-12 col-md-6"><h6 class="fw-semibold text-white mb-3" style="letter-spacing:.5px;font-size:.78rem;text-transform:uppercase;">Verification</h6><div class="mb-3"><div class="request-detail-label">Account Status</div><div class="request-detail-value">Pending Verification</div></div><div class="mb-3"><div class="request-detail-label">License Status</div><div class="request-detail-value">' + escapeHtml((l && l.status) || 'pending') + '</div></div><div class="mb-3"><div class="request-detail-label">Submitted</div><div class="request-detail-value">' + escapeHtml(formatDate(u.created_at)) + '</div></div></div>' + licenseBlock + companyBlock + '</div>';
-                        setFooter('<form action="account_review_action.php" method="POST" class="m-0"><input type="hidden" name="user_id" value="' + escapeHtml(u.user_id) + '"><input type="hidden" name="action" value="approve"><input type="hidden" name="return_to" value="view_requests.php"><button type="submit" class="btn btn-success">Approve</button></form><button type="button" class="btn btn-danger js-modal-reject">Reject</button>');
+                        const accountId = escapeHtml(u.user_id || button.dataset.userId);
+                        const hero = '<div class="request-account-hero mb-4"><div class="request-account-avatar">' + escapeHtml(accountInitials(u.user_name)) + '</div><div class="min-w-0"><div class="request-account-kicker">Pending account verification · ACCT-' + accountId + '</div><div class="request-account-name mt-1">' + escapeHtml(u.user_name || 'Unnamed account') + '</div><div class="text-white-50 small text-break mt-1">' + escapeHtml(u.email || 'No email provided') + '</div></div><span class="request-status request-status-pending ms-auto">Pending Verification</span></div>';
+                        const accountInfo = '<div class="request-detail-grid request-detail-grid--two">' +
+                            detailCard('Full name', escapeHtml(u.user_name || 'Not available')) +
+                            detailCard('Email address', escapeHtml(u.email || 'Not available')) +
+                            detailCard('Role', '#' + escapeHtml(u.role_id || '—') + ' · ' + escapeHtml(u.role_name || 'Not assigned')) +
+                            detailCard('Submitted', escapeHtml(formatDate(u.created_at))) +
+                            '</div>';
+                        const verificationInfo = '<div class="request-detail-grid">' +
+                            detailCard('Account status', '<span class="request-status request-status-pending">Pending Verification</span>') +
+                            detailCard('License status', escapeHtml((l && l.status) || 'Not submitted')) +
+                            detailCard('Review outcome', '<span class="text-warning">Awaiting administrator review</span>') +
+                            '</div>';
+                        const licenseInfo = l
+                            ? '<div class="request-detail-grid">' +
+                                detailCard('License number', escapeHtml(l.license_number || 'Not provided')) +
+                                detailCard('License name', escapeHtml(l.license_name || 'Not provided')) +
+                                detailCard('Phone', escapeHtml(l.phone_number || 'Not provided')) +
+                                detailCard('NRC', escapeHtml(l.nrc_number || 'Not provided')) +
+                                detailCard('Date of birth', escapeHtml(l.date_of_birth || 'Not provided')) +
+                                detailCard('Blood type', escapeHtml(l.blood_type || 'Not provided')) +
+                                detailCard('Valid until', escapeHtml(l.license_last_valid_date || 'Not provided')) +
+                                detailCard('License image', fileLink(l.license_image, 'Open license image')) +
+                                detailCard('Face image', fileLink(l.face_image, 'Open face image')) +
+                              '</div>'
+                            : '<div class="request-detail-callout text-white-50"><i class="bi bi-info-circle txt-neon-cyan me-2"></i>No driver license has been linked to this account yet.</div>';
+                        const companyInfo = h
+                            ? '<div class="request-detail-grid">' +
+                                detailCard('Company', escapeHtml(h.company_name || u.headquarter_name || 'Not provided')) +
+                                detailCard('HQ email', escapeHtml(h.headquarter_email || 'Not provided')) +
+                                detailCard('Contact', escapeHtml(h.contact_number || 'Not provided')) +
+                                detailCard('Business license', escapeHtml(h.business_license || 'Not provided')) +
+                                detailCard('License expiry', escapeHtml(h.business_license_expire_date || h.expire_at || 'Not provided')) +
+                                detailCard('Company logo', fileLink(h.company_logo, 'Open company logo')) +
+                                detailCard('Location', escapeHtml(h.location || u.headquarter_location || 'Not provided'), 'request-detail-card--full') +
+                                detailCard('License document', fileLink(h.business_license_image, 'Open company document')) +
+                                detailCard('Company bio', escapeHtml(h.headquarter_bio || 'Not provided'), 'request-detail-card--wide') +
+                              '</div>'
+                            : '';
+                        detailsBody.innerHTML = hero +
+                            detailSection('bi-person-vcard-fill', 'Account profile', accountInfo) +
+                            detailSection('bi-shield-check', 'Verification status', verificationInfo) +
+                            detailSection('bi-card-heading', 'Customer license', licenseInfo) +
+                            (companyInfo ? detailSection('bi-buildings-fill', 'Company details', companyInfo) : '');
+                        setFooter('<form action="account_review_action.php" method="POST" class="m-0"><input type="hidden" name="user_id" value="' + accountId + '"><input type="hidden" name="action" value="approve"><input type="hidden" name="return_to" value="view_requests.php"><button type="submit" class="btn btn-success">Approve</button></form><button type="button" class="btn btn-danger js-modal-reject">Reject</button>');
                         detailsFooter.querySelector('.js-modal-reject').addEventListener('click', () => rejectTarget('account', u.user_id, label, u.user_name || u.email || 'Unknown user'));
                     } catch (error) {
                         detailsBody.innerHTML = '<div class="alert request-flash alert-danger"><i class="bi bi-exclamation-triangle me-2"></i>' + escapeHtml(error.message) + '</div>';
@@ -358,6 +442,16 @@ $flashType = $flash['type'] ?? '';
             });
         })();
     </script>
+    <?php if ($accountReviewSuccess): ?>
+        <script>
+            (() => {
+                const successModal = document.getElementById('accountReviewSuccessModal');
+                if (successModal) {
+                    bootstrap.Modal.getOrCreateInstance(successModal).show();
+                }
+            })();
+        </script>
+    <?php endif; ?>
     <script>document.addEventListener('pointermove',(event)=>{document.body.style.setProperty('--bg-x',`${(event.clientX/window.innerWidth)*100}%`);document.body.style.setProperty('--bg-y',`${(event.clientY/window.innerHeight)*100}%`);});</script>
 </body>
 </html>
