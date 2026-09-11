@@ -193,6 +193,18 @@ body.background_color .table-responsive::-webkit-scrollbar-thumb:hover {
     background: rgba(13, 110, 253, 0.45);
 }
 
+body.background_color .user-table-scroll {
+    max-height: min(66vh, 640px);
+    overflow: auto;
+}
+
+body.background_color .user-table-scroll thead th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: #081226;
+}
+
 body.background_color.light-mode,
 body.background_color[data-theme="light"] {
     scrollbar-color: rgba(11, 94, 215, 0.42) #f5f9fc;
@@ -587,6 +599,33 @@ body.background_color > .container:not(.sticky-nav-wrapper) {
     background: var(--surface-2);
     border-radius: 16px;
     border: 1px dashed rgba(13, 110, 253, 0.15);
+}
+
+.pie-panel-solo {
+    flex-direction: column;
+    justify-content: center;
+    text-align: center;
+    border: 1px solid rgba(255, 255, 255, 0.09);
+}
+
+.pie-panel-solo:hover {
+    border-color: rgba(13, 110, 253, 0.18);
+}
+
+.pie-panel-solo .pie-chart {
+    flex-shrink: 0;
+}
+
+.pie-panel-text {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 100%;
+}
+
+.pie-panel-text .chart-legend {
+    display: inline-block;
+    text-align: left;
 }
 
 .pie-panel {

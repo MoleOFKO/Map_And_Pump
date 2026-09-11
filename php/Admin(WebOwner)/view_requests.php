@@ -188,6 +188,59 @@ $flashType = $flash['type'] ?? '';
         @media (max-width:767.98px) { .request-detail-modal .modal-body { padding:1rem; } .request-detail-grid, .request-detail-grid--two { grid-template-columns:1fr; } .request-detail-card--wide, .request-detail-card--full { grid-column:auto; } }
         body.background_color.light-mode .request-flash { background:rgba(255,255,255,.9); }
         body.background_color.light-mode .request-status { color:var(--text-muted); }
+
+        /* Account details modal */
+        .acct-profile-header{display:flex;align-items:center;gap:1.1rem;padding:1.1rem 1.3rem;border-radius:16px;background:linear-gradient(135deg,rgba(0,180,255,.14),rgba(27,228,148,.03));border:1px solid var(--glass-border);margin-bottom:1.4rem;flex-wrap:wrap;}
+        .acct-avatar{width:58px;height:58px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:1.35rem;color:#04121f;background:linear-gradient(135deg,#00f4ff,#1be494);flex-shrink:0;box-shadow:0 0 18px rgba(0,244,255,.4);letter-spacing:-.02em;}
+        .acct-profile-meta{min-width:0;flex:1 1 auto;}
+        .acct-profile-name{color:#fff;font-weight:700;font-size:1.02rem;line-height:1.25;word-break:break-word;}
+        .acct-profile-sub{color:rgba(255,255,255,.6);font-size:.8rem;word-break:break-word;}
+        .acct-badge{display:inline-flex;align-items:center;gap:.35rem;font-size:.68rem;font-weight:700;padding:.32rem .7rem;border-radius:999px;text-transform:uppercase;letter-spacing:.05em;white-space:nowrap;}
+        .acct-badge-pending{background:rgba(255,193,7,.12);color:#ffc107;border:1px solid rgba(255,193,7,.32);}
+        .acct-badge-role{background:rgba(0,244,255,.1);color:var(--neon-cyan);border:1px solid rgba(0,244,255,.28);}
+        .acct-section{border-radius:14px;background:rgba(0,244,255,.035);border:1px solid var(--glass-border);padding:1.1rem 1.25rem;margin-bottom:1.1rem;}
+        .acct-section:last-child{margin-bottom:0;}
+        .acct-section-title{display:flex;align-items:center;gap:.5rem;color:#fff;font-weight:700;font-size:.75rem;text-transform:uppercase;letter-spacing:.07em;margin-bottom:1rem;}
+        .acct-section-title i{color:var(--neon-cyan);font-size:.85rem;}
+        .acct-field-row{display:flex;align-items:flex-start;gap:.65rem;margin-bottom:.9rem;}
+        .acct-field-row:last-child{margin-bottom:0;}
+        .acct-field-icon{width:30px;height:30px;border-radius:9px;background:rgba(0,244,255,.08);display:flex;align-items:center;justify-content:center;color:var(--neon-cyan);font-size:.85rem;flex-shrink:0;margin-top:.05rem;}
+        .acct-doc-grid{display:flex;flex-wrap:wrap;gap:.85rem;margin-top:.3rem;}
+        .acct-doc-card{width:128px;border-radius:12px;overflow:hidden;border:1px solid var(--glass-border);background:rgba(255,255,255,.02);text-decoration:none;transition:transform .15s ease,border-color .15s ease,box-shadow .15s ease;display:block;}
+        .acct-doc-card:hover{transform:translateY(-3px);border-color:var(--neon-cyan);box-shadow:0 8px 20px rgba(0,244,255,.15);}
+        .acct-doc-thumb{width:100%;height:88px;object-fit:cover;display:block;background:rgba(0,0,0,.25);}
+        .acct-doc-empty{width:100%;height:88px;display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:1.4rem;background:rgba(255,255,255,.02);}
+        .acct-doc-label{font-size:.66rem;color:rgba(255,255,255,.65);padding:.4rem .5rem;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;border-top:1px solid var(--glass-border);}
+        .acct-empty-note{border-radius:12px;border:1px dashed var(--glass-border);padding:.9rem 1.1rem;color:rgba(255,255,255,.55);font-size:.82rem;display:flex;align-items:center;gap:.6rem;}
+        
+        /* Modal footer action styles: Make buttons long & centered */
+        #requestDetailsFooter { display: flex; gap: 0.75rem; width: 100%; }
+        #requestDetailsFooter form { display: flex; flex: 1; margin: 0; }
+        .acct-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            width: 100%;
+            gap: 0.5rem;
+            padding: 0.65rem 2rem;
+            border-radius: 999px;
+            font-size: 0.85rem;
+            font-weight: 700;
+            letter-spacing: 0.02em;
+            border: 1px solid transparent;
+            background: rgba(255, 255, 255, 0.02);
+            cursor: pointer;
+            transition: transform .15s ease, box-shadow .15s ease, background .15s ease;
+            flex: 1;
+        }
+        .acct-btn:active{transform:translateY(1px);}
+        .acct-btn-approve{color:#1be494;border-color:rgba(27,228,148,.4);background:rgba(27,228,148,.08);}
+        .acct-btn-approve:hover{background:rgba(27,228,148,.16);box-shadow:0 0 18px rgba(27,228,148,.35);color:#1be494;}
+        .acct-btn-reject{color:#ff4d6a;border-color:rgba(255,77,106,.4);background:rgba(255,77,106,.08);}
+        .acct-btn-reject:hover{background:rgba(255,77,106,.16);box-shadow:0 0 18px rgba(255,77,106,.35);color:#ff4d6a;}
+        body.background_color.light-mode .acct-profile-header{background:linear-gradient(135deg,rgba(0,150,220,.08),rgba(0,150,220,.02));}
+        body.background_color.light-mode .acct-profile-name{color:#12233f;}
     </style>
 </head>
 <body class="background_color" id="background_color">
@@ -307,14 +360,17 @@ $flashType = $flash['type'] ?? '';
             const formatDate = (value) => value ? new Date(String(value).replace(' ', 'T')).toLocaleString() : 'Not available';
             const statusClass = (status) => ({approved:'request-status-approved', rejected:'request-status-rejected', flagged:'request-status-flagged'}[String(status || '').toLowerCase()] || 'request-status-pending');
             const statusLabel = (status) => ({pending:'Pending', approved:'Approved', rejected:'Rejected', flagged:'Flagged'}[String(status || '').toLowerCase()] || 'Pending');
-            const defaultFooter = '<button type="button" class="btn btn-outline-secondary rounded-3 text-white-50 border-secondary border-opacity-20" data-bs-dismiss="modal">Close</button>';
+            const defaultFooter = '<button type="button" class="btn btn-outline-secondary rounded-3 text-white-50 border-secondary border-opacity-20 w-100" data-bs-dismiss="modal">Close</button>';
             const setFooter = (html = defaultFooter) => { detailsFooter.innerHTML = html; };
             const fileLink = (path, label) => path ? '<a href="' + escapeHtml(path) + '" target="_blank" rel="noopener" class="txt-neon-blue text-decoration-none"><i class="bi bi-box-arrow-up-right me-1"></i>' + escapeHtml(label || 'Open file') + '</a>' : '<span class="text-white-50">Not uploaded</span>';
-            const detailCard = (label, value, className = '') =>
-                '<div class="request-detail-card ' + className + '"><div class="request-detail-label">' + escapeHtml(label) + '</div><div class="request-detail-value">' + value + '</div></div>';
-            const detailSection = (icon, title, content) =>
-                '<section class="request-detail-section"><h6 class="request-detail-section-title"><i class="bi ' + icon + '"></i>' + escapeHtml(title) + '</h6>' + content + '</section>';
-            const accountInitials = (name) => String(name || 'A').trim().split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase() || 'A';
+            const isImagePath = (path) => /\.(png|jpe?g|gif|webp|bmp|svg)(\?.*)?$/i.test(String(path || ''));
+            const initialsOf = (name) => { const parts = String(name || '').trim().split(/\s+/).filter(Boolean); if (!parts.length) return '?'; return (parts[0][0] + (parts.length > 1 ? parts[parts.length - 1][0] : '')).toUpperCase(); };
+            const docCard = (path, label, icon = 'bi-file-earmark-text') => {
+                if (!path) return '<div class="acct-doc-card"><div class="acct-doc-empty"><i class="bi bi-file-earmark-x"></i></div><div class="acct-doc-label">Not uploaded</div></div>';
+                const inner = isImagePath(path) ? '<img src="' + escapeHtml(path) + '" alt="' + escapeHtml(label) + '" class="acct-doc-thumb" loading="lazy">' : '<div class="acct-doc-empty"><i class="bi ' + icon + '"></i></div>';
+                return '<a href="' + escapeHtml(path) + '" target="_blank" rel="noopener" class="acct-doc-card" title="' + escapeHtml(label) + '">' + inner + '<div class="acct-doc-label">' + escapeHtml(label) + '</div></a>';
+            };
+            const fieldRow = (icon, label, value) => '<div class="acct-field-row"><div class="acct-field-icon"><i class="bi ' + icon + '"></i></div><div class="min-width-0"><div class="request-detail-label">' + escapeHtml(label) + '</div><div class="request-detail-value">' + (value || '<span class="text-white-50">Not provided</span>') + '</div></div></div>';
             const rejectTarget = (targetType, id, label, sender) => {
                 rejectForm.action = targetType === 'account' ? 'account_review_action.php' : 'request_action.php';
                 rejectId.value = targetType === 'request' ? id : '';
@@ -346,7 +402,7 @@ $flashType = $flash['type'] ?? '';
                 detailsTitle.innerHTML = '<i class="bi bi-file-earmark-text txt-neon-cyan me-2"></i> Request ' + escapeHtml(request.reference_code || 'Details');
                 detailsBody.innerHTML = '<div class="row g-4"><div class="col-12 col-md-6"><h6 class="fw-semibold text-white mb-3" style="letter-spacing:.5px;font-size:.78rem;text-transform:uppercase;">Submitter Info</h6><div class="mb-3"><div class="request-detail-label">Corporate Partner</div><div class="request-detail-value">' + escapeHtml(request.sender_entity || request.hq_company_name || 'Not available') + '</div></div><div class="mb-3"><div class="request-detail-label">Authorized Official</div><div class="request-detail-value">' + escapeHtml(request.sender_name || request.submitter_username || 'Not available') + (request.sender_email ? ' (' + escapeHtml(request.sender_email) + ')' : '') + '</div></div><div class="mb-3"><div class="request-detail-label">Operation Hub Location</div><div class="request-detail-value">' + escapeHtml(request.location || 'Not provided') + '</div></div></div><div class="col-12 col-md-6"><h6 class="fw-semibold text-white mb-3" style="letter-spacing:.5px;font-size:.78rem;text-transform:uppercase;">Request Specifics</h6><div class="mb-3"><div class="request-detail-label">Request Type</div><div class="request-detail-value">' + escapeHtml(request.request_type_label || request.request_type || 'Not available') + '</div></div><div class="mb-3"><div class="request-detail-label">Status</div><div><span class="request-status ' + statusClass(request.status) + '">' + escapeHtml(request.status_label || statusLabel(request.status)) + '</span></div></div><div class="mb-3"><div class="request-detail-label">Submitted</div><div class="request-detail-value">' + escapeHtml(formatDate(request.created_at)) + '</div></div><div class="mb-3"><div class="request-detail-label">Verification Document</div><div class="request-detail-value">' + documentMarkup + '</div></div></div><div class="col-12"><h6 class="fw-semibold text-white mb-2" style="letter-spacing:.5px;font-size:.78rem;text-transform:uppercase;">Request Details</h6><div class="request-detail-value p-3 rounded-3" style="background:rgba(0,244,255,.04);border:1px solid var(--glass-border);">' + escapeHtml(request.request_details || 'No additional details provided.') + '</div></div>' + (request.review_reason ? '<div class="col-12"><div class="request-detail-label">Review Message</div><div class="request-detail-value">' + escapeHtml(request.review_reason) + '</div></div>' : '') + '</div>';
                 if (String(request.status || '').toLowerCase() === 'pending') {
-                    setFooter('<form action="request_action.php" method="POST" class="m-0"><input type="hidden" name="request_id" value="' + escapeHtml(request.request_id) + '"><input type="hidden" name="action" value="approve"><input type="hidden" name="return_to" value="view_requests.php"><button type="submit" class="btn btn-success">Approve</button></form><button type="button" class="btn btn-danger js-modal-reject">Reject</button>');
+                    setFooter('<form action="request_action.php" method="POST" class="m-0"><input type="hidden" name="request_id" value="' + escapeHtml(request.request_id) + '"><input type="hidden" name="action" value="approve"><input type="hidden" name="return_to" value="view_requests.php"><button type="submit" class="btn btn-success w-100">Approve</button></form><button type="button" class="btn btn-danger js-modal-reject w-100">Reject</button>');
                     detailsFooter.querySelector('.js-modal-reject').addEventListener('click', () => rejectTarget('request', request.request_id, request.reference_code || request.request_id, request.sender_entity || request.sender_name || 'Unknown sender'));
                 } else {
                     setFooter();
@@ -386,54 +442,38 @@ $flashType = $flash['type'] ?? '';
                         const h = payload.headquarter;
                         const label = 'ACCT-' + escapeHtml(u.user_id || button.dataset.userId);
                         detailsTitle.innerHTML = '<i class="bi bi-person-check txt-neon-cyan me-2"></i> Account ' + label;
-                        const licenseBlock = l ? '<div class="col-12"><h6 class="fw-semibold text-white mb-3" style="letter-spacing:.5px;font-size:.78rem;text-transform:uppercase;">Customer License Details</h6><div class="row g-3"><div class="col-12 col-md-4"><div class="request-detail-label">License Number</div><div class="request-detail-value">' + escapeHtml(l.license_number || 'Not provided') + '</div></div><div class="col-12 col-md-4"><div class="request-detail-label">License Name</div><div class="request-detail-value">' + escapeHtml(l.license_name || 'Not provided') + '</div></div><div class="col-12 col-md-4"><div class="request-detail-label">Phone</div><div class="request-detail-value">' + escapeHtml(l.phone_number || 'Not provided') + '</div></div><div class="col-12 col-md-4"><div class="request-detail-label">NRC</div><div class="request-detail-value">' + escapeHtml(l.nrc_number || 'Not provided') + '</div></div><div class="col-12 col-md-4"><div class="request-detail-label">Date of Birth</div><div class="request-detail-value">' + escapeHtml(l.date_of_birth || 'Not provided') + '</div></div><div class="col-12 col-md-4"><div class="request-detail-label">Blood Type</div><div class="request-detail-value">' + escapeHtml(l.blood_type || 'Not provided') + '</div></div><div class="col-12 col-md-4"><div class="request-detail-label">Valid Until</div><div class="request-detail-value">' + escapeHtml(l.license_last_valid_date || 'Not provided') + '</div></div><div class="col-12 col-md-4"><div class="request-detail-label">License Image</div><div class="request-detail-value">' + fileLink(l.license_image, 'Open license image') + '</div></div><div class="col-12 col-md-4"><div class="request-detail-label">Face Image</div><div class="request-detail-value">' + fileLink(l.face_image, 'Open face image') + '</div></div></div></div>' : '<div class="col-12"><div class="alert request-flash text-white-50">No driver license has been linked to this account yet.</div></div>';
-                        const companyBlock = h ? '<div class="col-12"><h6 class="fw-semibold text-white mb-3" style="letter-spacing:.5px;font-size:.78rem;text-transform:uppercase;">Company Details</h6><div class="row g-3"><div class="col-12 col-md-4"><div class="request-detail-label">Company</div><div class="request-detail-value">' + escapeHtml(h.company_name || u.headquarter_name || 'Not provided') + '</div></div><div class="col-12 col-md-4"><div class="request-detail-label">HQ Email</div><div class="request-detail-value">' + escapeHtml(h.headquarter_email || 'Not provided') + '</div></div><div class="col-12 col-md-4"><div class="request-detail-label">Contact</div><div class="request-detail-value">' + escapeHtml(h.contact_number || 'Not provided') + '</div></div><div class="col-12 col-md-4"><div class="request-detail-label">Company Logo</div><div class="request-detail-value">' + fileLink(h.company_logo, 'Open company logo') + '</div></div><div class="col-12"><div class="request-detail-label">Location</div><div class="request-detail-value">' + escapeHtml(h.location || u.headquarter_location || 'Not provided') + '</div></div><div class="col-12 col-md-4"><div class="request-detail-label">Business License</div><div class="request-detail-value">' + escapeHtml(h.business_license || 'Not provided') + '</div></div><div class="col-12 col-md-4"><div class="request-detail-label">License Image / Receipt</div><div class="request-detail-value">' + fileLink(h.business_license_image, 'Open company document') + '</div></div><div class="col-12 col-md-4"><div class="request-detail-label">License Expiry</div><div class="request-detail-value">' + escapeHtml(h.business_license_expire_date || h.expire_at || 'Not provided') + '</div></div><div class="col-12"><div class="request-detail-label">Company Bio</div><div class="request-detail-value">' + escapeHtml(h.headquarter_bio || 'Not provided') + '</div></div></div></div>' : '';
-                        detailsBody.innerHTML = '<div class="row g-4"><div class="col-12 col-md-6"><h6 class="fw-semibold text-white mb-3" style="letter-spacing:.5px;font-size:.78rem;text-transform:uppercase;">Account Info</h6><div class="mb-3"><div class="request-detail-label">Name</div><div class="request-detail-value">' + escapeHtml(u.user_name || 'Not available') + '</div></div><div class="mb-3"><div class="request-detail-label">Email</div><div class="request-detail-value">' + escapeHtml(u.email || 'Not available') + '</div></div><div class="mb-3"><div class="request-detail-label">Role</div><div class="request-detail-value">#' + escapeHtml(u.role_id || '') + ' · ' + escapeHtml(u.role_name || '') + '</div></div></div><div class="col-12 col-md-6"><h6 class="fw-semibold text-white mb-3" style="letter-spacing:.5px;font-size:.78rem;text-transform:uppercase;">Verification</h6><div class="mb-3"><div class="request-detail-label">Account Status</div><div class="request-detail-value">Pending Verification</div></div><div class="mb-3"><div class="request-detail-label">License Status</div><div class="request-detail-value">' + escapeHtml((l && l.status) || 'pending') + '</div></div><div class="mb-3"><div class="request-detail-label">Submitted</div><div class="request-detail-value">' + escapeHtml(formatDate(u.created_at)) + '</div></div></div>' + licenseBlock + companyBlock + '</div>';
-                        const accountId = escapeHtml(u.user_id || button.dataset.userId);
-                        const hero = '<div class="request-account-hero mb-4"><div class="request-account-avatar">' + escapeHtml(accountInitials(u.user_name)) + '</div><div class="min-w-0"><div class="request-account-kicker">Pending account verification · ACCT-' + accountId + '</div><div class="request-account-name mt-1">' + escapeHtml(u.user_name || 'Unnamed account') + '</div><div class="text-white-50 small text-break mt-1">' + escapeHtml(u.email || 'No email provided') + '</div></div><span class="request-status request-status-pending ms-auto">Pending Verification</span></div>';
-                        const accountInfo = '<div class="request-detail-grid request-detail-grid--two">' +
-                            detailCard('Full name', escapeHtml(u.user_name || 'Not available')) +
-                            detailCard('Email address', escapeHtml(u.email || 'Not available')) +
-                            detailCard('Role', '#' + escapeHtml(u.role_id || '—') + ' · ' + escapeHtml(u.role_name || 'Not assigned')) +
-                            detailCard('Submitted', escapeHtml(formatDate(u.created_at))) +
-                            '</div>';
-                        const verificationInfo = '<div class="request-detail-grid">' +
-                            detailCard('Account status', '<span class="request-status request-status-pending">Pending Verification</span>') +
-                            detailCard('License status', escapeHtml((l && l.status) || 'Not submitted')) +
-                            detailCard('Review outcome', '<span class="text-warning">Awaiting administrator review</span>') +
-                            '</div>';
-                        const licenseInfo = l
-                            ? '<div class="request-detail-grid">' +
-                                detailCard('License number', escapeHtml(l.license_number || 'Not provided')) +
-                                detailCard('License name', escapeHtml(l.license_name || 'Not provided')) +
-                                detailCard('Phone', escapeHtml(l.phone_number || 'Not provided')) +
-                                detailCard('NRC', escapeHtml(l.nrc_number || 'Not provided')) +
-                                detailCard('Date of birth', escapeHtml(l.date_of_birth || 'Not provided')) +
-                                detailCard('Blood type', escapeHtml(l.blood_type || 'Not provided')) +
-                                detailCard('Valid until', escapeHtml(l.license_last_valid_date || 'Not provided')) +
-                                detailCard('License image', fileLink(l.license_image, 'Open license image')) +
-                                detailCard('Face image', fileLink(l.face_image, 'Open face image')) +
-                              '</div>'
-                            : '<div class="request-detail-callout text-white-50"><i class="bi bi-info-circle txt-neon-cyan me-2"></i>No driver license has been linked to this account yet.</div>';
-                        const companyInfo = h
-                            ? '<div class="request-detail-grid">' +
-                                detailCard('Company', escapeHtml(h.company_name || u.headquarter_name || 'Not provided')) +
-                                detailCard('HQ email', escapeHtml(h.headquarter_email || 'Not provided')) +
-                                detailCard('Contact', escapeHtml(h.contact_number || 'Not provided')) +
-                                detailCard('Business license', escapeHtml(h.business_license || 'Not provided')) +
-                                detailCard('License expiry', escapeHtml(h.business_license_expire_date || h.expire_at || 'Not provided')) +
-                                detailCard('Company logo', fileLink(h.company_logo, 'Open company logo')) +
-                                detailCard('Location', escapeHtml(h.location || u.headquarter_location || 'Not provided'), 'request-detail-card--full') +
-                                detailCard('License document', fileLink(h.business_license_image, 'Open company document')) +
-                                detailCard('Company bio', escapeHtml(h.headquarter_bio || 'Not provided'), 'request-detail-card--wide') +
-                              '</div>'
+                        const roleName = escapeHtml(u.role_name || 'User');
+                        const isPending = String((u.status || 'pending')).toLowerCase() !== 'approved';
+                        const profileHeader = '<div class="acct-profile-header"><div class="acct-avatar">' + escapeHtml(initialsOf(u.user_name || u.email || 'U')) + '</div><div class="acct-profile-meta"><div class="acct-profile-name">' + escapeHtml(u.user_name || 'Unnamed account') + '</div><div class="acct-profile-sub"><i class="bi bi-envelope me-1"></i>' + escapeHtml(u.email || 'No email on file') + '</div><div class="d-flex gap-2 flex-wrap mt-2"><span class="acct-badge acct-badge-role"><i class="bi bi-person-badge"></i>' + roleName + '</span>' + (isPending ? '<span class="acct-badge acct-badge-pending"><i class="bi bi-hourglass-split"></i>Pending Verification</span>' : '') + '</div></div></div>';
+
+                        const accountInfoSection = '<div class="acct-section"><div class="acct-section-title"><i class="bi bi-person-vcard"></i>Account Info</div>' + fieldRow('bi-person', 'Full Name', escapeHtml(u.user_name || 'Not available')) + fieldRow('bi-envelope-at', 'Email', escapeHtml(u.email || 'Not available')) + fieldRow('bi-shield-lock', 'Role', '#' + escapeHtml(u.role_id || '') + ' &middot; ' + roleName) + fieldRow('bi-calendar3', 'Submitted', escapeHtml(formatDate(u.created_at))) + '</div>';
+
+                        const verificationSection = '<div class="acct-section"><div class="acct-section-title"><i class="bi bi-patch-check"></i>Verification Status</div>' + fieldRow('bi-person-check', 'Account Status', '<span class="request-status request-status-pending">Pending Verification</span>') + fieldRow('bi-card-checklist', 'License Status', '<span class="request-status ' + statusClass((l && l.status) || 'pending') + '">' + escapeHtml(statusLabel((l && l.status) || 'pending')) + '</span>') + '</div>';
+
+                        const licenseBlock = l ? '<div class="acct-section"><div class="acct-section-title"><i class="bi bi-card-heading"></i>Customer License Details</div><div class="row g-3">' +
+                            '<div class="col-12 col-md-6">' + fieldRow('bi-hash', 'License Number', escapeHtml(l.license_number || 'Not provided')) + '</div>' +
+                            '<div class="col-12 col-md-6">' + fieldRow('bi-person-lines-fill', 'License Name', escapeHtml(l.license_name || 'Not provided')) + '</div>' +
+                            '<div class="col-12 col-md-6">' + fieldRow('bi-telephone', 'Phone', escapeHtml(l.phone_number || 'Not provided')) + '</div>' +
+                            '<div class="col-12 col-md-6">' + fieldRow('bi-person-vcard', 'NRC', escapeHtml(l.nrc_number || 'Not provided')) + '</div>' +
+                            '<div class="col-12 col-md-6">' + fieldRow('bi-cake2', 'Date of Birth', escapeHtml(l.date_of_birth || 'Not provided')) + '</div>' +
+                            '<div class="col-12 col-md-6">' + fieldRow('bi-droplet', 'Blood Type', escapeHtml(l.blood_type || 'Not provided')) + '</div>' +
+                            '<div class="col-12 col-md-6">' + fieldRow('bi-calendar-check', 'Valid Until', escapeHtml(l.license_last_valid_date || 'Not provided')) + '</div>' +
+                            '</div><div class="mt-2"><div class="request-detail-label mb-2">Uploaded Documents</div><div class="acct-doc-grid">' + docCard(l.license_image, 'License image', 'bi-card-image') + docCard(l.face_image, 'Face photo', 'bi-person-bounding-box') + '</div></div></div>'
+                            : '<div class="acct-section"><div class="acct-empty-note"><i class="bi bi-info-circle txt-neon-cyan"></i>No driver license has been linked to this account yet.</div></div>';
+
+                        const companyBlock = h ? '<div class="acct-section"><div class="acct-section-title"><i class="bi bi-building"></i>Company Details</div><div class="row g-3">' +
+                            '<div class="col-12 col-md-6">' + fieldRow('bi-building', 'Company', escapeHtml(h.company_name || u.headquarter_name || 'Not provided')) + '</div>' +
+                            '<div class="col-12 col-md-6">' + fieldRow('bi-envelope', 'HQ Email', escapeHtml(h.headquarter_email || 'Not provided')) + '</div>' +
+                            '<div class="col-12 col-md-6">' + fieldRow('bi-telephone-outbound', 'Contact', escapeHtml(h.contact_number || 'Not provided')) + '</div>' +
+                            '<div class="col-12 col-md-6">' + fieldRow('bi-geo-alt', 'Location', escapeHtml(h.location || u.headquarter_location || 'Not provided')) + '</div>' +
+                            '<div class="col-12 col-md-6">' + fieldRow('bi-file-earmark-ruled', 'Business License', escapeHtml(h.business_license || 'Not provided')) + '</div>' +
+                            '<div class="col-12 col-md-6">' + fieldRow('bi-calendar-x', 'License Expiry', escapeHtml(h.business_license_expire_date || h.expire_at || 'Not provided')) + '</div>' +
+                            '<div class="col-12">' + fieldRow('bi-chat-square-text', 'Company Bio', escapeHtml(h.headquarter_bio || 'Not provided')) + '</div>' +
+                            '</div><div class="mt-2"><div class="request-detail-label mb-2">Uploaded Documents</div><div class="acct-doc-grid">' + docCard(h.company_logo, 'Company logo', 'bi-image') + docCard(h.business_license_image, 'License / receipt', 'bi-file-earmark-text') + '</div></div></div>'
                             : '';
-                        detailsBody.innerHTML = hero +
-                            detailSection('bi-person-vcard-fill', 'Account profile', accountInfo) +
-                            detailSection('bi-shield-check', 'Verification status', verificationInfo) +
-                            detailSection('bi-card-heading', 'Customer license', licenseInfo) +
-                            (companyInfo ? detailSection('bi-buildings-fill', 'Company details', companyInfo) : '');
-                        setFooter('<form action="account_review_action.php" method="POST" class="m-0"><input type="hidden" name="user_id" value="' + accountId + '"><input type="hidden" name="action" value="approve"><input type="hidden" name="return_to" value="view_requests.php"><button type="submit" class="btn btn-success">Approve</button></form><button type="button" class="btn btn-danger js-modal-reject">Reject</button>');
+
+                        detailsBody.innerHTML = profileHeader + accountInfoSection + verificationSection + licenseBlock + companyBlock;
+                        setFooter('<form action="account_review_action.php" method="POST" class="m-0"><input type="hidden" name="user_id" value="' + escapeHtml(u.user_id) + '"><input type="hidden" name="action" value="approve"><input type="hidden" name="return_to" value="view_requests.php"><button type="submit" class="acct-btn acct-btn-approve"><i class="bi bi-check-lg"></i>Approve</button></form><button type="button" class="acct-btn acct-btn-reject js-modal-reject"><i class="bi bi-x-lg"></i>Reject</button>');
                         detailsFooter.querySelector('.js-modal-reject').addEventListener('click', () => rejectTarget('account', u.user_id, label, u.user_name || u.email || 'Unknown user'));
                     } catch (error) {
                         detailsBody.innerHTML = '<div class="alert request-flash alert-danger"><i class="bi bi-exclamation-triangle me-2"></i>' + escapeHtml(error.message) + '</div>';
