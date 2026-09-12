@@ -21,6 +21,186 @@ $payment_accounts = [
     'YOMA Bank' => ['label' => 'YOMA Bank account number', 'number' => '0042 3456 7890 1234', 'phone' => $payment_default_phone],
 ];
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    header('Content-Type: application/json; charset=utf-8');
+
+    $respond = static function (bool $success, string $message, int $status = 200, array $extra = []): never {
+        http_response_code($status);
+        echo json_encode(array_merge(['success' => $success, 'message' => $message], $extra));
+        exit;
+    };
+
+    $iniBytes = static function (string $value): int {
+        $value = trim($value);
+        if ($value === '') {
+            return 0;
+        }
+        $unit = strtolower($value[strlen($value) - 1]);
+        $bytes = (float) $value;
+        return (int) match ($unit) {
+            'g' => $bytes * 1024 * 1024 * 1024,
+            'm' => $bytes * 1024 * 1024,
+            'k' => $bytes * 1024,
+            default => $bytes,
+        };
+    };
+    $contentLength = (int) ($_SERVER['CONTENT_LENGTH'] ?? 0);
+    $postMaxBytes = $iniBytes((string) ini_get('post_max_size'));
+    if ($contentLength > 0 && $postMaxBytes > 0 && $contentLength > $postMaxBytes) {
+        $respond(false, 'The uploaded files are too large. Please keep the total upload under 24 MB.', 413);
+    }
+
+    $companyName = trim((string) ($_POST['company_name'] ?? ''));
+    $companyAddress = trim((string) ($_POST['company_address'] ?? ''));
+    $licenseId = trim((string) ($_POST['license_id'] ?? ''));
+    $licenseExpiry = trim((string) ($_POST['license_expiry'] ?? ''));
+    $ownerEmail = strtolower(trim((string) ($_POST['owner_email'] ?? '')));
+    $ownerPhone = trim((string) ($_POST['owner_phone'] ?? ''));
+    $companyEmail = strtolower(trim((string) ($_POST['company_email'] ?? '')));
+    $companyPhone = trim((string) ($_POST['company_phone'] ?? ''));
+    $paymentMethod = trim((string) ($_POST['payment_method'] ?? ''));
+    $bankName = trim((string) ($_POST['bank_name'] ?? ''));
+
+    $allowedMethods = ['Bank transfer', 'KPay', 'Wave Pay', 'AYA Pay', 'CB Pay'];
+    $allowedBanks = ['AYA Bank', 'CB Bank', 'KBZ Bank', 'YOMA Bank'];
+    $expiry = DateTime::createFromFormat('!Y-m-d', $licenseExpiry);
+    $expiryErrors = DateTime::getLastErrors();
+    $expiryValid = $expiry && ($expiryErrors === false || ($expiryErrors['warning_count'] === 0 && $expiryErrors['error_count'] === 0)) && $expiry->format('Y-m-d') === $licenseExpiry;
+
+    $validationErrors = [];
+    if ($companyName === '') $validationErrors[] = 'company name';
+    if ($companyAddress === '') $validationErrors[] = 'company address';
+    if ($licenseId === '') $validationErrors[] = 'license ID';
+    if (!$expiryValid) $validationErrors[] = 'license expiry date';
+    if (!filter_var($ownerEmail, FILTER_VALIDATE_EMAIL)) $validationErrors[] = 'owner email';
+    if (!filter_var($companyEmail, FILTER_VALIDATE_EMAIL)) $validationErrors[] = 'company email';
+    if ($ownerPhone === '') $validationErrors[] = 'owner phone';
+    if ($companyPhone === '') $validationErrors[] = 'company phone';
+    if (!in_array($paymentMethod, $allowedMethods, true)) $validationErrors[] = 'payment method';
+    if ($paymentMethod === 'Bank transfer' && !in_array($bankName, $allowedBanks, true)) $validationErrors[] = 'bank';
+    if ($validationErrors) {
+        $respond(false, 'Please check: ' . implode(', ', $validationErrors) . '.', 422);
+    }
+
+    if (strlen($companyName) > 255 || strlen($companyAddress) > 255 || strlen($licenseId) > 255
+        || strlen($ownerEmail) > 255 || strlen($companyEmail) > 255 || strlen($ownerPhone) > 50 || strlen($companyPhone) > 50) {
+        $respond(false, 'One or more fields are longer than allowed.', 422);
+    }
+
+    $uploadErrorMessages = [
+        UPLOAD_ERR_INI_SIZE => 'One of the uploaded files is larger than the server allows.',
+        UPLOAD_ERR_FORM_SIZE => 'One of the uploaded files is larger than the form allows.',
+        UPLOAD_ERR_PARTIAL => 'One of the uploaded files was only partially uploaded.',
+        UPLOAD_ERR_NO_FILE => 'Please upload all required documents.',
+        UPLOAD_ERR_NO_TMP_DIR => 'The server upload folder is not available.',
+        UPLOAD_ERR_CANT_WRITE => 'The server could not write one of the uploaded files.',
+        UPLOAD_ERR_EXTENSION => 'A server extension stopped one of the uploaded files.',
+    ];
+
+    $detectMime = static function (string $path): string {
+        if (class_exists('finfo')) {
+            $mime = (new finfo(FILEINFO_MIME_TYPE))->file($path);
+            if (is_string($mime) && $mime !== '') {
+                return $mime;
+            }
+        }
+
+        if (function_exists('mime_content_type')) {
+            $mime = mime_content_type($path);
+            if (is_string($mime) && $mime !== '') {
+                return $mime;
+            }
+        }
+
+        throw new RuntimeException('The server cannot verify uploaded file formats right now.');
+    };
+
+    $uploadDir = __DIR__ . '/uploads/';
+    $upload = static function (string $field, array $allowedMimes, int $maxBytes) use ($uploadDir, $uploadErrorMessages, $detectMime): string {
+        if (!isset($_FILES[$field]) || !is_array($_FILES[$field])) {
+            throw new RuntimeException('Please upload all required documents.');
+        }
+        $file = $_FILES[$field];
+        $uploadError = (int) ($file['error'] ?? UPLOAD_ERR_NO_FILE);
+        if ($uploadError !== UPLOAD_ERR_OK) {
+            throw new RuntimeException($uploadErrorMessages[$uploadError] ?? 'One of the uploaded files could not be received.');
+        }
+        if ((int) $file['size'] > $maxBytes || !is_uploaded_file($file['tmp_name'])) {
+            throw new RuntimeException('One of the uploaded files is too large or invalid.');
+        }
+        $mime = $detectMime((string) $file['tmp_name']);
+        if (!in_array($mime, $allowedMimes, true)) {
+            throw new RuntimeException('One of the uploaded files has an unsupported format.');
+        }
+        $extensions = ['image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp', 'application/pdf' => 'pdf'];
+        $fileName = bin2hex(random_bytes(16)) . '.' . $extensions[$mime];
+        if (!is_dir($uploadDir) && !mkdir($uploadDir, 0755, true) && !is_dir($uploadDir)) {
+            throw new RuntimeException('The upload folder could not be created.');
+        }
+        if (!move_uploaded_file($file['tmp_name'], $uploadDir . $fileName)) {
+            throw new RuntimeException('An uploaded file could not be saved.');
+        }
+        return '/php/Company/uploads/' . $fileName;
+    };
+
+    $savedFiles = [];
+    try {
+        require_once __DIR__ . '/../conn.php';
+        $duplicate = $pdo->prepare("SELECT request_id FROM system_requests WHERE request_type = 'hq_registration' AND status = 'pending' AND (headquarter_email = ? OR headquarter_owner_email = ?) LIMIT 1");
+        $duplicate->execute([$companyEmail, $ownerEmail]);
+        if ($duplicate->fetchColumn()) {
+            $respond(false, 'A pending registration already exists for this email address.', 409);
+        }
+
+        $savedFiles[] = $logoPath = $upload('company_logo', ['image/jpeg', 'image/png', 'image/webp'], 5 * 1024 * 1024);
+        $savedFiles[] = $licensePath = $upload('license_photo', ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'], 10 * 1024 * 1024);
+        $savedFiles[] = $receiptPath = $upload('payment_receipt', ['image/jpeg', 'image/png', 'image/webp'], 5 * 1024 * 1024);
+
+        $details = json_encode([
+            'company_address' => $companyAddress,
+            'owner_phone' => $ownerPhone,
+            'company_phone' => $companyPhone,
+            'license_id' => $licenseId,
+            'payment_method' => $paymentMethod,
+            'bank_name' => $bankName,
+        ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        $reference = 'HQ-REG-' . date('YmdHis') . '-' . strtoupper(bin2hex(random_bytes(3)));
+        $pdo->beginTransaction();
+        $stmt = $pdo->prepare(
+            "INSERT INTO system_requests
+                (reference_code, request_type, status, submitter_user_id, role_id, sender_entity, sender_name, sender_email,
+                 location, request_details, document_name, document_path, headquarter_owner_email, headquarter_email,
+                 headquarter_company_logo, headquarter_contact_number, headquarter_expire_at)
+             VALUES (?, 'hq_registration', 'pending', ?, 3, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        );
+        $submitterId = (int) ($_SESSION['user_id'] ?? 0) ?: null;
+        $stmt->execute([
+            $reference, $submitterId, $companyName, $companyName, $ownerEmail, $companyAddress, $details,
+            $licenseId, $licensePath, $ownerEmail, $companyEmail, $logoPath, $companyPhone, $licenseExpiry . ' 23:59:59',
+        ]);
+        $requestId = (int) $pdo->lastInsertId();
+        $receiptStmt = $pdo->prepare(
+            "INSERT INTO hq_receipt (hq_id, request_id, receipt_type, receipt_image)
+             VALUES (NULL, ?, 'registration', ?)"
+        );
+        $receiptStmt->execute([$requestId, $receiptPath]);
+        $pdo->commit();
+        $respond(true, 'Registration submitted successfully. We will verify your documents and email you within 1 business day.', 201, ['reference' => $reference]);
+    } catch (Throwable $error) {
+        if (isset($pdo) && $pdo instanceof PDO && $pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        foreach ($savedFiles as $path) {
+            @unlink(__DIR__ . '/uploads/' . basename($path));
+        }
+        error_log('Company registration failed: ' . $error->getMessage());
+        $message = $error instanceof RuntimeException
+            ? $error->getMessage()
+            : 'The registration could not be saved. Please try again or contact support.';
+        $respond(false, $message, 500);
+    }
+}
+
 require __DIR__ . '/../partials/head.php';
 require __DIR__ . '/../partials/nav.php';
 ?>

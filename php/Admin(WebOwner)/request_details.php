@@ -26,10 +26,12 @@ $statement = $conn->prepare(
             u.user_id AS submitter_user_id, u.user_name AS submitter_username,
             h.company_name AS hq_company_name, h.company_logo, h.contact_number,
             h.headquarter_email AS hq_email, h.headquarter_bio, h.location AS hq_location,
-            h.business_license, h.business_license_image, h.business_license_expire_date
+                 h.business_license, h.business_license_image, h.business_license_expire_date,
+                 receipt.receipt_type, receipt.receipt_image
      FROM system_requests r
      LEFT JOIN users u ON u.user_id = r.submitter_user_id
      LEFT JOIN headquarter h ON h.headquarter_id = r.headquarter_id
+             LEFT JOIN hq_receipt receipt ON receipt.request_id = r.request_id
      WHERE r.request_id = ?
      LIMIT 1'
 );
@@ -49,6 +51,9 @@ if (!$request) {
     exit;
 }
 
+$registrationDetails = json_decode((string) ($request['request_details'] ?? ''), true);
+$registrationDetails = is_array($registrationDetails) ? $registrationDetails : [];
+
 echo json_encode([
     'success' => true,
     'request' => [
@@ -63,6 +68,15 @@ echo json_encode([
         'sender_email' => $request['sender_email'],
         'location' => $request['location'],
         'request_details' => $request['request_details'],
+        'registration_details' => [
+            'license_id' => $registrationDetails['license_id'] ?? null,
+            'license_expiry' => $request['headquarter_expire_at'] ?? ($registrationDetails['license_expiry'] ?? null),
+            'company_address' => $registrationDetails['company_address'] ?? null,
+            'owner_phone' => $registrationDetails['owner_phone'] ?? null,
+            'company_phone' => $registrationDetails['company_phone'] ?? null,
+            'payment_method' => $registrationDetails['payment_method'] ?? null,
+            'bank_name' => $registrationDetails['bank_name'] ?? null,
+        ],
         'document_name' => $request['document_name'],
         'document_path' => $request['document_path'],
         'headquarter_owner_email' => $request['headquarter_owner_email'],
@@ -84,5 +98,7 @@ echo json_encode([
         'business_license' => $request['business_license'],
         'business_license_image' => $request['business_license_image'],
         'business_license_expire_date' => $request['business_license_expire_date'],
+        'receipt_type' => $request['receipt_type'],
+        'receipt_image' => $request['receipt_image'],
     ],
 ]);
