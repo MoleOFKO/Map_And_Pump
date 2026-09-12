@@ -64,6 +64,71 @@ try {
         throw new RuntimeException('Only pending requests can be approved or rejected.');
     }
 
+    $createdHeadquarterId = null;
+    if ($action === 'approve' && strtolower((string) $target['request_type']) === 'hq_registration' && empty($target['headquarter_id'])) {
+        $details = json_decode((string) ($target['request_details'] ?? ''), true);
+        if (!is_array($details)) {
+            throw new RuntimeException('The company registration details are invalid.');
+        }
+
+        $headquarterInsert = $conn->prepare(
+            'INSERT INTO headquarter
+                (company_name, company_logo, contact_number, headquarter_email, location,
+                 business_license, business_license_image, business_license_expire_date)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+        );
+        if (!$headquarterInsert) {
+            throw new RuntimeException('Could not prepare the company account creation.');
+        }
+        $licenseExpiry = trim((string) ($target['headquarter_expire_at'] ?? ''));
+        $licenseExpiry = $licenseExpiry !== '' ? substr($licenseExpiry, 0, 10) : null;
+        $companyName = (string) $target['sender_entity'];
+        $companyLogo = (string) $target['headquarter_company_logo'];
+        $companyPhone = (string) $target['headquarter_contact_number'];
+        $companyEmail = (string) $target['headquarter_email'];
+        $companyLocation = (string) $target['location'];
+        $businessLicense = (string) $target['document_name'];
+        $licenseImage = (string) $target['document_path'];
+        $headquarterInsert->bind_param(
+            'ssssssss',
+            $companyName,
+            $companyLogo,
+            $companyPhone,
+            $companyEmail,
+            $companyLocation,
+            $businessLicense,
+            $licenseImage,
+            $licenseExpiry
+        );
+        if (!$headquarterInsert->execute()) {
+            throw new RuntimeException('Could not create the approved company account.');
+        }
+        $createdHeadquarterId = (int) $conn->insert_id;
+        $headquarterInsert->close();
+
+        $requestHqUpdate = $conn->prepare('UPDATE system_requests SET headquarter_id = ? WHERE request_id = ?');
+        if (!$requestHqUpdate) {
+            throw new RuntimeException('Could not link the approved company request.');
+        }
+        $requestHqUpdate->bind_param('ii', $createdHeadquarterId, $requestId);
+        if (!$requestHqUpdate->execute()) {
+            throw new RuntimeException('Could not link the approved company request.');
+        }
+        $requestHqUpdate->close();
+
+        $receiptUpdate = $conn->prepare(
+            "UPDATE hq_receipt SET hq_id = ? WHERE request_id = ? AND hq_id IS NULL"
+        );
+        if (!$receiptUpdate) {
+            throw new RuntimeException('Could not link the registration receipt.');
+        }
+        $receiptUpdate->bind_param('ii', $createdHeadquarterId, $requestId);
+        if (!$receiptUpdate->execute()) {
+            throw new RuntimeException('Could not link the registration receipt.');
+        }
+        $receiptUpdate->close();
+    }
+
     $newStatus = $action === 'approve' ? 'approved' : 'rejected';
     $reviewReason = $action === 'approve' ? 'Approved by administrator.' : $reason;
     $reviewerId = (int) $reviewer['user_id'];

@@ -389,7 +389,7 @@ backButton?.addEventListener('click', () => {
 });
 
 /* Final submit */
-paymentSubmit?.addEventListener('click', () => {
+paymentSubmit?.addEventListener('click', async () => {
     if (!receiptInput?.files?.length) {
         receiptField?.classList.add('has-error');
         showError(receiptError, 'Please upload a photo of your payment receipt.');
@@ -400,13 +400,34 @@ paymentSubmit?.addEventListener('click', () => {
     const method = methodInput?.value;
     const bank = bankInput?.value;
     clearError();
-    closePaymentModal();
+    paymentSubmit.disabled = true;
+    paymentSubmit.classList.add('is-loading');
 
-    if (formStatus) {
-        formStatus.classList.add('is-success');
-        formStatus.textContent = bank
-            ? `Receipt received for ${method} via ${bank}. We will verify your payment and email you within 1 business day.`
-            : `Receipt received for ${method}. We will verify your payment and email you within 1 business day.`;
+    try {
+        const formData = new FormData(registrationForm);
+        formData.set('payment_method', method || '');
+        formData.set('bank_name', bank || '');
+        const response = await fetch(window.location.href, {
+            method: 'POST',
+            body: formData,
+            headers: { Accept: 'application/json' },
+        });
+        const result = await response.json();
+        if (!response.ok || !result.success) throw new Error(result.message || 'Registration could not be submitted.');
+
+        closePaymentModal();
+        if (formStatus) {
+            formStatus.classList.remove('is-error');
+            formStatus.classList.add('is-success');
+            formStatus.textContent = result.message;
+        }
+        registrationForm.reset();
+    } catch (error) {
+        showError(receiptError, error.message);
+        goToStep('receipt');
+    } finally {
+        paymentSubmit.disabled = false;
+        paymentSubmit.classList.remove('is-loading');
     }
 });
 
