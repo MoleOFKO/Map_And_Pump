@@ -112,6 +112,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
 
+        $signature = file_get_contents($path, false, null, 0, 16);
+        if (is_string($signature)) {
+            if (str_starts_with($signature, "\xFF\xD8\xFF")) {
+                return 'image/jpeg';
+            }
+            if (str_starts_with($signature, "\x89PNG\x0D\x0A\x1A\x0A")) {
+                return 'image/png';
+            }
+            if (strlen($signature) >= 12 && substr($signature, 0, 4) === 'RIFF' && substr($signature, 8, 4) === 'WEBP') {
+                return 'image/webp';
+            }
+            if (str_starts_with($signature, '%PDF-')) {
+                return 'application/pdf';
+            }
+        }
+
         throw new RuntimeException('The server cannot verify uploaded file formats right now.');
     };
 
@@ -213,7 +229,7 @@ require __DIR__ . '/../partials/nav.php';
             <p>Tell us about your company and provide your business license for review.</p>
         </div>
 
-        <form class="company-registration-form" id="company-registration-form" novalidate>
+        <form class="company-registration-form" id="company-registration-form" method="post" enctype="multipart/form-data" novalidate>
             <section class="registration-section">
                 <div class="registration-section-title">
                     <span class="registration-step">01</span>
