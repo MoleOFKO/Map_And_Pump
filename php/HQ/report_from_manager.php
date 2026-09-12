@@ -5,28 +5,55 @@ require_once __DIR__ . '/../conn.php';
 $reports = [];
 $logs = [];
 $managerRoleId = 4;
+$headquarterId = (int) ($_SESSION['headquarter_id'] ?? map_pump_current_hq_id($pdo, (int) ($_SESSION['user_id'] ?? 0)));
 
 try {
+    if ($headquarterId <= 0) {
+        throw new RuntimeException('No HQ scope is available for this account.');
+    }
+
     $stmt = $pdo->prepare(
         'SELECT r.*, u.user_name
          FROM report r
          LEFT JOIN users u ON u.user_id = r.user_id
-         WHERE COALESCE(u.business_role_id, u.role_id) = :role_id
+         LEFT JOIN business_account_scope bas ON bas.user_id = u.user_id
+         WHERE (u.role_id = ? OR u.business_role_id = ? OR u.current_role_id = ?)
+           AND (
+                u.headquarter_id = ?
+                OR bas.headquarter_id = ?
+                OR EXISTS (
+                    SELECT 1
+                    FROM station_business_scope sbs
+                    WHERE sbs.branch_manager_user_id = u.user_id
+                      AND sbs.headquarter_id = ?
+                )
+           )
          ORDER BY r.created_at DESC
          LIMIT 5'
     );
-    $stmt->execute([':role_id' => $managerRoleId]);
+    $stmt->execute([$managerRoleId, $managerRoleId, $managerRoleId, $headquarterId, $headquarterId, $headquarterId]);
     $reports = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     $logStmt = $pdo->prepare(
         'SELECT l.log_id, l.user_id, l.action, l.created_at, u.user_name
          FROM log l
          LEFT JOIN users u ON u.user_id = l.user_id
-         WHERE COALESCE(u.business_role_id, u.role_id) = :role_id
+         LEFT JOIN business_account_scope bas ON bas.user_id = u.user_id
+         WHERE (l.role_id = ? OR (l.role_id IS NULL AND (u.role_id = ? OR u.business_role_id = ? OR u.current_role_id = ?)))
+           AND (
+                u.headquarter_id = ?
+                OR bas.headquarter_id = ?
+                OR EXISTS (
+                    SELECT 1
+                    FROM station_business_scope sbs
+                    WHERE sbs.branch_manager_user_id = u.user_id
+                      AND sbs.headquarter_id = ?
+                )
+           )
          ORDER BY l.created_at DESC
          LIMIT 10'
     );
-    $logStmt->execute([':role_id' => $managerRoleId]);
+    $logStmt->execute([$managerRoleId, $managerRoleId, $managerRoleId, $managerRoleId, $headquarterId, $headquarterId, $headquarterId]);
     $logs = $logStmt->fetchAll(PDO::FETCH_ASSOC);
 } catch (Throwable $e) {
     error_log('Failed to load manager activities: ' . $e->getMessage());

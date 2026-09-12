@@ -2,6 +2,7 @@
 session_start();
 require_once __DIR__ . '/../conn.php';
 require_once __DIR__ . '/../feedback_schema.php';
+require_once __DIR__ . '/../activity_log.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     header('Location: feedback_manage.php');
@@ -57,6 +58,7 @@ try {
     if ($action === 'mark_read') {
         $markRead = $pdo->prepare('UPDATE feedback SET staff_read_at = COALESCE(staff_read_at, NOW()) WHERE feedback_id = ?');
         $markRead->execute([$feedbackId]);
+        map_pump_log_action($pdo, $userId, 'Marked customer feedback #' . $feedbackId . ' as read', 5);
         header('Location: feedback_manage.php?tab=read');
         exit;
     }
@@ -67,6 +69,7 @@ try {
     $markRead = $pdo->prepare('UPDATE feedback SET staff_read_at = COALESCE(staff_read_at, NOW()) WHERE feedback_id = ?');
     $markRead->execute([$feedbackId]);
     $pdo->commit();
+    map_pump_log_action($pdo, $userId, 'Replied to customer feedback #' . $feedbackId, 5);
     header('Location: feedback_manage.php?tab=replies&reply_sent=1');
     exit;
 } catch (Throwable $e) {

@@ -7,6 +7,7 @@ require __DIR__ . '/../usage_history_schema.php';
 require_once __DIR__ . '/../Customer/car_access.php';
 require_once __DIR__ . '/../business_scope.php';
 require_once __DIR__ . '/../booking_rules.php';
+require_once __DIR__ . '/../activity_log.php';
 
 $bookingCode = '';
 $ajax = false;
@@ -197,6 +198,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $row['status'] = 'filled';
             $row['filled_gas'] = (float)$amountLiters;
             $row['time_of_filled'] = $filledAt;
+            map_pump_log_action($pdo, $staffUserId, 'Confirmed fuel fill for booking #' . (int) $row['booking_id'] . ' (' . rtrim(rtrim(number_format((float) $amountLiters, 2, '.', ''), '0'), '.') . ' L)', 5);
         } catch (Throwable $e) {
             if ($pdo->inTransaction()) {
                 $pdo->rollBack();

@@ -3,6 +3,7 @@ session_start();
 
 require_once __DIR__ . '/../conn.php';
 require_once __DIR__ . '/../profile_avatar.php';
+require_once __DIR__ . '/../activity_log.php';
 
 function redirect_to_login(string $message = 'Please sign in to continue.')
 {
@@ -59,6 +60,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'updat
                 try {
                     $update = $pdo->prepare('UPDATE users SET oauth_avatar_url = ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?');
                     $update->execute([$relativePath, $userId]);
+                    map_pump_log_action($pdo, $userId, 'Updated staff profile image', 5);
                     $_SESSION['flash_message'] = 'Profile image updated successfully.';
                     $_SESSION['flash_type'] = 'success';
                 } catch (Throwable $e) {
@@ -105,6 +107,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'updat
             } else {
                 $update = $pdo->prepare('UPDATE users SET user_name = ?, email = ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?');
                 $update->execute([$newName, $newEmail, $userId]);
+                map_pump_log_action($pdo, $userId, 'Updated staff profile details', 5);
                 $_SESSION['user_name'] = $newName;
                 $_SESSION['flash_message'] = 'Profile details updated successfully.';
                 $_SESSION['flash_type'] = 'success';

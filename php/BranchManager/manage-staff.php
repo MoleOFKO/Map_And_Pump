@@ -179,74 +179,22 @@ $total_staff    = count($staff);
 $active_staff   = count(array_filter($staff, fn($s) => (int)$s['is_active'] === 1));
 $disabled_staff = $total_staff - $active_staff;
 
-// activity log — focus on STAFF activities (actions performed on staff at this branch).
-// We show WHICH staff was affected + WHAT was done. Manager name is available in the action text
-// already; the primary subject of each row is the staff member.
+// Activity log — only actions performed by staff accounts affiliated with this manager's branch.
 $stmt = $pdo->prepare("
     SELECT l.log_id,
-           l.user_id  AS manager_id,
-           COALESCE(mgr.user_name, 'Branch Manager') AS manager_name,
+           l.user_id AS staff_user_id,
+           COALESCE(staff_user.user_name, 'Staff member') AS staff_name,
            l.action,
            l.created_at
     FROM log l
-    LEFT JOIN users mgr ON mgr.user_id = l.user_id
-    WHERE l.user_id = :manager_id
-      AND l.role_id = 4
-      AND l.action LIKE '%staff%'
+    INNER JOIN users staff_user ON staff_user.user_id = l.user_id
+    LEFT JOIN business_account_scope staff_scope ON staff_scope.user_id = staff_user.user_id
+    WHERE (l.role_id = 5 OR (l.role_id IS NULL AND (staff_user.role_id = 5 OR staff_user.business_role_id = 5 OR staff_user.current_role_id = 5)))
+      AND COALESCE(staff_user.branch_id, staff_scope.station_id) = :branch_id
     ORDER BY l.created_at DESC LIMIT 30
 ");
-$stmt->execute([':manager_id' => $user['user_id']]);
-$raw_activities = $stmt->fetchAll();
-
-// Build a quick lookup of staff by ID for the current branch so we can resolve "staff #123"
-// into a readable name + code.
-$staff_lookup = [];
-foreach ($staff as $s) {
-    $staff_lookup[(int)$s['staff_id']] = [
-        'name' => $s['full_name'],
-        'code' => $s['staff_code'],
-    ];
-}
-
-// Parse each log entry: extract staff_id (from "staff #123") and turn the action into a short verb
-$activities = [];
-foreach ($raw_activities as $row) {
-    $action_text = (string)$row['action'];
-    $target_id   = 0;
-    $target_name = null;
-    $target_code = null;
-    $verb        = $action_text;
-
-    if (preg_match('/staff\s+#(\d+)/i', $action_text, $m)) {
-        $target_id = (int)$m[1];
-        if (isset($staff_lookup[$target_id])) {
-            $target_name = $staff_lookup[$target_id]['name'];
-            $target_code = $staff_lookup[$target_id]['code'];
-        }
-    }
-    // Extract just the verb (Added / Edited / Deleted / Activated / Disabled)
-    if (preg_match('/^(Added|Edited|Deleted|Activated|Disabled)/i', $action_text, $vm)) {
-        $verb = ucfirst(strtolower($vm[1]));
-    }
-    // For "Added new staff: Name (ST-####)" pattern, capture name+code directly
-    if (preg_match('/Added new staff:\s*(.+?)\s*\((ST-\d+)\)/i', $action_text, $am)) {
-        $target_name = $am[1];
-        $target_code = $am[2];
-        $verb        = 'Added';
-    }
-
-    $activities[] = [
-        'log_id'        => $row['log_id'],
-        'manager_name'  => $row['manager_name'],
-        'verb'          => $verb,
-        'target_name'   => $target_name,
-        'target_code'   => $target_code,
-        'target_id'     => $target_id,
-        'raw_action'    => $action_text,
-        'created_at'    => $row['created_at'],
-    ];
-}
-$activities = array_slice($activities, 0, 20);
+$stmt->execute([':branch_id' => $bid]);
+$activities = $stmt->fetchAll();
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -743,43 +691,19 @@ $activities = array_slice($activities, 0, 20);
         </div>
       </div>
 
-      <!-- TAB 3: STAFF ACTIVITY LOG (focused on the staff being affected) -->
+      <!-- TAB 3: STAFF ACTIVITY LOG -->
       <div class="tab-panel" id="tab-activity">
         <div class="panel">
           <?php if (!$activities): ?>
             <div style="text-align:center; padding:22px; color:var(--slate-400); font-size:12.5px;">No staff activity yet.</div>
           <?php else: ?>
-            <?php
-              // colour per verb — makes the log skim-able
-              $verb_color = [
-                'Added'     => 'var(--mint-400)',
-                'Edited'    => 'var(--sky-400)',
-                'Activated' => 'var(--mint-400)',
-                'Disabled'  => 'var(--amber-400)',
-                'Deleted'   => 'var(--red-400)',
-              ];
-              $verb_icon = [
-                'Added'     => 'fa-user-plus',
-                'Edited'    => 'fa-pen-to-square',
-                'Activated' => 'fa-toggle-on',
-                'Disabled'  => 'fa-toggle-off',
-                'Deleted'   => 'fa-user-minus',
-              ];
-            ?>
-            <?php foreach ($activities as $a):
-              $vcolor = $verb_color[$a['verb']] ?? 'var(--slate-300)';
-              $vicon  = $verb_icon[$a['verb']] ?? 'fa-clock-rotate-left';
-              $subject = $a['target_name']
-                          ? $a['target_name'] . ($a['target_code'] ? ' (' . $a['target_code'] . ')' : '')
-                          : ($a['target_id'] ? 'Staff #' . $a['target_id'] . ' (removed)' : 'Staff record');
-            ?>
+            <?php foreach ($activities as $a): ?>
               <div class="activity-row">
                 <span class="t"><?= h(date('M j · h:i A', strtotime($a['created_at']))) ?></span>
                 <span>
-                  <i class="fa-solid <?= h($vicon) ?>" style="color:<?= $vcolor ?>; margin-right:6px;"></i>
-                  <b style="color:<?= $vcolor ?>"><?= h($a['verb']) ?></b>
-                  — <b><?= h($subject) ?></b>
-                  <span style="color:var(--slate-400); font-size:11.5px;"> by <?= h($a['manager_name']) ?></span>
+                  <i class="fa-solid fa-user-clock" style="color:var(--sky-400); margin-right:6px;"></i>
+                  <b><?= h($a['staff_name']) ?></b>
+                  <span style="color:var(--slate-300);"> — <?= h($a['action']) ?></span>
                 </span>
               </div>
             <?php endforeach; ?>
