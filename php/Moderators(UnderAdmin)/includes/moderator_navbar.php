@@ -34,11 +34,6 @@
                             </div>
                         </div>
                     </label>
-                    <form action="../Login/logout.php" method="post" class="m-0 d-inline-block">
-                        <button class="btn btn-sm menu-pill-btn logout-btn-nav" type="submit">
-                            <i class="bi bi-box-arrow-right me-1 txt-neon-cyan"></i> Logout
-                        </button>
-                    </form>
                     <button class="btn btn-sm menu-pill-btn" type="button" data-bs-toggle="offcanvas" data-bs-target="#mainMenuOffcanvas">
                         <i class="bi bi-grid-fill me-1 txt-neon-cyan"></i> Menu
                     </button>
