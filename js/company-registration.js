@@ -407,6 +407,7 @@ paymentSubmit?.addEventListener('click', async () => {
         const formData = new FormData(registrationForm);
         formData.set('payment_method', method || '');
         formData.set('bank_name', bank || '');
+        formData.set('payment_receipt', receiptInput.files[0]);
         const response = await fetch(window.location.href, {
             method: 'POST',
             body: formData,
