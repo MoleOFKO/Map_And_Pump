@@ -1,6 +1,7 @@
 <?php
 session_start();
 require_once __DIR__ . '/../conn.php';
+require_once __DIR__ . '/../activity_log.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     header('Location: feedback_manage.php');
@@ -59,6 +60,7 @@ $ok = $insert->execute();
 $insert->close();
 
 if ($ok) {
+    map_pump_log_action($pdo, $userId, 'Submitted staff report: ' . $short, 5);
     header('Location: feedback_manage.php?report_created=1');
     exit;
 }

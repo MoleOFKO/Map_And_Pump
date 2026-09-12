@@ -2,6 +2,7 @@
 session_start();
 
 require_once __DIR__ . '/../conn.php';
+require_once __DIR__ . '/../activity_log.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     $_SESSION['flash_message'] = 'Invalid password update request.';
@@ -64,6 +65,7 @@ try {
     $newHash = password_hash($newPassword, PASSWORD_DEFAULT);
     $update = $pdo->prepare('UPDATE users SET hashed_password = ?, updated_at = NOW() WHERE user_id = ?');
     $update->execute([$newHash, $userId]);
+    map_pump_log_action($pdo, $userId, 'Updated staff account password', 5);
 
     $_SESSION['flash_message'] = 'Your password was updated successfully.';
     $_SESSION['flash_type'] = 'success';

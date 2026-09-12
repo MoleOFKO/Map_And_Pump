@@ -209,12 +209,6 @@ function json_out($payload, int $code = 200): void {
 
 /** Log a manager / staff action */
 function log_activity(PDO $conn, int $branch_id, string $actor_type, int $actor_id, string $actor_name, string $action): void {
-    $stmt = $conn->prepare("
-        INSERT INTO log (user_id, role_id, action)
-        VALUES (:i, 4, :a)
-    ");
-    $stmt->execute([
-        ':i' => $actor_id,
-        ':a' => $action
-    ]);
+    require_once __DIR__ . '/../activity_log.php';
+    map_pump_log_action($conn, $actor_id, $action, 4);
 }

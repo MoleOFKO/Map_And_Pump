@@ -10,25 +10,41 @@ $level = in_array($level, $allowedLevels, true) ? $level : 'all';
 $logs = [];
 $metrics = ['total' => 0, 'security' => 0, 'last' => null];
 $dbError = null;
+$customerAndHqLogScope = '(l.role_id IN (3, 6) OR (l.role_id IS NULL AND (u.role_id IN (3, 6) OR u.business_role_id IN (3, 6) OR u.current_role_id IN (3, 6))))';
 
 if (hq_db_available()) {
-    $metricQuery = $conn->query('SELECT COUNT(*) AS total, MAX(created_at) AS last FROM log');
-    if ($metricQuery && ($metricRow = $metricQuery->fetch_assoc())) {
+    $metricQuery = $conn->prepare(
+        "SELECT COUNT(*) AS total, MAX(l.created_at) AS last
+         FROM log l
+         LEFT JOIN users u ON u.user_id = l.user_id
+         WHERE {$customerAndHqLogScope}"
+    );
+    if ($metricQuery && $metricQuery->execute() && ($metricRow = $metricQuery->get_result()->fetch_assoc())) {
         $metrics['total'] = (int) ($metricRow['total'] ?? 0);
         $metrics['last'] = $metricRow['last'] ?? null;
     }
-    $securityQuery = $conn->query('SELECT action FROM log');
-    while ($securityQuery && ($securityRow = $securityQuery->fetch_assoc())) {
+    $metricQuery?->close();
+    $securityQuery = $conn->prepare(
+        "SELECT l.action
+         FROM log l
+         LEFT JOIN users u ON u.user_id = l.user_id
+         WHERE {$customerAndHqLogScope}"
+    );
+    $securityQuery?->execute();
+    $securityResult = $securityQuery?->get_result();
+    while ($securityResult && ($securityRow = $securityResult->fetch_assoc())) {
         if (admin_log_level((string) $securityRow['action']) === 'security') {
             $metrics['security']++;
         }
     }
+    $securityQuery?->close();
 
     $query = $conn->prepare(
         'SELECT l.log_id, l.user_id, l.action, l.created_at, u.user_name, u.email
          FROM log l
          LEFT JOIN users u ON u.user_id = l.user_id
-         WHERE LOWER(l.action) LIKE ? OR LOWER(u.user_name) LIKE ?
+         WHERE ' . $customerAndHqLogScope . '
+           AND (LOWER(l.action) LIKE ? OR LOWER(COALESCE(u.user_name, \'\')) LIKE ?)
          ORDER BY l.created_at DESC, l.log_id DESC'
     );
     if ($query) {
@@ -73,11 +89,11 @@ $flashType = (string) ($flash['type'] ?? '');
     <?php if ($dbError): ?><div class="alert mod-flash alert-danger mb-4"><i class="bi bi-database-exclamation me-2"></i><?= moderator_escape($dbError) ?></div><?php endif; ?>
 
     <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3">
-        <div><span class="stat-chip mb-2"><i class="bi bi-terminal-split txt-neon-cyan"></i> System Monitoring</span><h1 class="fw-bold m-0 h4 text-white mt-2">View Log Files</h1><p class="text-white-50 m-0 small mt-1">Inspect live audit entries and filter them by action, username, and level.</p></div>
+        <div><span class="stat-chip mb-2"><i class="bi bi-terminal-split txt-neon-cyan"></i> Account Activity</span><h1 class="fw-bold m-0 h4 text-white mt-2">View Log Files</h1><p class="text-white-50 m-0 small mt-1">Inspect actions performed by customer and HQ accounts only.</p></div>
         <div class="text-white-50 small align-self-center"><i class="bi bi-eye me-1 txt-neon-cyan"></i>View only — clear/export is restricted to administrators.</div>
     </div>
 
-    <div class="row g-4 mb-4"><div class="col-12 col-sm-4"><div class="dashboard-card metric-card"><p class="mb-1 metric-label">Stored Entries</p><h4 class="fw-bold text-white mb-0"><?= $metrics['total'] ?></h4><small class="text-white-50">Live log table</small></div></div><div class="col-12 col-sm-4"><div class="dashboard-card metric-card"><p class="mb-1 metric-label">Security Entries</p><h4 class="fw-bold text-white mb-0"><?= $metrics['security'] ?></h4><small class="text-white-50">Detected from action text</small></div></div><div class="col-12 col-sm-4"><div class="dashboard-card metric-card"><p class="mb-1 metric-label">Last Event</p><h4 class="fw-bold text-white mb-0" style="font-size:1.05rem"><?= moderator_escape($metrics['last'] ? moderator_format_date((string) $metrics['last']) : 'No entries') ?></h4><small class="text-white-50">Latest database timestamp</small></div></div></div>
+    <div class="row g-4 mb-4"><div class="col-12 col-sm-4"><div class="dashboard-card metric-card"><p class="mb-1 metric-label">HQ &amp; Customer Entries</p><h4 class="fw-bold text-white mb-0"><?= $metrics['total'] ?></h4><small class="text-white-50">Scoped live log records</small></div></div><div class="col-12 col-sm-4"><div class="dashboard-card metric-card"><p class="mb-1 metric-label">Security Entries</p><h4 class="fw-bold text-white mb-0"><?= $metrics['security'] ?></h4><small class="text-white-50">Detected from scoped action text</small></div></div><div class="col-12 col-sm-4"><div class="dashboard-card metric-card"><p class="mb-1 metric-label">Last Event</p><h4 class="fw-bold text-white mb-0" style="font-size:1.05rem"><?= moderator_escape($metrics['last'] ? moderator_format_date((string) $metrics['last']) : 'No entries') ?></h4><small class="text-white-50">Latest HQ or customer timestamp</small></div></div></div>
 
     <div class="dashboard-card py-3 px-4 mb-4"><form class="row g-3 align-items-center" method="GET" action="view_logs(M).php"><div class="col-12 col-md-5"><div class="input-group"><span class="input-group-text bg-transparent border-end-0" style="border-color:var(--glass-border);color:var(--neon-cyan)"><i class="bi bi-terminal"></i></span><input type="search" class="form-control glass-input border-start-0" placeholder="Search action or username..." name="search" value="<?= moderator_escape($search) ?>"></div></div><div class="col-12 col-md-4"><select class="form-select glass-select" name="log_level"><option value="all">All Debug &amp; Status Levels</option><?php foreach (array_slice($allowedLevels, 1) as $option): ?><option value="<?= $option ?>" <?= $level === $option ? 'selected' : '' ?>><?= strtoupper($option) ?> Outputs</option><?php endforeach; ?></select></div><div class="col-12 col-md-3 d-grid"><button type="submit" class="btn btn-neon">Apply Filter</button></div></form></div>
 

@@ -26,7 +26,8 @@ function admin_load_logs(string $search = '', string $level = 'all'): array
         'SELECT l.log_id, l.user_id, l.action, l.created_at, u.user_name, u.email
          FROM log l
          LEFT JOIN users u ON u.user_id = l.user_id
-         WHERE LOWER(l.action) LIKE ? OR LOWER(u.user_name) LIKE ?
+         WHERE (l.role_id = 2 OR (l.role_id IS NULL AND (u.role_id = 2 OR u.business_role_id = 2 OR u.current_role_id = 2)))
+           AND (LOWER(l.action) LIKE ? OR LOWER(COALESCE(u.user_name, \'\')) LIKE ?)
          ORDER BY l.created_at DESC, l.log_id DESC'
     );
     if (!$statement) {
@@ -91,7 +92,11 @@ if ($action === 'clear') {
         admin_flash('danger', 'The log database is unavailable.');
         admin_redirect($returnTo);
     }
-    $statement = $conn->prepare('DELETE FROM log');
+    $statement = $conn->prepare(
+        'DELETE l FROM log l
+         LEFT JOIN users u ON u.user_id = l.user_id
+         WHERE l.role_id = 2 OR (l.role_id IS NULL AND (u.role_id = 2 OR u.business_role_id = 2 OR u.current_role_id = 2))'
+    );
     if (!$statement || !$statement->execute()) {
         $statement?->close();
         admin_flash('danger', 'The audit log could not be cleared.');
@@ -99,7 +104,7 @@ if ($action === 'clear') {
     }
     $deleted = $statement->affected_rows;
     $statement->close();
-    admin_flash('success', $deleted . ' audit log entries were cleared.');
+    admin_flash('success', $deleted . ' moderator audit log entries were cleared.');
     admin_redirect($returnTo);
 }
 
