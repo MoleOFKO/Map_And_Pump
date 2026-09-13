@@ -91,7 +91,28 @@ function admin_require_admin(string $redirect = '../Login/login.php'): array
 
     $user = admin_current_user(false);
     $status = strtolower(trim((string) ($user['status'] ?? '')));
-    if (!$user || !admin_is_admin($user) || in_array($status, ['suspended', 'removed', 'rejected'], true)) {
+    if (!$user || !admin_is_admin($user) || !in_array($status, ['approved', 'active'], true)) {
+        header('Location: ' . $redirect);
+        exit;
+    }
+
+    return $user;
+}
+
+/**
+ * Require an active Admin or Moderator account for handlers shared by both
+ * portals. Admin-only pages must use admin_require_admin() instead.
+ */
+function admin_require_staff(string $redirect = '../Login/login.php'): array
+{
+    if (session_status() !== PHP_SESSION_ACTIVE) {
+        session_start();
+    }
+
+    $user = admin_current_user(false);
+    $role = strtolower(trim((string) ($user['role_name'] ?? '')));
+    $status = strtolower(trim((string) ($user['status'] ?? '')));
+    if (!$user || !in_array($role, ['admin', 'moderator'], true) || !in_array($status, ['approved', 'active'], true)) {
         header('Location: ' . $redirect);
         exit;
     }
@@ -105,9 +126,10 @@ function admin_current_user(bool $allowDevelopmentFallback = true): ?array
     global $pdo;
 
     $baseSql = <<<'SQL'
-SELECT u.user_id, u.user_name, u.email, u.hashed_password, u.role_id,
+SELECT u.user_id, u.user_name, u.email, u.hashed_password, u.role_id, u.business_role_id, u.current_role_id,
        u.status, u.created_at, u.updated_at, u.last_login_at,
        u.oauth_avatar_url, u.headquarter_id,
+       COALESCE(u.current_role_id, u.business_role_id, u.role_id) AS effective_role_id,
        COALESCE(active_role.role_name, business_role.role_name, primary_role.role_name) AS role_name,
        h.company_name AS hq_name
 FROM users u

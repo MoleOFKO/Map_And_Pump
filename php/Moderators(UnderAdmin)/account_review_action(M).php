@@ -26,7 +26,7 @@ if (mb_strlen($reason) > 2000) {
     request_redirect('view_requests(M).php');
 }
 
-if (!hq_db_available() || !hq_registry_schema_ready()) {
+if (!hq_db_available() || !hq_registry_schema_ready() || !request_schema_ready()) {
     request_flash('danger', hq_db_error_message());
     request_redirect('view_requests(M).php');
 }
@@ -82,6 +82,41 @@ try {
         }
         $licenseUpdate->close();
     }
+
+    $notificationSubject = 'Map & Pump account verification: ' . ucfirst($newStatus);
+    $notificationMessage = $action === 'approve'
+        ? 'Your Map & Pump account verification has been approved. You can now use the account.'
+        : "Your Map & Pump account verification was rejected.\n\nReason:\n" . $reason;
+    $notification = request_send_notification((string) $target['email'], $notificationSubject, $notificationMessage);
+
+    // Account verification does not originate in system_requests, so request_id stays NULL.
+    $notificationInsert = $conn->prepare(
+        'INSERT INTO notifications
+            (request_id, recipient_user_id, recipient_email, notification_type, subject, message, delivery_status, delivery_note)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+    );
+    if (!$notificationInsert) {
+        throw new RuntimeException('Could not prepare the account notification record.');
+    }
+    $accountRequestId = null;
+    $notificationType = 'account_' . $newStatus;
+    $notificationStatus = (string) ($notification['status'] ?? 'not_configured');
+    $notificationNote = (string) ($notification['note'] ?? 'Notification delivery was not configured.');
+    $notificationInsert->bind_param(
+        'iissssss',
+        $accountRequestId,
+        $userId,
+        $target['email'],
+        $notificationType,
+        $notificationSubject,
+        $notificationMessage,
+        $notificationStatus,
+        $notificationNote
+    );
+    if (!$notificationInsert->execute()) {
+        throw new RuntimeException('Could not record the account notification.');
+    }
+    $notificationInsert->close();
 
     $logVerb = $action === 'approve' ? 'Approved' : 'Rejected';
     admin_record_log((int) $moderatorUser['user_id'], $logVerb . ' pending account #' . $userId . ' (' . $target['user_name'] . ').');

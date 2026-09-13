@@ -188,7 +188,11 @@ $flashType = (string) ($flash['type'] ?? '');
             </tr>
         <?php endforeach; ?>
         <?php foreach ($requestRows as $row): ?>
-            <?php $rowStatus = strtolower((string) ($row['status'] ?? 'pending')); $sender = (string) ($row['sender_entity'] ?: $row['sender_name'] ?: 'Unknown sender'); ?>
+            <?php
+            $rowStatus = strtolower((string) ($row['status'] ?? 'pending'));
+            $requestTypeName = strtolower((string) ($row['request_type'] ?? ''));
+            $sender = (string) ($row['sender_entity'] ?: $row['sender_name'] ?: 'Unknown sender');
+            ?>
             <tr>
                 <td class="fw-bold txt-neon-cyan">#<?= moderator_escape((string) $row['reference_code']) ?></td>
                 <td><div class="fw-semibold text-white"><?= moderator_escape($sender) ?></div><div class="text-white-50 small"><?= moderator_escape((string) ($row['location'] ?? 'Location not provided')) ?></div></td>
@@ -197,9 +201,11 @@ $flashType = (string) ($flash['type'] ?? '');
                 <td><span class="request-status <?= moderator_escape(request_status_class($rowStatus)) ?>"><?= moderator_escape(request_status_label($rowStatus)) ?></span></td>
                 <td class="text-end"><div class="d-flex gap-2 justify-content-end">
                     <button type="button" class="btn-action js-view-request" title="View Request Details" aria-label="View request <?= moderator_escape((string) $row['reference_code']) ?> details" data-request-id="<?= (int) $row['request_id'] ?>"><i class="bi bi-eye-fill"></i></button>
-                    <?php if ($rowStatus === 'pending'): ?>
+                    <?php if ($rowStatus === 'pending' && $requestTypeName !== 'hq_registration'): ?>
                         <a href="#" class="btn-action btn-action-success js-request-approve" title="Approve" aria-label="Approve request <?= moderator_escape((string) $row['reference_code']) ?>" data-request-id="<?= (int) $row['request_id'] ?>" data-reference="<?= moderator_escape((string) $row['reference_code']) ?>"><i class="bi bi-check-lg"></i></a>
                         <a href="#" class="btn-action btn-action-danger js-request-reject" title="Reject" aria-label="Reject request <?= moderator_escape((string) $row['reference_code']) ?>" data-request-id="<?= (int) $row['request_id'] ?>" data-reference="<?= moderator_escape((string) $row['reference_code']) ?>" data-sender="<?= moderator_escape($sender) ?>"><i class="bi bi-x-lg"></i></a>
+                    <?php elseif ($rowStatus === 'pending' && $requestTypeName === 'hq_registration'): ?>
+                        <span class="text-white-50 small" title="HQ registrations are reviewed by an Admin">Admin review</span>
                     <?php endif; ?>
                 </div></td>
             </tr>
@@ -265,7 +271,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const doc = r.document_path ? '<a href="' + esc(r.document_path) + '" target="_blank" rel="noopener">' + esc(r.document_name || 'Open document') + '</a>' : esc(r.document_name || 'Not provided');
             const receipt = r.receipt_image ? '<a href="' + esc(r.receipt_image) + '" target="_blank" rel="noopener" class="d-inline-block text-decoration-none"><img src="' + esc(r.receipt_image) + '" alt="Payment receipt proof" style="display:block;width:100%;max-width:260px;max-height:220px;object-fit:contain;border-radius:12px;border:1px solid var(--glass-border);background:rgba(255,255,255,.04);padding:.35rem;"><span class="txt-neon-cyan d-inline-flex align-items-center gap-1 mt-2"><i class="bi bi-receipt"></i>Open ' + esc(r.receipt_type || 'payment') + ' receipt</span></a>' : '<span class="text-white-50">No receipt proof uploaded</span>';
             body.innerHTML = '<div class="row g-4"><div class="col-12 col-md-6"><h6 class="fw-semibold text-white mb-3">SUBMITTER INFO</h6><div class="mb-3"><div class="request-detail-label">Corporate Partner</div><div class="request-detail-value">' + esc(r.sender_entity || r.hq_company_name || 'Not available') + '</div></div><div class="mb-3"><div class="request-detail-label">Authorized Official</div><div class="request-detail-value">' + esc(r.sender_name || r.submitter_username || 'Not available') + ' ' + (r.sender_email ? '(' + esc(r.sender_email) + ')' : '') + '</div></div><div class="mb-3"><div class="request-detail-label">Location</div><div class="request-detail-value">' + esc(r.location || 'Not provided') + '</div></div></div><div class="col-12 col-md-6"><h6 class="fw-semibold text-white mb-3">REQUEST SPECIFICS</h6><div class="mb-3"><div class="request-detail-label">Type</div><div class="request-detail-value">' + esc(r.request_type_label) + '</div></div><div class="mb-3"><div class="request-detail-label">Status</div><div class="request-detail-value">' + esc(r.status_label) + '</div></div><div class="mb-3"><div class="request-detail-label">Submitted</div><div class="request-detail-value">' + esc(date(r.created_at)) + '</div></div><div class="mb-3"><div class="request-detail-label">Verification Document</div><div class="request-detail-value">' + doc + '</div></div><div class="mb-3"><div class="request-detail-label">Payment Receipt Proof</div><div class="request-detail-value">' + receipt + '</div></div></div><div class="col-12"><div class="request-detail-label mb-2">Request Details</div><div class="request-detail-value p-3 rounded-3" style="background:rgba(0,244,255,.04);border:1px solid var(--glass-border)">' + esc(r.request_details || 'No additional details provided.') + '</div></div>' + (r.review_reason ? '<div class="col-12"><div class="request-detail-label">Review Message</div><div class="request-detail-value">' + esc(r.review_reason) + '</div></div>' : '') + '</div>';
-            if (String(r.status || '').toLowerCase() === 'pending') {
+            if (String(r.status || '').toLowerCase() === 'pending' && String(r.request_type || '').toLowerCase() !== 'hq_registration') {
                 setFooter('<form action="request_action(M).php" method="POST" class="m-0 flex-fill"><input type="hidden" name="request_id" value="' + esc(r.request_id) + '"><input type="hidden" name="action" value="approve"><input type="hidden" name="return_to" value="view_requests(M).php"><button type="submit" class="btn btn-success w-100"><i class="bi bi-check-lg me-1"></i>Approve</button></form><button type="button" class="btn btn-danger flex-fill js-modal-reject"><i class="bi bi-x-lg me-1"></i>Reject</button>');
                 footer.querySelector('.js-modal-reject').addEventListener('click', () => rejectTarget('request', r.request_id, '#' + (r.reference_code || r.request_id), esc(r.sender_name || 'Unknown')));
             }

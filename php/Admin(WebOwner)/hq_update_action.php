@@ -6,6 +6,8 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
     session_start();
 }
 
+admin_require_admin();
+
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     hq_redirect('view_hq_and_user_account.php');
 }

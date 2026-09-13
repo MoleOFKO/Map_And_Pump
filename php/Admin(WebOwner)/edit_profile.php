@@ -2,11 +2,12 @@
 require_once __DIR__ . '/admin_common.php';
 require_once __DIR__ . '/../profile_avatar.php';
 
+$user = admin_require_admin();
+
 if (session_status() !== PHP_SESSION_ACTIVE) {
     session_start();
 }
 
-$user = admin_current_user(true);
 $flash = admin_pull_flash();
 $statusLabel = static function (?string $status): string {
     return match (strtolower(trim((string) $status))) {

@@ -1,5 +1,7 @@
 <?php
-require_once __DIR__ . '/user_account_common.php';
+require_once __DIR__ . '/admin_common.php';
+
+admin_require_staff();
 
 header('Content-Type: application/json; charset=utf-8');
 
@@ -32,7 +34,12 @@ $statement = $conn->prepare(
      LEFT JOIN roles r ON r.role_id = COALESCE(u.current_role_id, u.business_role_id, u.role_id)
      LEFT JOIN headquarter h ON h.headquarter_id = u.headquarter_id
      LEFT JOIN user_license l ON l.license_id = u.license_id
-     WHERE u.user_id = ? LIMIT 1'
+     WHERE u.user_id = ?
+       AND u.role_id = 6
+       AND (u.business_role_id IS NULL OR u.business_role_id = 6)
+       AND (u.current_role_id IS NULL OR u.current_role_id = 6)
+       AND LOWER(TRIM(r.role_name)) = 'customer'
+     LIMIT 1'
 );
 
 if (!$statement) {

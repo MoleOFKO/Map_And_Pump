@@ -6,6 +6,8 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
     session_start();
 }
 
+$reviewer = admin_require_staff();
+
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     request_redirect();
 }
@@ -32,12 +34,6 @@ if (!hq_db_available() || !request_schema_ready()) {
 }
 
 global $conn;
-$reviewer = admin_current_user(false);
-$reviewerRole = strtolower(trim((string) ($reviewer['role_name'] ?? '')));
-if (!$reviewer || !in_array($reviewerRole, ['admin', 'moderator'], true)) {
-    request_flash('danger', 'A signed-in administrator or moderator account is required to review requests.');
-    request_redirect();
-}
 
 try {
     $conn->begin_transaction();
@@ -62,6 +58,9 @@ try {
     }
     if (strtolower((string) $target['status']) !== 'pending') {
         throw new RuntimeException('Only pending requests can be approved or rejected.');
+    }
+    if (strtolower((string) $target['request_type']) === 'hq_registration' && !admin_is_admin($reviewer)) {
+        throw new RuntimeException('Only an Admin can approve or reject an HQ registration request.');
     }
 
     $createdHeadquarterId = null;
@@ -193,6 +192,10 @@ try {
     $notificationInsert->close();
 
     $conn->commit();
+    admin_record_log(
+        (int) $reviewer['user_id'],
+        ucfirst($action) . ' request #' . $requestId . ' (' . $target['reference_code'] . ').'
+    );
     request_flash('success', sprintf('Request %s was %s.', $target['reference_code'], $newStatus));
 } catch (Throwable $exception) {
     $conn->rollback();

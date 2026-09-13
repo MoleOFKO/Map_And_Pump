@@ -1,6 +1,8 @@
 <?php
 require_once __DIR__ . '/request_common.php';
-require_once __DIR__ . '/user_account_common.php';
+require_once __DIR__ . '/admin_common.php';
+
+admin_require_admin();
 
 if (session_status() !== PHP_SESSION_ACTIVE) {
     session_start();

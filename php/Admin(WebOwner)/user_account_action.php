@@ -1,9 +1,11 @@
 <?php
-require_once __DIR__ . '/user_account_common.php';
+require_once __DIR__ . '/admin_common.php';
 
 if (session_status() !== PHP_SESSION_ACTIVE) {
     session_start();
 }
+
+$actingUser = admin_require_staff();
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     hq_redirect('view_users.php');
@@ -45,6 +47,10 @@ $targetQuery = $conn->prepare(
      LEFT JOIN roles br ON br.role_id = u.business_role_id
      LEFT JOIN roles cr ON cr.role_id = u.current_role_id
      WHERE u.user_id = ?
+       AND u.role_id = 6
+       AND LOWER(TRIM(r.role_name)) = 'customer'
+       AND (u.business_role_id IS NULL OR u.business_role_id = 6)
+       AND (u.current_role_id IS NULL OR u.current_role_id = 6)
      LIMIT 1"
 );
 
@@ -60,13 +66,6 @@ $targetQuery->close();
 
 if (!$target) {
     hq_flash('danger', 'The selected account could not be found.');
-    hq_redirect($redirect);
-}
-
-$blockedRoles = ['admin', 'moderator', 'hq', 'headquarter', 'headquarters'];
-$effectiveRole = strtolower(trim((string) ($target['role_name'] ?? '')));
-if (in_array($effectiveRole, $blockedRoles, true)) {
-    hq_flash('danger', 'The selected account is not a manageable non-HQ user account.');
     hq_redirect($redirect);
 }
 
@@ -123,13 +122,10 @@ try {
 
     // Logging is best-effort and must not undo a successful status change.
     try {
-        if (function_exists('admin_current_user') && function_exists('admin_record_log')) {
-            $reviewer = admin_current_user(false);
-            admin_record_log(
-                (int) ($reviewer['user_id'] ?? 0),
-                'Marked user #' . $userId . ' as ' . $newStatus . '.'
-            );
-        }
+        admin_record_log(
+            (int) $actingUser['user_id'],
+            'Marked user #' . $userId . ' as ' . $newStatus . '.'
+        );
     } catch (Throwable $logError) {
         error_log('[Customer registry] Action log skipped: ' . $logError->getMessage());
     }

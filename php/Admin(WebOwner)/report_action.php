@@ -5,6 +5,8 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
     session_start();
 }
 
+$currentUser = admin_require_staff();
+
 global $conn;
 $action = strtolower(trim((string) ($_POST['action'] ?? $_GET['action'] ?? '')));
 
@@ -68,12 +70,20 @@ if ($action === 'delete') {
         admin_flash('danger', 'The selected report is invalid.');
         admin_redirect('view_report.php');
     }
-    $statement = $conn->prepare('DELETE FROM report WHERE report_id = ?');
+    $isAdmin = admin_is_admin($currentUser);
+    $statement = $isAdmin
+        ? $conn->prepare('DELETE FROM report WHERE report_id = ?')
+        : $conn->prepare('DELETE FROM report WHERE report_id = ? AND user_id = ?');
     if (!$statement) {
         admin_flash('danger', 'The report could not be deleted.');
         admin_redirect('view_report.php');
     }
-    $statement->bind_param('i', $reportId);
+    if ($isAdmin) {
+        $statement->bind_param('i', $reportId);
+    } else {
+        $currentUserId = (int) $currentUser['user_id'];
+        $statement->bind_param('ii', $reportId, $currentUserId);
+    }
     $success = $statement->execute();
     $deleted = $statement->affected_rows;
     $statement->close();
@@ -81,14 +91,12 @@ if ($action === 'delete') {
         admin_flash('danger', 'The report was not found or could not be deleted.');
         admin_redirect('view_report.php');
     }
-    $currentUser = admin_current_user(true);
-    admin_record_log($currentUser ? (int) $currentUser['user_id'] : null, 'Deleted report #' . $reportId . '.');
+    admin_record_log((int) $currentUser['user_id'], 'Deleted report #' . $reportId . '.');
     admin_flash('success', 'Report #' . $reportId . ' was deleted.');
     admin_redirect('view_report.php');
 }
 
 if ($action === 'generate') {
-    $currentUser = admin_current_user(true);
     $title = trim((string) ($_POST['report_title'] ?? ''));
     $scope = strtolower(trim((string) ($_POST['scope'] ?? '')));
     $startDate = trim((string) ($_POST['start_date'] ?? ''));
@@ -97,12 +105,12 @@ if ($action === 'generate') {
     $allowedScopes = ['hq_performance', 'stations', 'requests', 'system'];
     $allowedFormats = ['pdf', 'csv'];
 
-    if (!$currentUser) {
-        admin_flash('danger', 'A signed-in admin or moderator account is required to generate a report.');
-        admin_redirect('view_report.php');
-    }
     if ($title === '' || strlen($title) > 255 || !in_array($scope, $allowedScopes, true) || !in_array($format, $allowedFormats, true)) {
         admin_flash('danger', 'Please provide a valid report title, data scope, and export format.');
+        admin_redirect('view_report.php');
+    }
+    if (!admin_is_admin($currentUser) && $scope === 'system') {
+        admin_flash('danger', 'Only an Admin can generate a system security and audit report.');
         admin_redirect('view_report.php');
     }
     $start = DateTime::createFromFormat('!Y-m-d', $startDate);
@@ -132,7 +140,7 @@ if ($action === 'generate') {
 
     $message = sprintf('[scope=%s][format=%s][start=%s][end=%s] %s', $scope, $format, $startDate, $endDate, $summary);
     $userId = (int) $currentUser['user_id'];
-    $roleId = (int) $currentUser['role_id'];
+    $roleId = (int) ($currentUser['effective_role_id'] ?? $currentUser['role_id']);
     $importance = 'normal';
     $statement = $conn->prepare('INSERT INTO report (user_id, role_id, importance, short_summery, message, created_at) VALUES (?, ?, ?, ?, ?, NOW())');
     if (!$statement) {

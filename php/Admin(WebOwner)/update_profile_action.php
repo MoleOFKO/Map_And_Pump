@@ -9,11 +9,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     admin_redirect('edit_profile.php');
 }
 
-$user = admin_current_user(true);
-if (!$user) {
-    admin_flash('danger', 'No admin or moderator account is available for this profile update.');
-    admin_redirect('edit_profile.php');
-}
+$user = admin_require_admin();
 
 $userName = trim(preg_replace('/\s+/', ' ', (string) ($_POST['user_name'] ?? '')) ?? '');
 $email = strtolower(trim((string) ($_POST['email'] ?? '')));

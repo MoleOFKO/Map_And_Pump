@@ -1,9 +1,11 @@
 <?php
-require_once __DIR__ . '/user_account_common.php';
+require_once __DIR__ . '/admin_common.php';
 
 if (session_status() !== PHP_SESSION_ACTIVE) {
     session_start();
 }
+
+admin_require_admin();
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     hq_redirect('view_users.php');
@@ -25,7 +27,7 @@ if (!hq_db_available() || !hq_registry_schema_ready()) {
 }
 
 global $conn;
-$targetQuery = $conn->prepare("SELECT u.user_id FROM users u INNER JOIN roles r ON r.role_id = u.role_id WHERE u.user_id = ? AND LOWER(TRIM(r.role_name)) NOT IN ('admin', 'moderator', 'hq', 'headquarter', 'headquarters') LIMIT 1");
+$targetQuery = $conn->prepare("SELECT u.user_id FROM users u INNER JOIN roles r ON r.role_id = u.role_id WHERE u.user_id = ? AND u.role_id = 6 AND LOWER(TRIM(r.role_name)) = 'customer' AND (u.business_role_id IS NULL OR u.business_role_id = 6) AND (u.current_role_id IS NULL OR u.current_role_id = 6) LIMIT 1");
 if (!$targetQuery) {
     hq_flash('danger', 'The selected Customer account could not be loaded.');
     hq_redirect($redirect);
@@ -51,7 +53,7 @@ if ($duplicate) {
 
 try {
     $conn->begin_transaction();
-    $update = $conn->prepare("UPDATE users SET user_name = ?, email = ?, updated_at = NOW() WHERE user_id = ? AND role_id IN (SELECT role_id FROM roles WHERE LOWER(TRIM(role_name)) NOT IN ('admin', 'moderator', 'hq', 'headquarter', 'headquarters'))");
+    $update = $conn->prepare("UPDATE users SET user_name = ?, email = ?, updated_at = NOW() WHERE user_id = ? AND role_id = 6 AND (business_role_id IS NULL OR business_role_id = 6) AND (current_role_id IS NULL OR current_role_id = 6)");
     $update->bind_param('ssi', $userName, $email, $userId);
     if (!$update->execute()) {
         throw new RuntimeException('Could not update the Customer account.');

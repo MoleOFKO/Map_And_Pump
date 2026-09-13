@@ -14,7 +14,10 @@ function customer_account_rows(string $search = '', string $status = ''): array
     }
 
     $where = [
-        "LOWER(TRIM(r.role_name)) NOT IN ('admin', 'moderator', 'hq', 'headquarter', 'headquarters')",
+        "u.role_id = 6",
+        "LOWER(TRIM(base_role.role_name)) = 'customer'",
+        '(u.business_role_id IS NULL OR u.business_role_id = 6)',
+        '(u.current_role_id IS NULL OR u.current_role_id = 6)',
         hq_manageable_status_sql('u.status'),
     ];
     $params = [];
@@ -39,10 +42,10 @@ function customer_account_rows(string $search = '', string $status = ''): array
 
     $sql = <<<'SQL'
 SELECT u.user_id, u.user_name, u.email, u.status, u.created_at, u.updated_at,
-       u.headquarter_id, COALESCE(u.current_role_id, u.business_role_id, u.role_id) AS role_id, r.role_name,
+       u.headquarter_id, u.role_id, base_role.role_name,
        h.company_name AS headquarter_name, h.location AS headquarter_location
 FROM users u
-INNER JOIN roles r ON r.role_id = COALESCE(u.current_role_id, u.business_role_id, u.role_id)
+INNER JOIN roles base_role ON base_role.role_id = u.role_id
 LEFT JOIN headquarter h ON h.headquarter_id = u.headquarter_id
 SQL;
     $sql .= ' WHERE ' . implode(' AND ', $where) . ' ORDER BY u.updated_at DESC, u.user_id DESC';
