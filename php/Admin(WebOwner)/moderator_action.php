@@ -37,7 +37,7 @@ function moderator_validate_profile(string $userName, string $email, int $roleId
     }
 
     if (!moderator_role_is_allowed($roleId)) {
-        return 'Please select a valid Admin or Moderator role from the database.';
+        return 'Please select the Moderator role from the database.';
     }
 
     return null;
@@ -78,10 +78,19 @@ function moderator_target_exists(int $userId): bool
     $statement = $conn->prepare(
         "SELECT u.user_id
          FROM users u
-         JOIN roles r ON r.role_id = u.role_id
+         LEFT JOIN roles r ON r.role_id = u.role_id
+         LEFT JOIN roles br ON br.role_id = u.business_role_id
+         LEFT JOIN roles cr ON cr.role_id = u.current_role_id
          WHERE u.user_id = ?
            AND u.headquarter_id IS NULL
-           AND LOWER(TRIM(r.role_name)) IN ('admin', 'moderator')
+           AND (
+                LOWER(TRIM(COALESCE(r.role_name, ''))) = 'moderator'
+                OR LOWER(TRIM(COALESCE(br.role_name, ''))) = 'moderator'
+                OR LOWER(TRIM(COALESCE(cr.role_name, ''))) = 'moderator'
+           )
+           AND LOWER(TRIM(COALESCE(r.role_name, ''))) <> 'admin'
+           AND LOWER(TRIM(COALESCE(br.role_name, ''))) <> 'admin'
+           AND LOWER(TRIM(COALESCE(cr.role_name, ''))) <> 'admin'
          LIMIT 1"
     );
     if (!$statement) {
@@ -166,7 +175,7 @@ if ($action === 'hire_existing') {
         moderator_redirect();
     }
     if (!moderator_role_is_allowed($roleId)) {
-        moderator_flash('danger', 'Please select a valid Admin or Moderator role.');
+        moderator_flash('danger', 'Please select the Moderator role.');
         moderator_redirect();
     }
     if ($message === '' || strlen($message) > 2000) {

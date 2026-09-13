@@ -87,8 +87,8 @@ function moderator_schema_ready(): bool
 }
 
 /**
- * Only system-level roles are available in this screen. HQ, manager, staff,
- * and customer roles belong to other account areas.
+ * The moderator registry may grant the Moderator role only. Admin privileges
+ * must never be created or assigned from this workflow.
  */
 function moderator_role_options(): array
 {
@@ -101,8 +101,8 @@ function moderator_role_options(): array
     $statement = $conn->prepare(
         "SELECT role_id, role_name
          FROM roles
-         WHERE LOWER(TRIM(role_name)) IN ('admin', 'moderator')
-         ORDER BY CASE LOWER(TRIM(role_name)) WHEN 'moderator' THEN 1 WHEN 'admin' THEN 2 ELSE 3 END, role_name"
+         WHERE LOWER(TRIM(role_name)) = 'moderator'
+         ORDER BY role_name"
     );
     if (!$statement || !$statement->execute()) {
         $statement?->close();
@@ -193,9 +193,11 @@ function moderator_hire_target_eligible(int $userId): bool
          FROM users u
          LEFT JOIN roles r ON r.role_id = u.role_id
          LEFT JOIN roles br ON br.role_id = u.business_role_id
+         LEFT JOIN roles cr ON cr.role_id = u.current_role_id
          WHERE u.user_id = ?
            AND LOWER(TRIM(COALESCE(r.role_name, ''))) NOT IN ('admin', 'moderator')
            AND LOWER(TRIM(COALESCE(br.role_name, ''))) NOT IN ('admin', 'moderator')
+           AND LOWER(TRIM(COALESCE(cr.role_name, ''))) NOT IN ('admin', 'moderator')
          LIMIT 1"
     );
     if (!$statement) {
