@@ -64,6 +64,8 @@ try {
     }
 
     $createdHeadquarterId = null;
+    $createdOwnerUserId = null;
+    $createdOwnerEmail = null;
     if ($action === 'approve' && strtolower((string) $target['request_type']) === 'hq_registration' && empty($target['headquarter_id'])) {
         $details = json_decode((string) ($target['request_details'] ?? ''), true);
         if (!is_array($details)) {
@@ -105,6 +107,70 @@ try {
         $createdHeadquarterId = (int) $conn->insert_id;
         $headquarterInsert->close();
 
+        // A public registration has no submitter account.  Ensure every
+        // approved HQ still receives a linked, role-3 login owner.
+        $hqRoleId = hq_hq_role_id();
+        if ($hqRoleId <= 0) {
+            throw new RuntimeException('Could not identify the HQ account role.');
+        }
+        $ownerEmail = strtolower(trim((string) ($target['headquarter_owner_email'] ?: $target['sender_email'])));
+        if (!filter_var($ownerEmail, FILTER_VALIDATE_EMAIL)) {
+            throw new RuntimeException('The approved HQ has no valid owner email address.');
+        }
+        $ownerName = trim((string) ($target['sender_name'] ?: $target['sender_entity']));
+        $ownerName = $ownerName !== '' ? $ownerName : $companyName;
+        $ownerLookup = $conn->prepare('SELECT user_id FROM users WHERE email = ? FOR UPDATE');
+        if (!$ownerLookup) {
+            throw new RuntimeException('Could not look up the HQ owner account.');
+        }
+        $ownerLookup->bind_param('s', $ownerEmail);
+        $ownerLookup->execute();
+        $existingOwner = $ownerLookup->get_result()?->fetch_assoc();
+        $ownerLookup->close();
+
+        if ($existingOwner) {
+            $createdOwnerUserId = (int) $existingOwner['user_id'];
+            $ownerUpdate = $conn->prepare(
+                'UPDATE users SET headquarter_id = ?, role_id = ?, business_role_id = ?, current_role_id = ?, status = \'approved\', updated_at = NOW() WHERE user_id = ?'
+            );
+            if (!$ownerUpdate) {
+                throw new RuntimeException('Could not link the existing HQ owner account.');
+            }
+            $ownerUpdate->bind_param('iiiii', $createdHeadquarterId, $hqRoleId, $hqRoleId, $hqRoleId, $createdOwnerUserId);
+            if (!$ownerUpdate->execute()) {
+                throw new RuntimeException('Could not link the existing HQ owner account.');
+            }
+            $ownerUpdate->close();
+        } else {
+            $ownerUserName = hq_unique_username($ownerName, $ownerEmail);
+            $oneTimeSecret = bin2hex(random_bytes(24));
+            $passwordHash = password_hash($oneTimeSecret, PASSWORD_DEFAULT);
+            $ownerInsert = $conn->prepare(
+                "INSERT INTO users (user_name, email, hashed_password, headquarter_id, role_id, business_role_id, current_role_id, status, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, 'approved', NOW(), NOW())"
+            );
+            if (!$ownerInsert) {
+                throw new RuntimeException('Could not prepare the HQ owner account.');
+            }
+            $ownerInsert->bind_param('sssiiii', $ownerUserName, $ownerEmail, $passwordHash, $createdHeadquarterId, $hqRoleId, $hqRoleId, $hqRoleId);
+            if (!$ownerInsert->execute()) {
+                throw new RuntimeException('Could not create the HQ owner account.');
+            }
+            $createdOwnerUserId = (int) $ownerInsert->insert_id;
+            $ownerInsert->close();
+        }
+        $createdOwnerEmail = $ownerEmail;
+
+        $hqOwnerUpdate = $conn->prepare('UPDATE headquarter SET headquarters_owner_id = ? WHERE headquarter_id = ?');
+        if (!$hqOwnerUpdate) {
+            throw new RuntimeException('Could not link the HQ owner.');
+        }
+        $hqOwnerUpdate->bind_param('ii', $createdOwnerUserId, $createdHeadquarterId);
+        if (!$hqOwnerUpdate->execute()) {
+            throw new RuntimeException('Could not link the HQ owner.');
+        }
+        $hqOwnerUpdate->close();
+
         $requestHqUpdate = $conn->prepare('UPDATE system_requests SET headquarter_id = ? WHERE request_id = ?');
         if (!$requestHqUpdate) {
             throw new RuntimeException('Could not link the approved company request.');
@@ -131,8 +197,8 @@ try {
     $newStatus = $action === 'approve' ? 'approved' : 'rejected';
     $reviewReason = $action === 'approve' ? 'Approved by administrator.' : $reason;
     $reviewerId = (int) $reviewer['user_id'];
-    $recipientUserId = !empty($target['existing_user_id']) ? (int) $target['existing_user_id'] : null;
-    $recipientEmail = trim((string) ($target['user_email'] ?: $target['sender_email']));
+    $recipientUserId = $createdOwnerUserId ?? (!empty($target['existing_user_id']) ? (int) $target['existing_user_id'] : null);
+    $recipientEmail = $createdOwnerEmail ?? trim((string) ($target['user_email'] ?: $target['sender_email']));
 
     $requestUpdate = $conn->prepare(
         "UPDATE system_requests

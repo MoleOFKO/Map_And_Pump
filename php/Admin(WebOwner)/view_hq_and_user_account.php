@@ -25,13 +25,10 @@ $hqRows = [];
 $dbError = null;
 
 if (hq_db_available() && hq_registry_schema_ready()) {
-    // The audit table is created once if the database user has DDL permission.
-    // Its failure does not prevent the HQ list itself from being displayed.
-    hq_action_table_ready();
-
    $hqRoleId = hq_hq_role_id();
    if ($hqRoleId > 0) {
-       $where = [hq_manageable_status_sql("COALESCE(owner.status, 'pending')")];
+       // Historic approved registrations may not yet have a linked owner.
+       $where = [hq_manageable_status_sql("COALESCE(owner.status, 'approved')")];
        $params = [];
        $types = '';
 
@@ -50,9 +47,9 @@ if (hq_db_available() && hq_registry_schema_ready()) {
 
        if ($status !== '') {
            if ($status === 'approved') {
-               $where[] = "LOWER(COALESCE(owner.status, 'pending')) IN ('approved', 'active')";
+               $where[] = "LOWER(COALESCE(owner.status, 'approved')) IN ('approved', 'active')";
            } else {
-               $where[] = 'LOWER(COALESCE(owner.status, \'pending\')) = ?';
+               $where[] = 'LOWER(COALESCE(owner.status, \'approved\')) = ?';
                $params[] = $status;
                $types .= 's';
            }
@@ -70,13 +67,13 @@ if (hq_db_available() && hq_registry_schema_ready()) {
             COALESCE(user_counts.user_count, 0) AS user_count,
             0 AS station_count
         FROM headquarter h
-        INNER JOIN (
+        LEFT JOIN (
             SELECT u.headquarter_id, MIN(u.user_id) AS owner_user_id, COUNT(*) AS user_count
             FROM users u
             WHERE (u.role_id = 3 OR u.business_role_id = 3)
             GROUP BY headquarter_id
         ) user_counts ON user_counts.headquarter_id = h.headquarter_id
-        INNER JOIN users owner ON owner.user_id = user_counts.owner_user_id";
+        LEFT JOIN users owner ON owner.user_id = user_counts.owner_user_id";
 
        if ($where) {
            $sql .= ' WHERE ' . implode(' AND ', $where);
