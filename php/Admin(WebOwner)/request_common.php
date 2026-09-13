@@ -101,59 +101,22 @@ function request_schema_ready(): bool
         return false;
     }
 
-    $queries = [
-        "CREATE TABLE IF NOT EXISTS system_requests (
-            request_id INT UNSIGNED NOT NULL AUTO_INCREMENT,
-            reference_code VARCHAR(40) NOT NULL,
-            request_type VARCHAR(60) NOT NULL,
-            status VARCHAR(20) NOT NULL DEFAULT 'pending',
-            submitter_user_id INT UNSIGNED NULL,
-            role_id INT UNSIGNED NULL,
-            sender_entity VARCHAR(255) NOT NULL,
-            sender_name VARCHAR(255) NULL,
-            sender_email VARCHAR(255) NULL,
-            location VARCHAR(255) NULL,
-            request_details TEXT NULL,
-            document_name VARCHAR(255) NULL,
-            document_path VARCHAR(500) NULL,
-            review_reason TEXT NULL,
-            reviewed_by INT UNSIGNED NULL,
-            reviewed_at TIMESTAMP NULL DEFAULT NULL,
-            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-            PRIMARY KEY (request_id),
-            UNIQUE KEY uq_system_requests_reference (reference_code),
-            KEY idx_system_requests_status (status),
-            KEY idx_system_requests_type (request_type),
-            KEY idx_system_requests_created (created_at),
-            KEY idx_system_requests_user (submitter_user_id)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
-        "CREATE TABLE IF NOT EXISTS notifications (
-            notification_id INT UNSIGNED NOT NULL AUTO_INCREMENT,
-            request_id INT UNSIGNED NULL,
-            recipient_user_id INT UNSIGNED NULL,
-            recipient_email VARCHAR(255) NULL,
-            notification_type VARCHAR(40) NOT NULL,
-            subject VARCHAR(255) NOT NULL,
-            message TEXT NOT NULL,
-            delivery_status VARCHAR(30) NOT NULL DEFAULT 'not_configured',
-            delivery_note VARCHAR(255) NULL,
-            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            PRIMARY KEY (notification_id),
-            KEY idx_notifications_request (request_id),
-            KEY idx_notifications_recipient (recipient_user_id),
-            KEY idx_notifications_created (created_at)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
-    ];
-
-    foreach ($queries as $query) {
-        if (!$conn->query($query)) {
-            error_log('[Request registry] Schema bootstrap failed: ' . $conn->error);
-            return false;
-        }
+    // Schema changes belong in db.sql/migrations, never in a page request.
+    $result = $conn->query(
+        "SELECT TABLE_NAME FROM information_schema.TABLES
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME IN ('system_requests', 'notifications')"
+    );
+    if (!$result) {
+        error_log('[Request registry] Schema check failed: ' . $conn->error);
+        return false;
     }
 
-    return true;
+    $tables = [];
+    while ($row = $result->fetch_assoc()) {
+        $tables[$row['TABLE_NAME']] = true;
+    }
+    return isset($tables['system_requests'], $tables['notifications']);
 }
 
 function request_send_notification(string $recipient, string $subject, string $message): array

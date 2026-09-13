@@ -32,7 +32,9 @@ $targetQuery = $conn->prepare(
     "SELECT u.user_id, u.user_name, u.email, r.role_id, r.role_name
      FROM users u
      INNER JOIN roles r ON r.role_id = u.role_id
-     WHERE u.user_id = ? AND LOWER(TRIM(r.role_name)) NOT IN ('admin', 'moderator', 'hq', 'headquarter', 'headquarters')
+     WHERE u.user_id = ? AND u.role_id = 6 AND LOWER(TRIM(r.role_name)) = 'customer'
+       AND (u.business_role_id IS NULL OR u.business_role_id = 6)
+       AND (u.current_role_id IS NULL OR u.current_role_id = 6)
      LIMIT 1"
 );
 if (!$targetQuery) {
@@ -66,7 +68,7 @@ if ($duplicate) {
 
 try {
     $conn->begin_transaction();
-    $userUpdate = $conn->prepare("UPDATE users SET user_name = ?, email = ?, updated_at = NOW() WHERE user_id = ? AND role_id IN (SELECT role_id FROM roles WHERE LOWER(TRIM(role_name)) NOT IN ('admin', 'moderator', 'hq', 'headquarter', 'headquarters'))");
+    $userUpdate = $conn->prepare("UPDATE users SET user_name = ?, email = ?, updated_at = NOW() WHERE user_id = ? AND role_id = 6 AND (business_role_id IS NULL OR business_role_id = 6) AND (current_role_id IS NULL OR current_role_id = 6)");
     if (!$userUpdate) {
         throw new RuntimeException('Could not prepare the Customer account update.');
     }

@@ -9,7 +9,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     admin_redirect('edit_profile.php');
 }
 
-$user = admin_current_user(true);
+$user = admin_require_admin();
 $upload = $_FILES['profile_avatar'] ?? null;
 if (!$user || !is_array($upload) || (int) ($upload['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
     admin_flash('danger', 'Please choose a valid image before uploading.');

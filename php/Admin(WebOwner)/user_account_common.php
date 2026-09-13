@@ -14,7 +14,10 @@ function customer_account_rows(string $search = '', string $status = ''): array
     }
 
     $where = [
-        "LOWER(TRIM(r.role_name)) NOT IN ('admin', 'moderator', 'hq', 'headquarter', 'headquarters')",
+        "u.role_id = 6",
+        "LOWER(TRIM(base_role.role_name)) = 'customer'",
+        '(u.business_role_id IS NULL OR u.business_role_id = 6)',
+        '(u.current_role_id IS NULL OR u.current_role_id = 6)',
         hq_manageable_status_sql('u.status'),
     ];
     $params = [];
@@ -39,10 +42,10 @@ function customer_account_rows(string $search = '', string $status = ''): array
 
     $sql = <<<'SQL'
 SELECT u.user_id, u.user_name, u.email, u.status, u.created_at, u.updated_at,
-       u.headquarter_id, COALESCE(u.current_role_id, u.business_role_id, u.role_id) AS role_id, r.role_name,
+       u.headquarter_id, u.role_id, base_role.role_name,
        h.company_name AS headquarter_name, h.location AS headquarter_location
 FROM users u
-INNER JOIN roles r ON r.role_id = COALESCE(u.current_role_id, u.business_role_id, u.role_id)
+INNER JOIN roles base_role ON base_role.role_id = u.role_id
 LEFT JOIN headquarter h ON h.headquarter_id = u.headquarter_id
 SQL;
     $sql .= ' WHERE ' . implode(' AND ', $where) . ' ORDER BY u.updated_at DESC, u.user_id DESC';
@@ -152,40 +155,7 @@ function user_action_table_ready(): bool
         error_log('[user_account_actions] existence check failed: ' . $e->getMessage());
     }
 
-    // Only attempt DDL when the table is missing.
-    $sql = <<<'SQL'
-CREATE TABLE IF NOT EXISTS user_account_actions (
-    action_id INT UNSIGNED NOT NULL AUTO_INCREMENT,
-    user_id INT NOT NULL,
-    action_type VARCHAR(20) NOT NULL,
-    reason TEXT NOT NULL,
-    notification_status VARCHAR(30) NOT NULL DEFAULT 'not_configured',
-    notification_note VARCHAR(255) NULL,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (action_id),
-    KEY idx_user_account_actions_user (user_id),
-    KEY idx_user_account_actions_created (created_at)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-SQL;
-
-    $ok = (bool) @$conn->query($sql);
-    if (!$ok) {
-        error_log('[user_account_actions] create failed: ' . $conn->error);
-        // Re-check in case another process created it.
-        try {
-            $exists = $conn->query(
-                "SELECT COUNT(*) AS c
-                 FROM information_schema.TABLES
-                 WHERE TABLE_SCHEMA = DATABASE()
-                   AND TABLE_NAME = 'user_account_actions'"
-            );
-            $ok = $exists && (int) ($exists->fetch_assoc()['c'] ?? 0) > 0;
-        } catch (Throwable $e) {
-            $ok = false;
-        }
-    }
-
-    return $ready = $ok;
+    return $ready = false;
 }
 
 

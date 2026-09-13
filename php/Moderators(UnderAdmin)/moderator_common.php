@@ -16,7 +16,7 @@ function moderator_require_user(): array
     $role = strtolower(trim((string) ($user['role_name'] ?? '')));
     $status = strtolower(trim((string) ($user['status'] ?? '')));
 
-    if (!$user || !in_array($role, ['admin', 'moderator'], true) || in_array($status, ['suspended', 'removed', 'rejected'], true)) {
+    if (!$user || $role !== 'moderator' || in_array($status, ['suspended', 'removed', 'rejected'], true)) {
         header('Location: ../Login/login.php');
         exit;
     }
@@ -92,7 +92,8 @@ function moderator_hq_rows(string $search, string $region, string $status): arra
         return $rows;
     }
 
-    $where = [hq_manageable_status_sql("COALESCE(owner.status, 'pending')")];
+    // Do not hide historic HQ records solely because their owner was not linked.
+    $where = [hq_manageable_status_sql("COALESCE(owner.status, 'approved')")];
     $params = [];
     $types = '';
     if ($search !== '') {
@@ -108,7 +109,7 @@ function moderator_hq_rows(string $search, string $region, string $status): arra
         $types .= 's';
     }
     if ($status !== '') {
-        $where[] = 'LOWER(COALESCE(owner.status, \'pending\')) = ?';
+        $where[] = 'LOWER(COALESCE(owner.status, \'approved\')) = ?';
         $params[] = $status;
         $types .= 's';
     }
@@ -120,13 +121,13 @@ function moderator_hq_rows(string $search, string $region, string $status): arra
        COALESCE(user_counts.user_count, 0) AS user_count,
        0 AS station_count
    FROM headquarter h
-   INNER JOIN (
+   LEFT JOIN (
        SELECT u.headquarter_id, MIN(u.user_id) AS owner_user_id, COUNT(*) AS user_count
        FROM users u
        WHERE (u.role_id = 3 OR u.business_role_id = 3)
        GROUP BY headquarter_id
    ) user_counts ON user_counts.headquarter_id = h.headquarter_id
-   INNER JOIN users owner ON owner.user_id = user_counts.owner_user_id";
+   LEFT JOIN users owner ON owner.user_id = user_counts.owner_user_id";
    if ($where) {
        $sql .= ' WHERE ' . implode(' AND ', $where);
    }

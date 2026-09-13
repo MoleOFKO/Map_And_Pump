@@ -1,5 +1,8 @@
 <?php
 require_once __DIR__ . '/request_common.php';
+require_once __DIR__ . '/admin_common.php';
+
+admin_require_staff();
 
 header('Content-Type: application/json; charset=utf-8');
 

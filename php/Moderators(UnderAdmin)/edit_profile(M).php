@@ -17,9 +17,13 @@ if (!empty($_SESSION['flash_message'])) {
 }
 
 $stmt = $pdo->prepare(
-    'SELECT u.user_id, u.user_name, u.email, u.oauth_avatar_url, u.created_at, u.last_login_at, u.status, u.role_id, r.role_name
+    'SELECT u.user_id, u.user_name, u.email, u.oauth_avatar_url, u.created_at, u.last_login_at, u.status,
+            COALESCE(u.current_role_id, u.business_role_id, u.role_id) AS role_id,
+            COALESCE(cr.role_name, br.role_name, r.role_name) AS role_name
      FROM users u
      LEFT JOIN roles r ON r.role_id = u.role_id
+     LEFT JOIN roles br ON br.role_id = u.business_role_id
+     LEFT JOIN roles cr ON cr.role_id = u.current_role_id
      WHERE u.user_id = ?
      LIMIT 1'
 );
@@ -105,7 +109,7 @@ $statusClass = static function (?string $status): string {
                             <div class="profile-avatar-container mb-3 mx-auto">
                                 <img src="<?= htmlspecialchars($avatarUrl !== '' ? $avatarUrl : $avatarFallbackUrl, ENT_QUOTES, 'UTF-8') ?>" alt="Current profile avatar" class="profile-avatar-image" id="avatarPreview">
                                 <label for="avatarInput" class="avatar-upload-trigger" title="Upload new photo"><i class="bi bi-camera-fill"></i></label>
-                                <input type="file" id="avatarInput" name="profile_avatar" accept="image/jpeg,image/png,image/gif,image/webp" class="d-none">
+                                <input type="file" id="avatarInput" name="profile_avatar" accept="image/jpeg,image/png,image/webp" class="d-none">
                             </div>
                             <button type="submit" class="btn btn-outline-info btn-sm rounded-3 px-3">Upload Image</button>
                         </form>

@@ -1,9 +1,11 @@
 <?php
-require_once __DIR__ . '/hq_account_common.php';
+require_once __DIR__ . '/admin_common.php';
 
 if (session_status() !== PHP_SESSION_ACTIVE) {
     session_start();
 }
+
+$actingUser = admin_require_staff();
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     hq_redirect('view_hq_and_user_account.php');
@@ -131,6 +133,11 @@ try {
     }
 
     $conn->commit();
+
+    admin_record_log(
+        (int) $actingUser['user_id'],
+        ucfirst($actionType) . ' HQ #' . $headquarterId . ' (' . $target['company_name'] . ').'
+    );
 
     $message = $actionType === 'remove'
         ? 'The HQ account was marked as removed.'

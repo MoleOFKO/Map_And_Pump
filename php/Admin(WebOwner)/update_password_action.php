@@ -9,11 +9,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     admin_redirect('edit_profile.php');
 }
 
-$user = admin_current_user(true);
-if (!$user) {
-    admin_flash('danger', 'No admin or moderator account is available for this password update.');
-    admin_redirect('edit_profile.php');
-}
+$user = admin_require_admin();
 
 $currentPassword = (string) ($_POST['current_password'] ?? '');
 $newPassword = (string) ($_POST['new_password'] ?? '');

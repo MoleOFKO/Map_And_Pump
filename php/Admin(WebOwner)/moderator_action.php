@@ -7,7 +7,7 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
 }
 
 // Create / hire / update / suspend moderators is admin-only.
-admin_require_admin();
+$adminUser = admin_require_admin();
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     moderator_redirect();
@@ -151,6 +151,8 @@ if ($action === 'create') {
     $newUserId = (int) $statement->insert_id;
     $statement->close();
 
+    admin_record_log((int) $adminUser['user_id'], 'Created moderator account #' . $newUserId . '.');
+
     moderator_flash('success', 'Moderator access was created successfully.', ['user_id' => $newUserId]);
     moderator_redirect();
 }
@@ -220,6 +222,8 @@ if ($action === 'hire_existing') {
     $notificationId = (int) $notify->insert_id;
     $notify->close();
 
+    admin_record_log((int) $adminUser['user_id'], 'Sent moderator hire invitation #' . $notificationId . ' to user #' . $targetUserId . '.');
+
     moderator_flash('success', 'Hire message was saved in notifications. The selected account will see it the next time they sign in.', [
         'notification_id' => $notificationId,
         'target_user_id' => $targetUserId,
@@ -284,6 +288,7 @@ if ($action === 'update_profile') {
         moderator_redirect();
     }
     $statement->close();
+    admin_record_log((int) $adminUser['user_id'], 'Updated moderator account #' . $userId . '.');
     moderator_flash('success', 'The moderator profile was updated successfully.');
     moderator_redirect();
 }
@@ -312,6 +317,7 @@ if ($action === 'update_status') {
         moderator_redirect();
     }
     $statement->close();
+    admin_record_log((int) $adminUser['user_id'], 'Changed moderator account #' . $userId . ' status to ' . $newStatus . '.');
     moderator_flash('success', 'The moderator status was changed to ' . moderator_status_label($newStatus) . '.');
     moderator_redirect();
 }

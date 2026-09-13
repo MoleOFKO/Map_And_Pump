@@ -246,40 +246,7 @@ function hq_action_table_ready(): bool
         error_log('[hq_account_actions] existence check failed: ' . $e->getMessage());
     }
 
-    // Only attempt DDL when the table is missing.
-    $sql = <<<'SQL'
-CREATE TABLE IF NOT EXISTS hq_account_actions (
-    action_id INT UNSIGNED NOT NULL AUTO_INCREMENT,
-    headquarter_id INT NOT NULL,
-    action_type VARCHAR(20) NOT NULL,
-    reason TEXT NOT NULL,
-    notification_status VARCHAR(30) NOT NULL DEFAULT 'not_configured',
-    notification_note VARCHAR(255) NULL,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (action_id),
-    KEY idx_hq_account_actions_hq (headquarter_id),
-    KEY idx_hq_account_actions_created (created_at)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-SQL;
-
-    $ok = (bool) @$conn->query($sql);
-    if (!$ok) {
-        error_log('[hq_account_actions] create failed: ' . $conn->error);
-        // Re-check in case another process created it.
-        try {
-            $exists = $conn->query(
-                "SELECT COUNT(*) AS c
-                 FROM information_schema.TABLES
-                 WHERE TABLE_SCHEMA = DATABASE()
-                   AND TABLE_NAME = 'hq_account_actions'"
-            );
-            $ok = $exists && (int) ($exists->fetch_assoc()['c'] ?? 0) > 0;
-        } catch (Throwable $e) {
-            $ok = false;
-        }
-    }
-
-    return $ready = $ok;
+    return $ready = false;
 }
 
 
