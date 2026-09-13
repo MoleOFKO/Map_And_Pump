@@ -97,12 +97,14 @@ $sqlWithBusiness = "
     FROM users u
     LEFT JOIN roles r ON r.role_id = u.role_id
     LEFT JOIN roles br ON br.role_id = u.business_role_id
+    LEFT JOIN roles cr ON cr.role_id = u.current_role_id
     WHERE (
            LOWER(u.user_name) LIKE ?
         OR LOWER(u.email) LIKE ?
     )
       AND LOWER(TRIM(COALESCE(r.role_name, ''))) NOT IN ('admin', 'moderator')
       AND LOWER(TRIM(COALESCE(br.role_name, ''))) NOT IN ('admin', 'moderator')
+      AND LOWER(TRIM(COALESCE(cr.role_name, ''))) NOT IN ('admin', 'moderator')
     ORDER BY
        CASE WHEN LOWER(u.email) = ? THEN 0
             WHEN LOWER(u.user_name) = ? THEN 1

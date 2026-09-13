@@ -28,10 +28,17 @@ $metrics = [
 ];
 $dbError = null;
 
-// Pure moderators (role_id) OR accounts hired via business_role_id.
+// Moderator accounts may be stored directly on role_id or as an existing
+// account's business role. Admin accounts are deliberately out of scope.
 $moderatorRolePredicate = "(
-    LOWER(TRIM(COALESCE(r.role_name, ''))) IN ('admin', 'moderator')
-    OR LOWER(TRIM(COALESCE(br.role_name, ''))) IN ('admin', 'moderator')
+    (
+        LOWER(TRIM(COALESCE(r.role_name, ''))) = 'moderator'
+        OR LOWER(TRIM(COALESCE(br.role_name, ''))) = 'moderator'
+        OR LOWER(TRIM(COALESCE(cr.role_name, ''))) = 'moderator'
+    )
+    AND LOWER(TRIM(COALESCE(r.role_name, ''))) <> 'admin'
+    AND LOWER(TRIM(COALESCE(br.role_name, ''))) <> 'admin'
+    AND LOWER(TRIM(COALESCE(cr.role_name, ''))) <> 'admin'
 )";
 
 if (moderator_schema_ready()) {
@@ -76,6 +83,7 @@ if (moderator_schema_ready()) {
          FROM users u
          LEFT JOIN roles r ON r.role_id = u.role_id
          LEFT JOIN roles br ON br.role_id = u.business_role_id
+         LEFT JOIN roles cr ON cr.role_id = u.current_role_id
          WHERE u.headquarter_id IS NULL
            AND $moderatorRolePredicate"
     );
@@ -92,7 +100,7 @@ if (moderator_schema_ready()) {
             u.email,
             u.role_id,
             u.business_role_id,
-            COALESCE(br.role_name, r.role_name) AS role_name,
+            COALESCE(br.role_name, r.role_name, cr.role_name) AS role_name,
             COALESCE(u.business_role_id, u.role_id) AS display_role_id,
             u.status,
             u.created_at,
@@ -100,6 +108,7 @@ if (moderator_schema_ready()) {
          FROM users u
          LEFT JOIN roles r ON r.role_id = u.role_id
          LEFT JOIN roles br ON br.role_id = u.business_role_id
+         LEFT JOIN roles cr ON cr.role_id = u.current_role_id
          WHERE $whereSql
          ORDER BY u.updated_at DESC, u.user_id DESC",
         $types,
@@ -133,7 +142,7 @@ $flashType = (string) ($flash['type'] ?? '');
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Map &amp; Pump Admin — Manage system administrators and moderator accounts.">
+    <meta name="description" content="Map &amp; Pump Admin — Manage moderator accounts.">
     <title>Manage Moderators — Map &amp; Pump</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -210,8 +219,8 @@ $flashType = (string) ($flash['type'] ?? '');
         <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3">
             <div>
                 <span class="stat-chip mb-2"><i class="bi bi-shield-lock-fill txt-neon-cyan"></i> Security Division</span>
-                <h1 class="fw-bold m-0 h4 text-white mt-2">Manage System Administrators</h1>
-                <p class="text-white-50 m-0 small mt-1">Create, edit, suspend, and revoke system-level moderator access.</p>
+                <h1 class="fw-bold m-0 h4 text-white mt-2">Manage Moderators</h1>
+                <p class="text-white-50 m-0 small mt-1">Create, edit, suspend, and revoke Moderator access. Admin privileges are not managed here.</p>
             </div>
             <button class="btn btn-neon d-flex align-items-center gap-2" type="button" data-bs-toggle="modal" data-bs-target="#addAdminModal"><i class="bi bi-person-plus-fill"></i> Add New Moderator</button>
         </div>
@@ -226,8 +235,8 @@ $flashType = (string) ($flash['type'] ?? '');
         <?php endif; ?>
 
         <div class="row g-4 mb-4">
-            <div class="col-12 col-sm-4"><div class="dashboard-card metric-card"><div class="d-flex align-items-center justify-content-between gap-3"><div><p class="mb-0 metric-label">Total Admins</p><h4 class="fw-bold text-white mb-0 metric-value" style="font-size:1.8rem;"><?= (int) $metrics['total'] ?></h4></div><span class="fs-3 txt-neon-cyan"><i class="bi bi-people-fill"></i></span></div><p class="text-success small mb-0 mt-2"><i class="bi bi-circle-fill me-1" style="font-size:0.45rem;"></i><?= (int) $metrics['active'] ?> active accounts</p></div></div>
-            <div class="col-12 col-sm-4"><div class="dashboard-card metric-card"><div class="d-flex align-items-center justify-content-between gap-3"><div><p class="mb-0 metric-label">Active Privileges</p><h4 class="fw-bold text-white mb-0" style="font-size:1.2rem; letter-spacing:-0.02em;">Admin, Moderator</h4></div><span class="fs-3 txt-neon-blue"><i class="bi bi-key-fill"></i></span></div><p class="text-white-50 small mb-0 mt-2"><?= count($roles) ?> database role tiers available</p></div></div>
+            <div class="col-12 col-sm-4"><div class="dashboard-card metric-card"><div class="d-flex align-items-center justify-content-between gap-3"><div><p class="mb-0 metric-label">Total Moderators</p><h4 class="fw-bold text-white mb-0 metric-value" style="font-size:1.8rem;"><?= (int) $metrics['total'] ?></h4></div><span class="fs-3 txt-neon-cyan"><i class="bi bi-people-fill"></i></span></div><p class="text-success small mb-0 mt-2"><i class="bi bi-circle-fill me-1" style="font-size:0.45rem;"></i><?= (int) $metrics['active'] ?> active accounts</p></div></div>
+            <div class="col-12 col-sm-4"><div class="dashboard-card metric-card"><div class="d-flex align-items-center justify-content-between gap-3"><div><p class="mb-0 metric-label">Granted Privilege</p><h4 class="fw-bold text-white mb-0" style="font-size:1.2rem; letter-spacing:-0.02em;">Moderator</h4></div><span class="fs-3 txt-neon-blue"><i class="bi bi-key-fill"></i></span></div><p class="text-white-50 small mb-0 mt-2">Admin access cannot be added here</p></div></div>
             <div class="col-12 col-sm-4"><div class="dashboard-card metric-card"><div class="d-flex align-items-center justify-content-between gap-3"><div><p class="mb-0 metric-label">Last Account Update</p><h4 class="fw-bold text-white mb-0" style="font-size:1.25rem; letter-spacing:-0.03em;"><?= hq_escape($metrics['last_sync'] ? hq_date((string) $metrics['last_sync']) : 'No accounts') ?></h4></div><span class="fs-3 text-success"><i class="bi bi-shield-check"></i></span></div><p class="text-success small mb-0 mt-2"><i class="bi bi-database-check me-1"></i>Live database values</p></div></div>
         </div>
 
@@ -239,9 +248,9 @@ $flashType = (string) ($flash['type'] ?? '');
                 <div class="col-12 col-md-2 d-grid"><button type="submit" class="btn btn-neon">Apply Filter</button></div>
             </form></div></div>
 
-            <div class="col-12"><div class="analytics-card"><div class="table-responsive"><table class="table table-dark-custom align-middle m-0"><thead><tr><th>Admin Identity</th><th>Email Address</th><th>Designation Role</th><th>Last Account Update</th><th>Account State</th><th class="text-end">Actions</th></tr></thead><tbody>
+            <div class="col-12"><div class="analytics-card"><div class="table-responsive"><table class="table table-dark-custom align-middle m-0"><thead><tr><th>Moderator Identity</th><th>Email Address</th><th>Designation Role</th><th>Last Account Update</th><th>Account State</th><th class="text-end">Actions</th></tr></thead><tbody>
             <?php if (!$moderatorRows): ?>
-                <tr><td colspan="6" class="text-center text-white-50 py-5">No system administrator or moderator accounts match the current filters.</td></tr>
+                <tr><td colspan="6" class="text-center text-white-50 py-5">No moderator accounts match the current filters.</td></tr>
             <?php else: ?>
                 <?php foreach ($moderatorRows as $row): ?>
                     <?php
@@ -272,7 +281,7 @@ $flashType = (string) ($flash['type'] ?? '');
                 <div class="modal-header">
                     <div>
                         <h5 class="modal-title fw-bold" id="addAdminModalLabel"><i class="bi bi-person-lock txt-neon-cyan me-2"></i> Add New Moderator</h5>
-                        <p class="moderator-modal-note mb-0 mt-1">Create a brand-new moderator account, or hire an existing customer / operational account.</p>
+                        <p class="moderator-modal-note mb-0 mt-1">Create a Moderator account, or grant Moderator access to an eligible existing account. This workflow cannot create Admin accounts.</p>
                     </div>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
@@ -302,7 +311,7 @@ $flashType = (string) ($flash['type'] ?? '');
                                         <option value="<?= (int) $role['role_id'] ?>" <?= (string) $role['role_id'] === $defaultRoleId ? 'selected' : '' ?>><?= hq_escape(moderator_role_label($role['role_name'])) ?></option>
                                     <?php endforeach; ?>
                                 </select>
-                                <div class="moderator-modal-note mt-1">Only Admin and Moderator roles are offered here.</div>
+                                <div class="moderator-modal-note mt-1">Only the Moderator role is offered here. Admin privileges cannot be granted from this panel.</div>
                             </div>
                             <div class="row g-3">
                                 <div class="col-12 col-md-6">
@@ -335,10 +344,10 @@ $flashType = (string) ($flash['type'] ?? '');
                                     <span id="hireSelectedLabel">No account selected</span>
                                     <button type="button" class="btn btn-sm btn-link text-white-50 ms-auto p-0 js-clear-hire-target" aria-label="Clear selected account">Clear</button>
                                 </div>
-                                <div class="moderator-modal-note mt-1">Existing Admin/Moderator accounts are excluded. Matching users appear in the dropdown as you type.</div>
+                                <div class="moderator-modal-note mt-1">Existing Admin and Moderator accounts are excluded. Matching eligible users appear in the dropdown as you type.</div>
                             </div>
                             <div>
-                                <label class="form-label text-white-50 small" for="hireModeratorRole">Offered role <span class="text-danger">*</span></label>
+                                <label class="form-label text-white-50 small" for="hireModeratorRole">Offered Moderator role <span class="text-danger">*</span></label>
                                 <select id="hireModeratorRole" class="form-select glass-select" name="role_id" required <?= !$roles ? 'disabled' : '' ?>>
                                     <option value="">Select a role</option>
                                     <?php foreach ($roles as $role): ?>

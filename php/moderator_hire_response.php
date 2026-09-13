@@ -81,17 +81,25 @@ try {
 
     $roleCheck = $pdo->prepare(
         "SELECT role_id, role_name FROM roles
-         WHERE role_id = ? AND LOWER(TRIM(role_name)) IN ('admin', 'moderator')
+         WHERE role_id = ? AND LOWER(TRIM(role_name)) = 'moderator'
          LIMIT 1"
     );
     $roleCheck->execute([$roleId]);
     $role = $roleCheck->fetch(PDO::FETCH_ASSOC);
     if (!$role) {
-        $_SESSION['moderator_hire_flash'] = 'The offered role is no longer available. Contact an administrator.';
+        $pdo->prepare(
+            "UPDATE notifications
+             SET delivery_status = 'declined'
+             WHERE notification_id = ?
+               AND recipient_user_id = ?
+               AND LOWER(delivery_status) = 'pending'"
+        )->execute([$inviteId, $userId]);
+        moderator_hire_remove_from_session($inviteId);
+        $_SESSION['moderator_hire_flash'] = 'This invitation is no longer valid. Only Moderator access can be granted through this workflow.';
         hire_response_redirect();
     }
 
-    // Hire existing accounts as moderator/admin via business_role_id so the
+    // Hire existing accounts as moderators via business_role_id so the
     // original role_id (e.g. customer) is preserved and account switching works.
     $hasCurrentRole = function_exists('map_pump_current_role_column_ready')
         ? map_pump_current_role_column_ready($pdo)
@@ -139,10 +147,7 @@ try {
     $_SESSION['moderator_hire_flash'] = 'Moderator access accepted. Your account role has been updated.';
 
     $roleName = strtolower(trim((string) $role['role_name']));
-    $destination = $roleName === 'admin'
-        ? '/php/Admin(WebOwner)/admin_dashboard.php'
-        : '/php/Moderators(UnderAdmin)/moderator_dashboard.php';
-    header('Location: ' . $destination);
+    header('Location: /php/Moderators(UnderAdmin)/moderator_dashboard.php');
     exit;
 } catch (Throwable $e) {
     error_log('[Moderator hire] Response failed: ' . $e->getMessage());
