@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/hq_guard.php';
 require_once __DIR__ . '/../conn.php';
+require_once __DIR__ . '/../account_deletion.php';
 require_once __DIR__ . '/../profile_avatar.php';
 
 if (empty($_SESSION['user_id'])) {
@@ -17,6 +18,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     try {
         $action = $_POST['action'] ?? '';
+
+        if ($action === 'request_deletion') {
+            $context = map_pump_hq_owner_context($pdo, $userId);
+            $confirmation = trim((string) ($_POST['account_name_delete_account'] ?? ''));
+            $expectedConfirmation = trim((string) ($context['user_name'] ?? '')) . '_delete_account';
+            if (!$context || $confirmation !== $expectedConfirmation || ($_POST['delete_confirmation'] ?? '') !== 'yes') {
+                http_response_code(422);
+                echo json_encode(['ok' => false, 'message' => 'Enter the exact account name confirmation and choose Yes.']);
+                exit;
+            }
+
+            $scheduledFor = map_pump_request_hq_account_deletion($pdo, $userId);
+            if ($scheduledFor === null) {
+                http_response_code(403);
+                echo json_encode(['ok' => false, 'message' => 'Only the HQ account owner can request this deletion.']);
+                exit;
+            }
+
+            $_SESSION['user_status'] = 'pending_deletion';
+            echo json_encode(['ok' => true, 'message' => 'Deletion scheduled.', 'scheduled_for' => $scheduledFor]);
+            exit;
+        }
+
+        if ($action === 'restore_deletion') {
+            if (!map_pump_restore_hq_account($pdo, $userId)) {
+                http_response_code(422);
+                echo json_encode(['ok' => false, 'message' => 'This HQ account is not awaiting deletion.']);
+                exit;
+            }
+
+            $_SESSION['user_status'] = 'active';
+            echo json_encode(['ok' => true, 'message' => 'Your HQ account has been restored.']);
+            exit;
+        }
 
         if ($action === 'update_profile') {
             $name = trim((string) ($_POST['name'] ?? ''));
@@ -169,6 +204,9 @@ $stmt = $pdo->prepare(
 );
 $stmt->execute([$userId]);
 $user = $stmt->fetch(PDO::FETCH_ASSOC);
+$deletionContext = map_pump_hq_owner_context($pdo, $userId);
+$deletionPending = ($deletionContext['status'] ?? '') === 'pending_deletion';
+$deletionScheduledFor = (string) ($deletionContext['account_deletion_scheduled_for'] ?? '');
 
 $profileName = !empty($user['user_name']) ? $user['user_name'] : 'Unknown User';
 $profileEmail = !empty($user['email']) ? $user['email'] : '';
@@ -292,6 +330,33 @@ $profileFallbackUrl = map_pump_profile_initial_svg($profileName, 'H');
             min-width: 120px;
             border: 0;
         }
+
+        .hq-deletion-card {
+            border: 1px solid rgba(248, 113, 113, 0.32) !important;
+            background: linear-gradient(145deg, rgba(127, 29, 29, 0.2), rgba(15, 23, 42, 0.88));
+        }
+
+        .hq-deletion-card.is-pending {
+            border-color: rgba(251, 191, 36, 0.5) !important;
+            background: linear-gradient(145deg, rgba(120, 53, 15, 0.24), rgba(15, 23, 42, 0.88));
+        }
+
+        .hq-delete-token {
+            display: block;
+            width: fit-content;
+            max-width: 100%;
+            margin: 0 0 10px;
+            padding: 8px 11px;
+            overflow-wrap: anywhere;
+            color: #ffe4e6;
+            background: rgba(127, 29, 29, 0.32);
+            border: 1px solid rgba(248, 113, 113, 0.35);
+            border-radius: 8px;
+        }
+
+        .hq-deletion-form .form-control {
+            max-width: 520px;
+        }
     </style>
 </head>
 <body>
@@ -349,6 +414,45 @@ $profileFallbackUrl = map_pump_profile_initial_svg($profileName, 'H');
                         <button type="submit" class="btn btn-outline-primary w-100">Switch to Customer Profile</button>
                     </form>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row mt-4">
+        <div class="col-12">
+            <div class="card p-4 hq-deletion-card <?= $deletionPending ? 'is-pending' : '' ?>">
+                <?php if ($deletionPending): ?>
+                    <div class="d-flex flex-wrap align-items-start justify-content-between gap-3">
+                        <div>
+                            <span class="badge text-bg-warning mb-2">Deletion scheduled</span>
+                            <h3 class="mb-2">Your HQ account is pending deletion</h3>
+                            <p class="subtitle mb-1">Your account information will be permanently removed after <strong><?= htmlspecialchars($deletionScheduledFor, ENT_QUOTES, 'UTF-8') ?></strong>.</p>
+                            <p class="subtitle mb-0">Restore the account before that deadline to cancel the deletion.</p>
+                        </div>
+                        <form onsubmit="restoreHqAccount(event)">
+                            <button type="submit" class="btn btn-success">Restore HQ Account</button>
+                        </form>
+                    </div>
+                <?php else: ?>
+                    <h3 class="mb-2">Delete HQ account</h3>
+                    <p class="subtitle mb-3">This starts a 30-day recovery period. Your HQ information is not deleted immediately, and the account owner can restore it during that period.</p>
+                    <form class="hq-deletion-form" onsubmit="requestHqDeletion(event)">
+                        <label for="hqDeleteConfirmation" class="form-label">Type this exact text to continue</label>
+                        <code class="hq-delete-token"><?= htmlspecialchars($profileName . '_delete_account', ENT_QUOTES, 'UTF-8') ?></code>
+                        <input type="text" class="form-control mb-3" id="hqDeleteConfirmation" name="account_name_delete_account" autocomplete="off" required>
+                        <div class="d-flex flex-wrap align-items-center gap-3">
+                            <div class="form-check form-check-inline mb-0">
+                                <input class="form-check-input" type="radio" name="delete_confirmation" id="hqDeleteYes" value="yes" required>
+                                <label class="form-check-label" for="hqDeleteYes">Yes, schedule deletion</label>
+                            </div>
+                            <div class="form-check form-check-inline mb-0">
+                                <input class="form-check-input" type="radio" name="delete_confirmation" id="hqDeleteNo" value="no">
+                                <label class="form-check-label" for="hqDeleteNo">No, keep account</label>
+                            </div>
+                            <button type="submit" class="btn btn-outline-danger ms-auto">Start 30-day deletion</button>
+                        </div>
+                    </form>
+                <?php endif; ?>
             </div>
         </div>
     </div>
@@ -457,6 +561,24 @@ $profileFallbackUrl = map_pump_profile_initial_svg($profileName, 'H');
             await submitAccountUpdate(formData);
         }
 
+        async function requestHqDeletion(event) {
+            event.preventDefault();
+            const formData = new FormData(event.target);
+            formData.append('action', 'request_deletion');
+            if (await submitAccountUpdate(formData)) {
+                window.location.reload();
+            }
+        }
+
+        async function restoreHqAccount(event) {
+            event.preventDefault();
+            const formData = new FormData();
+            formData.append('action', 'restore_deletion');
+            if (await submitAccountUpdate(formData)) {
+                window.location.reload();
+            }
+        }
+
         async function submitAccountUpdate(action, fields = {}) {
             const formData = action instanceof FormData ? action : new FormData();
             if (!(action instanceof FormData)) {
@@ -488,8 +610,10 @@ $profileFallbackUrl = map_pump_profile_initial_svg($profileName, 'H');
                     });
                 }
                 openUpdateModal(result.message);
+                return true;
             } catch (error) {
                 alert(error.message);
+                return false;
             }
         }
 

@@ -79,6 +79,10 @@ if (!$user) {
 [$activeRoleId, $activeRoleName] = map_pump_session_role($user);
 $activeRoleKey = strtolower(trim($activeRoleName));
 
+if (($user['status'] ?? '') === 'pending_deletion' && basename((string) ($_SERVER['PHP_SELF'] ?? '')) !== 'profile.php') {
+    hq_guard_redirect_top('/php/HQ/profile.php');
+}
+
 $_SESSION['role_id'] = $activeRoleId;
 $_SESSION['current_role_id'] = $activeRoleId;
 $_SESSION['role_name'] = $activeRoleName;

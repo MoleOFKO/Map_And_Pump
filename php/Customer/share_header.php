@@ -6,6 +6,7 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
 require_once __DIR__ . '/../conn.php';
 require_once __DIR__ . '/../invitations_schema.php';
 require_once __DIR__ . '/license_access.php';
+require_once __DIR__ . '/license_expiry.php';
 require_once __DIR__ . '/car_access.php';
 require_once __DIR__ . '/../profile_avatar.php';
 
@@ -15,6 +16,13 @@ if (!isset($_SESSION['user_id']) || !ctype_digit((string) $_SESSION['user_id']))
 }
 
 $currentPage = basename($_SERVER['PHP_SELF']);
+$licenseExpiryState = customer_sync_license_expiry($pdo, (int) $_SESSION['user_id']);
+$licenseExpiryWarnings = customer_license_expiry_warnings($licenseExpiryState);
+$licenseWarningDate = date('Y-m-d');
+$showLicenseExpiryWarning = !empty($licenseExpiryWarnings) && ($_SESSION['license_warning_shown_date'] ?? '') !== $licenseWarningDate;
+if ($showLicenseExpiryWarning) {
+    $_SESSION['license_warning_shown_date'] = $licenseWarningDate;
+}
 $customerSessionState = customer_refresh_session($pdo, (int) $_SESSION['user_id']);
 $customerLicenseAccess = $customerSessionState['license'];
 

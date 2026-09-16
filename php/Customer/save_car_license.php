@@ -5,6 +5,7 @@ ini_set('display_errors', '0');
 define('MAP_PUMP_JSON_RESPONSE', true);
 require_once __DIR__ . '/../conn.php';
 require_once __DIR__ . '/car_access.php';
+require_once __DIR__ . '/license_expiry.php';
 
 header('Content-Type: application/json; charset=utf-8');
 
@@ -95,6 +96,8 @@ function customer_car_license_schema_ready(PDO $pdo): bool
                 location varchar(255) NOT NULL,
                 filled_gas int NOT NULL DEFAULT 0,
                 issue_date date DEFAULT NULL,
+                license_expire_date date DEFAULT NULL,
+                status varchar(20) NOT NULL DEFAULT 'pending',
                 created_at timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                 PRIMARY KEY (car_license_id)
@@ -103,6 +106,8 @@ function customer_car_license_schema_ready(PDO $pdo): bool
         foreach ([
             'car_license_front_image' => "ALTER TABLE car_license ADD COLUMN car_license_front_image varchar(255) NULL AFTER car_owner_name",
             'car_license_back_image' => "ALTER TABLE car_license ADD COLUMN car_license_back_image varchar(255) NULL AFTER car_license_front_image",
+            'license_expire_date' => "ALTER TABLE car_license ADD COLUMN license_expire_date date NULL AFTER issue_date",
+            'status' => "ALTER TABLE car_license ADD COLUMN status varchar(20) NOT NULL DEFAULT 'pending' AFTER license_expire_date",
         ] as $column => $sql) {
             $columnStmt = $pdo->prepare(
                 "SELECT COUNT(*)
@@ -184,6 +189,7 @@ try {
     $chassisNumber = strtoupper(trim((string) ($_POST['chassis_number'] ?? '')));
     $location = trim((string) ($_POST['location'] ?? ''));
     $issueDate = trim((string) ($_POST['issue_date'] ?? ''));
+    $licenseExpireDate = trim((string) ($_POST['license_expire_date'] ?? ''));
 
     if (!preg_match('/^[1-9][A-Z]\\/(\\d{4})$/', $plateNumber, $plateMatches) || (int) $plateMatches[1] < 1111) {
         car_license_json(false, 'Car license plate number must use the format 1A/1234, with the last four digits from 1111 to 9999.');
@@ -213,6 +219,10 @@ try {
     }
     if ($issuedAt > new DateTime('today')) {
         car_license_json(false, 'Issued date cannot be in the future.');
+    }
+    $expiresAt = DateTime::createFromFormat('Y-m-d', $licenseExpireDate);
+    if (!$expiresAt || $expiresAt->format('Y-m-d') !== $licenseExpireDate || $expiresAt < new DateTime('today')) {
+        car_license_json(false, 'Please enter a valid car license expiry date that is today or later.');
     }
 
     $existingCar = [];
@@ -260,20 +270,20 @@ try {
 
     if ($carId > 0) {
         $update = $pdo->prepare(
-            'UPDATE car_license
-             SET car_plate_number = ?, car_owner_name = ?, car_license_front_image = ?, car_license_back_image = ?, model_year = ?, vehicle_name = ?, vehicle_type = ?, chassis_number = ?, location = ?, issue_date = ?, updated_at = NOW()
-             WHERE car_license_id = ?'
+            "UPDATE car_license
+             SET car_plate_number = ?, car_owner_name = ?, car_license_front_image = ?, car_license_back_image = ?, model_year = ?, vehicle_name = ?, vehicle_type = ?, chassis_number = ?, location = ?, issue_date = ?, license_expire_date = ?, status = 'pending', updated_at = NOW()
+             WHERE car_license_id = ?"
         );
-        $update->execute([$plateNumber, $ownerName, $frontImagePath, $backImagePath, $modelYear, $vehicleName, $vehicleType, $chassisNumber, $location, $issueDate, $carId]);
+           $update->execute([$plateNumber, $ownerName, $frontImagePath, $backImagePath, $modelYear, $vehicleName, $vehicleType, $chassisNumber, $location, $issueDate, $licenseExpireDate, $carId]);
         $savedCarId = $carId;
     } else {
         $insert = $pdo->prepare(
-            'INSERT INTO car_license
-                (car_plate_number, car_owner_name, car_license_front_image, car_license_back_image, model_year, vehicle_name, vehicle_type, chassis_number, location, filled_gas, issue_date, created_at, updated_at)
+            "INSERT INTO car_license
+                (car_plate_number, car_owner_name, car_license_front_image, car_license_back_image, model_year, vehicle_name, vehicle_type, chassis_number, location, filled_gas, issue_date, license_expire_date, status, created_at, updated_at)
              VALUES
-                (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, NOW(), NOW())'
+                (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 'pending', NOW(), NOW())"
         );
-        $insert->execute([$plateNumber, $ownerName, $frontImagePath, $backImagePath, $modelYear, $vehicleName, $vehicleType, $chassisNumber, $location, $issueDate]);
+            $insert->execute([$plateNumber, $ownerName, $frontImagePath, $backImagePath, $modelYear, $vehicleName, $vehicleType, $chassisNumber, $location, $issueDate, $licenseExpireDate]);
         $savedCarId = (int) $pdo->lastInsertId();
         if ($savedCarId <= 0) {
             $lookup = $pdo->prepare('SELECT car_license_id FROM car_license WHERE car_plate_number = ? ORDER BY car_license_id DESC LIMIT 1');
