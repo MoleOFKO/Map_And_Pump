@@ -29,6 +29,7 @@ $statusLabel = customer_license_status_label($licenseStatus);
 $showForm = !$hasLicense || isset($_GET['update']);
 $statusPillClass = match (strtolower($licenseStatus)) {
     'approved', 'confirmed', 'active' => 'active',
+    'expired' => 'danger',
     'rejected' => 'danger',
     default => 'pending',
 };

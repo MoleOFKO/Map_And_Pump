@@ -58,6 +58,7 @@ function customer_license_status_label(?string $status): string
 {
     return match (strtolower(trim((string) $status))) {
         'approved', 'confirmed', 'active' => 'Confirmed',
+        'expired' => 'Expired',
         'rejected' => 'Rejected',
         default => 'Pending Review',
     };

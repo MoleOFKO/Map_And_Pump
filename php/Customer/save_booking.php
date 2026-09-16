@@ -3,6 +3,7 @@ session_start();
 define('MAP_PUMP_JSON_RESPONSE', true);
 require __DIR__ . '/../conn.php';
 require_once __DIR__ . '/license_access.php';
+require_once __DIR__ . '/license_expiry.php';
 require_once __DIR__ . '/car_access.php';
 require_once __DIR__ . '/../business_scope.php';
 require_once __DIR__ . '/../booking_rules.php';
@@ -33,12 +34,15 @@ if ($userId <= 0) {
     exit;
 }
 
+$licenseExpiryState = customer_sync_license_expiry($pdo, $userId);
 $licenseAccess = customer_license_access($pdo, $userId);
 if (!$licenseAccess['is_approved']) {
     http_response_code(403);
     echo json_encode([
         'success' => false,
-        'message' => 'Your driver license must be confirmed by a Moderator before booking.'
+        'message' => ($licenseExpiryState['driver']['status'] ?? '') === 'expired'
+            ? 'Your driver license has expired. Please update it and wait for Moderator confirmation before booking.'
+            : 'Your driver license must be confirmed by a Moderator before booking.'
     ]);
     exit;
 }
@@ -136,6 +140,28 @@ try {
     }
 
     $activeCarLicenseId = (int) $quota['active_car_id'];
+    $carLicenseCheck = $pdo->prepare(
+        "SELECT status, license_expire_date
+         FROM car_license
+         WHERE car_license_id = ?
+         LIMIT 1
+         FOR UPDATE"
+    );
+    $carLicenseCheck->execute([$activeCarLicenseId]);
+    $activeCarLicense = $carLicenseCheck->fetch(PDO::FETCH_ASSOC) ?: [];
+    $carLicenseStatus = strtolower(trim((string) ($activeCarLicense['status'] ?? 'pending')));
+    $carLicenseExpired = $carLicenseStatus === 'expired'
+        || (!empty($activeCarLicense['license_expire_date']) && $activeCarLicense['license_expire_date'] < date('Y-m-d'));
+    if ($carLicenseExpired) {
+        $pdo->rollBack();
+        $pdo->prepare("UPDATE car_license SET status = 'expired', updated_at = NOW() WHERE car_license_id = ?")->execute([$activeCarLicenseId]);
+        http_response_code(403);
+        echo json_encode([
+            'success' => false,
+            'message' => 'Your selected car license has expired. Please update it before booking.'
+        ]);
+        exit;
+    }
     $activeStatuses = map_pump_booking_active_statuses();
     $statusPlaceholders = implode(',', array_fill(0, count($activeStatuses), '?'));
     $activeBooking = $pdo->prepare(

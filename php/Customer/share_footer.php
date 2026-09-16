@@ -1,5 +1,42 @@
 </main>
 
+<?php
+$licenseExpiryWarnings = $licenseExpiryWarnings ?? [];
+$showLicenseExpiryWarning = $showLicenseExpiryWarning ?? false;
+?>
+
+<?php if (!empty($showLicenseExpiryWarning)): ?>
+    <div class="license-expiry-warning" id="licenseExpiryWarning" role="alert">
+        <div class="license-expiry-warning-icon"><i class="bi bi-hourglass-split"></i></div>
+        <div class="license-expiry-warning-content">
+            <strong>License expiry reminder</strong>
+            <span>
+                <?php foreach ($licenseExpiryWarnings as $warningIndex => $warning): ?>
+                    <?php if ($warningIndex > 0): ?>, <?php endif; ?>
+                    <a href="<?php echo htmlspecialchars($warning['url'], ENT_QUOTES, 'UTF-8'); ?>"><?php echo htmlspecialchars($warning['label'], ENT_QUOTES, 'UTF-8'); ?></a>
+                    expires in <b><?php echo (int) $warning['days_left']; ?> day<?php echo (int) $warning['days_left'] === 1 ? '' : 's'; ?></b>
+                <?php endforeach; ?>.
+            </span>
+        </div>
+        <button type="button" class="license-expiry-later" id="licenseExpiryLater">Later</button>
+    </div>
+    <style>
+        .license-expiry-warning { position: fixed; right: 24px; bottom: 24px; z-index: 1100; display: flex; align-items: flex-start; gap: 12px; width: min(440px, calc(100vw - 32px)); padding: 15px 16px; color: #fff4d6; background: rgba(53, 38, 12, .96); border: 1px solid rgba(255, 193, 7, .48); border-radius: 12px; box-shadow: 0 16px 40px rgba(0,0,0,.4); }
+        .license-expiry-warning-icon { color: #ffd15c; font-size: 20px; }
+        .license-expiry-warning-content { display: grid; gap: 4px; min-width: 0; font-size: 12px; line-height: 1.45; }
+        .license-expiry-warning-content strong { color: #ffd15c; font-size: 13px; }
+        .license-expiry-warning-content a { color: #fff; font-weight: 700; text-decoration: underline; }
+        .license-expiry-warning-content b { color: #fff; }
+        .license-expiry-later { margin-left: auto; padding: 4px 0; color: #d9c78b; background: transparent; border: 0; font-size: 11px; cursor: pointer; }
+        .license-expiry-later:hover { color: #fff; }
+    </style>
+    <script>
+        document.getElementById('licenseExpiryLater')?.addEventListener('click', function () {
+            document.getElementById('licenseExpiryWarning')?.remove();
+        });
+    </script>
+<?php endif; ?>
+
     <!-- Mobile Sidebar -->
     <div class="offcanvas offcanvas-start bg-dark text-white" tabindex="-1" id="mobileSidebar" style="width:280px; background-color: var(--navy-900) !important;">
         <div class="offcanvas-header border-bottom border-secondary border-opacity-10">

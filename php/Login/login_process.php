@@ -6,6 +6,8 @@ map_pump_configure_session($remember);
 session_start();
 
 require_once __DIR__ . '/../conn.php';
+require_once __DIR__ . '/../Customer/license_expiry.php';
+require_once __DIR__ . '/../account_deletion.php';
 require_once __DIR__ . '/../Customer/license_access.php';
 require_once __DIR__ . '/../Customer/car_access.php';
 require_once __DIR__ . '/../role_state.php';
@@ -33,6 +35,7 @@ if (!filter_var($email, FILTER_VALIDATE_EMAIL) || $password === '') {
 }
 
 try {
+    map_pump_cleanup_due_account_deletions($pdo);
     $hasCurrentRole = map_pump_current_role_column_ready($pdo);
     $currentRoleSelect = $hasCurrentRole ? 'u.current_role_id, cr.role_name AS current_role_name,' : 'NULL AS current_role_id, NULL AS current_role_name,';
     $currentRoleJoin = $hasCurrentRole ? 'LEFT JOIN roles cr ON cr.role_id = u.current_role_id' : '';
@@ -65,8 +68,21 @@ try {
         auth_redirect_to_login('Invalid email or password.', $email);
     }
 
+    $licenseExpiryState = customer_sync_license_expiry($pdo, (int) $user['user_id']);
+    if (($licenseExpiryState['driver']['status'] ?? '') === 'expired') {
+        $user['status'] = 'license_expired';
+    }
+
     $status = strtolower((string) ($user['status'] ?? ''));
     $allowedStatuses = ['active', 'approved', 'enabled', 'ready'];
+    $isExpiredCustomer = $status === 'license_expired' && strtolower(trim((string) ($user['role_name'] ?? ''))) === 'customer';
+    if ($isExpiredCustomer) {
+        $allowedStatuses[] = 'license_expired';
+    }
+    $isHqAccount = (int) ($user['business_role_id'] ?? 0) === 3 || (int) ($user['role_id'] ?? 0) === 3;
+    if ($status === 'pending_deletion' && $isHqAccount) {
+        $allowedStatuses[] = 'pending_deletion';
+    }
     if ($status !== '' && !in_array($status, $allowedStatuses, true)) {
         auth_redirect_to_login('Your account is not active. Please contact support.', $email);
     }
@@ -86,6 +102,11 @@ try {
     ];
 
     $destination = $dashboardMap[$roleName] ?? '/php/Customer/dashboard.php';
+    if ($status === 'pending_deletion' && $isHqAccount) {
+        $destination = '/php/HQ/profile.php';
+    } elseif ($isExpiredCustomer) {
+        $destination = '../Customer/license.php';
+    }
     $customerLicenseAccess = null;
     if ($roleName === 'customer') {
         $customerLicenseAccess = customer_license_access($pdo, (int) $user['user_id']);

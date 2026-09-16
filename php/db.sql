@@ -180,6 +180,10 @@ INSERT INTO `car_license` VALUES (1,'1234',NULL,NULL,NULL,NULL,2000,NULL,'Yamaha
 /*!40000 ALTER TABLE `car_license` ENABLE KEYS */;
 UNLOCK TABLES;
 
+ALTER TABLE `car_license`
+  ADD COLUMN `license_expire_date` date DEFAULT NULL AFTER `issue_date`,
+  ADD COLUMN `status` varchar(20) NOT NULL DEFAULT 'pending' AFTER `license_expire_date`;
+
 --
 -- Table structure for table `deliveries`
 --
@@ -1089,6 +1093,8 @@ CREATE TABLE `users` (
   `current_role_id` int DEFAULT '6',
   `branch_id` int DEFAULT NULL,
   `status` varchar(50) COLLATE utf8mb4_0900_ai_ci NOT NULL DEFAULT 'active',
+  `account_deletion_requested_at` datetime DEFAULT NULL,
+  `account_deletion_scheduled_for` datetime DEFAULT NULL,
   `had_point` int NOT NULL DEFAULT '0',
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,

@@ -5,11 +5,45 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
 
 require_once __DIR__ . '/../conn.php';
 require_once __DIR__ . '/../profile_avatar.php';
+require_once __DIR__ . '/../Login/session_helper.php';
 require_once __DIR__ . '/car_access.php';
 
 $profileFlashMessage = $_SESSION['profile_flash_message'] ?? null;
 $profileFlashType = $_SESSION['profile_flash_type'] ?? 'success';
 unset($_SESSION['profile_flash_message'], $_SESSION['profile_flash_type']);
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delete_account') {
+    $userId = (int) ($_SESSION['user_id'] ?? 0);
+    $accountNameConfirmation = trim((string) ($_POST['account_name_delete_account'] ?? ''));
+    $deleteConfirmation = (string) ($_POST['delete_confirmation'] ?? '');
+    $accountName = trim((string) ($_SESSION['user_name'] ?? ''));
+    $expectedAccountNameConfirmation = $accountName . '_delete_account';
+
+    if ($userId <= 0 || $accountName === '' || $accountNameConfirmation !== $expectedAccountNameConfirmation || $deleteConfirmation !== 'yes') {
+        $_SESSION['profile_flash_message'] = 'Account deletion was not confirmed. Your account is still active.';
+        $_SESSION['profile_flash_type'] = 'warning';
+        header('Location: profile_page.php');
+        exit;
+    }
+
+    try {
+        $disableAccount = $pdo->prepare("UPDATE users SET status = 'disabled', updated_at = CURRENT_TIMESTAMP WHERE user_id = ?");
+        $disableAccount->execute([$userId]);
+        if ($disableAccount->rowCount() !== 1) {
+            throw new RuntimeException('Account could not be disabled.');
+        }
+
+        map_pump_destroy_login_session();
+        header('Location: ../Login/login.php');
+        exit;
+    } catch (Throwable $e) {
+        error_log('Failed to disable customer account: ' . $e->getMessage());
+        $_SESSION['profile_flash_message'] = 'Account could not be deleted right now. Please try again.';
+        $_SESSION['profile_flash_type'] = 'danger';
+        header('Location: profile_page.php');
+        exit;
+    }
+}
 
 function customer_profile_image_public_path(int $userId, array $file, string $imageData): ?string
 {
@@ -349,6 +383,20 @@ include 'share_header.php';
     </div>
 </div>
 
+<div class="row g-4 mt-1">
+    <div class="col-12">
+        <div class="dashboard-panel-card border border-danger border-opacity-50">
+            <div class="d-flex align-items-start justify-content-between gap-3 flex-wrap">
+                <div>
+                    <h3 class="text-danger mb-1">Delete Account</h3>
+                    <p class="text-secondary mb-0" style="font-size:13px;">Your account will be disabled and your data will remain stored. You will be signed out immediately.</p>
+                </div>
+                <button type="button" class="btn btn-outline-danger px-4 py-2 fw-bold rounded-3" data-bs-toggle="modal" data-bs-target="#deleteAccountModal" style="font-size:12px;">Delete Account</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
 (function () {
     const input = document.getElementById('profileImageInput');
@@ -488,6 +536,112 @@ include 'share_header.php';
         </div>
     </div>
 </div>
+
+<!-- Delete Account Modal -->
+<div class="modal fade delete-account-modal" id="deleteAccountModal" tabindex="-1" aria-labelledby="deleteAccountModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="delete-account-heading">
+                    <span class="delete-account-icon"><i class="bi bi-person-x-fill"></i></span>
+                    <div>
+                        <div class="delete-account-eyebrow">Account settings</div>
+                        <h5 class="modal-title" id="deleteAccountModalLabel">Disable your account?</h5>
+                    </div>
+                </div>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form action="profile_page.php" method="POST">
+                <div class="modal-body">
+                    <input type="hidden" name="action" value="delete_account">
+                    <div class="delete-account-notice">
+                        <i class="bi bi-shield-exclamation"></i>
+                        <p>Your account will be disabled and you will be signed out. Your account record will remain in the database.</p>
+                    </div>
+                    <?php $deleteAccountConfirmationText = trim((string) ($_SESSION['user_name'] ?? '')) . '_delete_account'; ?>
+                    <div class="delete-account-token">
+                        <div class="delete-account-token-label"><i class="bi bi-key-fill"></i> Type this exact phrase</div>
+                        <code><?php echo htmlspecialchars($deleteAccountConfirmationText, ENT_QUOTES, 'UTF-8'); ?></code>
+                    </div>
+                    <label class="delete-account-input-label" for="accountNameDeleteAccount">Enter the phrase to continue</label>
+                    <input type="text" id="accountNameDeleteAccount" name="account_name_delete_account" class="form-control delete-account-input" autocomplete="off" data-expected-value="<?php echo htmlspecialchars($deleteAccountConfirmationText, ENT_QUOTES, 'UTF-8'); ?>" required>
+                    <div class="delete-account-confirmation d-none" id="deleteAccountConfirmationOptions">
+                        <div class="delete-account-confirmation-title"><i class="bi bi-question-circle-fill"></i> Final confirmation</div>
+                        <div class="delete-account-confirmation-copy">Do you want to disable this account?</div>
+                        <div class="delete-account-choice-grid">
+                            <label class="delete-account-choice delete-account-choice-yes">
+                                <input class="visually-hidden" type="radio" name="delete_confirmation" value="yes" required>
+                                <i class="bi bi-check-circle-fill"></i><span>Yes, disable it</span>
+                            </label>
+                            <label class="delete-account-choice delete-account-choice-no">
+                                <input class="visually-hidden" type="radio" name="delete_confirmation" value="no">
+                                <i class="bi bi-x-circle-fill"></i><span>No, keep my account</span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn delete-account-cancel" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn delete-account-submit"><i class="bi bi-person-x-fill me-2"></i>Disable account</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<style>
+.delete-account-modal .modal-dialog { max-width: 500px; }
+.delete-account-modal .modal-content { border: 1px solid rgba(255, 77, 106, .35) !important; border-radius: 18px; overflow: hidden; box-shadow: 0 24px 70px rgba(0, 0, 0, .55); }
+.delete-account-modal .modal-header { padding: 22px 24px 18px; border-bottom: 1px solid rgba(255, 255, 255, .08); }
+.delete-account-modal .modal-body { padding: 22px 24px 8px; }
+.delete-account-modal .modal-footer { padding: 16px 24px 22px; border-top: 1px solid rgba(255, 255, 255, .08); }
+.delete-account-heading { display: flex; align-items: center; gap: 13px; }
+.delete-account-icon { width: 42px; height: 42px; display: grid; place-items: center; border-radius: 12px; color: #ff8094; background: rgba(255, 77, 106, .14); font-size: 19px; }
+.delete-account-eyebrow { color: #9aa8bd; font-size: 10px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; margin-bottom: 3px; }
+.delete-account-modal .modal-title { color: #fff; font-size: 20px; font-weight: 700; }
+.delete-account-notice { display: flex; gap: 12px; align-items: flex-start; padding: 13px 14px; margin-bottom: 20px; border-left: 3px solid #ff4d6a; border-radius: 8px; background: rgba(255, 77, 106, .08); color: #ffb4c0; }
+.delete-account-notice i { margin-top: 2px; font-size: 16px; }
+.delete-account-notice p { margin: 0; font-size: 12px; line-height: 1.55; }
+.delete-account-token { padding: 14px 15px; margin-bottom: 18px; border: 1px solid rgba(255, 193, 7, .4); border-radius: 10px; background: rgba(255, 193, 7, .08); }
+.delete-account-token-label { color: #ffd86a; font-size: 11px; font-weight: 700; margin-bottom: 7px; text-transform: uppercase; letter-spacing: .06em; }
+.delete-account-token code { display: block; color: #fff4c2; font-size: 14px; line-height: 1.45; overflow-wrap: anywhere; }
+.delete-account-input-label { display: block; color: #dce7f5; font-size: 12px; font-weight: 600; margin-bottom: 7px; }
+.delete-account-input { min-height: 46px; border-color: rgba(255, 193, 7, .38) !important; }
+.delete-account-input:focus { border-color: #ffc107 !important; box-shadow: 0 0 0 .2rem rgba(255, 193, 7, .12) !important; }
+.delete-account-confirmation { padding: 15px; margin-top: 17px; border: 1px solid rgba(255, 193, 7, .45); border-radius: 11px; background: rgba(255, 193, 7, .07); }
+.delete-account-confirmation-title { color: #ffd86a; font-size: 13px; font-weight: 700; }
+.delete-account-confirmation-copy { color: #aebbd0; font-size: 12px; margin: 4px 0 13px; }
+.delete-account-choice-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+.delete-account-choice { display: flex; align-items: center; justify-content: center; gap: 7px; min-height: 44px; padding: 9px 10px; margin: 0; border: 1px solid rgba(255, 255, 255, .14); border-radius: 8px; cursor: pointer; color: #dce7f5; font-size: 11px; font-weight: 700; text-align: center; transition: .18s ease; }
+.delete-account-choice-yes:hover, .delete-account-choice-yes:has(input:checked) { color: #fff; border-color: #ff4d6a; background: rgba(255, 77, 106, .18); }
+.delete-account-choice-no:hover, .delete-account-choice-no:has(input:checked) { color: #fff; border-color: #8391a8; background: rgba(131, 145, 168, .18); }
+.delete-account-cancel { color: #b8c4d5; border: 1px solid rgba(255, 255, 255, .15); }
+.delete-account-cancel:hover { color: #fff; border-color: rgba(255, 255, 255, .35); }
+.delete-account-submit { color: #fff; background: #c93651; border: 1px solid #e04a64; font-weight: 700; }
+.delete-account-submit:hover { color: #fff; background: #a92841; border-color: #ff6a80; }
+@media (max-width: 480px) { .delete-account-modal .modal-header, .delete-account-modal .modal-body { padding-left: 18px; padding-right: 18px; } .delete-account-modal .modal-footer { padding-left: 18px; padding-right: 18px; } .delete-account-choice-grid { grid-template-columns: 1fr; } }
+</style>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const deleteAccountInput = document.getElementById('accountNameDeleteAccount');
+    const deleteAccountOptions = document.getElementById('deleteAccountConfirmationOptions');
+    if (!deleteAccountInput || !deleteAccountOptions) return;
+
+    function updateDeleteAccountConfirmation() {
+        const isConfirmed = deleteAccountInput.value === deleteAccountInput.dataset.expectedValue;
+        deleteAccountOptions.classList.toggle('d-none', !isConfirmed);
+        if (!isConfirmed) {
+            deleteAccountOptions.querySelectorAll('input[name="delete_confirmation"]').forEach((input) => {
+                input.checked = false;
+            });
+        }
+    }
+
+    deleteAccountInput.addEventListener('input', updateDeleteAccountConfirmation);
+    updateDeleteAccountConfirmation();
+});
+</script>
 
 <!-- Switch Active Car Modal -->
 <?php if (count($profileCars) > 1): ?>

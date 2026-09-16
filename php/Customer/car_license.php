@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../conn.php';
 require_once __DIR__ . '/car_access.php';
+require_once __DIR__ . '/license_expiry.php';
 
 if (session_status() !== PHP_SESSION_ACTIVE) {
     session_start();
@@ -29,6 +30,8 @@ function car_license_page_schema_ready(PDO $pdo): void
                 location varchar(255) NOT NULL,
                 filled_gas int NOT NULL DEFAULT 0,
                 issue_date date DEFAULT NULL,
+                license_expire_date date DEFAULT NULL,
+                status varchar(20) NOT NULL DEFAULT 'pending',
                 created_at timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                 PRIMARY KEY (car_license_id)
@@ -37,6 +40,8 @@ function car_license_page_schema_ready(PDO $pdo): void
         foreach ([
             'car_license_front_image' => "ALTER TABLE car_license ADD COLUMN car_license_front_image varchar(255) NULL AFTER car_owner_name",
             'car_license_back_image' => "ALTER TABLE car_license ADD COLUMN car_license_back_image varchar(255) NULL AFTER car_license_front_image",
+            'license_expire_date' => "ALTER TABLE car_license ADD COLUMN license_expire_date date NULL AFTER issue_date",
+            'status' => "ALTER TABLE car_license ADD COLUMN status varchar(20) NOT NULL DEFAULT 'pending' AFTER license_expire_date",
         ] as $column => $sql) {
             $columnStmt = $pdo->prepare(
                 "SELECT COUNT(*)
@@ -309,6 +314,8 @@ include 'share_header.php';
                         <div class="car-license-fact"><span>Chassis Number</span><strong><?php echo htmlspecialchars((string) $selectedCar['chassis_number']); ?></strong></div>
                         <div class="car-license-fact"><span>Location</span><strong><?php echo htmlspecialchars((string) $selectedCar['location']); ?></strong></div>
                         <div class="car-license-fact"><span>Issued Date</span><strong><?php echo htmlspecialchars((string) $selectedCar['issue_date']); ?></strong></div>
+                        <div class="car-license-fact"><span>Expiry Date</span><strong><?php echo htmlspecialchars((string) ($selectedCar['license_expire_date'] ?? 'Not set')); ?></strong></div>
+                        <div class="car-license-fact"><span>Status</span><strong><?php echo htmlspecialchars(ucfirst((string) ($selectedCar['status'] ?? 'pending'))); ?></strong></div>
                     </div>
                     
                     <div class="row g-3 mt-2">
@@ -430,6 +437,11 @@ include 'share_header.php';
                         <div class="col-md-12">
                             <label class="form-label text-secondary fw-bold" style="font-size:11px;">ISSUED DATE</label>
                             <input type="date" name="issue_date" class="form-control custom-form-field" max="<?php echo htmlspecialchars($today); ?>" value="<?php echo htmlspecialchars((string) ($formCar['issue_date'] ?? $today)); ?>" required>
+                        </div>
+                        <div class="col-md-12">
+                            <label class="form-label text-secondary fw-bold" style="font-size:11px;">LICENSE EXPIRY DATE</label>
+                            <input type="date" name="license_expire_date" class="form-control custom-form-field" min="<?php echo htmlspecialchars($today); ?>" value="<?php echo htmlspecialchars((string) ($formCar['license_expire_date'] ?? '')); ?>" required>
+                            <small class="text-secondary d-block mt-1" style="font-size:11px;">You will receive a reminder during the 10 days before expiry.</small>
                         </div>
                     </div>
 
