@@ -24,56 +24,12 @@ if (is_array($sessionMessage)) {
     }
 }
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['promote_staff'])) {
-    $userId = filter_input(INPUT_POST, 'user_id', FILTER_VALIDATE_INT);
-
-    if ($userId) {
-        try {
-            $staffStmt = $pdo->prepare(
-                "SELECT u.user_id, bas.station_id
-                 FROM users u
-                 LEFT JOIN business_account_scope bas ON bas.user_id = u.user_id
-                 WHERE u.user_id = ?
-                   AND COALESCE(u.business_role_id, u.role_id) = 5
-                   AND bas.headquarter_id = ?
-                 LIMIT 1"
-            );
-            $staffStmt->execute([$userId, $hqId]);
-            $staff = $staffStmt->fetch(PDO::FETCH_ASSOC);
-
-            if (!$staff) {
-                $statusMessage = 'That staff account is not under your HQ.';
-            } else {
-                $pdo->beginTransaction();
-                $userUpdate = $pdo->prepare('UPDATE users SET business_role_id = 4, updated_at = NOW() WHERE user_id = ? AND COALESCE(business_role_id, role_id) = 5');
-                $userUpdate->execute([$userId]);
-
-                $scopeUpdate = $pdo->prepare(
-                    "UPDATE business_account_scope
-                     SET business_role_id = 4, status = 'active'
-                     WHERE user_id = ? AND headquarter_id = ?"
-                );
-                $scopeUpdate->execute([$userId, $hqId]);
-                $pdo->commit();
-                $statusMessage = 'Staff account promoted to Branch Manager successfully.';
-            }
-        } catch (PDOException $e) {
-            if ($pdo->inTransaction()) {
-                $pdo->rollBack();
-            }
-            $dbError = $e->getMessage();
-        }
-    } else {
-        $statusMessage = 'Invalid staff promotion request.';
-    }
-}
-
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['toggle_manager_status'])) {
     $userId = filter_input(INPUT_POST, 'user_id', FILTER_VALIDATE_INT);
     $newStatus = filter_input(INPUT_POST, 'new_status', FILTER_SANITIZE_STRING);
     $accountRole = filter_input(INPUT_POST, 'account_role', FILTER_VALIDATE_INT);
 
-    if ($userId && in_array($accountRole, [4, 5], true) && in_array($newStatus, ['active', 'disabled'], true)) {
+    if ($userId && $accountRole === 4 && in_array($newStatus, ['active', 'disabled'], true)) {
         try {
             if (!map_pump_manager_in_hq($pdo, (int)$userId, $hqId)) {
                 $statusMessage = 'That manager is not under your HQ.';
@@ -107,12 +63,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['toggle_manager_status
 }
 
 try {
-    $sql = "SELECT u.user_id, u.user_name, u.email, u.status, COALESCE(u.business_role_id, u.role_id) AS account_role, s.station_id, s.station_name, s.location
+    $sql = "SELECT u.user_id, u.user_name, u.email, u.status, 4 AS account_role, s.station_id, s.station_name, s.location
             FROM users u
             LEFT JOIN business_account_scope bas ON bas.user_id = u.user_id
             LEFT JOIN station_business_scope sbs ON sbs.branch_manager_user_id = u.user_id AND sbs.headquarter_id = :hq_id_scope
             LEFT JOIN stations s ON s.station_id = COALESCE(bas.station_id, sbs.station_id)
-              WHERE COALESCE(u.business_role_id, u.role_id) IN (4, 5)
+              WHERE COALESCE(u.business_role_id, u.role_id) = 4
               AND (
                   bas.headquarter_id = :hq_id
                   OR (
@@ -155,8 +111,8 @@ try {
 </head>
 <body>
     <div class="container">
-        <h2 class="title">Manage Manager &amp; Staff Accounts</h2>
-        <p class="subtitle">Invite customer accounts into your HQ and control on-site personnel access.</p>
+        <h2 class="title">Manage Branch Managers</h2>
+        <p class="subtitle">Invite and control branch managers assigned to this HQ. Staff are managed by their branch manager.</p>
 
         <?php
 if (!empty($dbError)): ?>
@@ -177,14 +133,11 @@ endif; ?>
         <div class="card">
             <div style="display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap;">
                 <h3 style="margin: 0;">Manager &amp; Staff Roster</h3>
-                <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#inviteAccountModal">+ Add Manager or Staff</button>
+                <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#inviteAccountModal">+ Add Branch Manager</button>
             </div>
             <ul class="nav nav-tabs mt-3" id="accountRoleTabs" role="tablist">
                 <li class="nav-item" role="presentation">
                     <button class="nav-link active" type="button" role="tab" data-account-role-tab="4" aria-selected="true">Branch Managers</button>
-                </li>
-                <li class="nav-item" role="presentation">
-                    <button class="nav-link" type="button" role="tab" data-account-role-tab="5" aria-selected="false">Staff</button>
                 </li>
             </ul>
             <table style="width: 100%; border-collapse: collapse; margin-top: 10px;">
@@ -217,13 +170,6 @@ $status = strtolower((string)($manager['status'] ?? ''));
                                 <td style="padding: 12px 8px;"><?= htmlspecialchars($stationText) ?></td>
                                 <td style="padding: 12px 8px;"><span style="color: <?= htmlspecialchars($statusColor) ?>; font-weight: bold;"><?= htmlspecialchars($statusLabel) ?></span></td>
                                 <td style="padding: 12px 8px; text-align: right;">
-                                    <?php if ((int)($manager['account_role'] ?? 4) === 5): ?>
-                                        <form method="POST" action="" style="display: inline; margin-right: 6px;">
-                                            <input type="hidden" name="promote_staff" value="1">
-                                            <input type="hidden" name="user_id" value="<?= (int)($manager['user_id'] ?? 0) ?>">
-                                            <button type="submit" class="btn btn-primary" style="padding: 6px 12px; font-size: 0.8rem;">Promote</button>
-                                        </form>
-                                    <?php endif; ?>
                                     <form method="POST" action="" style="display: inline;" class="manager-status-form">
                                         <input type="hidden" name="toggle_manager_status" value="1">
                                         <input type="hidden" name="user_id" value="<?= (int)($manager['user_id'] ?? 0) ?>">
@@ -240,7 +186,7 @@ endforeach; ?>
                     <?php
 else: ?>
                         <tr data-account-empty="true">
-                            <td colspan="5" style="padding: 16px 8px; text-align: center; color: var(--muted);">No manager or staff accounts found.</td>
+                            <td colspan="5" style="padding: 16px 8px; text-align: center; color: var(--muted);">No branch manager accounts found.</td>
                         </tr>
                     <?php
 endif; ?>
@@ -253,7 +199,7 @@ endif; ?>
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content" style="background: var(--bg, #111827); color: var(--slate-50, #f8fafc); border: 1px solid rgba(255,255,255,0.08); border-radius: 18px;">
                 <form method="POST" action="./invite_account.php" id="inviteAccountForm">
-                    <div class="modal-header border-0"><h5 class="modal-title" id="inviteAccountModalLabel">Add Manager or Staff</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button></div>
+                    <div class="modal-header border-0"><h5 class="modal-title" id="inviteAccountModalLabel">Add Branch Manager</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button></div>
                     <div class="modal-body">
                         <p class="small text-white-50">The email must belong to an existing customer account. That customer must Accept or Decline the invitation before continuing.</p>
                         <label class="form-label" for="inviteEmail">Customer email</label>

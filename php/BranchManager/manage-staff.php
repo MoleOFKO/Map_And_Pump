@@ -55,14 +55,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $pdo->beginTransaction();
             $userStmt = $pdo->prepare(
               "INSERT INTO users (user_name, email, hashed_password, role_id, business_role_id, current_role_id, headquarter_id, branch_id, status)
-               SELECT :name, :email, :password, :role_id, :role_id, :customer_role, u.headquarter_id, u.branch_id, 'active'
-               FROM users u WHERE u.user_id = :manager_id"
+               SELECT :name, :email, :password, :role_id, :role_id, :customer_role, u.headquarter_id, :branch_id, 'active'
+               FROM users u
+               INNER JOIN branches b ON b.manager_user_id = u.user_id AND b.branch_id = :manager_branch_id
+               WHERE u.user_id = :manager_id"
             );
             $customerRoleId = (int) $pdo->query("SELECT role_id FROM roles WHERE LOWER(role_name) = 'customer' LIMIT 1")->fetchColumn();
             $userStmt->execute([
               ':name' => $full_name, ':email' => $email,
               ':password' => password_hash(bin2hex(random_bytes(16)), PASSWORD_DEFAULT),
               ':role_id' => $staffRoleId, ':customer_role' => $customerRoleId,
+              ':branch_id' => $bid,
+              ':manager_branch_id' => $bid,
               ':manager_id' => $user['user_id'],
             ]);
             $staffUserId = (int) $pdo->lastInsertId();

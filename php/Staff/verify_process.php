@@ -9,6 +9,11 @@ require_once __DIR__ . '/../business_scope.php';
 require_once __DIR__ . '/../booking_rules.php';
 require_once __DIR__ . '/../activity_log.php';
 
+$staffCanAccessBranch = static function (int $staffUserId, int $branchId) use ($pdo): bool {
+    return function_exists('map_pump_staff_can_access_branch')
+        && (bool) call_user_func('map_pump_staff_can_access_branch', $pdo, $staffUserId, $branchId);
+};
+
 $bookingCode = '';
 $ajax = false;
 
@@ -46,7 +51,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (!$row) {
             if (map_pump_usage_history_schema_ready($pdo)) {
                 $historyRow = find_usage_history_by_booking_id($pdo, $bookingId);
-                if ($historyRow) {
+                if ($historyRow && $staffCanAccessBranch((int) $_SESSION['user_id'], (int) $historyRow['station_id'])) {
                     respond([
                         'success' => false,
                         'message' => 'This booking was already filled and saved in usage history.',
@@ -57,19 +62,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             respond(['success' => false, 'message' => 'Booking not found.'], $ajax, 404, 'verify_detail.php?booking_id=' . urlencode((string)$bookingId));
         }
 
-        $staffScopeStmt = $pdo->prepare(
-            "SELECT 1
-             FROM users u
-             LEFT JOIN business_account_scope bas ON bas.user_id = u.user_id
-             WHERE u.user_id = :staff_user_id
-               AND COALESCE(u.branch_id, bas.station_id) = :station_id
-             LIMIT 1"
-        );
-        $staffScopeStmt->execute([
-            ':staff_user_id' => (int)($_SESSION['user_id'] ?? 0),
-            ':station_id' => (int)$row['station_id'],
-        ]);
-        if (!$staffScopeStmt->fetchColumn()) {
+            if (!$staffCanAccessBranch((int) $_SESSION['user_id'], (int) $row['station_id'])) {
             respond(['success' => false, 'message' => 'This booking belongs to another station.'], $ajax, 403, 'verify_qr.php');
         }
 
@@ -370,7 +363,7 @@ try {
     if (!$row) {
         if (map_pump_usage_history_schema_ready($pdo)) {
             $historyRow = find_usage_history_by_code($pdo, $bookingCode, $normalized);
-            if ($historyRow) {
+            if ($historyRow && $staffCanAccessBranch((int) $_SESSION['user_id'], (int) $historyRow['station_id'])) {
                 respond([
                     'success' => false,
                     'message' => 'This QR code was already filled and saved in usage history.',
@@ -381,19 +374,7 @@ try {
         respond(['success' => false, 'message' => 'Booking code not found in the database.'], $ajax, 404);
     }
 
-    $staffScopeStmt = $pdo->prepare(
-        "SELECT 1
-         FROM users u
-         LEFT JOIN business_account_scope bas ON bas.user_id = u.user_id
-         WHERE u.user_id = :staff_user_id
-           AND COALESCE(u.branch_id, bas.station_id) = :station_id
-         LIMIT 1"
-    );
-    $staffScopeStmt->execute([
-        ':staff_user_id' => (int)($_SESSION['user_id'] ?? 0),
-        ':station_id' => (int)$row['station_id'],
-    ]);
-    if (!$staffScopeStmt->fetchColumn()) {
+        if (!$staffCanAccessBranch((int) $_SESSION['user_id'], (int) $row['station_id'])) {
         respond([
             'success' => false,
             'message' => 'This booking belongs to another station.',
