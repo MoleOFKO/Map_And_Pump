@@ -323,7 +323,7 @@ $accountRole = trim((string) ($user['role_name'] ?? 'Staff')) ?: 'Staff';
                         <div class="dashboard-card p-4 d-flex flex-column justify-content-between h-100">
                             <div>
                                 <h3 class="fw-bold mb-2 text-white"><i class="bi bi-arrow-left-right me-2 txt-neon-blue"></i>Account Profile Mode</h3>
-                                <p class="text-white-50 small mb-4">Switching profiles logs this session out first. Your email will be ready on the login page; enter only your password to continue.</p>
+                                <p class="text-white-50 small mb-4">Switching profiles keeps this signed-in session active and opens the Customer profile for the same account.</p>
                             </div>
                             <form action="../account_switch.php" method="POST">
                                 <input type="hidden" name="mode" value="customer">
