@@ -1,18 +1,5 @@
 <?php
 require_once __DIR__ . '/hq_guard.php';
-// $hostname = "mysql-19032a73-bhonen94-b057.a.aivencloud.com";
-// $port = 27909;
-// $username = "avnadmin";
-// $password = "AVNS_D_5WaEsuc_hdxjtXj1J";
-// $database = "map_and_pump"; // Change this to your database name if different
-
-// // Create connection
-// $conn = new mysqli($hostname, $username, $password, $database, $port);
-// // include ('../conn.php');
-// // Check connection
-// if ($conn->connect_error) {
-//     $db_error = "Database connection failed.";
-// }
 require_once __DIR__ . '/../conn.php';
 require_once __DIR__ . '/../business_scope.php';
 $hqId = map_pump_current_hq_id($pdo);

@@ -17,7 +17,7 @@ $hqId = map_pump_current_hq_id($pdo);
 $roleId = $role === 'manager' ? 4 : ($role === 'staff' ? 5 : 0);
 
 if ($hqId <= 0 || !filter_var($email, FILTER_VALIDATE_EMAIL) || $roleId <= 0 || !$stationId) {
-    $_SESSION['hq_account_message'] = ['type' => 'danger', 'text' => 'Please provide a valid email, role, and station.'];
+    $_SESSION['hq_account_message'] = ['type' => 'danger', 'text' => 'Please provide a valid email, role, and branch.'];
     header('Location: account.php');
     exit;
 }

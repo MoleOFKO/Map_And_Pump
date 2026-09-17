@@ -183,6 +183,21 @@ if (is_array($previousPending)
     register_json(false, 'Please wait one minute before requesting another verification code.');
 }
 
+$registrationRate = $_SESSION['registration_rate'] ?? ['window_started_at' => time(), 'attempts' => 0];
+$windowStartedAt = (int) ($registrationRate['window_started_at'] ?? 0);
+$attempts = (int) ($registrationRate['attempts'] ?? 0);
+if ($windowStartedAt < time() - 3600) {
+    $windowStartedAt = time();
+    $attempts = 0;
+}
+if ($attempts >= 5) {
+    register_json(false, 'Too many registration attempts. Please try again later.');
+}
+$_SESSION['registration_rate'] = [
+    'window_started_at' => $windowStartedAt,
+    'attempts' => $attempts + 1,
+];
+
 try {
     $stmt = $pdo->prepare('SELECT user_id, status FROM users WHERE LOWER(email) = LOWER(?) LIMIT 1');
     $stmt->execute([$email]);

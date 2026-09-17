@@ -2,6 +2,12 @@
 session_start();
 require_once __DIR__ . '/../Customer/car_access.php';
 require __DIR__ . '/../conn.php';
+require_once __DIR__ . '/../business_scope.php';
+
+$staffCanAccessBranch = static function (int $staffUserId, int $branchId) use ($pdo): bool {
+    return function_exists('map_pump_staff_can_access_branch')
+        && (bool) call_user_func('map_pump_staff_can_access_branch', $pdo, $staffUserId, $branchId);
+};
 
 function redirect_to_login(string $message = 'Please sign in to continue.')
 {
@@ -23,7 +29,7 @@ unset($_SESSION['verify_flash']);
 
 $bookingId = isset($_GET['booking_id']) ? (int)$_GET['booking_id'] : 0;
 $booking = null;
-$weeklyLimitLiters = CUSTOMER_WEEKLY_FUEL_LIMIT_LITERS;
+$weeklyLimitLiters = MAP_PUMP_FUEL_QUOTA_LITERS;
 $weeklyFilledLiters = 0.0;
 $fillableLiters = $weeklyLimitLiters;
 if ($bookingId > 0) {
@@ -42,6 +48,10 @@ if ($bookingId > 0) {
     );
     $stmt->execute([':booking_id' => $bookingId]);
     $booking = $stmt->fetch(PDO::FETCH_ASSOC);
+    if ($booking && !$staffCanAccessBranch((int) $_SESSION['user_id'], (int) $booking['station_id'])) {
+        $booking = null;
+        $errorMessage = 'This booking belongs to another branch.';
+    }
 }
 
 if (!$booking) {
