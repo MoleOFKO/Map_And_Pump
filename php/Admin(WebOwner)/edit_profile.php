@@ -27,6 +27,10 @@ $statusClass = static function (?string $status): string {
     };
 };
 $avatarUrl = trim((string) ($user['oauth_avatar_url'] ?? ''));
+$joinedAt = $user['created_at'] ?? null;
+$lastLoginAt = $user['last_login_at'] ?? null;
+$isFirstRecordedLogin = $joinedAt && $lastLoginAt
+    && strtotime((string) $joinedAt) === strtotime((string) $lastLoginAt);
 $avatarInitial = map_pump_profile_initial((string) ($user['user_name'] ?? ''), 'A');
 $avatarFallbackUrl = map_pump_profile_initial_svg((string) ($user['user_name'] ?? ''), 'A');
 ?>
@@ -91,11 +95,11 @@ $avatarFallbackUrl = map_pump_profile_initial_svg((string) ($user['user_name'] ?
                         </div>
                         <div class="d-flex align-items-center justify-content-between py-2 border-bottom border-white border-opacity-10">
                             <span class="text-white-50 small">Joined Since</span>
-                            <span class="text-white small font-monospace"><?= hq_escape(admin_date((string) $user['created_at'])) ?></span>
+                            <span class="text-white small font-monospace"><?= hq_escape(admin_date((string) $joinedAt)) ?></span>
                         </div>
                         <div class="d-flex align-items-center justify-content-between py-2">
                             <span class="text-white-50 small">Last Login</span>
-                            <span class="text-white small font-monospace"><?= hq_escape(admin_date($user['last_login_at'] ?? null)) ?></span>
+                            <span class="text-white small font-monospace"><?= hq_escape(admin_date($lastLoginAt)) ?><?= $isFirstRecordedLogin ? ' <span class="text-white-50">(first recorded sign-in)</span>' : '' ?></span>
                         </div>
                     </div>
                 </div>

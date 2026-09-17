@@ -242,8 +242,6 @@ if ($action === 'update_profile') {
     $userName = moderator_clean_user_name((string) ($_POST['user_name'] ?? ''));
     $email = strtolower(trim((string) ($_POST['email'] ?? '')));
     $roleId = (int) ($_POST['role_id'] ?? 0);
-    $password = (string) ($_POST['password'] ?? '');
-    $confirmPassword = (string) ($_POST['confirm_password'] ?? '');
 
     $validationError = moderator_validate_profile($userName, $email, $roleId);
     if ($validationError !== null) {
@@ -255,29 +253,13 @@ if ($action === 'update_profile') {
         moderator_redirect();
     }
 
-    if ($password !== '' || $confirmPassword !== '') {
-        if (strlen($password) < 8 || strlen($password) > 255) {
-            moderator_flash('danger', 'A replacement password must contain between 8 and 255 characters.');
-            moderator_redirect();
-        }
-        if (!hash_equals($password, $confirmPassword)) {
-            moderator_flash('danger', 'The replacement password and confirmation password do not match.');
-            moderator_redirect();
-        }
-        $passwordHash = password_hash($password, PASSWORD_DEFAULT);
-        $statement = $conn->prepare(
-            'UPDATE users SET user_name = ?, email = ?, role_id = ?, current_role_id = ?, hashed_password = ?, updated_at = NOW() WHERE user_id = ? AND headquarter_id IS NULL'
-        );
-        if ($statement) {
-            $statement->bind_param('ssiisi', $userName, $email, $roleId, $roleId, $passwordHash, $userId);
-        }
-    } else {
-        $statement = $conn->prepare(
-            'UPDATE users SET user_name = ?, email = ?, role_id = ?, current_role_id = ?, updated_at = NOW() WHERE user_id = ? AND headquarter_id IS NULL'
-        );
-        if ($statement) {
-            $statement->bind_param('ssiii', $userName, $email, $roleId, $roleId, $userId);
-        }
+    // Administrators may manage moderator identity, role, and status, but
+    // must never change another account's password through this workflow.
+    $statement = $conn->prepare(
+        'UPDATE users SET user_name = ?, email = ?, role_id = ?, current_role_id = ?, updated_at = NOW() WHERE user_id = ? AND headquarter_id IS NULL'
+    );
+    if ($statement) {
+        $statement->bind_param('ssiii', $userName, $email, $roleId, $roleId, $userId);
     }
 
     if (!$statement || !$statement->execute()) {
