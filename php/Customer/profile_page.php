@@ -308,7 +308,7 @@ include 'share_header.php';
                         </div>
                         <div>
                             <h3 class="text-white mb-1">Account Profile Mode</h3>
-                            <p class="text-secondary mb-0" style="font-size:13px;">Switching profiles logs this session out first. Your email will be ready on the login page.</p>
+                            <p class="text-secondary mb-0" style="font-size:13px;">Switching profiles keeps this signed-in session active and opens your linked business profile.</p>
                         </div>
                     </div>
                 </div>
