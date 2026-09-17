@@ -5,6 +5,47 @@
 (function () {
     'use strict';
 
+    /* ---------- School-project consent gate (home page only) ---------- */
+    var projectConsent = document.getElementById('project-consent');
+    if (projectConsent) {
+        var consentKey = 'map_pump_school_project_terms_v1';
+        var consentCheckbox = document.getElementById('project-consent-checkbox');
+        var acceptConsent = document.getElementById('project-consent-accept');
+        var leaveConsent = document.getElementById('project-consent-leave');
+
+        try {
+            if (window.localStorage.getItem(consentKey) === 'accepted') {
+                projectConsent.remove();
+            } else {
+                projectConsent.hidden = false;
+                document.body.classList.add('project-consent-open');
+                consentCheckbox.focus();
+            }
+        } catch (error) {
+            projectConsent.hidden = false;
+            document.body.classList.add('project-consent-open');
+        }
+
+        if (consentCheckbox && acceptConsent) {
+            consentCheckbox.addEventListener('change', function () {
+                acceptConsent.disabled = !consentCheckbox.checked;
+            });
+
+            acceptConsent.addEventListener('click', function () {
+                if (!consentCheckbox.checked) return;
+                try { window.localStorage.setItem(consentKey, 'accepted'); } catch (error) {}
+                projectConsent.remove();
+                document.body.classList.remove('project-consent-open');
+            });
+        }
+
+        if (leaveConsent) {
+            leaveConsent.addEventListener('click', function () {
+                window.location.replace('about:blank');
+            });
+        }
+    }
+
     var reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
     /* ---------- Cursor spotlight ---------- */
