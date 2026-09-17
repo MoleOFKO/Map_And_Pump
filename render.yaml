@@ -21,8 +21,6 @@ services:
         sync: false
       - key: DB_PASSWORD
         sync: false
-      - key: MAIL_LOCAL_FALLBACK
-        value: false
       - key: MAIL_PROVIDER
         value: resend
       - key: MAIL_FROM_NAME
