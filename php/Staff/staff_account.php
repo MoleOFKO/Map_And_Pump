@@ -291,8 +291,12 @@ $accountRole = trim((string) ($user['role_name'] ?? 'Staff')) ?: 'Staff';
                                     <?php endif; ?>
                                 </div>
 
-                                <!-- Change Profile Logo Button Under Logo -->
-                                <button type="button" class="btn btn-sm btn-outline-info rounded-pill px-3 py-1 mb-3 text-nowrap" style="font-size: 0.78rem;" data-bs-toggle="modal" data-bs-target="#uploadAvatarModal">
+                                <form id="avatarUploadForm" action="staff_account.php" method="POST" enctype="multipart/form-data" class="d-none">
+                                    <input type="hidden" name="action" value="update_avatar">
+                                    <input type="file" id="profileLogoInput" name="profile_logo" accept="image/jpeg,image/png,image/webp">
+                                </form>
+
+                                <button type="button" id="changeProfilePictureButton" class="btn btn-sm btn-outline-info rounded-pill px-3 py-1 mb-3 text-nowrap" style="font-size: 0.78rem;">
                                     <i class="bi bi-camera me-1"></i> Change Profile Picture
                                 </button>
 
@@ -323,7 +327,7 @@ $accountRole = trim((string) ($user['role_name'] ?? 'Staff')) ?: 'Staff';
                         <div class="dashboard-card p-4 d-flex flex-column justify-content-between h-100">
                             <div>
                                 <h3 class="fw-bold mb-2 text-white"><i class="bi bi-arrow-left-right me-2 txt-neon-blue"></i>Account Profile Mode</h3>
-                                <p class="text-white-50 small mb-4">Switching profiles keeps this signed-in session active and opens the Customer profile for the same account.</p>
+                                <p class="text-white-50 small mb-4">Switching profiles logs this session out first. Your email will be ready on the login page; enter only your password to continue.</p>
                             </div>
                             <form action="../account_switch.php" method="POST">
                                 <input type="hidden" name="mode" value="customer">
@@ -355,40 +359,6 @@ $accountRole = trim((string) ($user['role_name'] ?? 'Staff')) ?: 'Staff';
                     </a>
                 </div>
 
-            </div>
-        </div>
-    </div>
-
-    <!-- CHANGE PROFILE LOGO MODAL -->
-    <div class="modal fade staff-security-modal" id="uploadAvatarModal" tabindex="-1" aria-labelledby="uploadAvatarModalLabel" aria-hidden="true">
-        <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content">
-                <form action="staff_account.php" method="POST" enctype="multipart/form-data">
-                    <input type="hidden" name="action" value="update_avatar">
-                    <div class="modal-header px-4 pt-4">
-                        <div class="d-flex align-items-center gap-3">
-                            <span class="staff-security-icon"><i class="bi bi-camera"></i></span>
-                            <div>
-                                <h5 class="modal-title fw-bold text-white mb-0" id="uploadAvatarModalLabel">Change Profile Picture</h5>
-                                <p class="text-white-50 small mb-0">Upload a custom image to display on your profile.</p>
-                            </div>
-                        </div>
-                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
-                    </div>
-                    <div class="modal-body px-4">
-                        <div class="mb-3">
-                            <label for="profileLogoInput" class="form-label text-white-50 small">Select Image File</label>
-                            <input class="form-control glass-input text-white" type="file" id="profileLogoInput" name="profile_logo" accept="image/jpeg,image/png,image/webp" required>
-                            <div class="form-text text-white-50 small">Supports JPG, PNG, or WEBP (Max size: 2MB).</div>
-                        </div>
-                    </div>
-                    <div class="modal-footer px-4 pb-4">
-                        <button type="button" class="btn btn-outline-light rounded-pill px-4" data-bs-dismiss="modal">Cancel</button>
-                        <button type="submit" class="btn btn-info rounded-pill px-4 fw-bold">
-                            <i class="bi bi-upload me-2"></i>Upload Image
-                        </button>
-                    </div>
-                </form>
             </div>
         </div>
     </div>
@@ -541,6 +511,17 @@ $accountRole = trim((string) ($user['role_name'] ?? 'Staff')) ?: 'Staff';
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script src="/js/Admin.js"></script>
     <script>
+        const avatarUploadForm = document.getElementById('avatarUploadForm');
+        const changeProfilePictureButton = document.getElementById('changeProfilePictureButton');
+        const profileLogoInput = document.getElementById('profileLogoInput');
+
+        changeProfilePictureButton.addEventListener('click', () => profileLogoInput.click());
+        profileLogoInput.addEventListener('change', () => {
+            if (profileLogoInput.files.length > 0) {
+                avatarUploadForm.submit();
+            }
+        });
+
         document.addEventListener('pointermove', (event) => {
             document.body.style.setProperty('--bg-x', `${(event.clientX / window.innerWidth) * 100}%`);
             document.body.style.setProperty('--bg-y', `${(event.clientY / window.innerHeight) * 100}%`);
