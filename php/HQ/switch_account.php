@@ -20,7 +20,7 @@ if (empty($_SESSION['is_logged_in']) || empty($_SESSION['user_id'])) {
 <body>
     <div class="card" style="max-width: 500px; text-align: center; margin: 40px auto 0 auto;">
         <h3>Switch to Customer Profile</h3>
-        <p class="subtitle" style="margin-top: 8px;">This logs out the current session first. Your email will be ready on the login page; enter only your password to continue.</p>
+        <p class="subtitle" style="margin-top: 8px;">This keeps your current signed-in session active and opens the Customer profile for the same account.</p>
         <form action="../account_switch.php" method="POST" target="_top">
             <input type="hidden" name="mode" value="customer">
             <button type="submit" class="btn">Switch Profile</button>
