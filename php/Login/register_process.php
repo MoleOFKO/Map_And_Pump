@@ -95,6 +95,20 @@ function customer_role_id(PDO $pdo): int
 function register_mail_setup_message(Throwable $error): string
 {
     $message = strtolower($error->getMessage());
+    $provider = strtolower(mail_config_value('MAIL_PROVIDER', 'smtp'));
+
+    if ($provider === 'resend') {
+        if (trim(mail_config_value('RESEND_API_KEY')) === '' || trim(mail_config_value('RESEND_FROM_EMAIL')) === '') {
+            return 'Resend is not configured on Render yet. Set RESEND_API_KEY and RESEND_FROM_EMAIL, then redeploy.';
+        }
+
+        if (str_contains($message, 'sender') || str_contains($message, 'from') || str_contains($message, 'domain')) {
+            return 'Resend rejected the sender address. Verify your domain in Resend and set RESEND_FROM_EMAIL to an address from that verified domain.';
+        }
+
+        return 'Could not send the verification email through Resend. Check RESEND_API_KEY, RESEND_FROM_EMAIL, and the Resend dashboard, then redeploy.';
+    }
+
     $username = mail_config_value('SMTP_USERNAME');
     $password = mail_config_value('SMTP_PASSWORD');
 

@@ -157,7 +157,73 @@ function smtp_send_mail_via_phpmailer(string $to, string $subject, string $htmlB
 
 function smtp_send_mail(string $to, string $subject, string $htmlBody, string $textBody = ''): void
 {
+    if (strtolower(mail_config_value('MAIL_PROVIDER', 'smtp')) === 'resend') {
+        resend_send_mail($to, $subject, $htmlBody, $textBody);
+        return;
+    }
+
     smtp_send_mail_via_phpmailer($to, $subject, $htmlBody, $textBody);
+}
+
+function resend_send_mail(string $to, string $subject, string $htmlBody, string $textBody = ''): void
+{
+    $apiKey = mail_config_value('RESEND_API_KEY');
+    $fromEmail = mail_config_value('RESEND_FROM_EMAIL', mail_from_address());
+    $fromName = mail_config_value('RESEND_FROM_NAME', mail_from_name());
+
+    if ($apiKey === '' || $fromEmail === '') {
+        throw new RuntimeException('Resend email is not configured. Set RESEND_API_KEY and RESEND_FROM_EMAIL.');
+    }
+
+    if (!function_exists('curl_init')) {
+        throw new RuntimeException('PHP cURL is required to send email through Resend.');
+    }
+
+    $payload = [
+        'from' => $fromName !== '' ? sprintf('%s <%s>', $fromName, $fromEmail) : $fromEmail,
+        'to' => [$to],
+        'subject' => $subject,
+        'html' => $htmlBody,
+        'text' => $textBody !== '' ? $textBody : mail_text_from_html($htmlBody),
+    ];
+
+    $ch = curl_init('https://api.resend.com/emails');
+    if ($ch === false) {
+        throw new RuntimeException('Could not initialize the Resend request.');
+    }
+
+    curl_setopt_array($ch, [
+        CURLOPT_POST => true,
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_CONNECTTIMEOUT => 10,
+        CURLOPT_TIMEOUT => 30,
+        CURLOPT_HTTPHEADER => [
+            'Authorization: Bearer ' . $apiKey,
+            'Content-Type: application/json',
+            'Accept: application/json',
+        ],
+        CURLOPT_POSTFIELDS => json_encode($payload, JSON_THROW_ON_ERROR),
+    ]);
+
+    $response = curl_exec($ch);
+    $curlError = curl_error($ch);
+    $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+
+    if ($response === false) {
+        throw new RuntimeException('Could not connect to Resend: ' . ($curlError ?: 'unknown cURL error'));
+    }
+
+    if ($httpCode < 200 || $httpCode >= 300) {
+        $details = json_decode((string) $response, true);
+        $message = is_array($details) ? (string) ($details['message'] ?? '') : '';
+        throw new RuntimeException('Resend rejected the email request' . ($message !== '' ? ': ' . $message : ' (HTTP ' . $httpCode . ').'));
+    }
+}
+
+function send_mail(string $to, string $subject, string $htmlBody, string $textBody = ''): void
+{
+    smtp_send_mail($to, $subject, $htmlBody, $textBody);
 }
 
 function send_registration_code(string $email, string $code): void
@@ -173,6 +239,6 @@ function send_registration_code(string $email, string $code): void
         . '<p><strong>Privacy reminder:</strong> only your email address is needed for this verification. This is a school test project; use fictional data for every other field.</p>'
         . '</div>';
 
-    smtp_send_mail($email, 'Your MAP & PUMP school-project verification code', $html, "Your MAP & PUMP school-project verification code is {$code}. It expires in 10 minutes. Do not share it. If you did not request it, ignore this email. Only your email is needed for verification; use fictional data for all other fields.");
+    send_mail($email, 'Your MAP & PUMP school-project verification code', $html, "Your MAP & PUMP school-project verification code is {$code}. It expires in 10 minutes. Do not share it. If you did not request it, ignore this email. Only your email is needed for verification; use fictional data for all other fields.");
 }
 
