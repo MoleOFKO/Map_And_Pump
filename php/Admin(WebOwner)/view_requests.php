@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/request_common.php';
 require_once __DIR__ . '/admin_common.php';
+require_once __DIR__ . '/user_account_common.php';
 
 admin_require_admin();
 
@@ -440,7 +441,7 @@ $flashType = $flash['type'] ?? '';
                     setFooter();
                     detailsModal.show();
                     try {
-                        const response = await fetch('user_details.php?id=' + encodeURIComponent(button.dataset.userId), {headers:{Accept:'application/json'}});
+                        const response = await fetch('user_details.php?id=' + encodeURIComponent(button.dataset.userId) + '&context=request', {headers:{Accept:'application/json'}});
                         const payload = await response.json();
                         if (!response.ok || !payload.success) throw new Error(payload.message || 'Could not load account details.');
                         const u = payload.user || {};

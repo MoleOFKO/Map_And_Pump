@@ -61,8 +61,7 @@ function admin_is_admin(?array $user = null): bool
         return false;
     }
 
-    $role = strtolower(trim((string) ($user['role_name'] ?? '')));
-    if ($role === 'admin') {
+    if (admin_user_has_role($user, ['admin'])) {
         return true;
     }
 
@@ -100,6 +99,22 @@ function admin_require_admin(string $redirect = '../Login/login.php'): array
 }
 
 /**
+ * Check every role slot. A person may retain Customer as their base/current
+ * role while holding a privileged business role.
+ */
+function admin_user_has_role(array $user, array $allowedRoles): bool
+{
+    $allowedRoles = array_map(static fn (string $role): string => strtolower(trim($role)), $allowedRoles);
+    foreach (['role_name', 'primary_role_name', 'business_role_name', 'active_role_name'] as $key) {
+        if (in_array(strtolower(trim((string) ($user[$key] ?? ''))), $allowedRoles, true)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/**
  * Require an active Admin or Moderator account for handlers shared by both
  * portals. Admin-only pages must use admin_require_admin() instead.
  */
@@ -110,9 +125,8 @@ function admin_require_staff(string $redirect = '../Login/login.php'): array
     }
 
     $user = admin_current_user(false);
-    $role = strtolower(trim((string) ($user['role_name'] ?? '')));
     $status = strtolower(trim((string) ($user['status'] ?? '')));
-    if (!$user || !in_array($role, ['admin', 'moderator'], true) || !in_array($status, ['approved', 'active'], true)) {
+    if (!$user || !admin_user_has_role($user, ['admin', 'moderator']) || !in_array($status, ['approved', 'active'], true)) {
         header('Location: ' . $redirect);
         exit;
     }
@@ -131,6 +145,9 @@ SELECT u.user_id, u.user_name, u.email, u.hashed_password, u.role_id, u.business
        u.oauth_avatar_url, u.headquarter_id,
        COALESCE(u.current_role_id, u.business_role_id, u.role_id) AS effective_role_id,
        COALESCE(active_role.role_name, business_role.role_name, primary_role.role_name) AS role_name,
+       primary_role.role_name AS primary_role_name,
+       business_role.role_name AS business_role_name,
+       active_role.role_name AS active_role_name,
        h.company_name AS hq_name
 FROM users u
 LEFT JOIN roles primary_role ON primary_role.role_id = u.role_id
@@ -149,7 +166,7 @@ SQL;
     }
 
     if (!hq_db_available() && $pdo instanceof PDO) {
-        $roleFilter = "LOWER(TRIM(COALESCE(active_role.role_name, business_role.role_name, primary_role.role_name))) IN ('admin', 'moderator')";
+        $roleFilter = "(LOWER(TRIM(primary_role.role_name)) IN ('admin', 'moderator') OR LOWER(TRIM(business_role.role_name)) IN ('admin', 'moderator') OR LOWER(TRIM(active_role.role_name)) IN ('admin', 'moderator'))";
         if ($sessionUserId > 0) {
             $statement = $pdo->prepare($baseSql . " WHERE u.user_id = ? AND {$roleFilter} LIMIT 1");
             $statement->execute([$sessionUserId]);
@@ -172,7 +189,7 @@ SQL;
     }
 
     if ($sessionUserId > 0) {
-        $statement = $conn->prepare($baseSql . " WHERE u.user_id = ? AND LOWER(TRIM(COALESCE(active_role.role_name, business_role.role_name, primary_role.role_name))) IN ('admin', 'moderator') LIMIT 1");
+        $statement = $conn->prepare($baseSql . " WHERE u.user_id = ? AND (LOWER(TRIM(primary_role.role_name)) IN ('admin', 'moderator') OR LOWER(TRIM(business_role.role_name)) IN ('admin', 'moderator') OR LOWER(TRIM(active_role.role_name)) IN ('admin', 'moderator')) LIMIT 1");
         if ($statement) {
             $statement->bind_param('i', $sessionUserId);
             $statement->execute();
@@ -190,7 +207,7 @@ SQL;
 
     $result = $conn->query(
         $baseSql . " WHERE u.headquarter_id IS NULL
-         AND LOWER(TRIM(COALESCE(active_role.role_name, business_role.role_name, primary_role.role_name))) IN ('admin', 'moderator')
+         AND (LOWER(TRIM(primary_role.role_name)) IN ('admin', 'moderator') OR LOWER(TRIM(business_role.role_name)) IN ('admin', 'moderator') OR LOWER(TRIM(active_role.role_name)) IN ('admin', 'moderator'))
          ORDER BY CASE WHEN LOWER(u.status) IN ('approved', 'active') THEN 0 ELSE 1 END,
                   u.user_id ASC LIMIT 1"
     );
