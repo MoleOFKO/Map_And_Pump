@@ -10,7 +10,7 @@ services:
       - key: APP_ENV
         value: production
       - key: APP_BASE_URL
-        value: https://map-and-pump.online
+        value: https://map-and-pump.site
       - key: DB_HOST
         value: gateway01.ap-southeast-1.prod.aws.tidbcloud.com
       - key: DB_PORT
@@ -28,7 +28,7 @@ services:
       - key: RESEND_FROM_NAME
         value: "Map&Pump"
       - key: RESEND_FROM_EMAIL
-        value: noreply@map-and-pump.online
+        value: noreply@map-and-pump.site
       - key: RESEND_API_KEY
         sync: false
       - key: SMTP_HOST
