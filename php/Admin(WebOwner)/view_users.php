@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/admin_common.php';
+require_once __DIR__ . '/user_account_common.php';
 
 admin_require_admin();
 

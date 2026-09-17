@@ -1,11 +1,13 @@
 <?php
 require_once __DIR__ . '/admin_common.php';
+require_once __DIR__ . '/user_account_common.php';
 
 admin_require_staff();
 
 header('Content-Type: application/json; charset=utf-8');
 
 $userId = filter_var($_GET['id'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+$requestContext = strtolower(trim((string) ($_GET['context'] ?? ''))) === 'request';
 if (!$userId) {
     http_response_code(400);
     echo json_encode(['success' => false, 'message' => 'A valid user id is required.']);
@@ -19,6 +21,12 @@ if (!hq_db_available() || !hq_registry_schema_ready()) {
 }
 
 global $conn;
+$scopeCondition = $requestContext
+    ? "AND LOWER(TRIM(u.status)) = 'pending_verification'"
+    : "AND u.role_id = 6
+       AND (u.business_role_id IS NULL OR u.business_role_id = 6)
+       AND (u.current_role_id IS NULL OR u.current_role_id = 6)
+       AND LOWER(TRIM(r.role_name)) = 'customer'";
 $statement = $conn->prepare(
     'SELECT u.user_id, u.user_name, u.email, u.status, u.created_at, u.updated_at, u.last_login_at,
             u.license_id, u.headquarter_id,
@@ -34,11 +42,7 @@ $statement = $conn->prepare(
      LEFT JOIN roles r ON r.role_id = COALESCE(u.current_role_id, u.business_role_id, u.role_id)
      LEFT JOIN headquarter h ON h.headquarter_id = u.headquarter_id
      LEFT JOIN user_license l ON l.license_id = u.license_id
-     WHERE u.user_id = ?
-       AND u.role_id = 6
-       AND (u.business_role_id IS NULL OR u.business_role_id = 6)
-       AND (u.current_role_id IS NULL OR u.current_role_id = 6)
-       AND LOWER(TRIM(r.role_name)) = 'customer'
+     WHERE u.user_id = ? ' . $scopeCondition . '
      LIMIT 1'
 );
 

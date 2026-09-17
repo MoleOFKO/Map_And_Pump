@@ -286,7 +286,7 @@ document.addEventListener('DOMContentLoaded', () => {
         setFooter('');
         details.show();
         try {
-            const res = await fetch('user_details(M).php?id=' + encodeURIComponent(button.dataset.userId));
+            const res = await fetch('user_details(M).php?id=' + encodeURIComponent(button.dataset.userId) + '&context=request');
             const p = await res.json();
             if (!res.ok || !p.success) throw Error(p.message || 'Unable to load account details.');
             const u = p.user || {};
