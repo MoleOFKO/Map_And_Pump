@@ -12,39 +12,36 @@ require __DIR__ . '/partials/nav.php';
         <header class="legal-hero">
             <span class="eyebrow">Terms of service</span>
             <h1>Clear rules for<br><span class="text-gradient-accent">using MAP &amp; PUMP.</span></h1>
-            <p>These terms explain the agreement between you and MAP &amp; PUMP when you use our website and services.</p>
-            <p class="legal-updated"><i class="fa-regular fa-calendar me-2"></i>Last updated: August 20, 2026</p>
+            <p>These terms set the rules for using MAP &amp; PUMP as a school demonstration project.</p>
+            <p class="legal-updated"><i class="fa-regular fa-calendar me-2"></i>Last updated: September 17, 2026</p>
         </header>
 
         <article class="legal-content">
             <section>
                 <h2>1. Acceptance of these terms</h2>
-                <p>By accessing or using MAP &amp; PUMP (the website, apps, dashboards, and related services), you agree to these Terms of Service. If you do not agree, do not use the service. If you use MAP &amp; PUMP on behalf of a company or other organisation, you confirm that you have authority to bind that organisation to these terms.</p>
+                <p>By selecting “I understand and continue” or by using MAP &amp; PUMP, you agree to these Terms of Service. If you do not agree, do not use the site.</p>
             </section>
 
             <section>
-                <h2>2. What MAP &amp; PUMP provides</h2>
-                <p>MAP &amp; PUMP is an availability and information layer for fuel retail. Companies and station operators can list stations, show fuel stock or availability status, manage related operational tools, and reach drivers. Drivers and other users can view station and availability information, make bookings where offered, and use related account features.</p>
-                <p>Availability, prices, and station status are provided by operators or other sources and may change without notice. MAP &amp; PUMP does not guarantee that any station has fuel, is open, or will fulfil a booking exactly as shown.</p>
+                <h2>2. School project and test data only</h2>
+                <p>MAP &amp; PUMP is a non-production school project built for learning, demonstration, and testing. It is not a live fuel service, payment service, emergency service, or commercial platform. Features, records, maps, prices, bookings, and availability information may be fictional, incomplete, incorrect, or removed at any time.</p>
+                <p>Do not rely on this site for real-world fuel availability, bookings, travel decisions, payments, or business operations.</p>
             </section>
 
             <section>
-                <h2>3. Accounts and eligibility</h2>
-                <p>You must provide accurate registration information and keep it up to date. You are responsible for activity under your account and for keeping your login credentials secure. Notify us promptly if you believe your account has been accessed without permission.</p>
-                <p>Company, branch, staff, and similar accounts may be subject to additional verification. We may suspend or refuse accounts that appear incomplete, inaccurate, or used in a way that harms the service or other users.</p>
-                <p>Where MAP &amp; PUMP requires company, station, vehicle, or driver license information, you must provide current and lawful license details. You are responsible for renewing expired licenses and updating the service when a license number, document, owner, vehicle, company, or station permit changes. We may review, reject, suspend, or remove access when license details are missing, expired, invalid, misleading, or cannot be verified.</p>
+                <h2>3. No real personal or sensitive information</h2>
+                <p>You must use invented test data only. Do not submit real names, email addresses, phone numbers, addresses, vehicle or licence numbers, company information, passwords, identity documents, payment details, receipts, photographs, or any other personal or sensitive information belonging to you or anyone else.</p>
+                <p>If real data is submitted accidentally, contact the project team promptly so it can be removed. We may delete any submitted content or account without notice to protect privacy or maintain the test environment.</p>
             </section>
 
             <section>
                 <h2>4. Acceptable use</h2>
-                <p>You agree not to misuse MAP &amp; PUMP. That includes, among other things: attempting to disrupt or gain unauthorised access to systems or data; scraping or harvesting data in ways that harm the service or violate applicable law; posting false station, stock, price, or booking information; using the platform to harass others; or using the service for any unlawful purpose.</p>
-                <p>Operators must keep station and availability information as accurate and current as reasonably practical. Drivers and other users must honour bookings they make and follow any station rules that apply when they visit.</p>
+                <p>You agree not to misuse MAP &amp; PUMP. This includes attempting unauthorised access, disrupting the site, uploading harmful content, scraping or harvesting data, impersonating another person or organisation, or using the project for unlawful activity.</p>
             </section>
 
             <section>
-                <h2>5. Bookings and commercial relationships</h2>
-                <p>Where booking or similar features are available, the underlying fuel sale or service is between the driver (or customer) and the station or company. MAP &amp; PUMP facilitates information and, where offered, booking requests; it is not the seller of fuel unless expressly stated otherwise.</p>
-                <p>Paid plans, free tiers, and other commercial terms for companies or operators are as described on the pricing or account pages at the time of signup or upgrade, and may change with reasonable notice where required.</p>
+                <h2>5. No commercial transactions</h2>
+                <p>No information on this project creates a sale, booking, contract, payment obligation, partnership, or other commercial relationship. Do not send money or use real payment details through this site.</p>
             </section>
 
             <section>

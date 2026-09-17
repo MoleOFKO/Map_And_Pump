@@ -15,6 +15,27 @@ require __DIR__ . '/partials/head.php';
 require __DIR__ . '/partials/nav.php';
 ?>
 
+<section id="project-consent" class="project-consent" role="dialog" aria-modal="true" aria-labelledby="project-consent-title" aria-describedby="project-consent-description" hidden>
+    <div class="project-consent__card">
+        <span class="project-consent__label"><i class="fa-solid fa-flask me-2"></i>School project / test environment</span>
+        <h1 id="project-consent-title">Before you continue</h1>
+        <p id="project-consent-description">MAP &amp; PUMP is a student project for demonstration and testing. It is not a production service and must not be used for real fuel bookings, payments, business decisions, or emergency information.</p>
+        <div class="project-consent__warning">
+            <i class="fa-solid fa-shield-halved" aria-hidden="true"></i>
+            <p><strong>Do not enter real personal or sensitive data.</strong> Use made-up test names, email addresses, phone numbers, vehicle or licence numbers, company details, payment receipts, and documents only.</p>
+        </div>
+        <label class="project-consent__check" for="project-consent-checkbox">
+            <input id="project-consent-checkbox" type="checkbox">
+            <span>I understand this is a test project and agree not to submit real personal or sensitive information.</span>
+        </label>
+        <p class="project-consent__legal">Read the <a href="/php/TermsOfService.php" target="_blank" rel="noopener">Terms of Service</a> and <a href="/php/PrivacyPolicy.php" target="_blank" rel="noopener">Privacy Policy</a>.</p>
+        <div class="project-consent__actions">
+            <button type="button" id="project-consent-leave" class="btn btn-outline-light">Leave site</button>
+            <button type="button" id="project-consent-accept" class="btn btn-primary" disabled>I understand and continue</button>
+        </div>
+    </div>
+</section>
+
 <!-- ==========================================================================
      HERO — company first
      ========================================================================== -->
