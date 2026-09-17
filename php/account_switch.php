@@ -15,29 +15,6 @@ function account_switch_redirect_login(string $message = 'Please sign in to cont
     exit;
 }
 
-function account_switch_logout_to_login(string $email, string $message): void
-{
-    map_pump_destroy_login_session();
-    map_pump_configure_session();
-    session_start();
-
-    session_regenerate_id(true);
-    $_SESSION['login_success'] = $message;
-    $_SESSION['login_prefill_email'] = $email;
-
-    setcookie(MAP_PUMP_LOGIN_PREFILL_EMAIL_COOKIE, $email, [
-        'expires' => time() + 600,
-        'path' => '/',
-        'domain' => '',
-        'secure' => map_pump_secure_cookie(),
-        'httponly' => true,
-        'samesite' => 'Lax',
-    ]);
-
-    header('Location: ../php/Login/login.php');
-    exit;
-}
-
 function account_switch_role_id(PDO $pdo, string $roleName): int
 {
     $stmt = $pdo->prepare('SELECT role_id FROM roles WHERE LOWER(role_name) = LOWER(?) LIMIT 1');
@@ -51,7 +28,7 @@ function account_switch_dashboard(string $roleName, int $roleId = 0): string
         1 => '/php/Admin(WebOwner)/admin_dashboard.php',
         2 => '/php/Moderators(UnderAdmin)/moderator_dashboard.php',
         3 => '/php/HQ/index.php',
-        4 => 'php/BranchManager/dashboard.php',
+        4 => '/php/BranchManager/dashboard.php',
         5 => '/php/Staff/staff_dashboard.php',
         6 => '/php/Customer/dashboard.php',
     ];
@@ -67,11 +44,39 @@ function account_switch_dashboard(string $roleName, int $roleId = 0): string
         'manager' => '/php/BranchManager/dashboard.php',
         'branchmanager' => '/php/BranchManager/dashboard.php',
         'branch manager' => '/php/BranchManager/dashboard.php',
-        'staff' => 'php/Staff/staff_dashboard.php',
+        'staff' => '/php/Staff/staff_dashboard.php',
         'customer' => 'php/Customer/dashboard.php',
     ];
 
     return $dashboards[strtolower($roleName)] ?? '/php/Customer/dashboard.php';
+}
+
+/**
+ * Keep the existing signed-in account while changing only its active role.
+ * Regenerating the session ID retains session-fixation protection without
+ * forcing the user to authenticate a second time.
+ */
+function account_switch_activate(array $user, int $targetRoleId, string $targetRoleName): void
+{
+    session_regenerate_id(true);
+
+    $_SESSION['is_logged_in'] = true;
+    $_SESSION['user_id'] = (int) $user['user_id'];
+    $_SESSION['user_name'] = (string) $user['user_name'];
+    $_SESSION['user_email'] = (string) $user['email'];
+    $_SESSION['oauth_avatar_url'] = (string) ($user['oauth_avatar_url'] ?? '');
+    $_SESSION['user_status'] = (string) ($user['status'] ?? '');
+    $_SESSION['role_id'] = $targetRoleId;
+    $_SESSION['role_name'] = $targetRoleName;
+    $_SESSION['current_role_id'] = $targetRoleId;
+    $_SESSION['current_role_name'] = $targetRoleName;
+    $_SESSION['business_role_id'] = (int) ($user['business_role_id'] ?? 0);
+    $_SESSION['business_role_name'] = (string) ($user['business_role_name'] ?? '');
+    $_SESSION['headquarter_id'] = (int) ($user['headquarter_id'] ?? 0);
+    $_SESSION['branch_id'] = (int) ($user['branch_id'] ?? 0);
+    $_SESSION['license_id'] = (int) ($user['license_id'] ?? 0);
+    $_SESSION['has_business'] = !empty($user['business_role_id']);
+    $_SESSION['active_profile_mode'] = strtolower($targetRoleName) === 'customer' ? 'customer' : 'business';
 }
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
@@ -88,7 +93,8 @@ $targetMode = strtolower(trim((string) ($_POST['mode'] ?? '')));
 
 try {
     $stmt = $pdo->prepare(
-        'SELECT u.user_id, u.user_name, u.email, u.oauth_avatar_url, u.role_id, u.business_role_id,
+        'SELECT u.user_id, u.user_name, u.email, u.oauth_avatar_url, u.status, u.role_id, u.business_role_id,
+                u.headquarter_id, u.branch_id, u.license_id,
                 primary_role.role_name AS primary_role_name,
                 business_role.role_name AS business_role_name
          FROM users u
@@ -113,8 +119,13 @@ $businessRoleId = (int) ($user['business_role_id'] ?? 0);
 $businessRoleName = (string) ($user['business_role_name'] ?? '');
 
 if ($targetMode === 'customer') {
+    if ($customerRoleId <= 0) {
+        account_switch_redirect_login('The Customer role is unavailable. Please sign in again.');
+    }
     map_pump_set_current_role($pdo, $userId, $customerRoleId);
-    account_switch_logout_to_login((string)$user['email'], 'Profile switched to Customer. Enter your password to continue.');
+    account_switch_activate($user, $customerRoleId, 'Customer');
+    header('Location: ' . account_switch_dashboard('customer', $customerRoleId));
+    exit;
 }
 
 if ($targetMode === 'business') {
@@ -129,7 +140,9 @@ if ($targetMode === 'business') {
     }
 
     map_pump_set_current_role($pdo, $userId, $targetRoleId);
-    account_switch_logout_to_login((string)$user['email'], 'Profile switched to ' . $targetRoleName . '. Enter your password to continue.');
+    account_switch_activate($user, $targetRoleId, $targetRoleName);
+    header('Location: ' . account_switch_dashboard($targetRoleName, $targetRoleId));
+    exit;
 }
 
 $_SESSION['profile_flash_message'] = 'Choose a valid profile mode to switch accounts.';
