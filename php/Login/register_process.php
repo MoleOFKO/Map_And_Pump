@@ -35,47 +35,6 @@ function register_json(bool $ok, string $message, array $extra = []): never
     echo json_encode(['ok' => $ok, 'message' => $message] + $extra);
     exit;
 }
-function register_is_local_request(): bool
-{
-    if (filter_var(mail_config_value('RENDER', 'false'), FILTER_VALIDATE_BOOLEAN)) {
-        return false;
-    }
-
-    $appEnv = strtolower(mail_config_value('APP_ENV', mail_config_value('ENVIRONMENT', '')));
-    if (in_array($appEnv, ['production', 'prod'], true)) {
-        return false;
-    }
-
-    $host = strtolower((string) ($_SERVER['HTTP_HOST'] ?? $_SERVER['SERVER_NAME'] ?? ''));
-    $host = preg_replace('/:\d+$/', '', $host) ?? $host;
-    $remoteAddr = (string) ($_SERVER['REMOTE_ADDR'] ?? '');
-
-    return in_array($host, ['localhost', '127.0.0.1', '::1'], true)
-        || in_array($remoteAddr, ['127.0.0.1', '::1'], true)
-        || str_ends_with($host, '.test')
-        || str_ends_with($host, '.local');
-}
-
-function register_local_mail_fallback_enabled(): bool
-{
-    $configured = mail_config_value('MAIL_LOCAL_FALLBACK', 'false');
-
-    return register_is_local_request()
-        && filter_var($configured, FILTER_VALIDATE_BOOLEAN);
-}
-
-function register_is_render_request(): bool
-{
-    if (filter_var(mail_config_value('RENDER', 'false'), FILTER_VALIDATE_BOOLEAN)) {
-        return true;
-    }
-
-    $host = strtolower((string) ($_SERVER['HTTP_HOST'] ?? $_SERVER['SERVER_NAME'] ?? ''));
-    $host = preg_replace('/:\d+$/', '', $host) ?? $host;
-
-    return str_ends_with($host, '.onrender.com');
-}
-
 function register_validate_email_domain(string $domain): bool
 {
     $domain = strtolower(trim($domain));
@@ -162,10 +121,19 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     register_json(false, 'Registration request is invalid.');
 }
 
+$csrfToken = (string) ($_POST['csrf_token'] ?? '');
+if (empty($_SESSION['registration_csrf']) || !hash_equals((string) $_SESSION['registration_csrf'], $csrfToken)) {
+    register_json(false, 'Your registration session expired. Please refresh the page and try again.');
+}
+
 $username = trim((string) ($_POST['username'] ?? ''));
 $email = strtolower(trim((string) ($_POST['email'] ?? '')));
 $password = (string) ($_POST['password'] ?? '');
 $confirmPassword = (string) ($_POST['confirm_password'] ?? '');
+
+if ((string) ($_POST['test_data_acknowledgement'] ?? '') !== 'yes') {
+    register_json(false, 'Please confirm that you will use your email only for OTP verification and fictional data for all other fields.');
+}
 
 if ($username === '' || strlen($username) > 225) {
     register_json(false, 'Please enter a username.');
@@ -176,7 +144,7 @@ if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
 }
 
 $domain = strtolower((string) substr(strrchr($email, '@') ?: '', 1));
-if ($domain !== '' && !register_is_local_request()) {
+if ($domain !== '') {
     if (!register_validate_email_domain($domain)) {
         register_json(false, 'Email Does Not Exist, Please Try Again');
     }
@@ -192,6 +160,13 @@ if (strlen($password) < 8 || strlen($password) > 15) {
 
 if (!preg_match('/[a-z]/', $password) || !preg_match('/[A-Z]/', $password) || !preg_match('/\d/', $password) || !preg_match('/[^a-zA-Z0-9]/', $password)) {
     register_json(false, 'Password must include upper/lowercase letters, a number, and a symbol.');
+}
+
+$previousPending = $_SESSION['pending_registration'] ?? null;
+if (is_array($previousPending)
+    && strtolower((string) ($previousPending['email'] ?? '')) === $email
+    && (int) ($previousPending['last_sent_at'] ?? 0) > time() - 60) {
+    register_json(false, 'Please wait one minute before requesting another verification code.');
 }
 
 try {
@@ -235,38 +210,22 @@ try {
         $userId = (int) $pdo->lastInsertId();
     }
 
-    $code = (string) random_int(1000, 9999);
+    $code = (string) random_int(100000, 999999);
     $_SESSION['pending_registration'] = [
         'user_id' => $userId,
         'email' => $email,
         'code_hash' => password_hash($code, PASSWORD_DEFAULT),
         'expires_at' => time() + 600,
         'attempts' => 0,
+        'last_sent_at' => time(),
     ];
-
-    if (register_is_render_request()) {
-        error_log(sprintf('[Map&Pump Render registration demo] Verification code for %s: %s', $email, $code));
-        register_json(true, 'Localhost mode: email could not be sent, so use this verification code: ' . $code, [
-            'dev_code' => $code,
-            'mail_warning' => 'Render mode: email sending is disabled.',
-        ]);
-    }
 
     try {
         send_registration_code($email, $code);
         register_json(true, 'We sent a verification code to your email.');
     } catch (Throwable $mailError) {
         error_log('Registration email failed: ' . $mailError->getMessage() . ' [' . get_class($mailError) . ']');
-
-        if (!register_local_mail_fallback_enabled()) {
-            register_json(false, register_mail_setup_message($mailError));
-        }
-
-        error_log(sprintf('[Map&Pump local registration] Verification code for %s: %s', $email, $code));
-        register_json(true, 'Localhost mode: email could not be sent, so use this verification code: ' . $code, [
-            'dev_code' => $code,
-            'mail_warning' => 'SMTP failed. This fallback only works on localhost.',
-        ]);
+        register_json(false, register_mail_setup_message($mailError));
     }
 } catch (Throwable $e) {
     error_log('Registration code failed: ' . $e->getMessage() . ' [' . get_class($e) . ']');

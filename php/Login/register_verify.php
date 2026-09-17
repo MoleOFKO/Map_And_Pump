@@ -47,6 +47,11 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     verify_json(false, 'Verification request is invalid.');
 }
 
+$csrfToken = (string) ($_POST['csrf_token'] ?? '');
+if (empty($_SESSION['registration_csrf']) || !hash_equals((string) $_SESSION['registration_csrf'], $csrfToken)) {
+    verify_json(false, 'Your verification session expired. Please refresh the page and try again.');
+}
+
 $pending = $_SESSION['pending_registration'] ?? null;
 if (!is_array($pending) || empty($pending['user_id'])) {
     verify_json(false, 'Your verification session expired. Please register again.');
@@ -58,8 +63,8 @@ if ((int) ($pending['expires_at'] ?? 0) < time()) {
 }
 
 $code = preg_replace('/\D+/', '', (string) ($_POST['code'] ?? ''));
-if (strlen($code) !== 4) {
-    verify_json(false, 'Please enter the 4-digit code.');
+if (strlen($code) !== 6) {
+    verify_json(false, 'Please enter the 6-digit code.');
 }
 
 $pending['attempts'] = (int) ($pending['attempts'] ?? 0) + 1;
@@ -116,6 +121,7 @@ try {
     $lastLoginUpdate->execute([$userId]);
 
     unset($_SESSION['pending_registration']);
+    session_regenerate_id(true);
     $_SESSION['is_logged_in'] = true;
     $_SESSION['user_id'] = $userId;
     $_SESSION['user_public_id'] = (string) ($user['user_public_id'] ?? '');

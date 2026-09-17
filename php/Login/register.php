@@ -1,3 +1,10 @@
+<?php
+session_start();
+if (empty($_SESSION['registration_csrf'])) {
+  $_SESSION['registration_csrf'] = bin2hex(random_bytes(32));
+}
+$registrationCsrf = $_SESSION['registration_csrf'];
+?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -47,6 +54,7 @@
         <div id="register-status" role="alert" style="display:none; margin-bottom: 1rem; padding: 0.85rem 1rem; border-radius: 12px;"></div>
 
         <form id="form-step-1" onsubmit="return false;">
+          <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($registrationCsrf, ENT_QUOTES, 'UTF-8') ?>">
           
           <!-- Username Input -->
           <div class="input-group">
@@ -62,6 +70,7 @@
             <div class="input-wrapper">
               <input type="email" id="register-email" name="email" placeholder="example123@gmail.com" required />
             </div>
+            <small style="display:block;margin-top:8px;color:#a8b3c7;line-height:1.45;">Use an email address you can access only to receive the verification code. Do not enter any other real personal or sensitive information in this school project.</small>
           </div>
 
           <!-- Password Input -->
@@ -116,6 +125,11 @@
             </div>
           </div>
 
+          <label style="display:flex;gap:9px;align-items:flex-start;margin:4px 0 18px;color:#d5dceb;font-size:12px;line-height:1.45;cursor:pointer;">
+            <input type="checkbox" id="test-data-acknowledgement" required style="margin-top:3px;accent-color:#0ea5e9;">
+            <span>I understand that this is a school test project. I will use my accessible email only for OTP verification and fictional data for every other field.</span>
+          </label>
+
           <!-- Submit Button -->
           <div class="login-btn-wrapper">
             <button type="button" class="submit-btn full-width-btn" id="to-step-2">REGISTER</button>
@@ -138,17 +152,20 @@
         </div>
         <div class="header text-center">
           <h1 class="title">Verify your email</h1>
-          <p class="step-subtitle">We sent a 4-digit code to <span id="display-email"></span></p>
+          <p class="step-subtitle">We sent a 6-digit code to <span id="display-email"></span></p>
         </div>
         <div id="verify-status" role="alert" style="display:none; margin-bottom: 1rem; padding: 0.85rem 1rem; border-radius: 12px;"></div>
 
         <form id="form-step-2" onsubmit="return false;">
+          <input type="hidden" id="verify-csrf-token" value="<?= htmlspecialchars($registrationCsrf, ENT_QUOTES, 'UTF-8') ?>">
           <div class="input-group">
             <div class="otp-digit-container">
-              <input type="text" maxlength="1" class="otp-digit" required />
-              <input type="text" maxlength="1" class="otp-digit" required />
-              <input type="text" maxlength="1" class="otp-digit" required />
-              <input type="text" maxlength="1" class="otp-digit" required />
+              <input type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="1" class="otp-digit" required />
+              <input type="text" inputmode="numeric" maxlength="1" class="otp-digit" required />
+              <input type="text" inputmode="numeric" maxlength="1" class="otp-digit" required />
+              <input type="text" inputmode="numeric" maxlength="1" class="otp-digit" required />
+              <input type="text" inputmode="numeric" maxlength="1" class="otp-digit" required />
+              <input type="text" inputmode="numeric" maxlength="1" class="otp-digit" required />
             </div>
           </div>
 
@@ -235,6 +252,8 @@
       data.append('email', (document.getElementById('register-email')?.value || '').trim());
       data.append('password', document.getElementById('new-password')?.value || '');
       data.append('confirm_password', document.getElementById('confirm-password')?.value || '');
+      data.append('csrf_token', document.querySelector('#form-step-1 [name="csrf_token"]')?.value || '');
+      data.append('test_data_acknowledgement', document.getElementById('test-data-acknowledgement')?.checked ? 'yes' : '');
       return data;
     }
 
@@ -436,8 +455,8 @@
 
     toStep3.addEventListener('click', async function() {
       const code = Array.from(document.querySelectorAll('.otp-digit')).map((digit) => digit.value.trim()).join('');
-      if (!/^\d{4}$/.test(code)) {
-        showStatus(verifyStatus, 'Please enter the 4-digit code.');
+      if (!/^\d{6}$/.test(code)) {
+        showStatus(verifyStatus, 'Please enter the 6-digit code.');
         return;
       }
 
@@ -447,6 +466,7 @@
       try {
         const data = new FormData();
         data.append('code', code);
+        data.append('csrf_token', document.getElementById('verify-csrf-token').value);
         const result = await postForm('register_verify.php', data);
 
         if (!result.ok) {

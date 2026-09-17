@@ -8,7 +8,7 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
 // $host = 'gateway01.ap-southeast-1.prod.aws.tidbcloud.com'; // e.g., gateway01.us-west-2.prod.aws.tidbcloud.com
 // $dbname = 'map_and_pump';
 // $username = '3sdV1BWxtCzY7YS.root';
-// $password = 'GNfDltJeN7paYMLq';
+// $password = 'your-database-password';
 // $port = 4000; // Usually 4000 for TiDB, or 3306 for standard MySQL secure ports
 
 // try {
