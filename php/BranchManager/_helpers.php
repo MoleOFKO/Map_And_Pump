@@ -78,8 +78,9 @@ function current_context($db = null) {
         ) managed ON managed.branch_manager_user_id = u.user_id
         LEFT JOIN stations s ON s.station_id = managed.station_id
         LEFT JOIN branches b ON b.branch_id = {$branchExpression}
-        LEFT JOIN headquarter hq ON hq.headquarter_id = COALESCE(u.headquarter_id, managed.headquarter_id)
-        WHERE u.user_id = :uid
+                LEFT JOIN headquarter hq ON hq.headquarter_id = COALESCE(u.headquarter_id, managed.headquarter_id)
+                WHERE u.user_id = :uid
+                    AND b.manager_user_id = u.user_id
         LIMIT 1
     ");
     $stmt->execute([':uid' => $_SESSION['user_id']]);

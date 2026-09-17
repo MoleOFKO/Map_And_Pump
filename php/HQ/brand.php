@@ -5,27 +5,6 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
 }
 
 // // Database connection configuration
-// $host = 'gateway01.ap-southeast-1.prod.aws.tidbcloud.com'; // e.g., gateway01.us-west-2.prod.aws.tidbcloud.com
-// $dbname = 'map_and_pump';
-// $username = '3sdV1BWxtCzY7YS.root';
-// $password = 'your-database-password';
-// $port = 4000; // Usually 4000 for TiDB, or 3306 for standard MySQL secure ports
-
-// try {
-//     $dsn = "mysql:host=$host;port=$port;dbname=$dbname;charset=utf8mb4";
-    
-//     // Required SSL options for cloud databases requiring secure transport
-//     $options = [
-//         PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-//         PDO::MYSQL_ATTR_SSL_VERIFY_SERVER_CERT => true, // Set to true if you are supplying a specific CA bundle
-//         // If your cloud provider requires a specific CA certificate file, uncomment below:
-//          PDO::MYSQL_ATTR_SSL_CA => '../isrgrootx1.pem', // Path to the CA certificate file
-//     ];
-
-//     $pdo = new PDO($dsn, $username, $password, $options);
-// } catch (PDOException $e) {
-//     die("Database connection failed: " . $e->getMessage());
-// }
 require_once __DIR__ . '/../conn.php';
 // Handle form submission
 $message = '';
@@ -42,16 +21,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // Handle Logo Upload if present
     $logoPath = null;
     if (isset($_FILES['company_logo']) && $_FILES['company_logo']['error'] === UPLOAD_ERR_OK) {
-        $uploadDir = __DIR__ . '/uploads/';
-        if (!is_dir($uploadDir)) {
-            mkdir($uploadDir, 0755, true);
-        }
-        $fileExtension = pathinfo($_FILES['company_logo']['name'], PATHINFO_EXTENSION);
-        $fileName = 'logo_' . time() . '.' . $fileExtension;
-        $uploadFile = $uploadDir . $fileName;
+        $logoUpload = $_FILES['company_logo'];
+        $imageInfo = @getimagesize((string) ($logoUpload['tmp_name'] ?? ''));
+        $mime = is_array($imageInfo) ? (string) ($imageInfo['mime'] ?? '') : '';
+        $extensions = [
+            'image/jpeg' => 'jpg',
+            'image/png' => 'png',
+            'image/gif' => 'gif',
+            'image/webp' => 'webp',
+        ];
 
-        if (move_uploaded_file($_FILES['company_logo']['tmp_name'], $uploadFile)) {
-            $logoPath = 'uploads/' . $fileName;
+        if ((int) ($logoUpload['size'] ?? 0) > 2 * 1024 * 1024 || !isset($extensions[$mime])) {
+            $message = 'Company logos must be JPG, PNG, GIF, or WebP images no larger than 2 MB.';
+        } else {
+            $uploadDir = __DIR__ . '/uploads/';
+            if (!is_dir($uploadDir) && !mkdir($uploadDir, 0755, true) && !is_dir($uploadDir)) {
+                $message = 'The company logo folder could not be created.';
+            } else {
+                $fileName = 'logo_' . bin2hex(random_bytes(12)) . '.' . $extensions[$mime];
+                $uploadFile = $uploadDir . $fileName;
+
+                if (move_uploaded_file((string) $logoUpload['tmp_name'], $uploadFile)) {
+                    $logoPath = 'uploads/' . $fileName;
+                } else {
+                    $message = 'The company logo could not be saved.';
+                }
+            }
         }
     }
 
