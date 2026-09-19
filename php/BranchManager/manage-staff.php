@@ -677,7 +677,7 @@ $activities = array_slice($activities, 0, 20);
         </div>
         <div class="panel">
           <table id="staff-directory-table">
-            <thead><tr><th>Staff</th><th>Email</th><th>Contact</th><th>Status</th><th></th></tr></thead>
+            <thead><tr><th>Staff</th><th>Email</th><th>Contact</th><th></th></tr></thead>
             <tbody>
               <?php
               $duty_class  = ['On Duty' => 'on', 'Off Duty' => 'off', 'Leave' => 'leave'];
@@ -693,7 +693,7 @@ $activities = array_slice($activities, 0, 20);
                 </td>
                 <td><?= $staff_email !== '' ? h($staff_email) : '<span style="color:var(--slate-400);">—</span>' ?></td>
                 <td><?= h($s['contact']) ?></td>
-                <td><span class="status-pill <?= h($duty_class[$s['duty_status']] ?? 'off') ?>"><span class="d"></span> <?= h($s['duty_status']) ?></span></td>
+               
                 <td class="actions">
                   <a class="edit-action" data-id="<?= (int)$s['staff_id'] ?>" data-email="<?= h($staff_email) ?>">Edit</a>
                   <a class="danger delete-action" data-id="<?= (int)$s['staff_id'] ?>" data-name="<?= h($s['full_name']) ?>" data-code="<?= h($s['staff_code']) ?>">Delete</a>
@@ -701,7 +701,7 @@ $activities = array_slice($activities, 0, 20);
               </tr>
               <?php endforeach; ?>
               <?php if (!$staff): ?>
-                <tr><td colspan="5" style="text-align:center; color:var(--slate-400); padding:22px;">No staff registered yet.</td></tr>
+                <tr><td colspan="4" style="text-align:center; color:var(--slate-400); padding:22px;">No staff registered yet.</td></tr>
               <?php endif; ?>
             </tbody>
           </table>

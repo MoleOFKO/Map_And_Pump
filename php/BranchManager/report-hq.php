@@ -39,8 +39,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ':p' => $priority,
             ':d' => '[' . $category . '] ' . $desc,
         ]);
+        $report_id = (int)$pdo->lastInsertId();
         log_activity($pdo, $bid, 'user', $user['user_id'], $user['full_name'], "Filed report: {$subject}");
-        json_out(['ok' => true, 'report_id' => (int)$pdo->lastInsertId()]);
+
+        // Notify HQ recipients (non-fatal: the report is already saved).
+        try {
+            $recipients = hq_recipient_ids($pdo, (int)$user['user_id']);
+            $branchName = $branch['branch_name'] ?? ('Branch #' . $bid);
+            $notifSubject = '[' . ucfirst($priority) . '] Branch report: ' . $subject;
+            $notifBody = sprintf(
+                'New %s-priority report from %s (%s) — [%s] %s',
+                $priority, $branchName, $user['full_name'], $category, $desc
+            );
+            foreach ($recipients as $rid) {
+                notif_create($pdo, $rid, null, 'branch_report', $notifSubject, $notifBody, $report_id);
+            }
+        } catch (Throwable $e) {
+            error_log('report-hq notify failed: ' . $e->getMessage());
+        }
+
+        json_out(['ok' => true, 'report_id' => $report_id]);
     } catch (PDOException $e) {
         json_out(['ok' => false, 'error' => $e->getMessage()], 500);
     }
