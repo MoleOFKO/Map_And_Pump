@@ -15,6 +15,8 @@ function redirect_to_login(string $message = 'Please sign in to continue.')
 $flashMessage = $_SESSION['flash_message'] ?? null;
 $flashType = $_SESSION['flash_type'] ?? 'success';
 unset($_SESSION['flash_message'], $_SESSION['flash_type']);
+$accountDeletionFlash = (string) ($_SESSION['account_deletion_flash'] ?? '');
+unset($_SESSION['account_deletion_flash']);
 
 if (empty($_SESSION['is_logged_in']) || empty($_SESSION['user_id'])) {
     redirect_to_login();
@@ -277,6 +279,7 @@ $accountRole = trim((string) ($user['role_name'] ?? 'Staff')) ?: 'Staff';
                         <?= htmlspecialchars($flashMessage) ?>
                     </div>
                 <?php endif; ?>
+                <?php if ($accountDeletionFlash !== ''): ?><div class="alert alert-danger border-0 rounded-3 mb-4"><?= htmlspecialchars($accountDeletionFlash) ?></div><?php endif; ?>
 
                 <div class="row g-4 mt-1">
                     <!-- Staff Account Card -->
@@ -327,7 +330,7 @@ $accountRole = trim((string) ($user['role_name'] ?? 'Staff')) ?: 'Staff';
                         <div class="dashboard-card p-4 d-flex flex-column justify-content-between h-100">
                             <div>
                                 <h3 class="fw-bold mb-2 text-white"><i class="bi bi-arrow-left-right me-2 txt-neon-blue"></i>Account Profile Mode</h3>
-                                <p class="text-white-50 small mb-4">Switching profiles logs this session out first. Your email will be ready on the login page; enter only your password to continue.</p>
+                                <p class="text-white-50 small mb-4">Switching profiles keeps this signed-in session active and opens the Customer profile for the same account.</p>
                             </div>
                             <form action="../account_switch.php" method="POST">
                                 <input type="hidden" name="mode" value="customer">
@@ -358,6 +361,8 @@ $accountRole = trim((string) ($user['role_name'] ?? 'Staff')) ?: 'Staff';
                         <i class="bi bi-box-arrow-right me-1"></i> Securely Log Out of This Session
                     </a>
                 </div>
+
+                <div class="dashboard-card p-4 mt-4 border border-danger border-opacity-25" style="background:rgba(255,77,106,.045)!important;"><h6 class="fw-bold text-danger mb-2"><i class="bi bi-exclamation-triangle-fill me-2"></i>Delete Account</h6><p class="text-white-50 small">This deactivates your Staff account and signs you out. Type <code>DELETE</code> to continue.</p><form action="/php/account_self_delete.php" method="POST" class="row g-3 align-items-end"><input type="hidden" name="return_to" value="/php/Staff/staff_account.php"><div class="col-12 col-md-5"><input class="form-control glass-input" name="confirmation" autocomplete="off" placeholder="Type DELETE" required></div><div class="col-12 col-md-4"><label class="form-check text-white-50 small mb-0"><input class="form-check-input" type="checkbox" name="confirm_deletion" value="yes" required> I understand this disables my account.</label></div><div class="col-12 col-md-3"><button class="btn btn-outline-danger w-100" type="submit">Deactivate Account</button></div></form></div>
 
             </div>
         </div>

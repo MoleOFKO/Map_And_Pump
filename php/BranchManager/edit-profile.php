@@ -16,6 +16,8 @@ require_branch_manager();
 
 $message = '';
 $message_type = '';
+$accountDeletionFlash = (string) ($_SESSION['account_deletion_flash'] ?? '');
+unset($_SESSION['account_deletion_flash']);
 
 // ------- Avatar upload endpoint (multipart) --------
 // Handled separately so we can respond as JSON to the client-side uploader.
@@ -401,6 +403,7 @@ if ($avatarRaw) {
           <button type="button" class="btn-close btn-close-white" data-bs-dismiss="alert" aria-label="Close"></button>
         </div>
       <?php endif; ?>
+      <?php if ($accountDeletionFlash !== ''): ?><div class="alert alert-danger" role="alert" style="border-radius:12px; background:var(--navy-800); color:#fff; border-color:rgba(248,113,113,.35);"><?= htmlspecialchars($accountDeletionFlash) ?></div><?php endif; ?>
 
       <div class="layout-2col">
         <div class="panel profile-card-center">
@@ -429,6 +432,16 @@ if ($avatarRaw) {
             <h4><i class="fa-solid fa-triangle-exclamation"></i> Danger Zone</h4>
             <p>Switch to the customer side of this same account to manage your driver license and fill your car. You can return to Branch Manager after your license is confirmed.</p>
             <button class="btn-danger-outline" id="switch-account-btn" type="button"><i class="fa-solid fa-right-left"></i> Switch to Customer Profile</button>
+          </div>
+          <div class="danger-zone" style="text-align:left; margin-top:16px;">
+            <h4><i class="fa-solid fa-triangle-exclamation"></i> Delete Account</h4>
+            <p>This deactivates your Branch Manager account and signs you out. Type <strong>DELETE</strong> to continue.</p>
+            <form action="/php/account_self_delete.php" method="POST">
+              <input type="hidden" name="return_to" value="/php/BranchManager/edit-profile.php">
+              <input class="form-control-custom" name="confirmation" autocomplete="off" placeholder="Type DELETE" required>
+              <label style="display:block;margin:12px 0;color:var(--slate-300);font-size:12.5px;"><input type="checkbox" name="confirm_deletion" value="yes" required> I understand this disables my account.</label>
+              <button class="btn-danger-outline" type="submit"><i class="fa-solid fa-user-xmark"></i> Deactivate Account</button>
+            </form>
           </div>
         </div>
 

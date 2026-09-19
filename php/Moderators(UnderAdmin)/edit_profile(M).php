@@ -9,6 +9,8 @@ $moderatorUser = moderator_require_user();
 $userId = (int) $moderatorUser['user_id'];
 $flashMessage = '';
 $flashType = 'success';
+$accountDeletionFlash = (string) ($_SESSION['account_deletion_flash'] ?? '');
+unset($_SESSION['account_deletion_flash']);
 
 if (!empty($_SESSION['flash_message'])) {
     $flashMessage = (string) $_SESSION['flash_message'];
@@ -96,6 +98,7 @@ $statusClass = static function (?string $status): string {
                 <?= htmlspecialchars($flashMessage, ENT_QUOTES, 'UTF-8') ?>
             </div>
         <?php endif; ?>
+        <?php if ($accountDeletionFlash !== ''): ?><div class="alert alert-danger border-0" role="alert"><?= htmlspecialchars($accountDeletionFlash, ENT_QUOTES, 'UTF-8') ?></div><?php endif; ?>
 
         <div class="row g-4">
 
@@ -207,6 +210,8 @@ $statusClass = static function (?string $status): string {
                 </div>
 
             </div>
+
+            <div class="col-12"><div class="dashboard-card p-4 border border-danger border-opacity-25" style="background:rgba(255,77,106,.045)!important;"><h6 class="fw-bold text-danger mb-2"><i class="bi bi-exclamation-triangle-fill me-2"></i>Delete Account</h6><p class="text-white-50 small">This deactivates your Moderator account and signs you out. Type <code>DELETE</code> to continue.</p><form action="/php/account_self_delete.php" method="POST" class="row g-3 align-items-end"><input type="hidden" name="return_to" value="/php/Moderators(UnderAdmin)/edit_profile(M).php"><div class="col-12 col-md-5"><label class="form-label text-white-50 small">Confirmation</label><input class="form-control glass-input" name="confirmation" autocomplete="off" placeholder="Type DELETE" required></div><div class="col-12 col-md-4"><label class="form-check text-white-50 small mb-0"><input class="form-check-input" type="checkbox" name="confirm_deletion" value="yes" required> I understand this disables my account.</label></div><div class="col-12 col-md-3 text-md-end"><button class="btn btn-outline-danger w-100" type="submit">Deactivate Account</button></div></form></div></div>
 
         </div>
     </div>
