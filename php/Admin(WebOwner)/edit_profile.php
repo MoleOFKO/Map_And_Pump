@@ -9,6 +9,8 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
 }
 
 $flash = admin_pull_flash();
+$accountDeletionFlash = (string) ($_SESSION['account_deletion_flash'] ?? '');
+unset($_SESSION['account_deletion_flash']);
 $statusLabel = static function (?string $status): string {
     return match (strtolower(trim((string) $status))) {
         'approved', 'active' => 'Approved',
@@ -60,6 +62,7 @@ $avatarFallbackUrl = map_pump_profile_initial_svg((string) ($user['user_name'] ?
         </div>
         
         <?php if ($flash): ?><div class="alert alert-<?= hq_escape((string) ($flash['type'] ?? 'info')) ?> border-0" role="alert"><?= hq_escape((string) ($flash['message'] ?? '')) ?></div><?php endif; ?>
+        <?php if ($accountDeletionFlash !== ''): ?><div class="alert alert-danger border-0" role="alert"><?= hq_escape($accountDeletionFlash) ?></div><?php endif; ?>
         <?php if (!$user): ?><div class="alert alert-danger border-0">The live admin account could not be loaded.</div><?php else: ?>
         
         <div class="row g-4">
@@ -174,6 +177,19 @@ $avatarFallbackUrl = map_pump_profile_initial_svg((string) ($user['user_name'] ?
                 <div class="dashboard-card p-4" style="border-color:rgba(0,244,255,.18);background:rgba(0,244,255,.025)!important;">
                     <h6 class="fw-bold text-white mb-2"><i class="bi bi-database-check txt-neon-cyan me-2"></i>Database-backed profile</h6>
                     <p class="text-white-50 small mb-0">The live schema stores the username, email, password hash, role, status, timestamps, and optional avatar URL. Unsupported fields are not displayed as editable fake values.</p>
+                </div>
+            </div>
+
+            <div class="col-12">
+                <div class="dashboard-card p-4 border border-danger border-opacity-25" style="background:rgba(255,77,106,.045)!important;">
+                    <h6 class="fw-bold text-danger mb-2"><i class="bi bi-exclamation-triangle-fill me-2"></i>Delete Account</h6>
+                    <p class="text-white-50 small">This deactivates your own Admin account and signs you out. Type <code>DELETE</code> to confirm. The last active Admin account cannot be deactivated.</p>
+                    <form action="/php/account_self_delete.php" method="POST" class="row g-3 align-items-end">
+                        <input type="hidden" name="return_to" value="/php/Admin(WebOwner)/edit_profile.php">
+                        <div class="col-12 col-md-5"><label class="form-label text-white-50 small">Confirmation</label><input class="form-control glass-input" name="confirmation" autocomplete="off" placeholder="Type DELETE" required></div>
+                        <div class="col-12 col-md-4"><label class="form-check text-white-50 small mb-0"><input class="form-check-input" type="checkbox" name="confirm_deletion" value="yes" required> I understand this disables my account.</label></div>
+                        <div class="col-12 col-md-3 text-md-end"><button class="btn btn-outline-danger w-100" type="submit">Deactivate Account</button></div>
+                    </form>
                 </div>
             </div>
 
