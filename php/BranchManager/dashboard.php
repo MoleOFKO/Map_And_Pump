@@ -92,16 +92,12 @@ $stmt = $pdo->prepare("
 $stmt->execute([':manager_id' => $user['user_id']]);
 $queue = $stmt->fetchAll();
 
-// alerts (unread notifications, latest 5)
-$stmt = $pdo->prepare("
-    SELECT notification_id AS notif_id, subject, message, created_at
-    FROM notifications
-    WHERE recipient_user_id = :manager_id
-    ORDER BY created_at DESC LIMIT 5
-");
-$stmt->execute([':manager_id' => $user['user_id']]);
-$alerts = $stmt->fetchAll();
-$has_unread = count($alerts) > 0;
+// surface low-stock tanks as notifications (deduped, non-fatal)
+try { notif_low_stock_scan($pdo, $bid, (int)$user['user_id']); } catch (Throwable $e) {}
+// alerts / notifications (latest 5, normalised, with real read-state)
+$alerts       = notif_recent($pdo, (int)$user['user_id'], 5);
+$unread_count = notif_unread_count($pdo, (int)$user['user_id']);
+$has_unread   = $unread_count > 0;
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -469,30 +465,26 @@ $has_unread = count($alerts) > 0;
             <span id="mark-all-read">Clear All</span>
           </div>
           <div id="notif-list">
-            <div class="notif-item">
-              <i class="fa-solid fa-triangle-exclamation text-warning ic"></i>
-              <div class="notif-item-body">
-                <b>Diesel Stock Warning</b>
-                <span>Diesel running low (22%).</span>
-                <div class="notif-time">10 mins ago</div>
+            <?php if (!$alerts): ?>
+              <div class="notif-empty" style="text-align:center; padding:14px 0; color:var(--slate-400); font-size:12px;">No new notifications</div>
+            <?php else:
+              $icon_map = [
+                'warn' => 'fa-triangle-exclamation text-warning',
+                'err'  => 'fa-circle-exclamation text-danger',
+                'ok'   => 'fa-truck-ramp-box text-success',
+                'info' => 'fa-circle-info text-info',
+              ];
+              foreach ($alerts as $a):
+                $ic = $icon_map[$a['kind']] ?? $icon_map['info']; ?>
+              <div class="notif-item" data-notif-id="<?= (int)$a['notif_id'] ?>">
+                <i class="fa-solid <?= h($ic) ?> ic"></i>
+                <div class="notif-item-body">
+                  <b><?= h($a['title']) ?></b>
+                  <span><?= h($a['body']) ?></span>
+                  <div class="notif-time"><?= h($a['time_ago']) ?></div>
+                </div>
               </div>
-            </div>
-            <div class="notif-item">
-              <i class="fa-solid fa-wrench text-danger ic"></i>
-              <div class="notif-item-body">
-                <b>Pump #4 Down</b>
-                <span>Pump requires immediate inspection.</span>
-                <div class="notif-time">1 hour ago</div>
-              </div>
-            </div>
-            <div class="notif-item">
-              <i class="fa-solid fa-truck-ramp-box text-success ic"></i>
-              <div class="notif-item-body">
-                <b>Petrol 92 Received</b>
-                <span>8,000 liters added to storage.</span>
-                <div class="notif-time">3 hours ago</div>
-              </div>
-            </div>
+            <?php endforeach; endif; ?>
           </div>
         </div>
 
@@ -599,10 +591,10 @@ $has_unread = count($alerts) > 0;
             <?php if (!$alerts): ?>
               <div style="text-align:center; padding:20px; color:var(--slate-400); font-size:12.5px;">All alerts cleared.</div>
             <?php else:
-              $kind_map = ['warning'=>'warn','danger'=>'err','success'=>'ok','info'=>'ok'];
+              $kind_map = ['warn'=>'warn','err'=>'err','ok'=>'ok','info'=>'ok'];
               foreach ($alerts as $a):
                 $cls = $kind_map[$a['kind']] ?? 'ok'; ?>
-              <div class="alert-row <?= h($cls) ?>" data-notif-id="<?= (int)$a['notif-id'] ?>">
+              <div class="alert-row <?= h($cls) ?>" data-notif-id="<?= (int)$a['notif_id'] ?>">
                 <div class="dot2"></div>
                 <div><b><?= h($a['title']) ?></b><span><?= h($a['body']) ?> <small class="dismiss-txt">Dismiss</small></span></div>
               </div>
@@ -718,9 +710,46 @@ $has_unread = count($alerts) > 0;
       }
     });
 
+    // Notifications — dismiss + clear-all, wired to api_dismiss_notification.php
+    function postDismiss(payload){
+      return fetch('api_dismiss_notification.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      }).then(r => r.json()).catch(() => ({ ok:false }));
+    }
+
+    // Click an alert row (in the Alerts panel) to mark it read
+    const alertContainer = document.getElementById('alert-container');
+    if (alertContainer) {
+      alertContainer.addEventListener('click', (e) => {
+        const row = e.target.closest('.alert-row');
+        if (!row) return;
+        const id = parseInt(row.dataset.notifId || '0', 10);
+        row.style.opacity = '0.4';
+        postDismiss(id > 0 ? { notif_id: id } : { all: true }).then(res => {
+          if (res.ok) {
+            row.remove();
+            if (!alertContainer.querySelector('.alert-row')) {
+              alertContainer.innerHTML = '<div style="text-align:center; padding:20px; color:var(--slate-400); font-size:12.5px;">All alerts cleared.</div>';
+            }
+          } else {
+            row.style.opacity = '1';
+          }
+        });
+      });
+    }
+
     if (markAllBtn) {
       markAllBtn.addEventListener('click', () => {
-        notifList.innerHTML = `<div style="text-align: center; padding: 12px 0; color: var(--slate-400); font-size: 12px;">No new notifications</div>`;
+        postDismiss({ all: true }).then(() => {
+          notifList.innerHTML = `<div class="notif-empty" style="text-align: center; padding: 12px 0; color: var(--slate-400); font-size: 12px;">No new notifications</div>`;
+          if (alertContainer) {
+            alertContainer.innerHTML = '<div style="text-align:center; padding:20px; color:var(--slate-400); font-size:12.5px;">All alerts cleared.</div>';
+          }
+          const ping = bellBtn.querySelector('.ping');
+          if (ping) ping.remove();
+        });
       });
     }
   });

@@ -482,7 +482,6 @@ $feedbacks = $stmt->fetchAll();
       </div>
 
       <div class="tabs">
-        <button class="tab-btn active" data-tab="tab-list">Customer List</button>
         <button class="tab-btn" data-tab="tab-feedback">Feedback</button>
       </div>
 

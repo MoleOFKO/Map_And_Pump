@@ -61,10 +61,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         if ($action === 'complete') {
-            $token_id = (int)($_POST['token_id'] ?? 0);
+            $token_id      = (int)($_POST['token_id'] ?? 0);
+            // Optional: actual litres dispensed (frontend may pass it). Defaults to 0.
+            $filled_liters = round(max(0, (float)($_POST['filled_liters'] ?? 0)), 2);
             $pdo->beginTransaction();
             $stmt = $pdo->prepare("
-                SELECT bk.booking_id, p.pump_id, bk.qr_refrence_code AS token_code
+                SELECT bk.booking_id, bk.user_id, bk.car_license_id, bk.station_id, bk.oil_type_id,
+                       bk.qr_code, bk.qr_refrence_code AS token_code,
+                       bk.created_at AS booked_at, bk.expire_at, p.pump_id
                 FROM booking bk
                 INNER JOIN station_business_scope sbs ON sbs.station_id = bk.station_id
                 LEFT JOIN pumps p ON p.current_token = bk.qr_refrence_code AND p.branch_id = :branch_id
@@ -77,15 +81,69 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $tok = $stmt->fetch();
             if (!$tok) { $pdo->rollBack(); json_out(['ok' => false, 'error' => 'Token not found']); }
 
-            $stmt = $pdo->prepare("UPDATE booking SET status = 'completed', filled_gas = 1, time_of_filled = NOW() WHERE booking_id = :t AND status = 'serving'");
-            $stmt->execute([':t' => $token_id]);
+            // Current unit price for this station + fuel (if configured).
+            $priceStmt = $pdo->prepare("
+                SELECT price_per_litre
+                FROM station_oil_inventory
+                WHERE station_id = :s AND oil_type_id = :o
+                ORDER BY is_active DESC, updated_at DESC LIMIT 1
+            ");
+            $priceStmt->execute([':s' => $tok['station_id'], ':o' => $tok['oil_type_id']]);
+            $invRow = $priceStmt->fetch();
+            $price  = $invRow ? (float)$invRow['price_per_litre'] : null;
+            $total  = ($price !== null) ? round($price * $filled_liters, 2) : null;
+
+            // Mark booking completed (store litres in filled_gas when provided).
+            $fg = $filled_liters > 0 ? (int)round($filled_liters) : 1;
+            $stmt = $pdo->prepare("UPDATE booking SET status = 'completed', filled_gas = :fg, time_of_filled = NOW() WHERE booking_id = :t AND status = 'serving'");
+            $stmt->execute([':fg' => $fg, ':t' => $token_id]);
+
+            // Free the pump.
             if ($tok['pump_id']) {
                 $stmt = $pdo->prepare("UPDATE pumps SET status = 'idle', current_token = NULL WHERE pump_id = :p");
                 $stmt->execute([':p' => $tok['pump_id']]);
             }
+
+            // Record the fill in usage_history (feeds dashboard KPIs + customer history).
+            $stmt = $pdo->prepare("
+                INSERT INTO usage_history
+                    (booking_id, user_id, car_license_id, station_id, oil_type_id,
+                     qr_code, qr_refrence_code, filled_liters, price_per_litre, total_cost,
+                     status, booked_at, expire_at, filled_at, staff_user_id)
+                VALUES
+                    (:bid, :uid, :clid, :sid, :oid,
+                     :qr, :qref, :liters, :price, :total,
+                     'filled', :booked_at, :expire_at, NOW(), :staff)
+            ");
+            $stmt->execute([
+                ':bid'       => $tok['booking_id'],
+                ':uid'       => $tok['user_id'],
+                ':clid'      => $tok['car_license_id'],
+                ':sid'       => $tok['station_id'],
+                ':oid'       => $tok['oil_type_id'],
+                ':qr'        => $tok['qr_code'],
+                ':qref'      => $tok['token_code'],
+                ':liters'    => $filled_liters,
+                ':price'     => $price,
+                ':total'     => $total,
+                ':booked_at' => $tok['booked_at'],
+                ':expire_at' => $tok['expire_at'],
+                ':staff'     => $user['user_id'],
+            ]);
+
+            // Draw down station inventory when a real quantity was recorded.
+            if ($invRow && $filled_liters > 0) {
+                $stmt = $pdo->prepare("
+                    UPDATE station_oil_inventory
+                    SET current_amount_liters = GREATEST(0, current_amount_liters - :liters)
+                    WHERE station_id = :s AND oil_type_id = :o
+                ");
+                $stmt->execute([':liters' => $filled_liters, ':s' => $tok['station_id'], ':o' => $tok['oil_type_id']]);
+            }
+
             $pdo->commit();
             log_activity($pdo, $bid, 'user', $user['user_id'], $user['full_name'], "Completed token {$tok['token_code']}");
-            json_out(['ok' => true]);
+            json_out(['ok' => true, 'filled_liters' => $filled_liters, 'total_cost' => $total]);
         }
 
         if ($action === 'cancel') {
@@ -199,7 +257,7 @@ $stmt = $pdo->prepare("
 $stmt->execute([':manager_id' => $user['user_id']]);
 $queue = $stmt->fetchAll();
 
-$has_unread_notif = false; // TODO: hook into notifications table if needed
+$has_unread_notif = notif_unread_count($pdo, (int)$user['user_id']) > 0;
 ?>
 <!DOCTYPE html>
 <html lang="en">

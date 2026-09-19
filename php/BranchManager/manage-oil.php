@@ -70,6 +70,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             log_activity($pdo, $bid, 'user', $user['user_id'], $user['full_name'],
                          "Recorded {$qty}L {$fuel_code} delivery from {$supplier}");
+            try { notif_low_stock_scan($pdo, $bid, (int)$user['user_id']); } catch (Throwable $e) {}
             json_out(['ok' => true]);
         }
 
@@ -146,6 +147,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($pdo->inTransaction()) $pdo->rollBack();
         json_out(['ok' => false, 'error' => $e->getMessage()], 500);
     }
+   
+
+    // (Removed unreachable legacy refill handler that referenced a non-existent
+    //  `stock_logs` table and wrong tank columns. Real refills go through the
+    //  add_delivery action above.)
+
 }
 
 // -------- Load data --------
@@ -641,16 +648,19 @@ function tank_flag(?array $t): string {
 
     <div class="content">
       <div class="page-head">
-        <div>
-          <h2>Fuel Stock</h2>
-          <p>Manage stock levels and sales availability by fuel type</p>
-        </div>
-        <div style="display:flex; gap:10px; flex-wrap:wrap;">
-          <button class="btn-secondary-custom" id="open-limit-modal"><i class="fa-solid fa-gauge-high"></i> Manage Oil Limit</button>
-          <button class="btn-primary" id="open-delivery-modal"><i class="fa-solid fa-plus"></i> Add Delivery Record</button>
-        </div>
-      </div>
-
+  <div>
+    <h2>Fuel Stock</h2>
+    <p>Manage stock levels and sales availability by fuel type</p>
+  </div>
+  <div style="display:flex; gap:10px; flex-wrap:wrap;">
+    <!-- Add Fuel Type Button -->
+    <button class="btn-primary" id="open-add-oil-modal" style="background: linear-gradient(135deg, var(--sky-400), var(--blue-700)); color: #fff;">
+      <i class="fa-solid fa-plus-circle"></i> Add Fuel Type
+    </button>
+    <button class="btn-secondary-custom" id="open-limit-modal"><i class="fa-solid fa-gauge-high"></i> Manage Oil Limit</button>
+    <button class="btn-primary" id="open-delivery-modal"><i class="fa-solid fa-plus"></i> Add Delivery Record</button>
+  </div>
+</div>
       <div class="tabs">
         <button class="tab-btn active" id="tabbtn-amount" onclick="showTab('amount')">Manage Stock Levels</button>
         <button class="tab-btn" id="tabbtn-types" onclick="showTab('types')">Active / Disable Fuel Types</button>
@@ -894,6 +904,46 @@ function tank_flag(?array $t): string {
     </form>
   </div>
 </div>
+<!-- ---------- Add Fuel Type Modal ---------- -->
+<div class="modal-overlay" id="add-oil-modal">
+  <div class="modal-card-custom">
+    <div class="modal-header-custom">
+      <h3>Add New Fuel Type</h3>
+      <button class="modal-close" id="add-oil-modal-close-btn">&times;</button>
+    </div>
+    <form id="add-oil-form" method="POST" action="manage-oil.php">
+      <?php if (function_exists('csrf_token')): ?>
+        <input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>">
+      <?php endif; ?>
+      <input type="hidden" name="action" value="add_fuel_type">
+
+      <div class="form-group">
+        <label for="new-fuel-code">Fuel Code (e.g. p98, cng, bio)</label>
+        <input type="text" id="new-fuel-code" name="fuel_code" class="form-control-custom" required placeholder="e.g. p98">
+      </div>
+
+      <div class="form-group">
+        <label for="new-fuel-name">Fuel Display Name</label>
+        <input type="text" id="new-fuel-name" name="fuel_name" class="form-control-custom" required placeholder="e.g. Octane 98">
+      </div>
+
+      <div class="form-group">
+        <label for="new-tank-capacity">Tank Capacity (Liters)</label>
+        <input type="number" id="new-tank-capacity" name="capacity_l" class="form-control-custom" min="1000" value="10000" required>
+      </div>
+
+      <div class="form-group">
+        <label for="new-alert-pct">Low Stock Alert (%)</label>
+        <input type="number" id="new-alert-pct" name="alert_pct" class="form-control-custom" min="5" max="80" value="20" required>
+      </div>
+
+      <div class="modal-actions">
+        <button type="button" class="btn-secondary-custom" id="add-oil-modal-cancel-btn">Cancel</button>
+        <button type="submit" class="btn-primary" style="box-shadow: none; padding: 10px 18px;">Save Fuel Type</button>
+      </div>
+    </form>
+  </div>
+</div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script>
@@ -1120,6 +1170,23 @@ function tank_flag(?array $t): string {
       });
     }
   });
+  // Modal Control: Add Fuel Type
+const addOilModal = document.getElementById('add-oil-modal');
+const openAddOilBtn = document.getElementById('open-add-oil-modal');
+const addOilCloseBtn = document.getElementById('add-oil-modal-close-btn');
+const addOilCancelBtn = document.getElementById('add-oil-modal-cancel-btn');
+
+if (openAddOilBtn && addOilModal) {
+  openAddOilBtn.addEventListener('click', () => {
+    document.getElementById('add-oil-form').reset();
+    addOilModal.classList.add('active');
+  });
+
+  const closeAddOilModal = () => addOilModal.classList.remove('active');
+  addOilCloseBtn.addEventListener('click', closeAddOilModal);
+  addOilCancelBtn.addEventListener('click', closeAddOilModal);
+  addOilModal.addEventListener('click', (e) => { if (e.target === addOilModal) closeAddOilModal(); });
+}
 </script>
 </body>
 </html>
