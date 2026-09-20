@@ -47,9 +47,9 @@ if (!map_pump_usage_history_schema_ready($pdo) || !map_pump_feedback_schema_read
 try {
     $usageStmt = $pdo->prepare(
         'SELECT uh.usage_id, uh.booking_id, uh.user_id, uh.station_id, uh.oil_type_id, uh.qr_refrence_code,
-                uh.filled_liters, uh.status, uh.filled_at, s.station_name, o.oil_name
+                uh.filled_liters, uh.status, uh.filled_at, s.branch_name AS station_name, o.oil_name
                  FROM usage_history uh
-         LEFT JOIN stations s ON s.station_id = uh.station_id
+         LEFT JOIN branches s ON s.branch_id = uh.station_id
          LEFT JOIN oil_types o ON o.oil_type_id = uh.oil_type_id
                  WHERE uh.usage_id = :usage_id
                      AND uh.user_id = :user_id

@@ -63,12 +63,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['toggle_manager_status
 }
 
 try {
-    $sql = "SELECT u.user_id, u.user_name, u.email, u.status, 4 AS account_role, s.station_id, s.station_name, s.location
+    $sql = "SELECT u.user_id, u.user_name, u.email, u.status, 4 AS account_role,
+                   s.branch_id AS station_id, s.branch_name AS station_name,
+                   CASE WHEN s.latitude IS NOT NULL AND s.longitude IS NOT NULL
+                        THEN CONCAT(s.latitude, ', ', s.longitude) ELSE s.address END AS location
             FROM users u
             LEFT JOIN business_account_scope bas ON bas.user_id = u.user_id
             LEFT JOIN station_business_scope sbs ON sbs.branch_manager_user_id = u.user_id AND sbs.headquarter_id = :hq_id_scope
-            LEFT JOIN stations s ON s.station_id = COALESCE(bas.station_id, sbs.station_id)
-              WHERE COALESCE(u.business_role_id, u.role_id) = 4
+                        LEFT JOIN branches s ON s.branch_id = COALESCE(bas.station_id, sbs.station_id)
+                            WHERE COALESCE(u.business_role_id, u.role_id) = 4
               AND (
                   bas.headquarter_id = :hq_id
                   OR (
@@ -92,7 +95,13 @@ try {
 
 $stations = [];
 try {
-    $stationStmt = $pdo->prepare('SELECT s.station_id, s.station_name, s.location FROM stations s INNER JOIN station_business_scope sbs ON sbs.station_id = s.station_id WHERE sbs.headquarter_id = ? ORDER BY s.station_name');
+    $stationStmt = $pdo->prepare("SELECT s.branch_id AS station_id, s.branch_name AS station_name,
+                                         CASE WHEN s.latitude IS NOT NULL AND s.longitude IS NOT NULL
+                                              THEN CONCAT(s.latitude, ', ', s.longitude) ELSE s.address END AS location
+                                  FROM branches s
+                                  INNER JOIN station_business_scope sbs ON sbs.station_id = s.branch_id
+                                  WHERE sbs.headquarter_id = ?
+                                  ORDER BY s.branch_name");
     $stationStmt->execute([$hqId]);
     $stations = $stationStmt->fetchAll(PDO::FETCH_ASSOC);
 } catch (PDOException $e) {

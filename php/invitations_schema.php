@@ -21,7 +21,7 @@ if (!function_exists('map_pump_ensure_invitation_schema')) {
                 CONSTRAINT fk_invitations_hq FOREIGN KEY (headquarter_id) REFERENCES headquarter (headquarter_id) ON DELETE CASCADE,
                 CONSTRAINT fk_invitations_user FOREIGN KEY (invited_user_id) REFERENCES users (user_id) ON DELETE CASCADE,
                 CONSTRAINT fk_invitations_role FOREIGN KEY (business_role_id) REFERENCES roles (role_id) ON DELETE NO ACTION,
-                CONSTRAINT fk_invitations_station FOREIGN KEY (station_id) REFERENCES stations (station_id) ON DELETE CASCADE
+                CONSTRAINT fk_invitations_station FOREIGN KEY (station_id) REFERENCES branches (branch_id) ON DELETE CASCADE
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
         );
     }

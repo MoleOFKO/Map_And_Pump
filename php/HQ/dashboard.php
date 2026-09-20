@@ -23,26 +23,26 @@ $fuelPrices = [];
 $dashboardStations = [];
 $latestInventorySql = map_pump_latest_station_inventory_sql();
 $pricingStmt = $pdo->prepare(
-    "SELECT s.station_id, s.station_name, ot.oil_type_id, ot.oil_name, li.price_per_litre AS price_per_liter
-     FROM stations s
-     INNER JOIN station_business_scope sbs ON sbs.station_id = s.station_id
-     INNER JOIN ({$latestInventorySql}) li ON li.station_id = s.station_id
+  "SELECT s.branch_id AS station_id, s.branch_name AS station_name, ot.oil_type_id, ot.oil_name, li.price_per_litre AS price_per_liter
+    FROM branches s
+    INNER JOIN station_business_scope sbs ON sbs.station_id = s.branch_id
+    INNER JOIN ({$latestInventorySql}) li ON li.station_id = s.branch_id
      INNER JOIN oil_types ot ON ot.oil_type_id = li.oil_type_id
      WHERE sbs.headquarter_id = ?
        AND COALESCE(s.status, 'Active') <> 'Decommissioned'
-     ORDER BY s.station_name, ot.oil_type_id
+    ORDER BY s.branch_name, ot.oil_type_id
      LIMIT 8"
 );
 $pricingStmt->execute([$hqId]);
 $fuelPrices = $pricingStmt->fetchAll(PDO::FETCH_ASSOC);
 
 $dashboardStationStmt = $pdo->prepare(
-    "SELECT s.station_id, s.station_name
-     FROM stations s
-     INNER JOIN station_business_scope sbs ON sbs.station_id = s.station_id
+    "SELECT s.branch_id AS station_id, s.branch_name AS station_name
+    FROM branches s
+    INNER JOIN station_business_scope sbs ON sbs.station_id = s.branch_id
      WHERE sbs.headquarter_id = ?
        AND COALESCE(s.status, 'Active') <> 'Decommissioned'
-     ORDER BY s.station_name"
+    ORDER BY s.branch_name"
 );
 $dashboardStationStmt->execute([$hqId]);
 $dashboardStations = $dashboardStationStmt->fetchAll(PDO::FETCH_ASSOC);
@@ -64,11 +64,14 @@ $recentReports = $reportsStmt->fetchAll(PDO::FETCH_ASSOC);
 // Fetch Live Stations dynamically
 $stations = [];
 $stationsStmt = $pdo->prepare(
-    "SELECT s.station_id, s.station_name, s.location, s.status
-     FROM stations s
-     INNER JOIN station_business_scope sbs ON sbs.station_id = s.station_id
+  "SELECT s.branch_id AS station_id, s.branch_name AS station_name,
+        CASE WHEN s.latitude IS NOT NULL AND s.longitude IS NOT NULL
+          THEN CONCAT(s.latitude, ', ', s.longitude) ELSE s.address END AS location,
+        s.status
+    FROM branches s
+    INNER JOIN station_business_scope sbs ON sbs.station_id = s.branch_id
      WHERE sbs.headquarter_id = ?
-     ORDER BY s.station_id DESC"
+    ORDER BY s.branch_id DESC"
 );
 $stationsStmt->execute([$hqId]);
 $stations = $stationsStmt->fetchAll(PDO::FETCH_ASSOC);

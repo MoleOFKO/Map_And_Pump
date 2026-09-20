@@ -84,28 +84,28 @@ try {
     $grades = $gradeStmt->fetchAll(PDO::FETCH_ASSOC);
 
     $stationStmt = $pdo->prepare(
-        "SELECT s.station_id, s.station_name
-         FROM stations s
-         INNER JOIN station_business_scope sbs ON sbs.station_id = s.station_id
+        "SELECT s.branch_id AS station_id, s.branch_name AS station_name
+         FROM branches s
+         INNER JOIN station_business_scope sbs ON sbs.station_id = s.branch_id
          WHERE sbs.headquarter_id = ?
            AND COALESCE(s.status, 'Active') <> 'Decommissioned'
-         ORDER BY s.station_name"
+         ORDER BY s.branch_name"
     );
     $stationStmt->execute([$hqId]);
     $stations = $stationStmt->fetchAll(PDO::FETCH_ASSOC);
 
     $latestInventorySql = map_pump_latest_station_inventory_sql();
     $priceStmt = $pdo->prepare(
-        "SELECT s.station_id, s.station_name, ot.oil_type_id, ot.oil_name,
+        "SELECT s.branch_id AS station_id, s.branch_name AS station_name, ot.oil_type_id, ot.oil_name,
                 li.price_per_litre AS price_per_liter, li.is_active, li.updated_at
-         FROM stations s
-         INNER JOIN station_business_scope sbs ON sbs.station_id = s.station_id
+         FROM branches s
+         INNER JOIN station_business_scope sbs ON sbs.station_id = s.branch_id
          CROSS JOIN (SELECT oil_type_id, oil_name FROM oil_types ORDER BY oil_type_id LIMIT 4) ot
          LEFT JOIN ({$latestInventorySql}) li
-            ON li.station_id = s.station_id AND li.oil_type_id = ot.oil_type_id
+            ON li.station_id = s.branch_id AND li.oil_type_id = ot.oil_type_id
          WHERE sbs.headquarter_id = ?
            AND COALESCE(s.status, 'Active') <> 'Decommissioned'
-         ORDER BY s.station_name, ot.oil_type_id"
+         ORDER BY s.branch_name, ot.oil_type_id"
     );
     $priceStmt->execute([$hqId]);
     $priceRows = $priceStmt->fetchAll(PDO::FETCH_ASSOC);

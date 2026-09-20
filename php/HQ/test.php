@@ -27,8 +27,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     throw new RuntimeException('Please select a valid branch manager.');
                 }
 
-                $stmt = $pdo->prepare("INSERT INTO stations (station_name, location, station_address, business_user_id, status) VALUES (?, ?, ?, ?, 'Active')");
-                $stmt->execute([$station_name, $location, $station_address, $manager_id]);
+                $branchCodeStmt = $pdo->query("SELECT CONCAT('BR-', LPAD(COALESCE(MAX(branch_id), 0) + 1, 5, '0')) FROM branches");
+                $branchCode = (string)$branchCodeStmt->fetchColumn();
+                $coordinates = array_map('trim', explode(',', $location, 2));
+                $latitude = $coordinates[0] ?? null;
+                $longitude = $coordinates[1] ?? null;
+                $stmt = $pdo->prepare(
+                    "INSERT INTO branches
+                        (branch_code, branch_name, city, address, latitude, longitude, manager_user_id, status)
+                     VALUES (?, ?, 'Unknown', ?, ?, ?, ?, 'active')"
+                );
+                $stmt->execute([$branchCode, $station_name, $station_address, $latitude, $longitude, $manager_id]);
                 $message = "Station node created successfully.";
             } catch (PDOException $e) {
                 $error = "Error registering station: " . $e->getMessage();
@@ -58,8 +67,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 throw new RuntimeException('Please select a valid branch manager.');
             }
 
-            $stmt = $pdo->prepare("UPDATE stations SET station_name = ?, station_address = ?, location = ?, business_user_id = ? WHERE station_id = ?");
-            $stmt->execute([$station_name, $station_address, $location, $manager_id, $station_id]);
+            $coordinates = array_map('trim', explode(',', $location, 2));
+            $latitude = $coordinates[0] ?? null;
+            $longitude = $coordinates[1] ?? null;
+            $stmt = $pdo->prepare(
+                "UPDATE branches
+                 SET branch_name = ?, address = ?, latitude = ?, longitude = ?, manager_user_id = ?
+                 WHERE branch_id = ?"
+            );
+            $stmt->execute([$station_name, $station_address, $latitude, $longitude, $manager_id, $station_id]);
             $message = "Configuration saved successfully!";
         } catch (PDOException $e) {
             $error = "Error updating configuration: " . $e->getMessage();
@@ -75,8 +91,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if (!empty($station_id) && in_array($new_status, ['Active', 'Maintenance'])) {
             try {
-                $stmt = $pdo->prepare("UPDATE stations SET status = ? WHERE station_id = ?");
-                $stmt->execute([$new_status, $station_id]);
+                $branchStatus = $new_status === 'Maintenance' ? 'maintenance' : 'active';
+                $stmt = $pdo->prepare("UPDATE branches SET status = ? WHERE branch_id = ?");
+                $stmt->execute([$branchStatus, $station_id]);
                 echo json_encode(['success' => true]);
             } catch (PDOException $e) {
                 echo json_encode(['success' => false, 'message' => $e->getMessage()]);
@@ -92,7 +109,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $station_id = $_POST['station_id'] ?? '';
 
         try {
-            $stmt = $pdo->prepare("UPDATE stations SET status = 'Decommissioned' WHERE station_id = ?");
+            $stmt = $pdo->prepare("UPDATE branches SET status = 'closed' WHERE branch_id = ?");
             $stmt->execute([$station_id]);
             $message = "Station successfully decommissioned and hidden.";
         } catch (PDOException $e) {
@@ -105,7 +122,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $stations = [];
 $branchManagers = [];
 try {
-    $stmt = $pdo->query("SELECT s.*, u.user_name AS manager_name, u.email AS manager_email FROM stations s LEFT JOIN users u ON u.user_id = s.business_user_id WHERE s.status != 'Decommissioned' OR s.status IS NULL ORDER BY s.station_id DESC");
+        $stmt = $pdo->query(
+           "SELECT s.branch_id AS station_id, s.branch_code, s.branch_name AS station_name,
+                 CASE WHEN s.latitude IS NOT NULL AND s.longitude IS NOT NULL
+                     THEN CONCAT(s.latitude, ', ', s.longitude) ELSE '' END AS location,
+                 s.address AS station_address, s.status, s.created_at,
+                 u.user_name AS manager_name, u.email AS manager_email
+            FROM branches s
+            LEFT JOIN users u ON u.user_id = s.manager_user_id
+            WHERE LOWER(COALESCE(s.status, 'active')) <> 'closed'
+            ORDER BY s.branch_id DESC"
+        );
     $stations = $stmt->fetchAll();
 
     $managerStmt = $pdo->query("SELECT user_id, email FROM users WHERE COALESCE(business_role_id, role_id) = 4 AND status NOT IN ('suspended', 'removed') ORDER BY email");

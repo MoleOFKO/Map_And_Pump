@@ -97,10 +97,10 @@ try {
 
 try {
     $invitationStmt = $pdo->prepare(
-        "SELECT i.invitation_id, i.business_role_id, h.company_name, s.station_name
+        "SELECT i.invitation_id, i.business_role_id, h.company_name, s.branch_name AS station_name
          FROM invitations i
          INNER JOIN headquarter h ON h.headquarter_id = i.headquarter_id
-         INNER JOIN stations s ON s.station_id = i.station_id
+         INNER JOIN branches s ON s.branch_id = i.station_id
          WHERE i.invited_user_id = ? AND i.status = 'pending'
          ORDER BY i.created_at ASC LIMIT 1"
     );

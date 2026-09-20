@@ -93,11 +93,11 @@ try {
         $stateFilter = $activeTab === 'read' ? ' AND f.staff_read_at IS NOT NULL' : ($activeTab === 'unread' ? ' AND f.staff_read_at IS NULL' : '');
         $stmt = $pdo->prepare(
                 'SELECT f.feedback_id, f.user_id, f.feedback, f.created_at, f.usage_id, f.station_id, f.rating, f.staff_read_at,
-                    uh.qr_refrence_code, s.station_name, o.oil_name,
+                    uh.qr_refrence_code, s.branch_name AS station_name, o.oil_name,
                     (SELECT COUNT(*) FROM feedback_replies fr WHERE fr.feedback_id = f.feedback_id) AS reply_count
              FROM feedback f
              INNER JOIN usage_history uh ON uh.usage_id = f.usage_id
-             LEFT JOIN stations s ON s.station_id = f.station_id
+             LEFT JOIN branches s ON s.branch_id = f.station_id
              LEFT JOIN oil_types o ON o.oil_type_id = uh.oil_type_id
                          WHERE f.station_id = ?
                              AND uh.station_id = f.station_id' . $stateFilter . '

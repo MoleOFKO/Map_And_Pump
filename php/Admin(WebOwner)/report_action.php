@@ -127,7 +127,7 @@ if ($action === 'generate') {
         $summaryRow = $summaryQuery?->fetch_assoc() ?: ['total' => 0, 'active' => 0];
         $summary = 'HQ records: ' . (int) $summaryRow['total'] . '; active linked accounts: ' . (int) $summaryRow['active'];
     } elseif ($scope === 'stations') {
-        $summaryQuery = $conn->query('SELECT COUNT(*) AS total FROM stations');
+        $summaryQuery = $conn->query('SELECT COUNT(*) AS total FROM branches');
         $summary = 'Station records: ' . (int) (($summaryQuery?->fetch_assoc()['total'] ?? 0));
     } elseif ($scope === 'requests') {
         $summaryQuery = $conn->query('SELECT COUNT(*) AS total, COALESCE(SUM(status=0x70656e64696e67),0) AS pending, COALESCE(SUM(status=0x617070726f766564),0) AS approved, COALESCE(SUM(status IN (0x72656a6563746564,0x666c6167676564)),0) AS declined FROM system_requests');

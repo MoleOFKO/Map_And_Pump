@@ -65,16 +65,19 @@ if (!function_exists('map_pump_load_latest_station_prices')) {
     {
         $latestInventorySql = map_pump_latest_station_inventory_sql();
         $stmt = $pdo->query(
-            "SELECT s.station_id, s.station_name, s.location, s.station_address,
+                "SELECT s.branch_id AS station_id, s.branch_name AS station_name,
+                    CASE WHEN s.latitude IS NOT NULL AND s.longitude IS NOT NULL
+                     THEN CONCAT(s.latitude, ', ', s.longitude) ELSE '' END AS location,
+                    s.address AS station_address,
                     h.headquarter_id, h.company_name,
                     ot.oil_type_id, ot.oil_name, li.price_per_litre, li.is_active, li.updated_at,
                     t.fuel_code, t.current_l, t.capacity_l, t.is_enabled
-             FROM stations s
-             INNER JOIN station_business_scope sbs ON sbs.station_id = s.station_id
+             FROM branches s
+             INNER JOIN station_business_scope sbs ON sbs.station_id = s.branch_id
              INNER JOIN headquarter h ON h.headquarter_id = sbs.headquarter_id
-             INNER JOIN ({$latestInventorySql}) li ON li.station_id = s.station_id
+             INNER JOIN ({$latestInventorySql}) li ON li.station_id = s.branch_id
              INNER JOIN oil_types ot ON ot.oil_type_id = li.oil_type_id
-             LEFT JOIN tanks t ON t.branch_id = s.station_id
+             LEFT JOIN tanks t ON t.branch_id = s.branch_id
                 AND (
                     (t.fuel_code = 'p92' AND LOWER(REPLACE(ot.oil_name, ' ', '')) = 'octane92')
                     OR (t.fuel_code = 'p95' AND LOWER(REPLACE(ot.oil_name, ' ', '')) = 'octane95')
@@ -99,9 +102,9 @@ if (!function_exists('map_pump_load_previous_week_prices')) {
     function map_pump_load_previous_week_prices(PDO $pdo): array
     {
         $stmt = $pdo->query(
-            "SELECT s.station_id, ot.oil_name, soi.price_per_litre
+            "SELECT s.branch_id AS station_id, ot.oil_name, soi.price_per_litre
              FROM station_oil_inventory soi
-             INNER JOIN stations s ON s.station_id = soi.station_id
+             INNER JOIN branches s ON s.branch_id = soi.station_id
              INNER JOIN oil_types ot ON ot.oil_type_id = soi.oil_type_id
              INNER JOIN (
                  SELECT station_id, oil_type_id, MAX(inventory_id) AS inventory_id
@@ -361,9 +364,9 @@ if (!function_exists('map_pump_build_live_ticker')) {
         }
 
         $deliveryStmt = $pdo->query(
-            "SELECT s.station_name, d.quantity_l, d.fuel_code, d.received_at
+            "SELECT s.branch_name AS station_name, d.quantity_l, d.fuel_code, d.received_at
              FROM deliveries d
-             INNER JOIN stations s ON s.station_id = d.branch_id
+             INNER JOIN branches s ON s.branch_id = d.branch_id
              ORDER BY d.received_at DESC
              LIMIT 4"
         );
@@ -384,7 +387,7 @@ if (!function_exists('map_pump_build_market_news')) {
         $posts = [];
 
         $priceChanges = $pdo->query(
-            "SELECT s.station_name, h.company_name, ot.oil_name,
+            "SELECT s.branch_name AS station_name, h.company_name, ot.oil_name,
                     latest.price_per_litre AS current_price,
                     previous.price_per_litre AS previous_price,
                     latest.updated_at
@@ -407,8 +410,8 @@ if (!function_exists('map_pump_build_market_news')) {
                       AND soi2.oil_type_id = latest.oil_type_id
                       AND soi2.inventory_id < latest.inventory_id
                )
-             INNER JOIN stations s ON s.station_id = latest.station_id
-             INNER JOIN station_business_scope sbs ON sbs.station_id = s.station_id
+             INNER JOIN branches s ON s.branch_id = latest.station_id
+             INNER JOIN station_business_scope sbs ON sbs.station_id = s.branch_id
              INNER JOIN headquarter h ON h.headquarter_id = sbs.headquarter_id
              INNER JOIN oil_types ot ON ot.oil_type_id = latest.oil_type_id
              WHERE latest.price_per_litre > 0
@@ -431,9 +434,9 @@ if (!function_exists('map_pump_build_market_news')) {
         }
 
         $deliveryStmt = $pdo->query(
-            "SELECT s.station_name, d.quantity_l, d.fuel_code, d.supplier, d.received_at
+            "SELECT s.branch_name AS station_name, d.quantity_l, d.fuel_code, d.supplier, d.received_at
              FROM deliveries d
-             INNER JOIN stations s ON s.station_id = d.branch_id
+             INNER JOIN branches s ON s.branch_id = d.branch_id
              ORDER BY d.received_at DESC
              LIMIT 4"
         );
@@ -466,9 +469,9 @@ if (!function_exists('map_pump_build_platform_stats')) {
     function map_pump_build_platform_stats(PDO $pdo): array
     {
         $stations = (int) $pdo->query(
-            "SELECT COUNT(DISTINCT s.station_id)
-             FROM stations s
-             INNER JOIN station_business_scope sbs ON sbs.station_id = s.station_id
+            "SELECT COUNT(DISTINCT s.branch_id)
+             FROM branches s
+             INNER JOIN station_business_scope sbs ON sbs.station_id = s.branch_id
              WHERE COALESCE(s.status, 'Active') <> 'Decommissioned'"
         )->fetchColumn();
 

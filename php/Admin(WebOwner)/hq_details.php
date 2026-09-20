@@ -113,13 +113,16 @@ try {
     // Prefer explicit station-to-HQ mappings, then fall back to an HQ manager.
     $stations = [];
     $stationQuery = $conn->prepare(
-        'SELECT s.station_id, s.station_name, s.location, s.station_address, s.status, s.created_at,
+        'SELECT s.branch_id AS station_id, s.branch_name AS station_name,
+            CASE WHEN s.latitude IS NOT NULL AND s.longitude IS NOT NULL
+                 THEN CONCAT(s.latitude, \', \', s.longitude) ELSE \'\' END AS location,
+            s.address AS station_address, s.status, s.created_at,
                 manager.user_name AS manager_name
-         FROM stations s
-         INNER JOIN station_business_scope scope ON scope.station_id = s.station_id
-         LEFT JOIN users manager ON manager.user_id = s.business_user_id
+         FROM branches s
+         INNER JOIN station_business_scope scope ON scope.station_id = s.branch_id
+         LEFT JOIN users manager ON manager.user_id = s.manager_user_id
          WHERE scope.headquarter_id = ?
-         ORDER BY s.station_name ASC, s.station_id ASC
+        ORDER BY s.branch_name ASC, s.branch_id ASC
          LIMIT 100'
     );
     if (!$stationQuery) {
@@ -142,12 +145,15 @@ try {
 
     if (!$stations) {
         $fallbackQuery = $conn->prepare(
-            'SELECT DISTINCT s.station_id, s.station_name, s.location, s.station_address, s.status, s.created_at,
+                'SELECT DISTINCT s.branch_id AS station_id, s.branch_name AS station_name,
+                    CASE WHEN s.latitude IS NOT NULL AND s.longitude IS NOT NULL
+                     THEN CONCAT(s.latitude, \', \', s.longitude) ELSE \'\' END AS location,
+                    s.address AS station_address, s.status, s.created_at,
                     manager.user_name AS manager_name
-             FROM stations s
-             INNER JOIN users manager ON manager.user_id = s.business_user_id
+                 FROM branches s
+                 INNER JOIN users manager ON manager.user_id = s.manager_user_id
              WHERE manager.headquarter_id = ?
-             ORDER BY s.station_name ASC, s.station_id ASC
+            ORDER BY s.branch_name ASC, s.branch_id ASC
              LIMIT 100'
         );
         if (!$fallbackQuery) {

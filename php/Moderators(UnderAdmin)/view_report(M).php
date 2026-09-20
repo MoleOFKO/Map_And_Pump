@@ -15,7 +15,7 @@ $reports = [];
 $dbError = null;
 
 if (hq_db_available()) {
-    foreach (['hqs' => 'SELECT COUNT(*) AS value FROM headquarter', 'stations' => 'SELECT COUNT(*) AS value FROM stations', 'requests' => 'SELECT COUNT(*) AS value FROM system_requests', 'reports' => 'SELECT COUNT(*) AS value FROM report', 'reports_today' => 'SELECT COUNT(*) AS value FROM report WHERE DATE(created_at)=CURDATE()'] as $key => $sql) {
+    foreach (['hqs' => 'SELECT COUNT(*) AS value FROM headquarter', 'stations' => 'SELECT COUNT(*) AS value FROM branches', 'requests' => 'SELECT COUNT(*) AS value FROM system_requests', 'reports' => 'SELECT COUNT(*) AS value FROM report', 'reports_today' => 'SELECT COUNT(*) AS value FROM report WHERE DATE(created_at)=CURDATE()'] as $key => $sql) {
         $query = $conn->query($sql);
         if ($query) {
             $metrics[$key] = (int) (($query->fetch_assoc()['value'] ?? 0));

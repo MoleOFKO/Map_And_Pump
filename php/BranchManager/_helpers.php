@@ -34,21 +34,7 @@ function current_context($db = null) {
     global $pdo, $conn;
     $dbHandle = $db ?? $pdo ?? $conn;
 
-    $hasStationBranch = false;
-    try {
-        $columnCheck = $dbHandle->query(
-            "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
-             WHERE TABLE_SCHEMA = DATABASE()
-               AND TABLE_NAME = 'stations'
-               AND COLUMN_NAME = 'branch_id'"
-        );
-        $hasStationBranch = (int)$columnCheck->fetchColumn() > 0;
-    } catch (Throwable $e) {
-        $hasStationBranch = false;
-    }
-    $branchExpression = $hasStationBranch
-        ? 'COALESCE(u.branch_id, s.branch_id, s.station_id)'
-        : 'COALESCE(u.branch_id, s.station_id)';
+    $branchExpression = 'COALESCE(u.branch_id, managed.station_id)';
 
     $stmt = $dbHandle->prepare("
         SELECT u.user_id,
@@ -66,7 +52,7 @@ function current_context($db = null) {
                b.phone AS branch_phone, b.email AS branch_email,
                b.opening_time, b.closing_time, b.is_24hr,
                b.pump_count, b.tank_count, b.hq_region, b.established_at,
-               COALESCE(b.status, LOWER(s.status), 'active') AS branch_status,
+               COALESCE(b.status, 'active') AS branch_status,
                hq.company_name AS hq_name,
                hq.company_logo AS hq_logo
         FROM users u
@@ -76,7 +62,6 @@ function current_context($db = null) {
             FROM station_business_scope
             GROUP BY branch_manager_user_id
         ) managed ON managed.branch_manager_user_id = u.user_id
-        LEFT JOIN stations s ON s.station_id = managed.station_id
         LEFT JOIN branches b ON b.branch_id = {$branchExpression}
                 LEFT JOIN headquarter hq ON hq.headquarter_id = COALESCE(u.headquarter_id, managed.headquarter_id)
                 WHERE u.user_id = :uid

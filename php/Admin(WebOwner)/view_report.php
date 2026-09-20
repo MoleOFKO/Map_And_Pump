@@ -29,7 +29,7 @@ $dbError = null;
 if (hq_db_available()) {
     $queries = [
         'hqs' => 'SELECT COUNT(*) AS total FROM headquarter',
-        'stations' => 'SELECT COUNT(*) AS total FROM stations',
+        'stations' => 'SELECT COUNT(*) AS total FROM branches',
         'requests' => 'SELECT COUNT(*) AS total FROM system_requests',
     ];
     foreach ($queries as $key => $sql) {
