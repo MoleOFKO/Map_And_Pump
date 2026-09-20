@@ -26,9 +26,12 @@ try {
     map_pump_ensure_invitation_schema($pdo);
 
     $stationStmt = $pdo->prepare(
-        'SELECT station_name, location FROM stations s
-         INNER JOIN station_business_scope sbs ON sbs.station_id = s.station_id
-         WHERE s.station_id = ? AND sbs.headquarter_id = ? LIMIT 1'
+        "SELECT s.branch_name AS station_name,
+            CASE WHEN s.latitude IS NOT NULL AND s.longitude IS NOT NULL
+                 THEN CONCAT(s.latitude, ', ', s.longitude) ELSE s.address END AS location
+         FROM branches s
+         INNER JOIN station_business_scope sbs ON sbs.station_id = s.branch_id
+         WHERE s.branch_id = ? AND sbs.headquarter_id = ? LIMIT 1"
     );
     $stationStmt->execute([$stationId, $hqId]);
     $station = $stationStmt->fetch(PDO::FETCH_ASSOC);

@@ -11,7 +11,7 @@ $dbOnline = hq_db_available();
 if ($dbOnline) {
     $scalarQueries = [
         'hqs' => 'SELECT COUNT(*) AS value FROM headquarter',
-        'stations' => 'SELECT COUNT(*) AS value FROM stations',
+        'stations' => 'SELECT COUNT(*) AS value FROM branches',
         'reports' => 'SELECT COUNT(*) AS value FROM report',
         'reports_today' => 'SELECT COUNT(*) AS value FROM report WHERE DATE(created_at) = CURDATE()',
         'open_requests' => "SELECT COUNT(*) AS value FROM system_requests WHERE LOWER(status) IN ('pending', 'flagged')",

@@ -19,10 +19,10 @@ if ($feedbackReady && $userId > 0) {
 
         $feedbackStmt = $pdo->prepare(
             'SELECT f.feedback_id, f.feedback, f.created_at, f.usage_id, f.rating,
-                    s.station_name, o.oil_name,
+                    s.branch_name AS station_name, o.oil_name,
                     (SELECT COUNT(*) FROM feedback_replies fr WHERE fr.feedback_id = f.feedback_id) AS reply_count
              FROM feedback f
-             LEFT JOIN stations s ON s.station_id = f.station_id
+             LEFT JOIN branches s ON s.branch_id = f.station_id
              LEFT JOIN usage_history uh ON uh.usage_id = f.usage_id
              LEFT JOIN oil_types o ON o.oil_type_id = uh.oil_type_id
              WHERE f.user_id = ?
@@ -34,11 +34,11 @@ if ($feedbackReady && $userId > 0) {
         $replyStmt = $pdo->prepare(
             'SELECT fr.reply_id, fr.reply_text, fr.created_at, f.feedback_id, f.feedback, f.usage_id,
                     COALESCE(NULLIF(staff.user_name, \'\'), \'Station staff\') AS staff_name,
-                    s.station_name, o.oil_name
+                    s.branch_name AS station_name, o.oil_name
              FROM feedback_replies fr
              INNER JOIN feedback f ON f.feedback_id = fr.feedback_id
              LEFT JOIN users staff ON staff.user_id = fr.staff_id
-             LEFT JOIN stations s ON s.station_id = f.station_id
+             LEFT JOIN branches s ON s.branch_id = f.station_id
              LEFT JOIN usage_history uh ON uh.usage_id = f.usage_id
              LEFT JOIN oil_types o ON o.oil_type_id = uh.oil_type_id
              WHERE f.user_id = ?

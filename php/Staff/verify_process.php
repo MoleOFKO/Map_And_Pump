@@ -275,9 +275,9 @@ function find_usage_history_by_booking_id(PDO $pdo, int $bookingId): ?array
     $stmt = $pdo->prepare(
         'SELECT uh.usage_id, uh.booking_id, uh.user_id, uh.station_id, uh.oil_type_id, uh.qr_code, uh.qr_refrence_code,
                 uh.status, uh.filled_liters, uh.filled_at, uh.expire_at, uh.booked_at AS created_at,
-                s.station_name, o.oil_name
+                s.branch_name AS station_name, o.oil_name
          FROM usage_history uh
-         LEFT JOIN stations s ON s.station_id = uh.station_id
+         LEFT JOIN branches s ON s.branch_id = uh.station_id
          LEFT JOIN oil_types o ON o.oil_type_id = uh.oil_type_id
          WHERE uh.booking_id = :booking_id
          LIMIT 1'
@@ -293,9 +293,9 @@ function find_usage_history_by_code(PDO $pdo, string $bookingCode, string $norma
     $stmt = $pdo->prepare(
         'SELECT uh.usage_id, uh.booking_id, uh.user_id, uh.station_id, uh.oil_type_id, uh.qr_code, uh.qr_refrence_code,
                 uh.status, uh.filled_liters, uh.filled_at, uh.expire_at, uh.booked_at AS created_at,
-                s.station_name, o.oil_name
+                s.branch_name AS station_name, o.oil_name
          FROM usage_history uh
-         LEFT JOIN stations s ON s.station_id = uh.station_id
+         LEFT JOIN branches s ON s.branch_id = uh.station_id
          LEFT JOIN oil_types o ON o.oil_type_id = uh.oil_type_id
          WHERE uh.qr_refrence_code = :code_exact
             OR uh.qr_refrence_code LIKE :code_prefix
@@ -335,9 +335,9 @@ try {
     $stmt = $pdo->prepare(
         'SELECT b.booking_id, b.user_id, b.station_id, b.oil_type_id, b.qr_code, b.qr_refrence_code,
                 b.status, b.filled_gas, b.time_of_filled, b.expire_at, b.created_at,
-                s.station_name, o.oil_name
+                s.branch_name AS station_name, o.oil_name
          FROM booking b
-         LEFT JOIN stations s ON s.station_id = b.station_id
+         LEFT JOIN branches s ON s.branch_id = b.station_id
          LEFT JOIN oil_types o ON o.oil_type_id = b.oil_type_id
          WHERE b.qr_refrence_code = :code_exact
             OR b.qr_refrence_code LIKE :code_prefix

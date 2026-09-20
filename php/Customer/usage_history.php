@@ -16,11 +16,13 @@ if ($userId > 0 && $usageHistoryReady) {
     try {
         $stmt = $pdo->prepare(
             'SELECT uh.usage_id, uh.booking_id, uh.qr_refrence_code, uh.filled_liters, uh.price_per_litre,
-                    uh.total_cost, uh.status, uh.filled_at, s.station_name, s.location AS station_location,
+                    uh.total_cost, uh.status, uh.filled_at, s.branch_name AS station_name,
+                    CASE WHEN s.latitude IS NOT NULL AND s.longitude IS NOT NULL
+                        THEN CONCAT(s.latitude, ', ', s.longitude) ELSE s.address END AS station_location,
                     o.oil_name, c.car_plate_number,
                     COALESCE(fb.feedback_count, 0) AS feedback_count, fb.latest_rating
              FROM usage_history uh
-             LEFT JOIN stations s ON s.station_id = uh.station_id
+             LEFT JOIN branches s ON s.branch_id = uh.station_id
              LEFT JOIN oil_types o ON o.oil_type_id = uh.oil_type_id
              LEFT JOIN car_license c ON c.car_license_id = uh.car_license_id
              LEFT JOIN (
