@@ -81,7 +81,7 @@ $reportStationPct = $reportTotal > 0 ? round(($reportHqCount + $reportStationCou
     <link rel="icon" type="image/png" href="/images/Logo.png">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
-    <link rel="stylesheet" href="../../css/Admin.css">
+    <link rel="stylesheet" href="/css/Admin.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
 </head>
 <body class="background_color" id="background_color">
