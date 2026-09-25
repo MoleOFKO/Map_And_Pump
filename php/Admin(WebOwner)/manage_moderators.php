@@ -214,16 +214,24 @@ $flashType = (string) ($flash['type'] ?? '');
         }
         body.background_color.light-mode .moderator-search-item { color:#111; }
         body.background_color.light-mode .moderator-search-item small { color:#666; }
+        .moderator-flash {
+            border-radius:14px;
+            background:rgba(10,22,44,.82);
+            border:1px solid var(--glass-border);
+            color:var(--text-primary);
+        }
+        body.background_color.light-mode .moderator-flash {
+            background:rgba(255,255,255,.92);
+        }
     </style>
 </head>
 <body class="background_color" id="background_color">
 <?php $adminSection = 'manage_moderators'; include __DIR__ . '/admin_section_nav.php'; ?>
 
-    
-
-    
-
-    <div class="container my-5">
+<?php
+$filtersActive = ($search !== '' || $roleFilter > 0 || $statusFilter !== '');
+?>
+<main class="container my-5">
         <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3">
             <div>
                 <span class="stat-chip mb-2"><i class="bi bi-shield-lock-fill txt-neon-cyan"></i> Security Division</span>
@@ -234,31 +242,102 @@ $flashType = (string) ($flash['type'] ?? '');
         </div>
 
         <?php if ($flash && $flashType !== ''): ?>
-            <div class="alert alert-<?= hq_escape($flashType) ?> border-0 shadow-sm" role="alert">
-                <?= hq_escape((string) ($flash['message'] ?? '')) ?>
+            <div class="alert moderator-flash alert-<?= hq_escape($flashType) ?> alert-dismissible fade show mb-4" role="alert">
+                <i class="bi <?= $flashType === 'success' ? 'bi-check-circle-fill text-success' : 'bi-exclamation-triangle-fill text-danger' ?> me-2"></i><?= hq_escape((string) ($flash['message'] ?? '')) ?>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="alert" aria-label="Close"></button>
             </div>
         <?php endif; ?>
         <?php if ($dbError): ?>
-            <div class="alert alert-danger border-0 shadow-sm" role="alert"><?= hq_escape($dbError) ?></div>
+            <div class="alert moderator-flash alert-danger mb-4" role="alert"><i class="bi bi-database-exclamation me-2"></i><?= hq_escape($dbError) ?></div>
         <?php endif; ?>
 
-        <div class="row g-4 mb-4">
-            <div class="col-12 col-sm-4"><div class="dashboard-card metric-card"><div class="d-flex align-items-center justify-content-between gap-3"><div><p class="mb-0 metric-label">Total Moderators</p><h4 class="fw-bold text-white mb-0 metric-value" style="font-size:1.8rem;"><?= (int) $metrics['total'] ?></h4></div><span class="fs-3 txt-neon-cyan"><i class="bi bi-people-fill"></i></span></div><p class="text-success small mb-0 mt-2"><i class="bi bi-circle-fill me-1" style="font-size:0.45rem;"></i><?= (int) $metrics['active'] ?> active accounts</p></div></div>
-            <div class="col-12 col-sm-4"><div class="dashboard-card metric-card"><div class="d-flex align-items-center justify-content-between gap-3"><div><p class="mb-0 metric-label">Granted Privilege</p><h4 class="fw-bold text-white mb-0" style="font-size:1.2rem; letter-spacing:-0.02em;">Moderator</h4></div><span class="fs-3 txt-neon-blue"><i class="bi bi-key-fill"></i></span></div><p class="text-white-50 small mb-0 mt-2">Admin access cannot be added here</p></div></div>
-            <div class="col-12 col-sm-4"><div class="dashboard-card metric-card"><div class="d-flex align-items-center justify-content-between gap-3"><div><p class="mb-0 metric-label">Last Account Update</p><h4 class="fw-bold text-white mb-0" style="font-size:1.25rem; letter-spacing:-0.03em;"><?= hq_escape($metrics['last_sync'] ? hq_date((string) $metrics['last_sync']) : 'No accounts') ?></h4></div><span class="fs-3 text-success"><i class="bi bi-shield-check"></i></span></div><p class="text-success small mb-0 mt-2"><i class="bi bi-database-check me-1"></i>Live database values</p></div></div>
+        <div class="row g-3 mb-4">
+            <div class="col-12 col-sm-4">
+                <div class="dashboard-card metric-card">
+                    <div class="d-flex align-items-center justify-content-between gap-3">
+                        <div>
+                            <p class="mb-0 metric-label">Total Moderators</p>
+                            <h4 class="fw-bold text-white mb-0 metric-value" style="font-size:1.8rem;"><?= (int) $metrics['total'] ?></h4>
+                        </div>
+                        <span class="fs-3 txt-neon-cyan"><i class="bi bi-people-fill"></i></span>
+                    </div>
+                    <p class="text-white-50 small mb-0 mt-2">Non-admin accounts with Moderator role</p>
+                </div>
+            </div>
+            <div class="col-12 col-sm-4">
+                <div class="dashboard-card metric-card">
+                    <div class="d-flex align-items-center justify-content-between gap-3">
+                        <div>
+                            <p class="mb-0 metric-label">Active</p>
+                            <h4 class="fw-bold text-white mb-0 metric-value" style="font-size:1.8rem;"><?= (int) $metrics['active'] ?></h4>
+                        </div>
+                        <span class="fs-3 text-success"><i class="bi bi-shield-check"></i></span>
+                    </div>
+                    <p class="text-success small mb-0 mt-2"><i class="bi bi-circle-fill me-1" style="font-size:0.45rem;"></i>Approved / active status</p>
+                </div>
+            </div>
+            <div class="col-12 col-sm-4">
+                <div class="dashboard-card metric-card">
+                    <div class="d-flex align-items-center justify-content-between gap-3">
+                        <div>
+                            <p class="mb-0 metric-label">Suspended</p>
+                            <h4 class="fw-bold text-white mb-0 metric-value" style="font-size:1.8rem;"><?= (int) $metrics['suspended'] ?></h4>
+                        </div>
+                        <span class="fs-3" style="color:#ff9f43;"><i class="bi bi-pause-circle-fill"></i></span>
+                    </div>
+                    <p class="text-white-50 small mb-0 mt-2">
+                        <?php if (!empty($metrics['last_sync'])): ?>
+                            Last update <?= hq_escape(hq_date((string) $metrics['last_sync'])) ?>
+                        <?php else: ?>
+                            No moderator accounts yet
+                        <?php endif; ?>
+                    </p>
+                </div>
+            </div>
         </div>
 
         <div class="row g-4">
-            <div class="col-12"><div class="dashboard-card py-3 px-4"><form class="row g-3 align-items-center" method="GET" action="manage_moderators.php">
-                <div class="col-12 col-md-5"><div class="input-group"><span class="input-group-text bg-transparent border-end-0" style="border-color:var(--glass-border);color:var(--neon-cyan);border-radius:12px 0 0 12px;"><i class="bi bi-search"></i></span><input type="text" class="form-control glass-input border-start-0" placeholder="Search username or email..." name="search" value="<?= hq_escape($search) ?>"></div></div>
-                <div class="col-12 col-md-3"><select class="form-select glass-select" name="role_id"><option value="0">All Roles</option><?php foreach ($roles as $role): ?><option value="<?= (int) $role['role_id'] ?>" <?= $roleFilter === (int) $role['role_id'] ? 'selected' : '' ?>><?= hq_escape(moderator_role_label($role['role_name'])) ?></option><?php endforeach; ?></select></div>
-                <div class="col-12 col-md-2"><select class="form-select glass-select" name="status"><option value="">All Statuses</option><?php foreach ($allowedStatuses as $option): ?><option value="<?= hq_escape($option) ?>" <?= $statusFilter === $option ? 'selected' : '' ?>><?= hq_escape(moderator_status_label($option)) ?></option><?php endforeach; ?></select></div>
-                <div class="col-12 col-md-2 d-grid"><button type="submit" class="btn btn-neon">Apply Filter</button></div>
-            </form></div></div>
+            <div class="col-12">
+                <div class="dashboard-card py-3 px-4">
+                    <form class="row g-3 align-items-end" method="GET" action="manage_moderators.php">
+                        <div class="col-12 col-md-4">
+                            <label class="form-label text-white-50 small mb-1" for="moderatorSearch">Search</label>
+                            <div class="input-group">
+                                <span class="input-group-text bg-transparent border-end-0" style="border-color:var(--glass-border);color:var(--neon-cyan);border-radius:12px 0 0 12px;"><i class="bi bi-search"></i></span>
+                                <input id="moderatorSearch" type="search" class="form-control glass-input border-start-0" placeholder="Username or email…" name="search" value="<?= hq_escape($search) ?>">
+                            </div>
+                        </div>
+                        <div class="col-12 col-md-3">
+                            <label class="form-label text-white-50 small mb-1" for="moderatorRoleFilter">Role</label>
+                            <select id="moderatorRoleFilter" class="form-select glass-select" name="role_id">
+                                <option value="0">All Roles</option>
+                                <?php foreach ($roles as $role): ?>
+                                    <option value="<?= (int) $role['role_id'] ?>" <?= $roleFilter === (int) $role['role_id'] ? 'selected' : '' ?>><?= hq_escape(moderator_role_label($role['role_name'])) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <div class="col-12 col-md-2">
+                            <label class="form-label text-white-50 small mb-1" for="moderatorStatusFilter">Status</label>
+                            <select id="moderatorStatusFilter" class="form-select glass-select" name="status">
+                                <option value="">All Statuses</option>
+                                <?php foreach ($allowedStatuses as $option): ?>
+                                    <option value="<?= hq_escape($option) ?>" <?= $statusFilter === $option ? 'selected' : '' ?>><?= hq_escape(moderator_status_label($option)) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <div class="col-12 col-md-3 d-flex gap-2">
+                            <button type="submit" class="btn btn-neon flex-grow-1">Apply Filter</button>
+                            <?php if ($filtersActive): ?>
+                                <a href="manage_moderators.php" class="btn btn-outline-secondary text-white-50 border-secondary border-opacity-25" title="Clear filters">Clear</a>
+                            <?php endif; ?>
+                        </div>
+                    </form>
+                </div>
+            </div>
 
             <div class="col-12"><div class="analytics-card"><div class="table-responsive"><table class="table table-dark-custom align-middle m-0"><thead><tr><th>Moderator Identity</th><th>Email Address</th><th>Designation Role</th><th>Last Account Update</th><th>Account State</th><th class="text-end">Actions</th></tr></thead><tbody>
             <?php if (!$moderatorRows): ?>
-                <tr><td colspan="6" class="text-center text-white-50 py-5">No moderator accounts match the current filters.</td></tr>
+                <tr><td colspan="6" class="text-center text-white-50 py-5"><i class="bi bi-person-x fs-3 d-block mb-2"></i>No moderator accounts match the current filters.</td></tr>
             <?php else: ?>
                 <?php foreach ($moderatorRows as $row): ?>
                     <?php
@@ -282,6 +361,7 @@ $flashType = (string) ($flash['type'] ?? '');
             </tbody></table></div></div></div>
         </div>
     </div>
+</main>
 
     <div class="modal fade glass-modal" id="addAdminModal" tabindex="-1" aria-labelledby="addAdminModalLabel" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-lg">
