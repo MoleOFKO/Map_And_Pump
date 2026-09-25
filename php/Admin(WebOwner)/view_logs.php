@@ -270,7 +270,7 @@ $exportQuery = http_build_query([
                     $actorRole = (string) ($log['actor_role'] ?? '');
                     ?>
                     <div>
-                        <span class="log-time">[<?= hq_escape((string) $log['created_at']) ?>]</span>
+                        <span class="log-time">[<?= hq_escape(admin_date((string) $log['created_at'])) ?>]</span>
                         <span class="<?= hq_escape($logClass) ?>">[<?= strtoupper(hq_escape((string) $log['level'])) ?>]</span>
                         &nbsp;&nbsp;<?= hq_escape((string) $log['action']) ?>
                         <?php if ($actorName !== ''): ?>

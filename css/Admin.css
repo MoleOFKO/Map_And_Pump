@@ -1446,6 +1446,65 @@ body.background_color.light-mode #mainMenuOffcanvas .offcanvas-header {
 .log-error  { color: #ff4d6a; font-weight: 700; }
 .log-sec    { color: var(--neon-purple); font-weight: 700; }
 
+/* Light mode terminal / audit log panel */
+body.background_color.light-mode .terminal-panel,
+body.background_color[data-theme="light"] .terminal-panel {
+    background: rgba(248, 251, 255, 0.96);
+    color: #1e293b;
+    border-color: rgba(11, 94, 215, 0.18);
+}
+
+body.background_color.light-mode .terminal-panel::before,
+body.background_color[data-theme="light"] .terminal-panel::before {
+    background: repeating-linear-gradient(
+        to bottom,
+        transparent 0px,
+        transparent 2px,
+        rgba(15, 23, 42, 0.03) 2px,
+        rgba(15, 23, 42, 0.03) 4px
+    );
+}
+
+body.background_color.light-mode .log-time,
+body.background_color[data-theme="light"] .log-time {
+    color: rgba(71, 85, 105, 0.85);
+}
+
+body.background_color.light-mode .log-info,
+body.background_color[data-theme="light"] .log-info {
+    color: #0b5ed7;
+}
+
+body.background_color.light-mode .log-warn,
+body.background_color[data-theme="light"] .log-warn {
+    color: #b45309;
+}
+
+body.background_color.light-mode .log-error,
+body.background_color[data-theme="light"] .log-error {
+    color: #dc2626;
+}
+
+body.background_color.light-mode .log-sec,
+body.background_color[data-theme="light"] .log-sec {
+    color: #7c3aed;
+}
+
+body.background_color.light-mode .terminal-panel .txt-neon-cyan,
+body.background_color[data-theme="light"] .terminal-panel .txt-neon-cyan {
+    color: #0e7490 !important;
+}
+
+body.background_color.light-mode .terminal-panel::-webkit-scrollbar-track,
+body.background_color[data-theme="light"] .terminal-panel::-webkit-scrollbar-track {
+    background: rgba(226, 232, 240, 0.9);
+}
+
+body.background_color.light-mode .terminal-panel::-webkit-scrollbar-thumb,
+body.background_color[data-theme="light"] .terminal-panel::-webkit-scrollbar-thumb {
+    background: rgba(11, 94, 215, 0.35);
+}
+
 /* Blinking terminal cursor */
 @keyframes termBlink {
     0%, 100% { opacity: 1; }
