@@ -14,7 +14,8 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 $userId = filter_var($_POST['user_id'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
 $userName = trim((string) ($_POST['user_name'] ?? ''));
 $email = strtolower(trim((string) ($_POST['email'] ?? '')));
-$redirect = trim((string) ($_POST['return_to'] ?? 'view_users.php'));
+$redirectRaw = basename(trim((string) ($_POST['return_to'] ?? 'view_users.php')));
+$redirect = $redirectRaw === 'view_users.php' ? 'view_users.php' : 'view_users.php';
 
 if (!$userId || $userName === '' || !filter_var($email, FILTER_VALIDATE_EMAIL) || mb_strlen($userName) > 225 || mb_strlen($email) > 255) {
     hq_flash('danger', 'Please provide valid Customer user details.');
