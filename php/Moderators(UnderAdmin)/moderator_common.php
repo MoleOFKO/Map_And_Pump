@@ -109,17 +109,22 @@ function moderator_hq_rows(string $search, string $region, string $status): arra
         $types .= 's';
     }
     if ($status !== '') {
-        $where[] = 'LOWER(COALESCE(owner.status, \'approved\')) = ?';
-        $params[] = $status;
-        $types .= 's';
+        if (in_array($status, ['approved', 'active'], true)) {
+            $where[] = "LOWER(COALESCE(owner.status, 'approved')) IN ('approved', 'active')";
+        } else {
+            $where[] = "LOWER(COALESCE(owner.status, 'approved')) = ?";
+            $params[] = $status;
+            $types .= 's';
+        }
     }
 
-   $sql = "SELECT h.headquarter_id, h.company_name, h.company_logo, h.location, h.headquarter_email,
+    // Station totals from `branches` via station_business_scope (never dummy `stations` view).
+    $sql = "SELECT h.headquarter_id, h.company_name, h.company_logo, h.location, h.headquarter_email,
        h.contact_number, h.business_license, h.created_at, h.expire_at,
        owner.user_name AS owner_name, owner.email AS owner_email,
        COALESCE(owner.status, 'pending') AS account_status,
        COALESCE(user_counts.user_count, 0) AS user_count,
-       0 AS station_count
+       COALESCE(station_counts.station_count, 0) AS station_count
    FROM headquarter h
    LEFT JOIN (
        SELECT u.headquarter_id, MIN(u.user_id) AS owner_user_id, COUNT(*) AS user_count
@@ -127,11 +132,17 @@ function moderator_hq_rows(string $search, string $region, string $status): arra
        WHERE (u.role_id = 3 OR u.business_role_id = 3)
        GROUP BY headquarter_id
    ) user_counts ON user_counts.headquarter_id = h.headquarter_id
-   LEFT JOIN users owner ON owner.user_id = user_counts.owner_user_id";
-   if ($where) {
-       $sql .= ' WHERE ' . implode(' AND ', $where);
-   }
-   $sql .= ' ORDER BY h.created_at DESC, h.headquarter_id DESC';
+   LEFT JOIN users owner ON owner.user_id = user_counts.owner_user_id
+   LEFT JOIN (
+       SELECT scope.headquarter_id, COUNT(DISTINCT scope.station_id) AS station_count
+       FROM station_business_scope scope
+       INNER JOIN branches b ON b.branch_id = scope.station_id
+       GROUP BY scope.headquarter_id
+   ) station_counts ON station_counts.headquarter_id = h.headquarter_id";
+    if ($where) {
+        $sql .= ' WHERE ' . implode(' AND ', $where);
+    }
+    $sql .= ' ORDER BY h.created_at DESC, h.headquarter_id DESC';
 
    $statement = $conn->prepare($sql);
    if (!$statement) {
