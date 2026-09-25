@@ -49,22 +49,33 @@ $avatarFallbackUrl = map_pump_profile_initial_svg((string) ($user['user_name'] ?
     <link rel="icon" type="image/png" href="/images/Logo.png">
     <link rel="stylesheet" href="/css/Admin.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+<style>
+        .profile-flash { border-radius:14px; background:rgba(10,22,44,.82); border:1px solid var(--glass-border); color:var(--text-primary); }
+        body.background_color.light-mode .profile-flash { background:rgba(255,255,255,.92); }
+    </style>
 </head>
 <body class="background_color" id="background_color">
 <?php $adminSection = 'profile'; include __DIR__ . '/admin_section_nav.php'; ?>
 
-    
-    
-
-    <div class="container my-5" style="max-width:1140px;">
+    <main class="container my-5" style="max-width:1140px;">
         <div class="mb-4">
             <span class="stat-chip mb-2"><i class="bi bi-person-badge-fill txt-neon-cyan"></i> Account Settings</span>
             <h1 class="fw-bold m-0 h4 text-white mt-2">Edit Profile Details</h1>
             <p class="text-white-50 m-0 small mt-1">Update the signed-in admin/moderator identity and security credentials.</p>
         </div>
         
-        <?php if ($flash): ?><div class="alert alert-<?= hq_escape((string) ($flash['type'] ?? 'info')) ?> border-0" role="alert"><?= hq_escape((string) ($flash['message'] ?? '')) ?></div><?php endif; ?>
-        <?php if ($accountDeletionFlash !== ''): ?><div class="alert alert-danger border-0" role="alert"><?= hq_escape($accountDeletionFlash) ?></div><?php endif; ?>
+        <?php if ($flash): ?>
+            <div class="alert profile-flash alert-<?= hq_escape((string) ($flash['type'] ?? 'info')) ?> alert-dismissible fade show mb-4" role="alert">
+                <i class="bi <?= (($flash['type'] ?? '') === 'success') ? 'bi-check-circle-fill text-success' : 'bi-exclamation-triangle-fill text-danger' ?> me-2"></i><?= hq_escape((string) ($flash['message'] ?? '')) ?>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        <?php endif; ?>
+        <?php if ($accountDeletionFlash !== ''): ?>
+            <div class="alert profile-flash alert-danger alert-dismissible fade show mb-4" role="alert">
+                <i class="bi bi-exclamation-triangle-fill text-danger me-2"></i><?= hq_escape($accountDeletionFlash) ?>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        <?php endif; ?>
         <?php if (!$user): ?><div class="alert alert-danger border-0">The live admin account could not be loaded.</div><?php else: ?>
         
         <div class="row g-4">
@@ -77,7 +88,7 @@ $avatarFallbackUrl = map_pump_profile_initial_svg((string) ($user['user_name'] ?
                     <div class="text-center pb-4 border-bottom border-white border-opacity-10">
                         <form action="update_avatar_action.php" method="POST" enctype="multipart/form-data" id="avatarForm">
                             <div class="profile-avatar-container mb-3 mx-auto">
-                                <img src="<?= hq_escape($avatarUrl !== '' ? $avatarUrl : $avatarFallbackUrl) ?>" alt="Current profile avatar" class="profile-avatar-image" id="avatarPreview">
+                                <img src="<?= hq_escape($avatarUrl !== '' ? $avatarUrl : $avatarFallbackUrl) ?>" alt="Current profile avatar" class="profile-avatar-image" id="avatarPreview" onerror="this.onerror=null;this.src='<?= hq_escape($avatarFallbackUrl) ?>';">
                                 <label for="avatarInput" class="avatar-upload-trigger" title="Upload new photo"><i class="bi bi-camera-fill"></i></label>
                                 <input type="file" id="avatarInput" name="profile_avatar" accept="image/jpeg,image/png,image/gif,image/webp" class="d-none">
                             </div>
@@ -165,8 +176,12 @@ $avatarFallbackUrl = map_pump_profile_initial_svg((string) ($user['user_name'] ?
                                 <label class="form-label text-white-50 small" for="confirmPassword">Confirm New Password <span class="text-danger">*</span></label>
                                 <input id="confirmPassword" type="password" name="confirm_password" class="form-control glass-input" minlength="8" maxlength="72" required autocomplete="new-password">
                             </div>
+                            <div class="col-12">
+                                <p class="text-white-50 small mb-0"><i class="bi bi-info-circle txt-neon-cyan me-1"></i>Use 8–72 characters with upper &amp; lowercase letters, a number, and a symbol.</p>
+                                <div id="passwordMatchHint" class="small mt-1" aria-live="polite"></div>
+                            </div>
                             <div class="col-12 text-end mt-3">
-                                <button type="submit" class="btn btn-neon px-4">Save Changes</button>
+                                <button type="submit" class="btn btn-neon px-4" id="passwordSubmitBtn">Update Password</button>
                             </div>
                         </div>
                     </form>
@@ -198,14 +213,61 @@ $avatarFallbackUrl = map_pump_profile_initial_svg((string) ($user['user_name'] ?
         </div>
         
         <?php endif; ?>
-    </div>
+    </main>
 
-    
     <footer class="text-white-50 text-center py-4 mt-5 small">&copy; 2026 Map &amp; Pump | All Rights Reserved</footer>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script><script src="/js/Admin.js"></script><script>
-        document.getElementById('avatarInput')?.addEventListener('change', (event) => { const file = event.target.files?.[0]; if (file) { document.getElementById('avatarPreview').src = URL.createObjectURL(file); document.getElementById('avatarForm').submit(); } });
-        const passwordInput = document.getElementById('newPasswordInput'); const strengthFill = document.getElementById('pwStrengthFill'); const strengthLabel = document.getElementById('pwStrengthLabel');
-        passwordInput?.addEventListener('input', () => { const value = passwordInput.value; let score = 0; if (value.length >= 8) score++; if (/[A-Z]/.test(value)) score++; if (/\d/.test(value)) score++; if (/[^A-Za-z0-9]/.test(value)) score++; const levels = [{width:'0%',color:'transparent',label:''},{width:'25%',color:'#ff4d6a',label:'Weak'},{width:'50%',color:'#ffc107',label:'Fair'},{width:'75%',color:'#38b6ff',label:'Good'},{width:'100%',color:'#1be494',label:'Strong'}]; const level = levels[score]; strengthFill.style.width = level.width; strengthFill.style.background = level.color; strengthLabel.textContent = level.label; strengthLabel.style.color = level.color; });
+        document.getElementById('avatarInput')?.addEventListener('change', (event) => {
+            const file = event.target.files?.[0];
+            if (!file) return;
+            if (file.size > 2 * 1024 * 1024) {
+                alert('Profile images must be 2 MB or smaller.');
+                event.target.value = '';
+                return;
+            }
+            document.getElementById('avatarPreview').src = URL.createObjectURL(file);
+            document.getElementById('avatarForm').submit();
+        });
+        const passwordInput = document.getElementById('newPasswordInput');
+        const confirmInput = document.getElementById('confirmPassword');
+        const strengthFill = document.getElementById('pwStrengthFill');
+        const strengthLabel = document.getElementById('pwStrengthLabel');
+        const matchHint = document.getElementById('passwordMatchHint');
+        const passwordForm = document.getElementById('passwordForm');
+        const updateStrength = () => {
+            const value = passwordInput?.value || '';
+            let score = 0;
+            if (value.length >= 8) score++;
+            if (/[A-Z]/.test(value)) score++;
+            if (/\d/.test(value)) score++;
+            if (/[^A-Za-z0-9]/.test(value)) score++;
+            const levels = [
+                {width:'0%',color:'transparent',label:''},
+                {width:'25%',color:'#ff4d6a',label:'Weak'},
+                {width:'50%',color:'#ffc107',label:'Fair'},
+                {width:'75%',color:'#38b6ff',label:'Good'},
+                {width:'100%',color:'#1be494',label:'Strong'}
+            ];
+            const level = levels[score];
+            if (strengthFill) { strengthFill.style.width = level.width; strengthFill.style.background = level.color; }
+            if (strengthLabel) { strengthLabel.textContent = level.label; strengthLabel.style.color = level.color; }
+        };
+        const updateMatch = () => {
+            if (!matchHint || !passwordInput || !confirmInput) return;
+            if (!confirmInput.value) { matchHint.textContent = ''; return; }
+            const ok = passwordInput.value === confirmInput.value;
+            matchHint.textContent = ok ? 'Passwords match.' : 'Passwords do not match.';
+            matchHint.style.color = ok ? '#1be494' : '#ff4d6a';
+        };
+        passwordInput?.addEventListener('input', () => { updateStrength(); updateMatch(); });
+        confirmInput?.addEventListener('input', updateMatch);
+        passwordForm?.addEventListener('submit', (event) => {
+            if (passwordInput && confirmInput && passwordInput.value !== confirmInput.value) {
+                event.preventDefault();
+                updateMatch();
+                confirmInput.focus();
+            }
+        });
     </script>
 </body>
 </html>
