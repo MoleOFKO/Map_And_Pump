@@ -55,6 +55,7 @@ if (hq_db_available() && hq_registry_schema_ready()) {
            }
        }
 
+       // Station totals come from `branches` via station_business_scope (never the dummy `stations` view).
        $sql = "SELECT
             h.headquarter_id,
             h.company_name,
@@ -65,7 +66,7 @@ if (hq_db_available() && hq_registry_schema_ready()) {
             owner.email AS owner_email,
             COALESCE(owner.status, 'pending') AS account_status,
             COALESCE(user_counts.user_count, 0) AS user_count,
-            0 AS station_count
+            COALESCE(station_counts.station_count, 0) AS station_count
         FROM headquarter h
         LEFT JOIN (
             SELECT u.headquarter_id, MIN(u.user_id) AS owner_user_id, COUNT(*) AS user_count
@@ -73,7 +74,13 @@ if (hq_db_available() && hq_registry_schema_ready()) {
             WHERE (u.role_id = 3 OR u.business_role_id = 3)
             GROUP BY headquarter_id
         ) user_counts ON user_counts.headquarter_id = h.headquarter_id
-        LEFT JOIN users owner ON owner.user_id = user_counts.owner_user_id";
+        LEFT JOIN users owner ON owner.user_id = user_counts.owner_user_id
+        LEFT JOIN (
+            SELECT scope.headquarter_id, COUNT(DISTINCT scope.station_id) AS station_count
+            FROM station_business_scope scope
+            INNER JOIN branches b ON b.branch_id = scope.station_id
+            GROUP BY scope.headquarter_id
+        ) station_counts ON station_counts.headquarter_id = h.headquarter_id";
 
        if ($where) {
            $sql .= ' WHERE ' . implode(' AND ', $where);
@@ -163,16 +170,17 @@ $flashContext = $flash['context'] ?? [];
         .hq-modal-table th { color: var(--text-muted); font-size: .72rem; text-transform: uppercase; letter-spacing: .05em; }
         body.background_color.light-mode .hq-flash { background: rgba(255,255,255,.9); }
         body.background_color.light-mode .hq-status { color: var(--text-muted); }
+        .hq-table-scroll {
+            max-height: min(60vh, 520px);
+            overflow: auto;
+        }
     </style>
 </head>
 <body class="background_color" id="background_color">
 <?php $adminSection = 'view_hq'; include __DIR__ . '/admin_section_nav.php'; ?>
 
-    
-
-    
-
-    <main class="container my-5">
+<?php $filtersActive = ($search !== '' || $region !== '' || $status !== ''); ?>
+    <main class=\"container my-5\">
         <?php if ($flash && $flashType): ?>
             <div class="alert hq-flash alert-<?= hq_escape($flashType) ?> alert-dismissible fade show mb-4" role="alert">
                 <div class="d-flex gap-2 align-items-start">
@@ -210,15 +218,17 @@ $flashContext = $flash['context'] ?? [];
         <div class="row g-4">
             <div class="col-12">
                 <div class="dashboard-card py-3 px-4">
-                    <form class="row g-3 align-items-center" method="GET" action="view_hq_and_user_account.php">
-                        <div class="col-12 col-md-5">
+                    <form class="row g-3 align-items-end" method="GET" action="view_hq_and_user_account.php">
+                        <div class="col-12 col-md-4">
+                            <label class="form-label text-white-50 small mb-1" for="hqSearch">Search</label>
                             <div class="input-group">
                                 <span class="input-group-text bg-transparent border-end-0" style="border-color: var(--glass-border); color: var(--neon-cyan); border-radius: 12px 0 0 12px;"><i class="bi bi-search"></i></span>
-                                <input type="text" class="form-control glass-input border-start-0" placeholder="Search by HQ or owner name..." name="search" value="<?= hq_escape($search) ?>">
+                                <input id="hqSearch" type="search" class="form-control glass-input border-start-0" placeholder="Search by HQ or owner name..." name="search" value="<?= hq_escape($search) ?>">
                             </div>
                         </div>
                         <div class="col-12 col-md-3">
-                            <select class="form-select glass-select" name="region">
+                            <label class="form-label text-white-50 small mb-1" for="hqRegion">Region</label>
+                            <select id="hqRegion" class="form-select glass-select" name="region">
                                 <option value="" <?= $region === '' ? 'selected' : '' ?>>All Regions</option>
                                 <?php foreach ($allowedRegions as $option): ?>
                                     <option value="<?= $option ?>" <?= $region === $option ? 'selected' : '' ?>><?= hq_escape($regionLabel($option)) ?></option>
@@ -226,28 +236,34 @@ $flashContext = $flash['context'] ?? [];
                             </select>
                         </div>
                         <div class="col-12 col-md-2">
-                            <select class="form-select glass-select" name="status">
+                            <label class="form-label text-white-50 small mb-1" for="hqStatus">Status</label>
+                            <select id="hqStatus" class="form-select glass-select" name="status">
                                 <option value="" <?= $status === '' ? 'selected' : '' ?>>All Status</option>
                                 <?php foreach ($allowedStatuses as $option): ?>
                                     <option value="<?= $option ?>" <?= $status === $option ? 'selected' : '' ?>><?= hq_escape(hq_status_label($option)) ?></option>
                                 <?php endforeach; ?>
                             </select>
                         </div>
-                        <div class="col-12 col-md-2 d-grid"><button type="submit" class="btn btn-neon">Apply Filter</button></div>
+                        <div class="col-12 col-md-3 d-flex gap-2">
+                            <button type="submit" class="btn btn-neon flex-grow-1">Apply Filter</button>
+                            <?php if ($filtersActive): ?>
+                                <a href="view_hq_and_user_account.php" class="btn btn-outline-secondary text-white-50 border-secondary border-opacity-25" title="Clear filters">Clear</a>
+                            <?php endif; ?>
+                        </div>
                     </form>
                 </div>
             </div>
 
             <div class="col-12">
                 <div class="analytics-card">
-                    <div class="table-responsive">
+                    <div class="table-responsive hq-table-scroll">
                         <table class="table table-dark-custom align-middle m-0">
                             <thead>
-                                <tr><th>HQ Entity &amp; Owner</th><th>Role</th><th>Headquarters Location</th><th>Status</th><th class="text-end">Command</th></tr>
+                                <tr><th>HQ Entity &amp; Owner</th><th>Role</th><th>Headquarters Location</th><th>Stations</th><th>Status</th><th class="text-end">Command</th></tr>
                             </thead>
                             <tbody>
                                 <?php if (!$hqRows): ?>
-                                    <tr><td colspan="5" class="text-center text-white-50 py-5"><i class="bi bi-building-x fs-3 d-block mb-2"></i>No HQ accounts match the current filter.</td></tr>
+                                    <tr><td colspan="6" class="text-center text-white-50 py-5"><i class="bi bi-building-x fs-3 d-block mb-2"></i>No HQ accounts match the current filter.</td></tr>
                                 <?php endif; ?>
                                 <?php foreach ($hqRows as $row): ?>
                                     <?php
@@ -255,7 +271,8 @@ $flashContext = $flash['context'] ?? [];
                                     $ownerName = (string) ($row['owner_name'] ?? 'No owner account');
                                     $ownerEmail = (string) ($row['owner_email'] ?? 'No email available');
                                     $rowStatus = (string) ($row['account_status'] ?? 'pending');
-                                    $locationParts = explode(' — ', (string) ($row['location'] ?? ''), 2);
+                                    $stationCount = (int) ($row['station_count'] ?? 0);
+                                    $locationParts = preg_split('/\s+[—-]\s+/u', (string) ($row['location'] ?? ''), 2) ?: [];
                                     $locationRegion = $locationParts[0] ?? 'Location not available';
                                     $locationAddress = $locationParts[1] ?? ($locationParts[0] ?? 'Location not available');
                                     ?>
@@ -273,11 +290,12 @@ $flashContext = $flash['context'] ?? [];
                                         </td>
                                         <td class="text-white-50">#3 &middot; HQ</td>
                                         <td><div class="text-white"><?= hq_escape($locationRegion) ?></div><div class="text-white-50 small" style="font-size:.8rem;"><?= hq_escape($locationAddress) ?></div></td>
+                                        <td class="text-white-50"><span class="stat-chip" style="font-size:.75rem;"><i class="bi bi-fuel-pump me-1 txt-neon-cyan"></i><?= $stationCount ?></span></td>
                                         <td><span class="hq-status <?= hq_status_class($rowStatus) ?>"><?= hq_escape(hq_status_label($rowStatus)) ?></span></td>
                                         <td class="text-end">
                                             <div class="d-flex gap-2 justify-content-end">
                                                 <a href="#" class="btn-action js-view-hq" title="View Stations &amp; Users" aria-label="View <?= hq_escape($companyName) ?> details" data-hq-id="<?= (int) $row['headquarter_id'] ?>"><i class="bi bi-eye-fill"></i></a>
-                                                <a href="#" class="btn-action btn-action-danger js-account-action" title="Suspend/Remove" aria-label="Suspend or remove <?= hq_escape($companyName) ?>" data-hq-id="<?= (int) $row['headquarter_id'] ?>" data-hq-name="<?= hq_escape($companyName) ?>"><i class="bi bi-trash3-fill"></i></a>
+                                                <a href="#" class="btn-action btn-action-danger js-account-action" title="Suspend / Remove / Restore" aria-label="Change status for <?= hq_escape($companyName) ?>" data-hq-id="<?= (int) $row['headquarter_id'] ?>" data-hq-name="<?= hq_escape($companyName) ?>" data-hq-status="<?= hq_escape($rowStatus) ?>"><i class="bi bi-shield-exclamation"></i></a>
                                             </div>
                                         </td>
                                     </tr>
@@ -298,8 +316,8 @@ $flashContext = $flash['context'] ?? [];
                     <div class="modal-body d-flex flex-column gap-3">
                         <input type="hidden" name="headquarter_id" id="actionHQId"><input type="hidden" name="return_to" value="view_hq_and_user_account.php">
                         <div class="small text-white-50">Target HQ: <span class="txt-neon-cyan fw-semibold" id="actionHQName">—</span></div>
-                        <div><label class="form-label text-white-50 small" for="actionType">Account action</label><select class="form-select glass-select" name="action_type" id="actionType" required><option value="suspend">Suspend account</option><option value="remove">Remove account</option></select></div>
-                        <div><label class="form-label text-white-50 small" for="actionReason">Reason to record and notify</label><textarea class="form-control glass-input" name="reason" id="actionReason" rows="5" maxlength="2000" placeholder="Explain why this HQ account is being suspended or removed..." required style="resize:none;"></textarea></div>
+                        <div><label class="form-label text-white-50 small" for="actionType">Account action</label><select class="form-select glass-select" name="action_type" id="actionType" required><option value="suspend">Suspend account</option><option value="remove">Remove account</option><option value="restore">Restore (approve again)</option></select></div>
+                        <div><label class="form-label text-white-50 small" for="actionReason">Reason to record and notify</label><textarea class="form-control glass-input" name="reason" id="actionReason" rows="5" maxlength="2000" placeholder="Explain why this HQ account is being suspended, removed, or restored..." required style="resize:none;"></textarea></div>
                         <div class="small text-white-50"><i class="bi bi-envelope me-1 txt-neon-cyan"></i>The reason is saved to the HQ action history. Email delivery is currently a clearly marked placeholder until SMTP/provider settings are added.</div>
                     </div>
                     <div class="modal-footer"><button type="button" class="btn btn-outline-secondary rounded-3 text-white-50 border-secondary border-opacity-20" data-bs-dismiss="modal">Cancel</button><button type="submit" class="btn btn-danger" id="actionSubmit">Confirm Suspend</button></div>
@@ -344,8 +362,10 @@ $flashContext = $flash['context'] ?? [];
             const stationStatusLabel = (status) => ({active:'Active', approved:'Active', decommissioned:'Decommissioned', suspended:'Suspended', removed:'Removed', offline:'Offline'}[String(status || '').toLowerCase()] || (status ? String(status) : 'Unknown'));
 
             actionType.addEventListener('change', () => {
-                const remove = actionType.value === 'remove';
-                actionSubmit.textContent = remove ? 'Confirm Remove' : 'Confirm Suspend';
+                const kind = actionType.value;
+                actionSubmit.textContent = kind === 'remove' ? 'Confirm Remove' : (kind === 'restore' ? 'Confirm Restore' : 'Confirm Suspend');
+                actionSubmit.classList.toggle('btn-danger', kind !== 'restore');
+                actionSubmit.classList.toggle('btn-neon', kind === 'restore');
                 actionSubmit.classList.toggle('btn-danger', true);
             });
 
