@@ -163,14 +163,29 @@ $flashType = (string) ($flash['type'] ?? '');
         .moderator-modal-note { color:rgba(255,255,255,.58); font-size:.78rem; line-height:1.5; }
         .moderator-mode-tabs { display:flex; gap:.5rem; flex-wrap:wrap; }
         .moderator-mode-tabs .btn { border-radius:999px; font-size:.8rem; font-weight:600; }
-        .moderator-search-wrap { position:relative; }
+        .moderator-search-wrap { position:relative; z-index:5; }
         .moderator-search-results {
-            position:absolute; left:0; right:0; top:calc(100% + 4px); z-index:20;
-            max-height:240px; overflow:auto; border-radius:12px;
+            position:absolute; left:0; right:0; top:calc(100% + 4px); z-index:30;
+            max-height:min(240px, 40vh); overflow-x:hidden; overflow-y:auto;
+            border-radius:12px;
             background:rgba(8,14,28,.98); border:1px solid rgba(0,244,255,.22);
             box-shadow:0 12px 32px rgba(0,0,0,.45); display:none;
+            -webkit-overflow-scrolling:touch;
+            scrollbar-width:thin;
+            scrollbar-color:rgba(0,244,255,.45) rgba(4,12,28,.95);
         }
         .moderator-search-results.show { display:block; }
+        .moderator-search-results::-webkit-scrollbar { width:8px; height:8px; }
+        .moderator-search-results::-webkit-scrollbar-track {
+            background:rgba(4,12,28,.95); border-radius:999px;
+        }
+        .moderator-search-results::-webkit-scrollbar-thumb {
+            background:rgba(0,244,255,.4); border-radius:999px;
+            border:2px solid rgba(4,12,28,.95);
+        }
+        .moderator-search-results::-webkit-scrollbar-thumb:hover {
+            background:rgba(0,244,255,.6);
+        }
         .moderator-search-item {
             width:100%; text-align:left; border:0; background:transparent; color:#fff;
             padding:.7rem .9rem; border-bottom:1px solid rgba(255,255,255,.06);
@@ -189,6 +204,13 @@ $flashType = (string) ($flash['type'] ?? '');
         body.background_color.light-mode .moderator-modal-note { color:var(--text-muted); }
         body.background_color.light-mode .moderator-search-results {
             background:#fff; border-color:rgba(0,0,0,.12); color:#111;
+            scrollbar-color:rgba(11,94,215,.5) rgba(226,232,240,.95);
+        }
+        body.background_color.light-mode .moderator-search-results::-webkit-scrollbar-track {
+            background:rgba(226,232,240,.95);
+        }
+        body.background_color.light-mode .moderator-search-results::-webkit-scrollbar-thumb {
+            background:rgba(11,94,215,.4); border-color:rgba(226,232,240,.95);
         }
         body.background_color.light-mode .moderator-search-item { color:#111; }
         body.background_color.light-mode .moderator-search-item small { color:#666; }
