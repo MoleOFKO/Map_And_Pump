@@ -127,8 +127,17 @@ if ($action === 'generate') {
         $summaryRow = $summaryQuery?->fetch_assoc() ?: ['total' => 0, 'active' => 0];
         $summary = 'HQ records: ' . (int) $summaryRow['total'] . '; active linked accounts: ' . (int) $summaryRow['active'];
     } elseif ($scope === 'stations') {
-        $summaryQuery = $conn->query('SELECT COUNT(*) AS total FROM branches');
-        $summary = 'Station records: ' . (int) (($summaryQuery?->fetch_assoc()['total'] ?? 0));
+        // Always count from `branches` (not a legacy stations view).
+        $summaryQuery = $conn->query(
+            "SELECT COUNT(*) AS total,
+                    COALESCE(SUM(CASE WHEN LOWER(TRIM(status)) IN ('active', 'approved') THEN 1 ELSE 0 END), 0) AS active,
+                    COALESCE(SUM(CASE WHEN LOWER(TRIM(status)) IN ('closed', 'suspended', 'offline') THEN 1 ELSE 0 END), 0) AS inactive
+             FROM branches"
+        );
+        $summaryRow = $summaryQuery?->fetch_assoc() ?: ['total' => 0, 'active' => 0, 'inactive' => 0];
+        $summary = 'Station records (branches): ' . (int) $summaryRow['total']
+            . '; active: ' . (int) $summaryRow['active']
+            . '; inactive/closed: ' . (int) $summaryRow['inactive'];
     } elseif ($scope === 'requests') {
         $summaryQuery = $conn->query('SELECT COUNT(*) AS total, COALESCE(SUM(status=0x70656e64696e67),0) AS pending, COALESCE(SUM(status=0x617070726f766564),0) AS approved, COALESCE(SUM(status IN (0x72656a6563746564,0x666c6167676564)),0) AS declined FROM system_requests');
         $summaryRow = $summaryQuery?->fetch_assoc() ?: ['total' => 0, 'pending' => 0, 'approved' => 0, 'declined' => 0];
