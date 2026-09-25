@@ -163,6 +163,17 @@ $flashType = $flash['type'] ?? '';
         .request-modal-table th { color:var(--text-muted); font-size:.72rem; text-transform:uppercase; letter-spacing:.05em; }
         .request-detail-label { color:var(--text-muted); font-size:.72rem; text-transform:uppercase; letter-spacing:.07em; }
         .request-detail-value { color:var(--text-primary); word-break:break-word; white-space:pre-wrap; }
+        .request-detail-scroll {
+            max-height: min(28vh, 220px);
+            overflow-y: auto;
+            overscroll-behavior: contain;
+            scrollbar-width: thin;
+            scrollbar-color: rgba(0,244,255,.45) rgba(4,12,28,.9);
+        }
+        .request-detail-scroll::-webkit-scrollbar { width:8px; }
+        .request-detail-scroll::-webkit-scrollbar-thumb {
+            background:rgba(0,244,255,.35); border-radius:999px;
+        }
         .request-detail-modal .modal-content { overflow:hidden; }
         .request-detail-modal .modal-header { padding:1.1rem 1.35rem; border-bottom-color:rgba(0,244,255,.16); background:linear-gradient(120deg,rgba(0,244,255,.09),rgba(37,99,235,.035) 58%,transparent); }
         .request-detail-modal .modal-body { padding:1.35rem; }
@@ -249,6 +260,8 @@ $flashType = $flash['type'] ?? '';
 <body class="background_color" id="background_color">
 <?php $adminSection = 'requests'; include __DIR__ . '/admin_section_nav.php'; ?>
 
+<?php $filtersActive = ($search !== '' || $requestType !== '' || $status !== ''); ?>
+
     
 
     
@@ -278,7 +291,12 @@ $flashType = $flash['type'] ?? '';
                 <div class="col-12 col-md-5"><div class="input-group"><span class="input-group-text bg-transparent border-end-0" style="border-color:var(--glass-border);color:var(--neon-cyan);border-radius:12px 0 0 12px;"><i class="bi bi-funnel-fill"></i></span><input type="text" class="form-control glass-input border-start-0" placeholder="Filter by company, sender name, or reference ID..." name="search" value="<?= hq_escape($search) ?>"></div></div>
                 <div class="col-12 col-md-3"><select class="form-select glass-select" name="type"><option value="" <?= $requestType === '' ? 'selected' : '' ?>>All Request Types</option><option value="account" <?= $requestType === 'account' ? 'selected' : '' ?>>Account Verification</option><option value="station" <?= $requestType === 'station' ? 'selected' : '' ?>>New Station Registration</option><option value="license" <?= $requestType === 'license' ? 'selected' : '' ?>>License Modification</option><option value="deactivation" <?= $requestType === 'deactivation' ? 'selected' : '' ?>>Account Deactivation</option></select></div>
                 <div class="col-12 col-md-2"><select class="form-select glass-select" name="status"><option value="" <?= $status === '' ? 'selected' : '' ?>>All Statuses</option><option value="pending" <?= $status === 'pending' ? 'selected' : '' ?>>Pending</option><option value="approved" <?= $status === 'approved' ? 'selected' : '' ?>>Approved</option><option value="rejected" <?= $status === 'rejected' ? 'selected' : '' ?>>Rejected</option><option value="flagged" <?= $status === 'flagged' ? 'selected' : '' ?>>Flagged</option></select></div>
-                <div class="col-12 col-md-2 d-grid"><button type="submit" class="btn btn-neon">Apply Filter</button></div>
+                <div class="col-12 col-md-2 d-flex gap-2">
+                    <button type="submit" class="btn btn-neon flex-grow-1">Apply Filter</button>
+                    <?php if ($filtersActive): ?>
+                        <a href="view_requests.php" class="btn btn-outline-secondary text-white-50 border-secondary border-opacity-25" title="Clear filters">Clear</a>
+                    <?php endif; ?>
+                </div>
             </form></div></div>
 
             <div class="col-12"><div class="analytics-card"><div class="table-responsive"><table class="table table-dark-custom align-middle m-0"><thead><tr><th>Ref ID</th><th>Sender Entity</th><th>Type of Request</th><th>Submission Date</th><th>Status</th><th class="text-end">Command</th></tr></thead><tbody>
@@ -328,6 +346,8 @@ $flashType = $flash['type'] ?? '';
 
     <div class="modal fade glass-modal" id="rejectReqModal" tabindex="-1" aria-labelledby="rejectReqModalLabel" aria-hidden="true"><div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-header"><h5 class="modal-title fw-bold" id="rejectReqModalLabel"><i class="bi bi-shield-x text-danger me-2"></i> Reject Request</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button></div><form action="request_action.php" method="POST" id="rejectReqForm"><div class="modal-body d-flex flex-column gap-3"><input type="hidden" name="request_id" id="rejectRequestId"><input type="hidden" name="user_id" id="rejectUserId"><input type="hidden" name="action" value="reject"><input type="hidden" name="return_to" value="view_requests.php"><div class="small text-white-50">Target request: <span class="txt-neon-cyan fw-semibold" id="rejectRequestReference">—</span></div><div class="small text-white-50">Sender: <span class="text-white" id="rejectRequestSender">—</span></div><div><label class="form-label text-white-50 small" for="rejectReason">Reason for rejection</label><textarea class="form-control glass-input" name="reason" id="rejectReason" rows="5" maxlength="2000" placeholder="Explain why this request is being rejected..." required style="resize:none;"></textarea></div><div class="small text-white-50"><i class="bi bi-envelope me-1 txt-neon-cyan"></i>The reason is recorded and a notification is created for the request account. Email delivery uses the configured placeholder until SMTP is added.</div></div><div class="modal-footer"><button type="button" class="btn btn-outline-secondary rounded-3 text-white-50 border-secondary border-opacity-20" data-bs-dismiss="modal">Cancel</button><button type="submit" class="btn btn-danger">Confirm Rejection</button></div></form></div></div></div>
 
+    <div class="modal fade glass-modal" id="flagReqModal" tabindex="-1" aria-labelledby="flagReqModalLabel" aria-hidden="true"><div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-header"><h5 class="modal-title fw-bold" id="flagReqModalLabel"><i class="bi bi-flag-fill text-warning me-2"></i> Flag Request</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button></div><form action="request_action.php" method="POST" id="flagReqForm"><div class="modal-body d-flex flex-column gap-3"><input type="hidden" name="request_id" id="flagRequestId"><input type="hidden" name="action" value="flag"><input type="hidden" name="return_to" value="view_requests.php"><div class="small text-white-50">Target request: <span class="txt-neon-cyan fw-semibold" id="flagRequestReference">—</span></div><div class="small text-white-50">Sender: <span class="text-white" id="flagRequestSender">—</span></div><div><label class="form-label text-white-50 small" for="flagReason">Reason for flagging</label><textarea class="form-control glass-input" name="reason" id="flagReason" rows="5" maxlength="2000" placeholder="Explain why this request needs follow-up..." required style="resize:none;"></textarea></div><div class="small text-white-50"><i class="bi bi-info-circle me-1 txt-neon-cyan"></i>Flagged requests stay in the queue for later review; they are not approved or rejected.</div></div><div class="modal-footer"><button type="button" class="btn btn-outline-secondary rounded-3 text-white-50 border-secondary border-opacity-20" data-bs-dismiss="modal">Cancel</button><button type="submit" class="btn btn-warning">Confirm Flag</button></div></form></div></div></div>
+
     
 
     <footer class="text-white-50 text-center py-4 mt-5 small">&copy; 2026 Map &amp; Pump | All Rights Reserved</footer>
@@ -370,6 +390,18 @@ $flashType = $flash['type'] ?? '';
                 rejectReason.value = '';
                 rejectModal.show();
             };
+            const flagModal = bootstrap.Modal.getOrCreateInstance(document.getElementById('flagReqModal'));
+            const flagId = document.getElementById('flagRequestId');
+            const flagReference = document.getElementById('flagRequestReference');
+            const flagSender = document.getElementById('flagRequestSender');
+            const flagReason = document.getElementById('flagReason');
+            const flagTarget = (id, label, sender) => {
+                if (flagId) flagId.value = id || '';
+                if (flagReference) flagReference.textContent = label || 'Selected request';
+                if (flagSender) flagSender.textContent = sender || 'Unknown sender';
+                if (flagReason) flagReason.value = '';
+                flagModal.show();
+            };
 
             document.querySelectorAll('.js-request-approve').forEach((button) => {
                 button.addEventListener('click', (event) => {
@@ -393,11 +425,16 @@ $flashType = $flash['type'] ?? '';
                 const receiptMarkup = request.receipt_image ? '<a href="' + escapeHtml(request.receipt_image) + '" target="_blank" rel="noopener" class="d-inline-block text-decoration-none"><img src="' + escapeHtml(request.receipt_image) + '" alt="Payment receipt proof" style="display:block;width:100%;max-width:260px;max-height:220px;object-fit:contain;border-radius:12px;border:1px solid var(--glass-border);background:rgba(255,255,255,.04);padding:.35rem;"><span class="txt-neon-blue d-inline-flex align-items-center gap-1 mt-2"><i class="bi bi-receipt"></i>Open ' + escapeHtml(request.receipt_type || 'payment') + ' receipt</span></a>' : '<span class="text-white-50">No receipt attached</span>';
                 const licenseMarkup = registrationDetails.license_id ? '<div class="mb-2"><strong>License ID:</strong> ' + escapeHtml(registrationDetails.license_id) + '</div>' : '';
                 detailsTitle.innerHTML = '<i class="bi bi-file-earmark-text txt-neon-cyan me-2"></i> Request ' + escapeHtml(request.reference_code || 'Details');
-                detailsBody.innerHTML = '<div class="row g-4"><div class="col-12 col-md-6"><h6 class="fw-semibold text-white mb-3" style="letter-spacing:.5px;font-size:.78rem;text-transform:uppercase;">Submitter Info</h6><div class="mb-3"><div class="request-detail-label">Corporate Partner</div><div class="request-detail-value">' + escapeHtml(request.sender_entity || request.hq_company_name || 'Not available') + '</div></div><div class="mb-3"><div class="request-detail-label">Authorized Official</div><div class="request-detail-value">' + escapeHtml(request.sender_name || request.submitter_username || 'Not available') + (request.sender_email ? ' (' + escapeHtml(request.sender_email) + ')' : '') + '</div></div><div class="mb-3"><div class="request-detail-label">Operation Hub Location</div><div class="request-detail-value">' + escapeHtml(request.location || 'Not provided') + '</div></div></div><div class="col-12 col-md-6"><h6 class="fw-semibold text-white mb-3" style="letter-spacing:.5px;font-size:.78rem;text-transform:uppercase;">Request Specifics</h6><div class="mb-3"><div class="request-detail-label">Request Type</div><div class="request-detail-value">' + escapeHtml(request.request_type_label || request.request_type || 'Not available') + '</div></div><div class="mb-3"><div class="request-detail-label">Status</div><div><span class="request-status ' + statusClass(request.status) + '">' + escapeHtml(request.status_label || statusLabel(request.status)) + '</span></div></div><div class="mb-3"><div class="request-detail-label">Submitted</div><div class="request-detail-value">' + escapeHtml(formatDate(request.created_at)) + '</div></div><div class="mb-3"><div class="request-detail-label">Verification Document</div><div class="request-detail-value">' + documentMarkup + '</div></div></div><div class="col-12"><h6 class="fw-semibold text-white mb-2" style="letter-spacing:.5px;font-size:.78rem;text-transform:uppercase;">Request Details</h6><div class="request-detail-value p-3 rounded-3" style="background:rgba(0,244,255,.04);border:1px solid var(--glass-border);">' + escapeHtml(request.request_details || 'No additional details provided.') + '</div></div>' + (request.review_reason ? '<div class="col-12"><div class="request-detail-label">Review Message</div><div class="request-detail-value">' + escapeHtml(request.review_reason) + '</div></div>' : '') + '</div>';
+                detailsBody.innerHTML = '<div class="row g-4"><div class="col-12 col-md-6"><h6 class="fw-semibold text-white mb-3" style="letter-spacing:.5px;font-size:.78rem;text-transform:uppercase;">Submitter Info</h6><div class="mb-3"><div class="request-detail-label">Corporate Partner</div><div class="request-detail-value">' + escapeHtml(request.sender_entity || request.hq_company_name || 'Not available') + '</div></div><div class="mb-3"><div class="request-detail-label">Authorized Official</div><div class="request-detail-value">' + escapeHtml(request.sender_name || request.submitter_username || 'Not available') + (request.sender_email ? ' (' + escapeHtml(request.sender_email) + ')' : '') + '</div></div><div class="mb-3"><div class="request-detail-label">Operation Hub Location</div><div class="request-detail-value">' + escapeHtml(request.location || 'Not provided') + '</div></div></div><div class="col-12 col-md-6"><h6 class="fw-semibold text-white mb-3" style="letter-spacing:.5px;font-size:.78rem;text-transform:uppercase;">Request Specifics</h6><div class="mb-3"><div class="request-detail-label">Request Type</div><div class="request-detail-value">' + escapeHtml(request.request_type_label || request.request_type || 'Not available') + '</div></div><div class="mb-3"><div class="request-detail-label">Status</div><div><span class="request-status ' + statusClass(request.status) + '">' + escapeHtml(request.status_label || statusLabel(request.status)) + '</span></div></div><div class="mb-3"><div class="request-detail-label">Submitted</div><div class="request-detail-value">' + escapeHtml(formatDate(request.created_at)) + '</div></div><div class="mb-3"><div class="request-detail-label">Verification Document</div><div class="request-detail-value">' + documentMarkup + '</div></div></div><div class="col-12"><h6 class="fw-semibold text-white mb-2" style="letter-spacing:.5px;font-size:.78rem;text-transform:uppercase;">Request Details</h6><div class="request-detail-value request-detail-scroll p-3 rounded-3" style="background:rgba(0,244,255,.04);border:1px solid var(--glass-border);">' + escapeHtml(request.request_details || 'No additional details provided.') + '</div></div>' + (request.review_reason ? '<div class="col-12"><div class="request-detail-label">Review Message</div><div class="request-detail-value request-detail-scroll">' + escapeHtml(request.review_reason) + '</div></div>' : '') + '</div>';
                 detailsBody.insertAdjacentHTML('afterbegin', '<div class="mb-3"><div class="request-detail-label">Business License</div><div class="request-detail-value">' + licenseMarkup + documentMarkup + '</div></div><div class="mb-3"><div class="request-detail-label">Payment Receipt</div><div class="request-detail-value">' + receiptMarkup + '</div></div>');
                 if (String(request.status || '').toLowerCase() === 'pending') {
-                    setFooter('<form action="request_action.php" method="POST" class="m-0"><input type="hidden" name="request_id" value="' + escapeHtml(request.request_id) + '"><input type="hidden" name="action" value="approve"><input type="hidden" name="return_to" value="view_requests.php"><button type="submit" class="btn btn-success w-100">Approve</button></form><button type="button" class="btn btn-danger js-modal-reject w-100">Reject</button>');
-                    detailsFooter.querySelector('.js-modal-reject').addEventListener('click', () => rejectTarget('request', request.request_id, request.reference_code || request.request_id, request.sender_entity || request.sender_name || 'Unknown sender'));
+                    setFooter(
+                        '<form action="request_action.php" method="POST" class="m-0 flex-grow-1"><input type="hidden" name="request_id" value="' + escapeHtml(request.request_id) + '"><input type="hidden" name="action" value="approve"><input type="hidden" name="return_to" value="view_requests.php"><button type="submit" class="btn btn-success w-100">Approve</button></form>' +
+                        '<button type="button" class="btn btn-warning js-modal-flag flex-grow-1">Flag</button>' +
+                        '<button type="button" class="btn btn-danger js-modal-reject flex-grow-1">Reject</button>'
+                    );
+                    detailsFooter.querySelector('.js-modal-reject')?.addEventListener('click', () => rejectTarget('request', request.request_id, request.reference_code || request.request_id, request.sender_entity || request.sender_name || 'Unknown sender'));
+                    detailsFooter.querySelector('.js-modal-flag')?.addEventListener('click', () => flagTarget(request.request_id, request.reference_code || request.request_id, request.sender_entity || request.sender_name || 'Unknown sender'));
                 } else {
                     setFooter();
                 }
