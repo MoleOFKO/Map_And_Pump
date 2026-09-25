@@ -13,8 +13,21 @@ $flash = moderator_pull_flash();
 $search = trim((string) ($_GET['search'] ?? ''));
 $roleFilter = (int) ($_GET['role_id'] ?? 0);
 $statusFilter = strtolower(trim((string) ($_GET['status'] ?? '')));
-$allowedStatuses = ['approved', 'pending', 'suspended', 'removed', 'rejected'];
-if (!in_array($statusFilter, $allowedStatuses, true)) {
+// Status keywords from moderator-scoped accounts in the database.
+$allowedStatuses = admin_filter_user_statuses(
+    "(
+        LOWER(TRIM(COALESCE((SELECT role_name FROM roles WHERE role_id = u.role_id), ''))) = 'moderator'
+        OR LOWER(TRIM(COALESCE((SELECT role_name FROM roles WHERE role_id = u.business_role_id), ''))) = 'moderator'
+        OR LOWER(TRIM(COALESCE((SELECT role_name FROM roles WHERE role_id = u.current_role_id), ''))) = 'moderator'
+    )"
+);
+foreach (['approved', 'pending', 'suspended', 'removed', 'rejected', 'active'] as $fallbackStatus) {
+    if (!in_array($fallbackStatus, $allowedStatuses, true)) {
+        $allowedStatuses[] = $fallbackStatus;
+    }
+}
+sort($allowedStatuses);
+if ($statusFilter !== '' && !in_array($statusFilter, $allowedStatuses, true)) {
     $statusFilter = '';
 }
 

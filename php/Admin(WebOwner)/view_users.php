@@ -11,8 +11,15 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
 $flash = hq_pull_flash();
 $search = trim((string) ($_GET['search'] ?? ''));
 $status = strtolower(trim((string) ($_GET['status'] ?? '')));
-$allowedStatuses = hq_manageable_statuses();
-$status = in_array($status, $allowedStatuses, true) ? $status : '';
+// Status keywords from live customer/user rows (plus common actionable values).
+$allowedStatuses = admin_filter_user_statuses('u.headquarter_id IS NULL OR u.headquarter_id IS NOT NULL');
+foreach (['approved', 'active', 'pending', 'suspended', 'removed'] as $fallbackStatus) {
+    if (!in_array($fallbackStatus, $allowedStatuses, true)) {
+        $allowedStatuses[] = $fallbackStatus;
+    }
+}
+sort($allowedStatuses);
+$status = ($status !== '' && in_array($status, $allowedStatuses, true)) ? $status : '';
 $userRows = customer_account_rows($search, $status);
 $dbError = hq_db_available() ? null : hq_db_error_message();
 $flashType = (string) ($flash['type'] ?? '');
@@ -65,7 +72,7 @@ $flashType = (string) ($flash['type'] ?? '');
                 <select id="userStatus" class="form-select glass-select" name="status">
                     <option value="">All Status</option>
                     <?php foreach ($allowedStatuses as $option): ?>
-                        <option value="<?= $option ?>" <?= $status === $option ? 'selected' : '' ?>><?= hq_escape(hq_status_label($option)) ?></option>
+                        <option value="<?= $option ?>" <?= $status === $option ? 'selected' : '' ?>><?= hq_escape(admin_filter_label($option)) ?></option>
                     <?php endforeach; ?>
                 </select>
             </div>

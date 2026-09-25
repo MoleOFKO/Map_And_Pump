@@ -18,13 +18,29 @@ if (!is_array($accountReviewSuccess) || !in_array($accountReviewSuccess['action'
 $search = trim((string) ($_GET['search'] ?? ''));
 $requestType = strtolower(trim((string) ($_GET['type'] ?? '')));
 $status = strtolower(trim((string) ($_GET['status'] ?? '')));
-$allowedTypes = ['account', 'station', 'license', 'deactivation'];
-$allowedStatuses = ['pending', 'approved', 'rejected', 'flagged'];
+// Keywords from system_requests (live).
+$allowedStatuses = admin_filter_request_statuses();
+foreach (['pending', 'approved', 'rejected', 'flagged'] as $fallbackStatus) {
+    if (!in_array($fallbackStatus, $allowedStatuses, true)) {
+        $allowedStatuses[] = $fallbackStatus;
+    }
+}
+sort($allowedStatuses);
 
-if (!in_array($requestType, $allowedTypes, true)) {
+$dbTypes = admin_filter_request_types();
+$allowedTypes = $dbTypes;
+// Ensure common type keywords remain selectable even if table is empty.
+foreach (['account', 'station', 'new_station', 'new_station_registration', 'license', 'license_modification', 'deactivation', 'account_deactivation'] as $fallbackType) {
+    if (!in_array($fallbackType, $allowedTypes, true)) {
+        $allowedTypes[] = $fallbackType;
+    }
+}
+sort($allowedTypes);
+
+if ($requestType !== '' && !in_array($requestType, $allowedTypes, true)) {
     $requestType = '';
 }
-if (!in_array($status, $allowedStatuses, true)) {
+if ($status !== '' && !in_array($status, $allowedStatuses, true)) {
     $status = '';
 }
 
@@ -63,18 +79,18 @@ if (hq_db_available() && request_schema_ready()) {
     }
 
     if ($requestType !== '') {
+        // Exact keyword from DB, plus related aliases for grouped types.
         $typeValues = match ($requestType) {
-            'account' => [],
-            'station' => ['station', 'new_station', 'new_station_registration'],
-            'license' => ['license', 'license_modification'],
-            'deactivation' => ['deactivation', 'account_deactivation'],
+            'account' => ['account'],
+            'station', 'new_station', 'new_station_registration' => ['station', 'new_station', 'new_station_registration'],
+            'license', 'license_modification' => ['license', 'license_modification'],
+            'deactivation', 'account_deactivation' => ['deactivation', 'account_deactivation'],
+            default => [$requestType],
         };
-        if ($typeValues) {
-            $where[] = 'LOWER(r.request_type) IN (' . implode(',', array_fill(0, count($typeValues), '?')) . ')';
-            foreach ($typeValues as $typeValue) {
-                $params[] = $typeValue;
-                $types .= 's';
-            }
+        $where[] = 'LOWER(r.request_type) IN (' . implode(',', array_fill(0, count($typeValues), '?')) . ')';
+        foreach ($typeValues as $typeValue) {
+            $params[] = $typeValue;
+            $types .= 's';
         }
     }
 
@@ -289,8 +305,8 @@ $flashType = $flash['type'] ?? '';
         <div class="row g-4">
             <div class="col-12"><div class="dashboard-card py-3 px-4"><form class="row g-3 align-items-center" method="GET" action="view_requests.php">
                 <div class="col-12 col-md-5"><div class="input-group"><span class="input-group-text bg-transparent border-end-0" style="border-color:var(--glass-border);color:var(--neon-cyan);border-radius:12px 0 0 12px;"><i class="bi bi-funnel-fill"></i></span><input type="text" class="form-control glass-input border-start-0" placeholder="Filter by company, sender name, or reference ID..." name="search" value="<?= hq_escape($search) ?>"></div></div>
-                <div class="col-12 col-md-3"><select class="form-select glass-select" name="type"><option value="" <?= $requestType === '' ? 'selected' : '' ?>>All Request Types</option><option value="account" <?= $requestType === 'account' ? 'selected' : '' ?>>Account Verification</option><option value="station" <?= $requestType === 'station' ? 'selected' : '' ?>>New Station Registration</option><option value="license" <?= $requestType === 'license' ? 'selected' : '' ?>>License Modification</option><option value="deactivation" <?= $requestType === 'deactivation' ? 'selected' : '' ?>>Account Deactivation</option></select></div>
-                <div class="col-12 col-md-2"><select class="form-select glass-select" name="status"><option value="" <?= $status === '' ? 'selected' : '' ?>>All Statuses</option><option value="pending" <?= $status === 'pending' ? 'selected' : '' ?>>Pending</option><option value="approved" <?= $status === 'approved' ? 'selected' : '' ?>>Approved</option><option value="rejected" <?= $status === 'rejected' ? 'selected' : '' ?>>Rejected</option><option value="flagged" <?= $status === 'flagged' ? 'selected' : '' ?>>Flagged</option></select></div>
+                <div class="col-12 col-md-3"><select class="form-select glass-select" name="type"><option value="" <?= $requestType === '' ? 'selected' : '' ?>>All Request Types</option><?php foreach ($allowedTypes as $option): ?><option value="<?= hq_escape($option) ?>" <?= $requestType === $option ? 'selected' : '' ?>><?= hq_escape(admin_filter_label($option)) ?></option><?php endforeach; ?></select></div>
+                <div class="col-12 col-md-2"><select class="form-select glass-select" name="status"><option value="" <?= $status === '' ? 'selected' : '' ?>>All Status</option><?php foreach ($allowedStatuses as $option): ?><option value="<?= hq_escape($option) ?>" <?= $status === $option ? 'selected' : '' ?>><?= hq_escape(admin_filter_label($option)) ?></option><?php endforeach; ?></select></div>
                 <div class="col-12 col-md-2 d-flex gap-2">
                     <button type="submit" class="btn btn-neon flex-grow-1">Apply Filter</button>
                     <?php if ($filtersActive): ?>

@@ -134,6 +134,14 @@ $updatedLabel = $updatedAt ? admin_date($updatedAt) : 'Not available';
     <link rel="icon" type="image/png" href="/images/Logo.png">
     <link rel="stylesheet" href="/css/Admin.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+<style>
+        a.metric-card-link { display:block; text-decoration:none; color:inherit; height:100%; }
+        a.metric-card-link:hover .metric-card,
+        a.metric-card-link:focus .metric-card { transform:translateY(-2px); border-color:rgba(0,244,255,.35); box-shadow:0 10px 28px rgba(0,180,255,.12); }
+        a.metric-card-link:focus-visible { outline:2px solid var(--neon-cyan); outline-offset:3px; border-radius:16px; }
+        a.metric-card-link .metric-card-hint { opacity:.65; font-size:.72rem; }
+        a.metric-card-link:hover .metric-card-hint { opacity:1; color:var(--neon-cyan); }
+    </style>
 </head>
 <body class="background_color" id="background_color">
 <?php $adminSection = 'home'; include __DIR__ . '/admin_section_nav.php'; ?>
@@ -150,52 +158,64 @@ $updatedLabel = $updatedAt ? admin_date($updatedAt) : 'Not available';
 
     <div class="row g-3 mb-4">
         <div class="col-12 col-sm-6 col-xl-3">
-            <div class="analytics-card metric-card">
-                <div class="d-flex align-items-center justify-content-between gap-3">
-                    <div>
-                        <p class="mb-0 metric-label">Total HQs</p>
-                        <h3 class="metric-value text-white mb-0"><?= (int) $metrics['hqs'] ?></h3>
+            <a href="view_hq_and_user_account.php" class="metric-card-link" title="Open View/Manage HQ" aria-label="Open View/Manage HQ">
+                <div class="analytics-card metric-card">
+                    <div class="d-flex align-items-center justify-content-between gap-3">
+                        <div>
+                            <p class="mb-0 metric-label">Total HQs</p>
+                            <h3 class="metric-value text-white mb-0"><?= (int) $metrics['hqs'] ?></h3>
+                        </div>
+                        <span class="txt-neon-cyan fs-2"><i class="bi bi-building"></i></span>
                     </div>
-                    <span class="txt-neon-cyan fs-2"><i class="bi bi-building"></i></span>
+                    <p class="text-white-50 small mb-0 mt-2"><?= (int) $metrics['stations'] ?> stations in <code>branches</code></p>
+                    <p class="metric-card-hint text-white-50 mb-0 mt-2"><i class="bi bi-box-arrow-up-right me-1"></i>View / Manage HQ</p>
                 </div>
-                <p class="text-white-50 small mb-0 mt-2"><?= (int) $metrics['stations'] ?> stations in <code>branches</code></p>
-            </div>
+            </a>
         </div>
         <div class="col-12 col-sm-6 col-xl-3">
-            <div class="analytics-card metric-card">
-                <div class="d-flex align-items-center justify-content-between gap-3">
-                    <div>
-                        <p class="mb-0 metric-label">Open Requests</p>
-                        <h3 class="metric-value text-white mb-0"><?= (int) $metrics['open_requests'] ?></h3>
+            <a href="view_requests.php" class="metric-card-link" title="Open View Requests" aria-label="Open View Requests">
+                <div class="analytics-card metric-card">
+                    <div class="d-flex align-items-center justify-content-between gap-3">
+                        <div>
+                            <p class="mb-0 metric-label">Open Requests</p>
+                            <h3 class="metric-value text-white mb-0"><?= (int) $metrics['open_requests'] ?></h3>
+                        </div>
+                        <span class="txt-neon-blue fs-2"><i class="bi bi-file-earmark-check"></i></span>
                     </div>
-                    <span class="txt-neon-blue fs-2"><i class="bi bi-file-earmark-check"></i></span>
+                    <p class="text-warning small mb-0 mt-2"><?= (int) $metrics['pending_requests'] ?> pending verification</p>
+                    <p class="metric-card-hint text-white-50 mb-0 mt-2"><i class="bi bi-box-arrow-up-right me-1"></i>View Requests</p>
                 </div>
-                <p class="text-warning small mb-0 mt-2"><?= (int) $metrics['pending_requests'] ?> pending verification</p>
-            </div>
+            </a>
         </div>
         <div class="col-12 col-sm-6 col-xl-3">
-            <div class="analytics-card metric-card">
-                <div class="d-flex align-items-center justify-content-between gap-3">
-                    <div>
-                        <p class="mb-0 metric-label">Reports</p>
-                        <h3 class="metric-value text-white mb-0"><?= (int) $metrics['reports'] ?></h3>
+            <a href="view_report.php" class="metric-card-link" title="Open View Report" aria-label="Open View Report">
+                <div class="analytics-card metric-card">
+                    <div class="d-flex align-items-center justify-content-between gap-3">
+                        <div>
+                            <p class="mb-0 metric-label">Reports</p>
+                            <h3 class="metric-value text-white mb-0"><?= (int) $metrics['reports'] ?></h3>
+                        </div>
+                        <span class="txt-neon-cyan fs-2"><i class="bi bi-file-earmark-bar-graph"></i></span>
                     </div>
-                    <span class="txt-neon-cyan fs-2"><i class="bi bi-file-earmark-bar-graph"></i></span>
+                    <p class="text-white-50 small mb-0 mt-2"><?= (int) $metrics['reports_today'] ?> generated today</p>
+                    <p class="metric-card-hint text-white-50 mb-0 mt-2"><i class="bi bi-box-arrow-up-right me-1"></i>View Report</p>
                 </div>
-                <p class="text-white-50 small mb-0 mt-2"><?= (int) $metrics['reports_today'] ?> generated today</p>
-            </div>
+            </a>
         </div>
         <div class="col-12 col-sm-6 col-xl-3">
-            <div class="analytics-card metric-card">
-                <div class="d-flex align-items-center justify-content-between gap-3">
-                    <div>
-                        <p class="mb-0 metric-label">Database Status</p>
-                        <h3 class="metric-value text-white mb-0" style="font-size:1.45rem;"><?= $dbOnline ? 'Online' : 'Offline' ?></h3>
+            <a href="view_logs.php" class="metric-card-link" title="Open View Logs" aria-label="Open View Logs">
+                <div class="analytics-card metric-card">
+                    <div class="d-flex align-items-center justify-content-between gap-3">
+                        <div>
+                            <p class="mb-0 metric-label">Database Status</p>
+                            <h3 class="metric-value text-white mb-0" style="font-size:1.45rem;"><?= $dbOnline ? 'Online' : 'Offline' ?></h3>
+                        </div>
+                        <span class="<?= $dbOnline ? 'text-success' : 'text-danger' ?> fs-2"><i class="bi bi-database-check"></i></span>
                     </div>
-                    <span class="<?= $dbOnline ? 'text-success' : 'text-danger' ?> fs-2"><i class="bi bi-database-check"></i></span>
+                    <p class="<?= $dbOnline ? 'text-success' : 'text-danger' ?> small mb-0 mt-2"><?= $dbOnline ? 'map_and_pump connected' : 'Connection unavailable' ?></p>
+                    <p class="metric-card-hint text-white-50 mb-0 mt-2"><i class="bi bi-box-arrow-up-right me-1"></i>View Logs</p>
                 </div>
-                <p class="<?= $dbOnline ? 'text-success' : 'text-danger' ?> small mb-0 mt-2"><?= $dbOnline ? 'map_and_pump connected' : 'Connection unavailable' ?></p>
-            </div>
+            </a>
         </div>
     </div>
 

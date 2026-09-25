@@ -339,12 +339,20 @@ function hq_pending_status_sql(string $column): string
 
 function hq_manageable_status_sql(string $column): string
 {
-    return "LOWER(TRIM({$column})) IN ('active', 'approved', 'suspended', 'removed')";
+    // Include statuses that appear in live data so list filters stay flexible.
+    return "LOWER(TRIM({$column})) IN ('active', 'approved', 'pending', 'suspended', 'removed', 'rejected')";
 }
 
 function hq_manageable_statuses(): array
 {
-    return ['approved', 'suspended', 'removed'];
+    // Prefer live keywords when available; fall back to the core set.
+    if (function_exists('admin_filter_user_statuses')) {
+        $live = admin_filter_user_statuses('1=1');
+        if ($live) {
+            return $live;
+        }
+    }
+    return ['approved', 'active', 'pending', 'suspended', 'removed'];
 }
 
 function hq_unique_username(string $ownerName, string $email): string

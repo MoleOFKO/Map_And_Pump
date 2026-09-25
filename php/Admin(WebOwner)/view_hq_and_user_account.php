@@ -11,13 +11,26 @@ $flash = hq_pull_flash();
 $search = trim((string) ($_GET['search'] ?? ''));
 $region = strtolower(trim((string) ($_GET['region'] ?? '')));
 $status = strtolower(trim((string) ($_GET['status'] ?? '')));
-$allowedRegions = ['yangon', 'mandalay', 'naypyidaw'];
-$allowedStatuses = hq_manageable_statuses();
 
-if (!in_array($region, $allowedRegions, true)) {
-    $region = '';
+// Filter keywords come from live data (not fixed placeholders).
+$allowedRegions = admin_filter_hq_regions();
+$allowedStatuses = admin_filter_user_statuses(
+    "u.headquarter_id IS NOT NULL OR EXISTS (
+        SELECT 1 FROM headquarter h WHERE h.headquarter_id = u.headquarter_id
+     )"
+);
+// Keep actionable statuses available even if not yet present in rows.
+foreach (['approved', 'active', 'pending', 'suspended', 'removed'] as $fallbackStatus) {
+    if (!in_array($fallbackStatus, $allowedStatuses, true)) {
+        $allowedStatuses[] = $fallbackStatus;
+    }
 }
-if (!in_array($status, $allowedStatuses, true)) {
+sort($allowedStatuses);
+
+if ($region !== '' && !in_array($region, $allowedRegions, true)) {
+    // Still allow free-text region from the query string (LIKE filter below).
+}
+if ($status !== '' && !in_array($status, $allowedStatuses, true)) {
     $status = '';
 }
 
@@ -46,10 +59,10 @@ if (hq_db_available() && hq_registry_schema_ready()) {
        }
 
        if ($status !== '') {
-           if ($status === 'approved') {
+           if (in_array($status, ['approved', 'active'], true)) {
                $where[] = "LOWER(COALESCE(owner.status, 'approved')) IN ('approved', 'active')";
            } else {
-               $where[] = 'LOWER(COALESCE(owner.status, \'approved\')) = ?';
+               $where[] = "LOWER(COALESCE(owner.status, 'approved')) = ?";
                $params[] = $status;
                $types .= 's';
            }
@@ -114,13 +127,8 @@ if (hq_db_available() && hq_registry_schema_ready()) {
     $dbError = hq_db_error_message();
 }
 
-$regionLabel = static function (string $value): string {
-    return match ($value) {
-        'yangon' => 'Yangon Region',
-        'mandalay' => 'Mandalay Region',
-        'naypyidaw' => 'Naypyidaw',
-        default => 'All Regions',
-    };
+$regionLabel = static function (string $value) {
+    return admin_filter_label($value);
 };
 
 $flashType = $flash['type'] ?? '';
@@ -240,7 +248,7 @@ $flashContext = $flash['context'] ?? [];
                             <select id="hqStatus" class="form-select glass-select" name="status">
                                 <option value="" <?= $status === '' ? 'selected' : '' ?>>All Status</option>
                                 <?php foreach ($allowedStatuses as $option): ?>
-                                    <option value="<?= $option ?>" <?= $status === $option ? 'selected' : '' ?>><?= hq_escape(hq_status_label($option)) ?></option>
+                                    <option value="<?= $option ?>" <?= $status === $option ? 'selected' : '' ?>><?= hq_escape(admin_filter_label($option)) ?></option>
                                 <?php endforeach; ?>
                             </select>
                         </div>
