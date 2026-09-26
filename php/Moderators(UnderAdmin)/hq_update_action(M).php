@@ -19,7 +19,7 @@ $businessLicense = trim((string) ($_POST['business_license'] ?? ''));
 $expiryDate = trim((string) ($_POST['expire_at'] ?? ''));
 $allowedRegions = ['yangon', 'mandalay', 'naypyidaw'];
 
-$redirect = trim((string) ($_POST['return_to'] ?? 'view_hq_and_user_account(M).php'));
+$redirect = moderator_return_target('view_hq_and_user_account(M).php');
 
 if (!$headquarterId || $hqName === '' || $companyLogo === '' || $contactNumber === '' || $ownerName === '' || $address === '' || $businessLicense === '' || $expiryDate === '' || !filter_var($ownerEmail, FILTER_VALIDATE_EMAIL)) {
     hq_flash('danger', 'Please complete every required HQ, owner, contact, address, license, and expiry field.');

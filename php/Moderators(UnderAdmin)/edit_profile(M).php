@@ -80,10 +80,12 @@ $statusClass = static function (?string $status): string {
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
     <link rel="stylesheet" href="/css/Admin.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    <style>
+        .mod-flash{border-radius:14px;background:rgba(10,22,44,.82);border:1px solid var(--glass-border);color:var(--text-primary)}
+        body.background_color.light-mode .mod-flash{background:rgba(255,255,255,.92)}
+    </style>
 </head>
 <body class="background_color" id="background_color">
-<div class="page-load-bar"></div>
-
 <?php include __DIR__ . '/includes/moderator_navbar.php'; ?>
 
     <div class="container my-5" style="max-width:1140px;">
@@ -94,11 +96,11 @@ $statusClass = static function (?string $status): string {
         </div>
 
         <?php if ($flashMessage !== ''): ?>
-            <div class="alert alert-<?= htmlspecialchars($flashType, ENT_QUOTES, 'UTF-8') ?> border-0" role="alert">
+            <div class="alert mod-flash alert-<?= htmlspecialchars($flashType, ENT_QUOTES, 'UTF-8') ?> border-0" role="alert">
                 <?= htmlspecialchars($flashMessage, ENT_QUOTES, 'UTF-8') ?>
             </div>
         <?php endif; ?>
-        <?php if ($accountDeletionFlash !== ''): ?><div class="alert alert-danger border-0" role="alert"><?= htmlspecialchars($accountDeletionFlash, ENT_QUOTES, 'UTF-8') ?></div><?php endif; ?>
+        <?php if ($accountDeletionFlash !== ''): ?><div class="alert mod-flash mod-flash alert-danger border-0" role="alert"><?= htmlspecialchars($accountDeletionFlash, ENT_QUOTES, 'UTF-8') ?></div><?php endif; ?>
 
         <div class="row g-4">
 

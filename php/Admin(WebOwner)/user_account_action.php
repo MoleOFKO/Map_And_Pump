@@ -14,8 +14,14 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 $userId = filter_var($_POST['user_id'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
 $actionType = strtolower(trim((string) ($_POST['action_type'] ?? '')));
 $reason = trim((string) ($_POST['reason'] ?? ''));
-// Only same-folder Admin pages — block open redirects.
-$allowedReturns = ['view_users.php', 'view_hq_and_user_account.php'];
+// Same-folder Admin pages + Moderator (M) return targets — block open redirects.
+$allowedReturns = [
+    'view_users.php',
+    'view_hq_and_user_account.php',
+    'view_users(M).php',
+    'view_hq_and_user_account(M).php',
+    'moderator_dashboard.php',
+];
 $redirectRaw = basename(trim((string) ($_POST['return_to'] ?? 'view_users.php')));
 $redirect = in_array($redirectRaw, $allowedReturns, true) ? $redirectRaw : 'view_users.php';
 

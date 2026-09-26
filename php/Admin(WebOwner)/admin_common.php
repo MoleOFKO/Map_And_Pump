@@ -28,13 +28,17 @@ function admin_redirect(string $location = 'admin_dashboard.php'): never
 {
     $returnTo = trim((string) ($_POST['return_to'] ?? $_GET['return_to'] ?? ''));
     $allowedReturnTargets = [
+        'admin_dashboard.php',
         'moderator_dashboard.php',
         'manage_hq(M).php',
         'manage_users(M).php',
+        'view_hq_and_user_account.php',
         'view_hq_and_user_account(M).php',
         'view_users(M).php',
         'view_users.php',
+        'view_requests.php',
         'view_requests(M).php',
+        'view_report.php',
         'view_report(M).php',
         'edit_profile(M).php',
         'view_logs(M).php',
