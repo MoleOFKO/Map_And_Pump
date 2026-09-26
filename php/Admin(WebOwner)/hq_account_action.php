@@ -15,8 +15,8 @@ $headquarterId = filter_var($_POST['headquarter_id'] ?? null, FILTER_VALIDATE_IN
 $actionType = strtolower(trim((string) ($_POST['action_type'] ?? '')));
 $reason = trim((string) ($_POST['reason'] ?? ''));
 
-if (!$headquarterId || !in_array($actionType, ['suspend', 'remove'], true) || $reason === '') {
-    hq_flash('danger', 'Choose suspend or remove and provide a reason before submitting.');
+if (!$headquarterId || !in_array($actionType, ['suspend', 'remove', 'restore'], true) || $reason === '') {
+    hq_flash('danger', 'Choose suspend, remove, or restore and provide a reason before submitting.');
     hq_redirect('view_hq_and_user_account.php');
 }
 
@@ -69,12 +69,22 @@ if (!$target) {
     hq_redirect('view_hq_and_user_account.php');
 }
 
-$newStatus = $actionType === 'remove' ? 'removed' : 'suspended';
+$statusMap = [
+    'remove' => 'removed',
+    'suspend' => 'suspended',
+    'restore' => 'approved',
+];
+$newStatus = $statusMap[$actionType] ?? 'suspended';
+$actionVerb = match ($actionType) {
+    'remove' => 'removed',
+    'restore' => 'restored (approved)',
+    default => 'suspended',
+};
 $notificationSubject = sprintf('Map & Pump HQ account %s', ucfirst($actionType));
 $notificationBody = sprintf(
     "Your Map & Pump HQ account (%s) has been %s.\n\nReason:\n%s",
     $target['company_name'],
-    $actionType === 'remove' ? 'removed' : 'suspended',
+    $actionVerb,
     $reason
 );
 $notification = !empty($target['email'])
@@ -139,9 +149,11 @@ try {
         ucfirst($actionType) . ' HQ #' . $headquarterId . ' (' . $target['company_name'] . ').'
     );
 
-    $message = $actionType === 'remove'
-        ? 'The HQ account was marked as removed.'
-        : 'The HQ account was suspended.';
+    $message = match ($actionType) {
+        'remove' => 'The HQ account was marked as removed.',
+        'restore' => 'The HQ account was restored to approved status.',
+        default => 'The HQ account was suspended.',
+    };
     if ($affected <= 0) {
         $message .= ' (No linked HQ-role user rows matched; history may still be recorded.)';
     }

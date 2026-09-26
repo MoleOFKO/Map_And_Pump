@@ -28,13 +28,17 @@ function admin_redirect(string $location = 'admin_dashboard.php'): never
 {
     $returnTo = trim((string) ($_POST['return_to'] ?? $_GET['return_to'] ?? ''));
     $allowedReturnTargets = [
+        'admin_dashboard.php',
         'moderator_dashboard.php',
         'manage_hq(M).php',
         'manage_users(M).php',
+        'view_hq_and_user_account.php',
         'view_hq_and_user_account(M).php',
         'view_users(M).php',
         'view_users.php',
+        'view_requests.php',
         'view_requests(M).php',
+        'view_report.php',
         'view_report(M).php',
         'edit_profile(M).php',
         'view_logs(M).php',
@@ -372,4 +376,126 @@ function admin_log_level(string $action): string
         return 'warn';
     }
     return 'info';
+}
+
+
+/**
+ * Run a single-column SELECT and return sorted unique non-empty lowercase strings.
+ *
+ * @return list<string>
+ */
+function admin_distinct_values(string $sql): array
+{
+    global $conn;
+    if (!hq_db_available()) {
+        return [];
+    }
+    $values = [];
+    $query = $conn->query($sql);
+    if (!$query) {
+        return [];
+    }
+    while ($row = $query->fetch_assoc()) {
+        $raw = strtolower(trim((string) (array_values($row)[0] ?? '')));
+        if ($raw === '') {
+            continue;
+        }
+        $values[$raw] = $raw;
+    }
+    $list = array_values($values);
+    sort($list, SORT_STRING);
+    return $list;
+}
+
+/**
+ * Status keywords present on user accounts (optionally scoped by SQL fragment on users u).
+ *
+ * @return list<string>
+ */
+function admin_filter_user_statuses(string $extraWhere = '1=1'): array
+{
+    $sql = "SELECT DISTINCT LOWER(TRIM(u.status)) AS status
+            FROM users u
+            WHERE u.status IS NOT NULL AND TRIM(u.status) <> ''
+              AND ({$extraWhere})
+            ORDER BY status ASC";
+    return admin_distinct_values($sql);
+}
+
+/**
+ * Distinct HQ location keywords for region filter (from headquarter.location).
+ *
+ * @return list<string>
+ */
+function admin_filter_hq_regions(): array
+{
+    return admin_distinct_values(
+        "SELECT DISTINCT LOWER(TRIM(location)) AS region
+         FROM headquarter
+         WHERE location IS NOT NULL AND TRIM(location) <> ''
+         ORDER BY region ASC"
+    );
+}
+
+/**
+ * Distinct system_requests.status values.
+ *
+ * @return list<string>
+ */
+function admin_filter_request_statuses(): array
+{
+    return admin_distinct_values(
+        "SELECT DISTINCT LOWER(TRIM(status)) AS status
+         FROM system_requests
+         WHERE status IS NOT NULL AND TRIM(status) <> ''
+         ORDER BY status ASC"
+    );
+}
+
+/**
+ * Distinct system_requests.request_type values (raw keywords from DB).
+ *
+ * @return list<string>
+ */
+function admin_filter_request_types(): array
+{
+    return admin_distinct_values(
+        "SELECT DISTINCT LOWER(TRIM(request_type)) AS request_type
+         FROM system_requests
+         WHERE request_type IS NOT NULL AND TRIM(request_type) <> ''
+         ORDER BY request_type ASC"
+    );
+}
+
+/**
+ * Human label for a free-form filter keyword (status, region, request type).
+ */
+function admin_filter_label(string $value): string
+{
+    $value = strtolower(trim($value));
+    $known = [
+        'approved' => 'Approved',
+        'active' => 'Active',
+        'pending' => 'Pending',
+        'pending_verification' => 'Pending verification',
+        'suspended' => 'Suspended',
+        'removed' => 'Removed',
+        'rejected' => 'Rejected',
+        'flagged' => 'Flagged',
+        'yangon' => 'Yangon',
+        'mandalay' => 'Mandalay',
+        'naypyidaw' => 'Naypyidaw',
+        'account' => 'Account verification',
+        'station' => 'Station registration',
+        'new_station' => 'New station',
+        'new_station_registration' => 'New station registration',
+        'license' => 'License',
+        'license_modification' => 'License modification',
+        'deactivation' => 'Account deactivation',
+        'account_deactivation' => 'Account deactivation',
+    ];
+    if (isset($known[$value])) {
+        return $known[$value];
+    }
+    return ucwords(str_replace(['_', '-'], ' ', $value));
 }

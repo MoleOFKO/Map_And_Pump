@@ -1,11 +1,20 @@
 <?php
+/**
+ * Shared Admin portal shell: page-load bar, sticky top nav, and main-menu offcanvas.
+ * Set $adminSection before include so the active menu item is highlighted.
+ * Valid keys: home | view_hq | view_users | requests | report | profile | manage_moderators | logs
+ */
 $adminSection = (string) ($adminSection ?? '');
-$adminNavClass = static fn (string $key): string => $adminSection === $key ? 'menu-btn-nav active-nav' : 'menu-btn-nav';
+$adminMenuClass = static fn (string $key): string => $adminSection === $key ? 'menu-btn-nav active-nav' : 'menu-btn-nav';
 ?>
+<div class="page-load-bar"></div>
 <div class="container sticky-nav-wrapper">
     <nav class="navbar navbar-dark text-white navigation_style">
         <div class="container-fluid d-flex justify-content-between align-items-center p-0 gap-3">
-            <a class="navbar-brand d-flex align-items-center gap-2 fw-semibold txt-neon-cyan m-0" href="admin_dashboard.php" style="font-size:.95rem;"><img src="/images/Logo.png" alt="Logo" class="nav-logo"><span class="d-none d-sm-inline">Admin Portal</span></a>
+            <a class="navbar-brand d-flex align-items-center gap-2 fw-semibold txt-neon-cyan m-0" href="admin_dashboard.php" style="font-size:.95rem;">
+                <img src="/images/Logo.png" alt="Logo" class="nav-logo">
+                <span class="d-none d-sm-inline">Admin Portal</span>
+            </a>
 
             <div class="admin-nav-actions">
                 <label class="cosmic-toggle nav-theme-toggle" title="Toggle light mode">
@@ -38,10 +47,6 @@ $adminNavClass = static fn (string $key): string => $adminSection === $key ? 'me
 </div>
 
 <!-- ADMIN SIDEBAR MAIN MENU (offcanvas) -->
-<?php
-    $adminSection = $adminSection ?? '';
-    $adminMenuClass = static fn (string $key): string => $adminSection === $key ? 'menu-btn-nav active-nav' : 'menu-btn-nav';
-?>
 <div class="offcanvas offcanvas-end" tabindex="-1" id="mainMenuOffcanvas" style="width: 320px; background: rgba(6, 12, 24, 0.98); backdrop-filter: blur(28px); border-left: 1px solid rgba(0, 180, 255, 0.18);">
     <div class="offcanvas-header pb-2 border-bottom border-white border-opacity-10">
         <div>

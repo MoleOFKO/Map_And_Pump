@@ -14,13 +14,19 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 $userId = filter_var($_POST['user_id'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
 $actionType = strtolower(trim((string) ($_POST['action_type'] ?? '')));
 $reason = trim((string) ($_POST['reason'] ?? ''));
-$redirect = trim((string) ($_POST['return_to'] ?? 'view_users.php'));
-if ($redirect === '') {
-    $redirect = 'view_users.php';
-}
+// Same-folder Admin pages + Moderator (M) return targets — block open redirects.
+$allowedReturns = [
+    'view_users.php',
+    'view_hq_and_user_account.php',
+    'view_users(M).php',
+    'view_hq_and_user_account(M).php',
+    'moderator_dashboard.php',
+];
+$redirectRaw = basename(trim((string) ($_POST['return_to'] ?? 'view_users.php')));
+$redirect = in_array($redirectRaw, $allowedReturns, true) ? $redirectRaw : 'view_users.php';
 
-if (!$userId || !in_array($actionType, ['suspend', 'remove'], true) || $reason === '') {
-    hq_flash('danger', 'Choose suspend or remove and provide a reason before submitting.');
+if (!$userId || !in_array($actionType, ['suspend', 'remove', 'restore'], true) || $reason === '') {
+    hq_flash('danger', 'Choose suspend, remove, or restore and provide a reason before submitting.');
     hq_redirect($redirect);
 }
 
@@ -69,13 +75,23 @@ if (!$target) {
     hq_redirect($redirect);
 }
 
-$newStatus = $actionType === 'remove' ? 'removed' : 'suspended';
+$statusMap = [
+    'remove' => 'removed',
+    'suspend' => 'suspended',
+    'restore' => 'approved',
+];
+$newStatus = $statusMap[$actionType] ?? 'suspended';
+$actionVerb = match ($actionType) {
+    'remove' => 'removed',
+    'restore' => 'restored (approved)',
+    default => 'suspended',
+};
 $notification = hq_send_notification(
     (string) $target['email'],
     'Map & Pump account ' . ucfirst($actionType),
     sprintf(
         "Your Map & Pump account has been %s.\n\nReason:\n%s",
-        $actionType === 'remove' ? 'removed' : 'suspended',
+        $actionVerb,
         $reason
     )
 );
@@ -130,7 +146,11 @@ try {
         error_log('[Customer registry] Action log skipped: ' . $logError->getMessage());
     }
 
-    $message = 'The account was marked as ' . $newStatus . '.';
+    $message = match ($actionType) {
+        'remove' => 'The account was marked as removed.',
+        'restore' => 'The account was restored to approved status.',
+        default => 'The account was suspended.',
+    };
     if (!$historyReady) {
         $message .= ' Action history table was unavailable, so only the status was updated.';
     }

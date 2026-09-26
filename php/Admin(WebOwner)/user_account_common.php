@@ -31,11 +31,12 @@ function customer_account_rows(string $search = '', string $status = ''): array
     }
 
     if ($status !== '') {
-        if (strtolower($status) === 'approved') {
+        $statusKey = strtolower($status);
+        if (in_array($statusKey, ['approved', 'active'], true)) {
             $where[] = "LOWER(u.status) IN ('approved', 'active')";
         } else {
             $where[] = 'LOWER(u.status) = ?';
-            $params[] = strtolower($status);
+            $params[] = $statusKey;
             $types .= 's';
         }
     }

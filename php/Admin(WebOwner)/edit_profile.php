@@ -49,20 +49,33 @@ $avatarFallbackUrl = map_pump_profile_initial_svg((string) ($user['user_name'] ?
     <link rel="icon" type="image/png" href="/images/Logo.png">
     <link rel="stylesheet" href="/css/Admin.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+<style>
+        .profile-flash { border-radius:14px; background:rgba(10,22,44,.82); border:1px solid var(--glass-border); color:var(--text-primary); }
+        body.background_color.light-mode .profile-flash { background:rgba(255,255,255,.92); }
+    </style>
 </head>
 <body class="background_color" id="background_color">
-    <div class="page-load-bar"></div>
-    <div class="container sticky-nav-wrapper"><nav class="navbar navbar-dark text-white navigation_style"><div class="container-fluid d-flex justify-content-between align-items-center p-0 gap-3"><a class="navbar-brand d-flex align-items-center gap-2 fw-semibold txt-neon-cyan m-0" href="admin_dashboard.php" style="font-size:.95rem;"><img src="/images/Logo.png" alt="Logo" class="nav-logo"><span class="d-none d-sm-inline">Admin Portal</span></a><div class="admin-nav-actions"><label class="cosmic-toggle nav-theme-toggle" title="Toggle light mode"><input class="toggle js-theme-toggle" type="checkbox" aria-label="Toggle light mode"><div class="slider"><span class="theme-icon theme-icon-dark"><i class="bi bi-moon-stars-fill"></i></span><span class="theme-icon theme-icon-light"><i class="bi bi-sun-fill"></i></span><div class="cosmos"></div><div class="energy-line"></div><div class="energy-line"></div><div class="energy-line"></div><div class="toggle-orb"><div class="inner-orb"></div><div class="ring"></div></div><div class="particles"><div style="--angle:30deg" class="particle"></div><div style="--angle:60deg" class="particle"></div><div style="--angle:90deg" class="particle"></div><div style="--angle:120deg" class="particle"></div><div style="--angle:150deg" class="particle"></div><div style="--angle:180deg" class="particle"></div></div></div></label><button class="btn btn-sm menu-pill-btn" type="button" data-bs-toggle="offcanvas" data-bs-target="#mainMenuOffcanvas"><i class="bi bi-grid-fill me-1 txt-neon-cyan"></i> Menu</button></div></div></nav></div>
+<?php $adminSection = 'profile'; include __DIR__ . '/admin_section_nav.php'; ?>
 
-    <div class="container my-5" style="max-width:1140px;">
+    <main class="container my-5" style="max-width:1140px;">
         <div class="mb-4">
             <span class="stat-chip mb-2"><i class="bi bi-person-badge-fill txt-neon-cyan"></i> Account Settings</span>
             <h1 class="fw-bold m-0 h4 text-white mt-2">Edit Profile Details</h1>
             <p class="text-white-50 m-0 small mt-1">Update the signed-in admin/moderator identity and security credentials.</p>
         </div>
         
-        <?php if ($flash): ?><div class="alert alert-<?= hq_escape((string) ($flash['type'] ?? 'info')) ?> border-0" role="alert"><?= hq_escape((string) ($flash['message'] ?? '')) ?></div><?php endif; ?>
-        <?php if ($accountDeletionFlash !== ''): ?><div class="alert alert-danger border-0" role="alert"><?= hq_escape($accountDeletionFlash) ?></div><?php endif; ?>
+        <?php if ($flash): ?>
+            <div class="alert profile-flash alert-<?= hq_escape((string) ($flash['type'] ?? 'info')) ?> alert-dismissible fade show mb-4" role="alert">
+                <i class="bi <?= (($flash['type'] ?? '') === 'success') ? 'bi-check-circle-fill text-success' : 'bi-exclamation-triangle-fill text-danger' ?> me-2"></i><?= hq_escape((string) ($flash['message'] ?? '')) ?>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        <?php endif; ?>
+        <?php if ($accountDeletionFlash !== ''): ?>
+            <div class="alert profile-flash alert-danger alert-dismissible fade show mb-4" role="alert">
+                <i class="bi bi-exclamation-triangle-fill text-danger me-2"></i><?= hq_escape($accountDeletionFlash) ?>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        <?php endif; ?>
         <?php if (!$user): ?><div class="alert alert-danger border-0">The live admin account could not be loaded.</div><?php else: ?>
         
         <div class="row g-4">
@@ -75,7 +88,7 @@ $avatarFallbackUrl = map_pump_profile_initial_svg((string) ($user['user_name'] ?
                     <div class="text-center pb-4 border-bottom border-white border-opacity-10">
                         <form action="update_avatar_action.php" method="POST" enctype="multipart/form-data" id="avatarForm">
                             <div class="profile-avatar-container mb-3 mx-auto">
-                                <img src="<?= hq_escape($avatarUrl !== '' ? $avatarUrl : $avatarFallbackUrl) ?>" alt="Current profile avatar" class="profile-avatar-image" id="avatarPreview">
+                                <img src="<?= hq_escape($avatarUrl !== '' ? $avatarUrl : $avatarFallbackUrl) ?>" alt="Current profile avatar" class="profile-avatar-image" id="avatarPreview" onerror="this.onerror=null;this.src='<?= hq_escape($avatarFallbackUrl) ?>';">
                                 <label for="avatarInput" class="avatar-upload-trigger" title="Upload new photo"><i class="bi bi-camera-fill"></i></label>
                                 <input type="file" id="avatarInput" name="profile_avatar" accept="image/jpeg,image/png,image/gif,image/webp" class="d-none">
                             </div>
@@ -163,8 +176,12 @@ $avatarFallbackUrl = map_pump_profile_initial_svg((string) ($user['user_name'] ?
                                 <label class="form-label text-white-50 small" for="confirmPassword">Confirm New Password <span class="text-danger">*</span></label>
                                 <input id="confirmPassword" type="password" name="confirm_password" class="form-control glass-input" minlength="8" maxlength="72" required autocomplete="new-password">
                             </div>
+                            <div class="col-12">
+                                <p class="text-white-50 small mb-0"><i class="bi bi-info-circle txt-neon-cyan me-1"></i>Use 8–72 characters with upper &amp; lowercase letters, a number, and a symbol.</p>
+                                <div id="passwordMatchHint" class="small mt-1" aria-live="polite"></div>
+                            </div>
                             <div class="col-12 text-end mt-3">
-                                <button type="submit" class="btn btn-neon px-4">Save Changes</button>
+                                <button type="submit" class="btn btn-neon px-4" id="passwordSubmitBtn">Update Password</button>
                             </div>
                         </div>
                     </form>
@@ -196,14 +213,61 @@ $avatarFallbackUrl = map_pump_profile_initial_svg((string) ($user['user_name'] ?
         </div>
         
         <?php endif; ?>
-    </div>
+    </main>
 
-    <div class="offcanvas offcanvas-end" tabindex="-1" id="mainMenuOffcanvas" style="width:320px;background:rgba(6,12,24,.98);backdrop-filter:blur(28px);border-left:1px solid rgba(0,180,255,.18);"><div class="offcanvas-header pb-2 border-bottom border-white border-opacity-10"><div><h5 class="offcanvas-title text-white fw-bold mb-0">Main Menu</h5><p class="text-white-50 small mb-0">Admin Portal</p></div><button type="button" class="btn-close btn-close-white" data-bs-dismiss="offcanvas"></button></div><div class="offcanvas-body pt-3"><ul class="list-unstyled d-flex flex-column gap-2"><li><a href="admin_dashboard.php" class="menu-btn-nav"><i class="bi bi-house me-3 txt-neon-cyan"></i> Home</a></li><li><a href="view_hq_and_user_account.php" class="menu-btn-nav"><i class="bi bi-building-gear me-3 txt-neon-cyan"></i> View/Manage HQ</a></li><li><a href="view_users.php" class="menu-btn-nav"><i class="bi bi-people me-3 txt-neon-cyan"></i> View/Manage Users</a></li><li><a href="view_requests.php" class="menu-btn-nav"><i class="bi bi-file-earmark-check me-3 txt-neon-cyan"></i> View Requests</a></li><li><a href="view_report.php" class="menu-btn-nav"><i class="bi bi-graph-up-arrow me-3 txt-neon-cyan"></i> View Report</a></li><li><a href="edit_profile.php" class="menu-btn-nav active-nav"><i class="bi bi-person-bounding-box me-3 txt-neon-blue"></i> Edit Profile</a></li><li><a href="manage_moderators.php" class="menu-btn-nav"><i class="bi bi-people-fill me-3 txt-neon-blue"></i> Manage Moderators</a></li><li><a href="view_logs.php" class="menu-btn-nav"><i class="bi bi-terminal-split me-3 text-danger"></i> View Log Files</a></li><hr style="border-color:rgba(255,255,255,.08);margin:4px 0;"><li><form action="../Login/logout.php" method="post" class="m-0"><button type="submit" class="logout-btn-nav btn border-0 w-100"><i class="bi bi-box-arrow-right me-2"></i> Logout</button></form></li></ul></div></div>
     <footer class="text-white-50 text-center py-4 mt-5 small">&copy; 2026 Map &amp; Pump | All Rights Reserved</footer>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script><script src="/js/Admin.js"></script><script>
-        document.getElementById('avatarInput')?.addEventListener('change', (event) => { const file = event.target.files?.[0]; if (file) { document.getElementById('avatarPreview').src = URL.createObjectURL(file); document.getElementById('avatarForm').submit(); } });
-        const passwordInput = document.getElementById('newPasswordInput'); const strengthFill = document.getElementById('pwStrengthFill'); const strengthLabel = document.getElementById('pwStrengthLabel');
-        passwordInput?.addEventListener('input', () => { const value = passwordInput.value; let score = 0; if (value.length >= 8) score++; if (/[A-Z]/.test(value)) score++; if (/\d/.test(value)) score++; if (/[^A-Za-z0-9]/.test(value)) score++; const levels = [{width:'0%',color:'transparent',label:''},{width:'25%',color:'#ff4d6a',label:'Weak'},{width:'50%',color:'#ffc107',label:'Fair'},{width:'75%',color:'#38b6ff',label:'Good'},{width:'100%',color:'#1be494',label:'Strong'}]; const level = levels[score]; strengthFill.style.width = level.width; strengthFill.style.background = level.color; strengthLabel.textContent = level.label; strengthLabel.style.color = level.color; });
+        document.getElementById('avatarInput')?.addEventListener('change', (event) => {
+            const file = event.target.files?.[0];
+            if (!file) return;
+            if (file.size > 2 * 1024 * 1024) {
+                alert('Profile images must be 2 MB or smaller.');
+                event.target.value = '';
+                return;
+            }
+            document.getElementById('avatarPreview').src = URL.createObjectURL(file);
+            document.getElementById('avatarForm').submit();
+        });
+        const passwordInput = document.getElementById('newPasswordInput');
+        const confirmInput = document.getElementById('confirmPassword');
+        const strengthFill = document.getElementById('pwStrengthFill');
+        const strengthLabel = document.getElementById('pwStrengthLabel');
+        const matchHint = document.getElementById('passwordMatchHint');
+        const passwordForm = document.getElementById('passwordForm');
+        const updateStrength = () => {
+            const value = passwordInput?.value || '';
+            let score = 0;
+            if (value.length >= 8) score++;
+            if (/[A-Z]/.test(value)) score++;
+            if (/\d/.test(value)) score++;
+            if (/[^A-Za-z0-9]/.test(value)) score++;
+            const levels = [
+                {width:'0%',color:'transparent',label:''},
+                {width:'25%',color:'#ff4d6a',label:'Weak'},
+                {width:'50%',color:'#ffc107',label:'Fair'},
+                {width:'75%',color:'#38b6ff',label:'Good'},
+                {width:'100%',color:'#1be494',label:'Strong'}
+            ];
+            const level = levels[score];
+            if (strengthFill) { strengthFill.style.width = level.width; strengthFill.style.background = level.color; }
+            if (strengthLabel) { strengthLabel.textContent = level.label; strengthLabel.style.color = level.color; }
+        };
+        const updateMatch = () => {
+            if (!matchHint || !passwordInput || !confirmInput) return;
+            if (!confirmInput.value) { matchHint.textContent = ''; return; }
+            const ok = passwordInput.value === confirmInput.value;
+            matchHint.textContent = ok ? 'Passwords match.' : 'Passwords do not match.';
+            matchHint.style.color = ok ? '#1be494' : '#ff4d6a';
+        };
+        passwordInput?.addEventListener('input', () => { updateStrength(); updateMatch(); });
+        confirmInput?.addEventListener('input', updateMatch);
+        passwordForm?.addEventListener('submit', (event) => {
+            if (passwordInput && confirmInput && passwordInput.value !== confirmInput.value) {
+                event.preventDefault();
+                updateMatch();
+                confirmInput.focus();
+            }
+        });
     </script>
 </body>
 </html>

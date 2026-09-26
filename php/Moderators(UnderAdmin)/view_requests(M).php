@@ -6,10 +6,34 @@ $flash = request_pull_flash();
 $search = trim((string) ($_GET['search'] ?? ''));
 $requestType = strtolower(trim((string) ($_GET['type'] ?? '')));
 $status = strtolower(trim((string) ($_GET['status'] ?? '')));
-$allowedTypes = ['account', 'station', 'license', 'deactivation'];
-$allowedStatuses = ['pending', 'approved', 'rejected', 'flagged'];
-$requestType = in_array($requestType, $allowedTypes, true) ? $requestType : '';
-$status = in_array($status, $allowedStatuses, true) ? $status : '';
+
+// Filter keywords from live system_requests (+ account bucket + core fallbacks).
+$allowedStatuses = function_exists('admin_filter_request_statuses')
+    ? admin_filter_request_statuses()
+    : ['pending', 'approved', 'rejected', 'flagged'];
+foreach (['pending', 'approved', 'rejected', 'flagged'] as $fallbackStatus) {
+    if (!in_array($fallbackStatus, $allowedStatuses, true)) {
+        $allowedStatuses[] = $fallbackStatus;
+    }
+}
+sort($allowedStatuses);
+
+$dbTypes = function_exists('admin_filter_request_types') ? admin_filter_request_types() : [];
+$allowedTypes = $dbTypes;
+foreach (['account', 'station', 'new_station', 'new_station_registration', 'license', 'license_modification', 'deactivation', 'account_deactivation'] as $fallbackType) {
+    if (!in_array($fallbackType, $allowedTypes, true)) {
+        $allowedTypes[] = $fallbackType;
+    }
+}
+// Keep synthetic "account" bucket for pending user verification rows.
+if (!in_array('account', $allowedTypes, true)) {
+    array_unshift($allowedTypes, 'account');
+}
+sort($allowedTypes);
+
+$requestType = ($requestType !== '' && in_array($requestType, $allowedTypes, true)) ? $requestType : '';
+$status = ($status !== '' && in_array($status, $allowedStatuses, true)) ? $status : '';
+$filtersActive = ($search !== '' || $requestType !== '' || $status !== '');
 
 $requestRows = ($requestType === 'account') ? [] : moderator_request_rows($search, $requestType, $status);
 $accountRows = [];
@@ -49,6 +73,15 @@ $flashType = (string) ($flash['type'] ?? '');
         .request-detail-label { color:var(--text-muted); font-size:.72rem; text-transform:uppercase; letter-spacing:.07em; }
         .request-detail-value { color:var(--text-primary); word-break:break-word; white-space:pre-wrap; }
         .request-detail-modal .modal-content { overflow:hidden; }
+        .request-detail-scroll {
+            max-height: min(40vh, 320px);
+            overflow-y: auto;
+            overscroll-behavior: contain;
+            scrollbar-width: thin;
+            scrollbar-color: rgba(0,244,255,.45) rgba(4,12,28,.9);
+        }
+        .request-detail-scroll::-webkit-scrollbar { width: 8px; }
+        .request-detail-scroll::-webkit-scrollbar-thumb { background: rgba(0,244,255,.35); border-radius: 999px; }
         .request-detail-modal .modal-header { padding:1.1rem 1.35rem; border-bottom-color:rgba(0,244,255,.16); background:linear-gradient(120deg,rgba(0,244,255,.09),rgba(37,99,235,.035) 58%,transparent); }
         .request-detail-modal .modal-body { padding:1.35rem; }
         .request-detail-modal .modal-footer { padding:1rem 1.35rem; border-top-color:rgba(255,255,255,.09); background:rgba(4,13,30,.34); }
@@ -160,9 +193,9 @@ $flashType = (string) ($flash['type'] ?? '');
     <div class="col-12"><div class="dashboard-card py-3 px-4">
         <form class="row g-3 align-items-center" method="GET" action="view_requests(M).php">
             <div class="col-12 col-md-5"><div class="input-group"><span class="input-group-text bg-transparent border-end-0" style="border-color:var(--glass-border);color:var(--neon-cyan);border-radius:12px 0 0 12px;"><i class="bi bi-funnel-fill"></i></span><input type="text" class="form-control glass-input border-start-0" placeholder="Filter by company, sender name, email, or reference ID..." name="search" value="<?= moderator_escape($search) ?>"></div></div>
-            <div class="col-12 col-md-3"><select class="form-select glass-select" name="type"><option value="">All Request Types</option><?php foreach ($allowedTypes as $option): ?><option value="<?= $option ?>" <?= $requestType === $option ? 'selected' : '' ?>><?= $option === 'account' ? 'Account Verification' : moderator_escape(request_type_label($option)) ?></option><?php endforeach; ?></select></div>
-            <div class="col-12 col-md-2"><select class="form-select glass-select" name="status"><option value="">All Statuses</option><?php foreach ($allowedStatuses as $option): ?><option value="<?= $option ?>" <?= $status === $option ? 'selected' : '' ?>><?= moderator_escape(request_status_label($option)) ?></option><?php endforeach; ?></select></div>
-            <div class="col-12 col-md-2 d-grid"><button type="submit" class="btn btn-neon">Apply Filter</button></div>
+            <div class="col-12 col-md-3"><select class="form-select glass-select" name="type"><option value="">All Request Types</option><?php foreach ($allowedTypes as $option): ?><option value="<?= moderator_escape($option) ?>" <?= $requestType === $option ? 'selected' : '' ?>><?= $option === 'account' ? 'Account Verification' : moderator_escape(function_exists('admin_filter_label') ? admin_filter_label($option) : (function_exists('request_type_label') ? request_type_label($option) : $option)) ?></option><?php endforeach; ?></select></div>
+            <div class="col-12 col-md-2"><select class="form-select glass-select" name="status"><option value="">All Statuses</option><?php foreach ($allowedStatuses as $option): ?><option value="<?= moderator_escape($option) ?>" <?= $status === $option ? 'selected' : '' ?>><?= moderator_escape(function_exists('admin_filter_label') ? admin_filter_label($option) : request_status_label($option)) ?></option><?php endforeach; ?></select></div>
+            <div class="col-12 col-md-2 d-flex gap-2"><button type="submit" class="btn btn-neon flex-grow-1">Apply</button><?php if ($filtersActive): ?><a href="view_requests(M).php" class="btn btn-outline-secondary text-white-50 border-secondary border-opacity-25" title="Clear filters">Clear</a><?php endif; ?></div>
         </form>
     </div></div>
 
@@ -203,6 +236,7 @@ $flashType = (string) ($flash['type'] ?? '');
                     <button type="button" class="btn-action js-view-request" title="View Request Details" aria-label="View request <?= moderator_escape((string) $row['reference_code']) ?> details" data-request-id="<?= (int) $row['request_id'] ?>"><i class="bi bi-eye-fill"></i></button>
                     <?php if ($rowStatus === 'pending' && $requestTypeName !== 'hq_registration'): ?>
                         <a href="#" class="btn-action btn-action-success js-request-approve" title="Approve" aria-label="Approve request <?= moderator_escape((string) $row['reference_code']) ?>" data-request-id="<?= (int) $row['request_id'] ?>" data-reference="<?= moderator_escape((string) $row['reference_code']) ?>"><i class="bi bi-check-lg"></i></a>
+                        <a href="#" class="btn-action js-request-flag" title="Flag" aria-label="Flag request <?= moderator_escape((string) $row['reference_code']) ?>" data-request-id="<?= (int) $row['request_id'] ?>" data-reference="<?= moderator_escape((string) $row['reference_code']) ?>"><i class="bi bi-flag-fill text-warning"></i></a>
                         <a href="#" class="btn-action btn-action-danger js-request-reject" title="Reject" aria-label="Reject request <?= moderator_escape((string) $row['reference_code']) ?>" data-request-id="<?= (int) $row['request_id'] ?>" data-reference="<?= moderator_escape((string) $row['reference_code']) ?>" data-sender="<?= moderator_escape($sender) ?>"><i class="bi bi-x-lg"></i></a>
                     <?php elseif ($rowStatus === 'pending' && $requestTypeName === 'hq_registration'): ?>
                         <span class="text-white-50 small" title="HQ registrations are reviewed by an Admin">Admin review</span>
@@ -218,7 +252,9 @@ $flashType = (string) ($flash['type'] ?? '');
 
 <div class="modal fade glass-modal request-detail-modal" id="viewReqModal" tabindex="-1" aria-labelledby="viewReqTitle" aria-hidden="true"><div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-xl"><div class="modal-content"><div class="modal-header"><h5 class="modal-title fw-bold" id="viewReqTitle"><i class="bi bi-file-earmark-text txt-neon-cyan me-2"></i> Request Details</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button></div><div class="modal-body" id="requestDetailsBody"><div class="text-center text-white-50 py-5"><div class="spinner-border spinner-border-sm txt-neon-cyan mb-2" role="status"></div><div>Loading request details…</div></div></div><div class="modal-footer" id="requestDetailsFooter"><button type="button" class="btn btn-outline-secondary rounded-3 text-white-50 border-secondary border-opacity-20 w-100" data-bs-dismiss="modal">Close</button></div></div></div></div>
 
-<div class="modal fade glass-modal" id="rejectReqModal" tabindex="-1" aria-labelledby="rejectReqModalLabel" aria-hidden="true"><div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-header"><h5 class="modal-title fw-bold" id="rejectReqModalLabel"><i class="bi bi-shield-x text-danger me-2"></i> Reject Request</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button></div><form action="request_action(M).php" method="POST" id="rejectReqForm"><div class="modal-body d-flex flex-column gap-3"><input type="hidden" name="request_id" id="rejectRequestId"><input type="hidden" name="user_id" id="rejectUserId"><input type="hidden" name="action" value="reject"><input type="hidden" name="return_to" value="view_requests(M).php"><div class="small text-white-50">Target request: <span class="txt-neon-cyan fw-semibold" id="rejectRequestReference">—</span></div><div class="small text-white-50">Sender: <span class="text-white" id="rejectRequestSender">—</span></div><div><label class="form-label text-white-50 small" for="rejectReason">Reason for rejection</label><textarea class="form-control glass-input" name="reason" id="rejectReason" rows="5" maxlength="2000" placeholder="Explain why this request is being rejected..." required style="resize:none;"></textarea></div><div class="small text-white-50"><i class="bi bi-envelope me-1 txt-neon-cyan"></i>The reason is recorded and a notification is created for the request account. Email delivery uses the configured placeholder until SMTP is added.</div></div><div class="modal-footer"><button type="button" class="btn btn-outline-secondary rounded-3 text-white-50 border-secondary border-opacity-20" data-bs-dismiss="modal">Cancel</button><button type="submit" class="btn btn-danger">Confirm Rejection</button></div></form></div></div></div>
+<div class="modal fade glass-modal" id="rejectReqModal" tabindex="-1" aria-labelledby="rejectReqModalLabel" aria-hidden="true"><div class="modal-dialog modal-dialog-centered modal-dialog-scrollable"><div class="modal-content"><div class="modal-header"><h5 class="modal-title fw-bold" id="rejectReqModalLabel"><i class="bi bi-shield-x text-danger me-2"></i> Reject Request</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button></div><form action="request_action(M).php" method="POST" id="rejectReqForm"><div class="modal-body d-flex flex-column gap-3"><input type="hidden" name="request_id" id="rejectRequestId"><input type="hidden" name="user_id" id="rejectUserId"><input type="hidden" name="action" value="reject"><input type="hidden" name="return_to" value="view_requests(M).php"><div class="small text-white-50">Target request: <span class="txt-neon-cyan fw-semibold" id="rejectRequestReference">—</span></div><div class="small text-white-50">Sender: <span class="text-white" id="rejectRequestSender">—</span></div><div><label class="form-label text-white-50 small" for="rejectReason">Reason for rejection</label><textarea class="form-control glass-input" name="reason" id="rejectReason" rows="5" maxlength="2000" placeholder="Explain why this request is being rejected..." required style="resize:none;"></textarea></div><div class="small text-white-50"><i class="bi bi-envelope me-1 txt-neon-cyan"></i>The reason is recorded and a notification is created for the request account. Email delivery uses the configured placeholder until SMTP is added.</div></div><div class="modal-footer"><button type="button" class="btn btn-outline-secondary rounded-3 text-white-50 border-secondary border-opacity-20" data-bs-dismiss="modal">Cancel</button><button type="submit" class="btn btn-danger">Confirm Rejection</button></div></form></div></div></div>
+
+<div class="modal fade glass-modal" id="flagReqModal" tabindex="-1" aria-labelledby="flagReqModalLabel" aria-hidden="true"><div class="modal-dialog modal-dialog-centered modal-dialog-scrollable"><div class="modal-content"><div class="modal-header"><h5 class="modal-title fw-bold" id="flagReqModalLabel"><i class="bi bi-flag-fill text-warning me-2"></i> Flag Request</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button></div><form action="request_action(M).php" method="POST" id="flagReqForm"><div class="modal-body d-flex flex-column gap-3"><input type="hidden" name="request_id" id="flagRequestId"><input type="hidden" name="action" value="flag"><input type="hidden" name="return_to" value="view_requests(M).php"><div class="small text-white-50">Target request: <span class="txt-neon-cyan fw-semibold" id="flagRequestReference">—</span></div><div><label class="form-label text-white-50 small" for="flagReason">Reason for flagging</label><textarea class="form-control glass-input" name="reason" id="flagReason" rows="4" maxlength="2000" placeholder="Why should this request be flagged for follow-up?" required style="resize:none;"></textarea></div></div><div class="modal-footer"><button type="button" class="btn btn-outline-secondary rounded-3 text-white-50 border-secondary border-opacity-20" data-bs-dismiss="modal">Cancel</button><button type="submit" class="btn btn-warning">Flag Request</button></div></form></div></div></div>
 
 <?php $moderatorActiveNav = 'requests'; include __DIR__ . '/includes/moderator_offcanvas.php'; ?>
 <footer class="text-white-50 text-center py-4 mt-5 small">&copy; 2026 Map &amp; Pump | All Rights Reserved</footer>
@@ -227,6 +263,11 @@ $flashType = (string) ($flash['type'] ?? '');
 document.addEventListener('DOMContentLoaded', () => {
     const details = new bootstrap.Modal(document.getElementById('viewReqModal'));
     const reject = new bootstrap.Modal(document.getElementById('rejectReqModal'));
+    const flagModalEl = document.getElementById('flagReqModal');
+    const flagModal = flagModalEl ? new bootstrap.Modal(flagModalEl) : null;
+    const flagId = document.getElementById('flagRequestId');
+    const flagReference = document.getElementById('flagRequestReference');
+    const flagReason = document.getElementById('flagReason');
     const body = document.getElementById('requestDetailsBody');
     const footer = document.getElementById('requestDetailsFooter');
     const rejectForm = document.getElementById('rejectReqForm');
@@ -257,6 +298,18 @@ document.addEventListener('DOMContentLoaded', () => {
         rejectReason.value = '';
         reject.show();
     };
+    const flagTarget = (id, label) => {
+        if (!flagModal || !flagId) return;
+        flagId.value = id;
+        if (flagReference) flagReference.textContent = label || ('Request #' + id);
+        if (flagReason) flagReason.value = '';
+        flagModal.show();
+    };
+    document.querySelectorAll('.js-request-flag').forEach(btn => btn.addEventListener('click', event => {
+        event.preventDefault();
+        flagTarget(btn.dataset.requestId, btn.dataset.reference);
+    }));
+
 
     document.querySelectorAll('.js-view-request').forEach(button => button.addEventListener('click', async event => {
         event.preventDefault();
@@ -272,7 +325,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const receipt = r.receipt_image ? '<a href="' + esc(r.receipt_image) + '" target="_blank" rel="noopener" class="d-inline-block text-decoration-none"><img src="' + esc(r.receipt_image) + '" alt="Payment receipt proof" style="display:block;width:100%;max-width:260px;max-height:220px;object-fit:contain;border-radius:12px;border:1px solid var(--glass-border);background:rgba(255,255,255,.04);padding:.35rem;"><span class="txt-neon-cyan d-inline-flex align-items-center gap-1 mt-2"><i class="bi bi-receipt"></i>Open ' + esc(r.receipt_type || 'payment') + ' receipt</span></a>' : '<span class="text-white-50">No receipt proof uploaded</span>';
             body.innerHTML = '<div class="row g-4"><div class="col-12 col-md-6"><h6 class="fw-semibold text-white mb-3">SUBMITTER INFO</h6><div class="mb-3"><div class="request-detail-label">Corporate Partner</div><div class="request-detail-value">' + esc(r.sender_entity || r.hq_company_name || 'Not available') + '</div></div><div class="mb-3"><div class="request-detail-label">Authorized Official</div><div class="request-detail-value">' + esc(r.sender_name || r.submitter_username || 'Not available') + ' ' + (r.sender_email ? '(' + esc(r.sender_email) + ')' : '') + '</div></div><div class="mb-3"><div class="request-detail-label">Location</div><div class="request-detail-value">' + esc(r.location || 'Not provided') + '</div></div></div><div class="col-12 col-md-6"><h6 class="fw-semibold text-white mb-3">REQUEST SPECIFICS</h6><div class="mb-3"><div class="request-detail-label">Type</div><div class="request-detail-value">' + esc(r.request_type_label) + '</div></div><div class="mb-3"><div class="request-detail-label">Status</div><div class="request-detail-value">' + esc(r.status_label) + '</div></div><div class="mb-3"><div class="request-detail-label">Submitted</div><div class="request-detail-value">' + esc(date(r.created_at)) + '</div></div><div class="mb-3"><div class="request-detail-label">Verification Document</div><div class="request-detail-value">' + doc + '</div></div><div class="mb-3"><div class="request-detail-label">Payment Receipt Proof</div><div class="request-detail-value">' + receipt + '</div></div></div><div class="col-12"><div class="request-detail-label mb-2">Request Details</div><div class="request-detail-value p-3 rounded-3" style="background:rgba(0,244,255,.04);border:1px solid var(--glass-border)">' + esc(r.request_details || 'No additional details provided.') + '</div></div>' + (r.review_reason ? '<div class="col-12"><div class="request-detail-label">Review Message</div><div class="request-detail-value">' + esc(r.review_reason) + '</div></div>' : '') + '</div>';
             if (String(r.status || '').toLowerCase() === 'pending' && String(r.request_type || '').toLowerCase() !== 'hq_registration') {
-                setFooter('<form action="request_action(M).php" method="POST" class="m-0 flex-fill"><input type="hidden" name="request_id" value="' + esc(r.request_id) + '"><input type="hidden" name="action" value="approve"><input type="hidden" name="return_to" value="view_requests(M).php"><button type="submit" class="btn btn-success w-100"><i class="bi bi-check-lg me-1"></i>Approve</button></form><button type="button" class="btn btn-danger flex-fill js-modal-reject"><i class="bi bi-x-lg me-1"></i>Reject</button>');
+                setFooter('<form action="request_action(M).php" method="POST" class="m-0 flex-fill"><input type="hidden" name="request_id" value="' + esc(r.request_id) + '"><input type="hidden" name="action" value="approve"><input type="hidden" name="return_to" value="view_requests(M).php"><button type="submit" class="btn btn-success w-100"><i class="bi bi-check-lg me-1"></i>Approve</button></form><button type="button" class="btn btn-warning flex-fill js-modal-flag"><i class="bi bi-flag me-1"></i>Flag</button><button type="button" class="btn btn-danger flex-fill js-modal-reject"><i class="bi bi-x-lg me-1"></i>Reject</button>');
+            footer.querySelector('.js-modal-flag')?.addEventListener('click', () => flagTarget(r.request_id, r.reference_code));
                 footer.querySelector('.js-modal-reject').addEventListener('click', () => rejectTarget('request', r.request_id, '#' + (r.reference_code || r.request_id), esc(r.sender_name || 'Unknown')));
             }
         } catch (err) {

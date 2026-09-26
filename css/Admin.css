@@ -1032,23 +1032,29 @@ body.background_color > .container:not(.sticky-nav-wrapper) {
 
 /* ===================================================
    GLASS MODAL
+   Constrained dialog + flex column so .modal-body scrolls
+   (header/footer stay fixed). Do not use align-items:center
+   on the dialog — it sizes content to natural height and
+   kills the internal scrollbar.
    =================================================== */
 .glass-modal {
-    height: 100dvh;
-    max-height: 100dvh;
+    /* Overlay may scroll on tiny viewports as a fallback */
     overflow-y: auto;
     overscroll-behavior: contain;
 }
 
 .glass-modal .modal-dialog {
     width: auto;
-    height: 90dvh;
     max-width: min(680px, calc(100% - 1rem));
-    max-height: 90dvh;
+    /* Cap height so modal-content can shrink and body can scroll */
+    height: auto;
+    max-height: min(90dvh, calc(100dvh - 1.5rem));
     min-height: 0 !important;
-    margin: 5vh auto;
+    margin: 1.25rem auto;
     display: flex;
-    align-items: center;
+    align-items: stretch;
+    /* Override Bootstrap modal-dialog-scrollable height tricks */
+    pointer-events: auto;
 }
 
 .glass-modal .modal-dialog.modal-lg {
@@ -1067,10 +1073,20 @@ body.background_color > .container:not(.sticky-nav-wrapper) {
     color: var(--text-primary);
     box-shadow: 0 30px 70px rgba(0, 0, 0, 0.6), 0 0 30px rgba(13, 110, 253, 0.04);
     width: 100%;
-    height: 100%;
-    max-height: none;
+    /* Fill dialog up to max-height; overflow lives on .modal-body */
+    max-height: min(90dvh, calc(100dvh - 1.5rem));
+    height: auto;
+    min-height: 0;
     display: flex;
     flex-direction: column;
+    overflow: hidden;
+}
+
+/* Bootstrap modal-dialog-scrollable compatibility */
+.glass-modal.modal-dialog-scrollable .modal-content,
+.glass-modal .modal-dialog-scrollable .modal-content,
+.glass-modal .modal-dialog.modal-dialog-scrollable .modal-content {
+    max-height: min(90dvh, calc(100dvh - 1.5rem));
     overflow: hidden;
 }
 
@@ -1085,13 +1101,44 @@ body.background_color > .container:not(.sticky-nav-wrapper) {
 }
 
 .glass-modal .modal-body {
+    flex: 1 1 auto;
     min-height: 0;
+    max-height: none;
+    overflow-x: hidden;
     overflow-y: auto;
     scrollbar-gutter: stable;
     overscroll-behavior: contain;
     -webkit-overflow-scrolling: touch;
+    /* Visible themed scrollbar (dark modal) */
+    scrollbar-width: thin;
+    scrollbar-color: rgba(0, 244, 255, 0.45) rgba(4, 12, 28, 0.9);
 }
 
+.glass-modal .modal-body::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+.glass-modal .modal-body::-webkit-scrollbar-track {
+    background: rgba(4, 12, 28, 0.9);
+    border-radius: 999px;
+}
+
+.glass-modal .modal-body::-webkit-scrollbar-thumb {
+    background: rgba(0, 244, 255, 0.35);
+    border-radius: 999px;
+    border: 2px solid rgba(4, 12, 28, 0.9);
+}
+
+.glass-modal .modal-body::-webkit-scrollbar-thumb:hover {
+    background: rgba(0, 244, 255, 0.55);
+}
+
+.glass-modal .modal-body::-webkit-scrollbar-thumb:active {
+    background: var(--neon-cyan, #00f4ff);
+}
+
+/* Form as column: header/footer outside body stay fixed; body scrolls */
 .glass-modal form {
     min-height: 0;
     display: flex;
@@ -1102,6 +1149,30 @@ body.background_color > .container:not(.sticky-nav-wrapper) {
 
 .glass-modal form .modal-body {
     flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+}
+
+/* Light mode modal scrollbars */
+body.background_color.light-mode .glass-modal .modal-body,
+body.background_color[data-theme="light"] .glass-modal .modal-body {
+    scrollbar-color: rgba(11, 94, 215, 0.5) rgba(226, 232, 240, 0.9);
+}
+
+body.background_color.light-mode .glass-modal .modal-body::-webkit-scrollbar-track,
+body.background_color[data-theme="light"] .glass-modal .modal-body::-webkit-scrollbar-track {
+    background: rgba(226, 232, 240, 0.9);
+}
+
+body.background_color.light-mode .glass-modal .modal-body::-webkit-scrollbar-thumb,
+body.background_color[data-theme="light"] .glass-modal .modal-body::-webkit-scrollbar-thumb {
+    background: rgba(11, 94, 215, 0.4);
+    border-color: rgba(226, 232, 240, 0.9);
+}
+
+body.background_color.light-mode .glass-modal .modal-body::-webkit-scrollbar-thumb:hover,
+body.background_color[data-theme="light"] .glass-modal .modal-body::-webkit-scrollbar-thumb:hover {
+    background: rgba(11, 94, 215, 0.6);
 }
 
 .hq-registration-dialog {
@@ -1156,14 +1227,14 @@ body.modal-open {
     .glass-modal .modal-dialog.modal-lg,
     .glass-modal .modal-dialog.modal-xl {
         max-width: calc(100% - 0.75rem);
-        height: calc(100dvh - 0.75rem);
+        height: auto;
         max-height: calc(100dvh - 0.75rem);
         margin: 0.375rem auto;
     }
 
     .glass-modal .modal-content {
-        height: 100%;
-        max-height: none;
+        height: auto;
+        max-height: calc(100dvh - 0.75rem);
         border-radius: 16px;
     }
 
@@ -1374,6 +1445,65 @@ body.background_color.light-mode #mainMenuOffcanvas .offcanvas-header {
 .log-warn   { color: #ffc107; font-weight: 700; }
 .log-error  { color: #ff4d6a; font-weight: 700; }
 .log-sec    { color: var(--neon-purple); font-weight: 700; }
+
+/* Light mode terminal / audit log panel */
+body.background_color.light-mode .terminal-panel,
+body.background_color[data-theme="light"] .terminal-panel {
+    background: rgba(248, 251, 255, 0.96);
+    color: #1e293b;
+    border-color: rgba(11, 94, 215, 0.18);
+}
+
+body.background_color.light-mode .terminal-panel::before,
+body.background_color[data-theme="light"] .terminal-panel::before {
+    background: repeating-linear-gradient(
+        to bottom,
+        transparent 0px,
+        transparent 2px,
+        rgba(15, 23, 42, 0.03) 2px,
+        rgba(15, 23, 42, 0.03) 4px
+    );
+}
+
+body.background_color.light-mode .log-time,
+body.background_color[data-theme="light"] .log-time {
+    color: rgba(71, 85, 105, 0.85);
+}
+
+body.background_color.light-mode .log-info,
+body.background_color[data-theme="light"] .log-info {
+    color: #0b5ed7;
+}
+
+body.background_color.light-mode .log-warn,
+body.background_color[data-theme="light"] .log-warn {
+    color: #b45309;
+}
+
+body.background_color.light-mode .log-error,
+body.background_color[data-theme="light"] .log-error {
+    color: #dc2626;
+}
+
+body.background_color.light-mode .log-sec,
+body.background_color[data-theme="light"] .log-sec {
+    color: #7c3aed;
+}
+
+body.background_color.light-mode .terminal-panel .txt-neon-cyan,
+body.background_color[data-theme="light"] .terminal-panel .txt-neon-cyan {
+    color: #0e7490 !important;
+}
+
+body.background_color.light-mode .terminal-panel::-webkit-scrollbar-track,
+body.background_color[data-theme="light"] .terminal-panel::-webkit-scrollbar-track {
+    background: rgba(226, 232, 240, 0.9);
+}
+
+body.background_color.light-mode .terminal-panel::-webkit-scrollbar-thumb,
+body.background_color[data-theme="light"] .terminal-panel::-webkit-scrollbar-thumb {
+    background: rgba(11, 94, 215, 0.35);
+}
 
 /* Blinking terminal cursor */
 @keyframes termBlink {

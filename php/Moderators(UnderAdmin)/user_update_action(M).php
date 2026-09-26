@@ -10,7 +10,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 $userId = filter_var($_POST['user_id'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
 $userName = trim((string) ($_POST['user_name'] ?? ''));
 $email = strtolower(trim((string) ($_POST['email'] ?? '')));
-$redirect = trim((string) ($_POST['return_to'] ?? 'view_users(M).php'));
+$redirect = moderator_return_target('view_users(M).php');
 
 if (!$userId || $userName === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
     hq_flash('danger', 'Please provide a valid Customer user name and email address.');

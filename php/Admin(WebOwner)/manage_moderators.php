@@ -13,8 +13,21 @@ $flash = moderator_pull_flash();
 $search = trim((string) ($_GET['search'] ?? ''));
 $roleFilter = (int) ($_GET['role_id'] ?? 0);
 $statusFilter = strtolower(trim((string) ($_GET['status'] ?? '')));
-$allowedStatuses = ['approved', 'pending', 'suspended', 'removed', 'rejected'];
-if (!in_array($statusFilter, $allowedStatuses, true)) {
+// Status keywords from moderator-scoped accounts in the database.
+$allowedStatuses = admin_filter_user_statuses(
+    "(
+        LOWER(TRIM(COALESCE((SELECT role_name FROM roles WHERE role_id = u.role_id), ''))) = 'moderator'
+        OR LOWER(TRIM(COALESCE((SELECT role_name FROM roles WHERE role_id = u.business_role_id), ''))) = 'moderator'
+        OR LOWER(TRIM(COALESCE((SELECT role_name FROM roles WHERE role_id = u.current_role_id), ''))) = 'moderator'
+    )"
+);
+foreach (['approved', 'pending', 'suspended', 'removed', 'rejected', 'active'] as $fallbackStatus) {
+    if (!in_array($fallbackStatus, $allowedStatuses, true)) {
+        $allowedStatuses[] = $fallbackStatus;
+    }
+}
+sort($allowedStatuses);
+if ($statusFilter !== '' && !in_array($statusFilter, $allowedStatuses, true)) {
     $statusFilter = '';
 }
 
@@ -163,14 +176,29 @@ $flashType = (string) ($flash['type'] ?? '');
         .moderator-modal-note { color:rgba(255,255,255,.58); font-size:.78rem; line-height:1.5; }
         .moderator-mode-tabs { display:flex; gap:.5rem; flex-wrap:wrap; }
         .moderator-mode-tabs .btn { border-radius:999px; font-size:.8rem; font-weight:600; }
-        .moderator-search-wrap { position:relative; }
+        .moderator-search-wrap { position:relative; z-index:5; }
         .moderator-search-results {
-            position:absolute; left:0; right:0; top:calc(100% + 4px); z-index:20;
-            max-height:240px; overflow:auto; border-radius:12px;
+            position:absolute; left:0; right:0; top:calc(100% + 4px); z-index:30;
+            max-height:min(240px, 40vh); overflow-x:hidden; overflow-y:auto;
+            border-radius:12px;
             background:rgba(8,14,28,.98); border:1px solid rgba(0,244,255,.22);
             box-shadow:0 12px 32px rgba(0,0,0,.45); display:none;
+            -webkit-overflow-scrolling:touch;
+            scrollbar-width:thin;
+            scrollbar-color:rgba(0,244,255,.45) rgba(4,12,28,.95);
         }
         .moderator-search-results.show { display:block; }
+        .moderator-search-results::-webkit-scrollbar { width:8px; height:8px; }
+        .moderator-search-results::-webkit-scrollbar-track {
+            background:rgba(4,12,28,.95); border-radius:999px;
+        }
+        .moderator-search-results::-webkit-scrollbar-thumb {
+            background:rgba(0,244,255,.4); border-radius:999px;
+            border:2px solid rgba(4,12,28,.95);
+        }
+        .moderator-search-results::-webkit-scrollbar-thumb:hover {
+            background:rgba(0,244,255,.6);
+        }
         .moderator-search-item {
             width:100%; text-align:left; border:0; background:transparent; color:#fff;
             padding:.7rem .9rem; border-bottom:1px solid rgba(255,255,255,.06);
@@ -189,33 +217,34 @@ $flashType = (string) ($flash['type'] ?? '');
         body.background_color.light-mode .moderator-modal-note { color:var(--text-muted); }
         body.background_color.light-mode .moderator-search-results {
             background:#fff; border-color:rgba(0,0,0,.12); color:#111;
+            scrollbar-color:rgba(11,94,215,.5) rgba(226,232,240,.95);
+        }
+        body.background_color.light-mode .moderator-search-results::-webkit-scrollbar-track {
+            background:rgba(226,232,240,.95);
+        }
+        body.background_color.light-mode .moderator-search-results::-webkit-scrollbar-thumb {
+            background:rgba(11,94,215,.4); border-color:rgba(226,232,240,.95);
         }
         body.background_color.light-mode .moderator-search-item { color:#111; }
         body.background_color.light-mode .moderator-search-item small { color:#666; }
+        .moderator-flash {
+            border-radius:14px;
+            background:rgba(10,22,44,.82);
+            border:1px solid var(--glass-border);
+            color:var(--text-primary);
+        }
+        body.background_color.light-mode .moderator-flash {
+            background:rgba(255,255,255,.92);
+        }
     </style>
 </head>
 <body class="background_color" id="background_color">
-    <div class="page-load-bar"></div>
+<?php $adminSection = 'manage_moderators'; include __DIR__ . '/admin_section_nav.php'; ?>
 
-    <div class="container sticky-nav-wrapper">
-        <nav class="navbar navbar-dark text-white navigation_style">
-            <div class="container-fluid d-flex justify-content-between align-items-center p-0 gap-3">
-                <a class="navbar-brand d-flex align-items-center gap-2 fw-semibold txt-neon-cyan m-0" href="admin_dashboard.php" style="font-size: 0.95rem;">
-                    <img src="/images/Logo.png" alt="Logo" class="nav-logo">
-                    <span class="d-none d-sm-inline">Admin Portal</span>
-                </a>
-                <div class="admin-nav-actions">
-                    <label class="cosmic-toggle nav-theme-toggle" title="Toggle light mode">
-                        <input class="toggle js-theme-toggle" type="checkbox" aria-label="Toggle light mode">
-                        <div class="slider"><span class="theme-icon theme-icon-dark"><i class="bi bi-moon-stars-fill"></i></span><span class="theme-icon theme-icon-light"><i class="bi bi-sun-fill"></i></span><div class="cosmos"></div><div class="energy-line"></div><div class="energy-line"></div><div class="energy-line"></div><div class="toggle-orb"><div class="inner-orb"></div><div class="ring"></div></div><div class="particles"><div style="--angle: 30deg" class="particle"></div><div style="--angle: 60deg" class="particle"></div><div style="--angle: 90deg" class="particle"></div><div style="--angle: 120deg" class="particle"></div><div style="--angle: 150deg" class="particle"></div><div style="--angle: 180deg" class="particle"></div></div></div>
-                    </label>
-                    <button class="btn btn-sm menu-pill-btn" type="button" data-bs-toggle="offcanvas" data-bs-target="#mainMenuOffcanvas"><i class="bi bi-grid-fill me-1 txt-neon-cyan"></i> Menu</button>
-                </div>
-            </div>
-        </nav>
-    </div>
-
-    <div class="container my-5">
+<?php
+$filtersActive = ($search !== '' || $roleFilter > 0 || $statusFilter !== '');
+?>
+<main class="container my-5">
         <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3">
             <div>
                 <span class="stat-chip mb-2"><i class="bi bi-shield-lock-fill txt-neon-cyan"></i> Security Division</span>
@@ -226,31 +255,102 @@ $flashType = (string) ($flash['type'] ?? '');
         </div>
 
         <?php if ($flash && $flashType !== ''): ?>
-            <div class="alert alert-<?= hq_escape($flashType) ?> border-0 shadow-sm" role="alert">
-                <?= hq_escape((string) ($flash['message'] ?? '')) ?>
+            <div class="alert moderator-flash alert-<?= hq_escape($flashType) ?> alert-dismissible fade show mb-4" role="alert">
+                <i class="bi <?= $flashType === 'success' ? 'bi-check-circle-fill text-success' : 'bi-exclamation-triangle-fill text-danger' ?> me-2"></i><?= hq_escape((string) ($flash['message'] ?? '')) ?>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="alert" aria-label="Close"></button>
             </div>
         <?php endif; ?>
         <?php if ($dbError): ?>
-            <div class="alert alert-danger border-0 shadow-sm" role="alert"><?= hq_escape($dbError) ?></div>
+            <div class="alert moderator-flash alert-danger mb-4" role="alert"><i class="bi bi-database-exclamation me-2"></i><?= hq_escape($dbError) ?></div>
         <?php endif; ?>
 
-        <div class="row g-4 mb-4">
-            <div class="col-12 col-sm-4"><div class="dashboard-card metric-card"><div class="d-flex align-items-center justify-content-between gap-3"><div><p class="mb-0 metric-label">Total Moderators</p><h4 class="fw-bold text-white mb-0 metric-value" style="font-size:1.8rem;"><?= (int) $metrics['total'] ?></h4></div><span class="fs-3 txt-neon-cyan"><i class="bi bi-people-fill"></i></span></div><p class="text-success small mb-0 mt-2"><i class="bi bi-circle-fill me-1" style="font-size:0.45rem;"></i><?= (int) $metrics['active'] ?> active accounts</p></div></div>
-            <div class="col-12 col-sm-4"><div class="dashboard-card metric-card"><div class="d-flex align-items-center justify-content-between gap-3"><div><p class="mb-0 metric-label">Granted Privilege</p><h4 class="fw-bold text-white mb-0" style="font-size:1.2rem; letter-spacing:-0.02em;">Moderator</h4></div><span class="fs-3 txt-neon-blue"><i class="bi bi-key-fill"></i></span></div><p class="text-white-50 small mb-0 mt-2">Admin access cannot be added here</p></div></div>
-            <div class="col-12 col-sm-4"><div class="dashboard-card metric-card"><div class="d-flex align-items-center justify-content-between gap-3"><div><p class="mb-0 metric-label">Last Account Update</p><h4 class="fw-bold text-white mb-0" style="font-size:1.25rem; letter-spacing:-0.03em;"><?= hq_escape($metrics['last_sync'] ? hq_date((string) $metrics['last_sync']) : 'No accounts') ?></h4></div><span class="fs-3 text-success"><i class="bi bi-shield-check"></i></span></div><p class="text-success small mb-0 mt-2"><i class="bi bi-database-check me-1"></i>Live database values</p></div></div>
+        <div class="row g-3 mb-4">
+            <div class="col-12 col-sm-4">
+                <div class="dashboard-card metric-card">
+                    <div class="d-flex align-items-center justify-content-between gap-3">
+                        <div>
+                            <p class="mb-0 metric-label">Total Moderators</p>
+                            <h4 class="fw-bold text-white mb-0 metric-value" style="font-size:1.8rem;"><?= (int) $metrics['total'] ?></h4>
+                        </div>
+                        <span class="fs-3 txt-neon-cyan"><i class="bi bi-people-fill"></i></span>
+                    </div>
+                    <p class="text-white-50 small mb-0 mt-2">Non-admin accounts with Moderator role</p>
+                </div>
+            </div>
+            <div class="col-12 col-sm-4">
+                <div class="dashboard-card metric-card">
+                    <div class="d-flex align-items-center justify-content-between gap-3">
+                        <div>
+                            <p class="mb-0 metric-label">Active</p>
+                            <h4 class="fw-bold text-white mb-0 metric-value" style="font-size:1.8rem;"><?= (int) $metrics['active'] ?></h4>
+                        </div>
+                        <span class="fs-3 text-success"><i class="bi bi-shield-check"></i></span>
+                    </div>
+                    <p class="text-success small mb-0 mt-2"><i class="bi bi-circle-fill me-1" style="font-size:0.45rem;"></i>Approved / active status</p>
+                </div>
+            </div>
+            <div class="col-12 col-sm-4">
+                <div class="dashboard-card metric-card">
+                    <div class="d-flex align-items-center justify-content-between gap-3">
+                        <div>
+                            <p class="mb-0 metric-label">Suspended</p>
+                            <h4 class="fw-bold text-white mb-0 metric-value" style="font-size:1.8rem;"><?= (int) $metrics['suspended'] ?></h4>
+                        </div>
+                        <span class="fs-3" style="color:#ff9f43;"><i class="bi bi-pause-circle-fill"></i></span>
+                    </div>
+                    <p class="text-white-50 small mb-0 mt-2">
+                        <?php if (!empty($metrics['last_sync'])): ?>
+                            Last update <?= hq_escape(hq_date((string) $metrics['last_sync'])) ?>
+                        <?php else: ?>
+                            No moderator accounts yet
+                        <?php endif; ?>
+                    </p>
+                </div>
+            </div>
         </div>
 
         <div class="row g-4">
-            <div class="col-12"><div class="dashboard-card py-3 px-4"><form class="row g-3 align-items-center" method="GET" action="manage_moderators.php">
-                <div class="col-12 col-md-5"><div class="input-group"><span class="input-group-text bg-transparent border-end-0" style="border-color:var(--glass-border);color:var(--neon-cyan);border-radius:12px 0 0 12px;"><i class="bi bi-search"></i></span><input type="text" class="form-control glass-input border-start-0" placeholder="Search username or email..." name="search" value="<?= hq_escape($search) ?>"></div></div>
-                <div class="col-12 col-md-3"><select class="form-select glass-select" name="role_id"><option value="0">All Roles</option><?php foreach ($roles as $role): ?><option value="<?= (int) $role['role_id'] ?>" <?= $roleFilter === (int) $role['role_id'] ? 'selected' : '' ?>><?= hq_escape(moderator_role_label($role['role_name'])) ?></option><?php endforeach; ?></select></div>
-                <div class="col-12 col-md-2"><select class="form-select glass-select" name="status"><option value="">All Statuses</option><?php foreach ($allowedStatuses as $option): ?><option value="<?= hq_escape($option) ?>" <?= $statusFilter === $option ? 'selected' : '' ?>><?= hq_escape(moderator_status_label($option)) ?></option><?php endforeach; ?></select></div>
-                <div class="col-12 col-md-2 d-grid"><button type="submit" class="btn btn-neon">Apply Filter</button></div>
-            </form></div></div>
+            <div class="col-12">
+                <div class="dashboard-card py-3 px-4">
+                    <form class="row g-3 align-items-end" method="GET" action="manage_moderators.php">
+                        <div class="col-12 col-md-4">
+                            <label class="form-label text-white-50 small mb-1" for="moderatorSearch">Search</label>
+                            <div class="input-group">
+                                <span class="input-group-text bg-transparent border-end-0" style="border-color:var(--glass-border);color:var(--neon-cyan);border-radius:12px 0 0 12px;"><i class="bi bi-search"></i></span>
+                                <input id="moderatorSearch" type="search" class="form-control glass-input border-start-0" placeholder="Username or email…" name="search" value="<?= hq_escape($search) ?>">
+                            </div>
+                        </div>
+                        <div class="col-12 col-md-3">
+                            <label class="form-label text-white-50 small mb-1" for="moderatorRoleFilter">Role</label>
+                            <select id="moderatorRoleFilter" class="form-select glass-select" name="role_id">
+                                <option value="0">All Roles</option>
+                                <?php foreach ($roles as $role): ?>
+                                    <option value="<?= (int) $role['role_id'] ?>" <?= $roleFilter === (int) $role['role_id'] ? 'selected' : '' ?>><?= hq_escape(moderator_role_label($role['role_name'])) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <div class="col-12 col-md-2">
+                            <label class="form-label text-white-50 small mb-1" for="moderatorStatusFilter">Status</label>
+                            <select id="moderatorStatusFilter" class="form-select glass-select" name="status">
+                                <option value="">All Statuses</option>
+                                <?php foreach ($allowedStatuses as $option): ?>
+                                    <option value="<?= hq_escape($option) ?>" <?= $statusFilter === $option ? 'selected' : '' ?>><?= hq_escape(moderator_status_label($option)) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <div class="col-12 col-md-3 d-flex gap-2">
+                            <button type="submit" class="btn btn-neon flex-grow-1">Apply Filter</button>
+                            <?php if ($filtersActive): ?>
+                                <a href="manage_moderators.php" class="btn btn-outline-secondary text-white-50 border-secondary border-opacity-25" title="Clear filters">Clear</a>
+                            <?php endif; ?>
+                        </div>
+                    </form>
+                </div>
+            </div>
 
             <div class="col-12"><div class="analytics-card"><div class="table-responsive"><table class="table table-dark-custom align-middle m-0"><thead><tr><th>Moderator Identity</th><th>Email Address</th><th>Designation Role</th><th>Last Account Update</th><th>Account State</th><th class="text-end">Actions</th></tr></thead><tbody>
             <?php if (!$moderatorRows): ?>
-                <tr><td colspan="6" class="text-center text-white-50 py-5">No moderator accounts match the current filters.</td></tr>
+                <tr><td colspan="6" class="text-center text-white-50 py-5"><i class="bi bi-person-x fs-3 d-block mb-2"></i>No moderator accounts match the current filters.</td></tr>
             <?php else: ?>
                 <?php foreach ($moderatorRows as $row): ?>
                     <?php
@@ -274,6 +374,7 @@ $flashType = (string) ($flash['type'] ?? '');
             </tbody></table></div></div></div>
         </div>
     </div>
+</main>
 
     <div class="modal fade glass-modal" id="addAdminModal" tabindex="-1" aria-labelledby="addAdminModalLabel" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-lg">
@@ -375,7 +476,7 @@ $flashType = (string) ($flash['type'] ?? '');
 
     <div class="modal fade glass-modal" id="statusAdminModal" tabindex="-1" aria-labelledby="statusAdminModalLabel" aria-hidden="true"><div class="modal-dialog modal-dialog-centered modal-dialog-scrollable"><div class="modal-content"><div class="modal-header"><h5 class="modal-title fw-bold" id="statusAdminModalLabel"><i class="bi bi-person-x txt-neon-cyan me-2"></i> Change Moderator Status</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button></div><form action="moderator_action.php" method="POST"><input type="hidden" name="action" value="update_status"><input type="hidden" name="user_id" id="statusModeratorId"><div class="modal-body"><p class="text-white-50 mb-3">Choose the new database status for <strong class="text-white" id="statusModeratorName">this account</strong>.</p><label class="form-label text-white-50 small" for="statusModeratorValue">Account Status</label><select id="statusModeratorValue" class="form-select glass-select" name="status" required><option value="approved">Approved</option><option value="suspended">Suspended</option><option value="removed">Revoked / Removed</option></select><div class="moderator-modal-note mt-3"><i class="bi bi-database-check txt-neon-cyan me-1"></i>This updates <code>users.status</code> in the <code>map_and_pump</code> database.</div></div><div class="modal-footer"><button type="button" class="btn btn-outline-secondary rounded-3 text-white-50 border-secondary border-opacity-20" data-bs-dismiss="modal">Cancel</button><button type="submit" class="btn btn-neon">Update Status</button></div></form></div></div></div>
 
-    <div class="offcanvas offcanvas-end" tabindex="-1" id="mainMenuOffcanvas" style="width:320px;background:rgba(6,12,24,.98);backdrop-filter:blur(28px);border-left:1px solid rgba(0,180,255,.18);"><div class="offcanvas-header pb-2 border-bottom border-white border-opacity-10"><div><h5 class="offcanvas-title text-white fw-bold mb-0">Main Menu</h5><p class="text-white-50 small mb-0" style="font-size:.78rem;">Admin Portal</p></div><label class="cosmic-toggle float-end" title="Toggle light mode"><input class="toggle js-theme-toggle" type="checkbox" aria-label="Toggle light mode"><div class="slider"><span class="theme-icon theme-icon-dark"><i class="bi bi-moon-stars-fill"></i></span><span class="theme-icon theme-icon-light"><i class="bi bi-sun-fill"></i></span><div class="cosmos"></div><div class="energy-line"></div><div class="energy-line"></div><div class="energy-line"></div><div class="toggle-orb"><div class="inner-orb"></div><div class="ring"></div></div><div class="particles"><div style="--angle:30deg" class="particle"></div><div style="--angle:60deg" class="particle"></div><div style="--angle:90deg" class="particle"></div><div style="--angle:120deg" class="particle"></div><div style="--angle:150deg" class="particle"></div><div style="--angle:180deg" class="particle"></div></div></div></label><button type="button" class="btn-close btn-close-white" data-bs-dismiss="offcanvas"></button></div><div class="offcanvas-body pt-3"><ul class="list-unstyled d-flex flex-column gap-2"><li><a href="admin_dashboard.php" class="menu-btn-nav"><i class="bi bi-house me-3 txt-neon-cyan"></i> Home</a></li><li><a href="view_hq_and_user_account.php" class="menu-btn-nav"><i class="bi bi-building-gear me-3 txt-neon-cyan"></i> View/Manage HQ</a></li><li><a href="view_users.php" class="menu-btn-nav"><i class="bi bi-people me-3 txt-neon-cyan"></i> View/Manage Users</a></li><li><a href="view_requests.php" class="menu-btn-nav"><i class="bi bi-file-earmark-check me-3 txt-neon-cyan"></i> View Requests</a></li><li><a href="view_report.php" class="menu-btn-nav"><i class="bi bi-graph-up-arrow me-3 txt-neon-cyan"></i> View Report</a></li><li><a href="edit_profile.php" class="menu-btn-nav"><i class="bi bi-person-bounding-box me-3 txt-neon-blue"></i> Edit Profile</a></li><li><a href="manage_moderators.php" class="menu-btn-nav active-nav"><i class="bi bi-people-fill me-3 txt-neon-blue"></i> Manage Moderators</a></li><li><a href="view_logs.php" class="menu-btn-nav"><i class="bi bi-terminal-split me-3 text-danger"></i> View Log Files</a></li><hr style="border-color:rgba(255,255,255,.08);margin:4px 0;"><li><form action="../Login/logout.php" method="post" class="m-0"><button type="submit" class="logout-btn-nav btn border-0 w-100"><i class="bi bi-box-arrow-right me-2"></i> Logout</button></form></li></ul></div></div>
+    
 
     <footer class="text-white-50 text-center py-4 mt-5 small">&copy; 2026 Map &amp; Pump | All Rights Reserved</footer>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>

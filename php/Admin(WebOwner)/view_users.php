@@ -11,8 +11,15 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
 $flash = hq_pull_flash();
 $search = trim((string) ($_GET['search'] ?? ''));
 $status = strtolower(trim((string) ($_GET['status'] ?? '')));
-$allowedStatuses = hq_manageable_statuses();
-$status = in_array($status, $allowedStatuses, true) ? $status : '';
+// Status keywords from live customer/user rows (plus common actionable values).
+$allowedStatuses = admin_filter_user_statuses('u.headquarter_id IS NULL OR u.headquarter_id IS NOT NULL');
+foreach (['approved', 'active', 'pending', 'suspended', 'removed'] as $fallbackStatus) {
+    if (!in_array($fallbackStatus, $allowedStatuses, true)) {
+        $allowedStatuses[] = $fallbackStatus;
+    }
+}
+sort($allowedStatuses);
+$status = ($status !== '' && in_array($status, $allowedStatuses, true)) ? $status : '';
 $userRows = customer_account_rows($search, $status);
 $dbError = hq_db_available() ? null : hq_db_error_message();
 $flashType = (string) ($flash['type'] ?? '');
@@ -25,20 +32,64 @@ $flashType = (string) ($flash['type'] ?? '');
     <title>View/Manage Users — Map &amp; Pump</title>
     <link rel="icon" type="image/png" href="/images/Logo.png"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&amp;display=swap" rel="stylesheet"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"><link rel="stylesheet" href="/css/Admin.css"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+<style>
+        .hq-status { display:inline-flex; align-items:center; gap:.45rem; color:rgba(255,255,255,.68); font-size:.8rem; white-space:nowrap; }
+        .hq-status::before { content:''; width:8px; height:8px; border-radius:50%; display:inline-block; }
+        .hq-status-active::before { background:#1be494; box-shadow:0 0 8px #1be494; }
+        .hq-status-pending::before { background:#ffc107; box-shadow:0 0 8px #ffc107; }
+        .hq-status-suspended::before { background:#ff9f43; box-shadow:0 0 8px #ff9f43; }
+        .hq-status-removed::before { background:#ff4d6a; box-shadow:0 0 8px #ff4d6a; }
+        .hq-flash { border-radius:14px; background:rgba(10,22,44,.82); border:1px solid var(--glass-border); color:var(--text-primary); }
+        .hq-flash.alert-success { border-color:rgba(27,228,148,.4); }
+        .hq-flash.alert-danger { border-color:rgba(255,77,106,.45); }
+        body.background_color.light-mode .hq-flash { background:rgba(255,255,255,.9); }
+        body.background_color.light-mode .hq-status { color:var(--text-muted); }
+        .mod-detail-label { color:var(--text-muted); font-size:.72rem; text-transform:uppercase; letter-spacing:.07em; }
+        .mod-detail-value { color:var(--text-primary); word-break:break-word; }
+        .hq-modal-table { --bs-table-bg:transparent; --bs-table-color:var(--text-primary); --bs-table-border-color:var(--glass-border); }
+        .hq-modal-table th { color:var(--text-muted); font-size:.72rem; text-transform:uppercase; letter-spacing:.05em; }
+    </style>
 </head>
 <body class="background_color" id="background_color">
 <?php $adminSection = 'view_users'; include __DIR__ . '/admin_section_nav.php'; ?>
+
+<?php $filtersActive = ($search !== '' || $status !== ''); ?>
 <main class="container my-5">
     <?php if ($flash && $flashType): ?><div class="alert hq-flash alert-<?= hq_escape($flashType) ?> alert-dismissible fade show mb-4" role="alert"><i class="bi <?= $flashType === 'success' ? 'bi-check-circle-fill text-success' : 'bi-exclamation-triangle-fill text-danger' ?> me-2"></i><?= hq_escape((string) ($flash['message'] ?? '')) ?><button type="button" class="btn-close btn-close-white" data-bs-dismiss="alert"></button></div><?php endif; ?>
     <?php if ($dbError): ?><div class="alert hq-flash alert-danger mb-4"><i class="bi bi-database-exclamation me-2"></i><?= hq_escape($dbError) ?></div><?php endif; ?>
     <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3"><div><span class="stat-chip mb-2"><i class="bi bi-person-vcard-fill txt-neon-cyan"></i> User Administration</span><h1 class="fw-bold m-0 h4 text-white mt-2">View/Manage Users</h1><p class="text-white-50 m-0 small mt-1">View and manage approved, active, suspended, or removed non-HQ accounts.</p></div></div>
-    <div class="dashboard-card py-3 px-4 mb-4"><form class="row g-3 align-items-center" method="GET" action="view_users.php"><div class="col-12 col-md-7"><div class="input-group"><span class="input-group-text bg-transparent border-end-0" style="border-color:var(--glass-border);color:var(--neon-cyan);border-radius:12px 0 0 12px"><i class="bi bi-search"></i></span><input type="search" class="form-control glass-input border-start-0" placeholder="Search by user name, email, or HQ..." name="search" value="<?= hq_escape($search) ?>"></div></div><div class="col-12 col-md-3"><select class="form-select glass-select" name="status"><option value="">All Status</option><?php foreach ($allowedStatuses as $option): ?><option value="<?= $option ?>" <?= $status === $option ? 'selected' : '' ?>><?= hq_escape(hq_status_label($option)) ?></option><?php endforeach; ?></select></div><div class="col-12 col-md-2 d-grid"><button type="submit" class="btn btn-neon">Apply Filter</button></div></form></div>
+    <div class="dashboard-card py-3 px-4 mb-4">
+        <form class="row g-3 align-items-end" method="GET" action="view_users.php">
+            <div class="col-12 col-md-6">
+                <label class="form-label text-white-50 small mb-1" for="userSearch">Search</label>
+                <div class="input-group">
+                    <span class="input-group-text bg-transparent border-end-0" style="border-color:var(--glass-border);color:var(--neon-cyan);border-radius:12px 0 0 12px"><i class="bi bi-search"></i></span>
+                    <input id="userSearch" type="search" class="form-control glass-input border-start-0" placeholder="Search by user name, email, or HQ..." name="search" value="<?= hq_escape($search) ?>">
+                </div>
+            </div>
+            <div class="col-12 col-md-3">
+                <label class="form-label text-white-50 small mb-1" for="userStatus">Status</label>
+                <select id="userStatus" class="form-select glass-select" name="status">
+                    <option value="">All Status</option>
+                    <?php foreach ($allowedStatuses as $option): ?>
+                        <option value="<?= $option ?>" <?= $status === $option ? 'selected' : '' ?>><?= hq_escape(admin_filter_label($option)) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <div class="col-12 col-md-3 d-flex gap-2">
+                <button type="submit" class="btn btn-neon flex-grow-1">Apply Filter</button>
+                <?php if ($filtersActive): ?>
+                    <a href="view_users.php" class="btn btn-outline-secondary text-white-50 border-secondary border-opacity-25" title="Clear filters">Clear</a>
+                <?php endif; ?>
+            </div>
+        </form>
+    </div>
     <div class="analytics-card"><div class="table-responsive user-table-scroll"><table class="table table-dark-custom align-middle m-0"><thead><tr><th>User Account</th><th>Email</th><th>HQ</th><th>Role</th><th>Status</th><th class="text-end">Command</th></tr></thead><tbody>
     <?php if (!$userRows): ?><tr><td colspan="6" class="text-center text-white-50 py-5"><i class="bi bi-person-x fs-3 d-block mb-2"></i>No user accounts match the current filter.</td></tr><?php endif; ?>
-    <?php foreach ($userRows as $row): $userStatus = (string) ($row['status'] ?? 'pending'); ?><tr><td><div class="d-flex align-items-center gap-3"><div class="rounded-3 d-flex align-items-center justify-content-center fw-bold" style="width:44px;height:44px;background:rgba(0,244,255,.1);border:1px solid rgba(0,244,255,.28);color:var(--neon-cyan)"><?= hq_escape(hq_initials((string) ($row['user_name'] ?? 'User'))) ?></div><div><div class="fw-semibold text-white"><?= hq_escape((string) ($row['user_name'] ?? 'Unnamed User')) ?></div><div class="text-white-50 small">User ID: <?= (int) $row['user_id'] ?></div></div></div></td><td class="text-white-50"><?= hq_escape((string) ($row['email'] ?? 'No email')) ?></td><td class="text-white-50"><?= hq_escape((string) ($row['headquarter_name'] ?? 'No HQ linked')) ?></td><td class="text-white-50">#<?= (int) $row['role_id'] ?> · <?= hq_escape((string) $row['role_name']) ?></td><td><span class="hq-status <?= hq_escape(hq_status_class($userStatus)) ?>"><?= hq_escape(hq_status_label($userStatus)) ?></span></td><td class="text-end"><div class="d-flex gap-2 justify-content-end"><a href="#" class="btn-action js-view-user" title="View User Details" data-user-id="<?= (int) $row['user_id'] ?>"><i class="bi bi-eye-fill"></i></a><button type="button" class="btn-action btn-action-danger js-user-action" title="Suspend/Remove User" data-user-id="<?= (int) $row['user_id'] ?>" data-user-name="<?= hq_escape((string) $row['user_name']) ?>"><i class="bi bi-trash3-fill"></i></button></div></td></tr><?php endforeach; ?>
+    <?php foreach ($userRows as $row): $userStatus = (string) ($row['status'] ?? 'pending'); ?><tr><td><div class="d-flex align-items-center gap-3"><div class="rounded-3 d-flex align-items-center justify-content-center fw-bold" style="width:44px;height:44px;background:rgba(0,244,255,.1);border:1px solid rgba(0,244,255,.28);color:var(--neon-cyan)"><?= hq_escape(hq_initials((string) ($row['user_name'] ?? 'User'))) ?></div><div><div class="fw-semibold text-white"><?= hq_escape((string) ($row['user_name'] ?? 'Unnamed User')) ?></div><div class="text-white-50 small">User ID: <?= (int) $row['user_id'] ?></div></div></div></td><td class="text-white-50"><?= hq_escape((string) ($row['email'] ?? 'No email')) ?></td><td class="text-white-50"><?= hq_escape((string) ($row['headquarter_name'] ?? 'No HQ linked')) ?></td><td class="text-white-50">#<?= (int) $row['role_id'] ?> · <?= hq_escape(ucwords((string) ($row['role_name'] ?? 'Customer'))) ?></td><td><span class="hq-status <?= hq_escape(hq_status_class($userStatus)) ?>"><?= hq_escape(hq_status_label($userStatus)) ?></span></td><td class="text-end"><div class="d-flex gap-2 justify-content-end"><a href="#" class="btn-action js-view-user" title="View User Details" data-user-id="<?= (int) $row['user_id'] ?>"><i class="bi bi-eye-fill"></i></a><button type="button" class="btn-action btn-action-danger js-user-action" title="Suspend / Remove / Restore User" data-user-id="<?= (int) $row['user_id'] ?>" data-user-name="<?= hq_escape((string) $row['user_name']) ?>"><i class="bi bi-trash3-fill"></i></button></div></td></tr><?php endforeach; ?>
     </tbody></table></div></div>
 </main>
-<div class="modal fade glass-modal" id="userActionModal" tabindex="-1" aria-labelledby="userActionLabel" aria-hidden="true"><div class="modal-dialog modal-dialog-centered modal-dialog-scrollable"><div class="modal-content"><div class="modal-header"><h5 class="modal-title fw-bold" id="userActionLabel"><i class="bi bi-shield-exclamation text-danger me-2"></i> Suspend or Remove User</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div><form action="user_account_action.php" method="POST"><div class="modal-body d-flex flex-column gap-3"><input type="hidden" name="user_id" id="userActionId"><input type="hidden" name="return_to" value="view_users.php"><div class="small text-white-50">Target user: <span class="txt-neon-cyan fw-semibold" id="userActionName">Selected User</span></div><div><label class="form-label text-white-50 small" for="userActionType">Account action</label><select class="form-select glass-select" name="action_type" id="userActionType" required><option value="suspend">Suspend account</option><option value="remove">Remove account</option></select></div><div><label class="form-label text-white-50 small" for="userActionReason">Reason <span class="text-danger">*</span></label><textarea class="form-control glass-input" name="reason" id="userActionReason" rows="5" maxlength="2000" required></textarea></div><div class="small text-white-50">The reason is saved to user action history. Email delivery is currently a placeholder until SMTP is configured.</div></div><div class="modal-footer"><button type="button" class="btn btn-outline-secondary rounded-3 text-white-50" data-bs-dismiss="modal">Cancel</button><button type="submit" class="btn btn-danger">Save Action</button></div></form></div></div></div>
+<div class="modal fade glass-modal" id="userActionModal" tabindex="-1" aria-labelledby="userActionLabel" aria-hidden="true"><div class="modal-dialog modal-dialog-centered modal-dialog-scrollable"><div class="modal-content"><div class="modal-header"><h5 class="modal-title fw-bold" id="userActionLabel"><i class="bi bi-shield-exclamation text-danger me-2"></i> Suspend / Remove / Restore User</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div><form action="user_account_action.php" method="POST"><div class="modal-body d-flex flex-column gap-3"><input type="hidden" name="user_id" id="userActionId"><input type="hidden" name="return_to" value="view_users.php"><div class="small text-white-50">Target user: <span class="txt-neon-cyan fw-semibold" id="userActionName">Selected User</span></div><div><label class="form-label text-white-50 small" for="userActionType">Account action</label><select class="form-select glass-select" name="action_type" id="userActionType" required><option value="suspend">Suspend account</option><option value="remove">Remove account</option><option value="restore">Restore (approve again)</option></select></div><div><label class="form-label text-white-50 small" for="userActionReason">Reason <span class="text-danger">*</span></label><textarea class="form-control glass-input" name="reason" id="userActionReason" rows="5" maxlength="2000" required></textarea></div><div class="small text-white-50">The reason is saved to user action history. Email delivery is currently a placeholder until SMTP is configured.</div></div><div class="modal-footer"><button type="button" class="btn btn-outline-secondary rounded-3 text-white-50" data-bs-dismiss="modal">Cancel</button><button type="submit" class="btn btn-danger">Save Action</button></div></form></div></div></div>
 
 <!-- User details modal (loaded via AJAX) -->
 <div class="modal fade glass-modal" id="userDetailsModal" tabindex="-1" aria-hidden="true"><div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-lg"><div class="modal-content"><div class="modal-header"><h5 class="modal-title fw-bold"><i class="bi bi-person-check txt-neon-cyan me-2"></i> User Details</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div><div class="modal-body" id="userDetailsBody"><div class="text-center text-white-50 py-5"><span class="spinner-border spinner-border-sm me-2"></span>Loading user details...</div></div><div class="modal-footer"><button type="button" class="btn btn-neon js-edit-details" data-bs-target="#editUserModal" data-bs-toggle="modal">Edit details</button></div></div></div></div>
@@ -51,10 +102,23 @@ $flashType = (string) ($flash['type'] ?? '');
 <script>
 document.addEventListener('DOMContentLoaded', () => {
     const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('userActionModal'));
+    const actionTypeEl = document.getElementById('userActionType');
+    const actionSubmitBtn = document.querySelector('#userActionModal button[type="submit"]');
+    function syncUserActionSubmit() {
+        if (!actionTypeEl || !actionSubmitBtn) return;
+        const kind = actionTypeEl.value;
+        actionSubmitBtn.textContent = kind === 'remove' ? 'Confirm Remove' : (kind === 'restore' ? 'Confirm Restore' : 'Confirm Suspend');
+        actionSubmitBtn.classList.toggle('btn-danger', kind !== 'restore');
+        actionSubmitBtn.classList.toggle('btn-neon', kind === 'restore');
+    }
+    actionTypeEl?.addEventListener('change', syncUserActionSubmit);
+
     document.querySelectorAll('.js-user-action').forEach(button => button.addEventListener('click', () => {
         document.getElementById('userActionId').value = button.dataset.userId || '';
         document.getElementById('userActionName').textContent = button.dataset.userName || 'Selected User';
         document.getElementById('userActionReason').value = '';
+        if (actionTypeEl) actionTypeEl.value = 'suspend';
+        syncUserActionSubmit();
         modal.show();
     }));
 
@@ -98,7 +162,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const accountGrid =
                 '<div class="row g-3 mb-4">' +
                 '<div class="col-12 col-sm-6 col-lg-4">' + card('Email', esc(u.email || '—')) + '</div>' +
-                '<div class="col-12 col-sm-6 col-lg-4">' + card('Role', '#' + esc(u.role_id || '—') + ' · ' + esc(u.role_name || 'Unassigned')) + '</div>' +
+                '<div class="col-12 col-sm-6 col-lg-4">' + card('Role', '#' + esc(u.role_id || '—') + ' · ' + esc((u.role_name || 'Customer').replace(/\b\w/g, c => c.toUpperCase()))) + '</div>' +
                 '<div class="col-12 col-sm-6 col-lg-4">' + card('Headquarter', esc(u.headquarter_name || 'No HQ linked')) + '</div>' +
                 '<div class="col-6 col-sm-4 col-lg-4">' + card('Created', esc(date(u.created_at))) + '</div>' +
                 '<div class="col-6 col-sm-4 col-lg-4">' + card('Updated', esc(date(u.updated_at))) + '</div>' +

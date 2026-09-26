@@ -2,11 +2,16 @@
 require_once __DIR__ . '/moderator_common.php';
 
 $moderatorUser = moderator_require_user();
-$flash = admin_pull_flash();
+$flash = moderator_pull_flash();
+if (!$flash) {
+    $flash = admin_pull_flash();
+}
+
 $search = trim((string) ($_GET['search'] ?? ''));
 $level = strtolower(trim((string) ($_GET['log_level'] ?? 'all')));
 $allowedLevels = ['all', 'info', 'warn', 'error', 'security'];
 $level = in_array($level, $allowedLevels, true) ? $level : 'all';
+$filtersActive = ($search !== '' || $level !== 'all');
 $logs = [];
 $metrics = ['total' => 0, 'security' => 0, 'last' => null];
 $dbError = null;
@@ -80,7 +85,12 @@ $flashType = (string) ($flash['type'] ?? '');
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
     <link rel="stylesheet" href="/css/Admin.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
-    <style>.mod-flash{border-radius:14px;background:rgba(10,22,44,.82);border:1px solid var(--glass-border)}</style>
+    <style>
+        .mod-flash{border-radius:14px;background:rgba(10,22,44,.82);border:1px solid var(--glass-border);color:var(--text-primary)}
+        body.background_color.light-mode .mod-flash{background:rgba(255,255,255,.92)}
+        .mod-log-note{border-radius:12px;border:1px solid rgba(0,244,255,.2);background:rgba(0,244,255,.06);padding:.65rem 1rem}
+        body.background_color.light-mode .mod-log-note{background:rgba(11,94,215,.06);border-color:rgba(11,94,215,.2)}
+    </style>
 </head>
 <body class="background_color" id="background_color">
 <?php include __DIR__ . '/includes/moderator_navbar.php'; ?>
@@ -90,12 +100,12 @@ $flashType = (string) ($flash['type'] ?? '');
 
     <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3">
         <div><span class="stat-chip mb-2"><i class="bi bi-terminal-split txt-neon-cyan"></i> Account Activity</span><h1 class="fw-bold m-0 h4 text-white mt-2">View Log Files</h1><p class="text-white-50 m-0 small mt-1">Inspect actions performed by customer and HQ accounts only.</p></div>
-        <div class="text-white-50 small align-self-center"><i class="bi bi-eye me-1 txt-neon-cyan"></i>View only — clear/export is restricted to administrators.</div>
+        <div class="mod-log-note text-white-50 small align-self-center"><i class="bi bi-eye me-1 txt-neon-cyan"></i>View only — clear / export is restricted to administrators.</div>
     </div>
 
     <div class="row g-4 mb-4"><div class="col-12 col-sm-4"><div class="dashboard-card metric-card"><p class="mb-1 metric-label">HQ &amp; Customer Entries</p><h4 class="fw-bold text-white mb-0"><?= $metrics['total'] ?></h4><small class="text-white-50">Scoped live log records</small></div></div><div class="col-12 col-sm-4"><div class="dashboard-card metric-card"><p class="mb-1 metric-label">Security Entries</p><h4 class="fw-bold text-white mb-0"><?= $metrics['security'] ?></h4><small class="text-white-50">Detected from scoped action text</small></div></div><div class="col-12 col-sm-4"><div class="dashboard-card metric-card"><p class="mb-1 metric-label">Last Event</p><h4 class="fw-bold text-white mb-0" style="font-size:1.05rem"><?= moderator_escape($metrics['last'] ? moderator_format_date((string) $metrics['last']) : 'No entries') ?></h4><small class="text-white-50">Latest HQ or customer timestamp</small></div></div></div>
 
-    <div class="dashboard-card py-3 px-4 mb-4"><form class="row g-3 align-items-center" method="GET" action="view_logs(M).php"><div class="col-12 col-md-5"><div class="input-group"><span class="input-group-text bg-transparent border-end-0" style="border-color:var(--glass-border);color:var(--neon-cyan)"><i class="bi bi-terminal"></i></span><input type="search" class="form-control glass-input border-start-0" placeholder="Search action or username..." name="search" value="<?= moderator_escape($search) ?>"></div></div><div class="col-12 col-md-4"><select class="form-select glass-select" name="log_level"><option value="all">All Debug &amp; Status Levels</option><?php foreach (array_slice($allowedLevels, 1) as $option): ?><option value="<?= $option ?>" <?= $level === $option ? 'selected' : '' ?>><?= strtoupper($option) ?> Outputs</option><?php endforeach; ?></select></div><div class="col-12 col-md-3 d-grid"><button type="submit" class="btn btn-neon">Apply Filter</button></div></form></div>
+    <div class="dashboard-card py-3 px-4 mb-4"><form class="row g-3 align-items-center" method="GET" action="view_logs(M).php"><div class="col-12 col-md-5"><div class="input-group"><span class="input-group-text bg-transparent border-end-0" style="border-color:var(--glass-border);color:var(--neon-cyan)"><i class="bi bi-terminal"></i></span><input type="search" class="form-control glass-input border-start-0" placeholder="Search action or username..." name="search" value="<?= moderator_escape($search) ?>"></div></div><div class="col-12 col-md-4"><select class="form-select glass-select" name="log_level"><option value="all">All Debug &amp; Status Levels</option><?php foreach (array_slice($allowedLevels, 1) as $option): ?><option value="<?= moderator_escape($option) ?>" <?= $level === $option ? 'selected' : '' ?>><?= strtoupper(moderator_escape($option)) ?> Outputs</option><?php endforeach; ?></select></div><div class="col-12 col-md-3 d-flex gap-2"><button type="submit" class="btn btn-neon flex-grow-1">Apply</button><?php if ($filtersActive): ?><a href="view_logs(M).php" class="btn btn-outline-secondary text-white-50 border-secondary border-opacity-25" title="Clear filters">Clear</a><?php endif; ?></div></form></div>
 
     <div class="analytics-card p-1"><div class="terminal-panel"><?php if (!$logs): ?><div><span class="log-warn">[INFO]</span> No log entries match the current filters.</div><?php else: ?><?php foreach ($logs as $log): ?><?php $class = $log['level'] === 'security' ? 'log-sec' : 'log-' . $log['level']; ?><div><span class="log-time">[<?= moderator_escape((string) $log['created_at']) ?>]</span> <span class="<?= moderator_escape($class) ?>">[<?= strtoupper(moderator_escape((string) $log['level'])) ?>]</span>&nbsp;&nbsp;<?= moderator_escape((string) $log['action']) ?><?php if (!empty($log['user_name'])): ?> <span class="txt-neon-cyan">(@<?= moderator_escape((string) $log['user_name']) ?>)</span><?php endif; ?></div><?php endforeach; ?><?php endif; ?><div class="mt-2"><span class="txt-neon-cyan">&gt; Database audit scan complete.</span><span class="term-cursor"></span></div></div></div>
 </main>
