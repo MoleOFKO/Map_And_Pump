@@ -98,6 +98,11 @@ if ($action === 'delete') {
 }
 
 if ($action === 'generate') {
+    if (admin_is_admin($currentUser)) {
+        admin_flash('danger', 'Report generation is not available to Admin accounts.');
+        admin_redirect('view_report.php');
+    }
+
     $title = trim((string) ($_POST['report_title'] ?? ''));
     $scope = strtolower(trim((string) ($_POST['scope'] ?? '')));
     $startDate = trim((string) ($_POST['start_date'] ?? ''));

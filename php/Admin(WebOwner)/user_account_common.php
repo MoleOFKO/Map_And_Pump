@@ -44,7 +44,7 @@ function customer_account_rows(string $search = '', string $status = ''): array
     }
 
     $sql = <<<'SQL'
-SELECT u.user_id, u.user_name, u.email, u.status, u.created_at, u.updated_at,
+SELECT u.user_id, u.user_public_id, u.user_name, u.email, u.status, u.created_at, u.updated_at,
        u.headquarter_id, u.role_id, base_role.role_name,
        h.company_name AS headquarter_name, h.location AS headquarter_location
 FROM users u
@@ -109,7 +109,7 @@ function pending_account_rows(string $search = ''): array
     }
 
     $sql = <<<'SQL'
-SELECT u.user_id, u.user_name, u.email, u.status, u.created_at, u.updated_at,
+SELECT u.user_id, u.user_public_id, u.user_name, u.email, u.status, u.created_at, u.updated_at,
        u.license_id,
        u.headquarter_id, COALESCE(u.current_role_id, u.business_role_id, u.role_id) AS role_id, r.role_name,
        h.company_name AS headquarter_name, h.location AS headquarter_location,

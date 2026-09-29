@@ -19,7 +19,7 @@ if (!empty($_SESSION['flash_message'])) {
 }
 
 $stmt = $pdo->prepare(
-    'SELECT u.user_id, u.user_name, u.email, u.oauth_avatar_url, u.created_at, u.last_login_at, u.status,
+    'SELECT u.user_id, u.user_name, u.email, u.oauth_avatar_url, u.status,
             COALESCE(u.current_role_id, u.business_role_id, u.role_id) AS role_id,
             COALESCE(cr.role_name, br.role_name, r.role_name) AS role_name
      FROM users u
@@ -45,9 +45,6 @@ $avatarUrl = trim((string) ($user['oauth_avatar_url'] ?? ''));
 $avatarInitial = map_pump_profile_initial($displayName, 'M');
 $avatarFallbackUrl = map_pump_profile_initial_svg($displayName, 'M');
 $roleName = trim((string) ($user['role_name'] ?? 'Moderator'));
-$joinedSince = $user['created_at'] ? date('M Y', strtotime((string) $user['created_at'])) : 'N/A';
-$lastLogin = !empty($user['last_login_at']) ? date('M j, Y g:i A', strtotime((string) $user['last_login_at'])) : 'N/A';
-
 $statusLabel = static function (?string $status): string {
     return match (strtolower(trim((string) $status))) {
         'approved', 'active' => 'Approved',
@@ -127,19 +124,11 @@ $statusClass = static function (?string $status): string {
 
                     <div class="pt-4">
                         <h6 class="text-white-50 text-uppercase fw-semibold mb-3 small" style="letter-spacing:0.5px;">Account Overview</h6>
-                        <div class="d-flex align-items-center justify-content-between py-2 border-bottom border-white border-opacity-10">
+                        <div class="d-flex align-items-center justify-content-between py-2">
                             <span class="text-white-50 small">Role Status</span>
                             <span class="<?= htmlspecialchars($statusClass((string) $user['status']), ENT_QUOTES, 'UTF-8') ?> small fw-semibold">
                                 <i class="bi bi-circle-fill me-1" style="font-size:.4rem;"></i><?= htmlspecialchars($statusLabel((string) $user['status']), ENT_QUOTES, 'UTF-8') ?>
                             </span>
-                        </div>
-                        <div class="d-flex align-items-center justify-content-between py-2 border-bottom border-white border-opacity-10">
-                            <span class="text-white-50 small">Joined Since</span>
-                            <span class="text-white small font-monospace"><?= htmlspecialchars($joinedSince, ENT_QUOTES, 'UTF-8') ?></span>
-                        </div>
-                        <div class="d-flex align-items-center justify-content-between py-2">
-                            <span class="text-white-50 small">Last Login</span>
-                            <span class="text-white small font-monospace"><?= htmlspecialchars($lastLogin, ENT_QUOTES, 'UTF-8') ?></span>
                         </div>
                     </div>
                 </div>
