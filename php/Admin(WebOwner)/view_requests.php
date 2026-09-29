@@ -36,6 +36,7 @@ foreach (['account', 'station', 'new_station', 'new_station_registration', 'lice
     }
 }
 sort($allowedTypes);
+$requestTypeOptions = admin_request_type_filter_options($allowedTypes);
 
 if ($requestType !== '' && !in_array($requestType, $allowedTypes, true)) {
     $requestType = '';
@@ -305,7 +306,7 @@ $flashType = $flash['type'] ?? '';
         <div class="row g-4">
             <div class="col-12"><div class="dashboard-card py-3 px-4"><form class="row g-3 align-items-center" method="GET" action="view_requests.php">
                 <div class="col-12 col-md-5"><div class="input-group"><span class="input-group-text bg-transparent border-end-0" style="border-color:var(--glass-border);color:var(--neon-cyan);border-radius:12px 0 0 12px;"><i class="bi bi-funnel-fill"></i></span><input type="text" class="form-control glass-input border-start-0" placeholder="Filter by company, sender name, or reference ID..." name="search" value="<?= hq_escape($search) ?>"></div></div>
-                <div class="col-12 col-md-3"><select class="form-select glass-select" name="type"><option value="" <?= $requestType === '' ? 'selected' : '' ?>>All Request Types</option><?php foreach ($allowedTypes as $option): ?><option value="<?= hq_escape($option) ?>" <?= $requestType === $option ? 'selected' : '' ?>><?= hq_escape(admin_filter_label($option)) ?></option><?php endforeach; ?></select></div>
+                <div class="col-12 col-md-3"><select class="form-select glass-select" name="type"><option value="" <?= $requestType === '' ? 'selected' : '' ?>>All Request Types</option><?php foreach ($requestTypeOptions as $option): ?><option value="<?= hq_escape($option) ?>" <?= admin_request_type_filter_value($requestType) === $option ? 'selected' : '' ?>><?= hq_escape(admin_filter_label($option)) ?></option><?php endforeach; ?></select></div>
                 <div class="col-12 col-md-2"><select class="form-select glass-select" name="status"><option value="" <?= $status === '' ? 'selected' : '' ?>>All Status</option><?php foreach ($allowedStatuses as $option): ?><option value="<?= hq_escape($option) ?>" <?= $status === $option ? 'selected' : '' ?>><?= hq_escape(admin_filter_label($option)) ?></option><?php endforeach; ?></select></div>
                 <div class="col-12 col-md-2 d-flex gap-2">
                     <button type="submit" class="btn btn-neon flex-grow-1">Apply Filter</button>

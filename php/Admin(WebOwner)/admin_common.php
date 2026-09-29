@@ -348,9 +348,48 @@ function admin_scope_label(string $scope): string
     return match ($scope) {
         'hq_performance' => 'HQ Performance',
         'stations' => 'Station Logs',
-        'audit_logs', 'requests' => 'Audit & Request Logs',
+        'requests' => 'Request Audit Logs',
+        'audit_logs' => 'System Audit Logs',
         'system' => 'System Security',
         default => 'Stored Report',
+    };
+}
+
+/**
+ * Return one selectable request filter for each user-facing request category.
+ * Legacy request_type values remain accepted by the filtering code, while
+ * aliases that share a filter no longer produce repeated options.
+ *
+ * @param list<string> $types
+ * @return list<string>
+ */
+function admin_request_type_filter_options(array $types): array
+{
+    $options = [];
+    foreach ($types as $type) {
+        $value = strtolower(trim($type));
+        $canonical = match ($value) {
+            'station', 'new_station', 'new_station_registration' => 'station',
+            'license', 'license_modification' => 'license',
+            'deactivation', 'account_deactivation' => 'deactivation',
+            default => $value,
+        };
+        if ($canonical !== '' && !in_array($canonical, $options, true)) {
+            $options[] = $canonical;
+        }
+    }
+
+    return $options;
+}
+
+function admin_request_type_filter_value(string $type): string
+{
+    $value = strtolower(trim($type));
+    return match ($value) {
+        'station', 'new_station', 'new_station_registration' => 'station',
+        'license', 'license_modification' => 'license',
+        'deactivation', 'account_deactivation' => 'deactivation',
+        default => $value,
     };
 }
 
@@ -486,10 +525,10 @@ function admin_filter_label(string $value): string
         'mandalay' => 'Mandalay',
         'naypyidaw' => 'Naypyidaw',
         'account' => 'Account verification',
-        'station' => 'Station registration',
-        'new_station' => 'New station',
+        'station' => 'New station registration',
+        'new_station' => 'New station registration',
         'new_station_registration' => 'New station registration',
-        'license' => 'License',
+        'license' => 'License modification',
         'license_modification' => 'License modification',
         'deactivation' => 'Account deactivation',
         'account_deactivation' => 'Account deactivation',

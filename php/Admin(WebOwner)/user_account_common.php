@@ -130,6 +130,24 @@ SQL;
     return $rows;
 }
 
+function pending_account_count(): int
+{
+    global $conn;
+
+    if (!hq_db_available() || !hq_registry_schema_ready()) {
+        return 0;
+    }
+
+    $query = $conn->query(
+        "SELECT COUNT(*) AS total
+         FROM users u
+         INNER JOIN roles r ON r.role_id = COALESCE(u.current_role_id, u.business_role_id, u.role_id)
+         WHERE LOWER(TRIM(u.status)) = 'pending_verification'"
+    );
+
+    return $query ? (int) ($query->fetch_assoc()['total'] ?? 0) : 0;
+}
+
 function user_action_table_ready(): bool
 {
     global $conn;

@@ -15,7 +15,18 @@ $filtersActive = ($search !== '' || $level !== 'all');
 $logs = [];
 $metrics = ['total' => 0, 'security' => 0, 'last' => null];
 $dbError = null;
-$customerAndHqLogScope = '(l.role_id IN (3, 6) OR (l.role_id IS NULL AND (u.role_id IN (3, 6) OR u.business_role_id IN (3, 6) OR u.current_role_id IN (3, 6))))';
+$customerAndHqLogScope = "(
+    (l.role_id IS NOT NULL AND EXISTS (
+        SELECT 1 FROM roles log_role
+        WHERE log_role.role_id = l.role_id
+          AND LOWER(TRIM(log_role.role_name)) IN ('customer', 'hq', 'headquarter', 'headquarters')
+    ))
+    OR (l.role_id IS NULL AND EXISTS (
+        SELECT 1 FROM roles actor_role
+        WHERE actor_role.role_id = COALESCE(u.current_role_id, u.business_role_id, u.role_id)
+          AND LOWER(TRIM(actor_role.role_name)) IN ('customer', 'hq', 'headquarter', 'headquarters')
+    ))
+)";
 
 if (hq_db_available()) {
     $metricQuery = $conn->prepare(
@@ -99,7 +110,7 @@ $flashType = (string) ($flash['type'] ?? '');
     <?php if ($dbError): ?><div class="alert mod-flash alert-danger mb-4"><i class="bi bi-database-exclamation me-2"></i><?= moderator_escape($dbError) ?></div><?php endif; ?>
 
     <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3">
-        <div><span class="stat-chip mb-2"><i class="bi bi-terminal-split txt-neon-cyan"></i> Account Activity</span><h1 class="fw-bold m-0 h4 text-white mt-2">View Log Files</h1><p class="text-white-50 m-0 small mt-1">Inspect actions performed by customer and HQ accounts only.</p></div>
+        <div><span class="stat-chip mb-2"><i class="bi bi-terminal-split txt-neon-cyan"></i> Account Activity</span><h1 class="fw-bold m-0 h4 text-white mt-2">View Log Files</h1><p class="text-white-50 m-0 small mt-1">Inspect activity from customer and HQ accounts only.</p></div>
         <div class="mod-log-note text-white-50 small align-self-center"><i class="bi bi-eye me-1 txt-neon-cyan"></i>View only — clear / export is restricted to administrators.</div>
     </div>
 

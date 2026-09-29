@@ -30,9 +30,27 @@ if (!in_array('account', $allowedTypes, true)) {
     array_unshift($allowedTypes, 'account');
 }
 sort($allowedTypes);
+$requestTypeOptions = function_exists('admin_request_type_filter_options')
+    ? admin_request_type_filter_options($allowedTypes)
+    : array_values(array_unique(array_map(static function (string $type): string {
+        return match ($type) {
+            'new_station', 'new_station_registration' => 'station',
+            'license_modification' => 'license',
+            'account_deactivation' => 'deactivation',
+            default => $type,
+        };
+    }, $allowedTypes)));
 
 $requestType = ($requestType !== '' && in_array($requestType, $allowedTypes, true)) ? $requestType : '';
 $status = ($status !== '' && in_array($status, $allowedStatuses, true)) ? $status : '';
+$requestTypeOption = function_exists('admin_request_type_filter_value')
+    ? admin_request_type_filter_value($requestType)
+    : match ($requestType) {
+        'new_station', 'new_station_registration' => 'station',
+        'license_modification' => 'license',
+        'account_deactivation' => 'deactivation',
+        default => $requestType,
+    };
 $filtersActive = ($search !== '' || $requestType !== '' || $status !== '');
 
 $requestRows = ($requestType === 'account') ? [] : moderator_request_rows($search, $requestType, $status);
@@ -193,7 +211,7 @@ $flashType = (string) ($flash['type'] ?? '');
     <div class="col-12"><div class="dashboard-card py-3 px-4">
         <form class="row g-3 align-items-center" method="GET" action="view_requests(M).php">
             <div class="col-12 col-md-5"><div class="input-group"><span class="input-group-text bg-transparent border-end-0" style="border-color:var(--glass-border);color:var(--neon-cyan);border-radius:12px 0 0 12px;"><i class="bi bi-funnel-fill"></i></span><input type="text" class="form-control glass-input border-start-0" placeholder="Filter by company, sender name, email, or reference ID..." name="search" value="<?= moderator_escape($search) ?>"></div></div>
-            <div class="col-12 col-md-3"><select class="form-select glass-select" name="type"><option value="">All Request Types</option><?php foreach ($allowedTypes as $option): ?><option value="<?= moderator_escape($option) ?>" <?= $requestType === $option ? 'selected' : '' ?>><?= $option === 'account' ? 'Account Verification' : moderator_escape(function_exists('admin_filter_label') ? admin_filter_label($option) : (function_exists('request_type_label') ? request_type_label($option) : $option)) ?></option><?php endforeach; ?></select></div>
+            <div class="col-12 col-md-3"><select class="form-select glass-select" name="type"><option value="">All Request Types</option><?php foreach ($requestTypeOptions as $option): ?><option value="<?= moderator_escape($option) ?>" <?= $requestTypeOption === $option ? 'selected' : '' ?>><?= $option === 'account' ? 'Account Verification' : moderator_escape(function_exists('admin_filter_label') ? admin_filter_label($option) : (function_exists('request_type_label') ? request_type_label($option) : $option)) ?></option><?php endforeach; ?></select></div>
             <div class="col-12 col-md-2"><select class="form-select glass-select" name="status"><option value="">All Statuses</option><?php foreach ($allowedStatuses as $option): ?><option value="<?= moderator_escape($option) ?>" <?= $status === $option ? 'selected' : '' ?>><?= moderator_escape(function_exists('admin_filter_label') ? admin_filter_label($option) : request_status_label($option)) ?></option><?php endforeach; ?></select></div>
             <div class="col-12 col-md-2 d-flex gap-2"><button type="submit" class="btn btn-neon flex-grow-1">Apply</button><?php if ($filtersActive): ?><a href="view_requests(M).php" class="btn btn-outline-secondary text-white-50 border-secondary border-opacity-25" title="Clear filters">Clear</a><?php endif; ?></div>
         </form>

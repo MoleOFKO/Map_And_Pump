@@ -30,6 +30,13 @@ sort($allowedStatuses);
 if ($statusFilter !== '' && !in_array($statusFilter, $allowedStatuses, true)) {
     $statusFilter = '';
 }
+if ($statusFilter === 'active') {
+    $statusFilter = 'approved';
+}
+$statusOptions = array_values(array_filter(
+    $allowedStatuses,
+    static fn(string $status): bool => $status !== 'active'
+));
 
 $roles = [];
 $moderatorRows = [];
@@ -333,7 +340,7 @@ $filtersActive = ($search !== '' || $roleFilter > 0 || $statusFilter !== '');
                             <label class="form-label text-white-50 small mb-1" for="moderatorStatusFilter">Status</label>
                             <select id="moderatorStatusFilter" class="form-select glass-select" name="status">
                                 <option value="">All Statuses</option>
-                                <?php foreach ($allowedStatuses as $option): ?>
+                                <?php foreach ($statusOptions as $option): ?>
                                     <option value="<?= hq_escape($option) ?>" <?= $statusFilter === $option ? 'selected' : '' ?>><?= hq_escape(moderator_status_label($option)) ?></option>
                                 <?php endforeach; ?>
                             </select>
