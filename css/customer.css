@@ -7,6 +7,25 @@
     color: white;
 }
 
+.customer-reward-tier {
+    display: inline-flex;
+    align-items: center;
+    width: fit-content;
+    padding: 4px 10px;
+    border: 1px solid currentColor;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+}
+
+.customer-reward-tier-bronze { color: #cd7f32; background: rgba(205, 127, 50, .12); }
+.customer-reward-tier-silver { color: #c0c0c0; background: rgba(192, 192, 192, .12); }
+.customer-reward-tier-gold { color: #ffd700; background: rgba(255, 215, 0, .12); }
+.customer-reward-tier-platinum { color: #e5e4e2; background: rgba(229, 228, 226, .12); }
+.customer-reward-tier-diamond { color: #b9f2ff; background: rgba(185, 242, 255, .12); }
+
 
 .navigation_style{
     margin-top: 10px;
