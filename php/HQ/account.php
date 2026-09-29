@@ -114,9 +114,93 @@ try {
 <head>
     <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
     <script src="../../js/hq-theme.js"></script>
 <link rel="stylesheet" href="../../css/HQstyle.css">
+    <style>
+        /* Account roster search bar styling (matches pricing/station search bars) */
+        .account-search {
+            position: relative;
+            flex: 0 0 auto;
+            width: 260px;
+            max-width: 100%;
+        }
 
+        .account-search .account-search-icon {
+            position: absolute;
+            left: 13px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--slate-300);
+            font-size: 0.82rem;
+            line-height: 1;
+            opacity: 0.85;
+            pointer-events: none;
+        }
+
+        .account-search #accountSearch {
+            display: block;
+            width: 100%;
+            height: 36px;
+            padding: 0 66px 0 34px;
+            font-size: 0.85rem;
+            color: var(--slate-50);
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border);
+            border-radius: 999px;
+            box-shadow: none;
+            outline: none;
+            appearance: none;
+            -webkit-appearance: none;
+            box-sizing: border-box;
+        }
+
+        .account-search #accountSearch::placeholder {
+            color: var(--slate-300);
+            opacity: 0.7;
+        }
+
+        .account-search #accountSearch:focus {
+            background: rgba(255, 255, 255, 0.08);
+            border-color: rgba(56, 189, 248, 0.45);
+            box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.16);
+        }
+
+        .account-search #accountSearch::-webkit-search-cancel-button,
+        .account-search #accountSearch::-webkit-search-decoration {
+            -webkit-appearance: none;
+            appearance: none;
+        }
+
+        .account-search .account-search-clear {
+            position: absolute;
+            right: 34px;
+            top: 50%;
+            transform: translateY(-50%);
+            display: none;
+            width: 22px;
+            height: 22px;
+            padding: 0;
+            border: none;
+            border-radius: 50%;
+            background: transparent;
+            color: var(--slate-300);
+            font-size: 0.7rem;
+            line-height: 1;
+            cursor: pointer;
+        }
+
+        .account-search .account-search-clear:hover {
+            color: var(--slate-50);
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        .account-search.has-value .account-search-clear {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+    </style>
 </head>
 <body>
     <div class="container">
@@ -142,14 +226,20 @@ endif; ?>
         <div class="card">
             <div style="display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap;">
                 <h3 style="margin: 0;">Manager &amp; Staff Roster</h3>
-                <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#inviteAccountModal">+ Add Branch Manager</button>
+                <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                    <div class="account-search" id="accountSearchWrap">
+                        <i class="fa-solid fa-magnifying-glass account-search-icon" aria-hidden="true"></i>
+                        <input type="search" id="accountSearch" class="form-control" placeholder="Search accounts..." autocomplete="off" aria-label="Search accounts by name, email, station or status">
+                    </div>
+                    <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#inviteAccountModal">+ Add Manager or Staff</button>
+                </div>
             </div>
             <ul class="nav nav-tabs mt-3" id="accountRoleTabs" role="tablist">
                 <li class="nav-item" role="presentation">
                     <button class="nav-link active" type="button" role="tab" data-account-role-tab="4" aria-selected="true">Branch Managers</button>
                 </li>
             </ul>
-            <table style="width: 100%; border-collapse: collapse; margin-top: 10px;">
+            <table id="accountRosterTable" style="width: 100%; border-collapse: collapse; margin-top: 10px;">
                 <thead>
                     <tr style="border-bottom: 2px solid var(--border); text-align: left;">
                         <th style="padding: 12px 8px;">Account Name</th>
@@ -173,7 +263,12 @@ $status = strtolower((string)($manager['status'] ?? ''));
                                 $stationLocation = trim((string)($manager['location'] ?? ''));
                                 $stationText = $stationName !== '' ? ($stationLocation !== '' ? $stationName . ' — ' . $stationLocation : $stationName) : 'Unassigned';
                             ?>
-                            <tr style="border-bottom: 1px solid var(--border);" data-account-role="<?= (int)($manager['account_role'] ?? 4) ?>">
+                            <tr style="border-bottom: 1px solid var(--border);" data-account-role="<?= (int)($manager['account_role'] ?? 4) ?>" data-search="<?= htmlspecialchars(strtolower(trim(
+                                    ($manager['user_name'] ?? '') . ' ' .
+                                    ($manager['email'] ?? '') . ' ' .
+                                    $stationText . ' ' .
+                                    $statusLabel
+                                )), ENT_QUOTES) ?>">
                                 <td style="padding: 12px 8px;"><?= htmlspecialchars($manager['user_name'] ?? 'N/A') ?></td>
                                 <td style="padding: 12px 8px;"><?= htmlspecialchars($manager['email'] ?? 'N/A') ?></td>
                                 <td style="padding: 12px 8px;"><?= htmlspecialchars($stationText) ?></td>
@@ -279,27 +374,37 @@ endif; ?>
         const accountRows = document.querySelectorAll('[data-account-role]');
         let accountEmptyRow = document.querySelector('[data-account-empty]');
         const accountTableBody = accountEmptyRow ? accountEmptyRow.parentElement : document.querySelector('table tbody');
+        let currentAccountRole = '4';
 
         function showAccountRole(role) {
+            currentAccountRole = role;
             let visibleRows = 0;
+            const term = (document.getElementById('accountSearch') || {}).value ? document.getElementById('accountSearch').value.trim().toLowerCase() : '';
             accountRows.forEach(function (row) {
-                const isVisible = row.dataset.accountRole === role;
+                const matchesRole = row.dataset.accountRole === role;
+                const haystack = row.dataset.search || '';
+                const matchesSearch = term === '' || haystack.indexOf(term) !== -1;
+                const isVisible = matchesRole && matchesSearch;
                 row.style.display = isVisible ? '' : 'none';
                 if (isVisible) {
                     visibleRows += 1;
                 }
             });
 
+            const emptyText = term !== ''
+                ? 'No accounts match your search.'
+                : (role === '5' ? 'No staff accounts found.' : 'No branch manager accounts found.');
+
             if (accountEmptyRow) {
                 accountEmptyRow.style.display = visibleRows === 0 ? '' : 'none';
-                accountEmptyRow.querySelector('td').textContent = role === '5' ? 'No staff accounts found.' : 'No branch manager accounts found.';
+                accountEmptyRow.querySelector('td').textContent = emptyText;
             } else if (visibleRows === 0) {
                 const emptyRow = document.createElement('tr');
                 emptyRow.dataset.accountEmpty = 'true';
                 emptyRow.innerHTML = '<td colspan="5" style="padding: 16px 8px; text-align: center; color: var(--muted);"></td>';
                 accountTableBody.appendChild(emptyRow);
                 accountEmptyRow = emptyRow;
-                accountEmptyRow.querySelector('td').textContent = role === '5' ? 'No staff accounts found.' : 'No branch manager accounts found.';
+                accountEmptyRow.querySelector('td').textContent = emptyText;
             }
         }
 
@@ -315,6 +420,43 @@ endif; ?>
         });
 
         showAccountRole('4');
+
+        // Live search filter for the account roster table
+        (function () {
+            const input = document.getElementById('accountSearch');
+            const clearBtn = document.getElementById('accountSearchClear');
+            const searchWrap = document.getElementById('accountSearchWrap');
+            if (!input) return;
+
+            function updateClearButton() {
+                if (input.value.trim() !== '') {
+                    searchWrap.classList.add('has-value');
+                } else {
+                    searchWrap.classList.remove('has-value');
+                }
+            }
+
+            function applyFilter() {
+                updateClearButton();
+                showAccountRole(currentAccountRole);
+            }
+
+            input.addEventListener('input', applyFilter);
+            input.addEventListener('search', applyFilter);
+            input.addEventListener('keydown', function (event) {
+                if (event.key === 'Escape') {
+                    input.value = '';
+                    applyFilter();
+                }
+            });
+            if (clearBtn) {
+                clearBtn.addEventListener('click', function () {
+                    input.value = '';
+                    applyFilter();
+                    input.focus();
+                });
+            }
+        })();
 
         const inviteAccountForm = document.getElementById('inviteAccountForm');
         if (inviteAccountForm) {

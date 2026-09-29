@@ -291,6 +291,7 @@ try {
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
     <script src="../../js/hq-theme.js"></script>
     <link rel="stylesheet" href="../../css/HQstyle.css">
     <style>
@@ -324,7 +325,7 @@ try {
             display: block;
             width: 100%;
             height: 36px;
-            padding: 0 34px 0 34px;
+            padding: 0 66px 0 34px;
             font-size: 0.85rem;
             color: var(--slate-50);
             background: rgba(255, 255, 255, 0.05);
@@ -334,6 +335,7 @@ try {
             outline: none;
             appearance: none;
             -webkit-appearance: none;
+            box-sizing: border-box;
         }
 
         .station-search #stationSearch::placeholder {
@@ -355,7 +357,7 @@ try {
 
         .station-search .station-search-clear {
             position: absolute;
-            right: 6px;
+            right: 34px;
             top: 50%;
             transform: translateY(-50%);
             display: none;
@@ -380,6 +382,61 @@ try {
             display: flex;
             align-items: center;
             justify-content: center;
+        }
+
+        /* Kebab action menu (matches report manager view) */
+        .station-actions-cell { position: relative; }
+        .station-action-toggle {
+            border: none;
+            background: none;
+            color: var(--slate-300);
+            cursor: pointer;
+            font-size: 1.3rem;
+            box-shadow: none;
+            padding: 5px 8px;
+            border-radius: 6px;
+            transition: background 0.15s ease, color 0.15s ease;
+        }
+        .station-action-toggle:hover {
+            background: rgba(255, 255, 255, 0.08);
+            color: var(--slate-50);
+        }
+        .station-action-menu {
+            display: none;
+            position: absolute;
+            right: 0;
+            top: 100%;
+            margin-top: 4px;
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 8px;
+            min-width: 190px;
+            z-index: 1000;
+            box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35);
+        }
+        .station-action-menu button {
+            border: none;
+            background: none;
+            cursor: pointer;
+            width: 100%;
+            text-align: left;
+            padding: 8px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            color: #0d6efd;
+        }
+        .station-action-menu button:hover {
+            background: rgba(255, 255, 255, 0.06);
+        }
+        .station-action-menu button.danger {
+            color: #dc3545;
+        }
+        .station-action-menu button i {
+            font-size: 1rem;
         }
         #stationMap, #configMap { height: 220px; border-radius: 8px; border: 1px solid #373b3e; }
     </style>
@@ -411,18 +468,18 @@ try {
                 </div>
                 <div class="d-flex align-items-center gap-2 station-toolbar">
                     <div class="station-search" id="stationSearchWrap">
-                        <i class="bi bi-search station-search-icon" aria-hidden="true"></i>
+                        <i class="fa-solid fa-magnifying-glass station-search-icon" aria-hidden="true"></i>
                         <input type="search" id="stationSearch" placeholder="Search stations..."
                             autocomplete="off" aria-label="Search stations by ID, name, address, manager or status">
                         <button type="button" id="stationSearchClear" class="station-search-clear" title="Clear search" aria-label="Clear search">
-                            <i class="bi bi-x-lg" aria-hidden="true"></i>
+                            <i class="fa-solid fa-xmark" aria-hidden="true"></i>
                         </button>
                     </div>
                     <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#registerModal">+Add Station</button>
                 </div>
             </div>
             <div class="table-responsive">
-                <table class="table table-custom align-middle">
+                <table id="stationsTable" class="table table-custom align-middle">
                     <thead>
                         <tr>
                             <th>Station ID</th>
@@ -449,7 +506,7 @@ try {
                                 <tr class="station-row" data-search="<?= htmlspecialchars(strtolower(trim(
                                         '#' . $row['station_id'] . ' ' .
                                         ($row['station_name'] ?? '') . ' ' .
-                                        ($row['station_address'] ?? '') . ' ' .
+                                        ($row['station_address'] ?? '')
                                         ($row['manager_name'] ?? 'Not assigned') . ' ' .
                                         ($row['manager_email'] ?? '') . ' ' .
                                         $statusText
@@ -463,15 +520,23 @@ try {
                                             <?= $statusText ?>
                                         </span>
                                     </td>
-                                    <td class="text-end table-actions">
-                                        <button type="button" id="toggle-btn-<?= $row['station_id'] ?>" class="<?= $btnClass ?>" onclick="toggleStatus(<?= $row['station_id'] ?>, '<?= $targetStatus ?>')">
-                                            <?= $btnText ?>
+                                    <td class="text-end table-actions station-actions-cell" onclick="event.stopPropagation();">
+                                        <button type="button" class="station-action-toggle" onclick="toggleStationActions(this, <?= $row['station_id'] ?>)" title="More Actions" aria-label="More actions">
+                                            <i class="bi bi-three-dots-vertical"></i>
                                         </button>
-                                        <button type="button" class="btn btn-sm me-1 btn-outline-light" data-bs-toggle="modal" data-bs-target="#configureModal" 
-                                            onclick="setConfigureData('<?= htmlspecialchars($row['station_id'], ENT_QUOTES) ?>', '<?= htmlspecialchars($row['station_name'], ENT_QUOTES) ?>', '<?= htmlspecialchars($row['station_address'], ENT_QUOTES) ?>', '<?= htmlspecialchars($row['manager_email'], ENT_QUOTES) ?>', '<?= htmlspecialchars($row['location'], ENT_QUOTES) ?>')">
-                                            Configure
-                                        </button>
-                                        <button type="button" class="btn btn-sm btn-danger" data-bs-toggle="modal" data-bs-target="#decommissionModal" onclick="setDecommissionData('<?= htmlspecialchars($row['station_id']) ?>', 'Station #<?= htmlspecialchars($row['station_id']) ?> - <?= htmlspecialchars($row['station_name']) ?>')">Decommission</button>
+                                        <div class="station-action-menu" id="station-menu-<?= $row['station_id'] ?>">
+                                            <button type="button" id="toggle-btn-<?= $row['station_id'] ?>" onclick="closeStationMenus(); toggleStatus(<?= $row['station_id'] ?>, '<?= $targetStatus ?>')">
+                                                <i class="bi <?= $isMaintenance ? 'bi-toggle2-on' : 'bi-tools' ?>"></i> <?= $btnText ?>
+                                            </button>
+                                            <button type="button" data-bs-toggle="modal" data-bs-target="#configureModal"
+                                                onclick="closeStationMenus(); setConfigureData('<?= htmlspecialchars($row['station_id'], ENT_QUOTES) ?>', '<?= htmlspecialchars($row['station_name'], ENT_QUOTES) ?>', '<?= htmlspecialchars($row['station_address'], ENT_QUOTES) ?>', '<?= htmlspecialchars($row['manager_email'], ENT_QUOTES) ?>', '<?= htmlspecialchars($row['location'], ENT_QUOTES) ?>')">
+                                                <i class="bi bi-gear"></i> Configure
+                                            </button>
+                                            <button type="button" class="danger" data-bs-toggle="modal" data-bs-target="#decommissionModal"
+                                                onclick="closeStationMenus(); setDecommissionData('<?= htmlspecialchars($row['station_id']) ?>', 'Station #<?= htmlspecialchars($row['station_id']) ?> - <?= htmlspecialchars($row['station_name']) ?>')">
+                                                <i class="bi bi-trash"></i> Decommission
+                                            </button>
+                                        </div>
                                     </td>
                                 </tr>
                             <?php endforeach; ?>
@@ -670,6 +735,35 @@ try {
                 searchInput.focus();
             });
         });
+
+        function toggleStationActions(button, stationId) {
+            const menu = document.getElementById('station-menu-' + stationId);
+            const isVisible = menu.style.display === 'block';
+
+            // Hide all other menus
+            document.querySelectorAll('.station-action-menu').forEach(m => {
+                if (m.id !== 'station-menu-' + stationId) {
+                    m.style.display = 'none';
+                }
+            });
+
+            menu.style.display = isVisible ? 'none' : 'block';
+
+            if (!isVisible) {
+                document.addEventListener('click', function closeMenu(e) {
+                    if (!menu.contains(e.target) && e.target !== button) {
+                        menu.style.display = 'none';
+                        document.removeEventListener('click', closeMenu);
+                    }
+                });
+            }
+        }
+
+        function closeStationMenus() {
+            document.querySelectorAll('.station-action-menu').forEach(m => {
+                m.style.display = 'none';
+            });
+        }
 
         function toggleStatus(stationId, targetStatus) {
             const formData = new FormData();

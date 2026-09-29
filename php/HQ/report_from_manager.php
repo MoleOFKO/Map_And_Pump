@@ -67,9 +67,94 @@ try {
     <meta charset="UTF-8">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
     <script src="../../js/hq-theme.js"></script>
 <link rel="stylesheet" href="../../css/HQstyle.css">
     <title>Manager Reports & Activity</title>
+    <style>
+        /* Report search bar styling (matches pricing/station search bars) */
+        .report-search {
+            position: relative;
+            flex: 0 0 auto;
+            width: 260px;
+            max-width: 100%;
+        }
+
+        .report-search .report-search-icon {
+            position: absolute;
+            left: 13px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--slate-300);
+            font-size: 0.82rem;
+            line-height: 1;
+            opacity: 0.85;
+            pointer-events: none;
+        }
+
+        .report-search #reportSearch {
+            display: block;
+            width: 100%;
+            height: 36px;
+            padding: 0 66px 0 34px;
+            font-size: 0.85rem;
+            color: var(--slate-50);
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border);
+            border-radius: 999px;
+            box-shadow: none;
+            outline: none;
+            appearance: none;
+            -webkit-appearance: none;
+            box-sizing: border-box;
+        }
+
+        .report-search #reportSearch::placeholder {
+            color: var(--slate-300);
+            opacity: 0.7;
+        }
+
+        .report-search #reportSearch:focus {
+            background: rgba(255, 255, 255, 0.08);
+            border-color: rgba(56, 189, 248, 0.45);
+            box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.16);
+        }
+
+        .report-search #reportSearch::-webkit-search-cancel-button,
+        .report-search #reportSearch::-webkit-search-decoration {
+            -webkit-appearance: none;
+            appearance: none;
+        }
+
+        .report-search .report-search-clear {
+            position: absolute;
+            right: 34px;
+            top: 50%;
+            transform: translateY(-50%);
+            display: none;
+            width: 22px;
+            height: 22px;
+            padding: 0;
+            border: none;
+            border-radius: 50%;
+            background: transparent;
+            color: var(--slate-300);
+            font-size: 0.7rem;
+            line-height: 1;
+            cursor: pointer;
+        }
+
+        .report-search .report-search-clear:hover {
+            color: var(--slate-50);
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        .report-search.has-value .report-search-clear {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+    </style>
 </head>
 <body>
     <div class="container my-4">
@@ -85,9 +170,22 @@ if (isset($dbError)): ?>
 endif; ?>
 
         <div class="card mb-4 p-3">
-            <h3>Site Reports</h3>
-            <p class="subtitle" style="margin-bottom: 12px;">View shift-ending tallies submitted by field operators.</p>
-            
+            <div style="display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap;">
+                <div>
+                    <h3 style="margin: 0;">Site Reports</h3>
+                    <p class="subtitle" style="margin-bottom: 0;">View shift-ending tallies submitted by field operators.</p>
+                </div>
+                <?php if (!empty($reports)): ?>
+                <div class="report-search" id="reportSearchWrap">
+                    <i class="fa-solid fa-magnifying-glass report-search-icon" aria-hidden="true"></i>
+                    <input type="search" id="reportSearch" class="form-control" placeholder="Search reports..." autocomplete="off" aria-label="Search reports by ID, user, importance, summary or status">
+                    <button type="button" class="report-search-clear" id="reportSearchClear" title="Clear search" aria-label="Clear search">
+                        <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+                    </button>
+                </div>
+                <?php endif; ?>
+            </div>
+
             <?php
 if (empty($reports)): ?>
                 <div style="background: var(--bg); padding: 15px; border-radius: 6px; font-size: 0.9rem; color: var(--slate-50); text-align: center;">
@@ -96,7 +194,7 @@ if (empty($reports)): ?>
             <?php
 else: ?>
                 <div class="table-responsive">
-                    <table class="table table-dark table-striped">
+                    <table id="reportsTable" class="table table-dark table-striped">
                         <thead>
                             <tr>
                                 <th>Report ID</th>
@@ -110,7 +208,13 @@ else: ?>
                         <tbody>
                             <?php
 foreach ($reports as $rep): ?>
-                                <tr id="report-<?= htmlspecialchars($rep['report_id']) ?>" onclick="showDetailFromRow(this)" style="cursor: pointer;">
+                                <tr id="report-<?= htmlspecialchars($rep['report_id']) ?>" class="report-row" data-search="<?= htmlspecialchars(strtolower(trim(
+                                        $rep['report_id'] . ' ' .
+                                        ($rep['user_name'] ?? '') . ' ' .
+                                        ($rep['importance'] ?? '') . ' ' .
+                                        ($rep['short_summery'] ?? '') . ' ' .
+                                        'unread'
+                                    )), ENT_QUOTES) ?>" onclick="showDetailFromRow(this)" style="cursor: pointer;">
                                     <td><?= htmlspecialchars($rep['report_id']) ?></td>
                                     <td><?= htmlspecialchars($rep['user_name']) ?></td>
                                     <td><?= htmlspecialchars($rep['importance']) ?></td>
@@ -137,6 +241,9 @@ foreach ($reports as $rep): ?>
                                 </tr>
                             <?php
 endforeach; ?>
+                            <tr id="reportsNoResults" class="d-none">
+                                <td colspan="6" class="text-center text-muted">No reports match your search.</td>
+                            </tr>
                         </tbody>
                     </table>
                 </div>
@@ -194,6 +301,60 @@ endif; ?>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
+        // Live search filter for the site reports table
+        (function () {
+            const input = document.getElementById('reportSearch');
+            const clearBtn = document.getElementById('reportSearchClear');
+            const searchWrap = document.getElementById('reportSearchWrap');
+            if (!input) return;
+
+            const rows = Array.prototype.slice.call(document.querySelectorAll('.report-row'));
+            const noResults = document.getElementById('reportsNoResults');
+
+            function updateClearButton() {
+                if (input.value.trim() !== '') {
+                    searchWrap.classList.add('has-value');
+                } else {
+                    searchWrap.classList.remove('has-value');
+                }
+            }
+
+            function applyFilter() {
+                const term = input.value.trim().toLowerCase();
+                let visible = 0;
+
+                rows.forEach(function (row) {
+                    const haystack = row.dataset.search || row.textContent.toLowerCase();
+                    const match = term === '' || haystack.indexOf(term) !== -1;
+                    row.classList.toggle('d-none', !match);
+                    if (match) visible++;
+                });
+
+                if (noResults) {
+                    noResults.classList.toggle('d-none', !(rows.length > 0 && visible === 0));
+                }
+                updateClearButton();
+            }
+
+            input.addEventListener('input', applyFilter);
+            input.addEventListener('search', applyFilter);
+            input.addEventListener('keydown', function (event) {
+                if (event.key === 'Escape') {
+                    input.value = '';
+                    applyFilter();
+                }
+            });
+            if (clearBtn) {
+                clearBtn.addEventListener('click', function () {
+                    input.value = '';
+                    applyFilter();
+                    input.focus();
+                });
+            }
+
+            applyFilter();
+        })();
+
         // Toggle Actions Menu
         function toggleActions(button, reportId) {
             const menu = document.getElementById('menu-' + reportId);

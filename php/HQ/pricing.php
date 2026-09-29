@@ -8,6 +8,33 @@ $updateMessage = '';
 $errorMessage = '';
 $hqId = map_pump_current_hq_id($pdo);
 
+function normalize_search_tokens(?string $value): array
+{
+    if ($value === null) {
+        return [];
+    }
+
+    $normalized = strtolower(trim((string) $value));
+    $normalized = str_replace([',', '.'], ' ', $normalized);
+    $normalized = preg_replace('/\s+/', ' ', $normalized) ?? $normalized;
+    $tokens = preg_split('/\s+/', $normalized, -1, PREG_SPLIT_NO_EMPTY) ?: [];
+
+    return array_values(array_filter($tokens, static fn ($token) => $token !== ''));
+}
+
+function normalize_search_text(?string $value): string
+{
+    if ($value === null) {
+        return '';
+    }
+
+    $normalized = strtolower(trim((string) $value));
+    $normalized = str_replace([',', '.'], ' ', $normalized);
+    $normalized = preg_replace('/\s+/', ' ', $normalized) ?? $normalized;
+
+    return trim($normalized);
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
 
@@ -118,6 +145,7 @@ try {
 <head>
     <meta charset="UTF-8">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
     <script src="../../js/hq-theme.js"></script>
 <link rel="stylesheet" href="../../css/HQstyle.css">
     <style>
@@ -156,44 +184,77 @@ try {
 
         .pricing-table {
             width: 100%;
-            border-collapse: collapse;
-            margin-top: 16px;
+            border-collapse: separate;
+            border-spacing: 0;
+            margin-top: 0;
             background: transparent;
             color: var(--slate-50);
-            border-radius: 0;
-            border: none;
         }
 
-        .pricing-table thead th,
-        .pricing-table tbody td {
-            border-left: none;
-            border-right: none;
-        }
-
-        .pricing-table th {
+        .pricing-table thead th {
+            position: sticky;
+            top: 0;
+            z-index: 2;
+            background: var(--card-bg, #0f172a);
             text-align: left;
             font-size: 12px;
-            padding: 0 0 12px;
+            padding: 10px 12px;
             color: var(--slate-300);
             border-bottom: 1px solid var(--border);
             text-transform: uppercase;
             letter-spacing: 0.05em;
         }
 
-        .pricing-table td {
-            padding: 12px 0;
-            border-top: 1px solid var(--border);
+        .pricing-table tbody td {
+            padding: 12px;
+            border-bottom: 1px solid var(--border);
             font-size: 14px;
             color: var(--slate-50);
             vertical-align: middle;
+            background: transparent;
         }
 
-        .pricing-table tbody tr:first-child td {
-            border-top: none;
+        .pricing-table .price-header,
+        .pricing-table .price-cell {
+            white-space: nowrap;
+            line-height: 1.2;
+            vertical-align: middle;
+        }
+
+        .pricing-table thead th.price-header,
+        .pricing-table tbody td.price-cell {
+            white-space: nowrap;
+            line-height: 1.2;
         }
 
         .pricing-table tbody tr:hover td {
             background: rgba(255, 255, 255, 0.03);
+        }
+
+        .pricing-table tbody tr:last-child td {
+            border-bottom: none;
+        }
+
+        .pricing-status-badge {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 4px 8px;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: 600;
+            line-height: 1.4;
+            white-space: nowrap;
+        }
+
+        .pricing-status-badge.bg-success {
+            background: rgba(34, 197, 94, 0.18);
+            color: #86efac;
+        }
+
+        .pricing-status-badge.bg-warning {
+            background: rgba(250, 204, 21, 0.18);
+            color: #facc15;
         }
 
         .price-input-wrap {
@@ -253,7 +314,7 @@ try {
             display: block;
             width: 100%;
             height: 36px;
-            padding: 0 34px 0 34px;
+            padding: 0 36px 0 34px;
             font-size: 0.85rem;
             color: var(--slate-50);
             background: rgba(255, 255, 255, 0.05);
@@ -263,6 +324,7 @@ try {
             outline: none;
             appearance: none;
             -webkit-appearance: none;
+            box-sizing: border-box;
         }
 
         .pricing-search #pricingSearch::placeholder {
@@ -284,7 +346,7 @@ try {
 
         .pricing-search .pricing-search-clear {
             position: absolute;
-            right: 6px;
+            right: 4px;
             top: 50%;
             transform: translateY(-50%);
             display: none;
@@ -429,20 +491,20 @@ endforeach; ?>
             <div class="d-flex justify-content-between align-items-center mb-3">
                 <h3 class="mb-0">Current Fuel Grades</h3>
                 <div class="pricing-search" id="pricingSearchWrap">
-                    <i class="bi bi-search pricing-search-icon"></i>
-                    <input type="search" id="pricingSearch" class="form-control" placeholder="Search prices..." autocomplete="off" aria-label="Search fuel grades and prices">
+                    <i class="fa-solid fa-magnifying-glass pricing-search-icon"></i>
+                    <input type="search" id="pricingSearch" class="form-control" placeholder="Search,,," autocomplete="off" aria-label="Search fuel grades and prices">
                     <button type="button" class="pricing-search-clear" id="pricingSearchClear" title="Clear search" aria-label="Clear search">
-                        <i class="bi bi-x-lg"></i>
+                        <i class="fa-solid fa-mark"></i>
                     </button>
                 </div>
             </div>
             <div class="pricing-table-container">
-                <table class="pricing-table table-borderless align-middle">
+                <table id="pricingGradesTable" class="pricing-table table-borderless align-middle">
                     <thead>
                         <tr>
                             <th>Station</th>
                             <th>Fuel Grade</th>
-                            <th>Price / L</th>
+                            <th class="price-header">Price / L</th>
                             <th>Status</th>
                         </tr>
                     </thead>
@@ -451,7 +513,12 @@ endforeach; ?>
 if (count($priceRows) > 0): ?>
                             <?php
 foreach ($priceRows as $grade): ?>
-                                <tr>
+                                <tr data-search="<?= htmlspecialchars(strtolower(trim(
+                                    ($grade['station_name'] ?? '') . ' ' .
+                                    ($grade['oil_name'] ?? '') . ' ' .
+                                    ($grade['price_per_liter'] ?? '') . ' ' .
+                                    ((int)($grade['is_active'] ?? 0) === 1 ? 'Available' : 'Unavailable')
+                                )), ENT_QUOTES) ?>">
                                     <td><?php
 echo htmlspecialchars($grade['station_name']); ?></td>
                                     <td><?php
@@ -478,7 +545,7 @@ endif; ?>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-        // Live search filter for the pricing table
+        // Live search for the pricing table
         (function () {
             const input = document.getElementById('pricingSearch');
             const clearBtn = document.getElementById('pricingSearchClear');
@@ -500,13 +567,27 @@ endif; ?>
                 }
             }
 
-            function applyFilter() {
+            function applySearch() {
                 const term = input.value.trim().toLowerCase();
                 let visible = 0;
 
+                const normalizedTerm = term
+                    .replace(/[.,]/g, ' ')
+                    .replace(/\s+/g, ' ')
+                    .trim();
+                const tokens = normalizedTerm === '' ? [] : normalizedTerm.split(/\s+/).filter(Boolean);
+
                 rows.forEach(function (row) {
-                    const haystack = row.textContent.toLowerCase();
-                    const match = term === '' || haystack.indexOf(term) !== -1;
+                    const haystack = (row.getAttribute('data-search') || row.textContent || '').toLowerCase();
+                    const sanitizedHaystack = haystack
+                        .replace(/[.,]/g, ' ')
+                        .replace(/\s+/g, ' ')
+                        .trim();
+
+                    const match = tokens.length === 0 || tokens.every(function (token) {
+                        return sanitizedHaystack.indexOf(token) !== -1;
+                    });
+
                     row.classList.toggle('d-none', !match);
                     if (match) visible++;
                 });
@@ -517,22 +598,23 @@ endif; ?>
                 updateClearButton();
             }
 
-            input.addEventListener('input', applyFilter);
-            input.addEventListener('search', applyFilter);
+            input.addEventListener('input', applySearch);
+            input.addEventListener('search', applySearch);
             input.addEventListener('keydown', function (event) {
                 if (event.key === 'Escape') {
                     input.value = '';
-                    applyFilter();
+                    applySearch();
                 }
             });
             if (clearBtn) {
                 clearBtn.addEventListener('click', function () {
                     input.value = '';
-                    applyFilter();
+                    applySearch();
                     input.focus();
                 });
             }
-            applyFilter();
+
+            applySearch();
         })();
     </script>
 </body>
