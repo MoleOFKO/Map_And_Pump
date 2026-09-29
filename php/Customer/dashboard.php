@@ -6,10 +6,22 @@ $oilUsed = max(0.0, (float) ($_SESSION['oil_used'] ?? 0.0));
 $oilRemaining = max(0.0, (float) ($_SESSION['oil_remaining'] ?? ($oilLimit - $oilUsed)));
 $oilPercent = max(0.0, min(100.0, ($oilRemaining / $oilLimit) * 100));
 
-// Simulated variables for the new dashboard cards
-// You can later replace these with real database queries
 $monthly_visits = 3; 
-$reward_points = 1250;
+$rewardPointsStmt = $pdo->prepare('SELECT COALESCE(had_point, 0) FROM users WHERE user_id = ? LIMIT 1');
+$rewardPointsStmt->execute([(int) $_SESSION['user_id']]);
+$reward_points = max(0, (int) $rewardPointsStmt->fetchColumn());
+
+if ($reward_points >= 100) {
+    $reward_tier = 'Diamond';
+} elseif ($reward_points >= 80) {
+    $reward_tier = 'Platinum';
+} elseif ($reward_points >= 60) {
+    $reward_tier = 'Gold';
+} elseif ($reward_points >= 40) {
+    $reward_tier = 'Silver';
+} else {
+    $reward_tier = 'Bronze';
+}
 ?>
 
 <div class="customer-dashboard">
@@ -45,7 +57,10 @@ $reward_points = 1250;
                 <?php echo number_format($reward_points); ?> 
                 <span class="fs-5 text-warning ms-1"><i class="bi bi-star-fill" style="font-size: 20px;"></i></span>
             </h3>
-            <p class="text-secondary mb-0 mt-3" style="font-size:12px;">Earn points on every liter to redeem for future discounts</p>
+            <p class="customer-reward-tier customer-reward-tier-<?php echo strtolower($reward_tier); ?> mb-0 mt-3">
+                <i class="bi bi-award-fill me-1"></i><?php echo htmlspecialchars($reward_tier, ENT_QUOTES, 'UTF-8'); ?> tier
+            </p>
+            <p class="text-secondary mb-0 mt-2" style="font-size:12px;">Earn points on every liter to redeem for future discounts</p>
         </div>
     </div>
 </div>
