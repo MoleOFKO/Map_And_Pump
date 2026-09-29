@@ -36,10 +36,10 @@ require __DIR__ . '/partials/nav.php';
     <div class="container">
         <div class="row g-4">
             <div class="col-md-4" data-reveal>
-                <a class="feature-card d-block h-100" href="mailto:mapa.and.pump@gmail.com">
+                <a class="feature-card d-block h-100" href="mailto:map.and.pump@gmail.com">
                     <div class="icon-shape mb-4"><i class="fa-solid fa-envelope"></i></div>
                     <h3>Email us</h3>
-                    <p class="mb-0">mapa.and.pump@gmail.com</p>
+                    <p class="mb-0">map.and.pump@gmail.com</p>
                 </a>
             </div>
             <div class="col-md-4" data-reveal style="--reveal-delay:80ms">

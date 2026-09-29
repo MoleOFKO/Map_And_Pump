@@ -222,32 +222,44 @@ require __DIR__ . '/partials/nav.php';
     <div class="container">
         <div class="mb-4" data-reveal>
             <h2 class="section-title-sm">Price by region</h2>
-            <p class="section-lead mb-0">Octane 92 average per litre, with the weekly move and how many stations reported.</p>
+            <p class="section-lead mb-0">Each station's Octane 92 price, address and the average for its region.</p>
         </div>
 
-        <div class="row g-3">
+        <div class="table-shell" data-reveal>
+            <div class="table-responsive">
+                <table class="table price-table mb-0">
+                    <thead>
+                        <tr>
+                            <th scope="col">Region</th>
+                            <th scope="col">Station</th>
+                            <th scope="col">Address</th>
+                            <th scope="col" class="text-end">Station price (Octane 92)</th>
+                            <th scope="col" class="text-end">Region average</th>
+                        </tr>
+                    </thead>
+                    <tbody>
             <?php if (empty($REGION_PRICES)): ?>
-                <div class="col-12" data-reveal>
-                    <div class="alert alert-secondary border-0 mb-0">
+                            <tr>
+                                <td colspan="5" class="text-center text-dim py-4">
                         Regional averages will appear after stations publish Octane 92 prices with location data.
-                    </div>
-                </div>
+                                </td>
+                            </tr>
             <?php else: ?>
-            <?php foreach ($REGION_PRICES as $i => $region): $t = mp_trend($region['avg92'], $region['prev92']); ?>
-                <div class="col-6 col-lg-4" data-reveal style="--reveal-delay:<?php echo $i * 60; ?>ms">
-                    <div class="region-card">
-                        <div class="region-top">
-                            <span class="region-name"><i class="fa-solid fa-location-dot me-2"></i><?php echo htmlspecialchars($region['region']); ?></span>
-                            <span class="trend-chip trend-chip-sm <?php echo $t['class']; ?>">
-                                <i class="fa-solid <?php echo $t['icon']; ?>"></i> <?php echo $t['delta']; ?>
-                            </span>
-                        </div>
-                        <div class="region-price"><?php echo mp_money($region['avg92']); ?><small>MMK</small></div>
-                        <div class="region-meta"><?php echo (int) $region['stations']; ?> stations reporting</div>
-                    </div>
-                </div>
+            <?php foreach ($REGION_PRICES as $region): ?>
+                <?php foreach ($region['station_rows'] as $station): ?>
+                            <tr>
+                                <th scope="row"><?php echo htmlspecialchars($region['region']); ?></th>
+                                <td><?php echo htmlspecialchars($station['station_name']); ?></td>
+                                <td><?php echo htmlspecialchars($station['address'] !== '' ? $station['address'] : 'Address not set'); ?></td>
+                                <td class="text-end"><span class="cell-price"><?php echo mp_money($station['price92']); ?></span></td>
+                                <td class="text-end"><span class="cell-price"><?php echo mp_money($region['avg92']); ?></span></td>
+                            </tr>
+                <?php endforeach; ?>
             <?php endforeach; ?>
             <?php endif; ?>
+                    </tbody>
+                </table>
+            </div>
         </div>
     </div>
 </section>

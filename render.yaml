@@ -38,8 +38,8 @@ services:
       - key: SMTP_FROM_NAME
         value: "Map&Pump"
       - key: SMTP_USERNAME
-        value: mapa.and.pump@gmail.com
+        value: map.and.pump@gmail.com
       - key: SMTP_PASSWORD
         sync: false
       - key: SMTP_FROM_EMAIL
-        value: mapa.and.pump@gmail.com
+        value: map.and.pump@gmail.com

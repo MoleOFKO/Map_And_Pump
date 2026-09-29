@@ -5,6 +5,7 @@ require __DIR__ . '/../conn.php';
 require_once __DIR__ . '/license_access.php';
 require_once __DIR__ . '/license_expiry.php';
 require_once __DIR__ . '/car_access.php';
+require_once __DIR__ . '/../usage_history_schema.php';
 require_once __DIR__ . '/../business_scope.php';
 require_once __DIR__ . '/../booking_rules.php';
 
@@ -20,7 +21,7 @@ $bookingCode = isset($_POST['booking_code']) ? strtoupper(preg_replace('/\s+/', 
 $stationId = isset($_POST['station_id']) ? (int)$_POST['station_id'] : 0;
 $fuelType = isset($_POST['fuel_type']) ? trim($_POST['fuel_type']) : '';
 $quantity = isset($_POST['quantity_liters']) ? (float)$_POST['quantity_liters'] : 0;
-$userId = isset($_SESSION['user_id']) ? (int)$_SESSION['user_id'] : (isset($_POST['customer_id']) ? (int)$_POST['customer_id'] : 0);
+$userId = (int)($_SESSION['user_id'] ?? 0);
 
 if ($bookingCode === '' || $stationId <= 0 || $fuelType === '' || $quantity <= 0) {
     http_response_code(422);
@@ -50,6 +51,12 @@ if (!$licenseAccess['is_approved']) {
 $displayPayload = isset($_POST['display_payload']) ? trim($_POST['display_payload']) : '';
 if ($displayPayload === '') {
     $displayPayload = $bookingCode . '|' . $stationId . '|' . $fuelType . '|' . number_format($quantity, 1, '.', '') . 'L';
+}
+
+if (!customer_car_schema_ready($pdo) || !map_pump_usage_history_schema_ready($pdo)) {
+    http_response_code(500);
+    echo json_encode(['success' => false, 'message' => 'Booking service is temporarily unavailable. Please try again later.']);
+    exit;
 }
 
 try {
@@ -227,16 +234,21 @@ try {
         ':status' => 'notfilled',
         ':filled_gas' => 0
     ]);
+    $bookingId = (int) $pdo->lastInsertId();
+    $expiryStmt = $pdo->prepare('SELECT expire_at FROM booking WHERE booking_id = ? LIMIT 1');
+    $expiryStmt->execute([$bookingId]);
+    $expireAt = $expiryStmt->fetchColumn() ?: null;
 
     $pdo->commit();
 
-    echo json_encode(['success' => true, 'message' => 'Booking saved.', 'booking_code' => $bookingCode, 'payload' => $displayPayload]);
+    echo json_encode(['success' => true, 'message' => 'Booking saved.', 'booking_code' => $bookingCode, 'payload' => $displayPayload, 'expire_at' => $expireAt]);
 } catch (PDOException $e) {
     if ($pdo->inTransaction()) {
         $pdo->rollBack();
     }
     $message = $e->getMessage();
-    if ($e->getCode() === '23000' && strpos($message, 'fk_booking_station_id') !== false) {
+    error_log('Booking save failed: ' . $message);
+    if ($e->getCode() === '23000' && (strpos($message, 'fk_booking_branch_id') !== false || strpos($message, 'fk_booking_station_id') !== false)) {
         http_response_code(422);
         echo json_encode(['success' => false, 'message' => 'This station is not available in the database. Please refresh the booking page and choose a listed station.']);
         exit;
@@ -245,6 +257,7 @@ try {
     http_response_code(500);
     echo json_encode(['success' => false, 'message' => 'Unable to save booking. Please try again.']);
 } catch (Throwable $e) {
+    error_log('Booking save failed: ' . $e->getMessage());
     if ($pdo->inTransaction()) {
         $pdo->rollBack();
     }

@@ -2,6 +2,11 @@
 
 function map_pump_usage_history_schema_ready(PDO $pdo): bool
 {
+    static $ready = false;
+    if ($ready) {
+        return true;
+    }
+
     try {
         $pdo->exec(
             "CREATE TABLE IF NOT EXISTS usage_history (
@@ -42,6 +47,7 @@ function map_pump_usage_history_schema_ready(PDO $pdo): bool
             $pdo->exec("ALTER TABLE usage_history ADD COLUMN staff_user_id int DEFAULT NULL AFTER filled_at");
         }
 
+        $ready = true;
         return true;
     } catch (Throwable $e) {
         error_log('Could not prepare usage_history table: ' . $e->getMessage());

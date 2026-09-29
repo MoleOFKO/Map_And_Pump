@@ -1,6 +1,7 @@
 <?php
 include 'share_header.php';
 require_once __DIR__ . '/../business_scope.php';
+require_once __DIR__ . '/../booking_rules.php';
 $availableOilQuota = max(0.0, (float) ($_SESSION['oil_remaining'] ?? (((float) ($_SESSION['oil_limit'] ?? 35.0)) - ((float) ($_SESSION['oil_used'] ?? 0.0)))));
 
 function map_pump_station_coordinates(string $location): ?array
@@ -26,6 +27,12 @@ try {
                 CASE WHEN b.latitude IS NOT NULL AND b.longitude IS NOT NULL
                     THEN CONCAT(b.latitude, ', ', b.longitude) ELSE '' END AS location,
                 b.address AS station_address, b.status,
+                CASE WHEN b.is_24hr = 1
+                           OR b.opening_time IS NULL
+                           OR b.closing_time IS NULL
+                           OR (b.opening_time <= b.closing_time AND CURRENT_TIME() BETWEEN b.opening_time AND b.closing_time)
+                           OR (b.opening_time > b.closing_time AND (CURRENT_TIME() >= b.opening_time OR CURRENT_TIME() <= b.closing_time))
+                     THEN 1 ELSE 0 END AS is_open,
                 GROUP_CONCAT(DISTINCT ot.oil_name ORDER BY ot.oil_name SEPARATOR '|') AS fuel_names
          FROM branches b
          LEFT JOIN tanks t ON t.branch_id = b.branch_id
@@ -37,7 +44,8 @@ try {
             OR (t.fuel_code = 'dsl' AND LOWER(REPLACE(ot.oil_name, ' ', '')) IN ('disel', 'diesel'))
             OR (t.fuel_code = 'pdsl' AND LOWER(REPLACE(ot.oil_name, ' ', '')) IN ('premiumdisel', 'premiumdiesel'))
          WHERE LOWER(COALESCE(b.status, 'active')) <> 'closed'
-         GROUP BY b.branch_id, b.branch_name, b.latitude, b.longitude, b.address, b.status
+         GROUP BY b.branch_id, b.branch_name, b.latitude, b.longitude, b.address, b.status,
+                  b.is_24hr, b.opening_time, b.closing_time
          ORDER BY b.branch_id ASC"
     );
     foreach ($stationStmt->fetchAll(PDO::FETCH_ASSOC) as $stationRow) {
@@ -55,7 +63,7 @@ try {
             $stationStatus = 'Active';
         }
         $isStationActive = strcasecmp($stationStatus, 'Active') === 0;
-        $isOpen = true;
+        $isOpen = (int)($stationRow['is_open'] ?? 0) === 1;
 
         $customerStationsData[] = [
             'id' => $stationId,
@@ -74,11 +82,71 @@ try {
 } catch (Throwable $e) {
     error_log('Failed to load customer stations: ' . $e->getMessage());
 }
+
+$activeBooking = null;
+try {
+    $activeStatuses = map_pump_booking_active_statuses();
+    $statusPlaceholders = [];
+    $statusParams = [':user_id' => (int) $_SESSION['user_id']];
+    foreach ($activeStatuses as $index => $status) {
+        $placeholder = ':status_' . $index;
+        $statusPlaceholders[] = $placeholder;
+        $statusParams[$placeholder] = $status;
+    }
+
+    if ($statusPlaceholders) {
+        $bookingStmt = $pdo->prepare(
+            'SELECT bk.booking_id, bk.station_id, bk.oil_type_id, bk.qr_code, bk.qr_refrence_code,
+                    bk.status, bk.expire_at, bk.created_at,
+                    b.branch_name AS station_name, b.address AS station_address,
+                    ot.oil_name
+             FROM booking bk
+             LEFT JOIN branches b ON b.branch_id = bk.station_id
+             LEFT JOIN oil_types ot ON ot.oil_type_id = bk.oil_type_id
+             WHERE bk.user_id = :user_id
+               AND bk.status IN (' . implode(', ', $statusPlaceholders) . ')
+               AND (bk.expire_at IS NULL OR bk.expire_at > NOW())
+             ORDER BY bk.created_at DESC, bk.booking_id DESC
+             LIMIT 1'
+        );
+        $bookingStmt->execute($statusParams);
+        $activeBooking = $bookingStmt->fetch(PDO::FETCH_ASSOC) ?: null;
+        if ($activeBooking && preg_match('/\|([0-9]+(?:\.[0-9]+)?)L\s*$/i', (string) $activeBooking['qr_code'], $matches)) {
+            $activeBooking['quantity_liters'] = (float) $matches[1];
+        }
+    }
+} catch (Throwable $e) {
+    error_log('Failed to load customer active booking: ' . $e->getMessage());
+}
+$hasActiveBooking = $activeBooking !== null;
 ?>
 
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
 
-<section id="station-launch-card" class="dashboard-panel-card customer-map-launch-card">
+<section id="current-booking-card" class="dashboard-panel-card customer-map-launch-card mt-3<?php echo $hasActiveBooking ? '' : ' d-none'; ?>">
+    <div class="row align-items-center g-4">
+        <div class="col-12 col-md-auto text-center">
+            <div class="customer-qr-wrap customer-map-qr mx-auto mb-2">
+                <img id="current-booking-qr" src="<?php echo $hasActiveBooking ? htmlspecialchars('https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=' . rawurlencode((string) $activeBooking['qr_code']), ENT_QUOTES, 'UTF-8') : ''; ?>" alt="Current booking QR code">
+            </div>
+            <div id="current-booking-code" class="token-no text-sky-400" style="font-size:16px;"><?php echo $hasActiveBooking ? htmlspecialchars((string) $activeBooking['qr_refrence_code']) : ''; ?></div>
+        </div>
+        <div class="col">
+            <span class="status-pill active mb-2">Booking active</span>
+            <h3 class="text-white mb-3">Your current booking</h3>
+            <div class="row g-3 small">
+                <div class="col-12 col-sm-6"><span class="text-secondary d-block">Station</span><strong id="current-booking-station" class="text-white"><?php echo $hasActiveBooking ? htmlspecialchars((string) ($activeBooking['station_name'] ?? 'Station')) : ''; ?></strong></div>
+                <div class="col-12 col-sm-6"><span class="text-secondary d-block">Address</span><strong id="current-booking-address" class="text-white"><?php echo $hasActiveBooking ? htmlspecialchars((string) ($activeBooking['station_address'] ?: 'Address not set')) : ''; ?></strong></div>
+                <div class="col-12 col-sm-6"><span class="text-secondary d-block">Fuel</span><strong id="current-booking-fuel" class="text-white"><?php echo $hasActiveBooking ? htmlspecialchars((string) ($activeBooking['oil_name'] ?? '')) : ''; ?></strong></div>
+                <div class="col-12 col-sm-6"><span class="text-secondary d-block">Amount</span><strong id="current-booking-amount" class="text-white"><?php echo $hasActiveBooking && isset($activeBooking['quantity_liters']) ? htmlspecialchars(rtrim(rtrim(number_format((float) $activeBooking['quantity_liters'], 1, '.', ''), '0'), '.') . ' L') : ''; ?></strong></div>
+                <div class="col-12"><span class="text-secondary d-block">Expires</span><strong id="current-booking-expiry" class="text-white"><?php echo $hasActiveBooking && !empty($activeBooking['expire_at']) ? htmlspecialchars((string) $activeBooking['expire_at']) : 'When confirmed by station staff'; ?></strong></div>
+            </div>
+            <p class="text-secondary small mt-3 mb-0">Keep this booking QR available and show it to staff at the selected station.</p>
+        </div>
+    </div>
+</section>
+
+<section id="station-launch-card" class="dashboard-panel-card customer-map-launch-card<?php echo $hasActiveBooking ? ' d-none' : ''; ?>">
     <div class="d-flex align-items-center justify-content-between flex-wrap gap-3">
         <div>
             <h3 class="text-white mb-1">Find a station and book your fuel</h3>
@@ -90,7 +158,7 @@ try {
     </div>
 </section>
 
-<section id="quick-mapping-card" class="dashboard-panel-card customer-map-launch-card mt-3">
+<section id="quick-mapping-card" class="dashboard-panel-card customer-map-launch-card mt-3<?php echo $hasActiveBooking ? ' d-none' : ''; ?>">
     <div class="d-flex align-items-center justify-content-between flex-wrap gap-3">
         <div>
             <h3 class="text-white mb-1">Quick Mapping</h3>
@@ -102,7 +170,7 @@ try {
     </div>
 </section>
 
-<section id="top5-stations-card" class="dashboard-panel-card customer-map-launch-card mt-3 top5-stations-panel">
+<section id="top5-stations-card" class="dashboard-panel-card customer-map-launch-card mt-3 top5-stations-panel<?php echo $hasActiveBooking ? ' d-none' : ''; ?>">
     <h3 class="text-white mb-2">Top 5 nearest stations</h3>
     <div id="top5-stations-list" class="top5-stations-list">
         <div class="text-secondary" style="font-size:13px;">Locating nearest stations…</div>
@@ -379,6 +447,26 @@ body.customer-light-mode .customer-map-recenter-btn:hover {
     const availableOilQuota = <?php echo json_encode($availableOilQuota); ?>;
     const stationLogoUrl = '../../images/Logo.png';
     const stationsData = <?php echo json_encode($customerStationsData, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?>;
+    const savedActiveBooking = <?php echo json_encode($activeBooking, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT); ?>;
+
+    function showCurrentBooking(booking) {
+        const workflowIds = ['station-launch-card', 'quick-mapping-card', 'top5-stations-card', 'map-experience'];
+        workflowIds.forEach(id => document.getElementById(id)?.classList.add('d-none'));
+
+        document.getElementById('current-booking-code').textContent = booking.booking_code || booking.qr_refrence_code || '';
+        document.getElementById('current-booking-station').textContent = booking.station_name || 'Station';
+        document.getElementById('current-booking-address').textContent = booking.station_address || 'Address not set';
+        document.getElementById('current-booking-fuel').textContent = booking.oil_name || booking.fuel_type || '';
+        document.getElementById('current-booking-amount').textContent = `${booking.quantity_liters || booking.amount_liters || ''} L`;
+        document.getElementById('current-booking-expiry').textContent = booking.expire_at || 'When confirmed by station staff';
+        const payload = booking.qr_code || booking.payload || '';
+        document.getElementById('current-booking-qr').src = `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(payload)}`;
+        document.getElementById('current-booking-card').classList.remove('d-none');
+    }
+
+    if (savedActiveBooking) {
+        showCurrentBooking(savedActiveBooking);
+    }
 
     function openMapExperience(autoSelectNearest, preselectStationId) {
         document.getElementById('station-launch-card').classList.add('d-none');
@@ -667,8 +755,6 @@ body.customer-light-mode .customer-map-recenter-btn:hover {
         formData.append('fuel_type', fuel);
         formData.append('quantity_liters', String(quantity));
         formData.append('display_payload', displayPayload);
-        formData.append('customer_id', '<?php echo isset($_SESSION['user_id']) ? (int)$_SESSION['user_id'] : 0; ?>');
-
         let result;
         try {
             const response = await fetch('save_booking.php', {
@@ -686,18 +772,16 @@ body.customer-light-mode .customer-map-recenter-btn:hover {
             return;
         }
 
-        document.getElementById('qr-token-code').textContent = result.booking_code || code;
-        document.getElementById('booking-summary').textContent = `${selectedStation.name} / ${fuel} / ${quantity} L`;
         const qrPayload = result.payload || displayPayload;
-        document.getElementById('qr-image').src = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(qrPayload)}`;
-        document.getElementById('station-booking-form').classList.add('d-none');
-        document.getElementById('booking-pass').classList.remove('d-none');
-        showStationCard();
-    }
-
-    function cancelBooking() {
-        document.getElementById('booking-pass').classList.add('d-none');
-        document.getElementById('station-booking-form').classList.remove('d-none');
+        showCurrentBooking({
+            booking_code: result.booking_code || code,
+            qr_code: qrPayload,
+            station_name: selectedStation.name,
+            station_address: selectedStation.address,
+            fuel_type: fuel,
+            quantity_liters: quantity,
+            expire_at: result.expire_at || 'When confirmed by station staff'
+        });
     }
 </script>
 
