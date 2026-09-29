@@ -12,13 +12,13 @@
                 </p>
                 <div class="footer-contact mt-3">
                     <a href="tel:09888788889"><i class="fa-solid fa-phone"></i> 09888788889</a>
-                    <a href="mailto:mapa.and.pump@gmail.com"><i class="fa-solid fa-envelope"></i> mapa.and.pump@gmail.com</a>
+                    <a href="mailto:map.and.pump@gmail.com"><i class="fa-solid fa-envelope"></i> map.and.pump@gmail.com</a>
                 </div>
                 <div class="social-row">
                     <a href="https://www.facebook.com/profile.php?id=61593561616596" target="_blank" rel="noopener" aria-label="Facebook"><i class="fa-brands fa-facebook-f"></i></a>
                     <a href="#" aria-label="Telegram"><i class="fa-brands fa-telegram"></i></a>
                     <a href="#" aria-label="Viber"><i class="fa-brands fa-viber"></i></a>
-                    <a href="mailto:mapa.and.pump@gmail.com" aria-label="Email"><i class="fa-solid fa-envelope"></i></a>
+                    <a href="mailto:map.and.pump@gmail.com" aria-label="Email"><i class="fa-solid fa-envelope"></i></a>
                 </div>
             </div>
 

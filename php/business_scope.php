@@ -62,10 +62,12 @@ if (!function_exists('map_pump_staff_can_access_branch')) {
             "SELECT 1
              FROM staff st
              INNER JOIN users staff_user ON staff_user.user_id = st.user_id
+             LEFT JOIN business_account_scope staff_scope ON staff_scope.user_id = st.user_id
              INNER JOIN branches b ON b.branch_id = st.branch_id
              INNER JOIN users manager ON manager.user_id = b.manager_user_id
              WHERE st.user_id = ?
                AND st.branch_id = ?
+               AND COALESCE(staff_user.branch_id, staff_scope.station_id, st.branch_id) = ?
                AND st.is_active = 1
                AND COALESCE(staff_user.business_role_id, staff_user.role_id) = 5
                AND COALESCE(manager.business_role_id, manager.role_id) = 4
@@ -73,7 +75,7 @@ if (!function_exists('map_pump_staff_can_access_branch')) {
                AND LOWER(COALESCE(manager.status, 'active')) NOT IN ('disabled', 'suspended', 'removed')
              LIMIT 1"
         );
-        $stmt->execute([$staffUserId, $branchId]);
+        $stmt->execute([$staffUserId, $branchId, $branchId]);
 
         return (bool) $stmt->fetchColumn();
     }

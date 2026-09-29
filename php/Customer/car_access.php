@@ -4,6 +4,11 @@ require_once __DIR__ . '/../booking_rules.php';
 
 function customer_car_schema_ready(PDO $pdo): bool
 {
+    static $ready = false;
+    if ($ready) {
+        return true;
+    }
+
     try {
         $pdo->exec(
             "CREATE TABLE IF NOT EXISTS user_car (
@@ -40,6 +45,7 @@ function customer_car_schema_ready(PDO $pdo): bool
             }
         }
 
+        $ready = true;
         return true;
     } catch (Throwable $e) {
         error_log('Could not prepare user_car schema: ' . $e->getMessage());

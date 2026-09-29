@@ -66,9 +66,8 @@ if (!function_exists('map_pump_load_latest_station_prices')) {
         $latestInventorySql = map_pump_latest_station_inventory_sql();
         $stmt = $pdo->query(
                 "SELECT s.branch_id AS station_id, s.branch_name AS station_name,
-                    CASE WHEN s.latitude IS NOT NULL AND s.longitude IS NOT NULL
-                     THEN CONCAT(s.latitude, ', ', s.longitude) ELSE '' END AS location,
                     s.address AS station_address,
+                    s.hq_region AS station_region,
                     h.headquarter_id, h.company_name,
                     ot.oil_type_id, ot.oil_name, li.price_per_litre, li.is_active, li.updated_at,
                     t.fuel_code, t.current_l, t.capacity_l, t.is_enabled
@@ -235,12 +234,18 @@ if (!function_exists('map_pump_build_public_market_data')) {
                 }
 
                 if ($code === '92') {
-                    $region = map_pump_extract_region_name($row['location'] ?? null, $row['station_address'] ?? null);
-                    if (!isset($regionMap[$region])) {
-                        $regionMap[$region] = ['values' => [], 'stations' => []];
+                    $region = trim((string) ($row['station_region'] ?? ''));
+                    if ($region === '') {
+                        $region = map_pump_extract_region_name(null, $row['station_address'] ?? null);
                     }
-                    $regionMap[$region]['values'][] = $price;
-                    $regionMap[$region]['stations'][(int) $row['station_id']] = true;
+                    if (!isset($regionMap[$region])) {
+                        $regionMap[$region] = ['stations' => []];
+                    }
+                    $regionMap[$region]['stations'][$stationId] = [
+                        'station_name' => trim((string) ($row['station_name'] ?? 'Station')),
+                        'address' => trim((string) ($row['station_address'] ?? '')),
+                        'price92' => $price,
+                    ];
                 }
             }
 
@@ -305,15 +310,17 @@ if (!function_exists('map_pump_build_public_market_data')) {
             usort($data['company_prices'], static fn(array $a, array $b): int => strcmp($a['company'], $b['company']));
 
             foreach ($regionMap as $region => $entry) {
-                if (!$entry['values']) {
+                if (!$entry['stations']) {
                     continue;
                 }
-                $avg92 = (int) round(array_sum($entry['values']) / count($entry['values']));
+                $stationPrices = array_column($entry['stations'], 'price92');
+                $avg92 = (int) round(array_sum($stationPrices) / count($stationPrices));
                 $data['region_prices'][] = [
                     'region' => $region,
                     'avg92' => $avg92,
                     'prev92' => $prevWeek['92'] ?? $avg92,
                     'stations' => count($entry['stations']),
+                    'station_rows' => array_values($entry['stations']),
                 ];
             }
             usort($data['region_prices'], static fn(array $a, array $b): int => strcmp($a['region'], $b['region']));
