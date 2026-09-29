@@ -29,10 +29,6 @@ $statusClass = static function (?string $status): string {
     };
 };
 $avatarUrl = trim((string) ($user['oauth_avatar_url'] ?? ''));
-$joinedAt = $user['created_at'] ?? null;
-$lastLoginAt = $user['last_login_at'] ?? null;
-$isFirstRecordedLogin = $joinedAt && $lastLoginAt
-    && strtotime((string) $joinedAt) === strtotime((string) $lastLoginAt);
 $avatarInitial = map_pump_profile_initial((string) ($user['user_name'] ?? ''), 'A');
 $avatarFallbackUrl = map_pump_profile_initial_svg((string) ($user['user_name'] ?? ''), 'A');
 ?>
@@ -103,19 +99,11 @@ $avatarFallbackUrl = map_pump_profile_initial_svg((string) ($user['user_name'] ?
 
                     <div class="pt-4">
                         <h6 class="text-white-50 text-uppercase fw-semibold mb-3 small" style="letter-spacing:0.5px;">Account Overview</h6>
-                        <div class="d-flex align-items-center justify-content-between py-2 border-bottom border-white border-opacity-10">
+                        <div class="d-flex align-items-center justify-content-between py-2">
                             <span class="text-white-50 small">Role Status</span>
                             <span class="<?= hq_escape($statusClass((string) $user['status'])) ?> small fw-semibold">
                                 <i class="bi bi-circle-fill me-1" style="font-size:.4rem;"></i><?= hq_escape($statusLabel((string) $user['status'])) ?>
                             </span>
-                        </div>
-                        <div class="d-flex align-items-center justify-content-between py-2 border-bottom border-white border-opacity-10">
-                            <span class="text-white-50 small">Joined Since</span>
-                            <span class="text-white small font-monospace"><?= hq_escape(admin_date((string) $joinedAt)) ?></span>
-                        </div>
-                        <div class="d-flex align-items-center justify-content-between py-2">
-                            <span class="text-white-50 small">Last Login</span>
-                            <span class="text-white small font-monospace"><?= hq_escape(admin_date($lastLoginAt)) ?><?= $isFirstRecordedLogin ? ' <span class="text-white-50">(first recorded sign-in)</span>' : '' ?></span>
                         </div>
                     </div>
                 </div>

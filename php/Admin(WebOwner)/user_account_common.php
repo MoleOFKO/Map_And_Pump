@@ -18,7 +18,7 @@ function customer_account_rows(string $search = '', string $status = ''): array
         "LOWER(TRIM(base_role.role_name)) = 'customer'",
         '(u.business_role_id IS NULL OR u.business_role_id = 6)',
         '(u.current_role_id IS NULL OR u.current_role_id = 6)',
-        hq_manageable_status_sql('u.status'),
+        '(' . hq_manageable_status_sql('u.status') . " OR LOWER(TRIM(u.status)) = 'pending_verification')",
     ];
     $params = [];
     $types = '';
@@ -34,6 +34,8 @@ function customer_account_rows(string $search = '', string $status = ''): array
         $statusKey = strtolower($status);
         if (in_array($statusKey, ['approved', 'active'], true)) {
             $where[] = "LOWER(u.status) IN ('approved', 'active')";
+        } elseif ($statusKey === 'pending_verification') {
+            $where[] = "LOWER(TRIM(u.status)) = 'pending_verification'";
         } else {
             $where[] = 'LOWER(u.status) = ?';
             $params[] = $statusKey;
@@ -42,7 +44,7 @@ function customer_account_rows(string $search = '', string $status = ''): array
     }
 
     $sql = <<<'SQL'
-SELECT u.user_id, u.user_name, u.email, u.status, u.created_at, u.updated_at,
+SELECT u.user_id, u.user_public_id, u.user_name, u.email, u.status, u.created_at, u.updated_at,
        u.headquarter_id, u.role_id, base_role.role_name,
        h.company_name AS headquarter_name, h.location AS headquarter_location
 FROM users u
@@ -72,6 +74,18 @@ SQL;
     return $rows;
 }
 
+/**
+ * Status filters for customer_account_rows(). Pending verifications are
+ * included here as read-only rows; their approval/rejection remains in Requests.
+ * `active` is an alias of `approved` in this view.
+ *
+ * @return list<string>
+ */
+function customer_account_status_options(): array
+{
+    return ['approved', 'pending', 'pending_verification', 'rejected', 'removed', 'suspended'];
+}
+
 function pending_account_rows(string $search = ''): array
 {
     global $conn;
@@ -95,7 +109,7 @@ function pending_account_rows(string $search = ''): array
     }
 
     $sql = <<<'SQL'
-SELECT u.user_id, u.user_name, u.email, u.status, u.created_at, u.updated_at,
+SELECT u.user_id, u.user_public_id, u.user_name, u.email, u.status, u.created_at, u.updated_at,
        u.license_id,
        u.headquarter_id, COALESCE(u.current_role_id, u.business_role_id, u.role_id) AS role_id, r.role_name,
        h.company_name AS headquarter_name, h.location AS headquarter_location,
@@ -128,6 +142,24 @@ SQL;
     $statement->close();
 
     return $rows;
+}
+
+function pending_account_count(): int
+{
+    global $conn;
+
+    if (!hq_db_available() || !hq_registry_schema_ready()) {
+        return 0;
+    }
+
+    $query = $conn->query(
+        "SELECT COUNT(*) AS total
+         FROM users u
+         INNER JOIN roles r ON r.role_id = COALESCE(u.current_role_id, u.business_role_id, u.role_id)
+         WHERE LOWER(TRIM(u.status)) = 'pending_verification'"
+    );
+
+    return $query ? (int) ($query->fetch_assoc()['total'] ?? 0) : 0;
 }
 
 function user_action_table_ready(): bool

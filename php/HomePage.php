@@ -355,8 +355,9 @@ require __DIR__ . '/partials/nav.php';
         <div class="d-lg-flex justify-content-between align-items-end mb-4 gap-4" data-reveal>
             <div>
                 <span class="eyebrow">Market news</span>
-                <h2 class="section-title mb-2">Today's average fuel prices</h2>
+                <h2 class="section-title mb-2">Latest average fuel prices</h2>
                 <p class="section-lead mb-0">National average per litre &middot; updated <?php echo htmlspecialchars($PRICE_UPDATED_AT); ?></p>
+                <?php if ($PRICE_DATA_IS_STALE): ?><p class="small text-warning mb-0 mt-1" role="status"><i class="fa-solid fa-triangle-exclamation me-1"></i>Price reports are more than 24 hours old.</p><?php endif; ?>
             </div>
             <a href="/php/News.php" class="btn btn-ghost px-4 py-2 mt-3 mt-lg-0 flex-shrink-0">
                 All prices &amp; news <i class="fa-solid fa-arrow-right ms-2 small"></i>
@@ -607,7 +608,7 @@ require __DIR__ . '/partials/nav.php';
 
                 <div class="d-sm-flex gap-3 justify-content-center">
                     <a href="/php/Company/register.php" class="btn btn-success btn-lg px-5 py-3 fw-bold mb-3 mb-sm-0 w-100 w-sm-auto">Register your company</a>
-                    <a href="/php/News.php" class="btn btn-outline-light btn-lg px-4 py-3 w-100 w-sm-auto">Check today's prices</a>
+                    <a href="/php/News.php" class="btn btn-outline-light btn-lg px-4 py-3 w-100 w-sm-auto">Check latest prices</a>
                 </div>
             </div>
         </div>

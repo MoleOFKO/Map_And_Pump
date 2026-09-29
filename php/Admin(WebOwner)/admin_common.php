@@ -348,9 +348,48 @@ function admin_scope_label(string $scope): string
     return match ($scope) {
         'hq_performance' => 'HQ Performance',
         'stations' => 'Station Logs',
-        'audit_logs', 'requests' => 'Audit & Request Logs',
+        'requests' => 'Request Audit Logs',
+        'audit_logs' => 'System Audit Logs',
         'system' => 'System Security',
         default => 'Stored Report',
+    };
+}
+
+/**
+ * Return one selectable request filter for each user-facing request category.
+ * Legacy request_type values remain accepted by the filtering code, while
+ * aliases that share a filter no longer produce repeated options.
+ *
+ * @param list<string> $types
+ * @return list<string>
+ */
+function admin_request_type_filter_options(array $types): array
+{
+    $options = [];
+    foreach ($types as $type) {
+        $value = strtolower(trim($type));
+        $canonical = match ($value) {
+            'station', 'new_station', 'new_station_registration' => 'station',
+            'license', 'license_modification' => 'license',
+            'deactivation', 'account_deactivation' => 'deactivation',
+            default => $value,
+        };
+        if ($canonical !== '' && !in_array($canonical, $options, true)) {
+            $options[] = $canonical;
+        }
+    }
+
+    return $options;
+}
+
+function admin_request_type_filter_value(string $type): string
+{
+    $value = strtolower(trim($type));
+    return match ($value) {
+        'station', 'new_station', 'new_station_registration' => 'station',
+        'license', 'license_modification' => 'license',
+        'deactivation', 'account_deactivation' => 'deactivation',
+        default => $value,
     };
 }
 
@@ -423,18 +462,15 @@ function admin_filter_user_statuses(string $extraWhere = '1=1'): array
 }
 
 /**
- * Distinct HQ location keywords for region filter (from headquarter.location).
+ * Supported HQ region filter values. The location column also stores the
+ * street address, so selecting distinct locations would expose addresses as
+ * if they were regions.
  *
  * @return list<string>
  */
 function admin_filter_hq_regions(): array
 {
-    return admin_distinct_values(
-        "SELECT DISTINCT LOWER(TRIM(location)) AS region
-         FROM headquarter
-         WHERE location IS NOT NULL AND TRIM(location) <> ''
-         ORDER BY region ASC"
-    );
+    return ['mandalay', 'naypyidaw', 'yangon'];
 }
 
 /**
@@ -486,10 +522,10 @@ function admin_filter_label(string $value): string
         'mandalay' => 'Mandalay',
         'naypyidaw' => 'Naypyidaw',
         'account' => 'Account verification',
-        'station' => 'Station registration',
-        'new_station' => 'New station',
+        'station' => 'New station registration',
+        'new_station' => 'New station registration',
         'new_station_registration' => 'New station registration',
-        'license' => 'License',
+        'license' => 'License modification',
         'license_modification' => 'License modification',
         'deactivation' => 'Account deactivation',
         'account_deactivation' => 'Account deactivation',

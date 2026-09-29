@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/admin_common.php';
+require_once __DIR__ . '/user_account_common.php';
 
 admin_require_admin();
 
@@ -58,6 +59,11 @@ if ($dbOnline) {
             }
         }
     }
+
+    $pendingAccounts = pending_account_count();
+    $metrics['open_requests'] += $pendingAccounts;
+    $metrics['pending_requests'] += $pendingAccounts;
+    $requestCounts['pending'] += $pendingAccounts;
 
     $reportQuery = $conn->query(
         'SELECT r.message, r.short_summery, r.role_id, roles.role_name
@@ -224,7 +230,7 @@ $updatedLabel = $updatedAt ? admin_date($updatedAt) : 'Not available';
             <div class="dashboard-card h-100">
                 <div class="mb-4">
                     <h2 class="fw-bold h5 text-white mb-1">Operational Snapshot</h2>
-                    <p class="text-white-50 mb-0 small">Current request and report distributions from the database.</p>
+                    <p class="text-white-50 mb-0 small">Pending counts include account verification and operational requests.</p>
                 </div>
                 <div class="row g-4">
                     <div class="col-12 col-lg-6">

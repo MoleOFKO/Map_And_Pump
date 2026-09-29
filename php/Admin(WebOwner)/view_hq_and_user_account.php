@@ -12,7 +12,6 @@ $search = trim((string) ($_GET['search'] ?? ''));
 $region = strtolower(trim((string) ($_GET['region'] ?? '')));
 $status = strtolower(trim((string) ($_GET['status'] ?? '')));
 
-// Filter keywords come from live data (not fixed placeholders).
 $allowedRegions = admin_filter_hq_regions();
 $allowedStatuses = admin_filter_user_statuses(
     "u.headquarter_id IS NOT NULL OR EXISTS (
@@ -20,12 +19,12 @@ $allowedStatuses = admin_filter_user_statuses(
      )"
 );
 // Keep actionable statuses available even if not yet present in rows.
-foreach (['approved', 'active', 'pending', 'suspended', 'removed'] as $fallbackStatus) {
+foreach (['approved', 'pending', 'rejected', 'suspended', 'removed'] as $fallbackStatus) {
     if (!in_array($fallbackStatus, $allowedStatuses, true)) {
         $allowedStatuses[] = $fallbackStatus;
     }
 }
-sort($allowedStatuses);
+$allowedStatuses = hq_status_filter_options($allowedStatuses);
 
 if ($region !== '' && !in_array($region, $allowedRegions, true)) {
     // Still allow free-text region from the query string (LIKE filter below).
@@ -40,8 +39,8 @@ $dbError = null;
 if (hq_db_available() && hq_registry_schema_ready()) {
    $hqRoleId = hq_hq_role_id();
    if ($hqRoleId > 0) {
-       // Historic approved registrations may not yet have a linked owner.
-       $where = [hq_manageable_status_sql("COALESCE(owner.status, 'approved')")];
+       // Keep unlinked HQ records visible and classify them as pending below.
+       $where = ['(owner.user_id IS NULL OR ' . hq_manageable_status_sql("COALESCE(owner.status, 'pending')") . ')'];
        $params = [];
        $types = '';
 
@@ -60,9 +59,11 @@ if (hq_db_available() && hq_registry_schema_ready()) {
 
        if ($status !== '') {
            if (in_array($status, ['approved', 'active'], true)) {
-               $where[] = "LOWER(COALESCE(owner.status, 'approved')) IN ('approved', 'active')";
+               $where[] = "LOWER(COALESCE(owner.status, 'pending')) IN ('approved', 'active')";
+           } elseif (in_array($status, ['pending', 'pending_verification'], true)) {
+               $where[] = "LOWER(COALESCE(owner.status, 'pending')) IN ('pending', 'pending_verification')";
            } else {
-               $where[] = "LOWER(COALESCE(owner.status, 'approved')) = ?";
+               $where[] = "LOWER(COALESCE(owner.status, 'pending')) = ?";
                $params[] = $status;
                $types .= 's';
            }
@@ -188,7 +189,7 @@ $flashContext = $flash['context'] ?? [];
 <?php $adminSection = 'view_hq'; include __DIR__ . '/admin_section_nav.php'; ?>
 
 <?php $filtersActive = ($search !== '' || $region !== '' || $status !== ''); ?>
-    <main class=\"container my-5\">
+    <main class="container my-5">
         <?php if ($flash && $flashType): ?>
             <div class="alert hq-flash alert-<?= hq_escape($flashType) ?> alert-dismissible fade show mb-4" role="alert">
                 <div class="d-flex gap-2 align-items-start">
@@ -213,7 +214,7 @@ $flashContext = $flash['context'] ?? [];
             <div>
                 <span class="stat-chip mb-2"><i class="bi bi-building-fill txt-neon-cyan"></i> HQ Administration</span>
                 <h1 class="fw-bold m-0 h4 text-white mt-2">View/Manage HQ</h1>
-                <p class="text-white-50 m-0 small mt-1">View and manage approved, active, suspended, or removed role 3 HQ accounts.</p>
+                <p class="text-white-50 m-0 small mt-1">View HQ records. The status filter reflects the linked owner's account state.</p>
             </div>
         </div>
 
@@ -227,7 +228,7 @@ $flashContext = $flash['context'] ?? [];
             <div class="col-12">
                 <div class="dashboard-card py-3 px-4">
                     <form class="row g-3 align-items-end" method="GET" action="view_hq_and_user_account.php">
-                        <div class="col-12 col-md-4">
+                        <div class="col-12 col-md-3">
                             <label class="form-label text-white-50 small mb-1" for="hqSearch">Search</label>
                             <div class="input-group">
                                 <span class="input-group-text bg-transparent border-end-0" style="border-color: var(--glass-border); color: var(--neon-cyan); border-radius: 12px 0 0 12px;"><i class="bi bi-search"></i></span>
@@ -243,12 +244,12 @@ $flashContext = $flash['context'] ?? [];
                                 <?php endforeach; ?>
                             </select>
                         </div>
-                        <div class="col-12 col-md-2">
-                            <label class="form-label text-white-50 small mb-1" for="hqStatus">Status</label>
+                        <div class="col-12 col-md-3">
+                            <label class="form-label text-white-50 small mb-1" for="hqStatus">Owner account status</label>
                             <select id="hqStatus" class="form-select glass-select" name="status">
                                 <option value="" <?= $status === '' ? 'selected' : '' ?>>All Status</option>
                                 <?php foreach ($allowedStatuses as $option): ?>
-                                    <option value="<?= $option ?>" <?= $status === $option ? 'selected' : '' ?>><?= hq_escape(admin_filter_label($option)) ?></option>
+                                    <option value="<?= hq_escape($option) ?>" <?= $status === $option ? 'selected' : '' ?>><?= hq_escape(hq_status_label($option)) ?></option>
                                 <?php endforeach; ?>
                             </select>
                         </div>
@@ -267,7 +268,7 @@ $flashContext = $flash['context'] ?? [];
                     <div class="table-responsive hq-table-scroll">
                         <table class="table table-dark-custom align-middle m-0">
                             <thead>
-                                <tr><th>HQ Entity &amp; Owner</th><th>Role</th><th>Headquarters Location</th><th>Stations</th><th>Status</th><th class="text-end">Command</th></tr>
+                                <tr><th>HQ Entity &amp; Owner</th><th>Role</th><th>Headquarters Location</th><th>Stations</th><th>Owner Account Status</th><th class="text-end">Command</th></tr>
                             </thead>
                             <tbody>
                                 <?php if (!$hqRows): ?>
@@ -282,7 +283,7 @@ $flashContext = $flash['context'] ?? [];
                                     $stationCount = (int) ($row['station_count'] ?? 0);
                                     $locationParts = preg_split('/\s+[—-]\s+/u', (string) ($row['location'] ?? ''), 2) ?: [];
                                     $locationRegion = $locationParts[0] ?? 'Location not available';
-                                    $locationAddress = $locationParts[1] ?? ($locationParts[0] ?? 'Location not available');
+                                    $locationAddress = $locationParts[1] ?? '';
                                     ?>
                                     <tr>
                                         <td>
@@ -297,7 +298,7 @@ $flashContext = $flash['context'] ?? [];
                                             </div>
                                         </td>
                                         <td class="text-white-50">#3 &middot; HQ</td>
-                                        <td><div class="text-white"><?= hq_escape($locationRegion) ?></div><div class="text-white-50 small" style="font-size:.8rem;"><?= hq_escape($locationAddress) ?></div></td>
+                                        <td><div class="text-white"><?= hq_escape($locationRegion) ?></div><?php if ($locationAddress !== ''): ?><div class="text-white-50 small" style="font-size:.8rem;"><?= hq_escape($locationAddress) ?></div><?php endif; ?></td>
                                         <td class="text-white-50"><span class="stat-chip" style="font-size:.75rem;"><i class="bi bi-fuel-pump me-1 txt-neon-cyan"></i><?= $stationCount ?></span></td>
                                         <td><span class="hq-status <?= hq_status_class($rowStatus) ?>"><?= hq_escape(hq_status_label($rowStatus)) ?></span></td>
                                         <td class="text-end">
@@ -405,6 +406,14 @@ $flashContext = $flash['context'] ?? [];
                 const actions = payload.actions || [];
                 detailsTitle.innerHTML = '<i class="bi bi-building txt-neon-cyan me-2"></i>' + escapeHtml(hq.company_name || 'HQ Details');
 
+                const registeredDay = String(hq.created_at || '').slice(0, 10);
+                const expiryDay = String(hq.expire_at || '').slice(0, 10);
+                const currentDate = new Date();
+                const today = [currentDate.getFullYear(), String(currentDate.getMonth() + 1).padStart(2, '0'), String(currentDate.getDate()).padStart(2, '0')].join('-');
+                const licenseDateWarning = registeredDay && expiryDay && expiryDay <= registeredDay
+                    ? '<div class="alert alert-warning py-2 mb-3" role="status"><i class="bi bi-exclamation-triangle-fill me-2"></i>License expiry must be after registration. Correct this date from Edit details using the current business license.</div>'
+                    : (expiryDay && expiryDay < today ? '<div class="alert alert-warning py-2 mb-3" role="status"><i class="bi bi-exclamation-triangle-fill me-2"></i>This business license has expired. Review the current license date.</div>' : '');
+
                 const metaCards =
                     '<div class="row g-3 mb-4">' +
                     '<div class="col-12 col-md-6"><div class="p-3 rounded-3" style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);"><div class="hq-detail-label">HQ location</div><div class="hq-detail-value mt-1">' + escapeHtml(hq.location || 'Not available') + '</div></div></div>' +
@@ -448,7 +457,7 @@ $flashContext = $flash['context'] ?? [];
                     : emptyRow(3, 'No suspend/remove history.');
 
                 detailsBody.innerHTML =
-                    metaCards +
+                    licenseDateWarning + metaCards +
                     sectionTitle('bi-people-fill', 'Linked user accounts', accounts.length) +
                     '<div class="table-responsive mb-4"><table class="table hq-modal-table align-middle mb-0"><thead><tr><th>User</th><th>Email</th><th>Role</th><th>Status</th><th>Created</th></tr></thead><tbody>' + accountRows + '</tbody></table></div>' +
                     sectionTitle('bi-fuel-pump-fill', 'Linked stations', stations.length) +
@@ -491,6 +500,17 @@ $flashContext = $flash['context'] ?? [];
                     document.getElementById('editAddress').value = address;
                     document.getElementById('editLicense').value = hq.business_license || '';
                     document.getElementById('editExpire').value = hq.expire_at ? String(hq.expire_at).slice(0, 10) : '';
+                    const expiryInput = document.getElementById('editExpire');
+                    const now = new Date();
+                    const localToday = [now.getFullYear(), String(now.getMonth() + 1).padStart(2, '0'), String(now.getDate()).padStart(2, '0')].join('-');
+                    let minExpiry = localToday;
+                    const createdDay = String(hq.created_at || '').slice(0, 10);
+                    if (/^\d{4}-\d{2}-\d{2}$/.test(createdDay)) {
+                        const dayAfterRegistration = new Date(createdDay + 'T00:00:00Z');
+                        dayAfterRegistration.setUTCDate(dayAfterRegistration.getUTCDate() + 1);
+                        minExpiry = [minExpiry, dayAfterRegistration.toISOString().slice(0, 10)].sort().pop();
+                    }
+                    expiryInput.min = minExpiry;
                 });
             });
         })();

@@ -93,7 +93,8 @@ function moderator_hq_rows(string $search, string $region, string $status): arra
     }
 
     // Do not hide historic HQ records solely because their owner was not linked.
-    $where = [hq_manageable_status_sql("COALESCE(owner.status, 'approved')")];
+    // Keep unlinked HQ records visible and classify them as pending below.
+    $where = ['(owner.user_id IS NULL OR ' . hq_manageable_status_sql("COALESCE(owner.status, 'pending')") . ')'];
     $params = [];
     $types = '';
     if ($search !== '') {
@@ -110,9 +111,11 @@ function moderator_hq_rows(string $search, string $region, string $status): arra
     }
     if ($status !== '') {
         if (in_array($status, ['approved', 'active'], true)) {
-            $where[] = "LOWER(COALESCE(owner.status, 'approved')) IN ('approved', 'active')";
+            $where[] = "LOWER(COALESCE(owner.status, 'pending')) IN ('approved', 'active')";
+        } elseif (in_array($status, ['pending', 'pending_verification'], true)) {
+            $where[] = "LOWER(COALESCE(owner.status, 'pending')) IN ('pending', 'pending_verification')";
         } else {
-            $where[] = "LOWER(COALESCE(owner.status, 'approved')) = ?";
+            $where[] = "LOWER(COALESCE(owner.status, 'pending')) = ?";
             $params[] = $status;
             $types .= 's';
         }

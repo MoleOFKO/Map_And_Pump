@@ -28,7 +28,7 @@ $scopeCondition = $requestContext
        AND (u.current_role_id IS NULL OR u.current_role_id = 6)
        AND LOWER(TRIM(r.role_name)) = 'customer'";
 $statement = $conn->prepare(
-    'SELECT u.user_id, u.user_name, u.email, u.status, u.created_at, u.updated_at, u.last_login_at,
+    'SELECT u.user_id, u.user_public_id, u.user_name, u.email, u.status, u.created_at, u.updated_at, u.last_login_at,
             u.license_id, u.headquarter_id,
             COALESCE(u.current_role_id, u.business_role_id, u.role_id) AS role_id,
             r.role_name,
@@ -69,6 +69,7 @@ echo json_encode([
     'success' => true,
     'user' => [
         'user_id' => (int) $user['user_id'],
+        'user_public_id' => (string) ($user['user_public_id'] ?? ''),
         'user_name' => $user['user_name'],
         'email' => $user['email'],
         'status' => $user['status'],

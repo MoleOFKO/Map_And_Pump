@@ -22,7 +22,7 @@ require __DIR__ . '/partials/nav.php';
         <div class="row align-items-end g-4">
             <div class="col-lg-8" data-reveal>
                 <span class="eyebrow">News &amp; market prices</span>
-                <h1 class="page-title">What fuel costs today</h1>
+                <h1 class="page-title">Latest fuel prices</h1>
                 <p class="section-lead mb-0">
                     Average retail prices in MMK per litre, broken down by grade, by company and by region —
                     plus the supply and policy updates that moved them.
@@ -31,10 +31,11 @@ require __DIR__ . '/partials/nav.php';
             <div class="col-lg-4" data-reveal style="--reveal-delay:120ms">
                 <div class="updated-card">
                     <div class="d-flex align-items-center gap-2 mb-2">
-                        <span class="pulse-dot"></span>
+                        <span class="pulse-dot<?= $PRICE_DATA_IS_STALE ? ' opacity-50' : '' ?>"></span>
                         <span class="updated-label">Last updated</span>
                     </div>
                     <div class="updated-time"><?php echo htmlspecialchars($PRICE_UPDATED_AT); ?></div>
+                    <?php if ($PRICE_DATA_IS_STALE): ?><p class="small text-warning mb-0 mt-2" role="status">Price reports are more than 24 hours old.</p><?php endif; ?>
                     <p class="small text-dim mb-0 mt-2">Prices are collected from participating companies and reviewed before publishing.</p>
                 </div>
             </div>

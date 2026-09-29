@@ -33,6 +33,24 @@ if (!function_exists('map_pump_grade_catalog')) {
     }
 }
 
+if (!function_exists('map_pump_public_hq_owner_join_sql')) {
+    function map_pump_public_hq_owner_join_sql(): string
+    {
+        return "LEFT JOIN (
+                    SELECT u.headquarter_id, MIN(u.user_id) AS owner_user_id
+                    FROM users u
+                    LEFT JOIN roles primary_role ON primary_role.role_id = u.role_id
+                    LEFT JOIN roles business_role ON business_role.role_id = u.business_role_id
+                    LEFT JOIN roles current_role_lookup ON current_role_lookup.role_id = u.current_role_id
+                    WHERE LOWER(TRIM(COALESCE(primary_role.role_name, ''))) IN ('hq', 'headquarter', 'headquarters')
+                       OR LOWER(TRIM(COALESCE(business_role.role_name, ''))) IN ('hq', 'headquarter', 'headquarters')
+                       OR LOWER(TRIM(COALESCE(current_role_lookup.role_name, ''))) IN ('hq', 'headquarter', 'headquarters')
+                    GROUP BY u.headquarter_id
+                ) hq_owner_ids ON hq_owner_ids.headquarter_id = h.headquarter_id
+                LEFT JOIN users hq_owner ON hq_owner.user_id = COALESCE(hq_owner_ids.owner_user_id, h.headquarters_owner_id)";
+    }
+}
+
 if (!function_exists('map_pump_public_pdo')) {
     function map_pump_public_pdo(): ?PDO
     {
@@ -64,6 +82,7 @@ if (!function_exists('map_pump_load_latest_station_prices')) {
     function map_pump_load_latest_station_prices(PDO $pdo): array
     {
         $latestInventorySql = map_pump_latest_station_inventory_sql();
+        $hqOwnerJoinSql = map_pump_public_hq_owner_join_sql();
         $stmt = $pdo->query(
                 "SELECT s.branch_id AS station_id, s.branch_name AS station_name,
                     s.address AS station_address,
@@ -74,6 +93,7 @@ if (!function_exists('map_pump_load_latest_station_prices')) {
              FROM branches s
              INNER JOIN station_business_scope sbs ON sbs.station_id = s.branch_id
              INNER JOIN headquarter h ON h.headquarter_id = sbs.headquarter_id
+             {$hqOwnerJoinSql}
              INNER JOIN ({$latestInventorySql}) li ON li.station_id = s.branch_id
              INNER JOIN oil_types ot ON ot.oil_type_id = li.oil_type_id
              LEFT JOIN tanks t ON t.branch_id = s.branch_id
@@ -83,7 +103,8 @@ if (!function_exists('map_pump_load_latest_station_prices')) {
                     OR (t.fuel_code = 'dsl' AND LOWER(REPLACE(ot.oil_name, ' ', '')) IN ('disel', 'diesel'))
                     OR (t.fuel_code = 'pdsl' AND LOWER(REPLACE(ot.oil_name, ' ', '')) IN ('premiumdisel', 'premiumdiesel'))
                 )
-             WHERE COALESCE(s.status, 'Active') <> 'Decommissioned'
+             WHERE LOWER(COALESCE(s.status, 'active')) IN ('active', 'approved')
+               AND LOWER(COALESCE(hq_owner.status, 'approved')) IN ('active', 'approved')
                AND li.price_per_litre > 0"
         );
 
@@ -100,10 +121,14 @@ if (!function_exists('map_pump_load_latest_station_prices')) {
 if (!function_exists('map_pump_load_previous_week_prices')) {
     function map_pump_load_previous_week_prices(PDO $pdo): array
     {
+        $hqOwnerJoinSql = map_pump_public_hq_owner_join_sql();
         $stmt = $pdo->query(
             "SELECT s.branch_id AS station_id, ot.oil_name, soi.price_per_litre
              FROM station_oil_inventory soi
              INNER JOIN branches s ON s.branch_id = soi.station_id
+             INNER JOIN station_business_scope sbs ON sbs.station_id = s.branch_id
+             INNER JOIN headquarter h ON h.headquarter_id = sbs.headquarter_id
+             {$hqOwnerJoinSql}
              INNER JOIN oil_types ot ON ot.oil_type_id = soi.oil_type_id
              INNER JOIN (
                  SELECT station_id, oil_type_id, MAX(inventory_id) AS inventory_id
@@ -111,7 +136,9 @@ if (!function_exists('map_pump_load_previous_week_prices')) {
                  WHERE updated_at <= DATE_SUB(NOW(), INTERVAL 7 DAY)
                  GROUP BY station_id, oil_type_id
              ) prev ON prev.inventory_id = soi.inventory_id
-             WHERE soi.price_per_litre > 0"
+             WHERE LOWER(COALESCE(s.status, 'active')) IN ('active', 'approved')
+               AND LOWER(COALESCE(hq_owner.status, 'approved')) IN ('active', 'approved')
+               AND soi.price_per_litre > 0"
         );
 
         $byGrade = [];
@@ -154,6 +181,7 @@ if (!function_exists('map_pump_build_public_market_data')) {
         $data = [
             'source' => 'empty',
             'updated_at' => 'Awaiting manager price updates',
+            'updated_at_raw' => null,
             'fuel_grades' => [],
             'station_fuel_types' => [],
             'station_fuel_prices' => [],
@@ -333,6 +361,7 @@ if (!function_exists('map_pump_build_public_market_data')) {
             }
             if ($latestTimestamp !== '') {
                 $data['updated_at'] = date('j F Y, g:i A', strtotime($latestTimestamp));
+                $data['updated_at_raw'] = $latestTimestamp;
             }
 
             $data['live_ticker'] = map_pump_build_live_ticker($pdo, $latestRows);
@@ -370,10 +399,16 @@ if (!function_exists('map_pump_build_live_ticker')) {
             }
         }
 
+        $hqOwnerJoinSql = map_pump_public_hq_owner_join_sql();
         $deliveryStmt = $pdo->query(
             "SELECT s.branch_name AS station_name, d.quantity_l, d.fuel_code, d.received_at
              FROM deliveries d
              INNER JOIN branches s ON s.branch_id = d.branch_id
+             INNER JOIN station_business_scope sbs ON sbs.station_id = s.branch_id
+             INNER JOIN headquarter h ON h.headquarter_id = sbs.headquarter_id
+             {$hqOwnerJoinSql}
+             WHERE LOWER(COALESCE(s.status, 'active')) IN ('active', 'approved')
+               AND LOWER(COALESCE(hq_owner.status, 'approved')) IN ('active', 'approved')
              ORDER BY d.received_at DESC
              LIMIT 4"
         );
@@ -392,6 +427,7 @@ if (!function_exists('map_pump_build_market_news')) {
     function map_pump_build_market_news(PDO $pdo, array $latestRows): array
     {
         $posts = [];
+        $hqOwnerJoinSql = map_pump_public_hq_owner_join_sql();
 
         $priceChanges = $pdo->query(
             "SELECT s.branch_name AS station_name, h.company_name, ot.oil_name,
@@ -407,21 +443,32 @@ if (!function_exists('map_pump_build_market_news')) {
                      GROUP BY station_id, oil_type_id
                  ) x ON x.inventory_id = soi.inventory_id
              ) latest
+             INNER JOIN (
+                SELECT earlier.station_id, earlier.oil_type_id,
+                       MAX(earlier.inventory_id) AS previous_inventory_id
+                FROM station_oil_inventory earlier
+                INNER JOIN (
+                    SELECT station_id, oil_type_id, MAX(inventory_id) AS latest_inventory_id
+                    FROM station_oil_inventory
+                    GROUP BY station_id, oil_type_id
+                ) latest_ids
+                    ON latest_ids.station_id = earlier.station_id
+                   AND latest_ids.oil_type_id = earlier.oil_type_id
+                WHERE earlier.inventory_id < latest_ids.latest_inventory_id
+                GROUP BY earlier.station_id, earlier.oil_type_id
+             ) previous_ids
+                ON previous_ids.station_id = latest.station_id
+               AND previous_ids.oil_type_id = latest.oil_type_id
              INNER JOIN station_oil_inventory previous
-                ON previous.station_id = latest.station_id
-               AND previous.oil_type_id = latest.oil_type_id
-               AND previous.inventory_id = (
-                    SELECT MAX(soi2.inventory_id)
-                    FROM station_oil_inventory soi2
-                    WHERE soi2.station_id = latest.station_id
-                      AND soi2.oil_type_id = latest.oil_type_id
-                      AND soi2.inventory_id < latest.inventory_id
-               )
+                ON previous.inventory_id = previous_ids.previous_inventory_id
              INNER JOIN branches s ON s.branch_id = latest.station_id
              INNER JOIN station_business_scope sbs ON sbs.station_id = s.branch_id
              INNER JOIN headquarter h ON h.headquarter_id = sbs.headquarter_id
+             {$hqOwnerJoinSql}
              INNER JOIN oil_types ot ON ot.oil_type_id = latest.oil_type_id
-             WHERE latest.price_per_litre > 0
+             WHERE LOWER(COALESCE(s.status, 'active')) IN ('active', 'approved')
+               AND LOWER(COALESCE(hq_owner.status, 'approved')) IN ('active', 'approved')
+               AND latest.price_per_litre > 0
                AND previous.price_per_litre > 0
                AND latest.price_per_litre <> previous.price_per_litre
              ORDER BY latest.updated_at DESC
@@ -444,6 +491,11 @@ if (!function_exists('map_pump_build_market_news')) {
             "SELECT s.branch_name AS station_name, d.quantity_l, d.fuel_code, d.supplier, d.received_at
              FROM deliveries d
              INNER JOIN branches s ON s.branch_id = d.branch_id
+             INNER JOIN station_business_scope sbs ON sbs.station_id = s.branch_id
+             INNER JOIN headquarter h ON h.headquarter_id = sbs.headquarter_id
+             {$hqOwnerJoinSql}
+             WHERE LOWER(COALESCE(s.status, 'active')) IN ('active', 'approved')
+               AND LOWER(COALESCE(hq_owner.status, 'approved')) IN ('active', 'approved')
              ORDER BY d.received_at DESC
              LIMIT 4"
         );
@@ -475,11 +527,15 @@ if (!function_exists('map_pump_build_market_news')) {
 if (!function_exists('map_pump_build_platform_stats')) {
     function map_pump_build_platform_stats(PDO $pdo): array
     {
+        $hqOwnerJoinSql = map_pump_public_hq_owner_join_sql();
         $stations = (int) $pdo->query(
             "SELECT COUNT(DISTINCT s.branch_id)
              FROM branches s
              INNER JOIN station_business_scope sbs ON sbs.station_id = s.branch_id
-             WHERE COALESCE(s.status, 'Active') <> 'Decommissioned'"
+             INNER JOIN headquarter h ON h.headquarter_id = sbs.headquarter_id
+             {$hqOwnerJoinSql}
+             WHERE LOWER(COALESCE(s.status, 'active')) IN ('active', 'approved')
+               AND LOWER(COALESCE(hq_owner.status, 'approved')) IN ('active', 'approved')"
         )->fetchColumn();
 
         $drivers = (int) $pdo->query(
