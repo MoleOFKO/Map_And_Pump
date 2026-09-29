@@ -89,6 +89,35 @@ function hq_status_label(?string $status): string
     };
 }
 
+/**
+ * Collapse synonymous owner-account states so the HQ filter has one option
+ * per visible status.
+ *
+ * @param list<string> $statuses
+ * @return list<string>
+ */
+function hq_status_filter_options(array $statuses): array
+{
+    $options = [];
+
+    foreach ($statuses as $status) {
+        $normalized = strtolower(trim($status));
+        $normalized = match ($normalized) {
+            'active' => 'approved',
+            'pending_verification' => 'pending',
+            default => $normalized,
+        };
+
+        if ($normalized !== '') {
+            $options[$normalized] = $normalized;
+        }
+    }
+
+    $options = array_values($options);
+    sort($options, SORT_STRING);
+    return $options;
+}
+
 function hq_status_class(?string $status): string
 {
     return match (strtolower(trim((string) $status))) {
@@ -340,7 +369,7 @@ function hq_pending_status_sql(string $column): string
 function hq_manageable_status_sql(string $column): string
 {
     // Include statuses that appear in live data so list filters stay flexible.
-    return "LOWER(TRIM({$column})) IN ('active', 'approved', 'pending', 'suspended', 'removed', 'rejected')";
+    return "LOWER(TRIM({$column})) IN ('active', 'approved', 'pending', 'pending_verification', 'suspended', 'removed', 'rejected')";
 }
 
 function hq_manageable_statuses(): array

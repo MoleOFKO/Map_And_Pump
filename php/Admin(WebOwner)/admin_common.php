@@ -462,18 +462,15 @@ function admin_filter_user_statuses(string $extraWhere = '1=1'): array
 }
 
 /**
- * Distinct HQ location keywords for region filter (from headquarter.location).
+ * Supported HQ region filter values. The location column also stores the
+ * street address, so selecting distinct locations would expose addresses as
+ * if they were regions.
  *
  * @return list<string>
  */
 function admin_filter_hq_regions(): array
 {
-    return admin_distinct_values(
-        "SELECT DISTINCT LOWER(TRIM(location)) AS region
-         FROM headquarter
-         WHERE location IS NOT NULL AND TRIM(location) <> ''
-         ORDER BY region ASC"
-    );
+    return ['mandalay', 'naypyidaw', 'yangon'];
 }
 
 /**
