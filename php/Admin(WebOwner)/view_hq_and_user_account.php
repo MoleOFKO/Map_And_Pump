@@ -213,7 +213,7 @@ $flashContext = $flash['context'] ?? [];
             <div>
                 <span class="stat-chip mb-2"><i class="bi bi-building-fill txt-neon-cyan"></i> HQ Administration</span>
                 <h1 class="fw-bold m-0 h4 text-white mt-2">View/Manage HQ</h1>
-                <p class="text-white-50 m-0 small mt-1">View and manage approved, active, suspended, or removed role 3 HQ accounts.</p>
+                <p class="text-white-50 m-0 small mt-1">View HQ records. The status filter reflects the linked owner's account state.</p>
             </div>
         </div>
 
@@ -244,7 +244,7 @@ $flashContext = $flash['context'] ?? [];
                             </select>
                         </div>
                         <div class="col-12 col-md-2">
-                            <label class="form-label text-white-50 small mb-1" for="hqStatus">Status</label>
+                            <label class="form-label text-white-50 small mb-1" for="hqStatus">Owner account status</label>
                             <select id="hqStatus" class="form-select glass-select" name="status">
                                 <option value="" <?= $status === '' ? 'selected' : '' ?>>All Status</option>
                                 <?php foreach ($allowedStatuses as $option): ?>
@@ -267,7 +267,7 @@ $flashContext = $flash['context'] ?? [];
                     <div class="table-responsive hq-table-scroll">
                         <table class="table table-dark-custom align-middle m-0">
                             <thead>
-                                <tr><th>HQ Entity &amp; Owner</th><th>Role</th><th>Headquarters Location</th><th>Stations</th><th>Status</th><th class="text-end">Command</th></tr>
+                                <tr><th>HQ Entity &amp; Owner</th><th>Role</th><th>Headquarters Location</th><th>Stations</th><th>Owner Account Status</th><th class="text-end">Command</th></tr>
                             </thead>
                             <tbody>
                                 <?php if (!$hqRows): ?>
@@ -405,6 +405,14 @@ $flashContext = $flash['context'] ?? [];
                 const actions = payload.actions || [];
                 detailsTitle.innerHTML = '<i class="bi bi-building txt-neon-cyan me-2"></i>' + escapeHtml(hq.company_name || 'HQ Details');
 
+                const registeredDay = String(hq.created_at || '').slice(0, 10);
+                const expiryDay = String(hq.expire_at || '').slice(0, 10);
+                const currentDate = new Date();
+                const today = [currentDate.getFullYear(), String(currentDate.getMonth() + 1).padStart(2, '0'), String(currentDate.getDate()).padStart(2, '0')].join('-');
+                const licenseDateWarning = registeredDay && expiryDay && expiryDay <= registeredDay
+                    ? '<div class="alert alert-warning py-2 mb-3" role="status"><i class="bi bi-exclamation-triangle-fill me-2"></i>License expiry must be after registration. Correct this date from Edit details using the current business license.</div>'
+                    : (expiryDay && expiryDay < today ? '<div class="alert alert-warning py-2 mb-3" role="status"><i class="bi bi-exclamation-triangle-fill me-2"></i>This business license has expired. Review the current license date.</div>' : '');
+
                 const metaCards =
                     '<div class="row g-3 mb-4">' +
                     '<div class="col-12 col-md-6"><div class="p-3 rounded-3" style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);"><div class="hq-detail-label">HQ location</div><div class="hq-detail-value mt-1">' + escapeHtml(hq.location || 'Not available') + '</div></div></div>' +
@@ -448,7 +456,7 @@ $flashContext = $flash['context'] ?? [];
                     : emptyRow(3, 'No suspend/remove history.');
 
                 detailsBody.innerHTML =
-                    metaCards +
+                    licenseDateWarning + metaCards +
                     sectionTitle('bi-people-fill', 'Linked user accounts', accounts.length) +
                     '<div class="table-responsive mb-4"><table class="table hq-modal-table align-middle mb-0"><thead><tr><th>User</th><th>Email</th><th>Role</th><th>Status</th><th>Created</th></tr></thead><tbody>' + accountRows + '</tbody></table></div>' +
                     sectionTitle('bi-fuel-pump-fill', 'Linked stations', stations.length) +
@@ -491,6 +499,17 @@ $flashContext = $flash['context'] ?? [];
                     document.getElementById('editAddress').value = address;
                     document.getElementById('editLicense').value = hq.business_license || '';
                     document.getElementById('editExpire').value = hq.expire_at ? String(hq.expire_at).slice(0, 10) : '';
+                    const expiryInput = document.getElementById('editExpire');
+                    const now = new Date();
+                    const localToday = [now.getFullYear(), String(now.getMonth() + 1).padStart(2, '0'), String(now.getDate()).padStart(2, '0')].join('-');
+                    let minExpiry = localToday;
+                    const createdDay = String(hq.created_at || '').slice(0, 10);
+                    if (/^\d{4}-\d{2}-\d{2}$/.test(createdDay)) {
+                        const dayAfterRegistration = new Date(createdDay + 'T00:00:00Z');
+                        dayAfterRegistration.setUTCDate(dayAfterRegistration.getUTCDate() + 1);
+                        minExpiry = [minExpiry, dayAfterRegistration.toISOString().slice(0, 10)].sort().pop();
+                    }
+                    expiryInput.min = minExpiry;
                 });
             });
         })();

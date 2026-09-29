@@ -50,7 +50,7 @@ if (!hq_db_available() || !hq_registry_schema_ready()) {
 
 global $conn;
 $targetQuery = $conn->prepare(
-    'SELECT h.headquarter_id, owner.user_id AS owner_user_id
+    'SELECT h.headquarter_id, h.created_at, owner.user_id AS owner_user_id
      FROM headquarter h
      LEFT JOIN (
          SELECT u.headquarter_id, MIN(u.user_id) AS owner_user_id
@@ -73,6 +73,12 @@ $targetQuery->close();
 
 if (!$target) {
     hq_flash('danger', 'The selected HQ account could not be found.');
+    hq_redirect($redirect);
+}
+
+$registeredDate = substr((string) ($target['created_at'] ?? ''), 0, 10);
+if ($registeredDate !== '' && $expiryDate <= $registeredDate) {
+    hq_flash('danger', 'The license expiry date must be after the HQ registration date.');
     hq_redirect($redirect);
 }
 

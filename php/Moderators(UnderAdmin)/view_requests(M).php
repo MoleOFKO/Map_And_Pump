@@ -306,6 +306,25 @@ document.addEventListener('DOMContentLoaded', () => {
         const inner = isImagePath(path) ? '<img src="' + esc(path) + '" alt="' + esc(label) + '" class="acct-doc-thumb" loading="lazy">' : '<div class="acct-doc-empty"><i class="bi ' + icon + '"></i></div>';
         return '<a href="' + esc(path) + '" target="_blank" rel="noopener" class="acct-doc-card" title="' + esc(label) + '">' + inner + '<div class="acct-doc-label">' + esc(label) + '</div></a>';
     };
+    const markUnavailableDocImages = root => root.querySelectorAll('img.acct-doc-thumb').forEach(image => {
+        image.addEventListener('error', () => {
+            const card = image.closest('.acct-doc-card');
+            const placeholder = document.createElement('div');
+            placeholder.className = 'acct-doc-empty';
+            const icon = document.createElement('i');
+            icon.className = 'bi bi-file-earmark-x';
+            placeholder.appendChild(icon);
+            image.replaceWith(placeholder);
+            if (card) {
+                card.removeAttribute('href');
+                card.removeAttribute('target');
+                card.removeAttribute('rel');
+                card.setAttribute('aria-disabled', 'true');
+                const label = card.querySelector('.acct-doc-label');
+                if (label) label.textContent = 'File unavailable';
+            }
+        }, { once: true });
+    });
     const fieldRow = (icon, label, value) => '<div class="acct-field-row"><div class="acct-field-icon"><i class="bi ' + icon + '"></i></div><div class="min-width-0"><div class="request-detail-label">' + esc(label) + '</div><div class="request-detail-value">' + (value || '<span class="text-white-50">Not provided</span>') + '</div></div></div>';
     const rejectTarget = (targetType, id, label, sender) => {
         rejectForm.action = targetType === 'account' ? 'account_review_action(M).php' : 'request_action(M).php';
@@ -364,13 +383,20 @@ document.addEventListener('DOMContentLoaded', () => {
             const u = p.user || {};
             const l = p.license;
             const h = p.headquarter;
+            const licenseExpiryDate = String((l && l.license_last_valid_date) || '').slice(0, 10);
+            const currentDate = new Date();
+            const today = [currentDate.getFullYear(), String(currentDate.getMonth() + 1).padStart(2, '0'), String(currentDate.getDate()).padStart(2, '0')].join('-');
+            const licenseReviewWarning = licenseExpiryDate && licenseExpiryDate < today
+                ? '<div class="alert alert-warning py-2 mb-3" role="status"><i class="bi bi-exclamation-triangle-fill me-2"></i>Driver license expired on ' + esc(licenseExpiryDate) + '. Review a current license before recording an account decision.</div>'
+                : '';
             const label = 'ACCT-' + esc(u.user_id || button.dataset.userId);
             const userName = esc(u.user_name || 'Unknown User');
             const userEmail = esc(u.email || 'No email');
             const roleName = esc(u.role_name || 'User');
             const licenseBlock = l ? '<div class="acct-section"><div class="acct-section-title"><i class="bi bi-card-list"></i> Driver License Details</div>' + fieldRow('bi-hash', 'License Number', esc(l.license_number || 'Not provided')) + fieldRow('bi-person-vcard', 'License Name', esc(l.license_name || 'Not provided')) + fieldRow('bi-telephone', 'Phone', esc(l.phone_number || 'Not provided')) + fieldRow('bi-file-earmark', 'NRC', esc(l.nrc_number || 'Not provided')) + fieldRow('bi-calendar', 'Date of Birth', esc(l.date_of_birth || 'Not provided')) + fieldRow('bi-droplet', 'Blood Type', esc(l.blood_type || 'Not provided')) + fieldRow('bi-check-circle', 'License Valid Until', esc(l.license_last_valid_date || 'Not provided')) + '<div class="acct-field-row"><div class="acct-field-icon"><i class="bi bi-image"></i></div><div class="min-width-0"><div class="request-detail-label">License Documents</div><div class="request-detail-value"><div class="acct-doc-grid">' + docCard(l.license_image, 'License Image', 'bi-file-earmark-image') + docCard(l.face_image, 'Face Image', 'bi-person-circle') + '</div></div></div></div></div>' : '<div class="acct-empty-note"><i class="bi bi-info-circle-fill"></i><span>No driver license has been linked to this account yet.</span></div>';
             const hqBlock = h ? '<div class="acct-section"><div class="acct-section-title"><i class="bi bi-building"></i> Company Details</div>' + fieldRow('bi-shop', 'Company Name', esc(h.company_name || u.headquarter_name || 'Not provided')) + fieldRow('bi-envelope', 'HQ Email', esc(h.headquarter_email || 'Not provided')) + fieldRow('bi-telephone', 'Contact Number', esc(h.contact_number || 'Not provided')) + fieldRow('bi-geo-alt', 'Location', esc(h.location || u.headquarter_location || 'Not provided')) + fieldRow('bi-file-earmark-text', 'Business License Number', esc(h.business_license || 'Not provided')) + fieldRow('bi-calendar-check', 'License Expiry', esc(h.business_license_expire_date || h.expire_at || 'Not provided')) + '<div class="acct-field-row"><div class="acct-field-icon"><i class="bi bi-image"></i></div><div class="min-width-0"><div class="request-detail-label">Company Documents</div><div class="request-detail-value"><div class="acct-doc-grid">' + docCard(h.company_logo, 'Company Logo', 'bi-image') + docCard(h.business_license_image, 'Business License', 'bi-file-earmark-pdf') + '</div></div></div></div><div class="acct-field-row"><div class="acct-field-icon"><i class="bi bi-chat-dots"></i></div><div class="min-width-0"><div class="request-detail-label">Company Bio</div><div class="request-detail-value">' + esc(h.headquarter_bio || 'Not provided') + '</div></div></div></div>' : '';
-            body.innerHTML = '<div class="acct-profile-header"><div class="acct-avatar">' + initialsOf(u.user_name) + '</div><div class="acct-profile-meta"><div class="acct-profile-name">' + userName + '</div><div class="acct-profile-sub">' + userEmail + '</div></div><div class="acct-badge acct-badge-pending"><i class="bi bi-clock-fill"></i> Pending Verification</div><div class="acct-badge acct-badge-role"><i class="bi bi-tag-fill"></i> ' + roleName + '</div></div><div class="acct-section"><div class="acct-section-title"><i class="bi bi-person-check"></i> Account Information</div>' + fieldRow('bi-person', 'Name', userName) + fieldRow('bi-envelope', 'Email Address', userEmail) + fieldRow('bi-tag', 'Role', roleName + ' (#' + esc(u.role_id) + ')') + fieldRow('bi-calendar', 'Account Created', date(u.created_at)) + '</div>' + licenseBlock + hqBlock;
+            body.innerHTML = '<div class="acct-profile-header"><div class="acct-avatar">' + initialsOf(u.user_name) + '</div><div class="acct-profile-meta"><div class="acct-profile-name">' + userName + '</div><div class="acct-profile-sub">' + userEmail + '</div></div><div class="acct-badge acct-badge-pending"><i class="bi bi-clock-fill"></i> Pending Verification</div><div class="acct-badge acct-badge-role"><i class="bi bi-tag-fill"></i> ' + roleName + '</div></div><div class="acct-section"><div class="acct-section-title"><i class="bi bi-person-check"></i> Account Information</div>' + fieldRow('bi-person', 'Name', userName) + fieldRow('bi-envelope', 'Email Address', userEmail) + fieldRow('bi-tag', 'Role', roleName + ' (#' + esc(u.role_id) + ')') + fieldRow('bi-calendar', 'Account Created', date(u.created_at)) + '</div>' + licenseReviewWarning + licenseBlock + hqBlock;
+            markUnavailableDocImages(body);
             setFooter('<form action="account_review_action(M).php" method="POST" class="m-0 flex-fill"><input type="hidden" name="user_id" value="' + esc(u.user_id) + '"><input type="hidden" name="action" value="approve"><input type="hidden" name="return_to" value="view_requests(M).php"><button type="submit" class="acct-btn acct-btn-approve w-100"><i class="bi bi-check-lg me-1"></i>Approve Account</button></form><button type="button" class="acct-btn acct-btn-reject w-100 js-modal-reject"><i class="bi bi-x-lg me-1"></i>Reject Account</button>');
             footer.querySelector('.js-modal-reject').addEventListener('click', () => rejectTarget('account', u.user_id, label, userName));
         } catch (err) {

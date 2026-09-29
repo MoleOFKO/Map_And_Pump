@@ -397,6 +397,25 @@ $flashType = $flash['type'] ?? '';
                 const inner = isImagePath(path) ? '<img src="' + escapeHtml(path) + '" alt="' + escapeHtml(label) + '" class="acct-doc-thumb" loading="lazy">' : '<div class="acct-doc-empty"><i class="bi ' + icon + '"></i></div>';
                 return '<a href="' + escapeHtml(path) + '" target="_blank" rel="noopener" class="acct-doc-card" title="' + escapeHtml(label) + '">' + inner + '<div class="acct-doc-label">' + escapeHtml(label) + '</div></a>';
             };
+            const markUnavailableDocImages = (root) => root.querySelectorAll('img.acct-doc-thumb').forEach((image) => {
+                image.addEventListener('error', () => {
+                    const card = image.closest('.acct-doc-card');
+                    const placeholder = document.createElement('div');
+                    placeholder.className = 'acct-doc-empty';
+                    const icon = document.createElement('i');
+                    icon.className = 'bi bi-file-earmark-x';
+                    placeholder.appendChild(icon);
+                    image.replaceWith(placeholder);
+                    if (card) {
+                        card.removeAttribute('href');
+                        card.removeAttribute('target');
+                        card.removeAttribute('rel');
+                        card.setAttribute('aria-disabled', 'true');
+                        const label = card.querySelector('.acct-doc-label');
+                        if (label) label.textContent = 'File unavailable';
+                    }
+                }, { once: true });
+            });
             const fieldRow = (icon, label, value) => '<div class="acct-field-row"><div class="acct-field-icon"><i class="bi ' + icon + '"></i></div><div class="min-width-0"><div class="request-detail-label">' + escapeHtml(label) + '</div><div class="request-detail-value">' + (value || '<span class="text-white-50">Not provided</span>') + '</div></div></div>';
             const rejectTarget = (targetType, id, label, sender) => {
                 rejectForm.action = targetType === 'account' ? 'account_review_action.php' : 'request_action.php';
@@ -488,6 +507,12 @@ $flashType = $flash['type'] ?? '';
                         const u = payload.user || {};
                         const l = payload.license;
                         const h = payload.headquarter;
+                        const licenseExpiryDate = String((l && l.license_last_valid_date) || '').slice(0, 10);
+                        const currentDate = new Date();
+                        const today = [currentDate.getFullYear(), String(currentDate.getMonth() + 1).padStart(2, '0'), String(currentDate.getDate()).padStart(2, '0')].join('-');
+                        const licenseReviewWarning = licenseExpiryDate && licenseExpiryDate < today
+                            ? '<div class="alert alert-warning py-2 mb-3" role="status"><i class="bi bi-exclamation-triangle-fill me-2"></i>Driver license expired on ' + escapeHtml(licenseExpiryDate) + '. Review a current license before recording an account decision.</div>'
+                            : '';
                         const label = 'ACCT-' + escapeHtml(u.user_id || button.dataset.userId);
                         detailsTitle.innerHTML = '<i class="bi bi-person-check txt-neon-cyan me-2"></i> Account ' + label;
                         const roleName = escapeHtml(u.role_name || 'User');
@@ -520,7 +545,8 @@ $flashType = $flash['type'] ?? '';
                             '</div><div class="mt-2"><div class="request-detail-label mb-2">Uploaded Documents</div><div class="acct-doc-grid">' + docCard(h.company_logo, 'Company logo', 'bi-image') + docCard(h.business_license_image, 'License / receipt', 'bi-file-earmark-text') + '</div></div></div>'
                             : '';
 
-                        detailsBody.innerHTML = profileHeader + accountInfoSection + verificationSection + licenseBlock + companyBlock;
+                        detailsBody.innerHTML = profileHeader + accountInfoSection + verificationSection + licenseReviewWarning + licenseBlock + companyBlock;
+                        markUnavailableDocImages(detailsBody);
                         setFooter('<form action="account_review_action.php" method="POST" class="m-0"><input type="hidden" name="user_id" value="' + escapeHtml(u.user_id) + '"><input type="hidden" name="action" value="approve"><input type="hidden" name="return_to" value="view_requests.php"><button type="submit" class="acct-btn acct-btn-approve"><i class="bi bi-check-lg"></i>Approve</button></form><button type="button" class="acct-btn acct-btn-reject js-modal-reject"><i class="bi bi-x-lg"></i>Reject</button>');
                         detailsFooter.querySelector('.js-modal-reject').addEventListener('click', () => rejectTarget('account', u.user_id, label, u.user_name || u.email || 'Unknown user'));
                     } catch (error) {

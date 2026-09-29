@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/admin_common.php';
+require_once __DIR__ . '/user_account_common.php';
 
 admin_require_admin();
 
@@ -38,6 +39,9 @@ if (hq_db_available()) {
             $metrics[$key] = (int) (($query->fetch_assoc()['total'] ?? 0));
         }
     }
+    // The review queue combines system_requests with accounts awaiting
+    // verification, which are stored as users rather than request rows.
+    $metrics['requests'] += pending_account_count();
     $reportMetric = $conn->query("SELECT COUNT(*) AS total, COALESCE(SUM(DATE(created_at) = CURDATE()), 0) AS today FROM report");
     if ($reportMetric) {
         $metricRow = $reportMetric->fetch_assoc() ?: [];
@@ -127,7 +131,7 @@ $flashType = (string) ($flash['type'] ?? '');
         <?php if ($flash && $flashType !== ''): ?><div class="alert report-flash alert-<?= hq_escape($flashType) ?> alert-dismissible fade show" role="alert"><i class="bi <?= $flashType === 'success' ? 'bi-check-circle-fill text-success' : 'bi-exclamation-triangle-fill text-danger' ?> me-2"></i><?= hq_escape((string) ($flash['message'] ?? '')) ?><button type="button" class="btn-close btn-close-white" data-bs-dismiss="alert" aria-label="Close"></button></div><?php endif; ?>
         <?php if ($dbError): ?><div class="alert alert-danger border-0" role="alert"><?= hq_escape($dbError) ?></div><?php endif; ?>
 
-        <div class="row g-4 mb-4"><div class="col-12 col-sm-6 col-md-3"><div class="dashboard-card metric-card"><p class="mb-1 metric-label">Total HQs Registered</p><h4 class="fw-bold text-white mb-0"><?= (int) $metrics['hqs'] ?></h4><small class="text-white-50">Live headquarter records</small></div></div><div class="col-12 col-sm-6 col-md-3"><div class="dashboard-card metric-card"><p class="mb-1 metric-label">Active Stations</p><h4 class="fw-bold text-white mb-0"><?= (int) $metrics['stations'] ?></h4><small class="text-white-50">Live station records</small></div></div><div class="col-12 col-sm-6 col-md-3"><div class="dashboard-card metric-card"><p class="mb-1 metric-label">Requests Stored</p><h4 class="fw-bold text-white mb-0"><?= (int) $metrics['requests'] ?></h4><small class="text-white-50">System request records</small></div></div><div class="col-12 col-sm-6 col-md-3"><div class="dashboard-card metric-card"><p class="mb-1 metric-label">Reports Generated</p><h4 class="fw-bold text-white mb-0"><?= (int) $metrics['reports'] ?></h4><small class="text-success"><?= (int) $metrics['reports_today'] ?> created today</small></div></div></div>
+        <div class="row g-4 mb-4"><div class="col-12 col-sm-6 col-md-3"><div class="dashboard-card metric-card"><p class="mb-1 metric-label">Total HQs Registered</p><h4 class="fw-bold text-white mb-0"><?= (int) $metrics['hqs'] ?></h4><small class="text-white-50">Live headquarter records</small></div></div><div class="col-12 col-sm-6 col-md-3"><div class="dashboard-card metric-card"><p class="mb-1 metric-label">Active Stations</p><h4 class="fw-bold text-white mb-0"><?= (int) $metrics['stations'] ?></h4><small class="text-white-50">Live station records</small></div></div><div class="col-12 col-sm-6 col-md-3"><div class="dashboard-card metric-card"><p class="mb-1 metric-label">Requests in Queue</p><h4 class="fw-bold text-white mb-0"><?= (int) $metrics['requests'] ?></h4><small class="text-white-50">Operational requests and pending account verifications</small></div></div><div class="col-12 col-sm-6 col-md-3"><div class="dashboard-card metric-card"><p class="mb-1 metric-label">Reports Generated</p><h4 class="fw-bold text-white mb-0"><?= (int) $metrics['reports'] ?></h4><small class="text-success"><?= (int) $metrics['reports_today'] ?> created today</small></div></div></div>
 
         <div class="d-flex flex-wrap gap-2 mb-4">
             <span class="stat-chip report-scope-chip"><i class="bi bi-building me-1"></i>HQ <?= (int) ($scopeCounts['hq_performance'] ?? 0) ?></span>

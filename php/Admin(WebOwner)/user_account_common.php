@@ -18,7 +18,7 @@ function customer_account_rows(string $search = '', string $status = ''): array
         "LOWER(TRIM(base_role.role_name)) = 'customer'",
         '(u.business_role_id IS NULL OR u.business_role_id = 6)',
         '(u.current_role_id IS NULL OR u.current_role_id = 6)',
-        hq_manageable_status_sql('u.status'),
+        '(' . hq_manageable_status_sql('u.status') . " OR LOWER(TRIM(u.status)) = 'pending_verification')",
     ];
     $params = [];
     $types = '';
@@ -34,6 +34,8 @@ function customer_account_rows(string $search = '', string $status = ''): array
         $statusKey = strtolower($status);
         if (in_array($statusKey, ['approved', 'active'], true)) {
             $where[] = "LOWER(u.status) IN ('approved', 'active')";
+        } elseif ($statusKey === 'pending_verification') {
+            $where[] = "LOWER(TRIM(u.status)) = 'pending_verification'";
         } else {
             $where[] = 'LOWER(u.status) = ?';
             $params[] = $statusKey;
@@ -70,6 +72,18 @@ SQL;
     $statement->close();
 
     return $rows;
+}
+
+/**
+ * Status filters for customer_account_rows(). Pending verifications are
+ * included here as read-only rows; their approval/rejection remains in Requests.
+ * `active` is an alias of `approved` in this view.
+ *
+ * @return list<string>
+ */
+function customer_account_status_options(): array
+{
+    return ['approved', 'pending', 'pending_verification', 'rejected', 'removed', 'suspended'];
 }
 
 function pending_account_rows(string $search = ''): array

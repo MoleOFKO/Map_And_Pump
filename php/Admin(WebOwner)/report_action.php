@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/admin_common.php';
+require_once __DIR__ . '/user_account_common.php';
 
 if (session_status() !== PHP_SESSION_ACTIVE) {
     session_start();
@@ -141,7 +142,11 @@ if ($action === 'generate') {
     } elseif ($scope === 'requests') {
         $summaryQuery = $conn->query('SELECT COUNT(*) AS total, COALESCE(SUM(status=0x70656e64696e67),0) AS pending, COALESCE(SUM(status=0x617070726f766564),0) AS approved, COALESCE(SUM(status IN (0x72656a6563746564,0x666c6167676564)),0) AS declined FROM system_requests');
         $summaryRow = $summaryQuery?->fetch_assoc() ?: ['total' => 0, 'pending' => 0, 'approved' => 0, 'declined' => 0];
-        $summary = 'Requests: ' . (int) $summaryRow['total'] . '; pending: ' . (int) $summaryRow['pending'] . '; approved: ' . (int) $summaryRow['approved'] . '; declined/flagged: ' . (int) $summaryRow['declined'];
+        $pendingAccounts = pending_account_count();
+        $summary = 'Requests: ' . ((int) $summaryRow['total'] + $pendingAccounts)
+            . '; pending: ' . ((int) $summaryRow['pending'] + $pendingAccounts)
+            . '; approved: ' . (int) $summaryRow['approved']
+            . '; declined/flagged: ' . (int) $summaryRow['declined'];
     } else {
         $summaryQuery = $conn->query('SELECT COUNT(*) AS total FROM log');
         $summary = 'Audit log entries: ' . (int) (($summaryQuery?->fetch_assoc()['total'] ?? 0));
