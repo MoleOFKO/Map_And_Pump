@@ -119,6 +119,10 @@ try {
     error_log('Failed to load customer active booking: ' . $e->getMessage());
 }
 $hasActiveBooking = $activeBooking !== null;
+if (empty($_SESSION['booking_csrf_token'])) {
+    $_SESSION['booking_csrf_token'] = bin2hex(random_bytes(32));
+}
+$bookingCsrfToken = (string) $_SESSION['booking_csrf_token'];
 ?>
 
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
@@ -142,9 +146,48 @@ $hasActiveBooking = $activeBooking !== null;
                 <div class="col-12"><span class="text-secondary d-block">Expires</span><strong id="current-booking-expiry" class="text-white"><?php echo $hasActiveBooking && !empty($activeBooking['expire_at']) ? htmlspecialchars((string) $activeBooking['expire_at']) : 'When confirmed by station staff'; ?></strong></div>
             </div>
             <p class="text-secondary small mt-3 mb-0">Keep this booking QR available and show it to staff at the selected station.</p>
+            <div class="d-flex flex-wrap gap-2 mt-3">
+                <button type="button" class="btn btn-outline-info btn-sm px-3 py-2 fw-bold" onclick="downloadBookingDetails()" title="Save a JPEG receipt with booking details and QR code"><i class="bi bi-download me-1"></i>Download receipt</button>
+                <button type="button" class="btn btn-outline-danger btn-sm px-3 py-2 fw-bold" onclick="openCancellationDialog()"><i class="bi bi-x-circle me-1"></i>Cancel booking</button>
+            </div>
         </div>
     </div>
 </section>
+
+<dialog id="booking-cancellation-dialog" class="booking-cancellation-dialog" aria-labelledby="booking-cancellation-title">
+    <form id="booking-cancellation-form">
+        <div class="d-flex justify-content-between align-items-start gap-3 mb-3">
+            <div>
+                <h3 id="booking-cancellation-title" class="text-white mb-1">Why are you cancelling?</h3>
+                <p class="text-secondary small mb-0">Choose 1 to 3 reasons so we can improve the booking experience.</p>
+            </div>
+            <button type="button" class="btn-close btn-close-white" onclick="closeCancellationDialog()" aria-label="Close"></button>
+        </div>
+        <div id="cancellation-reasons" class="cancellation-reasons">
+            <label><input type="checkbox" name="cancellation_reason[]" value="Change of plans"><span>Change of plans</span></label>
+            <label><input type="checkbox" name="cancellation_reason[]" value="Found a closer station"><span>Found a closer station</span></label>
+            <label><input type="checkbox" name="cancellation_reason[]" value="Long wait or queue"><span>Long wait or queue</span></label>
+            <label><input type="checkbox" name="cancellation_reason[]" value="Station closed or unavailable"><span>Station closed or unavailable</span></label>
+            <label><input type="checkbox" name="cancellation_reason[]" value="Fuel type or stock unavailable"><span>Fuel type or stock unavailable</span></label>
+            <label><input type="checkbox" name="cancellation_reason[]" value="Booking details were incorrect"><span>Booking details were incorrect</span></label>
+            <label><input type="checkbox" name="cancellation_reason[]" value="Vehicle problem"><span>Vehicle problem</span></label>
+            <label><input type="checkbox" name="cancellation_reason[]" value="Payment or budget issue"><span>Payment or budget issue</span></label>
+            <label><input type="checkbox" name="cancellation_reason[]" value="Booked by mistake"><span>Booked by mistake</span></label>
+            <label><input type="checkbox" name="cancellation_reason[]" value="Emergency"><span>Emergency</span></label>
+            <label><input id="cancellation-other-checkbox" type="checkbox" name="cancellation_reason[]" value="Other"><span>Other</span></label>
+        </div>
+        <label class="form-label text-secondary small mt-3" for="cancellation-details">Tell us what happened <span id="cancellation-details-required" class="d-none">(required for Other)</span></label>
+        <textarea id="cancellation-details" class="form-control custom-form-field" rows="3" maxlength="1000" placeholder="Optional details; required when Other is selected."></textarea>
+        <div class="d-flex justify-content-between align-items-center gap-2 mt-3">
+            <small id="cancellation-selection-count" class="text-secondary">0 of 3 selected</small>
+            <div class="d-flex gap-2">
+                <button type="button" class="btn btn-outline-secondary btn-sm" onclick="closeCancellationDialog()">Keep booking</button>
+                <button id="submit-cancellation-btn" type="submit" class="btn btn-danger btn-sm fw-bold">Cancel booking</button>
+            </div>
+        </div>
+        <p id="cancellation-error" class="text-danger small mb-0 mt-2" role="alert"></p>
+    </form>
+</dialog>
 
 <section id="station-launch-card" class="dashboard-panel-card customer-map-launch-card<?php echo $hasActiveBooking ? ' d-none' : ''; ?>">
     <div class="d-flex align-items-center justify-content-between flex-wrap gap-3">
@@ -260,6 +303,35 @@ $hasActiveBooking = $activeBooking !== null;
     font-size: 12px;
     font-weight: 700;
     white-space: nowrap;
+}
+.booking-cancellation-dialog {
+    width: min(520px, calc(100% - 28px));
+    max-height: min(88vh, 720px);
+    padding: 22px;
+    border: 1px solid rgba(255,255,255,.14);
+    border-radius: 8px;
+    color: #fff;
+    background: #101a27;
+}
+.booking-cancellation-dialog::backdrop { background: rgba(0,0,0,.72); }
+.cancellation-reasons { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.cancellation-reasons label {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    min-width: 0;
+    padding: 9px;
+    border: 1px solid rgba(255,255,255,.1);
+    border-radius: 6px;
+    color: #dce5ef;
+    font-size: 12px;
+    cursor: pointer;
+}
+.cancellation-reasons input { flex: 0 0 auto; margin-top: 2px; accent-color: #0dcaf0; }
+.cancellation-reasons label:has(input:checked) { border-color: #0dcaf0; background: rgba(13,202,240,.09); }
+@media (max-width: 480px) {
+    .booking-cancellation-dialog { padding: 16px; }
+    .cancellation-reasons { grid-template-columns: 1fr; }
 }
 
 /* Light mode: station name / address must stay readable on pale glass cards */
@@ -435,12 +507,13 @@ body.customer-light-mode .customer-map-recenter-btn:hover {
             <p id="booking-summary" class="text-secondary mb-2" style="font-size:12px;"></p>
             <div class="customer-qr-wrap customer-map-qr mx-auto mb-2"><img id="qr-image" src="" alt="Booking QR code"></div>
             <div id="qr-token-code" class="token-no text-sky-400 mb-3" style="font-size:16px; letter-spacing:.08em;"></div>
-            <button type="button" class="btn btn-outline-danger btn-sm px-3 py-2 fw-bold rounded-3" onclick="cancelBooking()"><i class="bi bi-x-circle me-1"></i>Cancel booking</button>
+            <button type="button" class="btn btn-outline-danger btn-sm px-3 py-2 fw-bold rounded-3" onclick="openCancellationDialog()"><i class="bi bi-x-circle me-1"></i>Cancel booking</button>
         </div>
     </section>
 </section>
 
 <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.4/build/qrcode.min.js"></script>
 <script>
     let mapInstance, customerMarker, routeLine, selectedStation;
     let customerLocation = [16.8409, 96.1735]; // Yangon fallback when location permission is unavailable.
@@ -448,10 +521,13 @@ body.customer-light-mode .customer-map-recenter-btn:hover {
     const stationLogoUrl = '../../images/Logo.png';
     const stationsData = <?php echo json_encode($customerStationsData, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?>;
     const savedActiveBooking = <?php echo json_encode($activeBooking, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT); ?>;
+    const bookingCsrfToken = <?php echo json_encode($bookingCsrfToken); ?>;
+    let currentBooking = null;
 
     function showCurrentBooking(booking) {
         const workflowIds = ['station-launch-card', 'quick-mapping-card', 'top5-stations-card', 'map-experience'];
         workflowIds.forEach(id => document.getElementById(id)?.classList.add('d-none'));
+        currentBooking = { ...booking };
 
         document.getElementById('current-booking-code').textContent = booking.booking_code || booking.qr_refrence_code || '';
         document.getElementById('current-booking-station').textContent = booking.station_name || 'Station';
@@ -460,9 +536,168 @@ body.customer-light-mode .customer-map-recenter-btn:hover {
         document.getElementById('current-booking-amount').textContent = `${booking.quantity_liters || booking.amount_liters || ''} L`;
         document.getElementById('current-booking-expiry').textContent = booking.expire_at || 'When confirmed by station staff';
         const payload = booking.qr_code || booking.payload || '';
-        document.getElementById('current-booking-qr').src = `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(payload)}`;
+        QRCode.toDataURL(payload, { width: 240, margin: 1, errorCorrectionLevel: 'M' })
+            .then(imageUrl => { document.getElementById('current-booking-qr').src = imageUrl; })
+            .catch(error => console.error('Could not generate booking QR code.', error));
         document.getElementById('current-booking-card').classList.remove('d-none');
     }
+
+    async function downloadBookingDetails() {
+        if (!currentBooking) return;
+        const booking = currentBooking;
+        const payload = booking.qr_code || booking.payload || '';
+        if (!payload || !window.QRCode) {
+            alert('The booking image could not be created. Please check your connection and try again.');
+            return;
+        }
+
+        try {
+            const qrCanvas = document.createElement('canvas');
+            await QRCode.toCanvas(qrCanvas, payload, { width: 320, margin: 2, errorCorrectionLevel: 'M' });
+            const width = 800;
+            const padding = 48;
+            const rows = [
+                ['Station', booking.station_name || 'N/A'],
+                ['Address', booking.station_address || 'Address not set'],
+                ['Fuel', booking.oil_name || booking.fuel_type || 'N/A'],
+                ['Amount', `${booking.quantity_liters ?? booking.amount_liters ?? 'N/A'} L`],
+                ['Status', booking.status || 'Active'],
+                ['Booked', booking.created_at || 'Not available'],
+                ['Expires', booking.expire_at || 'When confirmed by station staff']
+            ];
+            const valueX = 205;
+            const valueWidth = width - padding - valueX;
+            const lineHeight = 25;
+            const measureContext = document.createElement('canvas').getContext('2d');
+            measureContext.font = '16px Arial, sans-serif';
+            const wrapText = (text, maxWidth) => {
+                const words = String(text).split(/\s+/);
+                const lines = [];
+                let line = '';
+                words.forEach(word => {
+                    const candidate = line ? `${line} ${word}` : word;
+                    if (line && measureContext.measureText(candidate).width > maxWidth) {
+                        lines.push(line);
+                        line = word;
+                    } else {
+                        line = candidate;
+                    }
+                });
+                if (line) lines.push(line);
+                return lines;
+            };
+            const wrappedRows = rows.map(([label, value]) => ({ label, lines: wrapText(value, valueWidth) }));
+            const rowsHeight = wrappedRows.reduce((height, row) => height + Math.max(lineHeight, row.lines.length * lineHeight) + 12, 0);
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = 590 + rowsHeight;
+            const context = canvas.getContext('2d');
+            context.fillStyle = '#ffffff';
+            context.fillRect(0, 0, canvas.width, canvas.height);
+            context.fillStyle = '#102033';
+            context.font = '700 30px Arial, sans-serif';
+            context.fillText('MAP & PUMP BOOKING', padding, 58);
+            context.fillStyle = '#536273';
+            context.font = '18px Arial, sans-serif';
+            context.fillText('OFFLINE BOOKING RECEIPT', padding, 88);
+            context.drawImage(qrCanvas, (width - 320) / 2, 112, 320, 320);
+            context.fillStyle = '#102033';
+            context.font = '700 22px Arial, sans-serif';
+            context.textAlign = 'center';
+            context.fillText(booking.booking_code || booking.qr_refrence_code || 'Booking reference', width / 2, 466);
+            context.textAlign = 'left';
+            let y = 530;
+            wrappedRows.forEach(row => {
+                context.fillStyle = '#536273';
+                context.font = '700 16px Arial, sans-serif';
+                context.fillText(`${row.label}:`, padding, y);
+                context.fillStyle = '#102033';
+                context.font = '16px Arial, sans-serif';
+                row.lines.forEach((line, index) => context.fillText(line, valueX, y + index * lineHeight));
+                y += Math.max(lineHeight, row.lines.length * lineHeight) + 12;
+            });
+            context.fillStyle = '#536273';
+            context.font = '14px Arial, sans-serif';
+            context.fillText('Present the QR code or booking reference to station staff.', padding, y + 8);
+
+            const imageBlob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.82));
+            if (!imageBlob) throw new Error('Could not encode booking image.');
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(imageBlob);
+            const safeReference = String(booking.booking_code || booking.qr_refrence_code || 'receipt').replace(/[^a-z0-9_-]/gi, '-');
+            link.download = `map-and-pump-booking-${safeReference}.jpg`;
+            link.click();
+            setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+        } catch (error) {
+            console.error('Could not create booking image.', error);
+            alert('The booking image could not be created. Please try again.');
+        }
+    }
+
+    const cancellationDialog = document.getElementById('booking-cancellation-dialog');
+    const cancellationChecks = Array.from(document.querySelectorAll('#cancellation-reasons input[type="checkbox"]'));
+
+    function openCancellationDialog() {
+        if (!currentBooking) return;
+        document.getElementById('cancellation-error').textContent = '';
+        cancellationDialog.showModal();
+    }
+
+    function closeCancellationDialog() {
+        cancellationDialog.close();
+    }
+
+    cancellationChecks.forEach(checkbox => checkbox.addEventListener('change', () => {
+        const selected = cancellationChecks.filter(item => item.checked);
+        if (selected.length > 3) {
+            checkbox.checked = false;
+            alert('Select no more than 3 reasons.');
+        }
+        const count = cancellationChecks.filter(item => item.checked).length;
+        document.getElementById('cancellation-selection-count').textContent = `${count} of 3 selected`;
+        const otherSelected = document.getElementById('cancellation-other-checkbox').checked;
+        document.getElementById('cancellation-details-required').classList.toggle('d-none', !otherSelected);
+        document.getElementById('cancellation-details').placeholder = otherSelected
+            ? 'Please describe the problem.'
+            : 'Optional details; required when Other is selected.';
+    }));
+
+    document.getElementById('booking-cancellation-form').addEventListener('submit', async event => {
+        event.preventDefault();
+        const reasons = cancellationChecks.filter(item => item.checked).map(item => item.value);
+        const details = document.getElementById('cancellation-details').value.trim();
+        const error = document.getElementById('cancellation-error');
+        if (reasons.length < 1 || reasons.length > 3) {
+            error.textContent = 'Select at least 1 and no more than 3 reasons.';
+            return;
+        }
+        if (reasons.includes('Other') && !details) {
+            error.textContent = 'Please describe the problem when selecting Other.';
+            return;
+        }
+
+        const submitButton = document.getElementById('submit-cancellation-btn');
+        submitButton.disabled = true;
+        error.textContent = '';
+        const formData = new FormData();
+        formData.append('booking_id', String(currentBooking.booking_id || ''));
+        formData.append('csrf_token', bookingCsrfToken);
+        reasons.forEach(reason => formData.append('reasons[]', reason));
+        formData.append('details', details);
+        try {
+            const response = await fetch('cancel_booking.php', { method: 'POST', body: formData });
+            const result = await response.json();
+            if (!response.ok || !result.success) {
+                error.textContent = result.message || 'Could not cancel this booking. Please try again.';
+                submitButton.disabled = false;
+                return;
+            }
+            window.location.reload();
+        } catch (requestError) {
+            error.textContent = 'Could not reach the booking service. Check your connection and try again.';
+            submitButton.disabled = false;
+        }
+    });
 
     if (savedActiveBooking) {
         showCurrentBooking(savedActiveBooking);
