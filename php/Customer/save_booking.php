@@ -235,13 +235,15 @@ try {
         ':filled_gas' => 0
     ]);
     $bookingId = (int) $pdo->lastInsertId();
-    $expiryStmt = $pdo->prepare('SELECT expire_at FROM booking WHERE booking_id = ? LIMIT 1');
+    $expiryStmt = $pdo->prepare('SELECT expire_at, created_at FROM booking WHERE booking_id = ? LIMIT 1');
     $expiryStmt->execute([$bookingId]);
-    $expireAt = $expiryStmt->fetchColumn() ?: null;
+    $bookingTimestamps = $expiryStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+    $expireAt = $bookingTimestamps['expire_at'] ?? null;
+    $createdAt = $bookingTimestamps['created_at'] ?? null;
 
     $pdo->commit();
 
-    echo json_encode(['success' => true, 'message' => 'Booking saved.', 'booking_code' => $bookingCode, 'payload' => $displayPayload, 'expire_at' => $expireAt]);
+    echo json_encode(['success' => true, 'message' => 'Booking saved.', 'booking_id' => $bookingId, 'booking_code' => $bookingCode, 'payload' => $displayPayload, 'expire_at' => $expireAt, 'created_at' => $createdAt]);
 } catch (PDOException $e) {
     if ($pdo->inTransaction()) {
         $pdo->rollBack();
