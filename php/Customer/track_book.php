@@ -524,6 +524,34 @@ body.customer-light-mode .customer-map-recenter-btn:hover {
     const bookingCsrfToken = <?php echo json_encode($bookingCsrfToken); ?>;
     let currentBooking = null;
 
+    async function createBookingQrCanvas(payload, width, margin) {
+        const canvas = document.createElement('canvas');
+        if (window.QRCode && typeof window.QRCode.toCanvas === 'function') {
+            try {
+                await window.QRCode.toCanvas(canvas, payload, { width, margin, errorCorrectionLevel: 'M' });
+                return canvas;
+            } catch (error) {
+                console.warn('Local QR generation failed; using the QR image service.', error);
+            }
+        }
+
+        const image = new Image();
+        image.crossOrigin = 'anonymous';
+        const loaded = new Promise((resolve, reject) => {
+            image.onload = resolve;
+            image.onerror = () => reject(new Error('QR image service is unavailable.'));
+        });
+        image.src = `https://api.qrserver.com/v1/create-qr-code/?size=${width}x${width}&qzone=${margin}&data=${encodeURIComponent(payload)}`;
+        await loaded;
+        canvas.width = width;
+        canvas.height = width;
+        const context = canvas.getContext('2d');
+        context.fillStyle = '#ffffff';
+        context.fillRect(0, 0, width, width);
+        context.drawImage(image, 0, 0, width, width);
+        return canvas;
+    }
+
     function showCurrentBooking(booking) {
         const workflowIds = ['station-launch-card', 'quick-mapping-card', 'top5-stations-card', 'map-experience'];
         workflowIds.forEach(id => document.getElementById(id)?.classList.add('d-none'));
@@ -535,25 +563,26 @@ body.customer-light-mode .customer-map-recenter-btn:hover {
         document.getElementById('current-booking-fuel').textContent = booking.oil_name || booking.fuel_type || '';
         document.getElementById('current-booking-amount').textContent = `${booking.quantity_liters || booking.amount_liters || ''} L`;
         document.getElementById('current-booking-expiry').textContent = booking.expire_at || 'When confirmed by station staff';
-        const payload = booking.qr_code || booking.payload || '';
-        QRCode.toDataURL(payload, { width: 240, margin: 1, errorCorrectionLevel: 'M' })
-            .then(imageUrl => { document.getElementById('current-booking-qr').src = imageUrl; })
-            .catch(error => console.error('Could not generate booking QR code.', error));
+        const payload = booking.qr_code || booking.payload || booking.qr_refrence_code || booking.booking_code || '';
+        if (payload) {
+            createBookingQrCanvas(payload, 240, 1)
+                .then(canvas => { document.getElementById('current-booking-qr').src = canvas.toDataURL('image/png'); })
+                .catch(error => console.error('Could not generate booking QR code.', error));
+        }
         document.getElementById('current-booking-card').classList.remove('d-none');
     }
 
     async function downloadBookingDetails() {
         if (!currentBooking) return;
         const booking = currentBooking;
-        const payload = booking.qr_code || booking.payload || '';
-        if (!payload || !window.QRCode) {
-            alert('The booking image could not be created. Please check your connection and try again.');
+        const payload = booking.qr_code || booking.payload || booking.qr_refrence_code || booking.booking_code || '';
+        if (!payload) {
+            alert('This booking is missing its QR payload. Refresh the page and try again.');
             return;
         }
 
         try {
-            const qrCanvas = document.createElement('canvas');
-            await QRCode.toCanvas(qrCanvas, payload, { width: 320, margin: 2, errorCorrectionLevel: 'M' });
+            const qrCanvas = await createBookingQrCanvas(payload, 320, 2);
             const width = 800;
             const padding = 48;
             const rows = [
