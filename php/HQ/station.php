@@ -506,7 +506,7 @@ try {
                                 <tr class="station-row" data-search="<?= htmlspecialchars(strtolower(trim(
                                         '#' . $row['station_id'] . ' ' .
                                         ($row['station_name'] ?? '') . ' ' .
-                                        ($row['station_address'] ?? '')
+                                        ($row['station_address'] ?? '') . ' ' .
                                         ($row['manager_name'] ?? 'Not assigned') . ' ' .
                                         ($row['manager_email'] ?? '') . ' ' .
                                         $statusText
