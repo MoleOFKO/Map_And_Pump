@@ -353,7 +353,7 @@ include 'share_header.php';
                 <?php endif; ?>
 
                 <!-- Editable Form View -->
-                <form id="car-license-form" enctype="multipart/form-data" class="<?php echo $showForm ? '' : 'd-none'; ?>">
+                <form id="car-license-form" action="save_car_license.php" method="post" enctype="multipart/form-data" class="<?php echo $showForm ? '' : 'd-none'; ?>">
                     <input type="hidden" name="action" value="save">
                     <input type="hidden" name="car_license_id" value="<?php echo (int) ($formCar['car_license_id'] ?? 0); ?>">
                     
