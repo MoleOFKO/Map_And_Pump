@@ -15,10 +15,11 @@ $feedbackReady = map_pump_feedback_schema_ready($pdo);
 if ($userId > 0 && $usageHistoryReady) {
     try {
         $stmt = $pdo->prepare(
-            'SELECT uh.usage_id, uh.booking_id, uh.qr_refrence_code, uh.filled_liters, uh.price_per_litre,
+                'SELECT uh.usage_id, uh.booking_id, uh.qr_refrence_code, uh.filled_liters, uh.price_per_litre,
+                    uh.staff_user_id,
                     uh.total_cost, uh.status, uh.filled_at, s.branch_name AS station_name,
                     CASE WHEN s.latitude IS NOT NULL AND s.longitude IS NOT NULL
-                        THEN CONCAT(s.latitude, ', ', s.longitude) ELSE s.address END AS station_location,
+                        THEN CONCAT(s.latitude, \', \', s.longitude) ELSE s.address END AS station_location,
                     o.oil_name, c.car_plate_number,
                     COALESCE(fb.feedback_count, 0) AS feedback_count, fb.latest_rating
              FROM usage_history uh
@@ -31,9 +32,8 @@ if ($userId > 0 && $usageHistoryReady) {
                  WHERE usage_id IS NOT NULL
                  GROUP BY usage_id
              ) fb ON fb.usage_id = uh.usage_id
-             WHERE uh.user_id = ?
-               AND LOWER(uh.status) = \'filled\'
-                             AND uh.staff_user_id IS NOT NULL
+                         WHERE uh.user_id = ?
+                             AND LOWER(uh.status) = \'filled\'
              ORDER BY uh.filled_at DESC, uh.usage_id DESC'
         );
         $stmt->execute([$userId]);
@@ -144,9 +144,13 @@ include 'share_header.php';
                             <td class="py-3"><span class="fuel-tag <?php echo htmlspecialchars(customer_usage_fuel_class($oilName)); ?>"><?php echo htmlspecialchars($oilName); ?></span></td>
                             <td class="py-3"><span class="status-pill active" style="font-size:9px;"><?php echo htmlspecialchars($status === 'Filled' ? 'Delivered' : $status); ?></span></td>
                             <td class="py-3 text-end">
-                                <button type="button" class="btn btn-outline-info btn-sm rounded-pill px-3" data-bs-toggle="modal" data-bs-target="#<?php echo htmlspecialchars($feedbackModalId, ENT_QUOTES, 'UTF-8'); ?>">
-                                    <i class="bi bi-chat-left-heart me-1"></i><?php echo $feedbackCount > 0 ? 'Feedback again' : 'Give feedback'; ?>
-                                </button>
+                                <?php if (!empty($usage['staff_user_id'])): ?>
+                                    <button type="button" class="btn btn-outline-info btn-sm rounded-pill px-3" data-bs-toggle="modal" data-bs-target="#<?php echo htmlspecialchars($feedbackModalId, ENT_QUOTES, 'UTF-8'); ?>">
+                                        <i class="bi bi-chat-left-heart me-1"></i><?php echo $feedbackCount > 0 ? 'Feedback again' : 'Give feedback'; ?>
+                                    </button>
+                                <?php else: ?>
+                                    <span class="text-secondary small">Staff details unavailable</span>
+                                <?php endif; ?>
                                 <?php if ($feedbackCount > 0): ?>
                                     <div class="text-secondary mt-1" style="font-size:11px;"><?php echo $feedbackCount; ?> sent<?php echo $latestRating > 0 ? ' · last ' . $latestRating . '/5' : ''; ?></div>
                                 <?php endif; ?>
