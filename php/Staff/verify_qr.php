@@ -244,13 +244,15 @@
 
             if (!result) return;
 
+            const booking = result.booking;
+            const isFilled = result.success && booking
+                && ['filled', 'completed'].includes(String(booking.status || '').toLowerCase());
             panel.classList.add('is-visible', result.success ? 'success' : 'error');
             icon.className = `bi fs-5 ${result.success ? 'bi-check-circle-fill text-success' : 'bi-x-circle-fill text-danger'}`;
-            title.textContent = result.success ? 'Booking verified' : 'Verification failed';
-            message.textContent = result.message || '';
+            title.textContent = isFilled ? 'Successfully filled' : result.success ? 'Booking verified' : 'Verification failed';
+            message.textContent = isFilled ? 'Fuel fill completed successfully.' : (result.message || '');
 
-            const booking = result.booking;
-            if (booking) {
+            if (booking && !isFilled) {
                 const rows = [
                     ['Code', booking.qr_refrence_code?.split('|')[0] || booking.qr_refrence_code || '—'],
                     ['Station', booking.station_name || `Station #${booking.station_id}`],
@@ -270,12 +272,14 @@
                 body: payload
             });
             const result = await response.json().catch(() => ({ success: false, message: 'Unexpected server response.' }));
-            if (result.success && result.booking && result.booking.booking_id) {
+            const isFilled = result.booking
+                && ['filled', 'completed'].includes(String(result.booking.status || '').toLowerCase());
+            if (result.success && result.booking && result.booking.booking_id && !isFilled) {
                 window.location.href = `verify_detail.php?booking_id=${encodeURIComponent(result.booking.booking_id)}`;
                 return result;
             }
             renderVerifyResult(result);
-            document.getElementById('scanStatus').textContent = result.success ? 'Checked in' : (result.message || 'Invalid booking');
+            document.getElementById('scanStatus').textContent = isFilled ? 'Fill complete' : result.success ? 'Checked in' : (result.message || 'Invalid booking');
             return result;
         }
 

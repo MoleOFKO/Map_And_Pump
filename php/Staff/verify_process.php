@@ -22,8 +22,8 @@ if (isset($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQU
 }
 
 
-if (empty($_SESSION['is_logged_in']) || empty($_SESSION['user_id']) || strtolower((string)($_SESSION['role_name'] ?? '')) !== 'staff') {
-    respond(['success' => false, 'message' => 'Only staff accounts can verify or confirm fuel fills.'], $ajax, 403, '../Login/login.php');
+if (empty($_SESSION['is_logged_in']) || empty($_SESSION['user_id'])) {
+    respond(['success' => false, 'message' => 'Please sign in to verify this booking.'], $ajax, 401, '../Login/login.php');
 }
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = isset($_POST['action']) ? trim($_POST['action']) : 'verify';
@@ -53,8 +53,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $historyRow = find_usage_history_by_booking_id($pdo, $bookingId);
                 if ($historyRow && $staffCanAccessBranch((int) $_SESSION['user_id'], (int) $historyRow['station_id'])) {
                     respond([
-                        'success' => false,
-                        'message' => 'This booking was already filled and saved in usage history.',
+                        'success' => true,
+                        'message' => 'Fuel fill completed successfully.',
                         'booking' => $historyRow,
                     ], $ajax, 200, 'verify_qr.php');
                 }

@@ -19,10 +19,6 @@ function redirect_to_login(string $message = 'Please sign in to continue.')
 if (empty($_SESSION['is_logged_in']) || empty($_SESSION['user_id'])) {
     redirect_to_login();
 }
-$roleName = strtolower((string)($_SESSION['role_name'] ?? ''));
-if ($roleName !== 'staff') {
-    redirect_to_login('This page is only available to staff accounts.');
-}
 
 $flash = $_SESSION['verify_flash'] ?? null;
 unset($_SESSION['verify_flash']);
