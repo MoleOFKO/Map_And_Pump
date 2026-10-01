@@ -96,13 +96,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 // Fetch current configuration to populate the form
 if ($loggedUserId > 0) {
-    $stmt = $pdo->prepare("SELECT h.* FROM users u JOIN headquarter h ON h.headquarter_id = u.headquarter_id WHERE u.user_id = ? LIMIT 1");
+    $stmt = $pdo->prepare("SELECT h.*, COALESCE(owner.user_name, u.user_name) AS owner_name, COALESCE((SELECT MIN(request.created_at) FROM system_requests request WHERE request.headquarter_id = h.headquarter_id AND request.request_type = 'hq_registration'), h.created_at) AS registration_date FROM users u JOIN headquarter h ON h.headquarter_id = u.headquarter_id LEFT JOIN users owner ON owner.user_id = h.headquarters_owner_id WHERE u.user_id = ? LIMIT 1");
     $stmt->execute([$loggedUserId]);
 } elseif ($loggedHqId > 0) {
-    $stmt = $pdo->prepare("SELECT * FROM headquarter WHERE headquarter_id = ? LIMIT 1");
+    $stmt = $pdo->prepare("SELECT h.*, owner.user_name AS owner_name, COALESCE((SELECT MIN(request.created_at) FROM system_requests request WHERE request.headquarter_id = h.headquarter_id AND request.request_type = 'hq_registration'), h.created_at) AS registration_date FROM headquarter h LEFT JOIN users owner ON owner.user_id = h.headquarters_owner_id WHERE h.headquarter_id = ? LIMIT 1");
     $stmt->execute([$loggedHqId]);
 } else {
-    $stmt = $pdo->query("SELECT * FROM headquarter LIMIT 1");
+    $stmt = $pdo->query("SELECT h.*, owner.user_name AS owner_name, COALESCE((SELECT MIN(request.created_at) FROM system_requests request WHERE request.headquarter_id = h.headquarter_id AND request.request_type = 'hq_registration'), h.created_at) AS registration_date FROM headquarter h LEFT JOIN users owner ON owner.user_id = h.headquarters_owner_id LIMIT 1");
 }
 $currentConfig = $stmt->fetch(PDO::FETCH_ASSOC);
 
@@ -111,6 +111,17 @@ $brandInfo = $currentConfig['headquarter_bio'] ?? '';
 $brandEmail = $currentConfig['headquarter_email'] ?? 'hq@apexfuelgas.com';
 $brandPhone = $currentConfig['contact_number'] ?? '+1 (800) 555-APEX';
 $businessLicense = $currentConfig['business_license'] ?? '';
+$licenseExpireDate = $currentConfig['business_license_expire_date'] ?? '';
+$ownerName = $currentConfig['owner_name'] ?? '';
+$registerDate = !empty($currentConfig['registration_date']) ? substr((string) $currentConfig['registration_date'], 0, 10) : '';
+$licenseExpiryValue = trim((string) $licenseExpireDate);
+$licenseExpiryDate = DateTimeImmutable::createFromFormat('!Y-m-d', $licenseExpiryValue);
+$licenseExpiryDaysRemaining = null;
+if ($licenseExpiryDate && $licenseExpiryDate->format('Y-m-d') === $licenseExpiryValue) {
+    $licenseExpiryDaysRemaining = (int) (new DateTimeImmutable('today'))->diff($licenseExpiryDate)->format('%r%a');
+}
+$showLicenseExpiryReminder = $licenseExpiryDaysRemaining !== null && $licenseExpiryDaysRemaining <= 7;
+$licenseReminderKey = 'hq-license-expiry:' . (int) ($currentConfig['headquarter_id'] ?? 0) . ':' . hash('sha256', strtolower(trim((string) $businessLicense)) . '|' . $licenseExpiryValue);
 $location = $currentConfig['location'] ?? '';
 $brandLogo = $currentConfig['company_logo'] ?? 'https://via.placeholder.com/150';
 if ($brandLogo !== '' && !preg_match('#^(?:https?:)?//#i', $brandLogo)) {
@@ -123,75 +134,191 @@ if ($brandLogo !== '' && !preg_match('#^(?:https?:)?//#i', $brandLogo)) {
     <meta charset="UTF-8">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
     <script src="../../js/hq-theme.js"></script>
-<link rel="stylesheet" href="../../css/HQstyle.css">
+    <link rel="stylesheet" href="../../css/HQstyle.css">
+    <style>
+        #brandInfoModal .modal-content {
+            max-height: min(90dvh, calc(100dvh - 1rem));
+            overflow: hidden;
+        }
+        #brandInfoModal .brand-info-form {
+            display: flex;
+            flex: 1 1 auto;
+            flex-direction: column;
+            min-height: 0;
+            overflow: hidden;
+        }
+        #brandInfoModal .brand-info-form .modal-body {
+            flex: 1 1 auto;
+            min-height: 0;
+            overflow-y: auto;
+        }
+        #brandInfoModal .modal-body {
+            scrollbar-color: transparent transparent;
+            scrollbar-width: thin;
+        }
+        #brandInfoModal .modal-body::-webkit-scrollbar { width: 8px; }
+        #brandInfoModal .modal-body::-webkit-scrollbar-track { background: transparent; }
+        #brandInfoModal .modal-body::-webkit-scrollbar-thumb {
+            background: transparent;
+            border-radius: 8px;
+        }
+        #brandInfoModal .modal-body:hover {
+            scrollbar-color: rgba(128, 145, 165, .45) transparent;
+        }
+        #brandInfoModal .modal-body:hover::-webkit-scrollbar-thumb { background: rgba(128, 145, 165, .4); }
+        #brandLogoInput:focus-visible + label { outline: 3px solid #2679e8; outline-offset: 3px; }
+    </style>
 </head>
 <body>
     <h2 class="title">Brand Configuration</h2>
     <p class="subtitle">Set global brand styles, logos, and configurations.</p>
     
-    <div class="card p-4">
-        <?php
-if (!empty($message)): ?>
-            <div class="alert alert-success" role="alert">
-                <?= htmlspecialchars($message) ?>
-            </div>
-        <?php
-endif; ?>
+    <?php if (!empty($message)): ?>
+        <div class="alert alert-success" role="alert"><?= htmlspecialchars($message) ?></div>
+    <?php endif; ?>
 
-        <form method="POST" enctype="multipart/form-data">
-            <div class="row align-items-center">
-                <!-- Logo Preview & Upload -->
-                <div class="col-md-4 text-center border-end-md mb-4 mb-md-0">
-                    <img id="logoPreview" src="<?= htmlspecialchars($brandLogo) ?>" alt="Brand Logo" class="rounded-circle img-thumbnail mb-3" style="width: 150px; height: 150px; object-fit: cover; background-color: #fff;">
+    <section class="card p-4" aria-labelledby="brandSummaryTitle">
+        <div class="row align-items-center g-4">
+            <div class="col-auto">
+                <img src="<?= htmlspecialchars($brandLogo) ?>" alt="Brand Logo" class="rounded-circle img-thumbnail" style="width: 112px; height: 112px; object-fit: cover; background-color: #fff;">
+            </div>
+            <div class="col">
+                <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-3">
                     <div>
-                        <input type="file" name="company_logo" id="brandLogoInput" accept="image/*" style="display: none;" onchange="previewLogo(event)">
-                        <label for="brandLogoInput" class="btn btn-sm btn-outline-secondary text-white bg-secondary">Change Logo</label>
+                        <h3 id="brandSummaryTitle" class="mb-1"><?= htmlspecialchars($brandTitle) ?></h3>
+                        <p class="text-muted mb-0"><?= htmlspecialchars($brandInfo ?: 'No company information added.') ?></p>
                     </div>
+                    <button type="button" class="btn btn-primary flex-shrink-0" data-bs-toggle="modal" data-bs-target="#brandInfoModal">Change Info</button>
                 </div>
-
-                <!-- Form Fields -->
-                <div class="col-md-8 ps-md-4">
-                    <div class="form-group mb-3">
-                        <label class="form-label">Brand Display Title</label>
-                        <input type="text" class="form-control" name="company_name" value="<?= htmlspecialchars($brandTitle) ?>" placeholder="Company Display Name">
-                    </div>
-            
-                    <div class="form-group mb-3">
-                        <label class="form-label">Company Information & Details</label>
-                        <textarea class="form-control custom-input" name="headquarter_bio" rows="3" placeholder="Enter corporate background, address, or details..."><?= htmlspecialchars($brandInfo) ?></textarea>
-                    </div>
-
-                    <div class="row">
-                        <div class="col-md-6 mb-3">
-                            <label class="form-label">Corporate Email</label>
-                            <input type="email" class="form-control" name="headquarter_email" value="<?= htmlspecialchars($brandEmail) ?>" placeholder="corp@example.com">
-                        </div>
-                        <div class="col-md-6 mb-3">
-                            <label class="form-label">Support / Contact Phone</label>
-                            <input type="text" class="form-control" name="contact_number" value="<?= htmlspecialchars($brandPhone) ?>" placeholder="+1 (xxx) xxx-xxxx">
-                        </div>
-                    </div>
-
-                    <div class="row">
-                        <div class="col-md-6 mb-3">
-                            <label class="form-label">Business License</label>
-                            <input type="text" class="form-control" name="business_license" value="<?= htmlspecialchars($businessLicense) ?>" placeholder="License Number">
-                        </div>
-                        <div class="col-md-6 mb-3">
-                            <label class="form-label">Location</label>
-                            <input type="text" class="form-control" name="location" value="<?= htmlspecialchars($location) ?>" placeholder="Office Location / City">
-                        </div>
-                    </div>
-
-                    <div class="text-center mt-3">
-                        <button type="submit" class="btn btn-primary px-4">Apply Brand Config</button>
-                    </div>
-                </div>
+                <dl class="row mb-0">
+                    <dt class="col-sm-4 col-lg-3">Corporate Email</dt><dd class="col-sm-8 col-lg-9"><?= htmlspecialchars($brandEmail ?: 'Not provided') ?></dd>
+                    <dt class="col-sm-4 col-lg-3">Contact Phone</dt><dd class="col-sm-8 col-lg-9"><?= htmlspecialchars($brandPhone ?: 'Not provided') ?></dd>
+                    <dt class="col-sm-4 col-lg-3">Business License</dt><dd class="col-sm-8 col-lg-9"><?= htmlspecialchars($businessLicense ?: 'Not provided') ?></dd>
+                    <dt class="col-sm-4 col-lg-3">License Expire Date</dt><dd class="col-sm-8 col-lg-9"><?= htmlspecialchars($licenseExpireDate ?: 'Not provided') ?></dd>
+                    <dt class="col-sm-4 col-lg-3">Owner Name</dt><dd class="col-sm-8 col-lg-9"><?= htmlspecialchars($ownerName ?: 'Not available') ?></dd>
+                    <dt class="col-sm-4 col-lg-3">Register Date</dt><dd class="col-sm-8 col-lg-9"><?= htmlspecialchars($registerDate ?: 'Not available') ?></dd>
+                    <dt class="col-sm-4 col-lg-3">Location</dt><dd class="col-sm-8 col-lg-9 mb-0"><?= htmlspecialchars($location ?: 'Not provided') ?></dd>
+                </dl>
             </div>
-        </form>
+        </div>
+    </section>
+
+    <div class="modal fade" id="brandInfoModal" tabindex="-1" aria-labelledby="brandInfoModalTitle" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-lg">
+            <div class="modal-content">
+                <form class="brand-info-form" method="POST" enctype="multipart/form-data">
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="brandInfoModalTitle">Change Brand Info</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="row align-items-center g-4">
+                            <div class="col-md-4 text-center">
+                                <img id="logoPreview" src="<?= htmlspecialchars($brandLogo) ?>" alt="Brand Logo Preview" class="rounded-circle img-thumbnail mb-3" style="width: 140px; height: 140px; object-fit: cover; background-color: #fff;">
+                                <input type="file" name="company_logo" id="brandLogoInput" accept="image/jpeg,image/png,image/gif,image/webp" class="visually-hidden" onchange="previewLogo(event)">
+                                <label for="brandLogoInput" class="btn btn-outline-secondary">Change Logo</label>
+                                <div class="form-text mt-2">JPG, PNG, GIF, or WebP up to 2 MB.</div>
+                            </div>
+                            <div class="col-md-8">
+                                <div class="form-group">
+                                    <label class="form-label" for="companyName">Brand Display Title</label>
+                                    <input id="companyName" type="text" class="form-control" name="company_name" value="<?= htmlspecialchars($brandTitle) ?>" placeholder="Company Display Name">
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label" for="headquarterBio">Company Information &amp; Details</label>
+                                    <textarea id="headquarterBio" class="form-control custom-input" name="headquarter_bio" rows="3" placeholder="Enter corporate background, address, or details..."><?= htmlspecialchars($brandInfo) ?></textarea>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label" for="headquarterEmail">Corporate Email</label>
+                                <input id="headquarterEmail" type="email" class="form-control" name="headquarter_email" value="<?= htmlspecialchars($brandEmail) ?>" placeholder="corp@example.com">
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label" for="contactNumber">Support / Contact Phone</label>
+                                <input id="contactNumber" type="text" class="form-control" name="contact_number" value="<?= htmlspecialchars($brandPhone) ?>" placeholder="+1 (xxx) xxx-xxxx">
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label" for="businessLicense">Business License</label>
+                                <input id="businessLicense" type="text" class="form-control" name="business_license" value="<?= htmlspecialchars($businessLicense) ?>" placeholder="License Number">
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label" for="licenseExpireDate">License Expire Date</label>
+                                <input id="licenseExpireDate" type="text" class="form-control" value="<?= htmlspecialchars($licenseExpireDate ?: 'Not provided') ?>" readonly>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label" for="brandOwnerName">Owner Name</label>
+                                <input id="brandOwnerName" type="text" class="form-control" value="<?= htmlspecialchars($ownerName) ?>" readonly>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label" for="brandRegisterDate">Register Date</label>
+                                <input id="brandRegisterDate" type="date" class="form-control" value="<?= htmlspecialchars($registerDate) ?>" readonly>
+                            </div>
+                            <div class="col-12 mb-3">
+                                <label class="form-label" for="brandLocation">Location</label>
+                                <input id="brandLocation" type="text" class="form-control" name="location" value="<?= htmlspecialchars($location) ?>" placeholder="Office Location / City">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-primary">Save Changes</button>
+                    </div>
+                </form>
+            </div>
+        </div>
     </div>
 
+    <?php if ($showLicenseExpiryReminder): ?>
+        <div class="modal fade" id="licenseExpiryReminderModal" tabindex="-1" aria-labelledby="licenseExpiryReminderTitle" aria-hidden="true" data-reminder-key="<?= htmlspecialchars($licenseReminderKey, ENT_QUOTES, 'UTF-8') ?>">
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="licenseExpiryReminderTitle">Business License Reminder</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="alert alert-warning mb-0" role="alert">
+                            <?php if ($licenseExpiryDaysRemaining < 0): ?>
+                                Your business license expired <?= abs($licenseExpiryDaysRemaining) ?> day<?= abs($licenseExpiryDaysRemaining) === 1 ? '' : 's' ?> ago, on <?= htmlspecialchars($licenseExpiryDate->format('F j, Y')) ?>.
+                            <?php elseif ($licenseExpiryDaysRemaining === 0): ?>
+                                Your business license expires today, <?= htmlspecialchars($licenseExpiryDate->format('F j, Y')) ?>.
+                            <?php else: ?>
+                                Your business license expires in <?= $licenseExpiryDaysRemaining ?> day<?= $licenseExpiryDaysRemaining === 1 ? '' : 's' ?>, on <?= htmlspecialchars($licenseExpiryDate->format('F j, Y')) ?>.
+                            <?php endif; ?>
+                            Please update your license information.
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-primary" data-bs-dismiss="modal">Understood</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    <?php endif; ?>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const reminderModal = document.getElementById('licenseExpiryReminderModal');
+            if (!reminderModal) return;
+
+            const reminderKey = reminderModal.dataset.reminderKey;
+            const reminderInterval = 24 * 60 * 60 * 1000;
+            let shouldShowReminder = true;
+
+            try {
+                const lastShownAt = Number(localStorage.getItem(reminderKey) || 0);
+                shouldShowReminder = !lastShownAt || Date.now() - lastShownAt >= reminderInterval;
+                if (shouldShowReminder) localStorage.setItem(reminderKey, String(Date.now()));
+            } catch (error) {
+                shouldShowReminder = true;
+            }
+
+            if (shouldShowReminder) bootstrap.Modal.getOrCreateInstance(reminderModal).show();
+        });
+
         function previewLogo(event) {
             const file = event.target.files[0];
             if (file) {
