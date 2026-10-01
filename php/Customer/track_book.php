@@ -1038,6 +1038,7 @@ body.customer-light-mode .customer-map-recenter-btn:hover {
 
         const qrPayload = result.payload || displayPayload;
         showCurrentBooking({
+            booking_id: result.booking_id,
             booking_code: result.booking_code || code,
             qr_code: qrPayload,
             station_name: selectedStation.name,
