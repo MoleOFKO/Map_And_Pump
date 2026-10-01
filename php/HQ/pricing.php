@@ -154,10 +154,20 @@ try {
             grid-template-columns: repeat(2, minmax(0, 1fr));
             gap: 24px;
             margin-bottom: 24px;
+            align-items: stretch;
         }
 
         .pricing-cards .card {
             margin-bottom: 0;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .pricing-card-inner {
+            display: flex;
+            flex-direction: column;
+            height: 100%;
         }
 
         .form-select {
@@ -165,8 +175,11 @@ try {
             color: var(--slate-50);
             border: 1px solid var(--border);
             border-radius: 12px;
-            padding: 10px 12px;
+            padding: 12px 14px;
             box-shadow: none;
+            font-size: 1.02rem;
+            font-weight: 600;
+            min-height: 50px;
         }
 
         .form-select:focus {
@@ -180,6 +193,8 @@ try {
         .form-select option {
             background-color: var(--navy-900);
             color: var(--slate-50);
+            font-size: 1rem;
+            font-weight: 500;
         }
 
         .pricing-table {
@@ -262,7 +277,12 @@ try {
         }
 
         .price-input-wrap .form-control {
-            padding-right: 110px;
+            padding-right: 120px;
+            min-height: 50px;
+            font-size: 1.03rem;
+            font-weight: 600;
+            padding-top: 12px;
+            padding-bottom: 12px;
         }
 
         .price-input-wrap .form-control::placeholder {
@@ -283,11 +303,47 @@ try {
             top: 50%;
             transform: translateY(-50%);
             color: var(--slate-400);
-            font-size: 0.8rem;
+            font-size: 0.88rem;
+            font-weight: 700;
             pointer-events: none;
             white-space: nowrap;
             background: var(--card-bg);
             padding-left: 8px;
+        }
+
+        .pricing-form-stack {
+            display: grid;
+            gap: 18px;
+            max-width: 520px;
+            width: 100%;
+            flex: 1;
+            margin-top: 8px;
+        }
+
+        .pricing-form-field {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .pricing-form-field .form-label {
+            margin-bottom: 0;
+            font-weight: 700;
+            font-size: 1.02rem;
+            color: var(--slate-200);
+        }
+
+        .pricing-form-submit {
+            margin-top: auto;
+            padding-top: 8px;
+        }
+
+        .pricing-form-submit .btn {
+            min-width: 180px;
+            min-height: 48px;
+            font-size: 1.02rem;
+            font-weight: 700;
+            padding: 0.8rem 1.2rem;
         }
 
         /* Pricing search bar styling */
@@ -442,12 +498,12 @@ endif; ?>
 
     <div class="pricing-cards">
         <div class="card mb-4 p-4">
-            <h3>Active Live Base Price</h3>
-            <p class="subtitle" style="margin-bottom:12px;">Push direct modifications down to electronic station nodes.</p>
-            <form method="POST">
-                <input type="hidden" name="action" value="update_price">
-                <div class="row g-3">
-                    <div class="col-md-6">
+            <div class="pricing-card-inner">
+                <h3>Active Live Base Price</h3>
+                <p class="subtitle" style="margin-bottom:12px;">Push direct modifications down to electronic station nodes.</p>
+                <form method="POST" class="pricing-form-stack">
+                    <input type="hidden" name="action" value="update_price">
+                    <div class="pricing-form-field">
                         <label class="form-label">Select Station</label>
                         <select name="station_id" class="form-select" required>
                             <option value="">Select station</option>
@@ -460,7 +516,8 @@ echo htmlspecialchars($station['station_name']); ?></option>
 endforeach; ?>
                         </select>
                     </div>
-                    <div class="col-md-6">
+
+                    <div class="pricing-form-field">
                         <label class="form-label">Select Product Grade</label>
                         <select name="oil_type_id" class="form-select" required>
                             <option value="">Select grade</option>
@@ -473,18 +530,20 @@ echo htmlspecialchars($grade['oil_name']); ?></option>
 endforeach; ?>
                         </select>
                     </div>
-                    <div class="col-md-6">
+
+                    <div class="pricing-form-field">
                         <label class="form-label">Active Base Pump Rate</label>
                         <div class="price-input-wrap">
                             <input type="number" name="fuel_price" class="form-control" step="1" min="0" placeholder="e.g., 3500" required>
                             <span class="input-suffix">(Kyats/L)</span>
                         </div>
                     </div>
-                </div>
-                <div class="mt-3">
-                    <button type="submit" class="btn btn-success">Publish Base Price</button>
-                </div>
-            </form>
+
+                    <div class="pricing-form-submit">
+                        <button type="submit" class="btn btn-success">Publish Base Price</button>
+                    </div>
+                </form>
+            </div>
         </div>
 
         <div class="card p-4">
