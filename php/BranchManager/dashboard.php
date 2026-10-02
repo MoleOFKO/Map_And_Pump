@@ -44,10 +44,10 @@ $stmt = $pdo->prepare("
     FROM booking bk
     INNER JOIN station_business_scope sbs ON sbs.station_id = bk.station_id
     WHERE sbs.branch_manager_user_id = :manager_id
-      AND bk.status IN ('notfilled','waiting','serving')
+      AND bk.status = 'expired'
 ");
 $stmt->execute([':manager_id' => $user['user_id']]);
-$waiting_count = (int)$stmt->fetchColumn();
+$expired_tokens = (int)$stmt->fetchColumn();
 
 // average wait time (minutes) — for tokens completed today
 $stmt = $pdo->prepare("
@@ -76,6 +76,25 @@ $stmt = $pdo->prepare("
 ");
 $stmt->execute([':b' => $bid]);
 $low_stock_fuel = $stmt->fetchColumn() ?: null;
+
+// fetch tanks for visualizer (current liters, capacity, alert threshold)
+$stmt = $pdo->prepare("
+  SELECT tank_id, fuel_name, current_l, capacity_l, alert_pct
+  FROM tanks
+  WHERE branch_id = :b AND capacity_l > 0
+  ORDER BY fuel_name ASC
+");
+$stmt->execute([':b' => $bid]);
+$tanks = $stmt->fetchAll();
+
+$defaultTankColors = [
+  'Octane 92' => '#38bdf8',
+  'Octane 95' => '#2563eb',
+  'Diesel' => '#34d399',
+  'Premium Diesel' => '#fbbf24',
+  'Super Diesel' => '#f59e0b',
+  'Fuel' => '#38bdf8',
+];
 
 // current live queue (top 5)
 $stmt = $pdo->prepare("
@@ -410,6 +429,43 @@ $has_unread   = $unread_count > 0;
   .alert-row span{color:var(--slate-400); display: flex; align-items: center; justify-content: space-between;}
   .alert-row .dismiss-txt { font-size: 10px; opacity: 0; color: var(--slate-400); transition: opacity 0.2s; }
   .alert-row:hover .dismiss-txt { opacity: 1; }
+  /* Tank visualizer styles */
+  .tank-visualizer { display:flex; gap:18px; align-items:stretch; justify-content:flex-start; flex-wrap:wrap; }
+  .tank { width:110px; min-height:260px; background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01)); border:1px solid rgba(148, 197, 255, 0.8); border-radius:10px; padding:12px; display:flex; flex-direction:column; align-items:center; gap:10px; box-shadow:0 0 0 1px rgba(255,255,255,0.02); }
+  .tank { --tank-accent:#7cc8ff; border-color: rgba(124, 200, 255, 0.9); box-shadow: 0 10px 20px -16px rgba(124, 200, 255, 0.65); }
+  .tank .tank-body { width:36px; height:180px; background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01)); border-radius:6px; position:relative; overflow:hidden; border:1px solid rgba(255,255,255,0.03); }
+  .tank .tank-fill { position:absolute; left:0; bottom:0; width:100%; background:linear-gradient(180deg, var(--sky-400), rgba(56,189,248,0.85)); display:flex; align-items:flex-end; justify-content:center; transition:height 0.6s ease; }
+  .tank .tank-label { font-weight:700; font-size:13px; text-align:center; min-height:32px; display:flex; align-items:center; justify-content:center; }
+  .tank .tank-meta { font-size:12px; color:var(--slate-400); text-align:center; }
+  .tank .tank-status { margin-top:auto; padding:6px 10px; border-radius:999px; font-weight:700; font-size:11px; }
+  .tank-status.ok { background: rgba(52,211,153,0.12); color: var(--mint-400); border:1px solid rgba(52,211,153,0.06); }
+  .tank-status.low { background: rgba(248,113,113,0.07); color: var(--red-400); border:1px solid rgba(248,113,113,0.04); }
+
+  /* Color Editor Modal Styles */
+  .tank-panel-header{display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:14px;}
+  .tank-panel-header h3{margin-bottom:0;}
+  .edit-color-btn{display:inline-flex; align-items:center; gap:8px; border:1px solid rgba(255,255,255,0.12); background:rgba(255,255,255,0.03); color:var(--slate-50); border-radius:999px; padding:7px 11px; font-size:11.5px; font-weight:700; transition: all 0.2s ease;}
+  .edit-color-btn:hover{background:rgba(56,189,248,0.08); border-color:rgba(56,189,248,0.28); color:var(--sky-400);}
+  .color-modal-backdrop{position:fixed; inset:0; background:rgba(2,6,23,0.72); display:none; align-items:center; justify-content:center; z-index:200; padding:20px;}
+  .color-modal-backdrop.show{display:flex;}
+  .color-modal{width:min(720px, 100%); background:linear-gradient(160deg, var(--navy-800), var(--navy-900)); border:1px solid rgba(255,255,255,0.08); border-radius:18px; padding:22px; box-shadow:0 18px 40px rgba(0,0,0,0.45);}
+  .color-modal-header{display:flex; align-items:center; justify-content:space-between; margin-bottom:16px;}
+  .color-modal-header h4{font-size:18px; margin:0; font-weight:700;}
+  .color-modal-close{width:32px; height:32px; border-radius:50%; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); color:var(--slate-50); font-size:18px; display:flex; align-items:center; justify-content:center;}
+  .fuel-color-table{width:100%; border-collapse:collapse; table-layout:fixed;}
+  .fuel-color-table th, .fuel-color-table td{padding:12px 10px; border-bottom:1px solid rgba(255,255,255,0.06); text-align:left;}
+  .fuel-color-table th{font-size:11px; color:var(--slate-400); text-transform:uppercase; letter-spacing:0.08em; font-weight:700;}
+  .fuel-color-table tbody tr{cursor:pointer; transition:background 0.2s ease;}
+  .fuel-color-table tbody tr:hover{background:rgba(255,255,255,0.02);}
+  .fuel-color-row{display:flex; align-items:center; gap:10px;}
+  .fuel-swatch{width:18px; height:18px; border-radius:6px; border:2px solid rgba(255,255,255,0.2); box-shadow:inset 0 0 0 1px rgba(0,0,0,0.2); flex-shrink:0;}
+  .color-picker-cell{display:flex; align-items:center; gap:10px; justify-content:flex-start;}
+  .color-preview{display:inline-flex; align-items:center; gap:10px; padding:8px 10px; border-radius:10px; border:1px solid rgba(255,255,255,0.08); background:rgba(255,255,255,0.02); min-width:150px; cursor:pointer;}
+  .color-preview-chip{width:18px; height:18px; border-radius:6px; border:2px solid rgba(255,255,255,0.2);}
+  .color-preview-text{font-size:12px; font-weight:700; color:var(--slate-50);}
+  .color-picker-input{position:absolute; opacity:0; width:1px; height:1px; pointer-events:none;}
+  .fuel-color-save{margin-top:18px; display:flex; justify-content:flex-end;}
+  .fuel-color-save button{background:linear-gradient(135deg, var(--sky-400), var(--blue-500)); color:white; border:none; border-radius:10px; padding:10px 16px; font-weight:700; font-size:12.5px;}
 </style>
 </head>
 <body>
@@ -503,85 +559,46 @@ $has_unread   = $unread_count > 0;
         <div class="kpi">
           <div class="lbl">Tokens Issued Today</div>
           <div class="val" id="issued-count"><?= $tokens_today ?></div>
-          <?php if ($tokens_delta_pct > 0): ?>
-            <div class="trend up"><i class="fa-solid fa-caret-up"></i> <?= $tokens_delta_pct ?>% vs yesterday</div>
-          <?php elseif ($tokens_delta_pct < 0): ?>
-            <div class="trend down"><i class="fa-solid fa-caret-down"></i> <?= abs($tokens_delta_pct) ?>% vs yesterday</div>
-          <?php else: ?>
-            <div class="trend flat">Same as yesterday</div>
-          <?php endif; ?>
         </div>
         <div class="kpi">
-          <div class="lbl">Currently Waiting</div>
-          <div class="val" id="waiting-count"><?= $waiting_count ?> cars</div>
-          <div class="trend flat">Avg wait <?= $avg_wait_min ?: '—' ?> min</div>
+          <div class="lbl">Expired Tokens</div>
+          <div class="val" id="expired-count"><?= $expired_tokens ?> tokens</div>
         </div>
         <div class="kpi">
           <div class="lbl">Avg Fuel Stock</div>
           <div class="val"><?= $avg_stock_pct ?>%</div>
-          <?php if ($low_stock_fuel): ?>
-            <div class="trend down"><i class="fa-solid fa-caret-down"></i> <?= h($low_stock_fuel) ?> running low</div>
-          <?php else: ?>
-            <div class="trend ok" style="color:var(--mint-400)">All tanks healthy</div>
-          <?php endif; ?>
         </div>
       </div>
 
-      <div class="section-title"><h2>Modules</h2></div>
-      <div class="module-grid">
-        <a href="manage-staff.php" class="module-card staff">
-          <div class="ic-badge"><i class="fa-solid fa-users"></i></div>
-          <h3>Manage Staff</h3>
-          <p>Manage shift schedules, duty status, and add new staff members.</p>
-          <span class="go">Open <i class="fa-solid fa-arrow-right"></i></span>
-        </a>
-        <a href="manage-oil.php" class="module-card oil">
-          <div class="ic-badge"><i class="fa-solid fa-gas-pump"></i></div>
-          <h3>Manage Oil Stock</h3>
-          <p>View tank levels, delivery records, and low-stock alerts.</p>
-          <span class="go">Open <i class="fa-solid fa-arrow-right"></i></span>
-        </a>
-        <a href="booking-slot.php" class="module-card slot">
-          <div class="ic-badge"><i class="fa-solid fa-ticket"></i></div>
-          <h3>Monitor Booking Slot</h3>
-          <p>Track the live queue, pump status, and every token in real time.</p>
-          <span class="go">Open <i class="fa-solid fa-arrow-right"></i></span>
-        </a>
-        <a href="view-customers.php" class="module-card slot">
-          <div class="ic-badge"><i class="fa-solid fa-address-book"></i></div>
-          <h3>View Customers</h3>
-          <p>Browse customer records and read feedback left at your branch.</p>
-          <span class="go">Open <i class="fa-solid fa-arrow-right"></i></span>
-        </a>
-        <a href="report-hq.php" class="module-card oil">
-          <div class="ic-badge"><i class="fa-solid fa-paper-plane"></i></div>
-          <h3>Report to HQ</h3>
-          <p>Send incident, stock, or maintenance reports to head office.</p>
-          <span class="go">Open <i class="fa-solid fa-arrow-right"></i></span>
-        </a>
-        <a href="edit-profile.php" class="module-card profile">
-          <div class="ic-badge"><i class="fa-solid fa-gear"></i></div>
-          <h3>Edit Profile</h3>
-          <p>Edit your personal details and manage your linked user account.</p>
-          <span class="go">Open <i class="fa-solid fa-arrow-right"></i></span>
-        </a>
-      </div>
-
       <div class="two-col">
-        <div class="panel">
-          <h3>Current Queue — Live</h3>
-          <div class="queue-list" id="queue-container">
-            <?php if (!$queue): ?>
-              <div style="text-align:center; padding:20px; color:var(--slate-400); font-size:12.5px;">Queue is empty.</div>
-            <?php else: foreach ($queue as $q): ?>
-              <div class="queue-row">
-                <span>
-                  <span class="tok"><?= h($q['token_code']) ?></span> ·
-                  <span class="pump"><?= $q['pump_no'] ? 'Pump #' . (int)$q['pump_no'] : '—' ?></span>
-                </span>
-                <span class="status-pill <?= h($q['status']) ?>"><?= h(ucfirst($q['status'])) ?></span>
-              </div>
-            <?php endforeach; endif; ?>
+        <div>
+          <div class="panel" style="padding:18px;">
+            <div class="tank-panel-header">
+              <h3 style="margin-bottom:0;">Tank Levels</h3>
+              <button type="button" class="edit-color-btn" id="editColorBtn"><i class="fa-solid fa-palette"></i> Edit Color</button>
+            </div>
+            <div class="tank-visualizer">
+              <?php if (empty($tanks)): ?>
+                <div style="color:var(--slate-400);">No tank data configured.</div>
+              <?php else: foreach ($tanks as $t): 
+                $fuelName = trim((string)$t['fuel_name']);
+                $fuelLabel = preg_replace('/^Petrol\s+/i', 'Octane ', $fuelName);
+                $fuelKey = $fuelLabel === 'Octane 92' || $fuelLabel === 'Octane 95' || $fuelLabel === 'Octane 98' ? $fuelLabel : $fuelLabel;
+                $pct = $t['capacity_l'] > 0 ? (int) round(($t['current_l'] / $t['capacity_l']) * 100) : 0;
+                $status_class = $pct < (int)$t['alert_pct'] ? 'low' : 'ok';
+                $tankColor = $defaultTankColors[$fuelLabel] ?? $defaultTankColors[$fuelName] ?? '#38bdf8';
+                ?>
+                <div class="tank" data-fuel-name="<?= h($fuelLabel) ?>" data-tank-color="<?= h($tankColor) ?>">
+                  <div class="tank-label"><?= h($fuelLabel) ?></div>
+                  <div class="tank-body" aria-hidden="true">
+                    <div class="tank-fill" style="height:<?= max(0, min(100, $pct)) ?>%; background:linear-gradient(180deg, <?= h($tankColor) ?>, rgba(255,255,255,0.28));"></div>
+                  </div>
+                  <div class="tank-meta"><?= number_format((float)$t['current_l'], 0) ?>L / <?= number_format((float)$t['capacity_l'], 0) ?>L</div>
+                  <div class="tank-meta"><?= $pct ?>%</div>
+                  <div class="tank-status <?= $status_class ?>"><?= $status_class === 'low' ? 'Low Stock' : 'Healthy' ?></div>
+                </div>
+              <?php endforeach; endif; ?>
+            </div>
           </div>
         </div>
 
@@ -589,7 +606,7 @@ $has_unread   = $unread_count > 0;
           <h3>Alerts <span style="font-size: 11px; font-weight: normal; color: var(--slate-400); margin-left: 6px;">(Click to dismiss)</span></h3>
           <div class="alert-list" id="alert-container">
             <?php if (!$alerts): ?>
-              <div style="text-align:center; padding:20px; color:var(--slate-400); font-size:12.5px;">All alerts cleared.</div>
+              <div style="text-align:center; padding: 20px; color:var(--slate-400); font-size:12.5px;">All alerts cleared.</div>
             <?php else:
               $kind_map = ['warn'=>'warn','err'=>'err','ok'=>'ok','info'=>'ok'];
               foreach ($alerts as $a):
@@ -608,17 +625,160 @@ $has_unread   = $unread_count > 0;
   </div>
 </div>
 
+<div class="color-modal-backdrop" id="fuelColorModal" aria-hidden="true">
+  <div class="color-modal" role="dialog" aria-modal="true" aria-labelledby="fuelColorTitle">
+    <div class="color-modal-header">
+      <h4 id="fuelColorTitle">Fuel Colors</h4>
+      <button type="button" class="color-modal-close" id="closeFuelColorModal" aria-label="Close">×</button>
+    </div>
+    <table class="fuel-color-table">
+      <thead>
+        <tr>
+          <th>Fuel Type</th>
+          <th>Color</th>
+        </tr>
+      </thead>
+      <tbody id="fuelColorTableBody"></tbody>
+    </table>
+    <div class="fuel-color-save">
+      <button type="button" id="saveFuelColorsBtn">Save Preferences</button>
+    </div>
+  </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script>
   document.addEventListener('DOMContentLoaded', () => {
-    
+    const defaultTankColors = {
+      'Octane 92': '#38bdf8',
+      'Octane 95': '#2563eb',
+      'Diesel': '#34d399',
+      'Premium Diesel': '#fbbf24',
+      'Super Diesel': '#f59e0b'
+    };
+
+    const fuelColorKey = 'mapPumpTankColors';
+    const savedColors = JSON.parse(localStorage.getItem(fuelColorKey) || '{}');
+    const tankMap = [...document.querySelectorAll('.tank')].reduce((acc, tankEl) => {
+      const fuelName = tankEl.dataset.fuelName;
+      acc[fuelName] = tankEl;
+      return acc;
+    }, {});
+
+    function normalizeFuelName(fuelName) {
+      if (!fuelName) return fuelName;
+      return fuelName.replace(/^Petrol\s+/i, 'Octane ');
+    }
+
+    function getFuelColor(fuelName, fallback) {
+      const normalized = normalizeFuelName(fuelName);
+      return savedColors[normalized] || defaultTankColors[normalized] || fallback || '#38bdf8';
+    }
+
+    function applyTankColors() {
+      document.querySelectorAll('.tank').forEach((tankEl) => {
+        const fuelName = normalizeFuelName(tankEl.dataset.fuelName || '');
+        const color = getFuelColor(fuelName, tankEl.dataset.tankColor || '#38bdf8');
+        const fill = tankEl.querySelector('.tank-fill');
+        if (fill) {
+          fill.style.background = `linear-gradient(180deg, ${color}, rgba(255,255,255,0.28))`;
+        }
+        tankEl.dataset.tankColor = color;
+        tankEl.style.setProperty('--tank-accent', color);
+      });
+    }
+
+    function buildFuelColorRows() {
+      const rows = [...document.querySelectorAll('.tank')].map((tankEl) => {
+        const fuelName = normalizeFuelName(tankEl.dataset.fuelName || '');
+        return {
+          fuelName,
+          color: getFuelColor(fuelName, tankEl.dataset.tankColor || '#38bdf8')
+        };
+      });
+
+      const uniqueRows = Array.from(new Map(rows.map(item => [item.fuelName, item])).values());
+      const tbody = document.getElementById('fuelColorTableBody');
+
+      tbody.innerHTML = uniqueRows.map((row) => `
+        <tr data-fuel-name="${row.fuelName}">
+          <td>
+            <div class="fuel-color-row">
+              <span class="fuel-swatch" style="background:${row.color};"></span>
+              <span>${row.fuelName}</span>
+            </div>
+          </td>
+          <td>
+            <div class="color-picker-cell">
+              <label class="color-preview" for="color-${row.fuelName.replace(/\s+/g, '-')}">
+                <span class="color-preview-chip" style="background:${row.color};"></span>
+                <span class="color-preview-text">${row.color.toUpperCase()}</span>
+              </label>
+              <input class="color-picker-input" id="color-${row.fuelName.replace(/\s+/g, '-')}" type="color" value="${row.color}" data-fuel-name="${row.fuelName}">
+            </div>
+          </td>
+        </tr>
+      `).join('');
+
+      tbody.querySelectorAll('tr').forEach((rowEl) => {
+        rowEl.addEventListener('click', (event) => {
+          if (event.target.closest('input')) return;
+          const input = rowEl.querySelector('input[type="color"]');
+          if (input) input.click();
+        });
+      });
+
+      tbody.querySelectorAll('input[type="color"]').forEach((picker) => {
+        picker.addEventListener('input', (event) => {
+          const fuelName = event.target.dataset.fuelName;
+          const newColor = event.target.value;
+          savedColors[fuelName] = newColor;
+          const previewChip = event.target.closest('.color-picker-cell')?.querySelector('.color-preview-chip');
+          const previewText = event.target.closest('.color-picker-cell')?.querySelector('.color-preview-text');
+          if (previewChip) previewChip.style.background = newColor;
+          if (previewText) previewText.textContent = newColor.toUpperCase();
+
+          const targetTank = document.querySelector(`.tank[data-fuel-name="${CSS.escape(fuelName)}"]`);
+          if (targetTank) {
+            const fill = targetTank.querySelector('.tank-fill');
+            if (fill) fill.style.background = `linear-gradient(180deg, ${newColor}, rgba(255,255,255,0.28))`;
+            targetTank.dataset.tankColor = newColor;
+            targetTank.style.setProperty('--tank-accent', newColor);
+          }
+        });
+      });
+    }
+
+    applyTankColors();
+    buildFuelColorRows();
+
+    document.getElementById('editColorBtn')?.addEventListener('click', () => {
+      buildFuelColorRows();
+      document.getElementById('fuelColorModal').classList.add('show');
+    });
+
+    document.getElementById('closeFuelColorModal')?.addEventListener('click', () => {
+      document.getElementById('fuelColorModal').classList.remove('show');
+    });
+
+    document.getElementById('fuelColorModal')?.addEventListener('click', (event) => {
+      if (event.target === event.currentTarget) {
+        event.currentTarget.classList.remove('show');
+      }
+    });
+
+    document.getElementById('saveFuelColorsBtn')?.addEventListener('click', () => {
+      localStorage.setItem(fuelColorKey, JSON.stringify(savedColors));
+      applyTankColors();
+      document.getElementById('fuelColorModal').classList.remove('show');
+    });
+
     // 1. Interactive Live Clock (Myanmar Timezone Format)
     function updateClock() {
       const now = new Date();
       const options = { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' };
       const dateString = now.toLocaleDateString('en-US', options);
       const timeString = now.toLocaleTimeString('en-US', { hour12: true, hour: '2-digit', minute: '2-digit', second: '2-digit' });
-      
       document.getElementById('live-clock').textContent = `${dateString} · ${timeString}`;
     }
     setInterval(updateClock, 1000);
@@ -640,52 +800,6 @@ $has_unread   = $unread_count > 0;
       }
     });
 
-    // 3. Simulated Live Queue System Updating Realtime
-    let currentMaxToken = 45;
-    let tokensIssued = 184;
-    let currentlyWaiting = 9;
-    const queueContainer = document.getElementById('queue-container');
-    const waitingCounter = document.getElementById('waiting-count');
-    const issuedCounter = document.getElementById('issued-count');
-
-    function simulateQueueRefresh() {
-      const rows = Array.from(queueContainer.querySelectorAll('.queue-row'));
-      if (rows.length === 0) return;
-
-      if (Math.random() > 0.4) {
-        const firstActiveRow = rows[0];
-        firstActiveRow.classList.add('fade-out');
-        
-        setTimeout(() => {
-          firstActiveRow.remove();
-
-          const remainingRows = Array.from(queueContainer.querySelectorAll('.queue-row'));
-          const nextInLine = remainingRows.find(row => row.querySelector('.status-pill').classList.contains('waiting'));
-          
-          if (nextInLine) {
-            const pill = nextInLine.querySelector('.status-pill');
-            pill.className = 'status-pill serving';
-            pill.textContent = 'Serving';
-            nextInLine.querySelector('.pump').textContent = `Pump #${Math.floor(Math.random() * 3) + 1}`;
-          }
-
-          currentMaxToken++;
-          tokensIssued++;
-          
-          const newRow = document.createElement('div');
-          newRow.className = 'queue-row fade-in';
-          newRow.innerHTML = `<span><span class="tok">B-0${currentMaxToken}</span> · <span class="pump">—</span></span><span class="status-pill waiting">Waiting</span>`;
-          queueContainer.appendChild(newRow);
-
-          currentlyWaiting = Math.max(1, currentlyWaiting + (Math.random() > 0.5 ? 1 : -1));
-          waitingCounter.textContent = `${currentlyWaiting} cars`;
-          issuedCounter.textContent = tokensIssued;
-        }, 300);
-      }
-    }
-    
-    setInterval(simulateQueueRefresh, 10000);
-
     // 4. Toggle Notifications Popup & Reset Badge
     const bellBtn = document.getElementById('notif-bell');
     const notifPopup = document.getElementById('notif-popup');
@@ -694,13 +808,11 @@ $has_unread   = $unread_count > 0;
 
     bellBtn.addEventListener('click', (e) => {
       e.stopPropagation();
-      
       const ping = bellBtn.querySelector('.ping');
       if (ping) {
         ping.style.transform = 'scale(0)';
         setTimeout(() => ping.remove(), 200);
       }
-
       notifPopup.classList.toggle('show');
     });
 
@@ -710,8 +822,7 @@ $has_unread   = $unread_count > 0;
       }
     });
 
-    // Notifications — dismiss + clear-all, wired to api_dismiss_notification.php
-    function postDismiss(payload){
+    function postDismiss(payload) {
       return fetch('api_dismiss_notification.php', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -719,7 +830,6 @@ $has_unread   = $unread_count > 0;
       }).then(r => r.json()).catch(() => ({ ok:false }));
     }
 
-    // Click an alert row (in the Alerts panel) to mark it read
     const alertContainer = document.getElementById('alert-container');
     if (alertContainer) {
       alertContainer.addEventListener('click', (e) => {
