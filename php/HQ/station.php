@@ -8,7 +8,7 @@ require_once __DIR__ . '/../business_scope.php';
 $message = '';
 $error = '';
 $hqId = map_pump_current_hq_id($pdo);
-$stationLimit = 3;
+$stationLimit = null;
 $stationCount = 0;
 $stationLimitReached = false;
 $showStationLimitModal = false;
@@ -44,8 +44,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (!empty($station_name) && $location !== null && !empty($manager_email)) {
             try {
                 $pdo->beginTransaction();
-                $hqLockStmt = $pdo->prepare("SELECT headquarter_id FROM headquarter WHERE headquarter_id = ? FOR UPDATE");
+                $hqLockStmt = $pdo->prepare("SELECT station_count FROM headquarter WHERE headquarter_id = ? FOR UPDATE");
                 $hqLockStmt->execute([$hqId]);
+                $stationLimitValue = $hqLockStmt->fetchColumn();
+                if ($stationLimitValue === false) {
+                    throw new RuntimeException('Could not verify this HQ station limit.');
+                }
+                $stationLimit = (int) $stationLimitValue;
+                if ($stationLimit < 1) {
+                    $stationLimit = null;
+                }
                 $stationCountStmt = $pdo->prepare(
                     "SELECT COUNT(*)
                      FROM branches b
@@ -53,7 +61,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                      WHERE sbs.headquarter_id = ? AND b.status <> 'closed'"
                 );
                 $stationCountStmt->execute([$hqId]);
-                if ((int) $stationCountStmt->fetchColumn() >= $stationLimit) {
+                if ($stationLimit !== null && (int) $stationCountStmt->fetchColumn() >= $stationLimit) {
                     throw new RuntimeException('station_limit_reached');
                 }
 
@@ -286,7 +294,14 @@ try {
     $stmt->execute([$hqId]);
     $stations = $stmt->fetchAll();
     $stationCount = count($stations);
-    $stationLimitReached = $stationCount >= $stationLimit;
+    $limitStmt = $pdo->prepare("SELECT station_count FROM headquarter WHERE headquarter_id = ?");
+    $limitStmt->execute([$hqId]);
+    $stationLimitValue = $limitStmt->fetchColumn();
+    $stationLimit = $stationLimitValue === false ? null : (int) $stationLimitValue;
+    if ($stationLimit !== null && $stationLimit < 1) {
+        $stationLimit = null;
+    }
+    $stationLimitReached = $stationLimit !== null && $stationCount >= $stationLimit;
 
     $managerStmt = $pdo->prepare(
         "SELECT u.user_id, u.email
@@ -640,8 +655,8 @@ try {
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
-                    <p class="mb-2">Your HQ has reached its limit of <?= (int) $stationLimit ?> included stations.</p>
-                    <p class="text-secondary mb-0">Review the station estimate to see pricing for additional stations.</p>
+                    <p class="mb-2">Your HQ has reached its configured limit of <?= (int) $stationLimit ?> stations.</p>
+                    <p class="text-secondary mb-0">Review the station estimate or contact your account administrator to update this limit.</p>
                 </div>
                 <div class="modal-footer border-secondary">
                     <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Close</button>
