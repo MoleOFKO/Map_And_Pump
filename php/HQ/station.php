@@ -660,7 +660,7 @@ try {
                 </div>
                 <div class="modal-footer border-secondary">
                     <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Close</button>
-                    <a href="/HomePage.php#calc" class="btn btn-warning"><i class="bi bi-calculator me-1"></i>View station estimate</a>
+                    <a href="/HomePage.php#calc" target="_top" class="btn btn-warning"><i class="bi bi-calculator me-1"></i>Go to update the package</a>
                 </div>
             </div>
         </div>
@@ -752,6 +752,114 @@ try {
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
+        let stationMap;
+        let stationMarker;
+        let configMap;
+        let configMarker;
+        const defaultMapCenter = [21.9588, 96.0891];
+
+        function parseMapCoordinates(value) {
+            const parts = (value || '').split(',');
+            if (parts.length !== 2) {
+                return null;
+            }
+
+            const latitude = Number.parseFloat(parts[0]);
+            const longitude = Number.parseFloat(parts[1]);
+            if (!Number.isFinite(latitude) || !Number.isFinite(longitude)
+                || latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
+                return null;
+            }
+
+            return L.latLng(latitude, longitude);
+        }
+
+        function setMapLocation(map, marker, locationInput, latLng) {
+            if (marker) {
+                marker.setLatLng(latLng);
+            } else {
+                marker = L.marker(latLng).addTo(map);
+            }
+            locationInput.value = latLng.lat.toFixed(6) + ', ' + latLng.lng.toFixed(6);
+            return marker;
+        }
+
+        function initializeStationMap() {
+            const locationInput = document.getElementById('stationLocation');
+            const initialLocation = parseMapCoordinates(locationInput.value);
+            if (!stationMap) {
+                stationMap = L.map('stationMap').setView(initialLocation || defaultMapCenter, initialLocation ? 14 : 6);
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    maxZoom: 19,
+                    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                }).addTo(stationMap);
+                stationMap.on('click', event => {
+                    stationMarker = setMapLocation(stationMap, stationMarker, locationInput, event.latlng);
+                });
+            } else if (initialLocation) {
+                stationMap.setView(initialLocation, 14);
+            }
+
+            if (initialLocation) {
+                stationMarker = setMapLocation(stationMap, stationMarker, locationInput, initialLocation);
+            }
+            window.setTimeout(() => stationMap.invalidateSize(), 100);
+        }
+
+        function initializeConfigMap() {
+            const locationInput = document.getElementById('configLocation');
+            const initialLocation = parseMapCoordinates(locationInput.value);
+            if (!configMap) {
+                configMap = L.map('configMap').setView(initialLocation || defaultMapCenter, initialLocation ? 14 : 6);
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    maxZoom: 19,
+                    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                }).addTo(configMap);
+                configMap.on('click', event => {
+                    configMarker = setMapLocation(configMap, configMarker, locationInput, event.latlng);
+                });
+            } else {
+                configMap.setView(initialLocation || defaultMapCenter, initialLocation ? 14 : 6);
+            }
+
+            if (configMarker) {
+                configMap.removeLayer(configMarker);
+                configMarker = null;
+            }
+            if (initialLocation) {
+                configMarker = setMapLocation(configMap, configMarker, locationInput, initialLocation);
+            }
+            window.setTimeout(() => configMap.invalidateSize(), 100);
+        }
+
+        function trackCurrentLocation(map, locationInput, updateMarker) {
+            if (!navigator.geolocation) {
+                alert('Location services are not available in this browser.');
+                return;
+            }
+
+            navigator.geolocation.getCurrentPosition(position => {
+                const location = L.latLng(position.coords.latitude, position.coords.longitude);
+                updateMarker(location);
+                map.setView(location, 14);
+            }, () => {
+                alert('Could not get your location. Check browser location permissions and try again.');
+            }, { enableHighAccuracy: true, timeout: 10000 });
+        }
+
+        document.getElementById('registerModal').addEventListener('shown.bs.modal', initializeStationMap);
+        document.getElementById('configureModal').addEventListener('shown.bs.modal', initializeConfigMap);
+        document.getElementById('trackLocBtn').addEventListener('click', () => {
+            trackCurrentLocation(stationMap, document.getElementById('stationLocation'), location => {
+                stationMarker = setMapLocation(stationMap, stationMarker, document.getElementById('stationLocation'), location);
+            });
+        });
+        document.getElementById('configTrackLocBtn').addEventListener('click', () => {
+            trackCurrentLocation(configMap, document.getElementById('configLocation'), location => {
+                configMarker = setMapLocation(configMap, configMarker, document.getElementById('configLocation'), location);
+            });
+        });
+
         document.addEventListener('DOMContentLoaded', () => {
             const searchWrap = document.getElementById('stationSearchWrap');
             const searchInput = document.getElementById('stationSearch');
