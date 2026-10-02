@@ -76,7 +76,7 @@ if (!preg_match('/^(09|\+959)\d{1,9}$/', $phoneNumber)) {
     license_json(false, 'Phone number must start with 09 or +959, followed by up to 9 digits.');
 }
 
-if (!preg_match('/^(1[0-4]|[1-9])\/[A-Z]{3,6}\([NEPT]\)\d{6}$/', $nrcNumber)) {
+if (!preg_match('/^(1[0-4]|[1-9])\/[A-Z]{3,9}\([NEPT]\)\d{6}$/', $nrcNumber)) {
     license_json(false, 'NRC number must use the format 12/TOWNSHIP(N)123456.');
 }
 

@@ -44,43 +44,27 @@ $phoneValue = (string) ($license['phone_number'] ?? '');
 
 $nrcValue = strtoupper((string) ($license['nrc_number'] ?? ''));
 $nrcParts = ['state' => '', 'township' => '', 'type' => 'N', 'number' => ''];
-if (preg_match('/^(1[0-4]|[1-9])\/([A-Z]{3,6})\(([A-Z])\)(\d{6})$/', $nrcValue, $matches)) {
+if (preg_match('/^(1[0-4]|[1-9])\/([A-Z]{3,9})\(([A-Z])\)(\d{6})$/', $nrcValue, $matches)) {
     $nrcParts = ['state' => $matches[1], 'township' => $matches[2], 'type' => $matches[3], 'number' => $matches[4]];
 }
 
 $currentYearShort = (int) date('y');
 $today = date('Y-m-d');
-$nrcTownships = [
-    'KAMANA' => 'Ka Ma Na',
-    'KAMATA' => 'Ka Ma Ta',
-    'KHABADA' => 'Kha Ba Da',
-    'LAMANA' => 'La Ma Na',
-    'MAMANA' => 'Ma Ma Na',
-    'PAMANA' => 'Pa Ma Na',
-    'TAMANA' => 'Ta Ma Na',
-    'YABAYA' => 'Ya Ba Ya',
-    'AHGAYA' => 'Ah Ga Ya',
-    'BAMANA' => 'Ba Ma Na',
-    'DAGANA' => 'Da Ga Na',
-    'LAMATA' => 'La Ma Ta',
-    'MAGADA' => 'Ma Ga Da',
-    'MAYAKA' => 'Ma Ya Ka',
-    'OUKAMA' => 'Ou Ka Ma',
-    'PAZATA' => 'Pa Za Ta',
-    'TAMATA' => 'Ta Ma Ta',
-    'YAKANA' => 'Ya Ka Na',
-    'AHLANA' => 'Ah La Na',
-    'BATHATA' => 'Ba Tha Ta',
-    'KAKAKA' => 'Ka Ka Ka',
-    'KAMAYA' => 'Ka Ma Ya',
-    'LAMAYA' => 'La Ma Ya',
-    'MABANA' => 'Ma Ba Na',
-    'MALANA' => 'Ma La Na',
-    'NAGANA' => 'Na Ga Na',
-    'PABANA' => 'Pa Ba Na',
-    'THAPANA' => 'Tha Pa Na',
-    'YATHANA' => 'Ya Tha Na',
-    'OAKATA' => 'Oa Ka Ta',
+$nrcTownshipsByState = [
+    1 => ['BaMaNa', 'KhaHpaNa', 'DaHpaYa', 'HaPaNa', 'HpaKaNa', 'AhGaYa', 'KaMaTa', 'KaPaTa', 'KhaLaHpa', 'LaGaNa', 'MaKhaBa', 'MaSaNa', 'MaKaTa', 'MaNyaNa', 'MaMaNa', 'MaKaNa', 'MaLaNa', 'NaMaNa', 'PaWaNa', 'PaNaDa', 'PaTaAh', 'SaDaNa', 'YaBaYa', 'YaKaNa', 'SaBaNa', 'SaPaYa', 'TaNaNa', 'TaSaLa', 'WaMaNa'],
+    2 => ['BaLaKha', 'DaMaSa', 'HpaSaNa', 'HpaYaSa', 'LaKaNa', 'MaSaNa', 'YaTaNa', 'YaThaNa'],
+    3 => ['BaGaLa', 'LaBaNa', 'BaAhNa', 'HpaPaNa', 'BaThaSa', 'KaMaMa', 'KaKaYa', 'KaDaNa', 'KaSaKa', 'KaDaTa', 'LaThaNa', 'MaWaTa', 'PaKaNa', 'YaYaTha', 'SaKaLa', 'ThaTaNa', 'ThaTaKa', 'WaLaMa'],
+    4 => ['KaKhaNa', 'HpaLaNa', 'HaKhaNa', 'KaPaLa', 'MaTaPa', 'MaTaNa', 'PaLaWa', 'YaZaNa', 'YaKhaDa', 'SaMaNa', 'TaTaNa', 'HtaTaLa', 'TaZaNa'],
+    5 => ['AhYaTa', 'BaMaNa', 'BaTaLa', 'KhaOuTa', 'KhaTaNa', 'HaMaLa', 'AhTaNa', 'KaLaHta', 'KaLaWa', 'KaBaLa', 'KaNaNa', 'KaThaNa', 'KaLaTa', 'KhaOuNa', 'KaLaNa', 'LaHaNa', 'LaYaNa', 'MaLaNa', 'MaKaNa', 'MaYaNa', 'MaMaNa', 'MaMaTa', 'NaYaNa', 'NgaZaNa', 'PaLaNa', 'HpaPaNa', 'PaLaBa', 'SaKaNa', 'SaLaKa', 'YaBaNa', 'DaPaYa', 'TaMaNa', 'TaSaNa', 'HtaKhaNa', 'WaLaNa', 'WaThaNa', 'YaOuNa', 'YaMaPa', 'KaMaNa', 'KhaPaNa'],
+    6 => ['BaPaNa', 'HtaWaNa', 'KaLaAh', 'KaThaNa', 'KaSaNa', 'LaLaNa', 'MaMaNa', 'PaLaNa', 'TaThaYa', 'ThaYaKha', 'YaHpaNa', 'KhaMaNa', 'MaTaNa', 'PaLaTa', 'KaYaYa'],
+    7 => ['DaOuNa', 'KaPaKa', 'KaWaNa', 'KaKaNa', 'KaTaKha', 'LaPaTa', 'MaLaNa', 'MaNyaNa', 'NaTaLa', 'NyaLaPa', 'AhHpaNa', 'AhTaNa', 'PaTaNa', 'PaKhaTa', 'PaKhaNa', 'PaTaTa', 'PaNaKa', 'HpaMaNa', 'PaMaNa', 'YaTaNa', 'YaKaNa', 'HtaTaPa', 'TaNgaNa', 'ThaNaPa', 'ThaWaTa', 'ThaKaNa', 'ThaSaNa', 'WaMaNa', 'YaTaYa', 'ZaKaNa', 'PaTaSa'],
+    8 => ['AhLaNa', 'KhaMaNa', 'GaGaNa', 'KaMaNa', 'MaKaNa', 'MaBaNa', 'MaTaNa', 'MaLaNa', 'MaMaNa', 'MaHtaNa', 'MaThaNa', 'NaMaNa', 'NgaHpaNa', 'PaKhaKa', 'PaMaNa', 'PaHpaNa', 'SaLaNa', 'SaMaNa', 'SaHpaNa', 'SaTaYa', 'SaPaWa', 'TaTaKa', 'ThaYaNa', 'HtaLaNa', 'YaNaKha', 'YaSaKa', 'KaHtaNa'],
+    9 => ['AhMaYa', 'AhMaZa', 'KhaAhZa', 'KhaMaSa', 'KaPaTa', 'KaSaNa', 'MaTaYa', 'MaHaMa', 'MaLaNa', 'MaHtaLa', 'MaKaNa', 'MaKhaNa', 'MaThaNa', 'NaHtaKa', 'NgaThaYa', 'NgaZaNa', 'NyaOuNa', 'PaThaKa', 'PaBaNa', 'PaKaKha', 'PaOuLa', 'SaKaNa', 'SaKaTa', 'ThaPaKa', 'TaTaOu', 'TaThaNa', 'ThaSaNa', 'WaTaNa', 'YaMaTha', 'TaKaTa', 'MaMaNa', 'DaKhaTha', 'LaWaNa', 'OuTaTha', 'PaBaTha', 'PaMaNa', 'TaKaNa', 'ZaBaTha', 'ZaYaTha'],
+    10 => ['BaLaNa', 'KhaSaNa', 'KhaZaNa', 'KaMaYa', 'KaHtaNa', 'LaMaNa', 'MaLaMa', 'MaDaNa', 'PaMaNa', 'ThaHpaYa', 'ThaHtaNa', 'YaMaNa'],
+    11 => ['AhMaNa', 'BaThaTa', 'GaMaNa', 'KaHpaNa', 'KaTaNa', 'MaAhTa', 'MaTaNa', 'MaPaNa', 'MaAhNa', 'MaOuNa', 'MaPaTa', 'PaTaNa', 'PaNaTa', 'YaBaNa', 'YaThaTa', 'SaTaNa', 'ThaTaNa', 'TaKaNa', 'KaTaLa', 'TaPaWa', 'BaTaHta'],
+    12 => ['AhLaNa', 'BaHaNa', 'KaKaKa', 'DaGaYa', 'DaGaMa', 'DaGaSa', 'DaGaTa', 'DaGaNa', 'DaLaNa', 'DaPaNa', 'LaThaYa', 'LaMaNa', 'LaKaNa', 'MaBaNa', 'HtaTaPa', 'AhSaNa', 'KaMaYa', 'KaMaNa', 'KhaYaNa', 'KaKhaKa', 'KaTaTa', 'KaTaNa', 'KaMaTa', 'LaMaTa', 'LaThaNa', 'MaYaKa', 'MaGaDa', 'MaGaTa', 'OuKaMa', 'PaBaTa', 'PaZaTa', 'SaKhaNa', 'SaKaKha', 'SaKaNa', 'YaPaTha', 'OuKaTa', 'TaTaHta', 'TaKaNa', 'TaMaNa', 'ThaKaTa', 'ThaLaNa', 'ThaGaKa', 'ThaKhaNa', 'TaTaNa', 'YaKaNa', 'OuKaNa'],
+    13 => ['AhKhaNa', 'KhaYaHa', 'KhaMaNa', 'HaTaNa', 'HaPaNa', 'HaPaTa', 'SaHpaNa', 'ThaNaNa', 'SaSaNa', 'ThaPaNa', 'KaLaHpa', 'KaLaNa', 'KaLaDa', 'KaMaSa', 'KaTaNa', 'KaYaNa', 'KaTaTa', 'KaHaNa', 'KaLaTa', 'KaKhaNa', 'KaMaNa', 'KaTaLa', 'KaThaNa', 'LaKhaNa', 'LaKhaTa', 'LaYaNa', 'LaKaNa', 'LaHaNa', 'LaLaNa', 'MaBaNa', 'MaMaSa', 'MaTaNa', 'MaTaTa', 'MaMaNa', 'MaHpaNa', 'MaKaNa', 'MaPaNa', 'MaSaNa', 'MaYaNa', 'MaKhaNa', 'MaLaNa', 'MaMaTa', 'MaNaNa', 'MaYaTa', 'MaSaTa', 'NaKhaWa', 'NaTaNa', 'NaKhaNa', 'NaMaTa', 'NaHpaNa', 'NaSaNa', 'NaKaNa', 'NaWaNa', 'NaPhaNa', 'NaKhaTa', 'NyaYaNa', 'PaKhaNa', 'PaYaNa', 'PaSaNa', 'PaWaNa', 'HpaKhaNa', 'PaTaYa', 'PaLaNa', 'TaKhaLa', 'TaYaNa', 'TaKaNa', 'YaLaNa', 'YaSaNa', 'YaHpaNa', 'YaNgaNa', 'NaTaYa', 'PaLaTa', 'KhaLaNa', 'MaHaYa', 'PaPaKa', 'TaMaNya', 'MaBaTa', 'MaNgaNa', 'AhTaNa', 'TaLaNa'],
+    14 => ['AhIMaTa', 'BaKaLa', 'DaNaHpa', 'DaDaYa', 'AhMaNa', 'HaKaKa', 'HaThaTa', 'AhGaPa', 'KaKaHta', 'KaLaNa', 'KaKhaNa', 'KaKaNa', 'KaPaNa', 'LaPaTa', 'LaMaNa', 'MaAhPa', 'MaMaKa', 'MaAhNa', 'MaMaNa', 'NgaPaTa', 'NgaThaKha', 'NgaYaKa', 'NgaSaNa', 'NgaThaYa', 'NyaTaNa', 'PaTaNa', 'PaThaNa', 'HpaPaNa', 'PaSaLa', 'YaThaYa', 'ThaPaNa', 'WaKhaMa', 'YaKaNa', 'ZaLaNa'],
 ];
 include 'share_header.php';
 ?>
@@ -453,8 +437,8 @@ include 'share_header.php';
                             <span class="license-separator">/</span>
                             <select id="nrcTownship" class="form-select custom-form-field nrc-township-select" aria-label="NRC township" required>
                                 <option value="">Township</option>
-                                <?php foreach ($nrcTownships as $code => $label): ?>
-                                    <option value="<?php echo $code; ?>" <?php echo $nrcParts['township'] === $code ? 'selected' : ''; ?>><?php echo $label; ?></option>
+                                <?php foreach ($nrcTownshipsByState[(int) $nrcParts['state']] ?? [] as $township): ?>
+                                    <option value="<?php echo htmlspecialchars(strtoupper($township), ENT_QUOTES, 'UTF-8'); ?>" <?php echo $nrcParts['township'] === strtoupper($township) ? 'selected' : ''; ?>><?php echo htmlspecialchars($township, ENT_QUOTES, 'UTF-8'); ?></option>
                                 <?php endforeach; ?>
                             </select>
                             <select id="nrcType" class="form-select custom-form-field nrc-type-select" aria-label="NRC citizen type" required>
@@ -519,8 +503,19 @@ include 'share_header.php';
     const nrcTownship = document.getElementById('nrcTownship');
     const nrcType = document.getElementById('nrcType');
     const nrcDigits = document.getElementById('nrcDigits');
+    const nrcTownshipsByState = <?php echo json_encode($nrcTownshipsByState, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT); ?>;
     const currentLicenseYear = <?php echo (int) $currentYearShort; ?>;
     let faceStream = null;
+
+    function populateNrcTownships(selectedTownship = '') {
+        nrcTownship.replaceChildren(new Option('Township', ''));
+        (nrcTownshipsByState[nrcState.value] || []).forEach((township) => {
+            const code = township.toUpperCase();
+            nrcTownship.add(new Option(township, code, false, code === selectedTownship));
+        });
+    }
+
+    populateNrcTownships(nrcTownship.value);
 
     function digitsOnly(input, limit) {
         input.value = input.value.replace(/\D/g, '').slice(0, limit);
@@ -561,6 +556,7 @@ include 'share_header.php';
     [licenseType, licenseSerial, licenseYear].forEach((field) => field.addEventListener('input', syncLicenseNumber));
     phoneNumber.addEventListener('input', syncPhoneNumber);
     [nrcState, nrcTownship, nrcType, nrcDigits].forEach((field) => field.addEventListener('input', syncNrcNumber));
+    nrcState.addEventListener('change', () => populateNrcTownships());
     [licenseType, nrcState, nrcTownship, nrcType].forEach((field) => field.addEventListener('change', () => {
         syncLicenseNumber();
         syncPhoneNumber();
