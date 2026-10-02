@@ -157,7 +157,7 @@ $updatedLabel = $updatedAt ? admin_date($updatedAt) : 'Not available';
         <div>
             <span class="stat-chip mb-2"><i class="bi bi-speedometer2 txt-neon-cyan"></i> Admin Dashboard</span>
             <h1 class="fw-bold m-0 h4 text-white mt-2">Control Center Overview</h1>
-            <p class="text-white-50 m-0 small mt-1">Live counts from the <code>map_and_pump</code> database.</p>
+            <p class="text-white-50 m-0 small mt-1">Live counts</p>
         </div>
         <span class="stat-chip"><i class="bi bi-clock-history me-1"></i> Updated <?= hq_escape($updatedLabel) ?></span>
     </div>

@@ -114,3 +114,90 @@
         console.warn('sticky-nav-wrapper move failed', e);
     }
 })();
+
+/**
+ * Live filter forms (Admin + Moderator list pages).
+ * Debounced auto-submit on search input; immediate submit on companion select changes.
+ * Targets GET forms that contain input[name="search"]. Skips hire-account AJAX search
+ * (no name="search") and all POST modals.
+ */
+(function () {
+    const DEBOUNCE_MS = 350;
+
+    function isGetForm(form) {
+        if (!(form instanceof HTMLFormElement)) return false;
+        const method = (form.getAttribute('method') || 'get').trim().toLowerCase();
+        return method === 'get';
+    }
+
+    function submitForm(form) {
+        if (!form || form.dataset.liveFilterSubmitting === '1') return;
+        form.dataset.liveFilterSubmitting = '1';
+        try {
+            if (typeof form.requestSubmit === 'function') {
+                form.requestSubmit();
+            } else {
+                form.submit();
+            }
+        } catch (e) {
+            form.dataset.liveFilterSubmitting = '0';
+            console.warn('live-filter submit failed', e);
+        }
+    }
+
+    function bindLiveFilter(form) {
+        if (!isGetForm(form) || form.dataset.liveFilterBound === '1') return;
+
+        const searchInput = form.querySelector('input[name="search"]');
+        if (!searchInput) return;
+
+        form.dataset.liveFilterBound = '1';
+        let timer = null;
+        let composing = false;
+
+        const scheduleSubmit = () => {
+            if (timer) clearTimeout(timer);
+            timer = setTimeout(() => {
+                timer = null;
+                if (composing) return;
+                submitForm(form);
+            }, DEBOUNCE_MS);
+        };
+
+        searchInput.addEventListener('compositionstart', () => {
+            composing = true;
+        });
+        searchInput.addEventListener('compositionend', () => {
+            composing = false;
+            scheduleSubmit();
+        });
+        searchInput.addEventListener('input', () => {
+            if (composing) return;
+            scheduleSubmit();
+        });
+
+        form.querySelectorAll('select').forEach((select) => {
+            select.addEventListener('change', () => {
+                if (timer) {
+                    clearTimeout(timer);
+                    timer = null;
+                }
+                submitForm(form);
+            });
+        });
+    }
+
+    function initLiveFilters() {
+        document.querySelectorAll('form').forEach((form) => {
+            if (!isGetForm(form)) return;
+            if (!form.querySelector('input[name="search"]')) return;
+            bindLiveFilter(form);
+        });
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initLiveFilters);
+    } else {
+        initLiveFilters();
+    }
+})();
