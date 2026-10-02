@@ -153,13 +153,50 @@ $updatedLabel = $updatedAt ? admin_date($updatedAt) : 'Not available';
 <?php $adminSection = 'home'; include __DIR__ . '/admin_section_nav.php'; ?>
 
 <main class="container my-5">
+    <?php if (function_exists('expiry_render_page_banners')) { expiry_render_page_banners('admin', true); } ?>
     <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3">
         <div>
             <span class="stat-chip mb-2"><i class="bi bi-speedometer2 txt-neon-cyan"></i> Admin Dashboard</span>
             <h1 class="fw-bold m-0 h4 text-white mt-2">Control Center Overview</h1>
-            <p class="text-white-50 m-0 small mt-1">Live counts from the <code>map_and_pump</code> database.</p>
+            <p class="text-white-50 m-0 small mt-1">Live counts</p>
         </div>
         <span class="stat-chip"><i class="bi bi-clock-history me-1"></i> Updated <?= hq_escape($updatedLabel) ?></span>
+    </div>
+
+    <?php
+    $expiryPayload = function_exists('expiry_alert_payload') ? expiry_alert_payload(false, true) : [];
+    $expiringSoon = (int) ($expiryPayload['warning_hq'] ?? 0) + (int) ($expiryPayload['warning_users'] ?? 0);
+    $expiredCount = (int) ($expiryPayload['expired_hq'] ?? 0) + (int) ($expiryPayload['expired_users'] ?? 0);
+    ?>
+    <div class="row g-3 mb-3">
+        <div class="col-12 col-sm-6">
+            <a href="view_hq_and_user_account.php?expiry=warning" class="metric-card-link" title="HQ and users expiring within 10 days">
+                <div class="analytics-card metric-card py-3">
+                    <div class="d-flex align-items-center justify-content-between gap-3">
+                        <div>
+                            <p class="mb-0 metric-label text-warning">Expiring soon</p>
+                            <h3 class="metric-value text-white mb-0"><?= $expiringSoon ?></h3>
+                        </div>
+                        <span class="text-warning fs-3"><i class="bi bi-clock-history"></i></span>
+                    </div>
+                    <p class="text-white-50 small mb-0 mt-2"><?= (int) ($expiryPayload['warning_hq'] ?? 0) ?> HQ · <?= (int) ($expiryPayload['warning_users'] ?? 0) ?> users (≤10 days)</p>
+                </div>
+            </a>
+        </div>
+        <div class="col-12 col-sm-6">
+            <a href="view_users.php?expiry=expired" class="metric-card-link" title="Accounts with expired licenses">
+                <div class="analytics-card metric-card py-3">
+                    <div class="d-flex align-items-center justify-content-between gap-3">
+                        <div>
+                            <p class="mb-0 metric-label text-danger">Expired licenses</p>
+                            <h3 class="metric-value text-white mb-0"><?= $expiredCount ?></h3>
+                        </div>
+                        <span class="text-danger fs-3"><i class="bi bi-x-octagon"></i></span>
+                    </div>
+                    <p class="text-white-50 small mb-0 mt-2"><?= (int) ($expiryPayload['expired_hq'] ?? 0) ?> HQ · <?= (int) ($expiryPayload['expired_users'] ?? 0) ?> users (auto-suspended)</p>
+                </div>
+            </a>
+        </div>
     </div>
 
     <div class="row g-3 mb-4">

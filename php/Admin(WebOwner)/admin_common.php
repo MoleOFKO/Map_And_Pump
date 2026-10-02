@@ -3,6 +3,7 @@
  * Shared helpers for the admin dashboard, profile, report, and log pages.
  */
 require_once __DIR__ . '/hq_account_common.php';
+require_once __DIR__ . '/../expiry_alerts.php';
 
 function admin_flash(string $type, string $message): void
 {

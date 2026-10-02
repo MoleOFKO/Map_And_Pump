@@ -6,6 +6,10 @@ $flash = hq_pull_flash();
 $search = trim((string) ($_GET['search'] ?? ''));
 $region = strtolower(trim((string) ($_GET['region'] ?? '')));
 $status = strtolower(trim((string) ($_GET['status'] ?? '')));
+$expiryFilter = strtolower(trim((string) ($_GET['expiry'] ?? '')));
+if (!in_array($expiryFilter, ['warning', 'expired', 'any'], true)) {
+    $expiryFilter = '';
+}
 
 $allowedRegions = function_exists('admin_filter_hq_regions') ? admin_filter_hq_regions() : [];
 $allowedStatuses = function_exists('admin_filter_user_statuses')
@@ -22,13 +26,13 @@ if ($status !== '' && !in_array($status, $allowedStatuses, true)) {
     $status = '';
 }
 // Region may be free-text LIKE even if not in the distinct list.
-$hqRows = moderator_hq_rows($search, $region, $status);
+$hqRows = moderator_hq_rows($search, $region, $status, $expiryFilter);
 $dbError = hq_db_available() ? null : hq_db_error_message();
 $regionLabel = static function (string $value): string {
     return function_exists('admin_filter_label') ? admin_filter_label($value) : ucwords($value);
 };
 $flashType = (string) ($flash['type'] ?? '');
-$filtersActive = ($search !== '' || $region !== '' || $status !== '');
+$filtersActive = ($search !== '' || $region !== '' || $status !== '' || $expiryFilter !== '');
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -59,13 +63,14 @@ $filtersActive = ($search !== '' || $region !== '' || $status !== '');
 <main class="container my-5">
     <?php if ($flash && $flashType): ?><div class="alert mod-flash alert-<?= moderator_escape($flashType) ?> alert-dismissible fade show mb-4" role="alert"><i class="bi <?= $flashType === 'success' ? 'bi-check-circle-fill text-success' : 'bi-exclamation-triangle-fill text-danger' ?> me-2"></i><?= moderator_escape((string) ($flash['message'] ?? '')) ?><button type="button" class="btn-close btn-close-white" data-bs-dismiss="alert"></button></div><?php endif; ?>
     <?php if ($dbError): ?><div class="alert mod-flash alert-danger mb-4"><i class="bi bi-database-exclamation me-2"></i><?= moderator_escape($dbError) ?></div><?php endif; ?>
+    <?php if (function_exists('expiry_render_page_banners')) { expiry_render_page_banners('moderator', true); } ?>
     <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3"><div><span class="stat-chip mb-2"><i class="bi bi-building-fill txt-neon-cyan"></i> HQ Administration</span><h1 class="fw-bold m-0 h4 text-white mt-2">View/Manage HQ</h1><p class="text-white-50 m-0 small mt-1">View HQ records. The status filter reflects the linked owner's account state.</p></div></div>
 
-            <div class="dashboard-card py-3 px-4 mb-4"><form class="row g-3 align-items-center" method="GET" action="view_hq_and_user_account(M).php"><div class="col-12 col-md-3"><div class="input-group"><span class="input-group-text bg-transparent border-end-0" style="border-color:var(--glass-border);color:var(--neon-cyan);border-radius:12px 0 0 12px"><i class="bi bi-search"></i></span><input type="search" class="form-control glass-input border-start-0" placeholder="Search by HQ or owner name..." name="search" value="<?= moderator_escape($search) ?>"></div></div><div class="col-12 col-md-3"><select class="form-select glass-select" name="region"><option value="">All Regions</option><?php foreach ($allowedRegions as $option): ?><option value="<?= moderator_escape($option) ?>" <?= $region === $option ? 'selected' : '' ?>><?= moderator_escape($regionLabel($option)) ?></option><?php endforeach; ?></select></div><div class="col-12 col-md-3"><select class="form-select glass-select" name="status" aria-label="Owner account status"><option value="">All Status</option><?php foreach ($allowedStatuses as $option): ?><option value="<?= moderator_escape($option) ?>" <?= $status === $option ? 'selected' : '' ?>><?= moderator_escape(hq_status_label($option)) ?></option><?php endforeach; ?></select></div><div class="col-12 col-md-3 d-flex gap-2"><button type="submit" class="btn btn-neon flex-grow-1">Apply Filter</button><?php if ($filtersActive): ?><a href="view_hq_and_user_account(M).php" class="btn btn-outline-secondary text-white-50 border-secondary border-opacity-25" title="Clear filters">Clear</a><?php endif; ?></div></form></div>
+            <div class="dashboard-card py-3 px-4 mb-4"><form class="row g-3 align-items-end" method="GET" action="view_hq_and_user_account(M).php"><div class="col-12 col-md-3"><div class="input-group"><span class="input-group-text bg-transparent border-end-0" style="border-color:var(--glass-border);color:var(--neon-cyan);border-radius:12px 0 0 12px"><i class="bi bi-search"></i></span><input type="search" class="form-control glass-input border-start-0" placeholder="Search by HQ or owner name..." name="search" value="<?= moderator_escape($search) ?>"></div></div><div class="col-6 col-md-2"><select class="form-select glass-select" name="region" aria-label="Region"><option value="">All Regions</option><?php foreach ($allowedRegions as $option): ?><option value="<?= moderator_escape($option) ?>" <?= $region === $option ? 'selected' : '' ?>><?= moderator_escape($regionLabel($option)) ?></option><?php endforeach; ?></select></div><div class="col-6 col-md-2"><select class="form-select glass-select" name="status" aria-label="Owner account status"><option value="">All Status</option><?php foreach ($allowedStatuses as $option): ?><option value="<?= moderator_escape($option) ?>" <?= $status === $option ? 'selected' : '' ?>><?= moderator_escape(hq_status_label($option)) ?></option><?php endforeach; ?></select></div><div class="col-12 col-md-3"><?= function_exists('expiry_filter_select_html') ? expiry_filter_select_html($expiryFilter, 'modHqExpiryFilter', 'moderator_escape') : '' ?></div><div class="col-12 col-md-2 d-flex gap-2"><button type="submit" class="btn btn-neon flex-grow-1">Apply Filter</button><?php if ($filtersActive): ?><a href="view_hq_and_user_account(M).php" class="btn btn-outline-secondary text-white-50 border-secondary border-opacity-25" title="Clear filters">Clear</a><?php endif; ?></div></form></div>
 
     <div class="analytics-card"><div class="table-responsive hq-table-scroll"><table class="table table-dark-custom align-middle m-0"><thead><tr><th>HQ Entity &amp; Owner</th><th>Role</th><th>Stations</th><th>Headquarters Location</th><th>Owner Account Status</th><th class="text-end">Command</th></tr></thead><tbody>
     <?php if (!$hqRows): ?><tr><td colspan="6" class="text-center text-white-50 py-5"><i class="bi bi-building-x fs-3 d-block mb-2"></i>No HQ accounts match the current filter.</td></tr><?php endif; ?>
-    <?php foreach ($hqRows as $row): ?><?php $company = (string) ($row['company_name'] ?? 'Unnamed HQ'); $location = preg_split('/\s+[—-]\s+/u', (string) ($row['location'] ?? ''), 2) ?: []; $rowStatus = (string) ($row['account_status'] ?? 'pending'); $stationCount = (int) ($row['station_count'] ?? 0); ?><tr><td><div class="d-flex align-items-center gap-3"><div class="rounded-3 d-flex align-items-center justify-content-center fw-bold" style="width:44px;height:44px;background:rgba(0,244,255,.1);border:1px solid rgba(0,244,255,.28);color:var(--neon-cyan)"><?= moderator_escape(hq_initials($company)) ?></div><div><div class="fw-semibold text-white"><?= moderator_escape($company) ?></div><div class="text-white-50 small">Owner: <?= moderator_escape((string) ($row['owner_name'] ?? 'No owner account')) ?> (<?= moderator_escape((string) ($row['owner_email'] ?? 'No email available')) ?>)</div></div></div></td><td class="text-white-50">#3 &middot; HQ</td><td class="text-white-50"><?= $stationCount ?></td><td><div class="text-white"><?= moderator_escape((string) ($location[0] ?? 'Location not available')) ?></div><?php if (!empty($location[1])): ?><div class="text-white-50 small"><?= moderator_escape((string) $location[1]) ?></div><?php endif; ?></td><td><span class="hq-status <?= moderator_escape(hq_status_class($rowStatus)) ?>"><?= moderator_escape(hq_status_label($rowStatus)) ?></span></td><td class="text-end"><div class="d-flex gap-2 justify-content-end"><a href="#" class="btn-action js-view-hq" title="View HQ Details" data-hq-id="<?= (int) $row['headquarter_id'] ?>"><i class="bi bi-eye-fill"></i></a><a href="#" class="btn-action btn-action-danger js-account-action" title="Suspend / Remove / Restore" data-hq-id="<?= (int) $row['headquarter_id'] ?>" data-hq-name="<?= moderator_escape($company) ?>"><i class="bi bi-shield-exclamation"></i></a></div></td></tr><?php endforeach; ?>
+    <?php foreach ($hqRows as $row): ?><?php $company = (string) ($row['company_name'] ?? 'Unnamed HQ'); $location = preg_split('/\s+[—-]\s+/u', (string) ($row['location'] ?? ''), 2) ?: []; $rowStatus = (string) ($row['account_status'] ?? 'pending'); $stationCount = (int) ($row['station_count'] ?? 0); ?><tr><td><div class="d-flex align-items-center gap-3"><div class="rounded-3 d-flex align-items-center justify-content-center fw-bold" style="width:44px;height:44px;background:rgba(0,244,255,.1);border:1px solid rgba(0,244,255,.28);color:var(--neon-cyan)"><?= moderator_escape(hq_initials($company)) ?></div><div><div class="fw-semibold text-white"><?= moderator_escape($company) ?></div><div class="text-white-50 small">Owner: <?= moderator_escape((string) ($row['owner_name'] ?? 'No owner account')) ?> (<?= moderator_escape((string) ($row['owner_email'] ?? 'No email available')) ?>)</div></div></div></td><td class="text-white-50">#3 &middot; HQ</td><td class="text-white-50"><?= $stationCount ?></td><td><div class="text-white"><?= moderator_escape((string) ($location[0] ?? 'Location not available')) ?></div><?php if (!empty($location[1])): ?><div class="text-white-50 small"><?= moderator_escape((string) $location[1]) ?></div><?php endif; ?></td><td><span class="hq-status <?= moderator_escape(hq_status_class($rowStatus)) ?>"><?= moderator_escape(hq_status_label($rowStatus)) ?></span><?php if (function_exists("expiry_badge_html")): ?><div class="mt-1"><?= expiry_badge_html(isset($row["expire_at"]) ? (string) $row["expire_at"] : null) ?></div><?php endif; ?></td><td class="text-end"><div class="d-flex gap-2 justify-content-end"><a href="#" class="btn-action js-view-hq" title="View HQ Details" data-hq-id="<?= (int) $row['headquarter_id'] ?>"><i class="bi bi-eye-fill"></i></a><a href="#" class="btn-action btn-action-danger js-account-action" title="Suspend / Remove / Restore" data-hq-id="<?= (int) $row['headquarter_id'] ?>" data-hq-name="<?= moderator_escape($company) ?>"><i class="bi bi-shield-exclamation"></i></a></div></td></tr><?php endforeach; ?>
     </tbody></table></div></div>
 </main>
 
@@ -90,6 +95,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const stationStatusLabel = status => ({active:'Active', approved:'Active', decommissioned:'Decommissioned', suspended:'Suspended', removed:'Removed', offline:'Offline'}[String(status || '').toLowerCase()] || (status ? String(status) : 'Unknown'));
     const emptyRow = (cols, message) => '<tr><td colspan="' + cols + '" class="text-center text-white-50 py-4"><i class="bi bi-inbox me-1"></i>' + esc(message) + '</td></tr>';
     const sectionTitle = (icon, title, count) => '<div class="d-flex align-items-center justify-content-between mb-2 mt-1"><h6 class="text-white fw-semibold mb-0"><i class="bi ' + icon + ' txt-neon-cyan me-2"></i>' + title + '</h6><span class="badge rounded-pill" style="background:rgba(0,244,255,.12);color:#7eefff;border:1px solid rgba(0,244,255,.25);font-weight:600;">' + count + '</span></div>';
+    
+    <?= function_exists('expiry_js_detail_helper') ? expiry_js_detail_helper() : 'function expiryDetailAlert(){return "";}' ?>
     const renderDetails = payload => {
         const hq = payload.hq || {};
         currentHQDetails = hq;
@@ -103,7 +110,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const today = [currentDate.getFullYear(), String(currentDate.getMonth() + 1).padStart(2, '0'), String(currentDate.getDate()).padStart(2, '0')].join('-');
         const licenseDateWarning = registeredDay && expiryDay && expiryDay <= registeredDay
             ? '<div class="alert alert-warning py-2 mb-3" role="status"><i class="bi bi-exclamation-triangle-fill me-2"></i>License expiry must be after registration. Correct this date from Edit details using the current business license.</div>'
-            : (expiryDay && expiryDay < today ? '<div class="alert alert-warning py-2 mb-3" role="status"><i class="bi bi-exclamation-triangle-fill me-2"></i>This business license has expired. Review the current license date.</div>' : '');
+            : (expiryDay && expiryDay < today ? '<div class="alert alert-warning py-2 mb-3" role="status"><i class="bi bi-exclamation-triangle-fill me-2"></i>This business license has expired. The related account should be suspended until renewed.</div>' : '');
         const metaCards = '<div class="row g-3 mb-4">' +
             '<div class="col-12 col-md-6"><div class="p-3 rounded-3" style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);"><div class="mod-detail-label">HQ location</div><div class="mod-detail-value mt-1">' + esc(hq.location || 'Not available') + '</div></div></div>' +
             '<div class="col-6 col-md-3"><div class="p-3 rounded-3 h-100" style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);"><div class="mod-detail-label">Contact</div><div class="mod-detail-value mt-1">' + esc(hq.contact_number || '—') + '</div></div></div>' +
@@ -117,12 +124,20 @@ document.addEventListener('DOMContentLoaded', () => {
         const actionRows = actions.length ? actions.map(action => '<tr><td><span class="badge text-bg-dark border border-secondary border-opacity-25">' + esc(String(action.action_type || '').toUpperCase()) + '</span></td><td class="text-white-50">' + esc(action.reason || '—') + '</td><td class="text-white-50 small">' + esc(date(action.created_at)) + '</td></tr>').join('') : emptyRow(3, 'No suspend/remove history.');
         detailsBody.innerHTML = licenseDateWarning + metaCards + sectionTitle('bi-people-fill', 'Linked user accounts', accounts.length) + '<div class="table-responsive mb-4"><table class="table mod-modal-table align-middle mb-0"><thead><tr><th>User</th><th>Email</th><th>Role</th><th>Status</th><th>Created</th></tr></thead><tbody>' + accountRows + '</tbody></table></div>' + sectionTitle('bi-fuel-pump-fill', 'Linked stations', stations.length) + '<div class="table-responsive mb-4"><table class="table mod-modal-table align-middle mb-0"><thead><tr><th>Station</th><th>Location</th><th>Manager</th><th>Status</th><th>Created</th></tr></thead><tbody>' + stationRows + '</tbody></table></div>' + sectionTitle('bi-clock-history', 'Account action history', actions.length) + '<div class="table-responsive"><table class="table mod-modal-table align-middle mb-0"><thead><tr><th>Action</th><th>Reason</th><th>Recorded</th></tr></thead><tbody>' + actionRows + '</tbody></table></div>';
     };
-    document.querySelectorAll('.js-view-hq').forEach(button => button.addEventListener('click', async event => {
-        event.preventDefault(); detailsTitle.innerHTML = '<i class="bi bi-building txt-neon-cyan me-2"></i> Stations &amp; Users'; detailsBody.innerHTML = '<div class="text-center text-white-50 py-5"><div class="spinner-border spinner-border-sm txt-neon-cyan mb-2" role="status"></div><div>Loading stations &amp; users…</div></div>'; detailModal.show();
-        try { const response = await fetch('hq_details(M).php?id=' + encodeURIComponent(button.dataset.hqId), {headers: {Accept: 'application/json'}, cache: 'no-store'}); const payload = await response.json(); if (!response.ok || !payload.success) throw new Error(payload.message || 'Unable to load HQ details.'); renderDetails(payload); } catch (error) { detailsBody.innerHTML = '<div class="alert mod-flash alert-danger"><i class="bi bi-exclamation-triangle me-2"></i>' + esc(error.message) + '</div>'; }
-    }));
-    document.querySelectorAll('.js-account-action').forEach(button => button.addEventListener('click', event => { event.preventDefault(); document.getElementById('actionHQId').value = button.dataset.hqId || ''; document.getElementById('actionHQName').textContent = button.dataset.hqName || 'Selected HQ'; document.getElementById('actionReason').value = ''; actionModal.show(); }));
-    document.querySelectorAll('.js-edit-hq-details').forEach(button => button.addEventListener('click', () => {
+    document.addEventListener('click', async event => {
+        const viewBtn = event.target.closest('.js-view-hq');
+        if (viewBtn) {
+            event.preventDefault(); detailsTitle.innerHTML = '<i class="bi bi-building txt-neon-cyan me-2"></i> Stations &amp; Users'; detailsBody.innerHTML = '<div class="text-center text-white-50 py-5"><div class="spinner-border spinner-border-sm txt-neon-cyan mb-2" role="status"></div><div>Loading stations &amp; users…</div></div>'; detailModal.show();
+            try { const response = await fetch('hq_details(M).php?id=' + encodeURIComponent(viewBtn.dataset.hqId), {headers: {Accept: 'application/json'}, cache: 'no-store'}); const payload = await response.json(); if (!response.ok || !payload.success) throw new Error(payload.message || 'Unable to load HQ details.'); renderDetails(payload); } catch (error) { detailsBody.innerHTML = '<div class="alert mod-flash alert-danger"><i class="bi bi-exclamation-triangle me-2"></i>' + esc(error.message) + '</div>'; }
+            return;
+        }
+        const actionBtn = event.target.closest('.js-account-action');
+        if (actionBtn) {
+            event.preventDefault(); document.getElementById('actionHQId').value = actionBtn.dataset.hqId || ''; document.getElementById('actionHQName').textContent = actionBtn.dataset.hqName || 'Selected HQ'; document.getElementById('actionReason').value = ''; actionModal.show();
+            return;
+        }
+        const editBtn = event.target.closest('.js-edit-hq-details');
+        if (!editBtn) return;
         const h = currentHQDetails || {};
         const location = String(h.location || '');
         const parts = location.split(/\s+(?:—|-)\s+/);
@@ -149,7 +164,7 @@ document.addEventListener('DOMContentLoaded', () => {
             minExpiry = [minExpiry, dayAfterRegistration.toISOString().slice(0, 10)].sort().pop();
         }
         expiryInput.min = minExpiry;
-    }));
+    });
 });
 </script>
 </body>

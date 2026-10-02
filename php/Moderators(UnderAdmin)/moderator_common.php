@@ -84,7 +84,7 @@ function moderator_format_date(?string $value): string
     return $timestamp ? date('M j, Y · g:i A', $timestamp) : $value;
 }
 
-function moderator_hq_rows(string $search, string $region, string $status): array
+function moderator_hq_rows(string $search, string $region, string $status, string $expiryFilter = ''): array
 {
     global $conn;
     $rows = [];
@@ -118,6 +118,13 @@ function moderator_hq_rows(string $search, string $region, string $status): arra
             $where[] = "LOWER(COALESCE(owner.status, 'pending')) = ?";
             $params[] = $status;
             $types .= 's';
+        }
+    }
+    $expiryFilter = strtolower(trim($expiryFilter));
+    if ($expiryFilter !== '' && function_exists('expiry_hq_filter_sql')) {
+        $expirySql = expiry_hq_filter_sql($expiryFilter, 'h.expire_at');
+        if ($expirySql !== '') {
+            $where[] = $expirySql;
         }
     }
 

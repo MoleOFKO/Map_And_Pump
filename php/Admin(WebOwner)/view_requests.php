@@ -439,19 +439,19 @@ $flashType = $flash['type'] ?? '';
                 flagModal.show();
             };
 
-            document.querySelectorAll('.js-request-approve').forEach((button) => {
-                button.addEventListener('click', (event) => {
+            document.addEventListener('click', (event) => {
+                const approveBtn = event.target.closest('.js-request-approve');
+                if (approveBtn) {
                     event.preventDefault();
-                    approveId.value = button.dataset.requestId || '';
+                    approveId.value = approveBtn.dataset.requestId || '';
                     document.getElementById('approveRequestForm').submit();
-                });
-            });
-
-            document.querySelectorAll('.js-request-reject').forEach((button) => {
-                button.addEventListener('click', (event) => {
+                    return;
+                }
+                const rejectBtn = event.target.closest('.js-request-reject');
+                if (rejectBtn) {
                     event.preventDefault();
-                    rejectTarget('request', button.dataset.requestId || '', button.dataset.reference || 'Selected request', button.dataset.sender || 'Unknown sender');
-                });
+                    rejectTarget('request', rejectBtn.dataset.requestId || '', rejectBtn.dataset.reference || 'Selected request', rejectBtn.dataset.sender || 'Unknown sender');
+                }
             });
 
             const renderDetails = (payload) => {
@@ -476,25 +476,26 @@ $flashType = $flash['type'] ?? '';
                 }
             };
 
-            document.querySelectorAll('.js-view-request').forEach((button) => {
-                button.addEventListener('click', async () => {
+            document.addEventListener('click', async (event) => {
+                const viewReqBtn = event.target.closest('.js-view-request');
+                if (viewReqBtn) {
                     detailsTitle.innerHTML = '<i class="bi bi-file-earmark-text txt-neon-cyan me-2"></i> Request Details';
                     detailsBody.innerHTML = '<div class="text-center text-white-50 py-5"><div class="spinner-border spinner-border-sm txt-neon-cyan mb-2" role="status"></div><div>Loading request details…</div></div>';
                     setFooter();
                     detailsModal.show();
                     try {
-                        const response = await fetch('request_details.php?id=' + encodeURIComponent(button.dataset.requestId), {headers:{Accept:'application/json'}});
+                        const response = await fetch('request_details.php?id=' + encodeURIComponent(viewReqBtn.dataset.requestId), {headers:{Accept:'application/json'}});
                         const payload = await response.json();
                         if (!response.ok || !payload.success) throw new Error(payload.message || 'Could not load request details.');
                         renderDetails(payload);
                     } catch (error) {
                         detailsBody.innerHTML = '<div class="alert request-flash alert-danger"><i class="bi bi-exclamation-triangle me-2"></i>' + escapeHtml(error.message) + '</div>';
                     }
-                });
-            });
+                    return;
+                }
 
-            document.querySelectorAll('.js-view-account-request').forEach((button) => {
-                button.addEventListener('click', async (event) => {
+                const button = event.target.closest('.js-view-account-request');
+                if (!button) return;
                     event.preventDefault();
                     detailsTitle.innerHTML = '<i class="bi bi-person-check txt-neon-cyan me-2"></i> Account Verification';
                     detailsBody.innerHTML = '<div class="text-center text-white-50 py-5"><div class="spinner-border spinner-border-sm txt-neon-cyan mb-2" role="status"></div><div>Loading account details…</div></div>';
@@ -552,7 +553,6 @@ $flashType = $flash['type'] ?? '';
                     } catch (error) {
                         detailsBody.innerHTML = '<div class="alert request-flash alert-danger"><i class="bi bi-exclamation-triangle me-2"></i>' + escapeHtml(error.message) + '</div>';
                     }
-                });
             });
         })();
     </script>

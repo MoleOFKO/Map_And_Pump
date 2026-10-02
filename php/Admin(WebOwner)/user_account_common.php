@@ -4,7 +4,7 @@
  */
 require_once __DIR__ . '/hq_account_common.php';
 
-function customer_account_rows(string $search = '', string $status = ''): array
+function customer_account_rows(string $search = '', string $status = '', string $expiryFilter = ''): array
 {
     global $conn;
     $rows = [];
@@ -43,13 +43,23 @@ function customer_account_rows(string $search = '', string $status = ''): array
         }
     }
 
+    $expiryFilter = strtolower(trim($expiryFilter));
+    if ($expiryFilter !== '' && function_exists('expiry_user_filter_sql')) {
+        $expirySql = expiry_user_filter_sql($expiryFilter, 'l.license_last_valid_date');
+        if ($expirySql !== '') {
+            $where[] = $expirySql;
+        }
+    }
+
     $sql = <<<'SQL'
 SELECT u.user_id, u.user_public_id, u.user_name, u.email, u.status, u.created_at, u.updated_at,
        u.headquarter_id, u.role_id, base_role.role_name,
-       h.company_name AS headquarter_name, h.location AS headquarter_location
+       h.company_name AS headquarter_name, h.location AS headquarter_location,
+       l.license_last_valid_date
 FROM users u
 INNER JOIN roles base_role ON base_role.role_id = u.role_id
 LEFT JOIN headquarter h ON h.headquarter_id = u.headquarter_id
+LEFT JOIN user_license l ON l.license_id = u.license_id
 SQL;
     $sql .= ' WHERE ' . implode(' AND ', $where) . ' ORDER BY u.updated_at DESC, u.user_id DESC';
 

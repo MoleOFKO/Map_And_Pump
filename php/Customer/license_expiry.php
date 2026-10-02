@@ -1,6 +1,9 @@
 <?php
 
-const MAP_PUMP_LICENSE_WARNING_DAYS = 10;
+// Align with Admin MAP_PUMP_EXPIRY_WARNING_DAYS when that constant is loaded first.
+if (!defined('MAP_PUMP_LICENSE_WARNING_DAYS')) {
+    define('MAP_PUMP_LICENSE_WARNING_DAYS', defined('MAP_PUMP_EXPIRY_WARNING_DAYS') ? (int) MAP_PUMP_EXPIRY_WARNING_DAYS : 10);
+}
 
 function customer_license_expiry_schema_ready(PDO $pdo): bool
 {

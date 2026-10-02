@@ -15,6 +15,7 @@
             </a>
 
             <div class="admin-nav-actions">
+                <?php if (function_exists('expiry_render_nav_bell')) { expiry_render_nav_bell('moderator'); } ?>
                 <label class="cosmic-toggle nav-theme-toggle" title="Toggle light mode">
                     <input class="toggle js-theme-toggle" type="checkbox" aria-label="Toggle light mode" />
                     <div class="slider">

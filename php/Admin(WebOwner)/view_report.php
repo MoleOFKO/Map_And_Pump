@@ -160,8 +160,9 @@ $flashType = (string) ($flash['type'] ?? '');
         const formatLabel = (format) => ({pdf:'Print / PDF',csv:'CSV',record:'Database Record'}[String(format || '').toLowerCase()] || 'Database Record');
         const card = (label, value) => '<div class="report-detail-card"><div class="report-detail-label mb-1">' + escapeHtml(label) + '</div><div class="report-detail-value">' + value + '</div></div>';
 
-        document.querySelectorAll('.js-view-report').forEach((button) => {
-            button.addEventListener('click', async () => {
+        document.addEventListener('click', async (event) => {
+            const button = event.target.closest('.js-view-report');
+            if (!button) return;
                 title.innerHTML = '<i class="bi bi-file-earmark-bar-graph-fill txt-neon-cyan me-2"></i>Report Details';
                 body.innerHTML = '<div class="text-center text-white-50 py-5"><div class="spinner-border spinner-border-sm txt-neon-cyan mb-2" role="status"></div><div>Loading report details…</div></div>';
                 modal.show();
@@ -191,7 +192,6 @@ $flashType = (string) ($flash['type'] ?? '');
                 } catch (error) {
                     body.innerHTML = '<div class="alert alert-danger border-0"><i class="bi bi-exclamation-triangle me-2"></i>' + escapeHtml(error.message) + '</div>';
                 }
-            });
         });
     })();
     </script>

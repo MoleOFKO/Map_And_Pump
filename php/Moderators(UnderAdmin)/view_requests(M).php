@@ -342,13 +342,17 @@ document.addEventListener('DOMContentLoaded', () => {
         if (flagReason) flagReason.value = '';
         flagModal.show();
     };
-    document.querySelectorAll('.js-request-flag').forEach(btn => btn.addEventListener('click', event => {
+    document.addEventListener('click', event => {
+        const btn = event.target.closest('.js-request-flag');
+        if (!btn) return;
         event.preventDefault();
         flagTarget(btn.dataset.requestId, btn.dataset.reference);
-    }));
+    });
 
 
-    document.querySelectorAll('.js-view-request').forEach(button => button.addEventListener('click', async event => {
+    document.addEventListener('click', async event => {
+        const button = event.target.closest('.js-view-request');
+        if (!button) return;
         event.preventDefault();
         body.innerHTML = '<div class="text-center text-white-50 py-5"><span class="spinner-border spinner-border-sm me-2"></span>Loading request details...</div>';
         setFooter('');
@@ -369,9 +373,11 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (err) {
             body.innerHTML = '<div class="alert alert-danger">' + esc(err.message) + '</div>';
         }
-    }));
+    });
 
-    document.querySelectorAll('.js-view-account-request').forEach(button => button.addEventListener('click', async event => {
+    document.addEventListener('click', async event => {
+        const button = event.target.closest('.js-view-account-request');
+        if (!button) return;
         event.preventDefault();
         body.innerHTML = '<div class="text-center text-white-50 py-5"><span class="spinner-border spinner-border-sm me-2"></span>Loading account details...</div>';
         setFooter('');
@@ -402,7 +408,7 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (err) {
             body.innerHTML = '<div class="alert alert-danger">' + esc(err.message) + '</div>';
         }
-    }));
+    });
 });
 </script>
 </body>

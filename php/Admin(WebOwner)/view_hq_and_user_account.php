@@ -11,6 +11,10 @@ $flash = hq_pull_flash();
 $search = trim((string) ($_GET['search'] ?? ''));
 $region = strtolower(trim((string) ($_GET['region'] ?? '')));
 $status = strtolower(trim((string) ($_GET['status'] ?? '')));
+$expiryFilter = strtolower(trim((string) ($_GET['expiry'] ?? '')));
+if (!in_array($expiryFilter, ['warning', 'expired', 'any'], true)) {
+    $expiryFilter = '';
+}
 
 $allowedRegions = admin_filter_hq_regions();
 $allowedStatuses = admin_filter_user_statuses(
@@ -69,6 +73,13 @@ if (hq_db_available() && hq_registry_schema_ready()) {
            }
        }
 
+       if ($expiryFilter !== '' && function_exists('expiry_hq_filter_sql')) {
+           $expirySql = expiry_hq_filter_sql($expiryFilter, 'h.expire_at');
+           if ($expirySql !== '') {
+               $where[] = $expirySql;
+           }
+       }
+
        // Station totals come from `branches` via station_business_scope (never the dummy `stations` view).
        $sql = "SELECT
             h.headquarter_id,
@@ -76,6 +87,7 @@ if (hq_db_available() && hq_registry_schema_ready()) {
             h.location,
             h.headquarter_email,
             h.created_at,
+            h.expire_at,
             owner.user_name AS owner_name,
             owner.email AS owner_email,
             COALESCE(owner.status, 'pending') AS account_status,
@@ -188,7 +200,7 @@ $flashContext = $flash['context'] ?? [];
 <body class="background_color" id="background_color">
 <?php $adminSection = 'view_hq'; include __DIR__ . '/admin_section_nav.php'; ?>
 
-<?php $filtersActive = ($search !== '' || $region !== '' || $status !== ''); ?>
+<?php $filtersActive = ($search !== '' || $region !== '' || $status !== '' || $expiryFilter !== ''); ?>
     <main class="container my-5">
         <?php if ($flash && $flashType): ?>
             <div class="alert hq-flash alert-<?= hq_escape($flashType) ?> alert-dismissible fade show mb-4" role="alert">
@@ -210,6 +222,7 @@ $flashContext = $flash['context'] ?? [];
             </div>
         <?php endif; ?>
 
+        <?php if (function_exists('expiry_render_page_banners')) { expiry_render_page_banners('admin', true); } ?>
         <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3">
             <div>
                 <span class="stat-chip mb-2"><i class="bi bi-building-fill txt-neon-cyan"></i> HQ Administration</span>
@@ -228,14 +241,14 @@ $flashContext = $flash['context'] ?? [];
             <div class="col-12">
                 <div class="dashboard-card py-3 px-4">
                     <form class="row g-3 align-items-end" method="GET" action="view_hq_and_user_account.php">
-                        <div class="col-12 col-md-3">
+                        <div class="col-12 col-md-4 col-xl-3">
                             <label class="form-label text-white-50 small mb-1" for="hqSearch">Search</label>
                             <div class="input-group">
                                 <span class="input-group-text bg-transparent border-end-0" style="border-color: var(--glass-border); color: var(--neon-cyan); border-radius: 12px 0 0 12px;"><i class="bi bi-search"></i></span>
                                 <input id="hqSearch" type="search" class="form-control glass-input border-start-0" placeholder="Search by HQ or owner name..." name="search" value="<?= hq_escape($search) ?>">
                             </div>
                         </div>
-                        <div class="col-12 col-md-3">
+                        <div class="col-6 col-md-4 col-xl-2">
                             <label class="form-label text-white-50 small mb-1" for="hqRegion">Region</label>
                             <select id="hqRegion" class="form-select glass-select" name="region">
                                 <option value="" <?= $region === '' ? 'selected' : '' ?>>All Regions</option>
@@ -244,8 +257,8 @@ $flashContext = $flash['context'] ?? [];
                                 <?php endforeach; ?>
                             </select>
                         </div>
-                        <div class="col-12 col-md-3">
-                            <label class="form-label text-white-50 small mb-1" for="hqStatus">Owner account status</label>
+                        <div class="col-6 col-md-4 col-xl-2">
+                            <label class="form-label text-white-50 small mb-1" for="hqStatus">Owner status</label>
                             <select id="hqStatus" class="form-select glass-select" name="status">
                                 <option value="" <?= $status === '' ? 'selected' : '' ?>>All Status</option>
                                 <?php foreach ($allowedStatuses as $option): ?>
@@ -253,9 +266,12 @@ $flashContext = $flash['context'] ?? [];
                                 <?php endforeach; ?>
                             </select>
                         </div>
-                        <div class="col-12 col-md-3 d-flex gap-2">
+                        <div class="col-12 col-md-6 col-xl-3">
+                            <?= function_exists('expiry_filter_select_html') ? expiry_filter_select_html($expiryFilter, 'hqExpiryFilter', 'hq_escape') : '' ?>
+                        </div>
+                        <div class="col-12 col-md-6 col-xl-2 d-flex gap-2">
                             <button type="submit" class="btn btn-neon flex-grow-1">Apply Filter</button>
-                            <?php if ($filtersActive): ?>
+                            <?php if ($filtersActive || $expiryFilter !== ''): ?>
                                 <a href="view_hq_and_user_account.php" class="btn btn-outline-secondary text-white-50 border-secondary border-opacity-25" title="Clear filters">Clear</a>
                             <?php endif; ?>
                         </div>
@@ -300,7 +316,12 @@ $flashContext = $flash['context'] ?? [];
                                         <td class="text-white-50">#3 &middot; HQ</td>
                                         <td><div class="text-white"><?= hq_escape($locationRegion) ?></div><?php if ($locationAddress !== ''): ?><div class="text-white-50 small" style="font-size:.8rem;"><?= hq_escape($locationAddress) ?></div><?php endif; ?></td>
                                         <td class="text-white-50"><span class="stat-chip" style="font-size:.75rem;"><i class="bi bi-fuel-pump me-1 txt-neon-cyan"></i><?= $stationCount ?></span></td>
-                                        <td><span class="hq-status <?= hq_status_class($rowStatus) ?>"><?= hq_escape(hq_status_label($rowStatus)) ?></span></td>
+                                        <td>
+                                            <span class="hq-status <?= hq_status_class($rowStatus) ?>"><?= hq_escape(hq_status_label($rowStatus)) ?></span>
+                                            <?php if (function_exists('expiry_badge_html')): ?>
+                                                <div class="mt-1"><?= expiry_badge_html(isset($row['expire_at']) ? (string) $row['expire_at'] : null) ?></div>
+                                            <?php endif; ?>
+                                        </td>
                                         <td class="text-end">
                                             <div class="d-flex gap-2 justify-content-end">
                                                 <a href="#" class="btn-action js-view-hq" title="View Stations &amp; Users" aria-label="View <?= hq_escape($companyName) ?> details" data-hq-id="<?= (int) $row['headquarter_id'] ?>"><i class="bi bi-eye-fill"></i></a>
@@ -378,16 +399,16 @@ $flashContext = $flash['context'] ?? [];
                 actionSubmit.classList.toggle('btn-danger', true);
             });
 
-            document.querySelectorAll('.js-account-action').forEach((button) => {
-                button.addEventListener('click', (event) => {
-                    event.preventDefault();
-                    actionId.value = button.dataset.hqId || '';
-                    actionName.textContent = button.dataset.hqName || 'Selected HQ';
-                    actionType.value = 'suspend';
-                    actionSubmit.textContent = 'Confirm Suspend';
-                    document.getElementById('actionReason').value = '';
-                    actionModal.show();
-                });
+            document.addEventListener('click', (event) => {
+                const button = event.target.closest('.js-account-action');
+                if (!button) return;
+                event.preventDefault();
+                actionId.value = button.dataset.hqId || '';
+                actionName.textContent = button.dataset.hqName || 'Selected HQ';
+                actionType.value = 'suspend';
+                actionSubmit.textContent = 'Confirm Suspend';
+                document.getElementById('actionReason').value = '';
+                actionModal.show();
             });
 
             const sectionTitle = (icon, title, count) =>
@@ -398,6 +419,8 @@ $flashContext = $flash['context'] ?? [];
             const emptyRow = (cols, message) =>
                 '<tr><td colspan="' + cols + '" class="text-center text-white-50 py-4"><i class="bi bi-inbox me-1"></i>' + escapeHtml(message) + '</td></tr>';
 
+            
+            <?= function_exists('expiry_js_detail_helper') ? expiry_js_detail_helper() : 'function expiryDetailAlert(){return "";}' ?>
             const renderDetails = (payload) => {
                 const hq = payload.hq || {};
                 currentHQDetails = hq;
@@ -412,7 +435,7 @@ $flashContext = $flash['context'] ?? [];
                 const today = [currentDate.getFullYear(), String(currentDate.getMonth() + 1).padStart(2, '0'), String(currentDate.getDate()).padStart(2, '0')].join('-');
                 const licenseDateWarning = registeredDay && expiryDay && expiryDay <= registeredDay
                     ? '<div class="alert alert-warning py-2 mb-3" role="status"><i class="bi bi-exclamation-triangle-fill me-2"></i>License expiry must be after registration. Correct this date from Edit details using the current business license.</div>'
-                    : (expiryDay && expiryDay < today ? '<div class="alert alert-warning py-2 mb-3" role="status"><i class="bi bi-exclamation-triangle-fill me-2"></i>This business license has expired. Review the current license date.</div>' : '');
+                    : (typeof expiryDetailAlert === 'function' ? expiryDetailAlert(expiryDay, 'hq') : (expiryDay && expiryDay < today ? '<div class="alert alert-danger py-2 mb-3" role="alert"><i class="bi bi-x-circle-fill me-2"></i>This business license has expired. The related account should be suspended until renewed.</div>' : ''));
 
                 const metaCards =
                     '<div class="row g-3 mb-4">' +
@@ -466,25 +489,26 @@ $flashContext = $flash['context'] ?? [];
                     '<div class="table-responsive"><table class="table hq-modal-table align-middle mb-0"><thead><tr><th>Action</th><th>Reason</th><th>Recorded</th></tr></thead><tbody>' + actionRows + '</tbody></table></div>';
             };
 
-            document.querySelectorAll('.js-view-hq').forEach((button) => {
-                button.addEventListener('click', async (event) => {
-                    event.preventDefault();
-                    detailsTitle.innerHTML = '<i class="bi bi-building txt-neon-cyan me-2"></i> Stations &amp; Users';
-                    detailsBody.innerHTML = '<div class="text-center text-white-50 py-5"><div class="spinner-border spinner-border-sm txt-neon-cyan mb-2" role="status"></div><div>Loading stations &amp; users…</div></div>';
-                    detailsModal.show();
-                    try {
-                        const response = await fetch('hq_details.php?id=' + encodeURIComponent(button.dataset.hqId), {headers: {Accept: 'application/json'}, cache: 'no-store'});
-                        const payload = await response.json();
-                        if (!response.ok || !payload.success) throw new Error(payload.message || 'Could not load HQ details.');
-                        renderDetails(payload);
-                    } catch (error) {
-                        detailsBody.innerHTML = '<div class="alert hq-flash alert-danger"><i class="bi bi-exclamation-triangle me-2"></i>' + escapeHtml(error.message) + '</div>';
-                    }
-                });
+            document.addEventListener('click', async (event) => {
+                const button = event.target.closest('.js-view-hq');
+                if (!button) return;
+                event.preventDefault();
+                detailsTitle.innerHTML = '<i class="bi bi-building txt-neon-cyan me-2"></i> Stations &amp; Users';
+                detailsBody.innerHTML = '<div class="text-center text-white-50 py-5"><div class="spinner-border spinner-border-sm txt-neon-cyan mb-2" role="status"></div><div>Loading stations &amp; users…</div></div>';
+                detailsModal.show();
+                try {
+                    const response = await fetch('hq_details.php?id=' + encodeURIComponent(button.dataset.hqId), {headers: {Accept: 'application/json'}, cache: 'no-store'});
+                    const payload = await response.json();
+                    if (!response.ok || !payload.success) throw new Error(payload.message || 'Could not load HQ details.');
+                    renderDetails(payload);
+                } catch (error) {
+                    detailsBody.innerHTML = '<div class="alert hq-flash alert-danger"><i class="bi bi-exclamation-triangle me-2"></i>' + escapeHtml(error.message) + '</div>';
+                }
             });
 
-            document.querySelectorAll('.js-edit-hq-details').forEach((button) => {
-                button.addEventListener('click', () => {
+            document.addEventListener('click', (event) => {
+                const button = event.target.closest('.js-edit-hq-details');
+                if (!button) return;
                     const hq = currentHQDetails || {};
                     const location = String(hq.location || '');
                     const parts = location.split(/\s+(?:—|-)\s+/);
@@ -511,7 +535,6 @@ $flashContext = $flash['context'] ?? [];
                         minExpiry = [minExpiry, dayAfterRegistration.toISOString().slice(0, 10)].sort().pop();
                     }
                     expiryInput.min = minExpiry;
-                });
             });
         })();
     </script>
