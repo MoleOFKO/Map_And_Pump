@@ -117,12 +117,20 @@ document.addEventListener('DOMContentLoaded', () => {
         const actionRows = actions.length ? actions.map(action => '<tr><td><span class="badge text-bg-dark border border-secondary border-opacity-25">' + esc(String(action.action_type || '').toUpperCase()) + '</span></td><td class="text-white-50">' + esc(action.reason || '—') + '</td><td class="text-white-50 small">' + esc(date(action.created_at)) + '</td></tr>').join('') : emptyRow(3, 'No suspend/remove history.');
         detailsBody.innerHTML = licenseDateWarning + metaCards + sectionTitle('bi-people-fill', 'Linked user accounts', accounts.length) + '<div class="table-responsive mb-4"><table class="table mod-modal-table align-middle mb-0"><thead><tr><th>User</th><th>Email</th><th>Role</th><th>Status</th><th>Created</th></tr></thead><tbody>' + accountRows + '</tbody></table></div>' + sectionTitle('bi-fuel-pump-fill', 'Linked stations', stations.length) + '<div class="table-responsive mb-4"><table class="table mod-modal-table align-middle mb-0"><thead><tr><th>Station</th><th>Location</th><th>Manager</th><th>Status</th><th>Created</th></tr></thead><tbody>' + stationRows + '</tbody></table></div>' + sectionTitle('bi-clock-history', 'Account action history', actions.length) + '<div class="table-responsive"><table class="table mod-modal-table align-middle mb-0"><thead><tr><th>Action</th><th>Reason</th><th>Recorded</th></tr></thead><tbody>' + actionRows + '</tbody></table></div>';
     };
-    document.querySelectorAll('.js-view-hq').forEach(button => button.addEventListener('click', async event => {
-        event.preventDefault(); detailsTitle.innerHTML = '<i class="bi bi-building txt-neon-cyan me-2"></i> Stations &amp; Users'; detailsBody.innerHTML = '<div class="text-center text-white-50 py-5"><div class="spinner-border spinner-border-sm txt-neon-cyan mb-2" role="status"></div><div>Loading stations &amp; users…</div></div>'; detailModal.show();
-        try { const response = await fetch('hq_details(M).php?id=' + encodeURIComponent(button.dataset.hqId), {headers: {Accept: 'application/json'}, cache: 'no-store'}); const payload = await response.json(); if (!response.ok || !payload.success) throw new Error(payload.message || 'Unable to load HQ details.'); renderDetails(payload); } catch (error) { detailsBody.innerHTML = '<div class="alert mod-flash alert-danger"><i class="bi bi-exclamation-triangle me-2"></i>' + esc(error.message) + '</div>'; }
-    }));
-    document.querySelectorAll('.js-account-action').forEach(button => button.addEventListener('click', event => { event.preventDefault(); document.getElementById('actionHQId').value = button.dataset.hqId || ''; document.getElementById('actionHQName').textContent = button.dataset.hqName || 'Selected HQ'; document.getElementById('actionReason').value = ''; actionModal.show(); }));
-    document.querySelectorAll('.js-edit-hq-details').forEach(button => button.addEventListener('click', () => {
+    document.addEventListener('click', async event => {
+        const viewBtn = event.target.closest('.js-view-hq');
+        if (viewBtn) {
+            event.preventDefault(); detailsTitle.innerHTML = '<i class="bi bi-building txt-neon-cyan me-2"></i> Stations &amp; Users'; detailsBody.innerHTML = '<div class="text-center text-white-50 py-5"><div class="spinner-border spinner-border-sm txt-neon-cyan mb-2" role="status"></div><div>Loading stations &amp; users…</div></div>'; detailModal.show();
+            try { const response = await fetch('hq_details(M).php?id=' + encodeURIComponent(viewBtn.dataset.hqId), {headers: {Accept: 'application/json'}, cache: 'no-store'}); const payload = await response.json(); if (!response.ok || !payload.success) throw new Error(payload.message || 'Unable to load HQ details.'); renderDetails(payload); } catch (error) { detailsBody.innerHTML = '<div class="alert mod-flash alert-danger"><i class="bi bi-exclamation-triangle me-2"></i>' + esc(error.message) + '</div>'; }
+            return;
+        }
+        const actionBtn = event.target.closest('.js-account-action');
+        if (actionBtn) {
+            event.preventDefault(); document.getElementById('actionHQId').value = actionBtn.dataset.hqId || ''; document.getElementById('actionHQName').textContent = actionBtn.dataset.hqName || 'Selected HQ'; document.getElementById('actionReason').value = ''; actionModal.show();
+            return;
+        }
+        const editBtn = event.target.closest('.js-edit-hq-details');
+        if (!editBtn) return;
         const h = currentHQDetails || {};
         const location = String(h.location || '');
         const parts = location.split(/\s+(?:—|-)\s+/);
@@ -149,7 +157,7 @@ document.addEventListener('DOMContentLoaded', () => {
             minExpiry = [minExpiry, dayAfterRegistration.toISOString().slice(0, 10)].sort().pop();
         }
         expiryInput.min = minExpiry;
-    }));
+    });
 });
 </script>
 </body>

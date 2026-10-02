@@ -378,16 +378,16 @@ $flashContext = $flash['context'] ?? [];
                 actionSubmit.classList.toggle('btn-danger', true);
             });
 
-            document.querySelectorAll('.js-account-action').forEach((button) => {
-                button.addEventListener('click', (event) => {
-                    event.preventDefault();
-                    actionId.value = button.dataset.hqId || '';
-                    actionName.textContent = button.dataset.hqName || 'Selected HQ';
-                    actionType.value = 'suspend';
-                    actionSubmit.textContent = 'Confirm Suspend';
-                    document.getElementById('actionReason').value = '';
-                    actionModal.show();
-                });
+            document.addEventListener('click', (event) => {
+                const button = event.target.closest('.js-account-action');
+                if (!button) return;
+                event.preventDefault();
+                actionId.value = button.dataset.hqId || '';
+                actionName.textContent = button.dataset.hqName || 'Selected HQ';
+                actionType.value = 'suspend';
+                actionSubmit.textContent = 'Confirm Suspend';
+                document.getElementById('actionReason').value = '';
+                actionModal.show();
             });
 
             const sectionTitle = (icon, title, count) =>
@@ -466,25 +466,26 @@ $flashContext = $flash['context'] ?? [];
                     '<div class="table-responsive"><table class="table hq-modal-table align-middle mb-0"><thead><tr><th>Action</th><th>Reason</th><th>Recorded</th></tr></thead><tbody>' + actionRows + '</tbody></table></div>';
             };
 
-            document.querySelectorAll('.js-view-hq').forEach((button) => {
-                button.addEventListener('click', async (event) => {
-                    event.preventDefault();
-                    detailsTitle.innerHTML = '<i class="bi bi-building txt-neon-cyan me-2"></i> Stations &amp; Users';
-                    detailsBody.innerHTML = '<div class="text-center text-white-50 py-5"><div class="spinner-border spinner-border-sm txt-neon-cyan mb-2" role="status"></div><div>Loading stations &amp; users…</div></div>';
-                    detailsModal.show();
-                    try {
-                        const response = await fetch('hq_details.php?id=' + encodeURIComponent(button.dataset.hqId), {headers: {Accept: 'application/json'}, cache: 'no-store'});
-                        const payload = await response.json();
-                        if (!response.ok || !payload.success) throw new Error(payload.message || 'Could not load HQ details.');
-                        renderDetails(payload);
-                    } catch (error) {
-                        detailsBody.innerHTML = '<div class="alert hq-flash alert-danger"><i class="bi bi-exclamation-triangle me-2"></i>' + escapeHtml(error.message) + '</div>';
-                    }
-                });
+            document.addEventListener('click', async (event) => {
+                const button = event.target.closest('.js-view-hq');
+                if (!button) return;
+                event.preventDefault();
+                detailsTitle.innerHTML = '<i class="bi bi-building txt-neon-cyan me-2"></i> Stations &amp; Users';
+                detailsBody.innerHTML = '<div class="text-center text-white-50 py-5"><div class="spinner-border spinner-border-sm txt-neon-cyan mb-2" role="status"></div><div>Loading stations &amp; users…</div></div>';
+                detailsModal.show();
+                try {
+                    const response = await fetch('hq_details.php?id=' + encodeURIComponent(button.dataset.hqId), {headers: {Accept: 'application/json'}, cache: 'no-store'});
+                    const payload = await response.json();
+                    if (!response.ok || !payload.success) throw new Error(payload.message || 'Could not load HQ details.');
+                    renderDetails(payload);
+                } catch (error) {
+                    detailsBody.innerHTML = '<div class="alert hq-flash alert-danger"><i class="bi bi-exclamation-triangle me-2"></i>' + escapeHtml(error.message) + '</div>';
+                }
             });
 
-            document.querySelectorAll('.js-edit-hq-details').forEach((button) => {
-                button.addEventListener('click', () => {
+            document.addEventListener('click', (event) => {
+                const button = event.target.closest('.js-edit-hq-details');
+                if (!button) return;
                     const hq = currentHQDetails || {};
                     const location = String(hq.location || '');
                     const parts = location.split(/\s+(?:—|-)\s+/);
@@ -511,7 +512,6 @@ $flashContext = $flash['context'] ?? [];
                         minExpiry = [minExpiry, dayAfterRegistration.toISOString().slice(0, 10)].sort().pop();
                     }
                     expiryInput.min = minExpiry;
-                });
             });
         })();
     </script>

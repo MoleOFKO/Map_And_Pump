@@ -56,12 +56,14 @@ $filtersActive = ($search !== '' || $status !== '');
 <script>
 document.addEventListener('DOMContentLoaded', () => {
     const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('userActionModal'));
-    document.querySelectorAll('.js-user-action').forEach(button => button.addEventListener('click', () => {
+    document.addEventListener('click', (event) => {
+        const button = event.target.closest('.js-user-action');
+        if (!button) return;
         document.getElementById('userActionId').value = button.dataset.userId || '';
         document.getElementById('userActionName').textContent = button.dataset.userName || 'Selected User';
         document.getElementById('userActionReason').value = '';
         modal.show();
-    }));
+    });
 
     // User details view (AJAX)
     const detailsModalEl = document.getElementById('userDetailsModal');
@@ -74,7 +76,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const statusLabel = status => ({active:'Approved', approved:'Approved', suspended:'Suspended', removed:'Removed', pending:'Pending', pending_verification:'Pending Verification'}[String(status || '').toLowerCase()] || (status ? String(status) : 'Unknown'));
     const card = (label, value) => '<div class="p-3 rounded-3 h-100" style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);"><div class="mod-detail-label">' + label + '</div><div class="mod-detail-value mt-1 text-break">' + value + '</div></div>';
 
-    document.querySelectorAll('.js-view-user').forEach(button => button.addEventListener('click', async event => {
+    document.addEventListener('click', async event => {
+        const button = event.target.closest('.js-view-user');
+        if (!button) return;
         event.preventDefault();
         if (!detailsModal) return;
         detailsBody.innerHTML = '<div class="text-center text-white-50 py-5"><span class="spinner-border spinner-border-sm me-2"></span>Loading user details...</div>';
@@ -104,13 +108,15 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (error) {
             detailsBody.innerHTML = '<div class="alert alert-danger">'+esc(error.message)+'</div>';
         }
-    }));
-    document.querySelectorAll('.js-edit-details').forEach(button => button.addEventListener('click', () => {
+    });
+    document.addEventListener('click', (event) => {
+        const button = event.target.closest('.js-edit-details');
+        if (!button) return;
         const u = currentUserDetails || {};
         document.getElementById('editUserId').value = u.user_id || '';
         document.getElementById('editUserName').value = u.user_name || '';
         document.getElementById('editUserEmail').value = u.email || '';
-    }));
+    });
 });
 </script>
 </body>

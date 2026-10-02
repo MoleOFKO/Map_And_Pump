@@ -455,6 +455,13 @@ body.background_color > .container:not(.sticky-nav-wrapper) {
     padding: 24px;
 }
 
+/* Live filter AJAX: dim results while the next page fragment loads */
+.analytics-card.is-live-filtering {
+    opacity: 0.55;
+    pointer-events: none;
+    transition: opacity 0.15s ease;
+}
+
 /* Staggered entrance delays for grids */
 .row > [class*="col-"]:nth-child(1) .dashboard-card,
 .row > [class*="col-"]:nth-child(1) .analytics-card { animation-delay: 0.05s; }
