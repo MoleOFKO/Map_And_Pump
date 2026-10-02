@@ -8,6 +8,10 @@ require_once __DIR__ . '/../business_scope.php';
 $message = '';
 $error = '';
 $hqId = map_pump_current_hq_id($pdo);
+$stationLimit = 3;
+$stationCount = 0;
+$stationLimitReached = false;
+$showStationLimitModal = false;
 
 function map_pump_normalize_station_location(string $location): ?string
 {
@@ -39,6 +43,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if (!empty($station_name) && $location !== null && !empty($manager_email)) {
             try {
+                $pdo->beginTransaction();
+                $hqLockStmt = $pdo->prepare("SELECT headquarter_id FROM headquarter WHERE headquarter_id = ? FOR UPDATE");
+                $hqLockStmt->execute([$hqId]);
+                $stationCountStmt = $pdo->prepare(
+                    "SELECT COUNT(*)
+                     FROM branches b
+                     INNER JOIN station_business_scope sbs ON sbs.station_id = b.branch_id
+                     WHERE sbs.headquarter_id = ? AND b.status <> 'closed'"
+                );
+                $stationCountStmt->execute([$hqId]);
+                if ((int) $stationCountStmt->fetchColumn() >= $stationLimit) {
+                    throw new RuntimeException('station_limit_reached');
+                }
+
                 $managerStmt = $pdo->prepare(
                     "SELECT u.user_id
                      FROM users u
@@ -62,7 +80,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     throw new RuntimeException('Please select a valid branch manager.');
                 }
 
-                $pdo->beginTransaction();
                 $branchCodeStmt = $pdo->prepare("SELECT CONCAT('BR-', LPAD(COALESCE(MAX(branch_id), 0) + 1, 5, '0')) FROM branches");
                 $branchCodeStmt->execute();
                 $branchCode = (string)$branchCodeStmt->fetchColumn();
@@ -124,7 +141,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
                 $error = "Error registering station: " . $e->getMessage();
             } catch (RuntimeException $e) {
-                $error = $e->getMessage();
+                if ($pdo->inTransaction()) {
+                    $pdo->rollBack();
+                }
+                if ($e->getMessage() === 'station_limit_reached') {
+                    $showStationLimitModal = true;
+                } else {
+                    $error = $e->getMessage();
+                }
             }
         } else {
             $error = "Station name, branch manager email, and a valid map location are required.";
@@ -261,6 +285,8 @@ try {
     );
     $stmt->execute([$hqId]);
     $stations = $stmt->fetchAll();
+    $stationCount = count($stations);
+    $stationLimitReached = $stationCount >= $stationLimit;
 
     $managerStmt = $pdo->prepare(
         "SELECT u.user_id, u.email
@@ -475,7 +501,7 @@ try {
                             <i class="fa-solid fa-xmark" aria-hidden="true"></i>
                         </button>
                     </div>
-                    <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#registerModal">+Add Station</button>
+                    <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="<?= $stationLimitReached ? '#stationLimitModal' : '#registerModal' ?>">+Add Station</button>
                 </div>
             </div>
             <div class="table-responsive">
@@ -605,6 +631,26 @@ try {
         </div>
     </div>
 
+    <!-- Station Limit Modal -->
+    <div class="modal fade" id="stationLimitModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content modal-content-custom text-light border-warning">
+                <div class="modal-header border-warning">
+                    <h5 class="modal-title text-warning"><i class="bi bi-exclamation-triangle-fill me-2"></i>Station limit reached</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="mb-2">Your HQ has reached its limit of <?= (int) $stationLimit ?> included stations.</p>
+                    <p class="text-secondary mb-0">Review the station estimate to see pricing for additional stations.</p>
+                </div>
+                <div class="modal-footer border-secondary">
+                    <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Close</button>
+                    <a href="/HomePage.php#calc" class="btn btn-warning"><i class="bi bi-calculator me-1"></i>View station estimate</a>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Configure Modal -->
     <div class="modal fade" id="configureModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-lg">
@@ -697,6 +743,10 @@ try {
             const clearBtn = document.getElementById('stationSearchClear');
             const rows = document.querySelectorAll('.station-row');
             const noResultsRow = document.getElementById('stationsNoResults');
+
+            <?php if ($showStationLimitModal): ?>
+            new bootstrap.Modal(document.getElementById('stationLimitModal')).show();
+            <?php endif; ?>
 
             function filterStations() {
                 const query = searchInput.value.toLowerCase().trim();
