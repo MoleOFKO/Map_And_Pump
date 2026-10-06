@@ -22,6 +22,7 @@ function map_pump_station_coordinates(string $location): ?array
 
 $customerStationsData = [];
 try {
+    $latestInventorySql = map_pump_latest_station_inventory_sql();
     $stationStmt = $pdo->query(
         "SELECT b.branch_id AS station_id, b.branch_name AS station_name,
                 CASE WHEN b.latitude IS NOT NULL AND b.longitude IS NOT NULL
@@ -33,7 +34,9 @@ try {
                            OR (b.opening_time <= b.closing_time AND CURRENT_TIME() BETWEEN b.opening_time AND b.closing_time)
                            OR (b.opening_time > b.closing_time AND (CURRENT_TIME() >= b.opening_time OR CURRENT_TIME() <= b.closing_time))
                      THEN 1 ELSE 0 END AS is_open,
-                GROUP_CONCAT(DISTINCT ot.oil_name ORDER BY ot.oil_name SEPARATOR '|') AS fuel_names
+                     t.current_l AS fuel_stock_liters,
+                     ot.oil_type_id, ot.oil_name,
+                     latest_inventory.price_per_litre, latest_inventory.is_active AS price_is_active
          FROM branches b
          LEFT JOIN tanks t ON t.branch_id = b.branch_id
             AND t.is_enabled = 1
@@ -43,11 +46,13 @@ try {
             OR (t.fuel_code = 'p95' AND LOWER(REPLACE(ot.oil_name, ' ', '')) = 'octane95')
             OR (t.fuel_code = 'dsl' AND LOWER(REPLACE(ot.oil_name, ' ', '')) IN ('disel', 'diesel'))
             OR (t.fuel_code = 'pdsl' AND LOWER(REPLACE(ot.oil_name, ' ', '')) IN ('premiumdisel', 'premiumdiesel'))
+         LEFT JOIN ({$latestInventorySql}) latest_inventory
+            ON latest_inventory.station_id = b.branch_id
+            AND latest_inventory.oil_type_id = ot.oil_type_id
          WHERE LOWER(COALESCE(b.status, 'active')) <> 'closed'
-         GROUP BY b.branch_id, b.branch_name, b.latitude, b.longitude, b.address, b.status,
-                  b.is_24hr, b.opening_time, b.closing_time
-         ORDER BY b.branch_id ASC"
+         ORDER BY b.branch_id ASC, ot.oil_name ASC"
     );
+    $stationsById = [];
     foreach ($stationStmt->fetchAll(PDO::FETCH_ASSOC) as $stationRow) {
         $stationId = (int)($stationRow['station_id'] ?? 0);
         $location = trim((string)($stationRow['location'] ?? ''));
@@ -56,31 +61,76 @@ try {
             continue;
         }
 
-        $fuels = array_values(array_filter(array_map('trim', explode('|', (string)($stationRow['fuel_names'] ?? '')))));
-
-        $stationStatus = trim((string)($stationRow['status'] ?? 'Active'));
-        if ($stationStatus === '') {
-            $stationStatus = 'Active';
+        if (!isset($stationsById[$stationId])) {
+            $stationStatus = trim((string)($stationRow['status'] ?? 'Active'));
+            if ($stationStatus === '') {
+                $stationStatus = 'Active';
+            }
+            $isStationActive = strcasecmp($stationStatus, 'Active') === 0;
+            $isOpen = (int)($stationRow['is_open'] ?? 0) === 1;
+            $stationsById[$stationId] = [
+                'id' => $stationId,
+                'name' => (string)($stationRow['station_name'] ?? ('Station #' . $stationId)),
+                'address' => (string)($stationRow['station_address'] ?: $location ?: 'Address not set'),
+                'lat' => $coords[0],
+                'lng' => $coords[1],
+                'status' => $stationStatus,
+                'isActive' => $isStationActive,
+                'isOpen' => $isOpen,
+                'fuels' => [],
+                'isBookable' => false,
+                'logo' => '../../images/Logo.png',
+            ];
         }
-        $isStationActive = strcasecmp($stationStatus, 'Active') === 0;
-        $isOpen = (int)($stationRow['is_open'] ?? 0) === 1;
 
-        $customerStationsData[] = [
-            'id' => $stationId,
-            'name' => (string)($stationRow['station_name'] ?? ('Station #' . $stationId)),
-            'address' => (string)($stationRow['station_address'] ?: $location ?: 'Address not set'),
-            'lat' => $coords[0],
-            'lng' => $coords[1],
-            'status' => $stationStatus,
-            'isActive' => $isStationActive,
-            'isOpen' => $isOpen,
-            'fuels' => $fuels,
-            'isBookable' => $isStationActive && $isOpen && !empty($fuels),
-            'logo' => '../../images/Logo.png',
-        ];
+        $oilTypeId = (int)($stationRow['oil_type_id'] ?? 0);
+        if ($oilTypeId > 0 && (int)($stationRow['price_is_active'] ?? 0) === 1 && (float)($stationRow['price_per_litre'] ?? 0) > 0) {
+            $stationsById[$stationId]['fuels'][] = [
+                'id' => $oilTypeId,
+                'name' => (string)$stationRow['oil_name'],
+                'price' => (float)$stationRow['price_per_litre'],
+                'stock' => (float)($stationRow['fuel_stock_liters'] ?? 0),
+            ];
+        }
     }
+    foreach ($stationsById as &$station) {
+        $station['isBookable'] = $station['isActive'] && $station['isOpen'] && !empty($station['fuels']);
+    }
+    unset($station);
+    $customerStationsData = array_values($stationsById);
 } catch (Throwable $e) {
     error_log('Failed to load customer stations: ' . $e->getMessage());
+}
+
+$customerCarsData = [];
+try {
+    if (customer_car_schema_ready($pdo)) {
+        $selectedCarId = customer_active_car_id($pdo, (int)$_SESSION['user_id']);
+        $carStmt = $pdo->prepare(
+            "SELECT c.car_license_id, c.car_plate_number, c.vehicle_name, c.vehicle_type,
+                    c.license_expire_date, uc.is_active
+             FROM user_car uc
+             INNER JOIN car_license c ON c.car_license_id = uc.car_id
+             WHERE uc.user_id = ?
+               AND LOWER(COALESCE(c.status, 'pending')) <> 'expired'
+               AND (c.license_expire_date IS NULL OR c.license_expire_date >= CURDATE())
+             ORDER BY (c.car_license_id = ?) DESC, uc.is_active DESC, c.updated_at DESC"
+        );
+        $carStmt->execute([(int)$_SESSION['user_id'], $selectedCarId]);
+        foreach ($carStmt->fetchAll(PDO::FETCH_ASSOC) as $carRow) {
+            $carId = (int)$carRow['car_license_id'];
+            $carQuota = customer_fuel_quota_for_car($pdo, (int)$_SESSION['user_id'], $carId);
+            $customerCarsData[] = [
+                'id' => $carId,
+                'plate' => (string)$carRow['car_plate_number'],
+                'name' => trim((string)($carRow['vehicle_name'] ?? '') . ' ' . (string)($carRow['vehicle_type'] ?? '')),
+                'quota' => (float)$carQuota['remaining'],
+                'selected' => $carId === $selectedCarId,
+            ];
+        }
+    }
+} catch (Throwable $e) {
+    error_log('Failed to load customer booking cars: ' . $e->getMessage());
 }
 
 $activeBooking = null;
@@ -489,13 +539,32 @@ body.customer-light-mode .customer-map-recenter-btn:hover {
             </div>
 
             <div class="mb-3">
+                <label class="form-label text-secondary" for="booking-car-select" style="font-size:10px; font-weight:600;">CAR FOR THIS BOOKING</label>
+                <select id="booking-car-select" class="form-select custom-form-field" <?php echo empty($customerCarsData) ? 'disabled' : ''; ?>>
+                    <?php foreach ($customerCarsData as $car): ?>
+                        <option value="<?php echo (int)$car['id']; ?>" data-quota="<?php echo htmlspecialchars((string)$car['quota'], ENT_QUOTES, 'UTF-8'); ?>" <?php echo $car['selected'] ? 'selected' : ''; ?>>
+                            <?php echo htmlspecialchars($car['plate'] . ($car['name'] !== '' ? ' · ' . $car['name'] : ''), ENT_QUOTES, 'UTF-8'); ?>
+                        </option>
+                    <?php endforeach; ?>
+                    <?php if (empty($customerCarsData)): ?>
+                        <option value="">Add a valid car license before booking</option>
+                    <?php endif; ?>
+                </select>
+                <small id="booking-car-quota" class="text-secondary d-block mt-2">Allowance for selected car: <strong class="text-sky-400"></strong></small>
+            </div>
+
+            <div class="mb-3">
                 <label class="form-label text-secondary" for="station-fuel-select" style="font-size:10px; font-weight:600;">FUEL TYPE</label>
                 <select id="station-fuel-select" class="form-select custom-form-field"></select>
+            </div>
+            <div class="row g-2 mb-3" aria-live="polite">
+                <div class="col-6"><div class="p-2 rounded-3 h-100 border border-secondary border-opacity-25"><small class="text-secondary d-block">Price per liter</small><strong id="station-fuel-price" class="text-white">Choose fuel</strong></div></div>
+                <div class="col-6"><div class="p-2 rounded-3 h-100 border border-secondary border-opacity-25"><small class="text-secondary d-block">Fuel left</small><strong id="station-fuel-stock" class="text-white">Choose fuel</strong></div></div>
             </div>
             <div class="mb-3">
                 <label class="form-label text-secondary" for="station-volume-input" style="font-size:10px; font-weight:600;">AMOUNT (LITERS)</label>
                 <input id="station-volume-input" type="number" min="0.1" step="0.1" value="20" class="form-control custom-form-field">
-                <small class="text-secondary d-block mt-2">Remaining allowance: <strong id="station-quota" class="text-sky-400"></strong></small>
+                <small class="text-secondary d-block mt-2">Maximum for this fuel and car: <strong id="station-quota" class="text-sky-400"></strong></small>
             </div>
             <button id="confirm-booking-btn" type="button" class="btn btn-info w-100 py-3 fw-bold rounded-4" onclick="confirmBooking()">Book this station <i class="bi bi-qr-code ms-1"></i></button>
         </div>
@@ -517,9 +586,10 @@ body.customer-light-mode .customer-map-recenter-btn:hover {
 <script>
     let mapInstance, customerMarker, routeLine, selectedStation;
     let customerLocation = [16.8409, 96.1735]; // Yangon fallback when location permission is unavailable.
-    const availableOilQuota = <?php echo json_encode($availableOilQuota); ?>;
+    const customerCarsData = <?php echo json_encode($customerCarsData, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT); ?>;
+    let availableOilQuota = Number(customerCarsData.find(car => car.selected)?.quota ?? <?php echo json_encode($availableOilQuota); ?>);
     const stationLogoUrl = '../../images/Logo.png';
-    const stationsData = <?php echo json_encode($customerStationsData, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?>;
+    const stationsData = <?php echo json_encode($customerStationsData, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT); ?>;
     const savedActiveBooking = <?php echo json_encode($activeBooking, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT); ?>;
     const bookingCsrfToken = <?php echo json_encode($bookingCsrfToken); ?>;
     let currentBooking = null;
@@ -915,21 +985,66 @@ body.customer-light-mode .customer-map-recenter-btn:hover {
         const fuelSelect = document.getElementById('station-fuel-select');
         const bookingButton = document.getElementById('confirm-booking-btn');
         if (selectedStation.isBookable && selectedStation.fuels.length) {
-            fuelSelect.innerHTML = selectedStation.fuels.map(fuel => `<option value="${fuel}">${fuel}</option>`).join('');
+            fuelSelect.replaceChildren(...selectedStation.fuels.map(fuel => {
+                const option = document.createElement('option');
+                option.value = String(fuel.id);
+                option.textContent = fuel.name;
+                return option;
+            }));
             fuelSelect.disabled = false;
-            bookingButton.disabled = false;
         } else {
-            fuelSelect.innerHTML = `<option value="">${selectedStation.isOpen ? 'No fuel currently available' : 'Station is currently closed'}</option>`;
+            fuelSelect.replaceChildren(new Option(selectedStation.isOpen ? 'No fuel currently available' : 'Station is currently closed', ''));
             fuelSelect.disabled = true;
             bookingButton.disabled = true;
         }
-        document.getElementById('station-quota').textContent = availableOilQuota + ' L';
+        updateBookingCarQuota();
         document.getElementById('station-volume-input').value = Math.min(20, availableOilQuota);
+        updateSelectedFuelDetails();
         document.getElementById('booking-pass').classList.add('d-none');
         document.getElementById('station-booking-form').classList.remove('d-none');
         showStationCard();
         showRoute();
     }
+
+    function updateBookingCarQuota() {
+        const selectedCarId = Number(document.getElementById('booking-car-select').value);
+        const selectedCar = customerCarsData.find(car => Number(car.id) === selectedCarId);
+        availableOilQuota = selectedCar ? Number(selectedCar.quota) : 0;
+        document.querySelector('#booking-car-quota strong').textContent = `${availableOilQuota.toLocaleString()} L`;
+        if (selectedStation) updateSelectedFuelDetails();
+    }
+
+    function updateSelectedFuelDetails() {
+        const selectedFuelId = Number(document.getElementById('station-fuel-select').value);
+        const fuel = selectedStation?.fuels.find(item => Number(item.id) === selectedFuelId);
+        const price = document.getElementById('station-fuel-price');
+        const stock = document.getElementById('station-fuel-stock');
+        const volumeInput = document.getElementById('station-volume-input');
+        const bookingButton = document.getElementById('confirm-booking-btn');
+
+        if (!fuel) {
+            price.textContent = 'Not available';
+            stock.textContent = 'Not available';
+            volumeInput.max = '0';
+            bookingButton.disabled = true;
+            document.getElementById('station-quota').textContent = '0 L';
+            return;
+        }
+
+        const availableLiters = Math.max(0, Number(fuel.stock));
+        const bookingLimit = Math.min(availableOilQuota, availableLiters);
+        price.textContent = `${Number(fuel.price).toLocaleString()} MMK / L`;
+        stock.textContent = `${availableLiters.toLocaleString()} L`;
+        volumeInput.max = String(bookingLimit);
+        if (Number(volumeInput.value) > bookingLimit) {
+            volumeInput.value = bookingLimit > 0 ? bookingLimit : '';
+        }
+        document.getElementById('station-quota').textContent = `${bookingLimit.toLocaleString()} L`;
+        bookingButton.disabled = !selectedStation?.isBookable || !document.getElementById('booking-car-select').value || bookingLimit < 0.1;
+    }
+
+    document.getElementById('station-fuel-select').addEventListener('change', updateSelectedFuelDetails);
+    document.getElementById('booking-car-select').addEventListener('change', updateBookingCarQuota);
 
     function createStationPopup(station) {
         const popup = document.createElement('div');
@@ -941,7 +1056,9 @@ body.customer-light-mode .customer-map-recenter-btn:hover {
         name.textContent = station.name;
         address.textContent = station.address;
         status.textContent = `Station status: ${station.status}`;
-        fuels.textContent = station.fuels.length ? `Active fuels: ${station.fuels.join(', ')}` : 'No active fuel available';
+        fuels.textContent = station.fuels.length
+            ? station.fuels.map(fuel => `${fuel.name}: ${Number(fuel.price).toLocaleString()} MMK/L, ${Number(fuel.stock).toLocaleString()} L left`).join(' · ')
+            : 'No active fuel available';
         address.style.marginTop = '4px';
         status.style.marginTop = '6px';
         status.style.fontWeight = '600';
@@ -973,7 +1090,9 @@ body.customer-light-mode .customer-map-recenter-btn:hover {
         fuels.className = 'station-tooltip-fuels';
         name.textContent = station.name;
         status.textContent = `Status: ${station.status}`;
-        fuels.textContent = station.fuels.length ? `Active fuels: ${station.fuels.join(', ')}` : 'Active fuels: None';
+        fuels.textContent = station.fuels.length
+            ? `Fuels: ${station.fuels.map(fuel => `${fuel.name} (${Number(fuel.price).toLocaleString()} MMK/L, ${Number(fuel.stock).toLocaleString()} L left)`).join(', ')}`
+            : 'Active fuels: None';
         tooltip.append(name, status, fuels);
         return tooltip;
     }
@@ -1008,16 +1127,23 @@ body.customer-light-mode .customer-map-recenter-btn:hover {
 
     async function confirmBooking() {
         const quantity = Number(document.getElementById('station-volume-input').value);
-        if (!selectedStation || !selectedStation.isBookable || !quantity || quantity <= 0 || quantity > availableOilQuota) { alert(`Enter an amount between 0.1 and ${availableOilQuota} liters.`); return; }
-        const fuel = document.getElementById('station-fuel-select').value;
+        const selectedFuelId = Number(document.getElementById('station-fuel-select').value);
+        const fuel = selectedStation?.fuels.find(item => Number(item.id) === selectedFuelId);
+        const selectedCarId = Number(document.getElementById('booking-car-select').value);
+        const bookingLimit = fuel ? Math.min(availableOilQuota, Number(fuel.stock)) : 0;
+        if (!selectedStation || !selectedStation.isBookable || !fuel || selectedCarId <= 0 || !quantity || quantity <= 0 || quantity > bookingLimit) {
+            alert(`Choose an available car and fuel, then enter an amount between 0.1 and ${bookingLimit} liters.`);
+            return;
+        }
         const code = `MP-${Math.floor(100 + Math.random() * 900)}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
-        const displayPayload = `${code}|${selectedStation.name}|${fuel}|${quantity}L`;
+        const displayPayload = `${code}|${selectedStation.name}|${fuel.name}|${quantity}L`;
 
         const formData = new FormData();
         formData.append('booking_code', code);
         formData.append('station_id', String(selectedStation.id));
-        formData.append('fuel_type', fuel);
+        formData.append('fuel_type', fuel.name);
         formData.append('quantity_liters', String(quantity));
+        formData.append('car_license_id', String(selectedCarId));
         formData.append('display_payload', displayPayload);
         let result;
         try {
@@ -1043,7 +1169,7 @@ body.customer-light-mode .customer-map-recenter-btn:hover {
             qr_code: qrPayload,
             station_name: selectedStation.name,
             station_address: selectedStation.address,
-            fuel_type: fuel,
+            oil_name: fuel.name,
             quantity_liters: quantity,
             expire_at: result.expire_at || 'When confirmed by station staff'
         });

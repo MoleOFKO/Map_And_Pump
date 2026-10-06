@@ -6,6 +6,7 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
 require_once __DIR__ . '/../conn.php';
 require_once __DIR__ . '/../feedback_schema.php';
 require_once __DIR__ . '/../usage_history_schema.php';
+require_once __DIR__ . '/license_expiry.php';
 
 function customer_feedback_redirect(string $query = ''): void
 {
@@ -22,6 +23,11 @@ $userId = (int)($_SESSION['user_id'] ?? 0);
 if ($userId <= 0) {
     header('Location: ../Login/login.php');
     exit;
+}
+
+$licenseExpiryState = customer_sync_license_expiry($pdo, $userId);
+if (($licenseExpiryState['driver']['status'] ?? '') === 'expired') {
+    customer_feedback_redirect();
 }
 
 $usageId = (int)($_POST['usage_id'] ?? 0);

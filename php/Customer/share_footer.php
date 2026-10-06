@@ -1,42 +1,5 @@
 </main>
 
-<?php
-$licenseExpiryWarnings = $licenseExpiryWarnings ?? [];
-$showLicenseExpiryWarning = $showLicenseExpiryWarning ?? false;
-?>
-
-<?php if (!empty($showLicenseExpiryWarning)): ?>
-    <div class="license-expiry-warning" id="licenseExpiryWarning" role="alert">
-        <div class="license-expiry-warning-icon"><i class="bi bi-hourglass-split"></i></div>
-        <div class="license-expiry-warning-content">
-            <strong>License expiry reminder</strong>
-            <span>
-                <?php foreach ($licenseExpiryWarnings as $warningIndex => $warning): ?>
-                    <?php if ($warningIndex > 0): ?>, <?php endif; ?>
-                    <a href="<?php echo htmlspecialchars($warning['url'], ENT_QUOTES, 'UTF-8'); ?>"><?php echo htmlspecialchars($warning['label'], ENT_QUOTES, 'UTF-8'); ?></a>
-                    expires in <b><?php echo (int) $warning['days_left']; ?> day<?php echo (int) $warning['days_left'] === 1 ? '' : 's'; ?></b>
-                <?php endforeach; ?>.
-            </span>
-        </div>
-        <button type="button" class="license-expiry-later" id="licenseExpiryLater">Later</button>
-    </div>
-    <style>
-        .license-expiry-warning { position: fixed; right: 24px; bottom: 24px; z-index: 1100; display: flex; align-items: flex-start; gap: 12px; width: min(440px, calc(100vw - 32px)); padding: 15px 16px; color: #fff4d6; background: rgba(53, 38, 12, .96); border: 1px solid rgba(255, 193, 7, .48); border-radius: 12px; box-shadow: 0 16px 40px rgba(0,0,0,.4); }
-        .license-expiry-warning-icon { color: #ffd15c; font-size: 20px; }
-        .license-expiry-warning-content { display: grid; gap: 4px; min-width: 0; font-size: 12px; line-height: 1.45; }
-        .license-expiry-warning-content strong { color: #ffd15c; font-size: 13px; }
-        .license-expiry-warning-content a { color: #fff; font-weight: 700; text-decoration: underline; }
-        .license-expiry-warning-content b { color: #fff; }
-        .license-expiry-later { margin-left: auto; padding: 4px 0; color: #d9c78b; background: transparent; border: 0; font-size: 11px; cursor: pointer; }
-        .license-expiry-later:hover { color: #fff; }
-    </style>
-    <script>
-        document.getElementById('licenseExpiryLater')?.addEventListener('click', function () {
-            document.getElementById('licenseExpiryWarning')?.remove();
-        });
-    </script>
-<?php endif; ?>
-
     <!-- Mobile Sidebar -->
     <div class="offcanvas offcanvas-start bg-dark text-white" tabindex="-1" id="mobileSidebar" style="width:280px; background-color: var(--navy-900) !important;">
         <div class="offcanvas-header border-bottom border-secondary border-opacity-10">
@@ -47,7 +10,14 @@ $showLicenseExpiryWarning = $showLicenseExpiryWarning ?? false;
         </div>
         <div class="offcanvas-body d-flex flex-column justify-content-between p-0">
             <div class="mt-4">
-                <?php if (($customerLicenseAccess['is_approved'] ?? false)): ?>
+                <?php if ($customerDriverLicenseExpired ?? false): ?>
+                    <a href="profile_page.php" class="nav-item-link">
+                        <i class="bi bi-person-fill-gear"></i> Edit Profile
+                    </a>
+                    <a href="license.php?update=1" class="nav-item-link">
+                        <i class="bi bi-person-vcard-fill"></i> Renew Driver License
+                    </a>
+                <?php elseif (($customerLicenseAccess['is_approved'] ?? false)): ?>
                     <a href="dashboard.php" class="nav-item-link">
                         <i class="bi bi-grid-1x2-fill"></i> Dashboard
                     </a>
@@ -61,21 +31,21 @@ $showLicenseExpiryWarning = $showLicenseExpiryWarning ?? false;
                         <i class="bi bi-person-fill-gear"></i> Edit Profile
                     </a>
                 <?php endif; ?>
-                <?php if (!($customerLicenseAccess['is_approved'] ?? false)): ?>
+                <?php if (!($customerDriverLicenseExpired ?? false) && !($customerLicenseAccess['is_approved'] ?? false)): ?>
                     <a href="license.php" class="nav-item-link">
                         <i class="bi bi-person-vcard-fill"></i> Driver License
                     </a>
                 <?php endif; ?>
             </div>
             <div class="p-4 bg-black bg-opacity-20">
-                <?php if (($linkedBusinessRoleNameHeader ?? '') !== ''): ?>
+                <?php if (!($customerDriverLicenseExpired ?? false) && ($linkedBusinessRoleNameHeader ?? '') !== ''): ?>
                     <form action="../account_switch.php" method="POST" class="mb-3">
                         <input type="hidden" name="mode" value="business">
                         <button type="submit" class="btn btn-outline-info w-100 py-2">
                             <i class="bi bi-arrow-left-right me-1"></i> Switch Account
                         </button>
                     </form>
-                <?php else: ?>
+                <?php elseif (!($customerDriverLicenseExpired ?? false)): ?>
                     <a href="profile_page.php" class="btn btn-outline-info w-100 py-2 mb-3">
                         <i class="bi bi-arrow-left-right me-1"></i> Switch Account
                     </a>
@@ -104,8 +74,10 @@ $showLicenseExpiryWarning = $showLicenseExpiryWarning ?? false;
     <script>
         function toggleAlertBox() {
             const panel = document.getElementById('notif-alert-panel');
+            const button = document.getElementById('notif-bell');
+            const isOpening = panel.classList.contains('d-none');
             panel.classList.toggle('d-none');
-            document.getElementById('notif-pulse-dot').classList.add('d-none');
+            button?.setAttribute('aria-expanded', isOpening ? 'true' : 'false');
         }
     </script>
     <?php require_once __DIR__ . '/../moderator_hire_popup.php'; ?>

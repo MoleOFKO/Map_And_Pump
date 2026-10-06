@@ -60,6 +60,7 @@ function customer_sync_license_expiry(PDO $pdo, int $userId): array
                 $status = 'expired';
             }
             $pdo->prepare("UPDATE users SET status = 'license_expired', updated_at = NOW() WHERE user_id = ? AND status IN ('active', 'approved', 'enabled', 'ready')")->execute([$userId]);
+            $pdo->prepare("UPDATE booking SET status = 'cancelled' WHERE user_id = ? AND status IN ('notfilled', 'serving')")->execute([$userId]);
         }
         $result['driver'] = [
             'status' => $status,

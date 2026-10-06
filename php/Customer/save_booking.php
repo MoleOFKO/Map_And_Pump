@@ -21,9 +21,10 @@ $bookingCode = isset($_POST['booking_code']) ? strtoupper(preg_replace('/\s+/', 
 $stationId = isset($_POST['station_id']) ? (int)$_POST['station_id'] : 0;
 $fuelType = isset($_POST['fuel_type']) ? trim($_POST['fuel_type']) : '';
 $quantity = isset($_POST['quantity_liters']) ? (float)$_POST['quantity_liters'] : 0;
+$requestedCarLicenseId = isset($_POST['car_license_id']) ? (int)$_POST['car_license_id'] : 0;
 $userId = (int)($_SESSION['user_id'] ?? 0);
 
-if ($bookingCode === '' || $stationId <= 0 || $fuelType === '' || $quantity <= 0) {
+if ($bookingCode === '' || $stationId <= 0 || $fuelType === '' || $quantity <= 0 || $requestedCarLicenseId < 0) {
     http_response_code(422);
     echo json_encode(['success' => false, 'message' => 'Missing booking details.']);
     exit;
@@ -68,14 +69,12 @@ try {
         exit;
     }
 
+    $latestInventorySql = map_pump_latest_station_inventory_sql();
     $stationStmt = $pdo->prepare(
-        "SELECT b.branch_id AS station_id, b.branch_name AS station_name, ot.oil_type_id, ot.oil_name
+        "SELECT b.branch_id AS station_id, b.branch_name AS station_name,
+                ot.oil_type_id, ot.oil_name, t.current_l AS available_liters,
+                latest_inventory.price_per_litre
          FROM branches b
-         LEFT JOIN (
-             SELECT station_id, oil_type_id, MAX(inventory_id) AS inventory_id
-             FROM station_oil_inventory
-             GROUP BY station_id, oil_type_id
-         ) latest_inventory ON latest_inventory.station_id = b.branch_id
          INNER JOIN tanks t ON t.branch_id = b.branch_id
             AND t.is_enabled = 1
             AND t.current_l > 0
@@ -86,6 +85,11 @@ try {
                 OR (t.fuel_code = 'dsl' AND LOWER(REPLACE(ot.oil_name, ' ', '')) IN ('disel', 'diesel'))
                 OR (t.fuel_code = 'pdsl' AND LOWER(REPLACE(ot.oil_name, ' ', '')) IN ('premiumdisel', 'premiumdiesel'))
             )
+         INNER JOIN ({$latestInventorySql}) latest_inventory
+            ON latest_inventory.station_id = b.branch_id
+            AND latest_inventory.oil_type_id = ot.oil_type_id
+            AND latest_inventory.is_active = 1
+            AND latest_inventory.price_per_litre > 0
          WHERE b.branch_id = :station_id
            AND LOWER(COALESCE(b.status, 'active')) = 'active'
            AND (
@@ -95,7 +99,6 @@ try {
                OR (b.opening_time <= b.closing_time AND CURRENT_TIME() BETWEEN b.opening_time AND b.closing_time)
                OR (b.opening_time > b.closing_time AND (CURRENT_TIME() >= b.opening_time OR CURRENT_TIME() <= b.closing_time))
            )
-         ORDER BY latest_inventory.inventory_id DESC
          LIMIT 1"
     );
     $stationStmt->execute([
@@ -116,6 +119,15 @@ try {
         exit;
     }
 
+    if ($quantity > (float)($stationFuel['available_liters'] ?? 0)) {
+        http_response_code(422);
+        echo json_encode([
+            'success' => false,
+            'message' => 'Only ' . number_format((float)$stationFuel['available_liters'], 1) . ' liters of this fuel are currently available at the selected station.'
+        ]);
+        exit;
+    }
+
     $oilTypeId = (int)$stationFuel['oil_type_id'];
     $fuelType = (string)$stationFuel['oil_name'];
     $stationName = (string)($stationFuel['station_name'] ?? ('Station #' . $stationId));
@@ -127,15 +139,32 @@ try {
      * the customer submits the form twice or has two browser tabs open.
      */
     $pdo->beginTransaction();
-    $carLock = $pdo->prepare(
-        'SELECT uc.car_id
-         FROM user_car uc
-         WHERE uc.user_id = :user_id AND uc.is_active = 1
-         LIMIT 1 FOR UPDATE'
-    );
-    $carLock->execute([':user_id' => $userId]);
-
-    $quota = customer_fuel_quota($pdo, $userId);
+    if ($requestedCarLicenseId > 0) {
+        $carLock = $pdo->prepare(
+            'SELECT uc.car_id
+             FROM user_car uc
+             WHERE uc.user_id = :user_id AND uc.car_id = :car_id
+             LIMIT 1 FOR UPDATE'
+        );
+        $carLock->execute([':user_id' => $userId, ':car_id' => $requestedCarLicenseId]);
+        $lockedCarId = (int)($carLock->fetchColumn() ?: 0);
+        if ($lockedCarId <= 0) {
+            $pdo->rollBack();
+            http_response_code(403);
+            echo json_encode(['success' => false, 'message' => 'The selected car is not linked to your account.']);
+            exit;
+        }
+        $quota = customer_fuel_quota_for_car($pdo, $userId, $lockedCarId);
+    } else {
+        $carLock = $pdo->prepare(
+            'SELECT uc.car_id
+             FROM user_car uc
+             WHERE uc.user_id = :user_id AND uc.is_active = 1
+             LIMIT 1 FOR UPDATE'
+        );
+        $carLock->execute([':user_id' => $userId]);
+        $quota = customer_fuel_quota($pdo, $userId);
+    }
     if (empty($quota['has_active_car'])) {
         $pdo->rollBack();
         http_response_code(422);
@@ -146,7 +175,7 @@ try {
         exit;
     }
 
-    $activeCarLicenseId = (int) $quota['active_car_id'];
+    $activeCarLicenseId = $requestedCarLicenseId > 0 ? $requestedCarLicenseId : (int)$quota['active_car_id'];
     $carLicenseCheck = $pdo->prepare(
         "SELECT status, license_expire_date
          FROM car_license

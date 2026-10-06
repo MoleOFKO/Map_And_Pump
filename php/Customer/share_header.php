@@ -17,12 +17,26 @@ if (!isset($_SESSION['user_id']) || !ctype_digit((string) $_SESSION['user_id']))
 
 $currentPage = basename($_SERVER['PHP_SELF']);
 $licenseExpiryState = customer_sync_license_expiry($pdo, (int) $_SESSION['user_id']);
-$licenseExpiryWarnings = customer_license_expiry_warnings($licenseExpiryState);
-$licenseWarningDate = date('Y-m-d');
-$showLicenseExpiryWarning = !empty($licenseExpiryWarnings) && ($_SESSION['license_warning_shown_date'] ?? '') !== $licenseWarningDate;
-if ($showLicenseExpiryWarning) {
-    $_SESSION['license_warning_shown_date'] = $licenseWarningDate;
+$customerDriverLicenseExpired = ($licenseExpiryState['driver']['status'] ?? '') === 'expired';
+$customerLicenseNotification = null;
+$driverLicenseExpiry = $licenseExpiryState['driver'] ?? null;
+if (is_array($driverLicenseExpiry)) {
+    $licenseDaysLeft = (int) ($driverLicenseExpiry['days_left'] ?? PHP_INT_MAX);
+    $licenseExpiryDate = (string) ($driverLicenseExpiry['expiry_date'] ?? '');
+    if (($driverLicenseExpiry['status'] ?? '') === 'expired') {
+        $customerLicenseNotification = [
+            'title' => 'Driver license expired',
+            'message' => 'Your driver license expired on ' . $licenseExpiryDate . '. Your account is restricted until you submit an updated license and a Moderator approves it.',
+        ];
+    } elseif ($licenseDaysLeft >= 0 && $licenseDaysLeft <= MAP_PUMP_LICENSE_WARNING_DAYS) {
+        $expiryTiming = $licenseDaysLeft === 0 ? 'expires today' : 'expires in ' . $licenseDaysLeft . ' day' . ($licenseDaysLeft === 1 ? '' : 's');
+        $customerLicenseNotification = [
+            'title' => 'Driver license expiring soon',
+            'message' => 'Your driver license ' . $expiryTiming . ' (' . $licenseExpiryDate . '). Update it before expiry. Every submitted update requires Moderator approval.',
+        ];
+    }
 }
+$customerLicenseNotificationCount = $customerLicenseNotification === null ? 0 : 1;
 $customerSessionState = customer_refresh_session($pdo, (int) $_SESSION['user_id']);
 $customerLicenseAccess = $customerSessionState['license'];
 
@@ -110,7 +124,11 @@ try {
     error_log('Failed to load HQ invitation: ' . $e->getMessage());
 }
 
-if ($currentPage !== 'license.php' && !$customerLicenseAccess['is_approved']) {
+if ($customerDriverLicenseExpired && !in_array($currentPage, ['profile_page.php', 'license.php'], true)) {
+    header('Location: profile_page.php');
+    exit;
+}
+if (!$customerDriverLicenseExpired && $currentPage !== 'license.php' && !$customerLicenseAccess['is_approved']) {
     header('Location: license.php');
     exit;
 }
@@ -177,7 +195,7 @@ if ($currentPage == 'car_license.php') $viewTitle = "Car License Setup";
 </head>
 <body>
 
-    <?php if ($pendingInvitation): ?>
+    <?php if ($pendingInvitation && !$customerDriverLicenseExpired): ?>
         <div class="modal fade" id="hqInvitationModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false" aria-labelledby="hqInvitationTitle" aria-hidden="true">
             <div class="modal-dialog modal-dialog-centered">
                 <div class="modal-content" style="background:#0a162c;color:#e8f3ff;border:1px solid rgba(13,110,253,.45);border-radius:18px;">
@@ -205,7 +223,14 @@ if ($currentPage == 'car_license.php') $viewTitle = "Car License Setup";
             </div>
 
             <div class="mt-4">
-                <?php if ($customerLicenseAccess['is_approved']): ?>
+                <?php if ($customerDriverLicenseExpired): ?>
+                    <a href="profile_page.php" class="nav-item-link <?php echo ($currentPage == 'profile_page.php') ? 'active' : ''; ?>">
+                        <i class="bi bi-person-fill-gear"></i> Edit Profile
+                    </a>
+                    <a href="license.php?update=1" class="nav-item-link <?php echo ($currentPage == 'license.php') ? 'active' : ''; ?>">
+                        <i class="bi bi-person-vcard-fill"></i> Renew Driver License
+                    </a>
+                <?php elseif ($customerLicenseAccess['is_approved']): ?>
                     <a href="dashboard.php" class="nav-item-link <?php echo ($currentPage == 'dashboard.php') ? 'active' : ''; ?>">
                         <i class="bi bi-grid-1x2-fill"></i> Dashboard
                     </a>
@@ -225,7 +250,7 @@ if ($currentPage == 'car_license.php') $viewTitle = "Car License Setup";
                         <i class="bi bi-car-front-fill"></i> Car License
                     </a>
                 <?php endif; ?>
-                <?php if (!$customerLicenseAccess['is_approved']): ?>
+                <?php if (!$customerDriverLicenseExpired && !$customerLicenseAccess['is_approved']): ?>
                     <a href="license.php" class="nav-item-link <?php echo ($currentPage == 'license.php') ? 'active' : ''; ?>">
                         <i class="bi bi-person-vcard-fill"></i> Driver License
                     </a>
@@ -247,14 +272,14 @@ if ($currentPage == 'car_license.php') $viewTitle = "Car License Setup";
                     <small class="text-secondary" style="font-size: 11px;">ID <?php echo htmlspecialchars($customerPublicUserId); ?></small>
                 </div>
             </div>
-            <?php if ($linkedBusinessRoleNameHeader !== ''): ?>
+            <?php if (!$customerDriverLicenseExpired && $linkedBusinessRoleNameHeader !== ''): ?>
                 <form action="../account_switch.php" method="POST" class="mb-3">
                     <input type="hidden" name="mode" value="business">
                     <button type="submit" class="btn btn-outline-info btn-sm w-100 py-2 border-opacity-25" style="border-radius:10px;">
                         <i class="bi bi-arrow-left-right me-1"></i> Switch Account
                     </button>
                 </form>
-            <?php else: ?>
+            <?php elseif (!$customerDriverLicenseExpired): ?>
                 <a href="profile_page.php" class="btn btn-outline-info btn-sm w-100 py-2 border-opacity-25 mb-3" style="border-radius:10px;">
                     <i class="bi bi-arrow-left-right me-1"></i> Switch Account
                 </a>
@@ -284,15 +309,24 @@ if ($currentPage == 'car_license.php') $viewTitle = "Car License Setup";
                     <span class="orb"></span>
                 </span>
             </label>
-            <div class="position-relative cursor-pointer" id="notif-hub" onclick="toggleAlertBox()" style="cursor: pointer;">
-                <i class="bi bi-bell-fill fs-5 text-secondary hover:text-white"></i>
-                <span id="notif-pulse-dot" class="position-absolute top-0 start-100 translate-middle p-1.5 bg-danger border border-light rounded-circle d-none"></span>
-                
-                <div id="notif-alert-panel" class="position-absolute end-0 mt-3 bg-dark border border-secondary border-opacity-20 rounded-4 shadow-lg py-3 d-none" style="width: 320px; z-index: 1000;">
-                    <div class="px-3 pb-2 border-bottom border-secondary border-opacity-10 font-bold text-white fs-6">Alert Logs</div>
-                    <div id="alert-logs-list" class="max-h-60 overflow-y-auto">
-                        <p class="px-3 py-4 text-center text-secondary mb-0" style="font-size:12px;">No notification dispatches registered.</p>
-                    </div>
+            <div class="position-relative" id="notif-hub">
+                <button type="button" class="btn btn-link p-0 border-0 text-secondary" id="notif-bell" onclick="toggleAlertBox()" aria-label="Notifications, <?php echo $customerLicenseNotificationCount; ?> available" aria-expanded="false" aria-controls="notif-alert-panel" style="line-height:1;">
+                    <i class="bi bi-bell-fill fs-5"></i>
+                    <?php if ($customerLicenseNotificationCount > 0): ?>
+                        <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger" id="notif-count"><?php echo $customerLicenseNotificationCount; ?></span>
+                    <?php endif; ?>
+                </button>
+                <div id="notif-alert-panel" class="position-absolute end-0 mt-3 bg-dark border border-secondary border-opacity-20 rounded-3 shadow-lg py-2 d-none" style="width:min(340px, calc(100vw - 32px)); z-index:1000;">
+                    <div class="px-3 pb-2 border-bottom border-secondary border-opacity-10 fw-semibold text-white">Notifications</div>
+                    <?php if ($customerLicenseNotification !== null): ?>
+                        <a href="license.php?update=1" class="d-block px-3 py-3 text-decoration-none border-bottom border-secondary border-opacity-10" style="color:inherit;">
+                            <span class="d-flex align-items-center gap-2 text-warning fw-semibold small"><i class="bi bi-exclamation-triangle-fill"></i><?php echo htmlspecialchars($customerLicenseNotification['title'], ENT_QUOTES, 'UTF-8'); ?></span>
+                            <span class="d-block mt-2 text-white-50" style="font-size:12px;line-height:1.5;"><?php echo htmlspecialchars($customerLicenseNotification['message'], ENT_QUOTES, 'UTF-8'); ?></span>
+                            <span class="d-inline-block mt-2 text-info small fw-semibold">Review or update license <i class="bi bi-arrow-up-right"></i></span>
+                        </a>
+                    <?php else: ?>
+                        <p class="px-3 py-4 text-center text-secondary mb-0" style="font-size:12px;">No license notifications.</p>
+                    <?php endif; ?>
                 </div>
             </div>
             <span class="bg-secondary bg-opacity-25" style="width:1px; height:24px;"></span>
@@ -303,3 +337,9 @@ if ($currentPage == 'car_license.php') $viewTitle = "Car License Setup";
     </header>
 
     <main class="main-frame">
+        <?php if ($customerDriverLicenseExpired): ?>
+            <div class="alert alert-danger" role="alert">
+                Your driver license has expired. Your bookings have been cancelled. Access is limited to your profile and license renewal.
+                <a class="alert-link" href="license.php?update=1">Renew your license</a>.
+            </div>
+        <?php endif; ?>

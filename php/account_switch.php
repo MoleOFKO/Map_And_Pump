@@ -4,6 +4,7 @@ session_start();
 require_once __DIR__ . '/Login/session_helper.php';
 require_once __DIR__ . '/conn.php';
 require_once __DIR__ . '/Customer/license_access.php';
+require_once __DIR__ . '/Customer/license_expiry.php';
 require_once __DIR__ . '/Customer/car_access.php';
 require_once __DIR__ . '/role_state.php';
 require_once __DIR__ . '/profile_avatar.php';
@@ -112,6 +113,14 @@ try {
 
 if (!$user) {
     account_switch_redirect_login('Your account could not be found. Please sign in again.');
+}
+
+if ((int) ($_SESSION['role_id'] ?? 0) === 6 || strtolower(trim((string) ($_SESSION['role_name'] ?? ''))) === 'customer') {
+    $licenseExpiryState = customer_sync_license_expiry($pdo, $userId);
+    if (($licenseExpiryState['driver']['status'] ?? '') === 'expired') {
+        header('Location: /php/Customer/profile_page.php');
+        exit;
+    }
 }
 
 $customerRoleId = account_switch_role_id($pdo, 'customer');

@@ -136,7 +136,9 @@ try {
     $customerLicenseAccess = null;
     if ($roleName === 'customer') {
         $customerLicenseAccess = customer_license_access($pdo, (int) $user['user_id']);
-        if (!$customerLicenseAccess['is_approved']) {
+        if ($isExpiredCustomer) {
+            $destination = '../Customer/profile_page.php';
+        } elseif (!$customerLicenseAccess['is_approved']) {
             $destination = '../Customer/license.php';
         }
     }
