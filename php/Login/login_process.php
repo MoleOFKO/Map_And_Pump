@@ -73,13 +73,33 @@ try {
         $user['status'] = 'license_expired';
     }
 
+    $hqLicenseExpired = false;
+    $isHqAccount = (int) ($user['business_role_id'] ?? 0) === 3 || (int) ($user['role_id'] ?? 0) === 3
+        || strtolower(trim((string) ($user['role_name'] ?? ''))) === 'hq'
+        || strtolower(trim((string) ($user['business_role_name'] ?? ''))) === 'hq';
+    if ($isHqAccount) {
+        $hqId = (int) ($user['headquarter_id'] ?? 0);
+        if ($hqId > 0) {
+            $hqStmt = $pdo->prepare('SELECT expire_at FROM headquarter WHERE headquarter_id = ? LIMIT 1');
+            if ($hqStmt && $hqStmt->execute([$hqId])) {
+                $hqRow = $hqStmt->fetch(PDO::FETCH_ASSOC);
+                $expireAt = trim((string) ($hqRow['expire_at'] ?? ''));
+                if ($expireAt !== '') {
+                    $expireDate = DateTimeImmutable::createFromFormat('!Y-m-d', $expireAt);
+                    if ($expireDate && $expireDate->format('Y-m-d') === $expireAt) {
+                        $hqLicenseExpired = $expireDate < new DateTimeImmutable('today');
+                    }
+                }
+            }
+        }
+    }
+
     $status = strtolower((string) ($user['status'] ?? ''));
     $allowedStatuses = ['active', 'approved', 'enabled', 'ready'];
     $isExpiredCustomer = $status === 'license_expired' && strtolower(trim((string) ($user['role_name'] ?? ''))) === 'customer';
     if ($isExpiredCustomer) {
         $allowedStatuses[] = 'license_expired';
     }
-    $isHqAccount = (int) ($user['business_role_id'] ?? 0) === 3 || (int) ($user['role_id'] ?? 0) === 3;
     if ($status === 'pending_deletion' && $isHqAccount) {
         $allowedStatuses[] = 'pending_deletion';
     }
@@ -103,6 +123,8 @@ try {
 
     $destination = $dashboardMap[$roleName] ?? '/php/Customer/dashboard.php';
     if ($status === 'pending_deletion' && $isHqAccount) {
+        $destination = '/php/HQ/profile.php';
+    } elseif ($hqLicenseExpired) {
         $destination = '/php/HQ/profile.php';
     } elseif ($isExpiredCustomer) {
         $destination = '../Customer/license.php';

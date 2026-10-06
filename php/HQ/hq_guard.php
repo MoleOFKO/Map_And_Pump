@@ -79,8 +79,31 @@ if (!$user) {
 [$activeRoleId, $activeRoleName] = map_pump_session_role($user);
 $activeRoleKey = strtolower(trim($activeRoleName));
 
+$hqLicenseExpired = false;
+$hqHeadquarterId = (int) ($user['headquarter_id'] ?? 0);
+if ($hqHeadquarterId > 0 && ($activeRoleId === 3 || strtolower(trim($activeRoleName)) === 'hq')) {
+    try {
+        $hqStmt = $pdo->prepare('SELECT expire_at FROM headquarter WHERE headquarter_id = ? LIMIT 1');
+        if ($hqStmt && $hqStmt->execute([$hqHeadquarterId])) {
+            $hqRow = $hqStmt->fetch(PDO::FETCH_ASSOC);
+            $expireAt = trim((string) ($hqRow['expire_at'] ?? ''));
+            if ($expireAt !== '') {
+                $expireDate = DateTimeImmutable::createFromFormat('!Y-m-d', $expireAt);
+                if ($expireDate && $expireDate->format('Y-m-d') === $expireAt) {
+                    $hqLicenseExpired = $expireDate < new DateTimeImmutable('today');
+                }
+            }
+        }
+    } catch (Throwable $e) {
+        error_log('HQ license guard failed while checking expire_at: ' . $e->getMessage());
+    }
+}
+
 if (($user['status'] ?? '') === 'pending_deletion' && basename((string) ($_SERVER['PHP_SELF'] ?? '')) !== 'profile.php') {
     hq_guard_redirect_top('/php/HQ/profile.php');
+}
+if ($hqLicenseExpired && basename((string) ($_SERVER['PHP_SELF'] ?? '')) !== 'profile.php') {
+    hq_guard_redirect_top('/php/HQ/profile.php', 'Your business license has expired. You can only access your HQ profile until it is renewed.');
 }
 
 $_SESSION['role_id'] = $activeRoleId;
