@@ -5,6 +5,7 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
 
 require_once __DIR__ . '/../conn.php';
 require_once __DIR__ . '/../invitations_schema.php';
+require_once __DIR__ . '/license_expiry.php';
 
 try {
     map_pump_ensure_invitation_schema($pdo);
@@ -22,6 +23,11 @@ if (empty($_SESSION['user_id'])) {
 $invitationId = filter_var($_POST['invitation_id'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
 $decision = strtolower(trim((string)($_POST['decision'] ?? '')));
 $userId = (int)$_SESSION['user_id'];
+$licenseExpiryState = customer_sync_license_expiry($pdo, $userId);
+if (($licenseExpiryState['driver']['status'] ?? '') === 'expired') {
+    header('Location: profile_page.php');
+    exit;
+}
 
 if (!$invitationId || !in_array($decision, ['accept', 'decline'], true)) {
     $_SESSION['customer_invitation_message'] = 'Invalid invitation response.';

@@ -2,6 +2,7 @@
 session_start();
 define('MAP_PUMP_JSON_RESPONSE', true);
 require __DIR__ . '/../conn.php';
+require_once __DIR__ . '/license_expiry.php';
 
 header('Content-Type: application/json');
 
@@ -42,6 +43,11 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 $userId = (int) ($_SESSION['user_id'] ?? 0);
 if ($userId <= 0) {
     booking_cancellation_response(401, 'Please sign in again to cancel this booking.');
+}
+
+$licenseExpiryState = customer_sync_license_expiry($pdo, $userId);
+if (($licenseExpiryState['driver']['status'] ?? '') === 'expired') {
+    booking_cancellation_response(403, 'Your driver license has expired. Active bookings have been cancelled.');
 }
 
 $sessionToken = (string) ($_SESSION['booking_csrf_token'] ?? '');

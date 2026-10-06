@@ -300,6 +300,7 @@ include 'share_header.php';
 
     <div class="col-lg-6">
         <div class="d-flex flex-column gap-4 h-100">
+            <?php if (!$customerDriverLicenseExpired): ?>
             <div class="dashboard-panel-card">
                 <div class="d-flex align-items-start justify-content-between gap-3 mb-3">
                     <div class="d-flex align-items-start gap-3">
@@ -379,6 +380,7 @@ include 'share_header.php';
                     <span class="text-secondary" style="font-size:12px;">No car license added yet.</span>
                 <?php endif; ?>
             </div>
+            <?php endif; ?>
         </div>
     </div>
 </div>

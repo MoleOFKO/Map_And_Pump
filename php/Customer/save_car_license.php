@@ -149,6 +149,11 @@ if ($userId <= 0) {
     car_license_json(false, 'Please sign in before adding a car license.', ['redirect' => '/php/Login/login.php']);
 }
 
+$licenseExpiryState = customer_sync_license_expiry($pdo, $userId);
+if (($licenseExpiryState['driver']['status'] ?? '') === 'expired') {
+    car_license_json(false, 'Your driver license has expired. Renew it before managing car licenses.', ['redirect' => '/php/Customer/profile_page.php']);
+}
+
 $action = trim((string) ($_POST['action'] ?? 'save'));
 $carId = (int) ($_POST['car_license_id'] ?? 0);
 
