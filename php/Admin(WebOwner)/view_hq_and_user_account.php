@@ -435,7 +435,7 @@ $flashContext = $flash['context'] ?? [];
                 const today = [currentDate.getFullYear(), String(currentDate.getMonth() + 1).padStart(2, '0'), String(currentDate.getDate()).padStart(2, '0')].join('-');
                 const licenseDateWarning = registeredDay && expiryDay && expiryDay <= registeredDay
                     ? '<div class="alert alert-warning py-2 mb-3" role="status"><i class="bi bi-exclamation-triangle-fill me-2"></i>License expiry must be after registration. Correct this date from Edit details using the current business license.</div>'
-                    : (typeof expiryDetailAlert === 'function' ? expiryDetailAlert(expiryDay, 'hq') : (expiryDay && expiryDay < today ? '<div class="alert alert-danger py-2 mb-3" role="alert"><i class="bi bi-x-circle-fill me-2"></i>This business license has expired. The related account should be suspended until renewed.</div>' : ''));
+                    : (typeof expiryDetailAlert === 'function' ? expiryDetailAlert(expiryDay, 'hq') : (expiryDay && expiryDay < today ? '<div class="alert alert-danger py-2 mb-3" role="alert"><i class="bi bi-x-circle-fill me-2"></i>This business license has expired. HQ access is limited to the profile until the business license is renewed.</div>' : ''));
 
                 const metaCards =
                     '<div class="row g-3 mb-4">' +

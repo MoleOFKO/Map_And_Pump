@@ -81,65 +81,10 @@ function expiry_db_ready(): bool
  */
 function expiry_sync_hq_expired(): array
 {
-    global $conn;
-    $changed = [];
-    if (!expiry_db_ready()) {
-        return $changed;
-    }
-
-    $sql = <<<'SQL'
-SELECT h.headquarter_id, h.company_name, h.expire_at,
-       owner.user_id AS owner_user_id, owner.status AS owner_status
-FROM headquarter h
-INNER JOIN (
-    SELECT u.headquarter_id, MIN(u.user_id) AS owner_user_id
-    FROM users u
-    WHERE (u.role_id = 3 OR u.business_role_id = 3)
-      AND u.headquarter_id IS NOT NULL
-    GROUP BY u.headquarter_id
-) owners ON owners.headquarter_id = h.headquarter_id
-INNER JOIN users owner ON owner.user_id = owners.owner_user_id
-WHERE h.expire_at IS NOT NULL
-  AND DATE(h.expire_at) < CURDATE()
-  AND LOWER(TRIM(owner.status)) IN ('approved','active','enabled','ready')
-SQL;
-
-    $result = $conn->query($sql);
-    if (!$result) {
-        return $changed;
-    }
-
-    while ($row = $result->fetch_assoc()) {
-        $userId = (int) ($row['owner_user_id'] ?? 0);
-        $hqId = (int) ($row['headquarter_id'] ?? 0);
-        if ($userId <= 0) {
-            continue;
-        }
-        $expireDate = substr((string) ($row['expire_at'] ?? ''), 0, 10);
-        $reason = 'Business license expired on ' . $expireDate . '. Account suspended automatically.';
-
-        $upd = $conn->prepare("UPDATE users SET status = 'suspended', updated_at = NOW() WHERE user_id = ? AND LOWER(TRIM(status)) IN ('approved','active','enabled','ready')");
-        if ($upd) {
-            $upd->bind_param('i', $userId);
-            $upd->execute();
-            $affected = $upd->affected_rows;
-            $upd->close();
-            if ($affected > 0) {
-                expiry_record_user_action($userId, 'suspend', $reason);
-                if (function_exists('admin_record_log')) {
-                    admin_record_log($userId, 'Auto-suspended HQ owner (license expired ' . $expireDate . ', HQ #' . $hqId . ')');
-                }
-                $changed[] = [
-                    'headquarter_id' => $hqId,
-                    'company_name' => (string) ($row['company_name'] ?? 'HQ'),
-                    'owner_user_id' => $userId,
-                    'expire_at' => $expireDate,
-                ];
-            }
-        }
-    }
-
-    return $changed;
+    // HQ business-license expiry stays on the headquarter record and does not
+    // suspend the owner user account. Access is restricted only to the HQ profile
+    // until the license is renewed.
+    return [];
 }
 
 /**
@@ -399,7 +344,7 @@ function expiry_alert_payload(bool $forceRefresh = false, bool $runSync = true):
             'kind' => 'hq',
             'bucket' => 'expired',
             'title' => (string) ($row['company_name'] ?? 'HQ'),
-            'subtitle' => 'Business license expired ' . ($row['expire_date'] ?? '') . ' · account suspended',
+            'subtitle' => 'Business license expired ' . ($row['expire_date'] ?? '') . ' · renewal required',
             'url' => 'view_hq_and_user_account.php?expiry=expired&search=' . rawurlencode((string) ($row['company_name'] ?? '')),
             'url_mod' => 'view_hq_and_user_account(M).php?expiry=expired&search=' . rawurlencode((string) ($row['company_name'] ?? '')),
             'days_left' => $row['days_left'],
@@ -554,7 +499,7 @@ function expiry_render_page_banners(string $portal = 'admin', bool $runSync = tr
             <?php if ($eHq > 0): ?><a href="<?= htmlspecialchars($hqExpUrl, ENT_QUOTES, 'UTF-8') ?>" class="alert-link"><?= $eHq ?> HQ</a><?php endif; ?>
             <?php if ($eHq > 0 && $eUser > 0): ?> and <?php endif; ?>
             <?php if ($eUser > 0): ?><a href="<?= htmlspecialchars($userExpUrl, ENT_QUOTES, 'UTF-8') ?>" class="alert-link"><?= $eUser ?> user<?= $eUser === 1 ? '' : 's' ?></a><?php endif; ?>
-            — accounts were suspended. Review and contact owners if they renew.
+            — review and renew the required documents immediately.
             <button type="button" class="btn-close btn-close-white" data-bs-dismiss="alert" aria-label="Close"></button>
         </div>
     <?php endif;
@@ -654,6 +599,12 @@ function expiry_detail_alert_html(?string $dateYmd, string $kind = 'license'): s
     $label = $kind === 'hq' ? 'Business license' : 'Driver license';
     $date = substr((string) $dateYmd, 0, 10);
     if ($bucket === 'expired') {
+        if ($kind === 'hq') {
+            return '<div class="alert alert-danger py-2 mb-3" role="alert"><i class="bi bi-x-circle-fill me-2"></i>'
+                . htmlspecialchars($label, ENT_QUOTES, 'UTF-8')
+                . ' expired on ' . htmlspecialchars($date, ENT_QUOTES, 'UTF-8')
+                . '. HQ access is limited to the profile until the business license is renewed.</div>';
+        }
         return '<div class="alert alert-danger py-2 mb-3" role="alert"><i class="bi bi-x-circle-fill me-2"></i>'
             . htmlspecialchars($label, ENT_QUOTES, 'UTF-8')
             . ' expired on ' . htmlspecialchars($date, ENT_QUOTES, 'UTF-8')
@@ -682,6 +633,9 @@ function expiryDetailAlert(dateStr, kind) {
     const diff = Math.round((exp - today) / 86400000);
     const label = kind === 'hq' ? 'Business license' : 'Driver license';
     if (diff < 0) {
+        if (kind === 'hq') {
+            return '<div class="alert alert-danger py-2 mb-3" role="alert"><i class="bi bi-x-circle-fill me-2"></i>' + label + ' expired on ' + day + '. HQ access is limited to the profile until the business license is renewed.</div>';
+        }
         return '<div class="alert alert-danger py-2 mb-3" role="alert"><i class="bi bi-x-circle-fill me-2"></i>' + label + ' expired on ' + day + '. Related account should be suspended until the license is renewed.</div>';
     }
     if (diff <= {$days}) {

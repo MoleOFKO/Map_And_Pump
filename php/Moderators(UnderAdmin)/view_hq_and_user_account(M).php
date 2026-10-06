@@ -110,7 +110,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const today = [currentDate.getFullYear(), String(currentDate.getMonth() + 1).padStart(2, '0'), String(currentDate.getDate()).padStart(2, '0')].join('-');
         const licenseDateWarning = registeredDay && expiryDay && expiryDay <= registeredDay
             ? '<div class="alert alert-warning py-2 mb-3" role="status"><i class="bi bi-exclamation-triangle-fill me-2"></i>License expiry must be after registration. Correct this date from Edit details using the current business license.</div>'
-            : (expiryDay && expiryDay < today ? '<div class="alert alert-warning py-2 mb-3" role="status"><i class="bi bi-exclamation-triangle-fill me-2"></i>This business license has expired. The related account should be suspended until renewed.</div>' : '');
+            : (expiryDay && expiryDay < today ? '<div class="alert alert-warning py-2 mb-3" role="status"><i class="bi bi-exclamation-triangle-fill me-2"></i>This business license has expired. HQ access is limited to the profile until the business license is renewed.</div>' : '');
         const metaCards = '<div class="row g-3 mb-4">' +
             '<div class="col-12 col-md-6"><div class="p-3 rounded-3" style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);"><div class="mod-detail-label">HQ location</div><div class="mod-detail-value mt-1">' + esc(hq.location || 'Not available') + '</div></div></div>' +
             '<div class="col-6 col-md-3"><div class="p-3 rounded-3 h-100" style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);"><div class="mod-detail-label">Contact</div><div class="mod-detail-value mt-1">' + esc(hq.contact_number || '—') + '</div></div></div>' +
