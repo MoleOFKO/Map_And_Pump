@@ -119,13 +119,13 @@ try {
     $hqUpdate = $conn->prepare(
         'UPDATE headquarter
          SET company_name = ?, company_logo = ?, contact_number = ?, headquarter_email = ?,
-             location = ?, business_license = ?, expire_at = ?
+             location = ?, business_license = ?, business_license_expire_date = ?, expire_at = ?
          WHERE headquarter_id = ?'
     );
     if (!$hqUpdate) {
         throw new RuntimeException('Could not prepare the HQ update.');
     }
-    $hqUpdate->bind_param('sssssssi', $hqName, $companyLogo, $contactNumber, $ownerEmail, $location, $businessLicense, $expireAt, $headquarterId);
+    $hqUpdate->bind_param('ssssssssi', $hqName, $companyLogo, $contactNumber, $ownerEmail, $location, $businessLicense, $expiryDate, $expireAt, $headquarterId);
     if (!$hqUpdate->execute()) {
         throw new RuntimeException('Could not update the HQ record.');
     }

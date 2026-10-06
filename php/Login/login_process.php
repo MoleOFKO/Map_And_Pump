@@ -96,6 +96,10 @@ try {
 
     $status = strtolower((string) ($user['status'] ?? ''));
     $allowedStatuses = ['active', 'approved', 'enabled', 'ready'];
+    $isHqAccount = (int) ($user['business_role_id'] ?? 0) === 3 || (int) ($user['role_id'] ?? 0) === 3;
+    if ($isHqAccount) {
+        $allowedStatuses = array_merge($allowedStatuses, ['expired', 'pending']);
+    }
     $isExpiredCustomer = $status === 'license_expired' && strtolower(trim((string) ($user['role_name'] ?? ''))) === 'customer';
     if ($isExpiredCustomer) {
         $allowedStatuses[] = 'license_expired';
@@ -135,6 +139,9 @@ try {
         if (!$customerLicenseAccess['is_approved']) {
             $destination = '../Customer/license.php';
         }
+    }
+    if ($isHqAccount && in_array($status, ['expired', 'pending'], true)) {
+        $destination = '/php/HQ/index.php';
     }
 
     $_SESSION['is_logged_in'] = true;

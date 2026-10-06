@@ -193,13 +193,17 @@ echo $brand_title; ?></span>
                 </div>
                 <div class="sidebar-section-title">Workspace</div>
                 <ul class="sidebar-menu">
+                    <?php if (!$hqAccessRestricted): ?>
                     <li class="active"><button type="button" onclick="routeTo('dashboard.php')"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3h7v7H3z M14 3h7v7h-7z M3 14h7v7H3z M14 14h7v7h-7z"/></svg>Overview</button></li>
-                    <li><button type="button" onclick="routeTo('brand.php')"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l9 5v8l-9 5-9-5V8z M3 8l9 5 9-5 M12 13v8"/></svg>Brand Setting</button></li>
+                    <?php endif; ?>
+                    <li class="<?= $hqAccessRestricted ? 'active' : '' ?>"><button type="button" onclick="routeTo('brand.php')"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l9 5v8l-9 5-9-5V8z M3 8l9 5 9-5 M12 13v8"/></svg>Brand Setting</button></li>
+                    <?php if (!$hqAccessRestricted): ?>
                     <li><button type="button" onclick="routeTo('pricing.php')"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18 M17 7H9a3 3 0 000 6h6a3 3 0 010 6H6"/></svg>Oil Types & Pricing</button></li>
                     <li><button type="button" onclick="routeTo('station.php')"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 21V4h10v17 M3 21h12 M6 7h6v5H6z M14 10h3l3 3v5a2 2 0 01-4 0v-4"/></svg>Manage Stations</button></li>
                     <li><button type="button" onclick="routeTo('report_from_manager.php')"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3h14v18H5z M8 7h8 M8 11h8 M8 15h5"/></svg>Manager Reports</button></li>
                     <li><button type="button" onclick="routeTo('report_to_admin.php')"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v12H8l-4 4z M8 8h8 M8 12h5"/></svg>Report to Admin</button></li>
                     <li><button type="button" onclick="routeTo('account.php')"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2 M9 3a4 4 0 110 8 4 4 0 010-8 M16 4a4 4 0 010 7 M22 21v-2a4 4 0 00-3-4"/></svg>Manager Accounts</button></li>
+                    <?php endif; ?>
                 </ul>
             </div>
             
@@ -290,7 +294,12 @@ echo $user_email_display; ?></p>
                 </div>
             </div>
 
-            <iframe title="HQ workspace content" id="viewport" class="content-frame" src="dashboard.php"></iframe>
+            <?php if ($hqAccessRestricted): ?>
+                <div class="alert alert-warning m-3" role="status">
+                    Your business license <?= $userStatus === 'expired' ? 'has expired' : 'renewal is awaiting admin approval' ?>. Access to HQ operations is paused until the license is approved.
+                </div>
+            <?php endif; ?>
+            <iframe title="HQ workspace content" id="viewport" class="content-frame" src="<?= $hqAccessRestricted ? 'brand.php' : 'dashboard.php' ?>"></iframe>
         </main>
     </div>
 

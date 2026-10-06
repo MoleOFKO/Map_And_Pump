@@ -72,7 +72,7 @@ echo json_encode([
         'location' => $request['location'],
         'request_details' => $request['request_details'],
         'registration_details' => [
-            'license_id' => $registrationDetails['license_id'] ?? null,
+            'license_id' => $registrationDetails['renewal_license_number'] ?? ($registrationDetails['license_id'] ?? null),
             'license_expiry' => $request['headquarter_expire_at'] ?? ($registrationDetails['license_expiry'] ?? null),
             'company_address' => $registrationDetails['company_address'] ?? null,
             'owner_phone' => $registrationDetails['owner_phone'] ?? null,

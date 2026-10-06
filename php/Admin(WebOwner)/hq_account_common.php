@@ -84,6 +84,7 @@ function hq_status_label(?string $status): string
         'suspended' => 'Suspended',
         'removed' => 'Removed',
         'rejected' => 'Rejected',
+        'expired' => 'Expired',
         'pending', 'pending_verification' => 'Pending Verification',
         default => $status !== null && trim($status) !== '' ? ucwords(str_replace('_', ' ', $status)) : 'Pending Verification',
     };
@@ -369,7 +370,7 @@ function hq_pending_status_sql(string $column): string
 function hq_manageable_status_sql(string $column): string
 {
     // Include statuses that appear in live data so list filters stay flexible.
-    return "LOWER(TRIM({$column})) IN ('active', 'approved', 'pending', 'pending_verification', 'suspended', 'removed', 'rejected')";
+    return "LOWER(TRIM({$column})) IN ('active', 'approved', 'pending', 'pending_verification', 'expired', 'suspended', 'removed', 'rejected')";
 }
 
 function hq_manageable_statuses(): array
@@ -381,7 +382,7 @@ function hq_manageable_statuses(): array
             return $live;
         }
     }
-    return ['approved', 'active', 'pending', 'suspended', 'removed'];
+    return ['approved', 'active', 'pending', 'expired', 'suspended', 'removed'];
 }
 
 function hq_unique_username(string $ownerName, string $email): string

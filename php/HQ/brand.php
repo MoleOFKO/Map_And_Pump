@@ -16,6 +16,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $email = $_POST['headquarter_email'] ?? '';
     $phone = $_POST['contact_number'] ?? '';
     $businessLicense = $_POST['business_license'] ?? '';
+    $licenseExpiry = trim((string) ($_POST['business_license_expiry'] ?? ''));
     $location = $_POST['location'] ?? '';
 
     // Handle Logo Upload if present
@@ -52,13 +53,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // Load the headquarters belonging to the signed-in user.
     if ($loggedUserId > 0) {
-        $stmt = $pdo->prepare("SELECT h.headquarter_id, h.company_logo, h.headquarter_email FROM users u JOIN headquarter h ON h.headquarter_id = u.headquarter_id WHERE u.user_id = ? LIMIT 1");
+        $stmt = $pdo->prepare("SELECT h.headquarter_id, h.company_logo, h.headquarter_email, h.company_name, h.location, h.business_license, h.business_license_expire_date, h.expire_at FROM users u JOIN headquarter h ON h.headquarter_id = u.headquarter_id WHERE u.user_id = ? LIMIT 1");
         $stmt->execute([$loggedUserId]);
     } elseif ($loggedHqId > 0) {
-        $stmt = $pdo->prepare("SELECT headquarter_id, company_logo, headquarter_email FROM headquarter WHERE headquarter_id = ? LIMIT 1");
+        $stmt = $pdo->prepare("SELECT headquarter_id, company_logo, headquarter_email, company_name, location, business_license, business_license_expire_date, expire_at FROM headquarter WHERE headquarter_id = ? LIMIT 1");
         $stmt->execute([$loggedHqId]);
     } else {
-        $stmt = $pdo->query("SELECT headquarter_id, company_logo, headquarter_email FROM headquarter LIMIT 1");
+        $stmt = $pdo->query("SELECT headquarter_id, company_logo, headquarter_email, company_name, location, business_license, business_license_expire_date, expire_at FROM headquarter LIMIT 1");
     }
     $config = $stmt->fetch(PDO::FETCH_ASSOC);
 
@@ -67,9 +68,66 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if ($config) {
+        $currentExpiry = trim((string) ($config['business_license_expire_date'] ?: $config['expire_at']));
+        $licenseChanged = trim((string) $businessLicense) !== trim((string) $config['business_license'])
+            || $licenseExpiry !== substr($currentExpiry, 0, 10);
+        if ($licenseChanged) {
+            $parsedExpiry = DateTime::createFromFormat('!Y-m-d', $licenseExpiry);
+            $expiryErrors = DateTime::getLastErrors();
+            if (trim((string) $businessLicense) === '' || !$parsedExpiry
+                || ($expiryErrors !== false && ($expiryErrors['warning_count'] > 0 || $expiryErrors['error_count'] > 0))
+                || $parsedExpiry->format('Y-m-d') !== $licenseExpiry || $licenseExpiry < date('Y-m-d')) {
+                $message = 'Enter a valid business license number and an expiry date of today or later.';
+            } else {
+                $pendingRequest = $pdo->prepare("SELECT request_id FROM system_requests WHERE headquarter_id = ? AND request_type = 'license_modification' AND status = 'pending' LIMIT 1");
+                $pendingRequest->execute([(int) $config['headquarter_id']]);
+                if ($pendingRequest->fetchColumn()) {
+                    $message = 'A license renewal request is already waiting for admin review.';
+                } else {
+                    try {
+                        $pdo->beginTransaction();
+                        $details = json_encode([
+                            'renewal_license_number' => trim((string) $businessLicense),
+                            'previous_status' => (string) ($_SESSION['user_status'] ?? 'expired'),
+                        ], JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
+                        $reference = 'HQ-LIC-' . date('YmdHis') . '-' . strtoupper(bin2hex(random_bytes(3)));
+                        $request = $pdo->prepare(
+                            "INSERT INTO system_requests
+                                (reference_code, request_type, status, submitter_user_id, role_id, headquarter_id,
+                                 sender_entity, sender_name, sender_email, location, request_details, headquarter_expire_at)
+                             VALUES (?, 'license_modification', 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                        );
+                        $request->execute([
+                            $reference,
+                            $loggedUserId,
+                            (int) ($_SESSION['role_id'] ?? 3),
+                            (int) $config['headquarter_id'],
+                            (string) ($config['company_name'] ?? $title),
+                            (string) ($_SESSION['user_name'] ?? ''),
+                            (string) ($_SESSION['user_email'] ?? ''),
+                            (string) ($config['location'] ?? $location),
+                            $details,
+                            $licenseExpiry . ' 23:59:59',
+                        ]);
+                        $updateStatus = $pdo->prepare("UPDATE users SET status = 'pending', updated_at = NOW() WHERE user_id = ?");
+                        $updateStatus->execute([$loggedUserId]);
+                        $pdo->commit();
+                        $_SESSION['user_status'] = 'pending';
+                        $message = 'License renewal submitted. HQ access will return after admin approval.';
+                    } catch (Throwable $e) {
+                        if ($pdo->inTransaction()) {
+                            $pdo->rollBack();
+                        }
+                        error_log('HQ license renewal submission failed: ' . $e->getMessage());
+                        $message = 'The license renewal request could not be submitted.';
+                    }
+                }
+            }
+        }
+
         // Save the brand settings without allowing an email conflict to block a logo update.
-        $updateStmt = $pdo->prepare("UPDATE headquarter SET company_name = ?, headquarter_bio = ?, contact_number = ?, business_license = ?, location = ?, company_logo = ? WHERE headquarter_id = ?");
-        $updateStmt->execute([$title, $info, $phone, $businessLicense, $location, $logoPath, $config['headquarter_id']]);
+        $updateStmt = $pdo->prepare("UPDATE headquarter SET company_name = ?, headquarter_bio = ?, contact_number = ?, location = ?, company_logo = ?, expire_at = expire_at WHERE headquarter_id = ?");
+        $updateStmt->execute([$title, $info, $phone, $location, $logoPath, $config['headquarter_id']]);
 
         $email = trim($email);
         if ($email !== '' && strcasecmp($email, (string) $config['headquarter_email']) !== 0) {
@@ -77,7 +135,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $emailCheck->execute([$email, $config['headquarter_id']]);
 
             if (!$emailCheck->fetchColumn()) {
-                $emailStmt = $pdo->prepare("UPDATE headquarter SET headquarter_email = ? WHERE headquarter_id = ?");
+                $emailStmt = $pdo->prepare("UPDATE headquarter SET headquarter_email = ?, expire_at = expire_at WHERE headquarter_id = ?");
                 $emailStmt->execute([$email, $config['headquarter_id']]);
             } else {
                 $message = "Brand settings saved, but that email is already used by another headquarters.";
@@ -111,7 +169,7 @@ $brandInfo = $currentConfig['headquarter_bio'] ?? '';
 $brandEmail = $currentConfig['headquarter_email'] ?? 'hq@apexfuelgas.com';
 $brandPhone = $currentConfig['contact_number'] ?? '+1 (800) 555-APEX';
 $businessLicense = $currentConfig['business_license'] ?? '';
-$licenseExpireDate = $currentConfig['business_license_expire_date'] ?? '';
+$licenseExpireDate = $currentConfig['business_license_expire_date'] ?: substr((string) ($currentConfig['expire_at'] ?? ''), 0, 10);
 $ownerName = $currentConfig['owner_name'] ?? '';
 $registerDate = !empty($currentConfig['registration_date']) ? substr((string) $currentConfig['registration_date'], 0, 10) : '';
 $licenseExpiryValue = trim((string) $licenseExpireDate);
@@ -245,7 +303,7 @@ if ($brandLogo !== '' && !preg_match('#^(?:https?:)?//#i', $brandLogo)) {
                             </div>
                             <div class="col-md-6 mb-3">
                                 <label class="form-label" for="licenseExpireDate">License Expire Date</label>
-                                <input id="licenseExpireDate" type="text" class="form-control" value="<?= htmlspecialchars($licenseExpireDate ?: 'Not provided') ?>" readonly>
+                                <input id="licenseExpireDate" type="date" class="form-control" name="business_license_expiry" value="<?= htmlspecialchars(substr((string) $licenseExpireDate, 0, 10)) ?>">
                             </div>
                             <div class="col-md-6 mb-3">
                                 <label class="form-label" for="brandOwnerName">Owner Name</label>

@@ -62,6 +62,9 @@ try {
     if (strtolower((string) $target['request_type']) === 'hq_registration' && !admin_is_admin($reviewer)) {
         throw new RuntimeException('Only an Admin can approve, reject, or flag an HQ registration request.');
     }
+    if (strtolower((string) $target['request_type']) === 'license_modification' && !admin_is_admin($reviewer)) {
+        throw new RuntimeException('Only an Admin can approve, reject, or flag an HQ license renewal request.');
+    }
 
     // Flag keeps the request open for follow-up without approving or rejecting.
     if ($action === 'flag') {
@@ -91,6 +94,45 @@ try {
     $createdHeadquarterId = null;
     $createdOwnerUserId = null;
     $createdOwnerEmail = null;
+    $requestType = strtolower((string) $target['request_type']);
+    $renewalDetails = [];
+    if ($requestType === 'license_modification') {
+        $renewalDetails = json_decode((string) ($target['request_details'] ?? ''), true);
+        if (!is_array($renewalDetails)) {
+            throw new RuntimeException('The license renewal details are invalid.');
+        }
+        $renewalLicense = trim((string) ($renewalDetails['renewal_license_number'] ?? ''));
+        $renewalExpiry = trim((string) ($target['headquarter_expire_at'] ?? ''));
+        $renewalExpiryDate = substr($renewalExpiry, 0, 10);
+        $parsedRenewalExpiry = DateTime::createFromFormat('!Y-m-d', $renewalExpiryDate);
+        $renewalExpiryErrors = DateTime::getLastErrors();
+        if ($renewalLicense === '' || strlen($renewalLicense) > 255 || !$parsedRenewalExpiry
+            || ($renewalExpiryErrors !== false && ($renewalExpiryErrors['warning_count'] > 0 || $renewalExpiryErrors['error_count'] > 0))
+            || $parsedRenewalExpiry->format('Y-m-d') !== $renewalExpiryDate) {
+            throw new RuntimeException('The submitted license number or expiry date is invalid.');
+        }
+        if (empty($target['headquarter_id'])) {
+            throw new RuntimeException('The license renewal is not linked to an HQ account.');
+        }
+        if ($action === 'approve') {
+            $expiryTimestamp = $renewalExpiryDate . ' 23:59:59';
+            $hqLicenseUpdate = $conn->prepare(
+                'UPDATE headquarter
+                 SET business_license = ?, business_license_expire_date = ?, expire_at = ?
+                 WHERE headquarter_id = ?'
+            );
+            if (!$hqLicenseUpdate) {
+                throw new RuntimeException('Could not prepare the HQ license update.');
+            }
+            $headquarterId = (int) $target['headquarter_id'];
+            $hqLicenseUpdate->bind_param('sssi', $renewalLicense, $renewalExpiryDate, $expiryTimestamp, $headquarterId);
+            if (!$hqLicenseUpdate->execute()) {
+                throw new RuntimeException('Could not apply the approved HQ license renewal.');
+            }
+            $hqLicenseUpdate->close();
+        }
+    }
+
     if ($action === 'approve' && strtolower((string) $target['request_type']) === 'hq_registration' && empty($target['headquarter_id'])) {
         $details = json_decode((string) ($target['request_details'] ?? ''), true);
         if (!is_array($details)) {
@@ -239,12 +281,19 @@ try {
     }
     $requestUpdate->close();
 
-    if ($recipientUserId !== null) {
+    if ($recipientUserId !== null && in_array($requestType, ['hq_registration', 'license_modification'], true)) {
+        $accountStatus = $newStatus;
+        if ($requestType === 'license_modification' && $action === 'reject') {
+            $previousStatus = strtolower(trim((string) ($renewalDetails['previous_status'] ?? 'expired')));
+            $accountStatus = in_array($previousStatus, ['active', 'approved', 'enabled', 'ready', 'expired'], true)
+                ? $previousStatus
+                : 'expired';
+        }
         $userUpdate = $conn->prepare('UPDATE users SET status = ?, updated_at = NOW() WHERE user_id = ?');
         if (!$userUpdate) {
             throw new RuntimeException('Could not prepare the related account update.');
         }
-        $userUpdate->bind_param('si', $newStatus, $recipientUserId);
+        $userUpdate->bind_param('si', $accountStatus, $recipientUserId);
         if (!$userUpdate->execute()) {
             throw new RuntimeException('Could not update the related account status.');
         }
