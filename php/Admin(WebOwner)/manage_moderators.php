@@ -248,9 +248,6 @@ $flashType = (string) ($flash['type'] ?? '');
 <body class="background_color" id="background_color">
 <?php $adminSection = 'manage_moderators'; include __DIR__ . '/admin_section_nav.php'; ?>
 
-<?php
-$filtersActive = ($search !== '' || $roleFilter > 0 || $statusFilter !== '');
-?>
 <main class="container my-5">
         <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3">
             <div>
@@ -346,10 +343,7 @@ $filtersActive = ($search !== '' || $roleFilter > 0 || $statusFilter !== '');
                             </select>
                         </div>
                         <div class="col-12 col-md-3 d-flex gap-2">
-                            <button type="submit" class="btn btn-neon flex-grow-1">Apply Filter</button>
-                            <?php if ($filtersActive): ?>
-                                <a href="manage_moderators.php" class="btn btn-outline-secondary text-white-50 border-secondary border-opacity-25" title="Clear filters">Clear</a>
-                            <?php endif; ?>
+                            <button type="button" class="btn btn-neon flex-grow-1 js-clear-filters" title="Clear filters">Clear</button>
                         </div>
                     </form>
                 </div>

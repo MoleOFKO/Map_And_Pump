@@ -237,23 +237,11 @@ function moderator_request_rows(string $search, string $requestType, string $sta
 
 function moderator_request_summary(): array
 {
-    global $conn;
-    $summary = ['pending' => 0, 'approved_today' => 0, 'declined_flagged' => 0];
-    if (!hq_db_available() || !request_schema_ready()) {
-        return $summary;
-    }
-
-    $result = $conn->query("SELECT LOWER(status) AS status, COUNT(*) AS total, SUM(DATE(reviewed_at) = CURDATE()) AS today_total FROM system_requests GROUP BY LOWER(status)");
-    while ($result && ($row = $result->fetch_assoc())) {
-        $status = (string) $row['status'];
-        if ($status === 'pending') {
-            $summary['pending'] += (int) $row['total'];
-        } elseif ($status === 'approved') {
-            $summary['approved_today'] += (int) ($row['today_total'] ?? 0);
-        } elseif (in_array($status, ['rejected', 'flagged'], true)) {
-            $summary['declined_flagged'] += (int) $row['total'];
-        }
-    }
-
-    return $summary;
+    $summary = request_live_status_summary();
+    return [
+        'pending' => $summary['pending'],
+        'approved_today' => $summary['approved_today'],
+        'declined_flagged' => $summary['declined_flagged'],
+        'error' => $summary['error'],
+    ];
 }

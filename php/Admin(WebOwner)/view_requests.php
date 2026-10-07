@@ -55,18 +55,8 @@ $accountRows = [];
 $dbError = null;
 
 if (hq_db_available() && request_schema_ready()) {
-    $summaryQuery = $conn->query(
-        "SELECT
-            COALESCE(SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END), 0) AS pending,
-            COALESCE(SUM(CASE WHEN status = 'approved' AND reviewed_at >= CURDATE() THEN 1 ELSE 0 END), 0) AS approved_today,
-            COALESCE(SUM(CASE WHEN status IN ('rejected', 'flagged') THEN 1 ELSE 0 END), 0) AS declined_flagged
-         FROM system_requests"
-    );
-    if ($summaryQuery) {
-        $summary = array_merge($summary, $summaryQuery->fetch_assoc() ?: []);
-    } else {
-        $dbError = 'The request summary could not be loaded.';
-    }
+    $summary = request_live_status_summary();
+    $dbError = $summary['error'];
 
     $where = [];
     $params = [];
@@ -277,8 +267,6 @@ $flashType = $flash['type'] ?? '';
 <body class="background_color" id="background_color">
 <?php $adminSection = 'requests'; include __DIR__ . '/admin_section_nav.php'; ?>
 
-<?php $filtersActive = ($search !== '' || $requestType !== '' || $status !== ''); ?>
-
     
 
     
@@ -299,8 +287,8 @@ $flashType = $flash['type'] ?? '';
 
         <div class="row g-3 mb-4">
             <div class="col-12 col-sm-4"><div class="request-indicator-card"><div><p class="text-white-50 mb-1 small fw-semibold" style="text-transform:uppercase;letter-spacing:.06em;font-size:.72rem;">Pending Verification</p><h4 class="fw-bold text-warning mb-0" style="font-size:1.8rem;letter-spacing:-.04em;"><?= (int) $summary['pending'] ?></h4></div><span class="fs-3 text-warning"><i class="bi bi-hourglass-split"></i></span></div></div>
-            <div class="col-12 col-sm-4"><div class="request-indicator-card"><div><p class="text-white-50 mb-1 small fw-semibold" style="text-transform:uppercase;letter-spacing:.06em;font-size:.72rem;">Approved Today</p><h4 class="fw-bold mb-0" style="font-size:1.8rem;letter-spacing:-.04em;color:#1be494;"><?= (int) $summary['approved_today'] ?></h4></div><span class="fs-3" style="color:#1be494;"><i class="bi bi-patch-check-fill"></i></span></div></div>
-            <div class="col-12 col-sm-4"><div class="request-indicator-card"><div><p class="text-white-50 mb-1 small fw-semibold" style="text-transform:uppercase;letter-spacing:.06em;font-size:.72rem;">Declined / Flagged</p><h4 class="fw-bold mb-0" style="font-size:1.8rem;letter-spacing:-.04em;color:#ff4d6a;"><?= (int) $summary['declined_flagged'] ?></h4></div><span class="fs-3" style="color:#ff4d6a;"><i class="bi bi-shield-x"></i></span></div></div>
+            <div class="col-12 col-sm-4"><div class="request-indicator-card"><div><p class="text-white-50 mb-1 small fw-semibold" style="text-transform:uppercase;letter-spacing:.06em;font-size:.72rem;">Approved Today</p><h4 class="fw-bold mb-0" data-live-request-count="approved_today" style="font-size:1.8rem;letter-spacing:-.04em;color:#1be494;"><?= (int) $summary['approved_today'] ?></h4></div><span class="fs-3" style="color:#1be494;"><i class="bi bi-patch-check-fill"></i></span></div></div>
+            <div class="col-12 col-sm-4"><div class="request-indicator-card"><div><p class="text-white-50 mb-1 small fw-semibold" style="text-transform:uppercase;letter-spacing:.06em;font-size:.72rem;">Declined / Flagged</p><h4 class="fw-bold mb-0" data-live-request-count="declined_flagged" style="font-size:1.8rem;letter-spacing:-.04em;color:#ff4d6a;"><?= (int) $summary['declined_flagged'] ?></h4></div><span class="fs-3" style="color:#ff4d6a;"><i class="bi bi-shield-x"></i></span></div></div>
         </div>
 
         <div class="row g-4">
@@ -309,10 +297,7 @@ $flashType = $flash['type'] ?? '';
                 <div class="col-12 col-md-3"><select class="form-select glass-select" name="type"><option value="" <?= $requestType === '' ? 'selected' : '' ?>>All Request Types</option><?php foreach ($requestTypeOptions as $option): ?><option value="<?= hq_escape($option) ?>" <?= admin_request_type_filter_value($requestType) === $option ? 'selected' : '' ?>><?= hq_escape(admin_filter_label($option)) ?></option><?php endforeach; ?></select></div>
                 <div class="col-12 col-md-2"><select class="form-select glass-select" name="status"><option value="" <?= $status === '' ? 'selected' : '' ?>>All Status</option><?php foreach ($allowedStatuses as $option): ?><option value="<?= hq_escape($option) ?>" <?= $status === $option ? 'selected' : '' ?>><?= hq_escape(admin_filter_label($option)) ?></option><?php endforeach; ?></select></div>
                 <div class="col-12 col-md-2 d-flex gap-2">
-                    <button type="submit" class="btn btn-neon flex-grow-1">Apply Filter</button>
-                    <?php if ($filtersActive): ?>
-                        <a href="view_requests.php" class="btn btn-outline-secondary text-white-50 border-secondary border-opacity-25" title="Clear filters">Clear</a>
-                    <?php endif; ?>
+                    <button type="button" class="btn btn-neon flex-grow-1 js-clear-filters" title="Clear filters">Clear</button>
                 </div>
             </form></div></div>
 

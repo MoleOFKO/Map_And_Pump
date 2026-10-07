@@ -158,6 +158,8 @@ if ($currentPage == 'car_license.php') $viewTitle = "Car License Setup";
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Noto+Sans+Myanmar:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../../css/customer.css">
+<link rel="stylesheet" href="../../css/customer-theme.css">
+<script src="../../js/customer-theme.js"></script>
 
     <style>
         /* Layout + structure only. Colors come from customer.css (admin parity theme). */

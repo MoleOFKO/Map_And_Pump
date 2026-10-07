@@ -119,6 +119,69 @@ function request_schema_ready(): bool
     return isset($tables['system_requests'], $tables['notifications']);
 }
 
+/**
+ * Current request status totals, including separately recorded account reviews.
+ *
+ * @return array{pending:int,approved:int,approved_today:int,declined_flagged:int,error:?string}
+ */
+function request_live_status_summary(): array
+{
+    global $conn;
+
+    $summary = [
+        'pending' => 0,
+        'approved' => 0,
+        'approved_today' => 0,
+        'declined_flagged' => 0,
+        'error' => null,
+    ];
+
+    if (!hq_db_available() || !request_schema_ready()) {
+        $summary['error'] = 'The request database is temporarily unavailable.';
+        return $summary;
+    }
+
+    $requestQuery = $conn->query(
+        "SELECT
+            COALESCE(SUM(CASE WHEN LOWER(TRIM(status)) = 'pending' THEN 1 ELSE 0 END), 0) AS pending,
+            COALESCE(SUM(CASE WHEN LOWER(TRIM(status)) = 'approved' THEN 1 ELSE 0 END), 0) AS approved,
+            COALESCE(SUM(CASE WHEN LOWER(TRIM(status)) = 'approved' AND DATE(reviewed_at) = CURDATE() THEN 1 ELSE 0 END), 0) AS approved_today,
+            COALESCE(SUM(CASE WHEN LOWER(TRIM(status)) IN ('rejected', 'flagged') THEN 1 ELSE 0 END), 0) AS declined_flagged
+         FROM system_requests"
+    );
+    if (!$requestQuery) {
+        error_log('[Request registry] Live status summary query failed: ' . $conn->error);
+        $summary['error'] = 'Request status totals could not be loaded.';
+        return $summary;
+    }
+
+    $requestCounts = $requestQuery->fetch_assoc() ?: [];
+    foreach (['pending', 'approved', 'approved_today', 'declined_flagged'] as $key) {
+        $summary[$key] = (int) ($requestCounts[$key] ?? 0);
+    }
+
+    $accountReviewQuery = $conn->query(
+        "SELECT
+            COALESCE(SUM(CASE WHEN LOWER(TRIM(notification_type)) = 'account_approved' THEN 1 ELSE 0 END), 0) AS approved,
+            COALESCE(SUM(CASE WHEN LOWER(TRIM(notification_type)) = 'account_approved' AND DATE(created_at) = CURDATE() THEN 1 ELSE 0 END), 0) AS approved_today,
+            COALESCE(SUM(CASE WHEN LOWER(TRIM(notification_type)) = 'account_rejected' THEN 1 ELSE 0 END), 0) AS rejected
+         FROM notifications
+         WHERE LOWER(TRIM(notification_type)) IN ('account_approved', 'account_rejected')"
+    );
+    if (!$accountReviewQuery) {
+        error_log('[Request registry] Account review totals query failed: ' . $conn->error);
+        $summary['error'] = 'Account review totals could not be loaded.';
+        return $summary;
+    }
+
+    $accountReviewCounts = $accountReviewQuery->fetch_assoc() ?: [];
+    $summary['approved'] += (int) ($accountReviewCounts['approved'] ?? 0);
+    $summary['approved_today'] += (int) ($accountReviewCounts['approved_today'] ?? 0);
+    $summary['declined_flagged'] += (int) ($accountReviewCounts['rejected'] ?? 0);
+
+    return $summary;
+}
+
 function request_send_notification(string $recipient, string $subject, string $message): array
 {
     $recipient = trim($recipient);
@@ -164,4 +227,3 @@ function request_date(?string $value): string
     $timestamp = strtotime($value);
     return $timestamp ? date('M j, Y · g:i A', $timestamp) : $value;
 }
-
