@@ -51,8 +51,6 @@ $requestTypeOption = function_exists('admin_request_type_filter_value')
         'account_deactivation' => 'deactivation',
         default => $requestType,
     };
-$filtersActive = ($search !== '' || $requestType !== '' || $status !== '');
-
 $requestRows = ($requestType === 'account') ? [] : moderator_request_rows($search, $requestType, $status);
 $accountRows = [];
 if (($requestType === '' || $requestType === 'account') && ($status === '' || $status === 'pending')) {
@@ -61,7 +59,7 @@ if (($requestType === '' || $requestType === 'account') && ($status === '' || $s
 
 $summary = moderator_request_summary();
 $summary['pending'] += count($accountRows);
-$dbError = hq_db_available() ? null : 'The request database is temporarily unavailable.';
+$dbError = $summary['error'] ?? (hq_db_available() ? null : 'The request database is temporarily unavailable.');
 $flashType = (string) ($flash['type'] ?? '');
 ?>
 <!DOCTYPE html>
@@ -203,8 +201,8 @@ $flashType = (string) ($flash['type'] ?? '');
 
     <div class="row g-3 mb-4">
         <div class="col-12 col-sm-4"><div class="request-indicator-card"><div><p class="text-white-50 mb-1 small fw-semibold" style="text-transform:uppercase;letter-spacing:.06em;font-size:.72rem;">Pending Verification</p><h4 class="fw-bold text-warning mb-0" style="font-size:1.8rem;letter-spacing:-.04em;"><?= (int) $summary['pending'] ?></h4></div><span class="fs-3 text-warning"><i class="bi bi-hourglass-split"></i></span></div></div>
-        <div class="col-12 col-sm-4"><div class="request-indicator-card"><div><p class="text-white-50 mb-1 small fw-semibold" style="text-transform:uppercase;letter-spacing:.06em;font-size:.72rem;">Approved Today</p><h4 class="fw-bold mb-0" style="font-size:1.8rem;letter-spacing:-.04em;color:#1be494;"><?= (int) $summary['approved_today'] ?></h4></div><span class="fs-3" style="color:#1be494;"><i class="bi bi-patch-check-fill"></i></span></div></div>
-        <div class="col-12 col-sm-4"><div class="request-indicator-card"><div><p class="text-white-50 mb-1 small fw-semibold" style="text-transform:uppercase;letter-spacing:.06em;font-size:.72rem;">Declined / Flagged</p><h4 class="fw-bold mb-0" style="font-size:1.8rem;letter-spacing:-.04em;color:#ff4d6a;"><?= (int) $summary['declined_flagged'] ?></h4></div><span class="fs-3" style="color:#ff4d6a;"><i class="bi bi-shield-x"></i></span></div></div>
+        <div class="col-12 col-sm-4"><div class="request-indicator-card"><div><p class="text-white-50 mb-1 small fw-semibold" style="text-transform:uppercase;letter-spacing:.06em;font-size:.72rem;">Approved Today</p><h4 class="fw-bold mb-0" data-live-request-count="approved_today" style="font-size:1.8rem;letter-spacing:-.04em;color:#1be494;"><?= (int) $summary['approved_today'] ?></h4></div><span class="fs-3" style="color:#1be494;"><i class="bi bi-patch-check-fill"></i></span></div></div>
+        <div class="col-12 col-sm-4"><div class="request-indicator-card"><div><p class="text-white-50 mb-1 small fw-semibold" style="text-transform:uppercase;letter-spacing:.06em;font-size:.72rem;">Declined / Flagged</p><h4 class="fw-bold mb-0" data-live-request-count="declined_flagged" style="font-size:1.8rem;letter-spacing:-.04em;color:#ff4d6a;"><?= (int) $summary['declined_flagged'] ?></h4></div><span class="fs-3" style="color:#ff4d6a;"><i class="bi bi-shield-x"></i></span></div></div>
     </div>
 
     <div class="row g-4">
@@ -213,7 +211,7 @@ $flashType = (string) ($flash['type'] ?? '');
             <div class="col-12 col-md-5"><div class="input-group"><span class="input-group-text bg-transparent border-end-0" style="border-color:var(--glass-border);color:var(--neon-cyan);border-radius:12px 0 0 12px;"><i class="bi bi-funnel-fill"></i></span><input type="text" class="form-control glass-input border-start-0" placeholder="Filter by company, sender name, email, or reference ID..." name="search" value="<?= moderator_escape($search) ?>"></div></div>
             <div class="col-12 col-md-3"><select class="form-select glass-select" name="type"><option value="">All Request Types</option><?php foreach ($requestTypeOptions as $option): ?><option value="<?= moderator_escape($option) ?>" <?= $requestTypeOption === $option ? 'selected' : '' ?>><?= $option === 'account' ? 'Account Verification' : moderator_escape(function_exists('admin_filter_label') ? admin_filter_label($option) : (function_exists('request_type_label') ? request_type_label($option) : $option)) ?></option><?php endforeach; ?></select></div>
             <div class="col-12 col-md-2"><select class="form-select glass-select" name="status"><option value="">All Statuses</option><?php foreach ($allowedStatuses as $option): ?><option value="<?= moderator_escape($option) ?>" <?= $status === $option ? 'selected' : '' ?>><?= moderator_escape(function_exists('admin_filter_label') ? admin_filter_label($option) : request_status_label($option)) ?></option><?php endforeach; ?></select></div>
-            <div class="col-12 col-md-2 d-flex gap-2"><button type="submit" class="btn btn-neon flex-grow-1">Apply</button><?php if ($filtersActive): ?><a href="view_requests(M).php" class="btn btn-outline-secondary text-white-50 border-secondary border-opacity-25" title="Clear filters">Clear</a><?php endif; ?></div>
+            <div class="col-12 col-md-2 d-flex gap-2"><button type="button" class="btn btn-neon flex-grow-1 js-clear-filters" title="Clear filters">Clear</button></div>
         </form>
     </div></div>
 

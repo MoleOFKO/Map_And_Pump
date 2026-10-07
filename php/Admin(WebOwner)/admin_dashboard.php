@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/admin_common.php';
+require_once __DIR__ . '/request_common.php';
 require_once __DIR__ . '/user_account_common.php';
 
 admin_require_admin();
@@ -26,6 +27,7 @@ $reportTypes = [
     'audit_logs' => 0,
 ];
 $updatedAt = null;
+$requestSummaryError = null;
 
 if ($dbOnline) {
     // Station totals must come from `branches` (canonical table), never the dummy `stations` view.
@@ -44,21 +46,11 @@ if ($dbOnline) {
         }
     }
 
-    $requestQuery = $conn->query(
-        'SELECT LOWER(status) AS status, COUNT(*) AS total FROM system_requests GROUP BY LOWER(status)'
-    );
-    if ($requestQuery) {
-        while ($row = $requestQuery->fetch_assoc()) {
-            $status = (string) $row['status'];
-            if ($status === 'pending') {
-                $requestCounts['pending'] += (int) $row['total'];
-            } elseif ($status === 'approved') {
-                $requestCounts['approved'] += (int) $row['total'];
-            } elseif (in_array($status, ['rejected', 'flagged'], true)) {
-                $requestCounts['declined'] += (int) $row['total'];
-            }
-        }
-    }
+    $requestSummary = request_live_status_summary();
+    $requestCounts['pending'] += $requestSummary['pending'];
+    $requestCounts['approved'] += $requestSummary['approved'];
+    $requestCounts['declined'] += $requestSummary['declined_flagged'];
+    $requestSummaryError = $requestSummary['error'];
 
     $pendingAccounts = pending_account_count();
     $metrics['open_requests'] += $pendingAccounts;
@@ -141,7 +133,11 @@ $updatedLabel = $updatedAt ? admin_date($updatedAt) : 'Not available';
     <link rel="stylesheet" href="/css/Admin.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
 <style>
-        a.metric-card-link { display:block; text-decoration:none; color:inherit; height:100%; }
+        .hq-flash { border-radius:14px; background:rgba(10,22,44,.82); border:1px solid var(--glass-border); color:var(--text-primary); }
+        .hq-flash.alert-success { border-color:rgba(27,228,148,.4); }
+        .hq-flash.alert-danger { border-color:rgba(255,77,106,.45); }
+        body.background_color.light-mode .hq-flash { background:rgba(255,255,255,.9); }
+    a.metric-card-link { display:block; text-decoration:none; color:inherit; height:100%; }
         a.metric-card-link:hover .metric-card,
         a.metric-card-link:focus .metric-card { transform:translateY(-2px); border-color:rgba(0,244,255,.35); box-shadow:0 10px 28px rgba(0,180,255,.12); }
         a.metric-card-link:focus-visible { outline:2px solid var(--neon-cyan); outline-offset:3px; border-radius:16px; }
@@ -272,13 +268,13 @@ $updatedLabel = $updatedAt ? admin_date($updatedAt) : 'Not available';
                 <div class="row g-4">
                     <div class="col-12 col-lg-6">
                         <div class="pie-panel pie-panel-solo">
-                            <div class="pie-chart request-pie" role="img" aria-label="Request status chart" style="<?= hq_escape($requestPieStyle) ?>"><span><?= (int) $requestTotal ?></span></div>
+                            <div class="pie-chart request-pie" data-live-request-pie role="img" aria-label="Request status chart" style="<?= hq_escape($requestPieStyle) ?>"><span data-live-request-total><?= (int) $requestTotal ?></span></div>
                             <div class="pie-panel-text">
                                 <h3 class="h6 fw-semibold text-white mb-3">Request Status</h3>
                                 <ul class="chart-legend list-unstyled m-0">
-                                    <li><span class="legend-dot bg-warning"></span><span>Pending</span><strong><?= (int) $requestCounts['pending'] ?></strong></li>
-                                    <li><span class="legend-dot" style="background:#1be494;"></span><span>Approved</span><strong><?= (int) $requestCounts['approved'] ?></strong></li>
-                                    <li><span class="legend-dot" style="background:#ff4d6a;"></span><span>Declined/Flagged</span><strong><?= (int) $requestCounts['declined'] ?></strong></li>
+                                    <li><span class="legend-dot bg-warning"></span><span>Pending</span><strong data-live-request-count="pending"><?= (int) $requestCounts['pending'] ?></strong></li>
+                                    <li><span class="legend-dot" style="background:#1be494;"></span><span>Approved</span><strong data-live-request-count="approved"><?= (int) $requestCounts['approved'] ?></strong></li>
+                                    <li><span class="legend-dot" style="background:#ff4d6a;"></span><span>Declined/Flagged</span><strong data-live-request-count="declined"><?= (int) $requestCounts['declined'] ?></strong></li>
                                 </ul>
                             </div>
                         </div>
@@ -313,9 +309,9 @@ $updatedLabel = $updatedAt ? admin_date($updatedAt) : 'Not available';
                                 <span class="summary-arrow"><i class="bi bi-arrow-right"></i></span>
                             </div>
                             <div class="summary-stat-grid">
-                                <div><span class="text-warning"><?= (int) $requestCounts['pending'] ?></span><small>Pending</small></div>
-                                <div><span style="color:#1be494;"><?= (int) $requestCounts['approved'] ?></span><small>Approved</small></div>
-                                <div><span style="color:#ff4d6a;"><?= (int) $requestCounts['declined'] ?></span><small>Declined</small></div>
+                                <div><span class="text-warning" data-live-request-count="pending"><?= (int) $requestCounts['pending'] ?></span><small>Pending</small></div>
+                                <div><span style="color:#1be494;" data-live-request-count="approved"><?= (int) $requestCounts['approved'] ?></span><small>Approved</small></div>
+                                <div><span style="color:#ff4d6a;" data-live-request-count="declined"><?= (int) $requestCounts['declined'] ?></span><small>Declined</small></div>
                             </div>
                         </div>
                     </a>

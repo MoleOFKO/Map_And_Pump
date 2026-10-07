@@ -51,7 +51,6 @@ $flashType = (string) ($flash['type'] ?? '');
 <body class="background_color" id="background_color">
 <?php $adminSection = 'view_users'; include __DIR__ . '/admin_section_nav.php'; ?>
 
-<?php $filtersActive = ($search !== '' || $status !== '' || $expiryFilter !== ''); ?>
 <main class="container my-5">
     <?php if ($flash && $flashType): ?><div class="alert hq-flash alert-<?= hq_escape($flashType) ?> alert-dismissible fade show mb-4" role="alert"><i class="bi <?= $flashType === 'success' ? 'bi-check-circle-fill text-success' : 'bi-exclamation-triangle-fill text-danger' ?> me-2"></i><?= hq_escape((string) ($flash['message'] ?? '')) ?><button type="button" class="btn-close btn-close-white" data-bs-dismiss="alert"></button></div><?php endif; ?>
     <?php if ($dbError): ?><div class="alert hq-flash alert-danger mb-4"><i class="bi bi-database-exclamation me-2"></i><?= hq_escape($dbError) ?></div><?php endif; ?>
@@ -79,10 +78,7 @@ $flashType = (string) ($flash['type'] ?? '');
                 <?= function_exists('expiry_filter_select_html') ? expiry_filter_select_html($expiryFilter, 'userExpiryFilter', 'hq_escape') : '' ?>
             </div>
             <div class="col-12 col-md-3 d-flex gap-2">
-                <button type="submit" class="btn btn-neon flex-grow-1">Apply Filter</button>
-                <?php if ($filtersActive || $expiryFilter !== ''): ?>
-                    <a href="view_users.php" class="btn btn-outline-secondary text-white-50 border-secondary border-opacity-25" title="Clear filters">Clear</a>
-                <?php endif; ?>
+                <button type="button" class="btn btn-neon flex-grow-1 js-clear-filters" title="Clear filters">Clear</button>
             </div>
         </form>
     </div>
