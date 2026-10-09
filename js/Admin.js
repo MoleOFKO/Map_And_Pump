@@ -126,6 +126,56 @@
  */
 (function () {
     const DEBOUNCE_MS = 320;
+    const LIVE_REQUEST_COUNTS_INTERVAL_MS = 5000;
+
+    function initLiveRequestCounts() {
+        const requestPie = document.querySelector('[data-live-request-pie]');
+        const liveCounters = document.querySelectorAll('[data-live-request-count]');
+        if (!requestPie && liveCounters.length === 0) return;
+
+        const refresh = async () => {
+            if (document.hidden) return;
+            try {
+                const response = await fetch('/php/Admin(WebOwner)/request_status_counts.php', {
+                    credentials: 'same-origin',
+                    headers: { Accept: 'application/json' },
+                    cache: 'no-store',
+                });
+                if (!response.ok) {
+                    throw new Error(`Request totals refresh failed (${response.status}).`);
+                }
+                const counts = await response.json();
+                liveCounters.forEach((counter) => {
+                    const key = counter.dataset.liveRequestCount;
+                    if (Object.prototype.hasOwnProperty.call(counts, key)) {
+                        counter.textContent = String(counts[key]);
+                    }
+                });
+
+                if (requestPie) {
+                    const pending = Number(counts.pending) || 0;
+                    const approved = Number(counts.approved) || 0;
+                    const declined = Number(counts.declined) || 0;
+                    const total = pending + approved + declined;
+                    const pendingPct = total ? pending / total * 100 : 0;
+                    const approvedPct = total ? (pending + approved) / total * 100 : 0;
+                    const background = total
+                        ? `conic-gradient(#ffc107 0 ${pendingPct}%, #1be494 ${pendingPct}% ${approvedPct}%, #ff4d6a ${approvedPct}% 100%)`
+                        : 'conic-gradient(rgba(255,255,255,.12) 0 100%)';
+                    requestPie.style.background = background;
+                    requestPie.setAttribute('aria-label', `Request status chart: ${pending} pending, ${approved} approved, ${declined} declined or flagged`);
+                    const totalLabel = requestPie.querySelector('[data-live-request-total]');
+                    if (totalLabel) totalLabel.textContent = String(total);
+                }
+            } catch (error) {
+                console.error('Live request totals could not be refreshed.', error);
+            }
+        };
+
+        refresh();
+        window.setInterval(refresh, LIVE_REQUEST_COUNTS_INTERVAL_MS);
+        document.addEventListener('visibilitychange', refresh);
+    }
 
     function isGetForm(form) {
         if (!(form instanceof HTMLFormElement)) return false;
@@ -324,6 +374,19 @@
             runFilter();
         };
 
+        const clearButton = form.querySelector('.js-clear-filters');
+        if (clearButton) {
+            clearButton.addEventListener('click', () => {
+                form.querySelectorAll('input[type="search"], input[type="text"], input[type="date"]').forEach((input) => {
+                    input.value = '';
+                });
+                form.querySelectorAll('select').forEach((select) => {
+                    select.selectedIndex = 0;
+                });
+                filterNow();
+            });
+        }
+
         searchInput.addEventListener('compositionstart', () => {
             composing = true;
         });
@@ -360,8 +423,12 @@
     }
 
     if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', initLiveFilters);
+        document.addEventListener('DOMContentLoaded', () => {
+            initLiveRequestCounts();
+            initLiveFilters();
+        });
     } else {
+        initLiveRequestCounts();
         initLiveFilters();
     }
 })();

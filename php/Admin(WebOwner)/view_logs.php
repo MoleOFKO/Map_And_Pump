@@ -119,7 +119,6 @@ if (hq_db_available()) {
 }
 
 $flashType = (string) ($flash['type'] ?? '');
-$filtersActive = ($search !== '' || $level !== 'all' || $actor !== 'all' || $dateFrom !== '' || $dateTo !== '');
 $exportQuery = http_build_query([
     'action' => 'export',
     'search' => $search,
@@ -217,14 +216,14 @@ $exportQuery = http_build_query([
 
     <div class="dashboard-card py-3 px-4 mb-4">
         <form class="row g-3 align-items-end" method="GET" action="view_logs.php">
-            <div class="col-12 col-md-3">
+            <div class="col-12 col-sm-6 col-xl-2">
                 <label class="form-label text-white-50 small mb-1" for="logSearch">Search</label>
                 <div class="input-group">
                     <span class="input-group-text bg-transparent border-end-0" style="border-color:var(--glass-border);color:var(--neon-cyan);border-radius:12px 0 0 12px;"><i class="bi bi-terminal"></i></span>
                     <input id="logSearch" type="search" class="form-control glass-input border-start-0" placeholder="Action, username, or email…" name="search" value="<?= hq_escape($search) ?>">
                 </div>
             </div>
-            <div class="col-6 col-md-2">
+            <div class="col-6 col-xl-2">
                 <label class="form-label text-white-50 small mb-1" for="logActor">Actor</label>
                 <select id="logActor" class="form-select glass-select" name="actor">
                     <option value="all" <?= $actor === 'all' ? 'selected' : '' ?>>All actors</option>
@@ -232,7 +231,7 @@ $exportQuery = http_build_query([
                     <option value="moderator" <?= $actor === 'moderator' ? 'selected' : '' ?>>Moderator</option>
                 </select>
             </div>
-            <div class="col-6 col-md-2">
+            <div class="col-6 col-xl-2">
                 <label class="form-label text-white-50 small mb-1" for="logLevel">Level</label>
                 <select id="logLevel" class="form-select glass-select" name="log_level">
                     <option value="all" <?= $level === 'all' ? 'selected' : '' ?>>All levels</option>
@@ -241,19 +240,16 @@ $exportQuery = http_build_query([
                     <?php endforeach; ?>
                 </select>
             </div>
-            <div class="col-6 col-md-2">
+            <div class="col-6 col-xl-2">
                 <label class="form-label text-white-50 small mb-1" for="logDateFrom">From</label>
                 <input id="logDateFrom" type="date" class="form-control glass-input" name="date_from" value="<?= hq_escape($dateFrom) ?>">
             </div>
-            <div class="col-6 col-md-1">
+            <div class="col-6 col-xl-2">
                 <label class="form-label text-white-50 small mb-1" for="logDateTo">To</label>
                 <input id="logDateTo" type="date" class="form-control glass-input" name="date_to" value="<?= hq_escape($dateTo) ?>">
             </div>
-            <div class="col-12 col-md-2 d-flex gap-2">
-                <button type="submit" class="btn btn-neon flex-grow-1">Apply</button>
-                <?php if ($filtersActive): ?>
-                    <a href="view_logs.php" class="btn btn-outline-secondary text-white-50 border-secondary border-opacity-25" title="Clear filters">Clear</a>
-                <?php endif; ?>
+            <div class="col-12 col-xl-2 d-flex">
+                <button type="button" class="btn btn-neon flex-grow-1 js-clear-filters" title="Clear filters">Clear</button>
             </div>
         </form>
     </div>
