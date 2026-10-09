@@ -40,7 +40,6 @@ try {
          FROM branches b
          LEFT JOIN tanks t ON t.branch_id = b.branch_id
             AND t.is_enabled = 1
-            AND t.current_l > 0
          LEFT JOIN oil_types ot ON
             (t.fuel_code = 'p92' AND LOWER(REPLACE(ot.oil_name, ' ', '')) = 'octane92')
             OR (t.fuel_code = 'p95' AND LOWER(REPLACE(ot.oil_name, ' ', '')) = 'octane95')
@@ -84,13 +83,23 @@ try {
         }
 
         $oilTypeId = (int)($stationRow['oil_type_id'] ?? 0);
-        if ($oilTypeId > 0 && (int)($stationRow['price_is_active'] ?? 0) === 1 && (float)($stationRow['price_per_litre'] ?? 0) > 0) {
-            $stationsById[$stationId]['fuels'][] = [
-                'id' => $oilTypeId,
-                'name' => (string)$stationRow['oil_name'],
-                'price' => (float)$stationRow['price_per_litre'],
-                'stock' => (float)($stationRow['fuel_stock_liters'] ?? 0),
-            ];
+        if ($oilTypeId > 0) {
+            $fuelAlreadyAdded = false;
+            foreach ($stationsById[$stationId]['fuels'] as $existingFuel) {
+                if ((int)($existingFuel['id'] ?? 0) === $oilTypeId) {
+                    $fuelAlreadyAdded = true;
+                    break;
+                }
+            }
+            if (!$fuelAlreadyAdded) {
+                $stationsById[$stationId]['fuels'][] = [
+                    'id' => $oilTypeId,
+                    'name' => (string)($stationRow['oil_name'] ?: 'Fuel'),
+                    'price' => ((int)($stationRow['price_is_active'] ?? 0) === 1 && (float)($stationRow['price_per_litre'] ?? 0) > 0) ? (float)$stationRow['price_per_litre'] : null,
+                    'stock' => (float)($stationRow['fuel_stock_liters'] ?? 0),
+                    'available' => ((int)($stationRow['price_is_active'] ?? 0) === 1 && (float)($stationRow['price_per_litre'] ?? 0) > 0 && (float)($stationRow['fuel_stock_liters'] ?? 0) > 0),
+                ];
+            }
         }
     }
     foreach ($stationsById as &$station) {
@@ -529,12 +538,30 @@ body.customer-light-mode .customer-map-recenter-btn:hover {
         <button type="button" class="btn btn-outline-info btn-sm customer-card-hide-btn" onclick="hideStationCard()" aria-label="Hide station card">
             <i class="bi bi-chevron-down"></i><span>Hide card</span>
         </button>
-        <div id="station-booking-form">
+
+        <div id="station-detail-card">
             <div class="d-flex justify-content-between align-items-start gap-2 border-bottom border-secondary border-opacity-10 pb-3 mb-3">
                 <div>
                     <span class="text-sky-400 text-uppercase" style="font-size:10px; font-weight:700; letter-spacing:.08em;">Selected station</span>
                     <h4 id="selected-station-name" class="text-white mt-1 mb-1">Station</h4>
                     <p id="selected-station-address" class="text-secondary mb-0" style="font-size:12px;"></p>
+                </div>
+                <div class="rounded-3 overflow-hidden border border-secondary border-opacity-25" style="width:96px; height:96px; background:#0c1724; flex-shrink:0;">
+                    <img id="selected-station-image" src="../../images/Logo.png" alt="Station image" style="width:100%; height:100%; object-fit:cover;">
+                </div>
+            </div>
+
+            <div id="station-detail-fuels" class="d-flex flex-column gap-2"></div>
+
+            <button type="button" class="btn btn-info w-100 py-3 fw-bold rounded-4 mt-3" onclick="showBookingForm()">Book this station <i class="bi bi-qr-code ms-1"></i></button>
+        </div>
+
+        <div id="station-booking-form" class="d-none">
+            <div class="d-flex justify-content-between align-items-start gap-2 border-bottom border-secondary border-opacity-10 pb-3 mb-3">
+                <div>
+                    <span class="text-sky-400 text-uppercase" style="font-size:10px; font-weight:700; letter-spacing:.08em;">Selected station</span>
+                    <h4 id="selected-station-name-booking" class="text-white mt-1 mb-1">Station</h4>
+                    <p id="selected-station-address-booking" class="text-secondary mb-0" style="font-size:12px;"></p>
                 </div>
             </div>
 
@@ -567,6 +594,7 @@ body.customer-light-mode .customer-map-recenter-btn:hover {
                 <small class="text-secondary d-block mt-2">Maximum for this fuel and car: <strong id="station-quota" class="text-sky-400"></strong></small>
             </div>
             <button id="confirm-booking-btn" type="button" class="btn btn-info w-100 py-3 fw-bold rounded-4" onclick="confirmBooking()">Book this station <i class="bi bi-qr-code ms-1"></i></button>
+            <button type="button" class="btn btn-outline-secondary w-100 mt-2" onclick="showStationDetails()">Back to station details</button>
         </div>
 
         <div id="booking-pass" class="d-none text-center py-1">
@@ -974,14 +1002,52 @@ body.customer-light-mode .customer-map-recenter-btn:hover {
 
 
 
+    function renderStationDetailCard(station) {
+        const stationImage = document.getElementById('selected-station-image');
+        const name = document.getElementById('selected-station-name');
+        const address = document.getElementById('selected-station-address');
+        const nameBooking = document.getElementById('selected-station-name-booking');
+        const addressBooking = document.getElementById('selected-station-address-booking');
+        const detailList = document.getElementById('station-detail-fuels');
+        if (!station) return;
+
+        name.textContent = station.name;
+        address.textContent = station.address;
+        nameBooking.textContent = station.name;
+        addressBooking.textContent = station.address;
+        stationImage.src = station.logo || '../../images/Logo.png';
+        stationImage.onerror = () => { stationImage.src = '../../images/Logo.png'; };
+
+        detailList.innerHTML = (station.fuels && station.fuels.length ? station.fuels : [{ id: 0, name: 'No fuel available', price: null, stock: 0, available: false }]).map(fuel => {
+            const priceText = fuel.price !== null && Number(fuel.price) > 0 ? `${Number(fuel.price).toLocaleString()} MMK / L` : 'Not available';
+            const stockText = Number(fuel.stock) > 0 ? `${Number(fuel.stock).toLocaleString()} L left` : 'Unavailable';
+            const isAvailable = fuel.available === true && Number(fuel.price) > 0 && Number(fuel.stock) > 0;
+            return `
+                <div class="customer-detail-fuel-item ${isAvailable ? 'customer-detail-fuel-item--active' : 'customer-detail-fuel-item--inactive'}">
+                    <div class="d-flex justify-content-between align-items-center gap-2">
+                        <div class="text-white fw-bold">${fuel.name}</div>
+                        <span class="customer-fuel-status ${isAvailable ? 'customer-fuel-status--active' : 'customer-fuel-status--inactive'}">${isAvailable ? 'Active' : 'Unavailable'}</span>
+                    </div>
+                    <div class="d-flex justify-content-between align-items-center mt-2 text-secondary small">
+                        <span>Fuel price</span>
+                        <strong class="text-white">${priceText}</strong>
+                    </div>
+                    <div class="d-flex justify-content-between align-items-center mt-1 text-secondary small">
+                        <span>Liters left</span>
+                        <strong class="${Number(fuel.stock) > 0 ? 'text-sky-400' : 'text-white'}">${stockText}</strong>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
     function selectStation(stationId) {
         selectedStation = stationsData.find(station => Number(station.id) === Number(stationId));
         if (!selectedStation || !selectedStation.isActive) {
             alert('This station is not active. Please choose another station.');
             return;
         }
-        document.getElementById('selected-station-name').textContent = selectedStation.name;
-        document.getElementById('selected-station-address').textContent = selectedStation.address;
+        renderStationDetailCard(selectedStation);
         const fuelSelect = document.getElementById('station-fuel-select');
         const bookingButton = document.getElementById('confirm-booking-btn');
         if (selectedStation.isBookable && selectedStation.fuels.length) {
@@ -989,6 +1055,7 @@ body.customer-light-mode .customer-map-recenter-btn:hover {
                 const option = document.createElement('option');
                 option.value = String(fuel.id);
                 option.textContent = fuel.name;
+                option.disabled = !fuel.available;
                 return option;
             }));
             fuelSelect.disabled = false;
@@ -1001,7 +1068,7 @@ body.customer-light-mode .customer-map-recenter-btn:hover {
         document.getElementById('station-volume-input').value = Math.min(20, availableOilQuota);
         updateSelectedFuelDetails();
         document.getElementById('booking-pass').classList.add('d-none');
-        document.getElementById('station-booking-form').classList.remove('d-none');
+        showStationDetails();
         showStationCard();
         showRoute();
     }
@@ -1032,15 +1099,26 @@ body.customer-light-mode .customer-map-recenter-btn:hover {
         }
 
         const availableLiters = Math.max(0, Number(fuel.stock));
-        const bookingLimit = Math.min(availableOilQuota, availableLiters);
-        price.textContent = `${Number(fuel.price).toLocaleString()} MMK / L`;
-        stock.textContent = `${availableLiters.toLocaleString()} L`;
+        const hasValidFuel = Number(fuel.price) > 0 && availableLiters > 0 && fuel.available;
+        const bookingLimit = hasValidFuel ? Math.min(availableOilQuota, availableLiters) : 0;
+        price.textContent = hasValidFuel ? `${Number(fuel.price).toLocaleString()} MMK / L` : 'Not available';
+        stock.textContent = hasValidFuel ? `${availableLiters.toLocaleString()} L` : 'Unavailable';
         volumeInput.max = String(bookingLimit);
         if (Number(volumeInput.value) > bookingLimit) {
             volumeInput.value = bookingLimit > 0 ? bookingLimit : '';
         }
-        document.getElementById('station-quota').textContent = `${bookingLimit.toLocaleString()} L`;
+        document.getElementById('station-quota').textContent = hasValidFuel ? `${bookingLimit.toLocaleString()} L` : '0 L';
         bookingButton.disabled = !selectedStation?.isBookable || !document.getElementById('booking-car-select').value || bookingLimit < 0.1;
+    }
+
+    function showBookingForm() {
+        document.getElementById('station-detail-card').classList.add('d-none');
+        document.getElementById('station-booking-form').classList.remove('d-none');
+    }
+
+    function showStationDetails() {
+        document.getElementById('station-detail-card').classList.remove('d-none');
+        document.getElementById('station-booking-form').classList.add('d-none');
     }
 
     document.getElementById('station-fuel-select').addEventListener('change', updateSelectedFuelDetails);
