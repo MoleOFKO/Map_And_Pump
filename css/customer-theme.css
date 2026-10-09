@@ -1,0 +1,131 @@
+/*
+ * Customer Theme – Light/Dark toggle
+ * -------------------------------------------------
+ * This file defines CSS custom properties for both light and dark
+ * themes and provides a simple data‑attribute based switch.
+ * It builds on the existing "customer" variables defined in
+ * customer.css (dark‑mode defaults).
+ */
+
+/* Light theme defaults – variables are chosen to match the logo's
+ * color palette (a soft blue/teal). Adjust as needed. */
+:root {
+    /* Core colors */
+    --customer-neon-cyan: #0d6efd;           /* Primary accent */
+    --customer-neon-blue: #0a58ca;           /* Secondary accent */
+    --customer-neon-purple: #084298;         /* Tertiary accent */
+    --customer-glass: rgba(250, 250, 250, 0.65);   /* Light glass */
+    --customer-border: rgba(13, 110, 253, 0.15);
+    --customer-hover-border: rgba(13, 110, 253, 0.35);
+    --customer-surface: rgba(255, 255, 255, 0.58);
+    --customer-surface-1: rgba(255, 255, 255, 0.4);
+    --customer-text: #0d0d0d;               /* Dark text for readability */
+    --customer-muted: rgba(13, 110, 253, 0.55);
+    --customer-success: #1be494;
+    --customer-warning: #ffc107;
+    --customer-danger: #ff4d6a;
+    --customer-card-radius: 20px;
+    --customer-transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+
+    /* UI tweaks for light mode */
+    --customer-bg: #f5f9ff;               /* Page background */
+    --customer-panel-bg: rgba(255, 255, 255, 0.9);
+    --customer-panel-border: rgba(13, 110, 253, 0.12);
+    --customer-input-bg: rgba(255, 255, 255, 0.8);
+    --customer-input-border: rgba(13, 110, 253, 0.2);
+}
+
+/* Dark theme – keep current dark values (already defined in customer.css).
+ * We simply reuse the same variable names under a data‑attribute selector.
+ * This mirrors the existing design while allowing a quick toggle. */
+[data-theme="dark"] {
+    --customer-neon-cyan: #0d6efd;
+    --customer-neon-blue: #0a58ca;
+    --customer-neon-purple: #084298;
+    --customer-glass: rgba(10, 22, 44, 0.65);
+    --customer-border: rgba(13, 110, 253, 0.15);
+    --customer-hover-border: rgba(13, 110, 253, 0.35);
+    --customer-surface: rgba(4, 9, 21, 0.58);
+    --customer-surface-1: rgba(4, 9, 21, 0.4);
+    --customer-text: #e8f3ff;
+    --customer-muted: rgba(217, 230, 255, 0.55);
+    --customer-success: #1be494;
+    --customer-warning: #ffc107;
+    --customer-danger: #ff4d6a;
+    --customer-card-radius: 20px;
+    --customer-transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+
+    --customer-bg: #040a18;
+    --customer-panel-bg: rgba(4, 10, 20, 0.9);
+    --customer-panel-border: var(--customer-border);
+    --customer-input-bg: rgba(3, 7, 15, 0.7);
+    --customer-input-border: rgba(13, 110, 253, 0.16);
+}
+
+/* Apply the variables to core UI elements */
+html, body {
+    background-color: var(--customer-bg) !important;
+    color: var(--customer-text) !important;
+    transition: var(--customer-transition);
+}
+
+/* Card / panel background */
+.dashboard-panel-card, .dashboard-card, .action-card {
+    background: var(--customer-panel-bg) !important;
+    border: 1px solid var(--customer-panel-border) !important;
+    border-radius: var(--customer-card-radius) !important;
+    color: var(--customer-text) !important;
+}
+
+/* Form controls */
+.custom-form-field {
+    background: var(--customer-input-bg) !important;
+    border-color: var(--customer-input-border) !important;
+    color: var(--customer-text) !important;
+}
+
+/* Buttons – keep the existing .btn-info style but use the accent */
+.btn-info {
+    background-color: var(--customer-neon-cyan) !important;
+    border-color: var(--customer-neon-cyan) !important;
+    color: #fff !important;
+}
+
+.btn-info:hover {
+    background-color: #0b5ed7 !important; /* a slightly darker shade */
+    border-color: #0b5ed7 !important;
+    box-shadow: 0 0 18px rgba(13, 110, 253, 0.28);
+}
+
+/* Modal background – light/dark aware */
+.modal-content {
+    background: var(--customer-panel-bg) !important;
+    border-color: var(--customer-panel-border) !important;
+    color: var(--customer-text);
+}
+
+/* Off‑canvas (sidebar) */
+.offcanvas {
+    background: var(--customer-panel-bg) !important;
+    color: var(--customer-text) !important;
+}
+
+/* Scrollbars – adapt to theme */
+::-webkit-scrollbar-thumb {
+    background: rgba(13, 110, 253, 0.28);
+}
+[data-theme="light"] ::-webkit-scrollbar-thumb {
+    background: rgba(13, 110, 253, 0.15);
+}
+
+/* Ensure the theme toggle component is visible */
+.customer-theme-toggle {
+    /* No changes needed – it already uses CSS variables */
+}
+
+/* Simple media‑query fallback – prefers‑dark */
+@media (prefers-color-scheme: dark) {
+    html {
+        /* If user has no explicit choice, default to dark */
+    }
+}
