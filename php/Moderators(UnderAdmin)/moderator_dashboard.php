@@ -163,7 +163,7 @@ $updatedLabel = $updatedAt ? moderator_format_date($updatedAt) : 'Not available'
     ?>
     <div class="row g-3 mb-3">
         <div class="col-12 col-sm-6">
-            <a href="view_hq_and_user_account(M).php?expiry=warning" class="metric-card-link" title="HQ and users expiring within 10 days">
+            <a href="view_hq_and_user_account(M).php?expiry=warning" class="metric-card-link" title="Companies and drivers expiring within 10 days">
                 <div class="analytics-card metric-card py-3">
                     <div class="d-flex align-items-center justify-content-between gap-3">
                         <div>
@@ -172,7 +172,7 @@ $updatedLabel = $updatedAt ? moderator_format_date($updatedAt) : 'Not available'
                         </div>
                         <span class="text-warning fs-3"><i class="bi bi-clock-history"></i></span>
                     </div>
-                    <p class="text-white-50 small mb-0 mt-2"><?= (int) ($expiryPayload['warning_hq'] ?? 0) ?> HQ · <?= (int) ($expiryPayload['warning_users'] ?? 0) ?> users (≤10 days)</p>
+                    <p class="text-white-50 small mb-0 mt-2"><?= (int) ($expiryPayload['warning_hq'] ?? 0) ?> companies · <?= (int) ($expiryPayload['warning_users'] ?? 0) ?> drivers (≤10 days)</p>
                 </div>
             </a>
         </div>
@@ -186,7 +186,7 @@ $updatedLabel = $updatedAt ? moderator_format_date($updatedAt) : 'Not available'
                         </div>
                         <span class="text-danger fs-3"><i class="bi bi-x-octagon"></i></span>
                     </div>
-                    <p class="text-white-50 small mb-0 mt-2"><?= (int) ($expiryPayload['expired_hq'] ?? 0) ?> HQ · <?= (int) ($expiryPayload['expired_users'] ?? 0) ?> users (auto-suspended)</p>
+                    <p class="text-white-50 small mb-0 mt-2"><?= (int) ($expiryPayload['expired_hq'] ?? 0) ?> companies · <?= (int) ($expiryPayload['expired_users'] ?? 0) ?> drivers (auto-suspended)</p>
                 </div>
             </a>
         </div>
@@ -194,17 +194,17 @@ $updatedLabel = $updatedAt ? moderator_format_date($updatedAt) : 'Not available'
 
     <div class="row g-3 mb-4">
         <div class="col-12 col-sm-6 col-xl-3">
-            <a href="view_hq_and_user_account(M).php" class="metric-card-link" title="Open View/Manage HQ" aria-label="Open View/Manage HQ">
+            <a href="view_hq_and_user_account(M).php" class="metric-card-link" title="Open View/Manage Companies" aria-label="Open View/Manage Companies">
                 <div class="analytics-card metric-card">
                     <div class="d-flex align-items-center justify-content-between gap-3">
                         <div>
-                            <p class="mb-0 metric-label">Total HQs</p>
+                            <p class="mb-0 metric-label">Total Companies</p>
                             <h3 class="metric-value text-white mb-0"><?= (int) $metrics['hqs'] ?></h3>
                         </div>
                         <span class="txt-neon-cyan fs-2"><i class="bi bi-building"></i></span>
                     </div>
                     <p class="text-white-50 small mb-0 mt-2"><?= (int) $metrics['stations'] ?> stations in <code>branches</code></p>
-                    <p class="metric-card-hint text-white-50 mb-0 mt-2"><i class="bi bi-box-arrow-up-right me-1"></i>View / Manage HQ</p>
+                    <p class="metric-card-hint text-white-50 mb-0 mt-2"><i class="bi bi-box-arrow-up-right me-1"></i>View / Manage Companies</p>
                 </div>
             </a>
         </div>
@@ -257,14 +257,14 @@ $updatedLabel = $updatedAt ? moderator_format_date($updatedAt) : 'Not available'
 
     <div class="row g-4">
         <div class="col-12 col-xl-7">
-            <div class="dashboard-card h-100">
+            <div class="dashboard-card operational-snapshot-card h-100">
                 <div class="mb-4">
                     <h2 class="fw-bold h5 text-white mb-1">Operational Snapshot</h2>
                     <p class="text-white-50 mb-0 small">Pending counts include account verification and operational requests.</p>
                 </div>
-                <div class="row g-4">
+                <div class="row g-4 operational-snapshot-panels">
                     <div class="col-12 col-lg-6">
-                        <div class="pie-panel pie-panel-solo">
+                        <div class="pie-panel pie-panel-solo operational-snapshot-panel">
                             <div class="pie-chart request-pie" data-live-request-pie role="img" aria-label="Request status chart" style="<?= moderator_escape($requestPieStyle) ?>"><span data-live-request-total><?= (int) $requestTotal ?></span></div>
                             <div class="pie-panel-text">
                                 <h3 class="h6 fw-semibold text-white mb-3">Request Status</h3>
@@ -277,12 +277,12 @@ $updatedLabel = $updatedAt ? moderator_format_date($updatedAt) : 'Not available'
                         </div>
                     </div>
                     <div class="col-12 col-lg-6">
-                        <div class="pie-panel pie-panel-solo">
+                        <div class="pie-panel pie-panel-solo operational-snapshot-panel">
                             <div class="pie-chart report-pie" role="img" aria-label="Report scope chart" style="<?= moderator_escape($reportPieStyle) ?>"><span><?= (int) $reportTotal ?></span></div>
                             <div class="pie-panel-text">
                                 <h3 class="h6 fw-semibold text-white mb-3">Report Scopes</h3>
                                 <ul class="chart-legend list-unstyled m-0">
-                                    <li><span class="legend-dot bg-info"></span><span>HQ Performance</span><strong><?= $reportHqCount ?></strong></li>
+                                    <li><span class="legend-dot bg-info"></span><span>Company Performance</span><strong><?= $reportHqCount ?></strong></li>
                                     <li><span class="legend-dot bg-primary"></span><span>Station Logs</span><strong><?= $reportStationCount ?></strong></li>
                                     <li><span class="legend-dot" style="background:#1be494;"></span><span>Requests/System</span><strong><?= $reportOtherCount ?></strong></li>
                                 </ul>
@@ -325,7 +325,7 @@ $updatedLabel = $updatedAt ? moderator_format_date($updatedAt) : 'Not available'
                                 <span class="summary-arrow"><i class="bi bi-arrow-right"></i></span>
                             </div>
                             <div class="summary-stat-grid">
-                                <div><span class="txt-neon-cyan"><?= $reportHqCount ?></span><small>HQ Reports</small></div>
+                                <div><span class="txt-neon-cyan"><?= $reportHqCount ?></span><small>Company Reports</small></div>
                                 <div><span class="txt-neon-blue"><?= $reportStationCount ?></span><small>Station Logs</small></div>
                                 <div><span style="color:#1be494;"><?= $reportOtherCount ?></span><small>Audit Files</small></div>
                             </div>
@@ -370,16 +370,16 @@ $updatedLabel = $updatedAt ? moderator_format_date($updatedAt) : 'Not available'
                                 <td class="text-end"><a href="view_report(M).php" class="btn-action" title="Open reports"><i class="bi bi-arrow-right"></i></a></td>
                             </tr>
                             <tr>
-                                <td class="fw-medium text-white">View/Manage HQ</td>
-                                <td><span class="badge rounded-pill bg-success bg-opacity-10 text-success border border-success border-opacity-25"><?= (int) $metrics['hqs'] ?> HQ · <?= (int) $metrics['stations'] ?> Stations</span></td>
-                                <td class="text-white-50">View, edit, suspend, or remove HQ accounts.</td>
-                                <td class="text-end"><a href="view_hq_and_user_account(M).php" class="btn-action" title="View/Manage HQ"><i class="bi bi-arrow-right"></i></a></td>
+                                <td class="fw-medium text-white">View/Manage Companies</td>
+                                <td><span class="badge rounded-pill bg-success bg-opacity-10 text-success border border-success border-opacity-25"><?= (int) $metrics['hqs'] ?> Companies · <?= (int) $metrics['stations'] ?> Stations</span></td>
+                                <td class="text-white-50">View, edit, suspend, or remove company accounts.</td>
+                                <td class="text-end"><a href="view_hq_and_user_account(M).php" class="btn-action" title="View/Manage Companies"><i class="bi bi-arrow-right"></i></a></td>
                             </tr>
                             <tr>
-                                <td class="fw-medium text-white">View/Manage Users</td>
-                                <td><span class="badge rounded-pill bg-success bg-opacity-10 text-success border border-success border-opacity-25">Non-HQ accounts</span></td>
-                                <td class="text-white-50">View, edit, suspend, or remove user accounts.</td>
-                                <td class="text-end"><a href="view_users(M).php" class="btn-action" title="View/Manage Users"><i class="bi bi-arrow-right"></i></a></td>
+                                <td class="fw-medium text-white">View/Manage Drivers</td>
+                                <td><span class="badge rounded-pill bg-success bg-opacity-10 text-success border border-success border-opacity-25">Driver accounts</span></td>
+                                <td class="text-white-50">View, edit, suspend, or remove driver accounts.</td>
+                                <td class="text-end"><a href="view_users(M).php" class="btn-action" title="View/Manage Drivers"><i class="bi bi-arrow-right"></i></a></td>
                             </tr>
                         </tbody>
                     </table>
