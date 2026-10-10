@@ -2,7 +2,9 @@
 include 'share_header.php';
 require_once __DIR__ . '/../business_scope.php';
 require_once __DIR__ . '/../booking_rules.php';
+require_once __DIR__ . '/../loyalty_points.php';
 $availableOilQuota = max(0.0, (float) ($_SESSION['oil_remaining'] ?? (((float) ($_SESSION['oil_limit'] ?? 35.0)) - ((float) ($_SESSION['oil_used'] ?? 0.0)))));
+$loyaltyBalance = loyalty_get_balance($pdo, (int) ($_SESSION['user_id'] ?? 0));
 
 function map_pump_station_coordinates(string $location): ?array
 {
@@ -592,6 +594,19 @@ body.customer-light-mode .customer-map-recenter-btn:hover {
                 <label class="form-label text-secondary" for="station-volume-input" style="font-size:10px; font-weight:600;">AMOUNT (LITERS)</label>
                 <input id="station-volume-input" type="number" min="0.1" step="0.1" value="20" class="form-control custom-form-field">
                 <small class="text-secondary d-block mt-2">Maximum for this fuel and car: <strong id="station-quota" class="text-sky-400"></strong></small>
+            </div>
+            <div class="mb-3">
+                <label class="form-label text-secondary" for="loyalty-points-select" style="font-size:10px; font-weight:600;">LOYALTY POINTS TO USE (PER FILL)</label>
+                <select id="loyalty-points-select" class="form-select custom-form-field">
+                    <option value="0" selected>0 — no discount</option>
+                    <option value="10" <?php echo $loyaltyBalance < 10 ? 'disabled' : ''; ?>>10 points</option>
+                    <option value="20" <?php echo $loyaltyBalance < 20 ? 'disabled' : ''; ?>>20 points (max)</option>
+                </select>
+                <small class="text-secondary d-block mt-2">
+                    Balance: <strong class="text-warning"><?php echo (int) $loyaltyBalance; ?></strong> pts.
+                    Up to 20 pts per fill. Discount % depends on liters filled; max 20% of total. Points are deducted only when staff confirms the fill.
+                </small>
+                <small id="loyalty-discount-estimate" class="text-sky-400 d-block mt-1"></small>
             </div>
             <button id="confirm-booking-btn" type="button" class="btn btn-info w-100 py-3 fw-bold rounded-4" onclick="confirmBooking()">Book this station <i class="bi bi-qr-code ms-1"></i></button>
             <button type="button" class="btn btn-outline-secondary w-100 mt-2" onclick="showStationDetails()">Back to station details</button>
@@ -1203,14 +1218,48 @@ body.customer-light-mode .customer-map-recenter-btn:hover {
         } catch (error) { /* The cyan fallback line remains visible. */ }
     }
 
+    const loyaltyBalanceClient = <?php echo (int) $loyaltyBalance; ?>;
+    const LOYALTY_PCT_PER_LITER = <?php echo json_encode((float) LOYALTY_PCT_PER_LITER); ?>;
+    const LOYALTY_PCT_PER_UNIT_CAP = <?php echo json_encode((float) LOYALTY_PCT_PER_UNIT_CAP); ?>;
+    const LOYALTY_MAX_DISCOUNT_PCT = <?php echo json_encode((float) LOYALTY_MAX_DISCOUNT_PCT); ?>;
+    const LOYALTY_REDEEM_UNIT = <?php echo (int) LOYALTY_REDEEM_UNIT_POINTS; ?>;
+
+    function updateLoyaltyEstimate() {
+        const estimateEl = document.getElementById('loyalty-discount-estimate');
+        if (!estimateEl) return;
+        const points = Number(document.getElementById('loyalty-points-select')?.value || 0);
+        const quantity = Number(document.getElementById('station-volume-input')?.value || 0);
+        const selectedFuelId = Number(document.getElementById('station-fuel-select')?.value || 0);
+        const fuel = selectedStation?.fuels?.find(item => Number(item.id) === selectedFuelId);
+        if (!points || points <= 0 || !quantity || quantity <= 0 || !fuel || !(Number(fuel.price) > 0)) {
+            estimateEl.textContent = '';
+            return;
+        }
+        const units = points / LOYALTY_REDEEM_UNIT;
+        const rawPctPerUnit = Math.min(LOYALTY_PCT_PER_UNIT_CAP, quantity * LOYALTY_PCT_PER_LITER);
+        const discountPct = Math.min(LOYALTY_MAX_DISCOUNT_PCT, rawPctPerUnit * units);
+        const totalCost = quantity * Number(fuel.price);
+        const discountMmk = Math.min(totalCost * (LOYALTY_MAX_DISCOUNT_PCT / 100), totalCost * (discountPct / 100));
+        estimateEl.textContent = `Est. ~${discountPct.toFixed(1)}% off (~${Math.round(discountMmk).toLocaleString()} MMK) on this fill. Final amount uses liters staff actually fill.`;
+    }
+
+    document.getElementById('loyalty-points-select')?.addEventListener('change', updateLoyaltyEstimate);
+    document.getElementById('station-volume-input')?.addEventListener('input', updateLoyaltyEstimate);
+    document.getElementById('station-fuel-select')?.addEventListener('change', updateLoyaltyEstimate);
+
     async function confirmBooking() {
         const quantity = Number(document.getElementById('station-volume-input').value);
         const selectedFuelId = Number(document.getElementById('station-fuel-select').value);
         const fuel = selectedStation?.fuels.find(item => Number(item.id) === selectedFuelId);
         const selectedCarId = Number(document.getElementById('booking-car-select').value);
+        const pointsToRedeem = Number(document.getElementById('loyalty-points-select')?.value || 0);
         const bookingLimit = fuel ? Math.min(availableOilQuota, Number(fuel.stock)) : 0;
         if (!selectedStation || !selectedStation.isBookable || !fuel || selectedCarId <= 0 || !quantity || quantity <= 0 || quantity > bookingLimit) {
             alert(`Choose an available car and fuel, then enter an amount between 0.1 and ${bookingLimit} liters.`);
+            return;
+        }
+        if (pointsToRedeem > 0 && pointsToRedeem > loyaltyBalanceClient) {
+            alert('Not enough loyalty points for that option.');
             return;
         }
         const code = `MP-${Math.floor(100 + Math.random() * 900)}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
@@ -1223,6 +1272,7 @@ body.customer-light-mode .customer-map-recenter-btn:hover {
         formData.append('quantity_liters', String(quantity));
         formData.append('car_license_id', String(selectedCarId));
         formData.append('display_payload', displayPayload);
+        formData.append('points_to_redeem', String(pointsToRedeem));
         let result;
         try {
             const response = await fetch('save_booking.php', {

@@ -60,7 +60,7 @@ if ($reward_points >= 100) {
             <p class="customer-reward-tier customer-reward-tier-<?php echo strtolower($reward_tier); ?> mb-0 mt-3">
                 <i class="bi bi-award-fill me-1"></i><?php echo htmlspecialchars($reward_tier, ENT_QUOTES, 'UTF-8'); ?> tier
             </p>
-            <p class="text-secondary mb-0 mt-2" style="font-size:12px;">Earn points on every liter to redeem for future discounts</p>
+            <p class="text-secondary mb-0 mt-2" style="font-size:12px;">3 points per successful fill · redeem up to 20 points per fill (max 20% off)</p>
         </div>
     </div>
 </div>
