@@ -9,7 +9,43 @@
 require_once __DIR__ . '/_helpers.php';
 require_once __DIR__ . '/../conn.php';
 require_once __DIR__ . '/../business_scope.php';
+require_once __DIR__ . '/../loyalty_config.php';
 require_branch_manager();
+
+/**
+ * Best-effort: add proof columns on deliveries (never fatal).
+ */
+function map_pump_deliveries_proof_schema_ready(PDO $pdo): bool
+{
+    static $ready = false;
+    if ($ready) {
+        return true;
+    }
+    try {
+        foreach (
+            [
+                'proof_path' => 'VARCHAR(512) NULL DEFAULT NULL',
+                'requires_review' => 'TINYINT(1) NOT NULL DEFAULT 0',
+            ] as $name => $def
+        ) {
+            $c = $pdo->prepare(
+                "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+                 WHERE TABLE_SCHEMA = DATABASE()
+                   AND TABLE_NAME = 'deliveries'
+                   AND COLUMN_NAME = ?"
+            );
+            $c->execute([$name]);
+            if ((int) $c->fetchColumn() === 0) {
+                $pdo->exec("ALTER TABLE deliveries ADD COLUMN {$name} {$def}");
+            }
+        }
+        $ready = true;
+        return true;
+    } catch (Throwable $e) {
+        error_log('map_pump_deliveries_proof_schema_ready: ' . $e->getMessage());
+        return false;
+    }
+}
 
 $ctx      = current_context($pdo);
 $user     = $ctx['user'];
@@ -45,14 +81,84 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $tank = $stmt->fetch();
             if (!$tank) json_out(['ok' => false, 'error' => 'Tank not found for this fuel']);
 
+            // Inventory trust: large deliveries may require proof (enforce gated by flag).
+            $needsProof = $qty >= (int) LOYALTY_INVENTORY_PROOF_SINGLE_L;
+            if (!$needsProof) {
+                try {
+                    $roll = $pdo->prepare(
+                        "SELECT COALESCE(SUM(quantity_l), 0) FROM deliveries
+                         WHERE branch_id = ? AND received_at >= (NOW() - INTERVAL 7 DAY)"
+                    );
+                    $roll->execute([$bid]);
+                    $rolling = (int) $roll->fetchColumn() + $qty;
+                    if ($rolling >= (int) LOYALTY_INVENTORY_PROOF_ROLLING_7D_L) {
+                        $needsProof = true;
+                    }
+                } catch (Throwable $e) {
+                    // non-fatal
+                }
+            }
+
+            $proofPath = null;
+            $requiresReview = $needsProof ? 1 : 0;
+            $hasUpload = !empty($_FILES['proof']['tmp_name']) && is_uploaded_file($_FILES['proof']['tmp_name']);
+
+            if ($needsProof && defined('LOYALTY_CM_INVENTORY_PROOF_ENFORCE') && LOYALTY_CM_INVENTORY_PROOF_ENFORCE) {
+                if (!$hasUpload) {
+                    json_out([
+                        'ok' => false,
+                        'error' => 'This delivery is large enough to require proof (invoice/photo). Please attach a proof file.',
+                    ], 422);
+                }
+            }
+
+            if ($hasUpload) {
+                $uploadDir = __DIR__ . '/../uploads/delivery_proof';
+                if (!is_dir($uploadDir)) {
+                    @mkdir($uploadDir, 0755, true);
+                }
+                $ext = strtolower(pathinfo((string) ($_FILES['proof']['name'] ?? ''), PATHINFO_EXTENSION));
+                $allowed = ['jpg', 'jpeg', 'png', 'pdf', 'webp'];
+                if (!in_array($ext, $allowed, true)) {
+                    $ext = 'bin';
+                }
+                $fname = 'delivery_' . $bid . '_' . time() . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
+                $dest = $uploadDir . '/' . $fname;
+                if (@move_uploaded_file($_FILES['proof']['tmp_name'], $dest)) {
+                    $proofPath = 'php/uploads/delivery_proof/' . $fname;
+                } elseif (LOYALTY_CM_INVENTORY_PROOF_ENFORCE && $needsProof) {
+                    json_out(['ok' => false, 'error' => 'Could not store proof file. Try again.'], 500);
+                }
+            }
+
             $new_level = min((int)$tank['capacity_l'], (int)$tank['current_l'] + $qty);
 
             $pdo->beginTransaction();
-            $stmt = $pdo->prepare("
-                INSERT INTO deliveries (branch_id, tank_id, fuel_code, quantity_l, supplier, received_by)
-                VALUES (:b, :t, :f, :q, :s, :r)
-            ");
-            $stmt->execute([':b'=>$bid, ':t'=>$tank['tank_id'], ':f'=>$fuel_code, ':q'=>$qty, ':s'=>$supplier, ':r'=>$rec_by]);
+            map_pump_deliveries_proof_schema_ready($pdo);
+
+            try {
+                $stmt = $pdo->prepare("
+                    INSERT INTO deliveries (branch_id, tank_id, fuel_code, quantity_l, supplier, received_by, proof_path, requires_review)
+                    VALUES (:b, :t, :f, :q, :s, :r, :proof, :review)
+                ");
+                $stmt->execute([
+                    ':b' => $bid,
+                    ':t' => $tank['tank_id'],
+                    ':f' => $fuel_code,
+                    ':q' => $qty,
+                    ':s' => $supplier,
+                    ':r' => $rec_by,
+                    ':proof' => $proofPath,
+                    ':review' => $requiresReview,
+                ]);
+            } catch (Throwable $insEx) {
+                // Columns may not exist — fall back to original INSERT
+                $stmt = $pdo->prepare("
+                    INSERT INTO deliveries (branch_id, tank_id, fuel_code, quantity_l, supplier, received_by)
+                    VALUES (:b, :t, :f, :q, :s, :r)
+                ");
+                $stmt->execute([':b'=>$bid, ':t'=>$tank['tank_id'], ':f'=>$fuel_code, ':q'=>$qty, ':s'=>$supplier, ':r'=>$rec_by]);
+            }
 
             $stmt = $pdo->prepare("UPDATE tanks SET current_l = :l WHERE tank_id = :t");
             $stmt->execute([':l' => $new_level, ':t' => $tank['tank_id']]);
@@ -69,9 +175,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $pdo->commit();
 
             log_activity($pdo, $bid, 'user', $user['user_id'], $user['full_name'],
-                         "Recorded {$qty}L {$fuel_code} delivery from {$supplier}");
+                         "Recorded {$qty}L {$fuel_code} delivery from {$supplier}"
+                         . ($needsProof ? ' (large — review flagged)' : ''));
             try { notif_low_stock_scan($pdo, $bid, (int)$user['user_id']); } catch (Throwable $e) {}
-            json_out(['ok' => true]);
+            json_out(['ok' => true, 'requires_review' => (bool) $requiresReview]);
         }
 
         if ($action === 'save_limits') {

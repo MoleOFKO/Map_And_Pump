@@ -201,6 +201,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $pointsIntent = 0;
             }
 
+            // Countermeasures: detect internal (own station / business-role same HQ)
+            $isInternalFill = false;
+            try {
+                $isInternalFill = loyalty_is_internal_fill(
+                    $pdo,
+                    (int) $row['user_id'],
+                    (int) $row['station_id']
+                );
+            } catch (Throwable $internalEx) {
+                $isInternalFill = false;
+            }
+
             $loyaltyResult = loyalty_apply_on_fill(
                 $pdo,
                 (int) $row['user_id'],
@@ -208,27 +220,59 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $totalCost !== null ? (float) $totalCost : null,
                 $pointsIntent,
                 (int) $row['booking_id'],
-                $staffUserId > 0 ? $staffUserId : null
+                $staffUserId > 0 ? $staffUserId : null,
+                $isInternalFill,
+                (int) $row['station_id'],
+                $usageId > 0 ? $usageId : null
             );
 
-            // Persist loyalty figures on usage_history when columns exist.
+            // Persist loyalty figures on usage_history when columns exist (fail-soft).
             if ($usageId > 0) {
                 try {
                     $loyaltyHist = $pdo->prepare(
                         'UPDATE usage_history
                          SET points_earned = :earned,
                              points_redeemed = :redeemed,
-                             discount_mmk = :discount
+                             discount_mmk = :discount,
+                             is_internal = :is_internal,
+                             admin_share_mmk = :admin_share,
+                             company_share_mmk = :company_share,
+                             company_points_earned = :company_pts
                          WHERE usage_id = :usage_id'
                     );
                     $loyaltyHist->execute([
                         ':earned' => (int) ($loyaltyResult['points_earned'] ?? 0),
                         ':redeemed' => (int) ($loyaltyResult['points_redeemed'] ?? 0),
                         ':discount' => (float) ($loyaltyResult['discount_mmk'] ?? 0),
+                        ':is_internal' => !empty($loyaltyResult['is_internal']) ? 1 : 0,
+                        ':admin_share' => isset($loyaltyResult['admin_share_mmk'])
+                            ? (float) $loyaltyResult['admin_share_mmk']
+                            : null,
+                        ':company_share' => isset($loyaltyResult['company_share_mmk'])
+                            ? (float) $loyaltyResult['company_share_mmk']
+                            : null,
+                        ':company_pts' => (int) ($loyaltyResult['company_points_earned'] ?? 0),
                         ':usage_id' => $usageId,
                     ]);
                 } catch (Throwable $histEx) {
-                    // Columns may not exist yet; non-fatal.
+                    // New columns may not exist yet — fall back to v1 columns only.
+                    try {
+                        $loyaltyHist = $pdo->prepare(
+                            'UPDATE usage_history
+                             SET points_earned = :earned,
+                                 points_redeemed = :redeemed,
+                                 discount_mmk = :discount
+                             WHERE usage_id = :usage_id'
+                        );
+                        $loyaltyHist->execute([
+                            ':earned' => (int) ($loyaltyResult['points_earned'] ?? 0),
+                            ':redeemed' => (int) ($loyaltyResult['points_redeemed'] ?? 0),
+                            ':discount' => (float) ($loyaltyResult['discount_mmk'] ?? 0),
+                            ':usage_id' => $usageId,
+                        ]);
+                    } catch (Throwable $histEx2) {
+                        // Columns may not exist yet; non-fatal.
+                    }
                 }
             }
 
@@ -257,13 +301,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $le = (int) ($row['loyalty']['points_earned'] ?? 0);
             $lr = (int) ($row['loyalty']['points_redeemed'] ?? 0);
             $ld = (float) ($row['loyalty']['discount_mmk'] ?? 0);
-            if ($le > 0 || $lr > 0) {
+            $isInternalMsg = !empty($row['loyalty']['is_internal']);
+            $poolLimited = !empty($row['loyalty']['pool_limited']);
+            if ($isInternalMsg) {
+                $loyaltyMsg = ' Loyalty: 0 pts (internal fill — own station/network; points not awarded).';
+            } elseif ($le > 0 || $lr > 0 || $poolLimited) {
                 $loyaltyMsg = ' Loyalty: +' . $le . ' pt' . ($le === 1 ? '' : 's');
                 if ($lr > 0) {
                     $loyaltyMsg .= ', −' . $lr . ' redeemed';
                     if ($ld > 0) {
                         $loyaltyMsg .= ' (' . number_format($ld, 0) . ' MMK off)';
                     }
+                    if ($poolLimited) {
+                        $loyaltyMsg .= ' (tier pool limited)';
+                    }
+                } elseif ($poolLimited) {
+                    $loyaltyMsg .= ', redeem skipped (tier pool empty)';
                 }
                 $loyaltyMsg .= '.';
             }
@@ -484,5 +537,3 @@ try {
     }
     respond(['success' => false, 'message' => 'Server error while verifying the booking. Please try again.'], false, 500, 'verify_qr.php');
 }
-
-

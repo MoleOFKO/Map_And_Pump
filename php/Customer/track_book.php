@@ -5,6 +5,16 @@ require_once __DIR__ . '/../booking_rules.php';
 require_once __DIR__ . '/../loyalty_points.php';
 $availableOilQuota = max(0.0, (float) ($_SESSION['oil_remaining'] ?? (((float) ($_SESSION['oil_limit'] ?? 35.0)) - ((float) ($_SESSION['oil_used'] ?? 0.0)))));
 $loyaltyBalance = loyalty_get_balance($pdo, (int) ($_SESSION['user_id'] ?? 0));
+$loyaltyTierCode = loyalty_resolve_tier($loyaltyBalance);
+$loyaltyTierLabel = loyalty_tier_label($loyaltyTierCode);
+$loyaltyPoolRemaining = null;
+try {
+    if (defined('LOYALTY_CM_TIER_POOL') && LOYALTY_CM_TIER_POOL) {
+        $loyaltyPoolRemaining = loyalty_get_pool_remaining($pdo, $loyaltyTierCode);
+    }
+} catch (Throwable $e) {
+    $loyaltyPoolRemaining = null;
+}
 
 function map_pump_station_coordinates(string $location): ?array
 {
@@ -603,8 +613,13 @@ body.customer-light-mode .customer-map-recenter-btn:hover {
                     <option value="20" <?php echo $loyaltyBalance < 20 ? 'disabled' : ''; ?>>20 points (max)</option>
                 </select>
                 <small class="text-secondary d-block mt-2">
-                    Balance: <strong class="text-warning"><?php echo (int) $loyaltyBalance; ?></strong> pts.
-                    Up to 20 pts per fill. Discount % depends on liters filled; max 20% of total. Points are deducted only when staff confirms the fill.
+                    Balance: <strong class="text-warning"><?php echo (int) $loyaltyBalance; ?></strong> pts
+                    · <?php echo htmlspecialchars($loyaltyTierLabel, ENT_QUOTES, 'UTF-8'); ?> tier.
+                    <?php if ($loyaltyPoolRemaining !== null): ?>
+                    Pool left: <strong class="text-sky-400"><?php echo number_format((float) $loyaltyPoolRemaining, 0); ?> MMK</strong>.
+                    <?php endif; ?>
+                    Up to 20 pts per fill (max 20% off). Points are deducted only when staff confirms the fill.
+                    Final discount depends on tier pool at fill time.
                 </small>
                 <small id="loyalty-discount-estimate" class="text-sky-400 d-block mt-1"></small>
             </div>

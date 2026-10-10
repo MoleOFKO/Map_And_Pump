@@ -72,9 +72,10 @@ $customerName = $booking['user_name'] ?? 'Customer';
 $weeklyFilledDisplay = rtrim(rtrim(number_format($weeklyFilledLiters, 1, '.', ''), '0'), '.');
 $fillableDisplay = rtrim(rtrim(number_format($fillableLiters, 1, '.', ''), '0'), '.');
 
-// Loyalty preview for staff (balance + redeem intent on this booking)
+// Loyalty preview for staff (balance + redeem intent + internal flag)
 $loyaltyBalance = 0;
 $pointsToRedeemIntent = 0;
+$loyaltyWillBeInternal = false;
 if (!empty($booking['user_id'])) {
     loyalty_schema_ready($pdo);
     $loyaltyBalance = loyalty_get_balance($pdo, (int) $booking['user_id']);
@@ -84,6 +85,15 @@ if (!empty($booking['user_id'])) {
         $pointsToRedeemIntent = (int) $intentStmt->fetchColumn();
     } catch (Throwable $e) {
         $pointsToRedeemIntent = 0;
+    }
+    try {
+        $loyaltyWillBeInternal = loyalty_is_internal_fill(
+            $pdo,
+            (int) $booking['user_id'],
+            (int) ($booking['station_id'] ?? 0)
+        );
+    } catch (Throwable $e) {
+        $loyaltyWillBeInternal = false;
     }
 }
 ?>
@@ -219,17 +229,25 @@ if (!empty($booking['user_id'])) {
                                 <div class="p-3 rounded-4" style="background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);">
                                     <div class="detail-label mb-2">Loyalty Balance</div>
                                     <div class="detail-value text-warning"><?php echo (int) $loyaltyBalance; ?> pts</div>
+                                    <?php if (!empty($loyaltyWillBeInternal)): ?>
+                                        <div class="text-warning small mt-2">Internal fill (own station/network) — 0 points will be awarded.</div>
+                                    <?php endif; ?>
                                 </div>
                             </div>
                             <div class="col-12 col-md-6">
                                 <div class="p-3 rounded-4" style="background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);">
                                     <div class="detail-label mb-2">Points to Redeem (this booking)</div>
                                     <div class="detail-value">
-                                        <?php echo (int) $pointsToRedeemIntent; ?> pts
-                                        <?php if ((int) $pointsToRedeemIntent > 0): ?>
-                                            <span class="text-white-50 small"> · will apply on confirm (+<?php echo (int) LOYALTY_POINTS_PER_FILL; ?> earn after)</span>
+                                        <?php if (!empty($loyaltyWillBeInternal)): ?>
+                                            0 pts
+                                            <span class="text-white-50 small"> · internal fill — loyalty skipped</span>
                                         <?php else: ?>
-                                            <span class="text-white-50 small"> · +<?php echo (int) LOYALTY_POINTS_PER_FILL; ?> pts earned on confirm</span>
+                                            <?php echo (int) $pointsToRedeemIntent; ?> pts
+                                            <?php if ((int) $pointsToRedeemIntent > 0): ?>
+                                                <span class="text-white-50 small"> · will apply on confirm (+<?php echo (int) LOYALTY_POINTS_PER_FILL; ?> earn after)</span>
+                                            <?php else: ?>
+                                                <span class="text-white-50 small"> · +<?php echo (int) LOYALTY_POINTS_PER_FILL; ?> pts earned on confirm</span>
+                                            <?php endif; ?>
                                         <?php endif; ?>
                                     </div>
                                 </div>
