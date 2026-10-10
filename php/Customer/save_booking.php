@@ -8,6 +8,7 @@ require_once __DIR__ . '/car_access.php';
 require_once __DIR__ . '/../usage_history_schema.php';
 require_once __DIR__ . '/../business_scope.php';
 require_once __DIR__ . '/../booking_rules.php';
+require_once __DIR__ . '/../loyalty_points.php';
 
 header('Content-Type: application/json');
 
@@ -22,6 +23,7 @@ $stationId = isset($_POST['station_id']) ? (int)$_POST['station_id'] : 0;
 $fuelType = isset($_POST['fuel_type']) ? trim($_POST['fuel_type']) : '';
 $quantity = isset($_POST['quantity_liters']) ? (float)$_POST['quantity_liters'] : 0;
 $requestedCarLicenseId = isset($_POST['car_license_id']) ? (int)$_POST['car_license_id'] : 0;
+$requestedPointsToRedeem = isset($_POST['points_to_redeem']) ? (int)$_POST['points_to_redeem'] : 0;
 $userId = (int)($_SESSION['user_id'] ?? 0);
 
 if ($bookingCode === '' || $stationId <= 0 || $fuelType === '' || $quantity <= 0 || $requestedCarLicenseId < 0) {
@@ -251,6 +253,18 @@ try {
         exit;
     }
 
+    // Loyalty redeem intent (0 / 10 / 20). Debit happens only on successful fill.
+    loyalty_schema_ready($pdo);
+    $pointsToRedeem = 0;
+    try {
+        $pointsToRedeem = loyalty_validate_redeem_intent($pdo, $userId, $requestedPointsToRedeem);
+    } catch (InvalidArgumentException $loyaltyEx) {
+        $pdo->rollBack();
+        http_response_code(422);
+        echo json_encode(['success' => false, 'message' => $loyaltyEx->getMessage()]);
+        exit;
+    }
+
     $expiryHours = (int) MAP_PUMP_BOOKING_EXPIRY_HOURS;
     $insert = $pdo->prepare('INSERT INTO booking (user_id, car_license_id, station_id, oil_type_id, qr_code, qr_refrence_code, status, filled_gas, expire_at, created_at) VALUES (:user_id, :car_license_id, :station_id, :oil_type_id, :qr_code, :qr_refrence_code, :status, :filled_gas, DATE_ADD(NOW(), INTERVAL ' . $expiryHours . ' HOUR), NOW())');
     $insert->execute([
@@ -264,6 +278,22 @@ try {
         ':filled_gas' => 0
     ]);
     $bookingId = (int) $pdo->lastInsertId();
+
+    if ($pointsToRedeem > 0 && $bookingId > 0) {
+        try {
+            $ptsUpdate = $pdo->prepare(
+                'UPDATE booking SET points_to_redeem = :pts WHERE booking_id = :bid'
+            );
+            $ptsUpdate->execute([
+                ':pts' => $pointsToRedeem,
+                ':bid' => $bookingId,
+            ]);
+        } catch (Throwable $ptsEx) {
+            // Column may be missing if schema alter failed; booking still valid without intent.
+            error_log('Could not store points_to_redeem on booking: ' . $ptsEx->getMessage());
+        }
+    }
+
     $expiryStmt = $pdo->prepare('SELECT expire_at, created_at FROM booking WHERE booking_id = ? LIMIT 1');
     $expiryStmt->execute([$bookingId]);
     $bookingTimestamps = $expiryStmt->fetch(PDO::FETCH_ASSOC) ?: [];
@@ -272,7 +302,16 @@ try {
 
     $pdo->commit();
 
-    echo json_encode(['success' => true, 'message' => 'Booking saved.', 'booking_id' => $bookingId, 'booking_code' => $bookingCode, 'payload' => $displayPayload, 'expire_at' => $expireAt, 'created_at' => $createdAt]);
+    echo json_encode([
+        'success' => true,
+        'message' => 'Booking saved.',
+        'booking_id' => $bookingId,
+        'booking_code' => $bookingCode,
+        'payload' => $displayPayload,
+        'expire_at' => $expireAt,
+        'created_at' => $createdAt,
+        'points_to_redeem' => $pointsToRedeem,
+    ]);
 } catch (PDOException $e) {
     if ($pdo->inTransaction()) {
         $pdo->rollBack();

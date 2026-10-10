@@ -3,6 +3,7 @@ session_start();
 require_once __DIR__ . '/../Customer/car_access.php';
 require __DIR__ . '/../conn.php';
 require_once __DIR__ . '/../business_scope.php';
+require_once __DIR__ . '/../loyalty_points.php';
 
 $staffCanAccessBranch = static function (int $staffUserId, int $branchId) use ($pdo): bool {
     return function_exists('map_pump_staff_can_access_branch')
@@ -70,6 +71,31 @@ $isFilled = isset($booking['status']) && in_array(strtolower((string)$booking['s
 $customerName = $booking['user_name'] ?? 'Customer';
 $weeklyFilledDisplay = rtrim(rtrim(number_format($weeklyFilledLiters, 1, '.', ''), '0'), '.');
 $fillableDisplay = rtrim(rtrim(number_format($fillableLiters, 1, '.', ''), '0'), '.');
+
+// Loyalty preview for staff (balance + redeem intent + internal flag)
+$loyaltyBalance = 0;
+$pointsToRedeemIntent = 0;
+$loyaltyWillBeInternal = false;
+if (!empty($booking['user_id'])) {
+    loyalty_schema_ready($pdo);
+    $loyaltyBalance = loyalty_get_balance($pdo, (int) $booking['user_id']);
+    try {
+        $intentStmt = $pdo->prepare('SELECT COALESCE(points_to_redeem, 0) FROM booking WHERE booking_id = ? LIMIT 1');
+        $intentStmt->execute([(int) ($booking['booking_id'] ?? 0)]);
+        $pointsToRedeemIntent = (int) $intentStmt->fetchColumn();
+    } catch (Throwable $e) {
+        $pointsToRedeemIntent = 0;
+    }
+    try {
+        $loyaltyWillBeInternal = loyalty_is_internal_fill(
+            $pdo,
+            (int) $booking['user_id'],
+            (int) ($booking['station_id'] ?? 0)
+        );
+    } catch (Throwable $e) {
+        $loyaltyWillBeInternal = false;
+    }
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -197,6 +223,33 @@ $fillableDisplay = rtrim(rtrim(number_format($fillableLiters, 1, '.', ''), '0'),
                                 <div class="p-3 rounded-4" style="background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);">
                                     <div class="detail-label mb-2">Can Fill</div>
                                     <div class="detail-value"><?php echo htmlspecialchars($fillableDisplay, ENT_QUOTES, 'UTF-8'); ?> L left</div>
+                                </div>
+                            </div>
+                            <div class="col-12 col-md-6">
+                                <div class="p-3 rounded-4" style="background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);">
+                                    <div class="detail-label mb-2">Loyalty Balance</div>
+                                    <div class="detail-value text-warning"><?php echo (int) $loyaltyBalance; ?> pts</div>
+                                    <?php if (!empty($loyaltyWillBeInternal)): ?>
+                                        <div class="text-warning small mt-2">Internal fill (own station/network) — 0 points will be awarded.</div>
+                                    <?php endif; ?>
+                                </div>
+                            </div>
+                            <div class="col-12 col-md-6">
+                                <div class="p-3 rounded-4" style="background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);">
+                                    <div class="detail-label mb-2">Points to Redeem (this booking)</div>
+                                    <div class="detail-value">
+                                        <?php if (!empty($loyaltyWillBeInternal)): ?>
+                                            0 pts
+                                            <span class="text-white-50 small"> · internal fill — loyalty skipped</span>
+                                        <?php else: ?>
+                                            <?php echo (int) $pointsToRedeemIntent; ?> pts
+                                            <?php if ((int) $pointsToRedeemIntent > 0): ?>
+                                                <span class="text-white-50 small"> · will apply on confirm (+<?php echo (int) LOYALTY_POINTS_PER_FILL; ?> earn after)</span>
+                                            <?php else: ?>
+                                                <span class="text-white-50 small"> · +<?php echo (int) LOYALTY_POINTS_PER_FILL; ?> pts earned on confirm</span>
+                                            <?php endif; ?>
+                                        <?php endif; ?>
+                                    </div>
                                 </div>
                             </div>
                         </div>

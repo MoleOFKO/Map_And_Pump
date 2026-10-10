@@ -8,6 +8,7 @@ require_once __DIR__ . '/../Customer/car_access.php';
 require_once __DIR__ . '/../business_scope.php';
 require_once __DIR__ . '/../booking_rules.php';
 require_once __DIR__ . '/../activity_log.php';
+require_once __DIR__ . '/../loyalty_points.php';
 
 $staffCanAccessBranch = static function (int $staffUserId, int $branchId) use ($pdo): bool {
     return function_exists('map_pump_staff_can_access_branch')
@@ -34,6 +35,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($bookingId <= 0 || $amountLiters === '' || !is_numeric($amountLiters) || (float)$amountLiters <= 0) {
             respond(['success' => false, 'message' => 'Please enter a valid amount in liters.'], $ajax, 422, 'verify_detail.php?booking_id=' . urlencode((string)$bookingId));
         }
+
+        // Ensure optional loyalty columns exist (best-effort; no ledger table).
+        loyalty_schema_ready($pdo);
 
         $stmt = $pdo->prepare(
             'SELECT b.booking_id, b.user_id, b.station_id, b.oil_type_id, o.oil_name, b.qr_code, b.qr_refrence_code,
@@ -183,6 +187,94 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ':filled_at' => $filledAt,
                 ':staff_user_id' => $staffUserId > 0 ? $staffUserId : null,
             ]);
+            $usageId = (int) $pdo->lastInsertId();
+
+            // Loyalty: read redeem intent from booking (0 if column missing), then apply redeem + earn (+3).
+            $pointsIntent = 0;
+            try {
+                $intentStmt = $pdo->prepare(
+                    'SELECT COALESCE(points_to_redeem, 0) FROM booking WHERE booking_id = ? LIMIT 1'
+                );
+                $intentStmt->execute([(int) $row['booking_id']]);
+                $pointsIntent = (int) $intentStmt->fetchColumn();
+            } catch (Throwable $intentEx) {
+                $pointsIntent = 0;
+            }
+
+            // Countermeasures: detect internal (own station / business-role same HQ)
+            $isInternalFill = false;
+            try {
+                $isInternalFill = loyalty_is_internal_fill(
+                    $pdo,
+                    (int) $row['user_id'],
+                    (int) $row['station_id']
+                );
+            } catch (Throwable $internalEx) {
+                $isInternalFill = false;
+            }
+
+            $loyaltyResult = loyalty_apply_on_fill(
+                $pdo,
+                (int) $row['user_id'],
+                (float) $amountLiters,
+                $totalCost !== null ? (float) $totalCost : null,
+                $pointsIntent,
+                (int) $row['booking_id'],
+                $staffUserId > 0 ? $staffUserId : null,
+                $isInternalFill,
+                (int) $row['station_id'],
+                $usageId > 0 ? $usageId : null
+            );
+
+            // Persist loyalty figures on usage_history when columns exist (fail-soft).
+            if ($usageId > 0) {
+                try {
+                    $loyaltyHist = $pdo->prepare(
+                        'UPDATE usage_history
+                         SET points_earned = :earned,
+                             points_redeemed = :redeemed,
+                             discount_mmk = :discount,
+                             is_internal = :is_internal,
+                             admin_share_mmk = :admin_share,
+                             company_share_mmk = :company_share,
+                             company_points_earned = :company_pts
+                         WHERE usage_id = :usage_id'
+                    );
+                    $loyaltyHist->execute([
+                        ':earned' => (int) ($loyaltyResult['points_earned'] ?? 0),
+                        ':redeemed' => (int) ($loyaltyResult['points_redeemed'] ?? 0),
+                        ':discount' => (float) ($loyaltyResult['discount_mmk'] ?? 0),
+                        ':is_internal' => !empty($loyaltyResult['is_internal']) ? 1 : 0,
+                        ':admin_share' => isset($loyaltyResult['admin_share_mmk'])
+                            ? (float) $loyaltyResult['admin_share_mmk']
+                            : null,
+                        ':company_share' => isset($loyaltyResult['company_share_mmk'])
+                            ? (float) $loyaltyResult['company_share_mmk']
+                            : null,
+                        ':company_pts' => (int) ($loyaltyResult['company_points_earned'] ?? 0),
+                        ':usage_id' => $usageId,
+                    ]);
+                } catch (Throwable $histEx) {
+                    // New columns may not exist yet — fall back to v1 columns only.
+                    try {
+                        $loyaltyHist = $pdo->prepare(
+                            'UPDATE usage_history
+                             SET points_earned = :earned,
+                                 points_redeemed = :redeemed,
+                                 discount_mmk = :discount
+                             WHERE usage_id = :usage_id'
+                        );
+                        $loyaltyHist->execute([
+                            ':earned' => (int) ($loyaltyResult['points_earned'] ?? 0),
+                            ':redeemed' => (int) ($loyaltyResult['points_redeemed'] ?? 0),
+                            ':discount' => (float) ($loyaltyResult['discount_mmk'] ?? 0),
+                            ':usage_id' => $usageId,
+                        ]);
+                    } catch (Throwable $histEx2) {
+                        // Columns may not exist yet; non-fatal.
+                    }
+                }
+            }
 
             $deleteBooking = $pdo->prepare('DELETE FROM booking WHERE booking_id = :booking_id');
             $deleteBooking->execute([':booking_id' => (int)$row['booking_id']]);
@@ -191,6 +283,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $row['status'] = 'filled';
             $row['filled_gas'] = (float)$amountLiters;
             $row['time_of_filled'] = $filledAt;
+            $row['loyalty'] = $loyaltyResult;
             map_pump_log_action($pdo, $staffUserId, 'Confirmed fuel fill for booking #' . (int) $row['booking_id'] . ' (' . rtrim(rtrim(number_format((float) $amountLiters, 2, '.', ''), '0'), '.') . ' L)', 5);
         } catch (Throwable $e) {
             if ($pdo->inTransaction()) {
@@ -203,10 +296,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             respond(['success' => false, 'message' => $message], $ajax, $status, 'verify_detail.php?booking_id=' . urlencode((string)$bookingId));
         }
 
+        $loyaltyMsg = '';
+        if (!empty($row['loyalty']) && is_array($row['loyalty'])) {
+            $le = (int) ($row['loyalty']['points_earned'] ?? 0);
+            $lr = (int) ($row['loyalty']['points_redeemed'] ?? 0);
+            $ld = (float) ($row['loyalty']['discount_mmk'] ?? 0);
+            $isInternalMsg = !empty($row['loyalty']['is_internal']);
+            $poolLimited = !empty($row['loyalty']['pool_limited']);
+            if ($isInternalMsg) {
+                $loyaltyMsg = ' Loyalty: 0 pts (internal fill — own station/network; points not awarded).';
+            } elseif ($le > 0 || $lr > 0 || $poolLimited) {
+                $loyaltyMsg = ' Loyalty: +' . $le . ' pt' . ($le === 1 ? '' : 's');
+                if ($lr > 0) {
+                    $loyaltyMsg .= ', −' . $lr . ' redeemed';
+                    if ($ld > 0) {
+                        $loyaltyMsg .= ' (' . number_format($ld, 0) . ' MMK off)';
+                    }
+                    if ($poolLimited) {
+                        $loyaltyMsg .= ' (tier pool limited)';
+                    }
+                } elseif ($poolLimited) {
+                    $loyaltyMsg .= ', redeem skipped (tier pool empty)';
+                }
+                $loyaltyMsg .= '.';
+            }
+        }
+
         respond([
             'success' => true,
-            'message' => 'Booking confirmed. The fill was saved to usage history and removed from active bookings.',
+            'message' => 'Booking confirmed. The fill was saved to usage history and removed from active bookings.' . $loyaltyMsg,
             'booking' => $row,
+            'loyalty' => $row['loyalty'] ?? null,
         ], $ajax, 200, 'verify_qr.php');
     }
 
@@ -417,5 +537,3 @@ try {
     }
     respond(['success' => false, 'message' => 'Server error while verifying the booking. Please try again.'], false, 500, 'verify_qr.php');
 }
-
-
