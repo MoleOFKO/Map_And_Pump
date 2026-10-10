@@ -163,11 +163,11 @@ $exportQuery = http_build_query([
                 <input type="hidden" name="action" value="clear">
                 <input type="hidden" name="actor" value="<?= hq_escape($actor) ?>">
                 <input type="hidden" name="return_to" value="view_logs.php">
-                <button type="submit" class="btn btn-outline-danger btn-sm border-danger border-opacity-20 text-danger rounded-3 d-flex align-items-center gap-2">
+                <button type="submit" class="btn btn-clear-logs log-header-action rounded-3 d-flex align-items-center gap-2">
                     <i class="bi bi-trash3-fill"></i> Clear Filtered Logs
                 </button>
             </form>
-            <a class="btn btn-neon d-flex align-items-center gap-2" href="log_action.php?<?= hq_escape($exportQuery) ?>">
+            <a class="btn btn-neon log-header-action d-flex align-items-center gap-2" href="log_action.php?<?= hq_escape($exportQuery) ?>">
                 <i class="bi bi-cloud-arrow-down-fill"></i> Export CSV
             </a>
         </div>
