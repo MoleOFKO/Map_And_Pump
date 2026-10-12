@@ -82,19 +82,6 @@ $actionVerb = match ($actionType) {
     'restore' => 'restored (approved)',
     default => 'suspended',
 };
-$notification = !empty($target['email'])
-    ? hq_send_notification((string) $target['email'], '', '', [
-        'kind' => 'hq',
-        'action' => $actionType,
-        'account_label' => (string) ($target['company_name'] ?? ''),
-        'reason' => $reason,
-    ])
-    : [
-        'sent' => false,
-        'status' => 'skipped',
-        'note' => 'No HQ email address is available; the reason was recorded in the HQ action history.',
-    ];
-
 try {
     $conn->begin_transaction();
 
@@ -123,10 +110,11 @@ try {
         );
     }
 
+    $actionId = 0;
     if ($historyReady) {
         // Live schema (db.sql): hq_account_actions has no user_id column.
-        $notificationStatus = (string) ($notification['status'] ?? 'not_configured');
-        $notificationNote = (string) ($notification['note'] ?? '');
+        $notificationStatus = 'pending';
+        $notificationNote = 'Account action committed; email delivery is pending.';
         $actionInsert = $conn->prepare(
             'INSERT INTO hq_account_actions
                 (headquarter_id, action_type, reason, notification_status, notification_note)
@@ -146,10 +134,49 @@ try {
         if (!$actionInsert->execute()) {
             throw new RuntimeException('Could not record the HQ action history: ' . $actionInsert->error);
         }
+        $actionId = (int) $conn->insert_id;
         $actionInsert->close();
     }
 
     $conn->commit();
+
+    try {
+        $notification = !empty($target['email'])
+            ? hq_send_notification((string) $target['email'], '', '', [
+                'kind' => 'hq',
+                'action' => $actionType,
+                'account_label' => (string) ($target['company_name'] ?? ''),
+                'reason' => $reason,
+            ])
+            : [
+                'sent' => false,
+                'status' => 'skipped',
+                'note' => 'No HQ email address is available; the reason was recorded in the HQ action history.',
+            ];
+    } catch (Throwable $mailError) {
+        error_log('[HQ registry] Account notice failed: ' . $mailError->getMessage());
+        $notification = [
+            'status' => 'failed',
+            'note' => 'Email delivery failed. The account action was completed.',
+        ];
+    }
+
+    if ($historyReady && $actionId > 0) {
+        try {
+            $historyUpdate = $conn->prepare(
+                'UPDATE hq_account_actions SET notification_status = ?, notification_note = ? WHERE action_id = ?'
+            );
+            if ($historyUpdate) {
+                $notificationStatus = (string) ($notification['status'] ?? 'unknown');
+                $notificationNote = substr((string) ($notification['note'] ?? ''), 0, 255);
+                $historyUpdate->bind_param('ssi', $notificationStatus, $notificationNote, $actionId);
+                $historyUpdate->execute();
+                $historyUpdate->close();
+            }
+        } catch (Throwable $historyError) {
+            error_log('[HQ registry] Email status history update failed: ' . $historyError->getMessage());
+        }
+    }
 
     admin_record_log(
         (int) $actingUser['user_id'],

@@ -827,6 +827,12 @@ body:has(.customer-dashboard) { overflow-y: hidden; }
 }
 .customer-qr-wrap img { display: block; width: 200px; height: 200px; }
 .customer-map-launch-card { padding: 24px 28px; }
+.customer-booking-status-card { padding: 16px 20px !important; }
+.customer-booking-status-card .customer-map-qr { width: 128px; padding: 4px; }
+.customer-booking-status-card .customer-map-qr img { width: 120px; height: 120px; }
+.customer-map-station-card #booking-pass .customer-qr-icon { width: 44px; height: 44px; font-size: 1.25rem; }
+.customer-map-station-card #booking-pass .customer-map-qr { width: 128px; padding: 4px; }
+.customer-map-station-card #booking-pass .customer-map-qr img { width: 120px; height: 120px; }
 .customer-map-experience {
     position: relative;
     height: calc(100vh - 155px);
@@ -865,11 +871,36 @@ body:has(.customer-dashboard) { overflow-y: hidden; }
     gap: 12px;
 }
 .customer-detail-fuel-item {
+    display: block;
+    width: 100%;
+    color: var(--customer-text);
+    text-align: left;
+    font: inherit;
     border-radius: 16px;
     border: 1px solid rgba(148, 163, 184, 0.28);
     background: rgba(15, 23, 42, 0.7);
     padding: 16px 18px;
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    cursor: pointer;
+    transition: border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
+}
+.customer-detail-fuel-item:not(:disabled):hover {
+    border-color: rgba(13, 110, 253, 0.58);
+    background: rgba(13, 110, 253, 0.1);
+    transform: translateY(-1px);
+}
+.customer-detail-fuel-item:focus-visible {
+    outline: 3px solid rgba(13, 110, 253, 0.45);
+    outline-offset: 2px;
+}
+.customer-detail-fuel-item.customer-detail-fuel-item--selected {
+    border-color: rgba(13, 110, 253, 0.72);
+    background: rgba(13, 110, 253, 0.14);
+    box-shadow: inset 0 0 0 1px rgba(13, 110, 253, 0.22), 0 0 18px rgba(13, 110, 253, 0.12);
+}
+.customer-detail-fuel-item:disabled {
+    cursor: not-allowed;
+    opacity: 0.72;
 }
 .customer-detail-fuel-item--active {
     border-color: rgba(34, 197, 94, 0.35);
@@ -1050,6 +1081,16 @@ body.customer-light-mode .station-selector-card.selected {
     background: rgba(11, 94, 215, 0.07) !important;
     border-color: var(--customer-neon-cyan) !important;
 }
+body.customer-light-mode .customer-detail-fuel-item {
+    color: var(--customer-text);
+    background: rgba(248, 250, 252, 0.92);
+    border-color: rgba(11, 94, 215, 0.16);
+}
+body.customer-light-mode .customer-detail-fuel-item.customer-detail-fuel-item--selected,
+body.customer-light-mode .customer-detail-fuel-item:not(:disabled):hover {
+    background: rgba(11, 94, 215, 0.09);
+    border-color: rgba(11, 94, 215, 0.48);
+}
 
 body.customer-light-mode .modal-content,
 body.customer-light-mode .offcanvas {
@@ -1078,9 +1119,58 @@ body.customer-light-mode .btn-info {
     color: #fff !important;
 }
 
+/* Keep customer page content aligned with the profile surface and controls. */
+.main-frame .dashboard-panel-card h3,
+.main-frame .dashboard-panel-card h4,
+.main-frame .dashboard-panel-card h5 {
+    line-height: 1.35;
+}
+
+.main-frame .form-label {
+    color: var(--customer-muted);
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.main-frame .form-control.custom-form-field,
+.main-frame .form-select.custom-form-field,
+.main-frame textarea.glass-input {
+    min-height: 46px;
+    padding: 12px 14px;
+    border-radius: 12px !important;
+}
+
+.main-frame textarea.custom-form-field,
+.main-frame textarea.glass-input {
+    min-height: 112px;
+}
+
+.main-frame .table-responsive {
+    overflow-x: auto;
+    border: 1px solid var(--customer-border);
+    border-radius: 14px;
+    background: var(--customer-surface-1);
+}
+
+.main-frame .feedback-conversation-card,
+.main-frame .car-license-fact,
+.main-frame .car-active-shell,
+.main-frame .license-face-capture {
+    border-radius: 14px;
+    border-color: var(--customer-border);
+}
+
+.main-frame .car-license-fact,
+.main-frame .car-active-shell,
+.main-frame .license-face-capture {
+    background: var(--customer-surface-1);
+}
+
 /* ---------- Responsive ---------- */
 @media (max-width: 991px) {
     body:has(.customer-dashboard) { overflow-y: auto; }
+    .main-frame { padding: 28px !important; }
     .customer-map-experience {
         height: calc(100vh - 115px);
         min-height: 480px;
@@ -1088,6 +1178,8 @@ body.customer-light-mode .btn-info {
 }
 
 @media (max-width: 575.98px) {
+    .main-frame { padding: 20px 14px !important; }
+    .main-frame .dashboard-panel-card { padding: 20px !important; }
     .customer-map-launch-card { padding: 20px; }
     .customer-map-experience {
         height: calc(100vh - 100px);
