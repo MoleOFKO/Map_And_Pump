@@ -82,18 +82,16 @@ $actionVerb = match ($actionType) {
     'restore' => 'restored (approved)',
     default => 'suspended',
 };
-$notificationSubject = sprintf('Map & Pump HQ account %s', ucfirst($actionType));
-$notificationBody = sprintf(
-    "Your Map & Pump HQ account (%s) has been %s.\n\nReason:\n%s",
-    $target['company_name'],
-    $actionVerb,
-    $reason
-);
 $notification = !empty($target['email'])
-    ? hq_send_notification((string) $target['email'], $notificationSubject, $notificationBody)
+    ? hq_send_notification((string) $target['email'], '', '', [
+        'kind' => 'hq',
+        'action' => $actionType,
+        'account_label' => (string) ($target['company_name'] ?? ''),
+        'reason' => $reason,
+    ])
     : [
         'sent' => false,
-        'status' => 'not_configured',
+        'status' => 'skipped',
         'note' => 'No HQ email address is available; the reason was recorded in the HQ action history.',
     ];
 

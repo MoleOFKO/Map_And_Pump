@@ -143,6 +143,12 @@ function smtp_send_mail_via_phpmailer(string $to, string $subject, string $htmlB
         $mail->setFrom($fromEmail, $fromName);
         $mail->addAddress($to);
 
+        // Optional Reply-To (project contact). Falls back to From when unset.
+        $replyTo = mail_config_value('MAIL_REPLY_TO', mail_config_value('SMTP_REPLY_TO', $fromEmail));
+        if ($replyTo !== '' && filter_var($replyTo, FILTER_VALIDATE_EMAIL)) {
+            $mail->addReplyTo($replyTo, $fromName);
+        }
+
         $mail->isHTML(true);
         $mail->Subject = $subject;
         $mail->Body = $htmlBody;

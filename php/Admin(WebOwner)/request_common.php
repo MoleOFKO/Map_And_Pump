@@ -3,7 +3,7 @@
  * Shared helpers for the admin request review pipeline.
  */
 require_once __DIR__ . '/hq_account_common.php';
-require_once __DIR__ . '/../Login/mailer.php';
+require_once __DIR__ . '/../Login/mail_templates.php';
 
 function request_type_label(?string $type): string
 {
@@ -182,41 +182,37 @@ function request_live_status_summary(): array
     return $summary;
 }
 
-function request_send_notification(string $recipient, string $subject, string $message): array
+/**
+ * @param array<string,mixed>|null $context  Optional structured template context
+ * @return array{status:string,note:string,sent?:bool,subject?:string}
+ */
+function request_send_notification(string $recipient, string $subject = '', string $message = '', ?array $context = null): array
 {
-    $recipient = trim($recipient);
-
-    if ($recipient === '' || !filter_var($recipient, FILTER_VALIDATE_EMAIL)) {
+    if (is_array($context) && $context !== []) {
+        $result = mail_send_account_notice($recipient, $context);
         return [
-            'status' => 'skipped',
-            'note' => 'No valid requester email address was available.',
+            'sent' => (bool) ($result['sent'] ?? false),
+            'status' => (string) ($result['status'] ?? 'failed'),
+            'note' => (string) ($result['note'] ?? ''),
+            'subject' => (string) ($result['subject'] ?? ''),
         ];
     }
 
-    $safeSubject = htmlspecialchars($subject, ENT_QUOTES, 'UTF-8');
-    $safeMessage = nl2br(htmlspecialchars($message, ENT_QUOTES, 'UTF-8'));
-    $html = '<div style="font-family:Arial,sans-serif;line-height:1.5;color:#111827">'
-        . '<h2>' . $safeSubject . '</h2>'
-        . '<p>' . $safeMessage . '</p>'
-        . '<p style="color:#6b7280;font-size:13px">Map & Pump request registry</p>'
-        . '</div>';
+    $result = mail_send_account_notice($recipient, [
+        'kind' => 'request',
+        'action' => 'updated',
+        'account_label' => '',
+        'reason' => trim($message),
+        'extra_lines' => $subject !== '' ? ['Reference: ' . $subject] : [],
+        'effect' => 'A request associated with this email address was updated in Map & Pump.',
+    ]);
 
-    try {
-        smtp_send_mail($recipient, $subject, $html, $message);
-
-        return [
-            'status' => 'sent',
-            'note' => 'Email sent to requester.',
-        ];
-    } catch (Throwable $e) {
-        $note = 'Email delivery failed: ' . $e->getMessage();
-        error_log('[Request registry] ' . $note);
-
-        return [
-            'status' => 'failed',
-            'note' => substr($note, 0, 255),
-        ];
-    }
+    return [
+        'sent' => (bool) ($result['sent'] ?? false),
+        'status' => (string) ($result['status'] ?? 'failed'),
+        'note' => (string) ($result['note'] ?? ''),
+        'subject' => (string) ($result['subject'] ?? ''),
+    ];
 }
 function request_date(?string $value): string
 {

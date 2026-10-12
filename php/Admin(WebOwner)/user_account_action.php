@@ -91,12 +91,14 @@ $actionVerb = match ($actionType) {
 };
 $notification = hq_send_notification(
     (string) $target['email'],
-    'Map & Pump account ' . ucfirst($actionType),
-    sprintf(
-        "Your Map & Pump account has been %s.\n\nReason:\n%s",
-        $actionVerb,
-        $reason
-    )
+    '',
+    '',
+    [
+        'kind' => 'account',
+        'action' => $actionType,
+        'account_label' => (string) ($target['user_name'] ?? ''),
+        'reason' => $reason,
+    ]
 );
 
 try {

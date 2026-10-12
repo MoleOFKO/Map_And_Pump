@@ -3,6 +3,7 @@
  * Shared helpers for the admin HQ/account registry.
  */
 require_once __DIR__ . '/../conn.php';
+require_once __DIR__ . '/../Login/mail_templates.php';
 
 function hq_db_available(): bool
 {
@@ -280,44 +281,30 @@ function hq_action_table_ready(): bool
 }
 
 
-function hq_send_notification(string $recipient, string $subject, string $body): array
+/**
+ * Send a transactional registry notice.
+ *
+ * Prefer passing $context (kind, action, account_label, reason) so the shared
+ * legal template is used. Legacy $subject/$body are still accepted as a fallback.
+ *
+ * @param array<string,mixed>|null $context
+ * @return array{sent:bool,status:string,note:string,subject?:string}
+ */
+function hq_send_notification(string $recipient, string $subject = '', string $body = '', ?array $context = null): array
 {
-    $recipient = trim($recipient);
-
-    if ($recipient === '' || !filter_var($recipient, FILTER_VALIDATE_EMAIL)) {
-        return [
-            'sent' => false,
-            'status' => 'skipped',
-            'note' => 'No valid email address was available; the reason was recorded in the action history.',
-        ];
+    if (is_array($context) && $context !== []) {
+        return mail_send_account_notice($recipient, $context);
     }
 
-    $safeSubject = htmlspecialchars($subject, ENT_QUOTES, 'UTF-8');
-    $safeBody = nl2br(htmlspecialchars($body, ENT_QUOTES, 'UTF-8'));
-    $html = '<div style="font-family:Arial,sans-serif;line-height:1.5;color:#111827">'
-        . '<h2>' . $safeSubject . '</h2>'
-        . '<p>' . $safeBody . '</p>'
-        . '<p style="color:#6b7280;font-size:13px">Map & Pump account registry</p>'
-        . '</div>';
-
-    try {
-        smtp_send_mail($recipient, $subject, $html, $body);
-
-        return [
-            'sent' => true,
-            'status' => 'sent',
-            'note' => 'Email sent to account owner.',
-        ];
-    } catch (Throwable $e) {
-        $note = 'Email delivery failed: ' . $e->getMessage();
-        error_log('[HQ registry] ' . $note);
-
-        return [
-            'sent' => false,
-            'status' => 'failed',
-            'note' => substr($note, 0, 255),
-        ];
-    }
+    // Legacy path: wrap plain subject/body in the same legal footer template.
+    return mail_send_account_notice($recipient, [
+        'kind' => 'account',
+        'action' => 'updated',
+        'account_label' => '',
+        'reason' => trim($body),
+        'extra_lines' => $subject !== '' ? ['Reference: ' . $subject] : [],
+        'effect' => trim($body) !== '' ? 'Please review the reason below for details about this update.' : 'The account status recorded in Map & Pump was updated.',
+    ]);
 }
 function hq_find_role_id(): int|false
 {

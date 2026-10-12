@@ -83,11 +83,19 @@ try {
         $licenseUpdate->close();
     }
 
-    $notificationSubject = 'Map & Pump account verification: ' . ucfirst($newStatus);
+    $notification = request_send_notification((string) $target['email'], '', '', [
+        'kind' => 'verification',
+        'action' => $action === 'approve' ? 'approve' : 'reject',
+        'account_label' => (string) ($target['user_name'] ?? ''),
+        'reason' => $action === 'approve' ? '' : $reason,
+        'effect' => $action === 'approve'
+            ? 'Your account verification was approved. You may use the account under the project Terms of Service.'
+            : 'Your account verification was not approved. You may correct the submission and try again if the project allows it.',
+    ]);
+    $notificationSubject = (string) ($notification['subject'] ?? ('Map & Pump account verification: ' . ucfirst($newStatus)));
     $notificationMessage = $action === 'approve'
         ? 'Your Map & Pump account verification has been approved. You can now use the account.'
         : "Your Map & Pump account verification was rejected.\n\nReason:\n" . $reason;
-    $notification = request_send_notification((string) $target['email'], $notificationSubject, $notificationMessage);
 
     // Account verification does not originate in system_requests, so request_id stays NULL.
     $notificationInsert = $conn->prepare(
