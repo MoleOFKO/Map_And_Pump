@@ -167,12 +167,12 @@ $updatedLabel = $updatedAt ? moderator_format_date($updatedAt) : 'Not available'
                 <div class="analytics-card metric-card py-3">
                     <div class="d-flex align-items-center justify-content-between gap-3">
                         <div>
-                            <p class="mb-0 metric-label text-warning">Expiring soon</p>
+                            <p class="mb-0 metric-label text-warning">Licenses expiring soon</p>
                             <h3 class="metric-value text-white mb-0"><?= $expiringSoon ?></h3>
                         </div>
                         <span class="text-warning fs-3"><i class="bi bi-clock-history"></i></span>
                     </div>
-                    <p class="text-white-50 small mb-0 mt-2"><?= (int) ($expiryPayload['warning_hq'] ?? 0) ?> companies · <?= (int) ($expiryPayload['warning_users'] ?? 0) ?> drivers (≤10 days)</p>
+                    <p class="text-white-50 small mb-0 mt-2"><?= (int) ($expiryPayload['warning_hq'] ?? 0) ?> companies · <?= (int) ($expiryPayload['warning_users'] ?? 0) ?> drivers (In 10 days)</p>
                 </div>
             </a>
         </div>
@@ -203,7 +203,7 @@ $updatedLabel = $updatedAt ? moderator_format_date($updatedAt) : 'Not available'
                         </div>
                         <span class="txt-neon-cyan fs-2"><i class="bi bi-building"></i></span>
                     </div>
-                    <p class="text-white-50 small mb-0 mt-2"><?= (int) $metrics['stations'] ?> stations in <code>branches</code></p>
+                    <p class="text-white-50 small mb-0 mt-2"><span class="txt-neon-cyan fw-semibold"><?= (int) $metrics['stations'] ?></span> stations in total</p>
                     <p class="metric-card-hint text-white-50 mb-0 mt-2"><i class="bi bi-box-arrow-up-right me-1"></i>View / Manage Companies</p>
                 </div>
             </a>
