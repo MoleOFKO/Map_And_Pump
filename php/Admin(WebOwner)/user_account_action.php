@@ -89,18 +89,6 @@ $actionVerb = match ($actionType) {
     'restore' => 'restored (approved)',
     default => 'suspended',
 };
-$notification = hq_send_notification(
-    (string) $target['email'],
-    '',
-    '',
-    [
-        'kind' => 'account',
-        'action' => $actionType,
-        'account_label' => (string) ($target['user_name'] ?? ''),
-        'reason' => $reason,
-    ]
-);
-
 try {
     $conn->begin_transaction();
 
@@ -122,6 +110,7 @@ try {
     }
     $statusUpdate->close();
 
+    $actionId = 0;
     if ($historyReady) {
         $actionInsert = $conn->prepare(
             'INSERT INTO user_account_actions (user_id, action_type, reason, notification_status, notification_note)
@@ -130,16 +119,54 @@ try {
         if (!$actionInsert) {
             throw new RuntimeException('Could not prepare the action history insert: ' . $conn->error);
         }
-        $notificationStatus = (string) ($notification['status'] ?? 'not_configured');
-        $notificationNote = (string) ($notification['note'] ?? 'Email delivery is not configured.');
+        $notificationStatus = 'pending';
+        $notificationNote = 'Account action committed; email delivery is pending.';
         $actionInsert->bind_param('issss', $userId, $actionType, $reason, $notificationStatus, $notificationNote);
         if (!$actionInsert->execute()) {
             throw new RuntimeException('Could not record the action history: ' . $actionInsert->error);
         }
+        $actionId = (int) $conn->insert_id;
         $actionInsert->close();
     }
 
     $conn->commit();
+
+    try {
+        $notification = hq_send_notification(
+            (string) $target['email'],
+            '',
+            '',
+            [
+                'kind' => 'account',
+                'action' => $actionType,
+                'account_label' => (string) ($target['user_name'] ?? ''),
+                'reason' => $reason,
+            ]
+        );
+    } catch (Throwable $mailError) {
+        error_log('[Customer registry] Account notice failed: ' . $mailError->getMessage());
+        $notification = [
+            'status' => 'failed',
+            'note' => 'Email delivery failed. The account action was completed.',
+        ];
+    }
+
+    if ($historyReady && $actionId > 0) {
+        try {
+            $historyUpdate = $conn->prepare(
+                'UPDATE user_account_actions SET notification_status = ?, notification_note = ? WHERE action_id = ?'
+            );
+            if ($historyUpdate) {
+                $notificationStatus = (string) ($notification['status'] ?? 'unknown');
+                $notificationNote = substr((string) ($notification['note'] ?? ''), 0, 255);
+                $historyUpdate->bind_param('ssi', $notificationStatus, $notificationNote, $actionId);
+                $historyUpdate->execute();
+                $historyUpdate->close();
+            }
+        } catch (Throwable $historyError) {
+            error_log('[Customer registry] Email status history update failed: ' . $historyError->getMessage());
+        }
+    }
 
     // Logging is best-effort and must not undo a successful status change.
     try {

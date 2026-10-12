@@ -261,7 +261,7 @@ if ($currentPage == 'car_license.php') $viewTitle = "Car License Setup";
         </div>
 
         <div class="p-3 border-t border-secondary border-opacity-10 bg-black bg-opacity-20">
-            <div class="d-flex align-items-center gap-3 mb-3">
+            <a href="profile_page.php" class="clickable-profile gap-3 mb-3" aria-label="Open profile settings">
                 <?php if ($customerAvatarUrl !== ''): ?>
                     <img src="<?php echo htmlspecialchars($customerAvatarUrl, ENT_QUOTES, 'UTF-8'); ?>" alt="Profile image" class="rounded-circle" style="width:40px; height:40px; object-fit:cover; background:rgba(13,110,253,.08); border:1px solid rgba(13,110,253,.22);">
                 <?php else: ?>
@@ -273,7 +273,7 @@ if ($currentPage == 'car_license.php') $viewTitle = "Car License Setup";
                     <span class="fw-bold d-block text-white" style="font-size: 13px;"><?php echo htmlspecialchars($customerDisplayName, ENT_QUOTES, 'UTF-8'); ?></span>
                     <small class="text-secondary" style="font-size: 11px;">ID <?php echo htmlspecialchars($customerPublicUserId); ?></small>
                 </div>
-            </div>
+            </a>
             <?php if (!$customerDriverLicenseExpired && $linkedBusinessRoleNameHeader !== ''): ?>
                 <form action="../account_switch.php" method="POST" class="mb-3">
                     <input type="hidden" name="mode" value="business">

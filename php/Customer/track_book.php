@@ -198,7 +198,7 @@ $bookingCsrfToken = (string) $_SESSION['booking_csrf_token'];
 
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
 
-<section id="current-booking-card" class="dashboard-panel-card customer-map-launch-card mt-3<?php echo $hasActiveBooking ? '' : ' d-none'; ?>">
+<section id="current-booking-card" class="dashboard-panel-card customer-map-launch-card customer-booking-status-card mt-3<?php echo $hasActiveBooking ? '' : ' d-none'; ?>">
     <div class="row align-items-center g-4">
         <div class="col-12 col-md-auto text-center">
             <div class="customer-qr-wrap customer-map-qr mx-auto mb-2">
@@ -294,6 +294,16 @@ $bookingCsrfToken = (string) $_SESSION['booking_csrf_token'];
 <style>
 .top5-stations-panel {
     overflow: hidden;
+}
+.customer-map-card-back {
+    color: var(--customer-muted);
+    font-size: 12px;
+    font-weight: 700;
+    text-decoration: none;
+}
+.customer-map-card-back:hover,
+.customer-map-card-back:focus-visible {
+    color: var(--customer-neon-cyan);
 }
 .top5-stations-list {
     display: flex;
@@ -549,6 +559,9 @@ body.customer-light-mode .customer-map-recenter-btn:hover {
     <section id="station-booking-card" class="dashboard-panel-card customer-map-station-card d-none">
         <button type="button" class="btn btn-outline-info btn-sm customer-card-hide-btn" onclick="hideStationCard()" aria-label="Hide station card">
             <i class="bi bi-chevron-down"></i><span>Hide card</span>
+        </button>
+        <button type="button" class="btn btn-link customer-map-card-back p-0 mb-2" onclick="closeMapExperience()">
+            <i class="bi bi-arrow-left me-1"></i>Back to stations
         </button>
 
         <div id="station-detail-card">
@@ -1048,27 +1061,60 @@ body.customer-light-mode .customer-map-recenter-btn:hover {
         stationImage.src = station.logo || '../../images/Logo.png';
         stationImage.onerror = () => { stationImage.src = '../../images/Logo.png'; };
 
-        detailList.innerHTML = (station.fuels && station.fuels.length ? station.fuels : [{ id: 0, name: 'No fuel available', price: null, stock: 0, available: false }]).map(fuel => {
-            const priceText = fuel.price !== null && Number(fuel.price) > 0 ? `${Number(fuel.price).toLocaleString()} MMK / L` : 'Not available';
-            const stockText = Number(fuel.stock) > 0 ? `${Number(fuel.stock).toLocaleString()} L left` : 'Unavailable';
-            const isAvailable = fuel.available === true && Number(fuel.price) > 0 && Number(fuel.stock) > 0;
-            return `
-                <div class="customer-detail-fuel-item ${isAvailable ? 'customer-detail-fuel-item--active' : 'customer-detail-fuel-item--inactive'}">
-                    <div class="d-flex justify-content-between align-items-center gap-2">
-                        <div class="text-white fw-bold">${fuel.name}</div>
-                        <span class="customer-fuel-status ${isAvailable ? 'customer-fuel-status--active' : 'customer-fuel-status--inactive'}">${isAvailable ? 'Active' : 'Unavailable'}</span>
-                    </div>
-                    <div class="d-flex justify-content-between align-items-center mt-2 text-secondary small">
-                        <span>Fuel price</span>
-                        <strong class="text-white">${priceText}</strong>
-                    </div>
-                    <div class="d-flex justify-content-between align-items-center mt-1 text-secondary small">
-                        <span>Liters left</span>
-                        <strong class="${Number(fuel.stock) > 0 ? 'text-sky-400' : 'text-white'}">${stockText}</strong>
-                    </div>
-                </div>
-            `;
-        }).join('');
+        const fuels = station.fuels && station.fuels.length
+            ? station.fuels
+            : [{ id: 0, name: 'No fuel available', price: null, stock: 0, available: false }];
+        detailList.replaceChildren();
+        fuels.forEach(fuel => {
+            const isAvailable = station.isBookable && fuel.available === true && Number(fuel.price) > 0 && Number(fuel.stock) > 0;
+            const item = document.createElement('button');
+            item.type = 'button';
+            item.className = `customer-detail-fuel-item ${isAvailable ? 'customer-detail-fuel-item--active' : 'customer-detail-fuel-item--inactive'}`;
+            item.dataset.fuelId = String(fuel.id);
+            item.disabled = !isAvailable;
+            item.setAttribute('aria-pressed', 'false');
+
+            const heading = document.createElement('div');
+            heading.className = 'd-flex justify-content-between align-items-center gap-2';
+            const name = document.createElement('span');
+            name.className = 'text-white fw-bold';
+            name.textContent = String(fuel.name || 'Fuel');
+            const status = document.createElement('span');
+            status.className = `customer-fuel-status ${isAvailable ? 'customer-fuel-status--active' : 'customer-fuel-status--inactive'}`;
+            status.textContent = isAvailable ? 'Active' : 'Unavailable';
+            heading.append(name, status);
+            item.append(heading);
+
+            if (station.isOpen) {
+                const priceRow = document.createElement('div');
+                priceRow.className = 'd-flex justify-content-between align-items-center mt-2 text-secondary small';
+                const priceLabel = document.createElement('span');
+                priceLabel.textContent = 'Fuel price';
+                const priceValue = document.createElement('strong');
+                priceValue.className = 'text-white';
+                priceValue.textContent = fuel.price !== null && Number(fuel.price) > 0
+                    ? `${Number(fuel.price).toLocaleString()} MMK / L`
+                    : 'Not available';
+                priceRow.append(priceLabel, priceValue);
+                item.append(priceRow);
+            }
+
+            const stockRow = document.createElement('div');
+            stockRow.className = 'd-flex justify-content-between align-items-center mt-1 text-secondary small';
+            const stockLabel = document.createElement('span');
+            stockLabel.textContent = 'Liters left';
+            const stockValue = document.createElement('strong');
+            stockValue.className = Number(fuel.stock) > 0 ? 'text-sky-400' : 'text-white';
+            stockValue.textContent = Number(fuel.stock) > 0 ? `${Number(fuel.stock).toLocaleString()} L left` : 'Unavailable';
+            stockRow.append(stockLabel, stockValue);
+            item.append(stockRow);
+
+            item.addEventListener('click', () => {
+                document.getElementById('station-fuel-select').value = String(fuel.id);
+                updateSelectedFuelDetails();
+            });
+            detailList.append(item);
+        });
     }
 
     function selectStation(stationId) {
@@ -1080,15 +1126,17 @@ body.customer-light-mode .customer-map-recenter-btn:hover {
         renderStationDetailCard(selectedStation);
         const fuelSelect = document.getElementById('station-fuel-select');
         const bookingButton = document.getElementById('confirm-booking-btn');
-        if (selectedStation.isBookable && selectedStation.fuels.length) {
+        const availableFuels = selectedStation.fuels.filter(fuel => selectedStation.isBookable && fuel.available === true && Number(fuel.price) > 0 && Number(fuel.stock) > 0);
+        if (availableFuels.length) {
             fuelSelect.replaceChildren(...selectedStation.fuels.map(fuel => {
                 const option = document.createElement('option');
                 option.value = String(fuel.id);
                 option.textContent = fuel.name;
-                option.disabled = !fuel.available;
+                option.disabled = !availableFuels.includes(fuel);
                 return option;
             }));
             fuelSelect.disabled = false;
+            fuelSelect.value = String(availableFuels[0].id);
         } else {
             fuelSelect.replaceChildren(new Option(selectedStation.isOpen ? 'No fuel currently available' : 'Station is currently closed', ''));
             fuelSelect.disabled = true;
@@ -1119,6 +1167,12 @@ body.customer-light-mode .customer-map-recenter-btn:hover {
         const volumeInput = document.getElementById('station-volume-input');
         const bookingButton = document.getElementById('confirm-booking-btn');
 
+        document.querySelectorAll('#station-detail-fuels .customer-detail-fuel-item').forEach(item => {
+            const isSelected = item.dataset.fuelId === String(selectedFuelId);
+            item.classList.toggle('customer-detail-fuel-item--selected', isSelected);
+            item.setAttribute('aria-pressed', String(isSelected));
+        });
+
         if (!fuel) {
             price.textContent = 'Not available';
             stock.textContent = 'Not available';
@@ -1129,7 +1183,7 @@ body.customer-light-mode .customer-map-recenter-btn:hover {
         }
 
         const availableLiters = Math.max(0, Number(fuel.stock));
-        const hasValidFuel = Number(fuel.price) > 0 && availableLiters > 0 && fuel.available;
+        const hasValidFuel = selectedStation?.isBookable && Number(fuel.price) > 0 && availableLiters > 0 && fuel.available;
         const bookingLimit = hasValidFuel ? Math.min(availableOilQuota, availableLiters) : 0;
         price.textContent = hasValidFuel ? `${Number(fuel.price).toLocaleString()} MMK / L` : 'Not available';
         stock.textContent = hasValidFuel ? `${availableLiters.toLocaleString()} L` : 'Unavailable';
@@ -1165,7 +1219,9 @@ body.customer-light-mode .customer-map-recenter-btn:hover {
         address.textContent = station.address;
         status.textContent = `Station status: ${station.status}`;
         fuels.textContent = station.fuels.length
-            ? station.fuels.map(fuel => `${fuel.name}: ${Number(fuel.price).toLocaleString()} MMK/L, ${Number(fuel.stock).toLocaleString()} L left`).join(' · ')
+            ? station.fuels.map(fuel => station.isOpen
+                ? `${fuel.name}: ${Number(fuel.price).toLocaleString()} MMK/L, ${Number(fuel.stock).toLocaleString()} L left`
+                : `${fuel.name}: ${Number(fuel.stock).toLocaleString()} L left`).join(' · ')
             : 'No active fuel available';
         address.style.marginTop = '4px';
         status.style.marginTop = '6px';
@@ -1199,7 +1255,9 @@ body.customer-light-mode .customer-map-recenter-btn:hover {
         name.textContent = station.name;
         status.textContent = `Status: ${station.status}`;
         fuels.textContent = station.fuels.length
-            ? `Fuels: ${station.fuels.map(fuel => `${fuel.name} (${Number(fuel.price).toLocaleString()} MMK/L, ${Number(fuel.stock).toLocaleString()} L left)`).join(', ')}`
+            ? `Fuels: ${station.fuels.map(fuel => station.isOpen
+                ? `${fuel.name} (${Number(fuel.price).toLocaleString()} MMK/L, ${Number(fuel.stock).toLocaleString()} L left)`
+                : `${fuel.name} (${Number(fuel.stock).toLocaleString()} L left)`).join(', ')}`
             : 'Active fuels: None';
         tooltip.append(name, status, fuels);
         return tooltip;
