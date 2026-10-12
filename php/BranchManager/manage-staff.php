@@ -462,7 +462,7 @@ $activities = $stmt->fetchAll();
   }
 
   .activity-row{
-    display:flex; gap:14px; padding:13px 18px; border-bottom:1px solid rgba(255,255,255,0.05); font-size:13px;
+    display:flex; gap: 14px; padding:13px 18px; border-bottom:1px solid rgba(255,255,255,0.05); font-size:13px;
     transition: background 0.2s;
   }
   .activity-row:hover{background: rgba(255,255,255,0.01);}
@@ -507,6 +507,27 @@ $activities = $stmt->fetchAll();
     transition: background 0.2s, color 0.2s;
   }
   .btn-secondary-custom:hover { background: rgba(255,255,255,0.05); color: var(--slate-50); }
+
+  .table-actions-menu-wrap{position:relative; display:flex; justify-content:flex-end;}
+  .row-menu-toggle{
+    width:32px; height:32px; border-radius:8px; border:1px solid rgba(255,255,255,0.08); background:rgba(255,255,255,0.02);
+    color:var(--slate-300); cursor:pointer; display:inline-flex; align-items:center; justify-content:center; transition:all 0.2s ease;
+  }
+  .row-menu-toggle:hover{background:rgba(255,255,255,0.06); color:var(--slate-50); border-color:rgba(255,255,255,0.14);}
+  .row-action-menu{
+    position:absolute; right:0; top:calc(100% + 8px); min-width:180px; background:linear-gradient(180deg, rgba(15,23,42,0.98), rgba(15,23,42,0.9));
+    border:1px solid rgba(255,255,255,0.08); border-radius:12px; box-shadow:0 18px 40px rgba(2,6,23,0.45); padding:8px; display:none; z-index:50;
+  }
+  .row-action-menu.active{display:block;}
+  .row-action{
+    width:100%; border:none; background:transparent; color:var(--slate-200); text-align:left; padding:9px 10px; border-radius:8px; cursor:pointer;
+    font-size:13px; font-weight:600; display:flex; align-items:center; gap:8px; transition:background 0.2s ease, color 0.2s ease;
+  }
+  .row-action:hover{background:rgba(255,255,255,0.05); color:var(--slate-50);}
+  .row-action.danger{color:var(--red-400);}
+  .row-action.danger:hover{background:rgba(239,68,68,0.08); color:#fca5a5;}
+  .row-action.status-toggle{color:var(--slate-200);}
+  .row-action.status-toggle[style*="color:var(--mint-400)"]{color:var(--mint-400) !important;}
 </style>
 </head>
 <body>
@@ -614,13 +635,12 @@ $activities = $stmt->fetchAll();
       </div>
 
       <div class="tabs">
-        <button class="tab-btn active" id="tabbtn-create" onclick="showTab('create')">Create / Delete Staff Account</button>
-        <button class="tab-btn" id="tabbtn-status" onclick="showTab('status')">Active / Disable Staff Account</button>
+        <button class="tab-btn active" id="tabbtn-manage" onclick="showTab('manage')">Manage Staff Accounts</button>
         <button class="tab-btn" id="tabbtn-activity" onclick="showTab('activity')">View Staff Activity</button>
       </div>
 
-      <!-- TAB 1: CREATE / DELETE STAFF -->
-      <div class="tab-panel active" id="tab-create">
+      <!-- TAB 1: MANAGE STAFF ACCOUNTS -->
+      <div class="tab-panel active" id="tab-manage">
         <div class="toolbar">
           <div class="search">
             <i class="fa-solid fa-magnifying-glass"></i> 
@@ -629,12 +649,13 @@ $activities = $stmt->fetchAll();
         </div>
         <div class="panel">
           <table id="staff-directory-table">
-            <thead><tr><th>Staff</th><th>Email</th><th>Contact</th><th></th></tr></thead>
+            <thead><tr><th>Staff</th><th>Email</th><th>Contact</th><th>Account Status</th><th></th></tr></thead>
             <tbody>
               <?php
               $duty_class  = ['On Duty' => 'on', 'Off Duty' => 'off', 'Leave' => 'leave'];
               foreach ($staff as $s):
                 $staff_email = $s['email'] ?? '';
+                $on = (int)$s['is_active'] === 1;
               ?>
               <tr data-id="<?= (int)$s['staff_id'] ?>">
                 <td>
@@ -645,57 +666,47 @@ $activities = $stmt->fetchAll();
                 </td>
                 <td><?= $staff_email !== '' ? h($staff_email) : '<span style="color:var(--slate-400);">—</span>' ?></td>
                 <td><?= h($s['contact']) ?></td>
-               
-                <td class="actions">
-                  <a class="edit-action" data-id="<?= (int)$s['staff_id'] ?>" data-email="<?= h($staff_email) ?>">Edit</a>
-                  <a class="danger delete-action" data-id="<?= (int)$s['staff_id'] ?>" data-name="<?= h($s['full_name']) ?>" data-code="<?= h($s['staff_code']) ?>">Delete</a>
-                </td>
-              </tr>
-              <?php endforeach; ?>
-              <?php if (!$staff): ?>
-                <tr><td colspan="4" style="text-align:center; color:var(--slate-400); padding:22px;">No staff registered yet.</td></tr>
-              <?php endif; ?>
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <!-- TAB 2: ACTIVE / DISABLE STAFF -->
-      <div class="tab-panel" id="tab-status">
-        <div class="panel">
-          <table id="status-management-table">
-            <thead><tr><th>Staff</th><th>Contact</th><th>Account Status</th><th></th></tr></thead>
-            <tbody>
-              <?php foreach ($staff as $s): $on = (int)$s['is_active'] === 1; ?>
-              <tr data-id="<?= (int)$s['staff_id'] ?>">
                 <td>
-                  <div class="staff-name">
-                    <div class="mini-avatar"><?= h(initials($s['full_name'])) ?></div>
-                    <div><b><?= h($s['full_name']) ?></b><span>ID: <?= h($s['staff_code']) ?></span></div>
+                  <span class="status-pill <?= $on ? 'on' : 'off' ?>">
+                    <span class="d"></span>
+                    <?= $on ? 'Active' : 'Disabled' ?>
+                  </span>
+                </td>
+                <td class="actions">
+                  <div class="table-actions-menu-wrap">
+                    <button type="button" class="row-menu-toggle" aria-label="Open row actions" data-id="<?= (int)$s['staff_id'] ?>">
+                      <i class="fa-solid fa-ellipsis-vertical"></i>
+                    </button>
+                    <div class="row-action-menu" id="row-menu-<?= (int)$s['staff_id'] ?>">
+                      <button type="button" class="row-action edit-action" data-id="<?= (int)$s['staff_id'] ?>" data-email="<?= h($staff_email) ?>" data-name="<?= h($s['full_name']) ?>" data-contact="<?= h($s['contact']) ?>">
+                        <i class="fa-solid fa-pen"></i> Edit
+                      </button>
+                      <?php if ($on): ?>
+                        <button type="button" class="row-action status-toggle danger" data-action="disable" data-id="<?= (int)$s['staff_id'] ?>">
+                          <i class="fa-solid fa-user-slash"></i> Disable
+                        </button>
+                      <?php else: ?>
+                        <button type="button" class="row-action status-toggle" style="color:var(--mint-400)" data-action="activate" data-id="<?= (int)$s['staff_id'] ?>">
+                          <i class="fa-solid fa-user-check"></i> Activate
+                        </button>
+                      <?php endif; ?>
+                      <button type="button" class="row-action danger delete-action" data-id="<?= (int)$s['staff_id'] ?>" data-name="<?= h($s['full_name']) ?>" data-code="<?= h($s['staff_code']) ?>">
+                        <i class="fa-solid fa-trash"></i> Delete
+                      </button>
+                    </div>
                   </div>
                 </td>
-                <td><?= h($s['contact']) ?></td>
-                <td>
-                  <span class="status-pill <?= $on ? 'on' : 'off' ?>"><span class="d"></span> <?= $on ? 'Active' : 'Disabled' ?></span>
-                </td>
-                <td class="actions">
-                  <?php if ($on): ?>
-                    <a class="danger status-toggle" data-action="disable" data-id="<?= (int)$s['staff_id'] ?>">Disable</a>
-                  <?php else: ?>
-                    <a class="status-toggle" style="color:var(--mint-400)" data-action="activate" data-id="<?= (int)$s['staff_id'] ?>">Activate</a>
-                  <?php endif; ?>
-                </td>
               </tr>
               <?php endforeach; ?>
               <?php if (!$staff): ?>
-                <tr><td colspan="4" style="text-align:center; color:var(--slate-400); padding:22px;">No staff registered yet.</td></tr>
+                <tr><td colspan="5" style="text-align:center; color:var(--slate-400); padding:22px;">No staff registered yet.</td></tr>
               <?php endif; ?>
             </tbody>
           </table>
         </div>
       </div>
 
-      <!-- TAB 3: STAFF ACTIVITY LOG -->
+      <!-- TAB 2: STAFF ACTIVITY LOG -->
       <div class="tab-panel" id="tab-activity">
         <div class="panel">
           <?php if (!$activities): ?>
@@ -858,22 +869,141 @@ $activities = $stmt->fetchAll();
 
     function openDeleteModal(row) {
       pendingDeleteRow = row;
-      const name = row.querySelector('.delete-action')?.dataset.name || 'this staff member';
-      const code = row.querySelector('.delete-action')?.dataset.code || '';
+      const deleteAction = row.querySelector('.delete-action');
+      const name = deleteAction?.dataset.name || 'this staff member';
+      const code = deleteAction?.dataset.code || '';
       deleteMsg.innerHTML = `You are about to permanently remove <b>${name}</b>${code ? ` (<b>${code}</b>)` : ''}. This action cannot be undone.`;
       deleteModal.classList.add('active');
     }
+
     function closeDeleteModal() {
       deleteModal.classList.remove('active');
       pendingDeleteRow = null;
     }
+
+    function updateTotalMetrics() {
+      const totalStaff = document.querySelectorAll('#staff-directory-table tbody tr').length;
+      const totalActive = document.querySelectorAll('#staff-directory-table tbody .status-pill.on').length;
+      const totalDisabled = document.querySelectorAll('#staff-directory-table tbody .status-pill.off').length;
+
+      document.getElementById('stat-total').textContent = totalStaff;
+      document.getElementById('stat-active').textContent = totalActive;
+      document.getElementById('stat-disabled').textContent = totalDisabled;
+    }
+
+    function syncRowMenu(row, sid) {
+      const menu = document.getElementById('row-menu-' + sid);
+      if (!menu) return;
+
+      const name = row.querySelector('.staff-name b')?.textContent.trim() || '';
+      const email = (row.cells[1]?.textContent || '').trim();
+      const contact = (row.cells[2]?.textContent || '').trim();
+      const code = row.querySelector('.delete-action')?.dataset.code || '';
+      const isActive = row.querySelector('.status-pill')?.classList.contains('on');
+      
+      // Helper to safely escape attribute values
+      const esc = (str) => String(str || '').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+
+      menu.innerHTML = `
+        <button type="button" class="row-action edit-action" data-id="${sid}" data-email="${esc(email)}" data-name="${esc(name)}" data-contact="${esc(contact)}">
+          <i class="fa-solid fa-pen"></i> Edit
+        </button>
+        ${isActive ? `
+          <button type="button" class="row-action status-toggle danger" data-action="disable" data-id="${sid}">
+            <i class="fa-solid fa-user-slash"></i> Disable
+          </button>
+        ` : `
+          <button type="button" class="row-action status-toggle" style="color:var(--mint-400)" data-action="activate" data-id="${sid}">
+            <i class="fa-solid fa-user-check"></i> Activate
+          </button>
+        `}
+        <button type="button" class="row-action danger delete-action" data-id="${sid}" data-name="${esc(name)}" data-code="${esc(code)}">
+          <i class="fa-solid fa-trash"></i> Delete
+        </button>
+      `;
+    }
+
     deleteCancel.addEventListener('click', closeDeleteModal);
     deleteModal.addEventListener('click', (e) => { if (e.target === deleteModal) closeDeleteModal(); });
 
-    directoryTable.addEventListener('click', (e) => {
-      if (e.target.classList.contains('delete-action')) {
+    document.querySelectorAll('.row-menu-toggle').forEach(button => {
+      button.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const menu = document.getElementById('row-menu-' + button.dataset.id);
+        if (!menu) return;
+
+        const isOpen = menu.classList.contains('active');
+        document.querySelectorAll('.row-action-menu').forEach(m => m.classList.remove('active'));
+        if (!isOpen) {
+          menu.classList.add('active');
+        }
+      });
+    });
+
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest('.row-menu-toggle') && !e.target.closest('.row-action-menu')) {
+        document.querySelectorAll('.row-action-menu').forEach(m => m.classList.remove('active'));
+      }
+    });
+
+    directoryTable.addEventListener('click', async (e) => {
+      const deleteBtn = e.target.closest('.delete-action');
+      if (deleteBtn) {
         e.preventDefault();
-        openDeleteModal(e.target.closest('tr'));
+        openDeleteModal(deleteBtn.closest('tr'));
+        document.querySelectorAll('.row-action-menu').forEach(m => m.classList.remove('active'));
+        return;
+      }
+
+      const editBtn = e.target.closest('.edit-action');
+      if (editBtn) {
+        e.preventDefault();
+        const row = editBtn.closest('tr');
+        const sid = row.dataset.id || editBtn.dataset.id;
+        const name = editBtn.dataset.name || row.querySelector('.staff-name b').textContent.trim();
+        const email = editBtn.dataset.email || '';
+        const contact = editBtn.dataset.contact || row.cells[2].textContent.trim();
+
+        editTargetRow = row;
+        document.getElementById('staff-form-action').value = 'edit';
+        document.getElementById('staff-form-id').value = sid;
+        openModal(true, name, email, contact);
+        document.querySelectorAll('.row-action-menu').forEach(m => m.classList.remove('active'));
+        return;
+      }
+
+      const toggleBtn = e.target.closest('.status-toggle');
+      if (toggleBtn) {
+        e.preventDefault();
+        const row = toggleBtn.closest('tr');
+        const sid = row.dataset.id;
+        const action = toggleBtn.dataset.action;
+
+        const fd = new FormData();
+        fd.append('csrf', csrfToken);
+        fd.append('action', action);
+        fd.append('staff_id', sid);
+
+        try {
+          const res = await fetch('manage-staff.php', { method: 'POST', body: fd });
+          const data = await res.json();
+          if (!data.ok) { alert('Update failed: ' + (data.error || 'unknown')); return; }
+
+          const pill = row.querySelector('.status-pill');
+          if (action === 'disable') {
+            pill.className = 'status-pill off';
+            pill.innerHTML = '<span class="d"></span> Disabled';
+          } else {
+            pill.className = 'status-pill on';
+            pill.innerHTML = '<span class="d"></span> Active';
+          }
+
+          syncRowMenu(row, sid);
+          document.querySelectorAll('.row-action-menu').forEach(m => m.classList.remove('active'));
+          updateTotalMetrics();
+        } catch (err) {
+          alert('Network error: ' + err.message);
+        }
       }
     });
 
@@ -897,7 +1027,6 @@ $activities = $stmt->fetchAll();
         row.style.transform = 'translateX(-20px)';
         setTimeout(() => {
           row.remove();
-          document.querySelector(`#status-management-table tr[data-id="${sid}"]`)?.remove();
           updateTotalMetrics();
         }, 300);
       } catch (err) {
@@ -907,55 +1036,6 @@ $activities = $stmt->fetchAll();
         deleteConfirm.textContent = 'Delete Permanently';
       }
     });
-
-    // 6. Server-side Account Activation Status Changer
-    const statusTable = document.getElementById('status-management-table');
-    statusTable.addEventListener('click', async (e) => {
-      const toggleBtn = e.target.closest('.status-toggle');
-      if (!toggleBtn) return;
-      e.preventDefault();
-      const row = toggleBtn.closest('tr');
-      const sid = toggleBtn.dataset.id;
-      const action = toggleBtn.getAttribute('data-action');
-
-      const fd = new FormData();
-      fd.append('csrf', csrfToken);
-      fd.append('action', action);
-      fd.append('staff_id', sid);
-      try {
-        const res = await fetch('manage-staff.php', { method: 'POST', body: fd });
-        const data = await res.json();
-        if (!data.ok) { alert('Update failed: ' + (data.error || 'unknown')); return; }
-
-        const pill = row.querySelector('.status-pill');
-        if (action === 'disable') {
-          pill.className = 'status-pill off';
-          pill.innerHTML = '<span class="d"></span> Disabled';
-          toggleBtn.textContent = 'Activate';
-          toggleBtn.style.color = 'var(--mint-400)';
-          toggleBtn.setAttribute('data-action', 'activate');
-          toggleBtn.classList.remove('danger');
-        } else {
-          pill.className = 'status-pill on';
-          pill.innerHTML = '<span class="d"></span> Active';
-          toggleBtn.textContent = 'Disable';
-          toggleBtn.style.color = '';
-          toggleBtn.setAttribute('data-action', 'disable');
-          toggleBtn.classList.add('danger');
-        }
-        updateTotalMetrics();
-      } catch (err) { alert('Network error: ' + err.message); }
-    });
-
-    function updateTotalMetrics() {
-      const totalStaff = document.querySelectorAll('#staff-directory-table tbody tr').length;
-      const totalActive = document.querySelectorAll('#status-management-table tbody .status-pill.on').length;
-      const totalDisabled = document.querySelectorAll('#status-management-table tbody .status-pill.off').length;
-      
-      document.getElementById('stat-total').textContent = totalStaff;
-      document.getElementById('stat-active').textContent = totalActive;
-      document.getElementById('stat-disabled').textContent = totalDisabled;
-    }
 
     // 7. Interactive Form Dialog Logic
     const modal = document.getElementById('staff-modal');
@@ -996,33 +1076,55 @@ $activities = $stmt->fetchAll();
     closeBtn.addEventListener('click', closeModal);
     modal.addEventListener('click', (e) => { if (e.target === modal) closeModal(); });
 
-    // Edit actions
-    directoryTable.addEventListener('click', (e) => {
-      if (e.target.classList.contains('edit-action')) {
-        e.preventDefault();
-        editTargetRow = e.target.closest('tr');
-        const name    = editTargetRow.querySelector('.staff-name b').textContent.trim();
-        const email   = e.target.dataset.email || '';
-        // Contact is now column index 2 (Staff | Email | Contact | Status | Actions)
-        const contact = editTargetRow.cells[2].textContent.trim();
-
-        document.getElementById('staff-form-action').value = 'edit';
-        document.getElementById('staff-form-id').value = editTargetRow.dataset.id;
-        openModal(true, name, email, contact);
-      }
-    });
-
     // Server-side Form Submit
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
-      const fd = new FormData(form);
+      const action = document.getElementById('staff-form-action').value;
+      const staffId = document.getElementById('staff-form-id').value;
+      const fullName = document.getElementById('staff-name-input').value.trim();
+      const email = document.getElementById('staff-email-input').value.trim();
+      const contact = document.getElementById('staff-contact-input').value.trim();
+      
+      if (!fullName) { alert('Full name is required'); return; }
+      if (!contact) { alert('Contact is required'); return; }
+      
+      const fd = new FormData();
+      fd.append('csrf', csrfToken);
+      fd.append('action', action);
+      fd.append('full_name', fullName);
+      fd.append('email', email);
+      fd.append('contact', contact);
+      if (action === 'edit') { fd.append('staff_id', staffId); }
+      
       try {
         const res = await fetch('manage-staff.php', { method: 'POST', body: fd });
         const data = await res.json();
         if (!data.ok) { alert('Save failed: ' + (data.error || 'unknown')); return; }
-        // simplest reliable path: reload the page so PHP re-renders fresh data
+        
+        if (action === 'edit' && editTargetRow) {
+          // Update the table row with new values
+          const nameCell = editTargetRow.querySelector('.staff-name b');
+          const emailCell = editTargetRow.cells[1];
+          const contactCell = editTargetRow.cells[2];
+          
+          if (nameCell) nameCell.textContent = fullName;
+          if (emailCell) emailCell.innerHTML = email ? email : '<span style="color:var(--slate-400);">—</span>';
+          if (contactCell) contactCell.textContent = contact;
+          
+          // Update the row menu data attributes
+          const menuId = 'row-menu-' + editTargetRow.dataset.id;
+          const editBtn = document.querySelector('.edit-action[data-id="' + editTargetRow.dataset.id + '"]');
+          if (editBtn) {
+            editBtn.dataset.name = fullName;
+            editBtn.dataset.email = email;
+            editBtn.dataset.contact = contact;
+          }
+          
+          syncRowMenu(editTargetRow, editTargetRow.dataset.id);
+        }
+        
         closeModal();
-        window.location.reload();
+        updateTotalMetrics();
       } catch (err) { alert('Network error: ' + err.message); }
     });
   });
