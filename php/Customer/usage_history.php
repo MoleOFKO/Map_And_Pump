@@ -6,11 +6,14 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
 require_once __DIR__ . '/../conn.php';
 require_once __DIR__ . '/../usage_history_schema.php';
 require_once __DIR__ . '/../feedback_schema.php';
+require_once __DIR__ . '/../loyalty_points.php';
 
 $userId = (int) ($_SESSION['user_id'] ?? 0);
 $usageRows = [];
 $usageHistoryReady = map_pump_usage_history_schema_ready($pdo);
 $feedbackReady = map_pump_feedback_schema_ready($pdo);
+// Best-effort: add points_earned / points_redeemed / discount_mmk if missing.
+loyalty_schema_ready($pdo);
 
 if ($userId > 0 && $usageHistoryReady) {
     try {
@@ -21,7 +24,10 @@ if ($userId > 0 && $usageHistoryReady) {
                     CASE WHEN s.latitude IS NOT NULL AND s.longitude IS NOT NULL
                         THEN CONCAT(s.latitude, \', \', s.longitude) ELSE s.address END AS station_location,
                     o.oil_name, c.car_plate_number,
-                    COALESCE(fb.feedback_count, 0) AS feedback_count, fb.latest_rating
+                    COALESCE(fb.feedback_count, 0) AS feedback_count, fb.latest_rating,
+                    COALESCE(uh.points_earned, 0) AS points_earned,
+                    COALESCE(uh.points_redeemed, 0) AS points_redeemed,
+                    COALESCE(uh.discount_mmk, 0) AS discount_mmk
              FROM usage_history uh
              LEFT JOIN branches s ON s.branch_id = uh.station_id
              LEFT JOIN oil_types o ON o.oil_type_id = uh.oil_type_id
@@ -39,8 +45,37 @@ if ($userId > 0 && $usageHistoryReady) {
         $stmt->execute([$userId]);
         $usageRows = $stmt->fetchAll(PDO::FETCH_ASSOC);
     } catch (Throwable $e) {
-        error_log('Failed to load customer usage history: ' . $e->getMessage());
-        $usageRows = [];
+        // Fallback if loyalty columns are not present yet.
+        error_log('Failed to load customer usage history (with loyalty): ' . $e->getMessage());
+        try {
+            $stmt = $pdo->prepare(
+                'SELECT uh.usage_id, uh.booking_id, uh.qr_refrence_code, uh.filled_liters, uh.price_per_litre,
+                    uh.staff_user_id,
+                    uh.total_cost, uh.status, uh.filled_at, s.branch_name AS station_name,
+                    CASE WHEN s.latitude IS NOT NULL AND s.longitude IS NOT NULL
+                        THEN CONCAT(s.latitude, \', \', s.longitude) ELSE s.address END AS station_location,
+                    o.oil_name, c.car_plate_number,
+                    COALESCE(fb.feedback_count, 0) AS feedback_count, fb.latest_rating
+                 FROM usage_history uh
+                 LEFT JOIN branches s ON s.branch_id = uh.station_id
+                 LEFT JOIN oil_types o ON o.oil_type_id = uh.oil_type_id
+                 LEFT JOIN car_license c ON c.car_license_id = uh.car_license_id
+                 LEFT JOIN (
+                     SELECT usage_id, COUNT(*) AS feedback_count, MAX(rating) AS latest_rating
+                     FROM feedback
+                     WHERE usage_id IS NOT NULL
+                     GROUP BY usage_id
+                 ) fb ON fb.usage_id = uh.usage_id
+                 WHERE uh.user_id = ?
+                   AND LOWER(uh.status) = \'filled\'
+                 ORDER BY uh.filled_at DESC, uh.usage_id DESC'
+            );
+            $stmt->execute([$userId]);
+            $usageRows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        } catch (Throwable $e2) {
+            error_log('Failed to load customer usage history: ' . $e2->getMessage());
+            $usageRows = [];
+        }
     }
 }
 
@@ -110,15 +145,16 @@ include 'share_header.php';
                     <th class="pb-3 border-0">STATION LOCATION</th>
                     <th class="pb-3 border-0">VOLUME REGISTERED</th>
                     <th class="pb-3 border-0">FUEL CLASSIFICATION</th>
+                    <th class="pb-3 border-0">LOYALTY</th>
                     <th class="pb-3 border-0">STATUS STATE</th>
                     <th class="pb-3 border-0 text-end">FEEDBACK</th>
                 </tr>
             </thead>
             <tbody id="usage-log-body" class="text-white" style="font-size:13px; font-weight:500;">
                 <?php if (!$usageHistoryReady): ?>
-                    <tr><td colspan="7" class="py-4 text-center text-secondary">Usage history table is not available yet.</td></tr>
+                    <tr><td colspan="8" class="py-4 text-center text-secondary">Usage history table is not available yet.</td></tr>
                 <?php elseif (!$usageRows): ?>
-                    <tr><td colspan="7" class="py-4 text-center text-secondary">No filled usage history yet.</td></tr>
+                    <tr><td colspan="8" class="py-4 text-center text-secondary">No filled usage history yet.</td></tr>
                 <?php else: ?>
                     <?php foreach ($usageRows as $usage): ?>
                         <?php
@@ -135,6 +171,20 @@ include 'share_header.php';
                             $feedbackCount = (int) ($usage['feedback_count'] ?? 0);
                             $latestRating = (int) ($usage['latest_rating'] ?? 0);
                             $feedbackModalId = 'feedbackModal' . (int) $usage['usage_id'];
+                            $ptsEarned = (int) ($usage['points_earned'] ?? 0);
+                            $ptsRedeemed = (int) ($usage['points_redeemed'] ?? 0);
+                            $discountMmk = (float) ($usage['discount_mmk'] ?? 0);
+                            $loyaltyBits = [];
+                            if ($ptsEarned > 0) {
+                                $loyaltyBits[] = '+' . $ptsEarned . ' earned';
+                            }
+                            if ($ptsRedeemed > 0) {
+                                $loyaltyBits[] = '−' . $ptsRedeemed . ' used';
+                            }
+                            if ($discountMmk > 0) {
+                                $loyaltyBits[] = number_format($discountMmk, 0) . ' MMK off';
+                            }
+                            $loyaltyText = $loyaltyBits !== [] ? implode(' · ', $loyaltyBits) : '—';
                         ?>
                         <tr class="border-bottom border-secondary border-opacity-5" data-date="<?php echo htmlspecialchars($date); ?>">
                             <td class="py-3 font-semibold text-white">TXN-<?php echo (int) $usage['usage_id']; ?>-MP</td>
@@ -142,6 +192,7 @@ include 'share_header.php';
                             <td class="py-3"><?php echo htmlspecialchars($stationText); ?></td>
                             <td class="py-3"><?php echo htmlspecialchars($liters); ?> Liters</td>
                             <td class="py-3"><span class="fuel-tag <?php echo htmlspecialchars(customer_usage_fuel_class($oilName)); ?>"><?php echo htmlspecialchars($oilName); ?></span></td>
+                            <td class="py-3"><span class="text-warning" style="font-size:12px;"><?php echo htmlspecialchars($loyaltyText, ENT_QUOTES, 'UTF-8'); ?></span></td>
                             <td class="py-3"><span class="status-pill active" style="font-size:9px;"><?php echo htmlspecialchars($status === 'Filled' ? 'Delivered' : $status); ?></span></td>
                             <td class="py-3 text-end">
                                 <?php if (!empty($usage['staff_user_id'])): ?>
@@ -172,6 +223,20 @@ include 'share_header.php';
             $modalStation = trim((string)($usage['station_name'] ?? 'Unknown station'));
             $modalFuel = (string)($usage['oil_name'] ?? 'Fuel');
             $modalLiters = rtrim(rtrim(number_format((float)($usage['filled_liters'] ?? 0), 1, '.', ''), '0'), '.');
+            $modalPtsEarned = (int) ($usage['points_earned'] ?? 0);
+            $modalPtsRedeemed = (int) ($usage['points_redeemed'] ?? 0);
+            $modalDiscount = (float) ($usage['discount_mmk'] ?? 0);
+            $modalLoyalty = [];
+            if ($modalPtsEarned > 0) {
+                $modalLoyalty[] = '+' . $modalPtsEarned . ' pts earned';
+            }
+            if ($modalPtsRedeemed > 0) {
+                $modalLoyalty[] = '−' . $modalPtsRedeemed . ' pts used';
+            }
+            if ($modalDiscount > 0) {
+                $modalLoyalty[] = number_format($modalDiscount, 0) . ' MMK off';
+            }
+            $modalLoyaltyText = $modalLoyalty !== [] ? implode(' · ', $modalLoyalty) : '';
         ?>
         <div class="modal fade" id="<?php echo htmlspecialchars($feedbackModalId, ENT_QUOTES, 'UTF-8'); ?>" tabindex="-1" aria-hidden="true" data-bs-backdrop="true">
             <div class="modal-dialog modal-dialog-centered px-3">
@@ -181,6 +246,9 @@ include 'share_header.php';
                             <div>
                                 <h5 class="modal-title text-white fw-bold">Fuel Fill Feedback</h5>
                                 <p class="text-secondary mb-0 small"><?php echo htmlspecialchars($modalStation . ' / ' . $modalFuel . ' / ' . $modalLiters . ' L', ENT_QUOTES, 'UTF-8'); ?></p>
+                                <?php if ($modalLoyaltyText !== ''): ?>
+                                    <p class="text-warning mb-0 small mt-1"><?php echo htmlspecialchars($modalLoyaltyText, ENT_QUOTES, 'UTF-8'); ?></p>
+                                <?php endif; ?>
                             </div>
                             <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Skip feedback"></button>
                         </div>
