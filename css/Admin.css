@@ -2253,6 +2253,10 @@ body.background_color.light-mode .table-dark-custom {
     --bs-table-border-color: rgba(11, 94, 215, 0.12);
 }
 
+body.background_color.light-mode .user-table-scroll thead th {
+    background: var(--glass-bg);
+}
+
 body.background_color.light-mode .table-dark-custom tbody tr {
     border-bottom-color: rgba(11, 94, 215, 0.1);
 }
