@@ -40,13 +40,15 @@ if ($hqRoleId <= 0) {
     hq_redirect('view_hq_and_user_account.php');
 }
 
+// Match HQ accounts on any role slot (base / business / current). Older rows
+// sometimes only populate current_role_id after role switching.
 $targetQuery = $conn->prepare(
     "SELECT h.company_name, owner.user_id, owner.email
      FROM headquarter h
      LEFT JOIN (
          SELECT u.headquarter_id, MIN(u.user_id) AS owner_user_id
          FROM users u
-         WHERE u.role_id = ? OR u.business_role_id = ?
+         WHERE u.role_id = ? OR u.business_role_id = ? OR u.current_role_id = ?
          GROUP BY u.headquarter_id
      ) owner_link ON owner_link.headquarter_id = h.headquarter_id
      LEFT JOIN users owner ON owner.user_id = owner_link.owner_user_id
@@ -59,7 +61,7 @@ if (!$targetQuery) {
     hq_redirect('view_hq_and_user_account.php');
 }
 
-$targetQuery->bind_param('iii', $hqRoleId, $hqRoleId, $headquarterId);
+$targetQuery->bind_param('iiii', $hqRoleId, $hqRoleId, $hqRoleId, $headquarterId);
 $targetQuery->execute();
 $target = $targetQuery->get_result()?->fetch_assoc();
 $targetQuery->close();
@@ -98,23 +100,30 @@ $notification = !empty($target['email'])
 try {
     $conn->begin_transaction();
 
-    // Update only HQ-role accounts under this HQ. Either role column can identify an HQ account.
+    // Update HQ-role accounts under this HQ across all role slots used by the app.
     $statusUpdate = $conn->prepare(
         'UPDATE users
          SET status = ?, updated_at = NOW()
          WHERE headquarter_id = ?
-           AND (role_id = ? OR business_role_id = ?)'
+           AND (role_id = ? OR business_role_id = ? OR current_role_id = ?)'
     );
     if (!$statusUpdate) {
         throw new RuntimeException('Could not prepare the HQ status update: ' . $conn->error);
     }
 
-    $statusUpdate->bind_param('siii', $newStatus, $headquarterId, $hqRoleId, $hqRoleId);
+    $statusUpdate->bind_param('siiii', $newStatus, $headquarterId, $hqRoleId, $hqRoleId, $hqRoleId);
     if (!$statusUpdate->execute()) {
         throw new RuntimeException('Could not update the HQ account status: ' . $statusUpdate->error);
     }
     $affected = $statusUpdate->affected_rows;
     $statusUpdate->close();
+
+    // No matching HQ-role users means the UI status badge cannot change.
+    if ($affected <= 0 && empty($target['user_id'])) {
+        throw new RuntimeException(
+            'No HQ-role user is linked to this headquarters, so the account status could not be changed.'
+        );
+    }
 
     if ($historyReady) {
         // Live schema (db.sql): hq_account_actions has no user_id column.

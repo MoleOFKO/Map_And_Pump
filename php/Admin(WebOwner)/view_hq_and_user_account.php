@@ -97,7 +97,7 @@ if (hq_db_available() && hq_registry_schema_ready()) {
         LEFT JOIN (
             SELECT u.headquarter_id, MIN(u.user_id) AS owner_user_id, COUNT(*) AS user_count
             FROM users u
-            WHERE (u.role_id = 3 OR u.business_role_id = 3)
+            WHERE (u.role_id = {$hqRoleId} OR u.business_role_id = {$hqRoleId} OR u.current_role_id = {$hqRoleId})
             GROUP BY headquarter_id
         ) user_counts ON user_counts.headquarter_id = h.headquarter_id
         LEFT JOIN users owner ON owner.user_id = user_counts.owner_user_id

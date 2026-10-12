@@ -4,6 +4,40 @@
  */
 require_once __DIR__ . '/hq_account_common.php';
 
+/**
+ * Resolve the Customer role_id from the live roles table (fallback: 6).
+ */
+function customer_role_id(): int
+{
+    global $conn;
+    static $roleId = null;
+    if ($roleId !== null) {
+        return $roleId;
+    }
+
+    $roleId = 6;
+    if (!hq_db_available()) {
+        return $roleId;
+    }
+
+    try {
+        $statement = $conn->prepare(
+            "SELECT role_id FROM roles WHERE LOWER(TRIM(role_name)) = 'customer' ORDER BY role_id ASC LIMIT 1"
+        );
+        if ($statement && $statement->execute()) {
+            $row = $statement->get_result()?->fetch_assoc();
+            if ($row && (int) ($row['role_id'] ?? 0) > 0) {
+                $roleId = (int) $row['role_id'];
+            }
+        }
+        $statement?->close();
+    } catch (Throwable $e) {
+        // Keep the historical default of 6.
+    }
+
+    return $roleId;
+}
+
 function customer_account_rows(string $search = '', string $status = '', string $expiryFilter = ''): array
 {
     global $conn;
@@ -13,11 +47,12 @@ function customer_account_rows(string $search = '', string $status = '', string 
         return $rows;
     }
 
+    $customerRoleId = customer_role_id();
     $where = [
-        "u.role_id = 6",
+        "u.role_id = {$customerRoleId}",
         "LOWER(TRIM(base_role.role_name)) = 'customer'",
-        '(u.business_role_id IS NULL OR u.business_role_id = 6)',
-        '(u.current_role_id IS NULL OR u.current_role_id = 6)',
+        "(u.business_role_id IS NULL OR u.business_role_id = {$customerRoleId})",
+        "(u.current_role_id IS NULL OR u.current_role_id = {$customerRoleId})",
         '(' . hq_manageable_status_sql('u.status') . " OR LOWER(TRIM(u.status)) = 'pending_verification')",
     ];
     $params = [];
