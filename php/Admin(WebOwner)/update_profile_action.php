@@ -14,6 +14,9 @@ $user = admin_require_admin();
 $userName = trim(preg_replace('/\s+/', ' ', (string) ($_POST['user_name'] ?? '')) ?? '');
 $email = strtolower(trim((string) ($_POST['email'] ?? '')));
 $userId = (int) $user['user_id'];
+$oldEmail = trim((string) ($user['email'] ?? ''));
+$emailChanged = strcasecmp($oldEmail, $email) !== 0;
+$profileChanged = trim((string) ($user['user_name'] ?? '')) !== $userName;
 
 if ($userName === '' || strlen($userName) > 225) {
     admin_flash('danger', 'Please provide a username/display name no longer than 225 characters.');
@@ -43,7 +46,17 @@ if (!hq_db_available() && $pdo instanceof PDO) {
     $_SESSION['user_name'] = $userName;
     $_SESSION['user_email'] = $email;
     admin_record_log($userId, 'Updated admin profile details.');
-    admin_flash('success', 'Profile details were updated successfully.');
+    $notice = null;
+    if ($emailChanged || $profileChanged) {
+        $notice = mail_send_account_notice($oldEmail, [
+            'kind' => 'security',
+            'action' => $emailChanged ? 'email_changed' : 'profile_changed',
+        ]);
+    }
+    $noticeSuffix = $notice === null ? '' : (!empty($notice['sent'])
+        ? ' A notice was sent to the previous account email.'
+        : ' Profile details were saved, but an email notice could not be delivered to the previous address.');
+    admin_flash('success', 'Profile details were updated successfully.' . $noticeSuffix);
     admin_redirect('edit_profile.php');
 }
 
@@ -80,5 +93,15 @@ $statement->close();
 $_SESSION['user_name'] = $userName;
 $_SESSION['user_email'] = $email;
 admin_record_log($userId, 'Updated admin profile details.');
-admin_flash('success', 'Profile details were updated successfully.');
+$notice = null;
+if ($emailChanged || $profileChanged) {
+    $notice = mail_send_account_notice($oldEmail, [
+        'kind' => 'security',
+        'action' => $emailChanged ? 'email_changed' : 'profile_changed',
+    ]);
+}
+$noticeSuffix = $notice === null ? '' : (!empty($notice['sent'])
+    ? ' A notice was sent to the previous account email.'
+    : ' Profile details were saved, but an email notice could not be delivered to the previous address.');
+admin_flash('success', 'Profile details were updated successfully.' . $noticeSuffix);
 admin_redirect('edit_profile.php');

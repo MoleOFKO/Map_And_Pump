@@ -11,14 +11,6 @@ require_once __DIR__ . '/../loyalty_points.php';
 $reward_points = loyalty_get_balance($pdo, (int) $_SESSION['user_id']);
 $reward_tier_code = loyalty_resolve_tier($reward_points);
 $reward_tier = loyalty_tier_label($reward_tier_code);
-$tier_pool_remaining = null;
-try {
-    if (defined('LOYALTY_CM_TIER_POOL') && LOYALTY_CM_TIER_POOL) {
-        $tier_pool_remaining = loyalty_get_pool_remaining($pdo, $reward_tier_code);
-    }
-} catch (Throwable $e) {
-    $tier_pool_remaining = null;
-}
 ?>
 
 <div class="customer-dashboard">
@@ -57,13 +49,7 @@ try {
             <p class="customer-reward-tier customer-reward-tier-<?php echo htmlspecialchars(strtolower($reward_tier_code), ENT_QUOTES, 'UTF-8'); ?> mb-0 mt-3">
                 <i class="bi bi-award-fill me-1"></i><?php echo htmlspecialchars($reward_tier, ENT_QUOTES, 'UTF-8'); ?> tier
             </p>
-            <?php if ($tier_pool_remaining !== null): ?>
-            <p class="text-secondary mb-0 mt-2" style="font-size:12px;">
-                Tier pool remaining this month:
-                <strong class="text-sky-400"><?php echo number_format((float) $tier_pool_remaining, 0); ?> MMK</strong>
-            </p>
-            <?php endif; ?>
-            <p class="text-secondary mb-0 mt-1" style="font-size:12px;">3 points per successful external fill · redeem up to 20 points per fill (max 20% off). Final discount depends on tier pool at fill time.</p>
+            <p class="text-secondary mb-0 mt-1" style="font-size:12px;">3 points per successful external fill · 10 points = 100 MMK off · up to 20 points per fill.</p>
         </div>
     </div>
 </div>

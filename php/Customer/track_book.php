@@ -3,18 +3,12 @@ include 'share_header.php';
 require_once __DIR__ . '/../business_scope.php';
 require_once __DIR__ . '/../booking_rules.php';
 require_once __DIR__ . '/../loyalty_points.php';
+$billingReady = loyalty_countermeasures_schema_ready($pdo);
+$billingMonth = loyalty_current_year_month();
 $availableOilQuota = max(0.0, (float) ($_SESSION['oil_remaining'] ?? (((float) ($_SESSION['oil_limit'] ?? 35.0)) - ((float) ($_SESSION['oil_used'] ?? 0.0)))));
 $loyaltyBalance = loyalty_get_balance($pdo, (int) ($_SESSION['user_id'] ?? 0));
 $loyaltyTierCode = loyalty_resolve_tier($loyaltyBalance);
 $loyaltyTierLabel = loyalty_tier_label($loyaltyTierCode);
-$loyaltyPoolRemaining = null;
-try {
-    if (defined('LOYALTY_CM_TIER_POOL') && LOYALTY_CM_TIER_POOL) {
-        $loyaltyPoolRemaining = loyalty_get_pool_remaining($pdo, $loyaltyTierCode);
-    }
-} catch (Throwable $e) {
-    $loyaltyPoolRemaining = null;
-}
 
 function map_pump_station_coordinates(string $location): ?array
 {
@@ -35,11 +29,18 @@ function map_pump_station_coordinates(string $location): ?array
 $customerStationsData = [];
 try {
     $latestInventorySql = map_pump_latest_station_inventory_sql();
-    $stationStmt = $pdo->query(
+    $monthlyFeePaidSql = $billingReady
+        ? "EXISTS (
+                SELECT 1 FROM company_loyalty_station_fees fee
+                INNER JOIN station_business_scope sbs ON sbs.headquarter_id = fee.headquarter_id
+                WHERE sbs.station_id = b.branch_id AND fee.station_id = b.branch_id AND fee.year_month = ?
+            )"
+        : '0';
+    $stationStmt = $pdo->prepare(
         "SELECT b.branch_id AS station_id, b.branch_name AS station_name,
                 CASE WHEN b.latitude IS NOT NULL AND b.longitude IS NOT NULL
                     THEN CONCAT(b.latitude, ', ', b.longitude) ELSE '' END AS location,
-                b.address AS station_address, b.status,
+                b.address AS station_address, b.status, {$monthlyFeePaidSql} AS monthly_fee_paid,
                 CASE WHEN b.is_24hr = 1
                            OR b.opening_time IS NULL
                            OR b.closing_time IS NULL
@@ -63,6 +64,7 @@ try {
          WHERE LOWER(COALESCE(b.status, 'active')) <> 'closed'
          ORDER BY b.branch_id ASC, ot.oil_name ASC"
     );
+    $stationStmt->execute($billingReady ? [$billingMonth] : []);
     $stationsById = [];
     foreach ($stationStmt->fetchAll(PDO::FETCH_ASSOC) as $stationRow) {
         $stationId = (int)($stationRow['station_id'] ?? 0);
@@ -77,7 +79,11 @@ try {
             if ($stationStatus === '') {
                 $stationStatus = 'Active';
             }
-            $isStationActive = strcasecmp($stationStatus, 'Active') === 0;
+            $feePaid = (int) ($stationRow['monthly_fee_paid'] ?? 0) === 1;
+            $isStationActive = strcasecmp($stationStatus, 'Active') === 0 && $feePaid;
+            if (!$feePaid && strcasecmp($stationStatus, 'Active') === 0) {
+                $stationStatus = 'Paused — monthly fee unpaid';
+            }
             $isOpen = (int)($stationRow['is_open'] ?? 0) === 1;
             $stationsById[$stationId] = [
                 'id' => $stationId,
@@ -87,6 +93,7 @@ try {
                 'lng' => $coords[1],
                 'status' => $stationStatus,
                 'isActive' => $isStationActive,
+                'monthlyFeePaid' => $feePaid,
                 'isOpen' => $isOpen,
                 'fuels' => [],
                 'isBookable' => false,
@@ -628,11 +635,8 @@ body.customer-light-mode .customer-map-recenter-btn:hover {
                 <small class="text-secondary d-block mt-2">
                     Balance: <strong class="text-warning"><?php echo (int) $loyaltyBalance; ?></strong> pts
                     · <?php echo htmlspecialchars($loyaltyTierLabel, ENT_QUOTES, 'UTF-8'); ?> tier.
-                    <?php if ($loyaltyPoolRemaining !== null): ?>
-                    Pool left: <strong class="text-sky-400"><?php echo number_format((float) $loyaltyPoolRemaining, 0); ?> MMK</strong>.
-                    <?php endif; ?>
-                    Up to 20 pts per fill (max 20% off). Points are deducted only when staff confirms the fill.
-                    Final discount depends on tier pool at fill time.
+                    10 points = <?php echo (int) (10 * LOYALTY_MMK_PER_POINT); ?> MMK off.
+                    Up to 20 points per fill. Only enough points to cover the bill are deducted when staff confirms the fill.
                 </small>
                 <small id="loyalty-discount-estimate" class="text-sky-400 d-block mt-1"></small>
             </div>
@@ -1292,10 +1296,7 @@ body.customer-light-mode .customer-map-recenter-btn:hover {
     }
 
     const loyaltyBalanceClient = <?php echo (int) $loyaltyBalance; ?>;
-    const LOYALTY_PCT_PER_LITER = <?php echo json_encode((float) LOYALTY_PCT_PER_LITER); ?>;
-    const LOYALTY_PCT_PER_UNIT_CAP = <?php echo json_encode((float) LOYALTY_PCT_PER_UNIT_CAP); ?>;
-    const LOYALTY_MAX_DISCOUNT_PCT = <?php echo json_encode((float) LOYALTY_MAX_DISCOUNT_PCT); ?>;
-    const LOYALTY_REDEEM_UNIT = <?php echo (int) LOYALTY_REDEEM_UNIT_POINTS; ?>;
+    const LOYALTY_MMK_PER_POINT = <?php echo json_encode((float) LOYALTY_MMK_PER_POINT); ?>;
 
     function updateLoyaltyEstimate() {
         const estimateEl = document.getElementById('loyalty-discount-estimate');
@@ -1308,12 +1309,10 @@ body.customer-light-mode .customer-map-recenter-btn:hover {
             estimateEl.textContent = '';
             return;
         }
-        const units = points / LOYALTY_REDEEM_UNIT;
-        const rawPctPerUnit = Math.min(LOYALTY_PCT_PER_UNIT_CAP, quantity * LOYALTY_PCT_PER_LITER);
-        const discountPct = Math.min(LOYALTY_MAX_DISCOUNT_PCT, rawPctPerUnit * units);
         const totalCost = quantity * Number(fuel.price);
-        const discountMmk = Math.min(totalCost * (LOYALTY_MAX_DISCOUNT_PCT / 100), totalCost * (discountPct / 100));
-        estimateEl.textContent = `Est. ~${discountPct.toFixed(1)}% off (~${Math.round(discountMmk).toLocaleString()} MMK) on this fill. Final amount uses liters staff actually fill.`;
+        const pointsToUse = Math.min(points, Math.floor(totalCost / LOYALTY_MMK_PER_POINT));
+        const discountMmk = Math.min(totalCost, pointsToUse * LOYALTY_MMK_PER_POINT);
+        estimateEl.textContent = `Estimated ${Math.round(discountMmk).toLocaleString()} MMK off using ${pointsToUse} points. Final discount uses the liters staff actually fill and cannot exceed the bill.`;
     }
 
     document.getElementById('loyalty-points-select')?.addEventListener('change', updateLoyaltyEstimate);

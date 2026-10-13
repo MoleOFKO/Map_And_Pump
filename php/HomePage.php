@@ -22,11 +22,11 @@ require __DIR__ . '/partials/nav.php';
         <p id="project-consent-description">MAP &amp; PUMP is a student project for demonstration and testing. It is not a production service and must not be used for real fuel bookings, payments, business decisions, or emergency information.</p>
         <div class="project-consent__warning">
             <i class="fa-solid fa-shield-halved" aria-hidden="true"></i>
-            <p><strong>Do not enter real personal or sensitive data.</strong> Use made-up test names, email addresses, phone numbers, vehicle or licence numbers, company details, payment receipts, and documents only.</p>
+            <p><strong>Use fictional information in project fields.</strong> You may provide an email address you can access for registration, verification, and essential account, security, invitation, or request-status notices. Do not enter other real personal or sensitive information, payment details, or documents.</p>
         </div>
         <label class="project-consent__check" for="project-consent-checkbox">
             <input id="project-consent-checkbox" type="checkbox">
-            <span>I understand this is a test project and agree not to submit real personal or sensitive information.</span>
+            <span>I understand this is a school demo. I may use an accessible email for account notices and will use fictional information for all other fields.</span>
         </label>
         <p class="project-consent__legal">Read the <a href="/php/TermsOfService.php" target="_blank" rel="noopener">Terms of Service</a> and <a href="/php/PrivacyPolicy.php" target="_blank" rel="noopener">Privacy Policy</a>.</p>
         <div class="project-consent__actions">

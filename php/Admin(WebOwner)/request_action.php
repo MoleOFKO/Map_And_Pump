@@ -306,16 +306,11 @@ try {
     $notification = request_send_notification($recipientEmail, '', '', [
         'kind' => 'request',
         'action' => $action === 'approve' ? 'approve' : 'reject',
-        'account_label' => trim((string) ($target['sender_entity'] ?? '')) !== ''
-            ? (string) $target['sender_entity'] . ' (' . (string) $target['reference_code'] . ')'
-            : (string) $target['reference_code'],
         'reason' => $action === 'approve' ? '' : $reason,
         'effect' => $action === 'approve'
             ? 'Your request was approved in Map & Pump.'
-            : 'Your request was not approved. Review the reason below if one was provided.',
-        'extra_lines' => [
-            'Reference code: ' . (string) $target['reference_code'],
-        ],
+            : 'Your request was not approved. Sign in to review the request details.',
+        'reference_code' => (string) $target['reference_code'],
     ]);
     $subject = (string) ($notification['subject'] ?? sprintf('Map & Pump request %s: %s', $target['reference_code'], ucfirst($newStatus)));
 

@@ -54,7 +54,13 @@ try {
     $updateStmt = $pdo->prepare('UPDATE users SET hashed_password = ?, updated_at = NOW() WHERE user_id = ?');
     $updateStmt->execute([$newHash, $userId]);
 
-    $_SESSION['flash_message'] = 'Password updated successfully.';
+    $notice = mail_send_account_notice((string) ($moderatorUser['email'] ?? ''), [
+        'kind' => 'security',
+        'action' => 'password_changed',
+    ]);
+    $_SESSION['flash_message'] = 'Password updated successfully.' . (!empty($notice['sent'])
+        ? ' A security notice was sent to the account email.'
+        : ' The password was saved, but a security email could not be delivered.');
     $_SESSION['flash_type'] = 'success';
     header('Location: edit_profile(M).php');
     exit;
