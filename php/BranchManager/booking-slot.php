@@ -10,6 +10,8 @@
 require_once __DIR__ . '/_helpers.php';
 require_once __DIR__ . '/../conn.php';
 require_branch_manager();
+require_once __DIR__ . '/../usage_history_schema.php';
+require_once __DIR__ . '/../loyalty_points.php';
 
 $ctx      = current_context($pdo);
 $user     = $ctx['user'];
@@ -17,9 +19,17 @@ $branch   = $ctx['branch'];
 $initials = initials($user['full_name']);
 $bid      = (int)$branch['branch_id'];
 
+// Prepare loyalty tables before any fill transaction (MySQL DDL can commit).
+map_pump_usage_history_schema_ready($pdo);
+loyalty_schema_ready($pdo);
+loyalty_countermeasures_schema_ready($pdo);
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!csrf_check($_POST['csrf'] ?? null)) json_out(['ok' => false, 'error' => 'CSRF failed'], 403);
     $action = $_POST['action'] ?? '';
+    if (in_array($action, ['call_next', 'complete'], true) && !company_loyalty_station_is_paid($pdo, $bid)) {
+        json_out(['ok' => false, 'error' => 'This station is paused until its HQ pays the monthly operating fee.'], 403);
+    }
     try {
         if ($action === 'call_next') {
             $token_id = (int)($_POST['token_id'] ?? 0);
@@ -62,13 +72,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if ($action === 'complete') {
             $token_id      = (int)($_POST['token_id'] ?? 0);
-            // Optional: actual litres dispensed (frontend may pass it). Defaults to 0.
             $filled_liters = round(max(0, (float)($_POST['filled_liters'] ?? 0)), 2);
+            if ($filled_liters <= 0) {
+                json_out(['ok' => false, 'error' => 'Enter the actual liters dispensed before completing this fill.'], 422);
+            }
             $pdo->beginTransaction();
             $stmt = $pdo->prepare("
                 SELECT bk.booking_id, bk.user_id, bk.car_license_id, bk.station_id, bk.oil_type_id,
                        bk.qr_code, bk.qr_refrence_code AS token_code,
-                       bk.created_at AS booked_at, bk.expire_at, p.pump_id
+                       bk.created_at AS booked_at, bk.expire_at, p.pump_id,
+                       COALESCE(bk.points_to_redeem, 0) AS points_to_redeem
                 FROM booking bk
                 INNER JOIN station_business_scope sbs ON sbs.station_id = bk.station_id
                 LEFT JOIN pumps p ON p.current_token = bk.qr_refrence_code AND p.branch_id = :branch_id
@@ -130,6 +143,50 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ':expire_at' => $tok['expire_at'],
                 ':staff'     => $user['user_id'],
             ]);
+            $usageId = (int) $pdo->lastInsertId();
+
+            $isInternal = loyalty_is_internal_fill(
+                $pdo,
+                (int) $tok['user_id'],
+                (int) $tok['station_id']
+            );
+            $loyaltyResult = loyalty_apply_on_fill(
+                $pdo,
+                (int) $tok['user_id'],
+                $filled_liters,
+                $total,
+                (int) $tok['points_to_redeem'],
+                (int) $tok['booking_id'],
+                (int) $user['user_id'],
+                $isInternal,
+                (int) $tok['station_id'],
+                $usageId > 0 ? $usageId : null
+            );
+            $discount = (float) ($loyaltyResult['discount_mmk'] ?? 0);
+            $netTotal = $total !== null ? max(0.0, round($total - $discount, 2)) : null;
+            $loyaltyUpdate = $pdo->prepare(
+                'UPDATE usage_history
+                 SET total_cost = :net_total,
+                     points_earned = :earned,
+                     points_redeemed = :redeemed,
+                     discount_mmk = :discount,
+                     is_internal = :is_internal,
+                     admin_share_mmk = :admin_share,
+                     company_share_mmk = :company_share,
+                     company_points_earned = :company_points
+                 WHERE usage_id = :usage_id'
+            );
+            $loyaltyUpdate->execute([
+                ':net_total' => $netTotal,
+                ':earned' => (int) ($loyaltyResult['points_earned'] ?? 0),
+                ':redeemed' => (int) ($loyaltyResult['points_redeemed'] ?? 0),
+                ':discount' => $discount,
+                ':is_internal' => !empty($loyaltyResult['is_internal']) ? 1 : 0,
+                ':admin_share' => (float) ($loyaltyResult['admin_share_mmk'] ?? 0),
+                ':company_share' => (float) ($loyaltyResult['company_share_mmk'] ?? 0),
+                ':company_points' => (int) ($loyaltyResult['company_points_earned'] ?? 0),
+                ':usage_id' => $usageId,
+            ]);
 
             // Draw down station inventory when a real quantity was recorded.
             if ($invRow && $filled_liters > 0) {
@@ -143,7 +200,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             $pdo->commit();
             log_activity($pdo, $bid, 'user', $user['user_id'], $user['full_name'], "Completed token {$tok['token_code']}");
-            json_out(['ok' => true, 'filled_liters' => $filled_liters, 'total_cost' => $total]);
+            json_out([
+                'ok' => true,
+                'filled_liters' => $filled_liters,
+                'total_cost' => $netTotal,
+                'discount_mmk' => $discount,
+                'points_earned' => (int) ($loyaltyResult['points_earned'] ?? 0),
+                'points_redeemed' => (int) ($loyaltyResult['points_redeemed'] ?? 0),
+                'company_points_earned' => (int) ($loyaltyResult['company_points_earned'] ?? 0),
+            ]);
         }
 
         if ($action === 'cancel') {
@@ -185,9 +250,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         json_out(['ok' => false, 'error' => 'Unknown action'], 400);
-    } catch (PDOException $e) {
+    } catch (Throwable $e) {
         if ($pdo->inTransaction()) $pdo->rollBack();
-        json_out(['ok' => false, 'error' => $e->getMessage()], 500);
+        $message = $e instanceof LoyaltyTransferException
+            ? 'The HQ points transfer failed. The fill was not recorded; please try again.'
+            : 'Could not complete this action. Please try again.';
+        json_out(['ok' => false, 'error' => $message], 500);
     }
 }
 
@@ -876,8 +944,15 @@ $has_unread_notif = notif_unread_count($pdo, (int)$user['user_id']) > 0;
       // COMPLETE ACTION
       if (target.classList.contains('btn-complete')) {
         const tokenId = target.dataset.tokenId;
+        const litersText = prompt('Enter the actual liters dispensed:');
+        if (litersText === null) return;
+        const liters = Number(litersText);
+        if (!Number.isFinite(liters) || liters <= 0) {
+          alert('Enter a valid amount greater than 0 liters.');
+          return;
+        }
         try {
-          const data = await serverAction('complete', { token_id: tokenId });
+          const data = await serverAction('complete', { token_id: tokenId, filled_liters: String(liters) });
           if (!data.ok) { alert('Failed: ' + (data.error || 'unknown')); return; }
           window.location.reload();
         } catch (err) { alert('Network error: ' + err.message); }
