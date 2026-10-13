@@ -16,7 +16,7 @@ function moderator_require_user(): array
     $role = strtolower(trim((string) ($user['role_name'] ?? '')));
     $status = strtolower(trim((string) ($user['status'] ?? '')));
 
-    if (!$user || $role !== 'moderator' || in_array($status, ['suspended', 'removed', 'rejected'], true)) {
+    if (!$user || $role !== 'moderator' || !in_array($status, ['approved', 'active'], true)) {
         header('Location: ../Login/login.php');
         exit;
     }

@@ -159,15 +159,19 @@ $exportQuery = http_build_query([
             <p class="text-white-50 m-0 small mt-1">Review Admin and Moderator actions recorded in the live <code>log</code> table.</p>
         </div>
         <div class="d-flex gap-2 flex-wrap">
-            <form action="log_action.php" method="POST" class="m-0" onsubmit="return confirm('Clear audit entries matching the current actor filter? This cannot be undone.');">
+            <form id="clearLogsForm" action="log_action.php" method="POST" class="m-0" onsubmit="return confirm(this.dataset.confirmMessage || 'Clear audit entries matching the current filters? This cannot be undone.');">
                 <input type="hidden" name="action" value="clear">
                 <input type="hidden" name="actor" value="<?= hq_escape($actor) ?>">
+                <input type="hidden" name="search" value="<?= hq_escape($search) ?>">
+                <input type="hidden" name="log_level" value="<?= hq_escape($level) ?>">
+                <input type="hidden" name="date_from" value="<?= hq_escape($dateFrom) ?>">
+                <input type="hidden" name="date_to" value="<?= hq_escape($dateTo) ?>">
                 <input type="hidden" name="return_to" value="view_logs.php">
                 <button type="submit" class="btn btn-clear-logs log-header-action rounded-3 d-flex align-items-center gap-2">
                     <i class="bi bi-trash3-fill"></i> Clear Filtered Logs
                 </button>
             </form>
-            <a class="btn btn-neon log-header-action d-flex align-items-center gap-2" href="log_action.php?<?= hq_escape($exportQuery) ?>">
+            <a class="btn btn-neon log-header-action d-flex align-items-center gap-2 js-export-logs" href="log_action.php?<?= hq_escape($exportQuery) ?>">
                 <i class="bi bi-cloud-arrow-down-fill"></i> Export CSV
             </a>
         </div>

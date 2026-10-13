@@ -5,10 +5,8 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
     session_start();
 }
 
-// Clear/export are admin-only. View remains available to moderators via their pages.
-$user = admin_current_user(false);
-$role = strtolower(trim((string) ($user['role_name'] ?? '')));
-$isStaff = $user && in_array($role, ['admin', 'moderator'], true);
+// Clear/export are Admin-only. View remains available to active staff via their routes.
+$user = admin_require_staff();
 $isAdmin = admin_is_admin($user);
 
 global $conn;
@@ -92,11 +90,6 @@ function admin_load_logs(
     return $logs;
 }
 
-if (!$isStaff) {
-    header('Location: ../Login/login.php');
-    exit;
-}
-
 if ($action === 'export') {
     if (!$isAdmin) {
         http_response_code(403);
@@ -162,15 +155,78 @@ if ($action === 'clear') {
     if (!in_array($actor, ['all', 'admin', 'moderator'], true)) {
         $actor = 'moderator';
     }
-    // Default clear remains safer moderator-only unless explicitly "all".
-    $actorSql = admin_log_actor_sql($actor);
+    $search = trim((string) ($_POST['search'] ?? ''));
+    $level = strtolower(trim((string) ($_POST['log_level'] ?? 'all')));
+    if (!in_array($level, ['all', 'info', 'warn', 'error', 'security'], true)) {
+        $level = 'all';
+    }
+    $dateFrom = trim((string) ($_POST['date_from'] ?? ''));
+    $dateTo = trim((string) ($_POST['date_to'] ?? ''));
+    $validDate = static function (string $value): bool {
+        if ($value === '') {
+            return true;
+        }
+        $date = DateTime::createFromFormat('!Y-m-d', $value);
+        $errors = DateTime::getLastErrors();
+        return $date !== false
+            && $date->format('Y-m-d') === $value
+            && ($errors === false || ($errors['warning_count'] === 0 && $errors['error_count'] === 0));
+    };
+    if (!$validDate($dateFrom)) {
+        $dateFrom = '';
+    }
+    if (!$validDate($dateTo)) {
+        $dateTo = '';
+    }
+    if ($dateFrom !== '' && $dateTo !== '' && $dateFrom > $dateTo) {
+        [$dateFrom, $dateTo] = [$dateTo, $dateFrom];
+    }
+
+    $where = [admin_log_actor_sql($actor)];
+    $params = [];
+    $types = '';
+    if ($search !== '') {
+        $where[] = '(LOWER(l.action) LIKE ? OR LOWER(COALESCE(u.user_name, \'\')) LIKE ? OR LOWER(COALESCE(u.email, \'\')) LIKE ?)';
+        $like = '%' . strtolower($search) . '%';
+        array_push($params, $like, $like, $like);
+        $types .= 'sss';
+    }
+    if ($dateFrom !== '') {
+        $where[] = 'DATE(l.created_at) >= ?';
+        $params[] = $dateFrom;
+        $types .= 's';
+    }
+    if ($dateTo !== '') {
+        $where[] = 'DATE(l.created_at) <= ?';
+        $params[] = $dateTo;
+        $types .= 's';
+    }
+
+    // Keep the clear filter in sync with admin_log_level()'s priority order.
+    $securitySql = "(LOWER(l.action) LIKE '%security%' OR LOWER(l.action) LIKE '%auth%' OR LOWER(l.action) LIKE '%login%' OR LOWER(l.action) LIKE '%password%' OR LOWER(l.action) LIKE '%permission%' OR LOWER(l.action) LIKE '%suspend%' OR LOWER(l.action) LIKE '%remove%' OR LOWER(l.action) LIKE '%approve%' OR LOWER(l.action) LIKE '%reject%')";
+    $errorSql = "(LOWER(l.action) LIKE '%error%' OR LOWER(l.action) LIKE '%failed%' OR LOWER(l.action) LIKE '%exception%' OR LOWER(l.action) LIKE '%fatal%')";
+    $warnSql = "(LOWER(l.action) LIKE '%warn%' OR LOWER(l.action) LIKE '%warning%' OR LOWER(l.action) LIKE '%latency%' OR LOWER(l.action) LIKE '%expired%')";
+    if ($level === 'security') {
+        $where[] = $securitySql;
+    } elseif ($level === 'error') {
+        $where[] = "NOT {$securitySql} AND {$errorSql}";
+    } elseif ($level === 'warn') {
+        $where[] = "NOT {$securitySql} AND NOT {$errorSql} AND {$warnSql}";
+    } elseif ($level === 'info') {
+        $where[] = "NOT {$securitySql} AND NOT {$errorSql} AND NOT {$warnSql}";
+    }
+    $whereSql = implode(' AND ', $where);
 
     $statement = $conn->prepare(
         "DELETE l FROM log l
          LEFT JOIN users u ON u.user_id = l.user_id
          LEFT JOIN roles r ON r.role_id = COALESCE(u.current_role_id, u.business_role_id, u.role_id)
-         WHERE {$actorSql}"
+         WHERE {$whereSql}"
     );
+    if ($statement && $types !== '') {
+        $bound = array_values($params);
+        hq_bind($statement, $types, $bound);
+    }
     if (!$statement || !$statement->execute()) {
         $statement?->close();
         admin_flash('danger', 'The audit log could not be cleared.');
@@ -180,7 +236,15 @@ if ($action === 'clear') {
     $statement->close();
     admin_record_log((int) ($user['user_id'] ?? 0), 'Cleared ' . $deleted . ' audit log entries (actor=' . $actor . ').');
     admin_flash('success', $deleted . ' audit log entries were cleared (' . $actor . ' scope).');
-    admin_redirect($returnTo);
+    $filterQuery = http_build_query([
+        'search' => $search,
+        'log_level' => $level,
+        'actor' => $actor,
+        'date_from' => $dateFrom,
+        'date_to' => $dateTo,
+    ]);
+    header('Location: view_logs.php?' . $filterQuery);
+    exit;
 }
 
 admin_flash('danger', 'The requested log action is not supported.');
