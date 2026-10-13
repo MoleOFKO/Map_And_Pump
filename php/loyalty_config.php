@@ -24,18 +24,9 @@ if (!defined('LOYALTY_MAX_POINTS_PER_FILL')) {
     define('LOYALTY_MAX_POINTS_PER_FILL', 20);
 }
 
-// Hard cap on discount as percent of that fill's total_cost
-if (!defined('LOYALTY_MAX_DISCOUNT_PCT')) {
-    define('LOYALTY_MAX_DISCOUNT_PCT', 20);
-}
-
-// Liter → percentage per redeem unit:
-// raw_pct_per_unit = min(LOYALTY_PCT_PER_UNIT_CAP, filled_liters * LOYALTY_PCT_PER_LITER)
-if (!defined('LOYALTY_PCT_PER_LITER')) {
-    define('LOYALTY_PCT_PER_LITER', 0.5);
-}
-if (!defined('LOYALTY_PCT_PER_UNIT_CAP')) {
-    define('LOYALTY_PCT_PER_UNIT_CAP', 10);
+// Fixed customer redemption value: 1 point = 10 MMK (10 points = 100 MMK).
+if (!defined('LOYALTY_MMK_PER_POINT')) {
+    define('LOYALTY_MMK_PER_POINT', 10);
 }
 
 // ---------------------------------------------------------------------------
@@ -46,7 +37,8 @@ if (!defined('LOYALTY_CM_INTERNAL_DETECT')) {
     define('LOYALTY_CM_INTERNAL_DETECT', true);
 }
 if (!defined('LOYALTY_CM_TIER_POOL')) {
-    define('LOYALTY_CM_TIER_POOL', true);
+    // Fixed-value redemption is independent of a shared monthly discount pool.
+    define('LOYALTY_CM_TIER_POOL', false);
 }
 if (!defined('LOYALTY_CM_COMPANY_POINTS')) {
     define('LOYALTY_CM_COMPANY_POINTS', true);
@@ -77,14 +69,16 @@ if (!defined('LOYALTY_COMPANY_DISCOUNT_SHARE_PCT')) {
 // Company points
 // ---------------------------------------------------------------------------
 
-if (!defined('LOYALTY_COMPANY_POINTS_PER_EXTERNAL_FILL')) {
-    define('LOYALTY_COMPANY_POINTS_PER_EXTERNAL_FILL', 1);
-}
-if (!defined('LOYALTY_COMPANY_MONTHLY_EARN_CAP')) {
-    define('LOYALTY_COMPANY_MONTHLY_EARN_CAP', 500);
-}
 if (!defined('LOYALTY_COMPANY_POINT_EXPIRY_DAYS')) {
     define('LOYALTY_COMPANY_POINT_EXPIRY_DAYS', 90);
+}
+
+// HQ operating costs are points-only and billed monthly.
+if (!defined('LOYALTY_HQ_STATION_SLOT_MONTHLY_COST')) {
+    define('LOYALTY_HQ_STATION_SLOT_MONTHLY_COST', 10000);
+}
+if (!defined('LOYALTY_HQ_STATION_MONTHLY_FEE')) {
+    define('LOYALTY_HQ_STATION_MONTHLY_FEE', 10000);
 }
 
 // ---------------------------------------------------------------------------

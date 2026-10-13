@@ -2,7 +2,11 @@
 require_once __DIR__ . '/hq_guard.php';
 require_once __DIR__ . '/../conn.php';
 require_once __DIR__ . '/../business_scope.php';
+require_once __DIR__ . '/../loyalty_points.php';
 $hqId = map_pump_current_hq_id($pdo);
+$hqBillingReady = loyalty_countermeasures_schema_ready($pdo);
+$hqBillingMonth = loyalty_current_year_month();
+$hqPointBalance = company_loyalty_get_balance($pdo, $hqId);
 // Handle quick price update submission if posted
 $updateMessage = "";
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'update_price') {
@@ -63,17 +67,31 @@ $recentReports = $reportsStmt->fetchAll(PDO::FETCH_ASSOC);
 
 // Fetch Live Stations dynamically
 $stations = [];
+$stationStatusSql = $hqBillingReady
+    ? "CASE
+           WHEN LOWER(COALESCE(s.status, 'active')) = 'active'
+            AND NOT EXISTS (
+                SELECT 1 FROM company_loyalty_station_fees fee
+                WHERE fee.headquarter_id = sbs.headquarter_id
+                  AND fee.station_id = s.branch_id
+                  AND fee.year_month = ?
+            ) THEN 'Paused'
+           WHEN LOWER(COALESCE(s.status, 'active')) = 'maintenance' THEN 'Maintenance'
+           WHEN LOWER(COALESCE(s.status, 'active')) = 'active' THEN 'Active'
+           ELSE s.status
+       END"
+    : "CASE WHEN LOWER(COALESCE(s.status, 'active')) = 'active' THEN 'Paused' ELSE s.status END";
 $stationsStmt = $pdo->prepare(
   "SELECT s.branch_id AS station_id, s.branch_name AS station_name,
         CASE WHEN s.latitude IS NOT NULL AND s.longitude IS NOT NULL
           THEN CONCAT(s.latitude, ', ', s.longitude) ELSE s.address END AS location,
-        s.status
+        {$stationStatusSql} AS status
     FROM branches s
     INNER JOIN station_business_scope sbs ON sbs.station_id = s.branch_id
      WHERE sbs.headquarter_id = ?
     ORDER BY s.branch_id DESC"
 );
-$stationsStmt->execute([$hqId]);
+$stationsStmt->execute($hqBillingReady ? [$hqBillingMonth, $hqId] : [$hqId]);
 $stations = $stationsStmt->fetchAll(PDO::FETCH_ASSOC);
 ?>
 <!DOCTYPE html>
@@ -251,6 +269,7 @@ endif; ?>
     <a class="hq-metric" href="station.php" onclick="event.preventDefault(); navigateTo('station.php')"><i class="fa-solid fa-gas-pump" aria-hidden="true"></i><div><strong><?= count($stations) ?></strong><span>Total stations</span></div></a>
     <a class="hq-metric" href="station.php" onclick="event.preventDefault(); navigateTo('station.php')"><i class="fa-solid fa-circle-check" aria-hidden="true"></i><div><strong><?= count(array_filter($stations, static fn($s) => ($s['status'] ?: 'Active') === 'Active')) ?></strong><span>Active stations</span></div></a>
     <a class="hq-metric" href="station.php" onclick="event.preventDefault(); navigateTo('station.php')"><i class="fa-solid fa-wrench" aria-hidden="true"></i><div><strong><?= count(array_filter($stations, static fn($s) => $s['status'] === 'Maintenance')) ?></strong><span>Under maintenance</span></div></a>
+    <div class="hq-metric"><i class="fa-solid fa-star" aria-hidden="true"></i><div><strong><?= number_format($hqPointBalance) ?></strong><span>HQ points</span></div></div>
   </div>
 
   <div class="dashboard-grid">

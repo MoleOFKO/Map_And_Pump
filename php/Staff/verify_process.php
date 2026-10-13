@@ -38,6 +38,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         // Ensure optional loyalty columns exist (best-effort; no ledger table).
         loyalty_schema_ready($pdo);
+        // Create loyalty tables before opening the fill transaction. MySQL
+        // DDL may implicitly commit, so schema setup must stay outside it.
+        loyalty_countermeasures_schema_ready($pdo);
 
         $stmt = $pdo->prepare(
             'SELECT b.booking_id, b.user_id, b.station_id, b.oil_type_id, o.oil_name, b.qr_code, b.qr_refrence_code,
@@ -68,6 +71,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             if (!$staffCanAccessBranch((int) $_SESSION['user_id'], (int) $row['station_id'])) {
             respond(['success' => false, 'message' => 'This booking belongs to another station.'], $ajax, 403, 'verify_qr.php');
+        }
+
+        if (!company_loyalty_station_is_paid($pdo, (int) $row['station_id'])) {
+            respond(['success' => false, 'message' => 'This station is paused until its HQ pays the monthly operating fee.'], $ajax, 403, 'verify_qr.php');
         }
 
         $closedStatuses = ['filled', 'completed', 'cancelled', 'expired'];
@@ -225,13 +232,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 (int) $row['station_id'],
                 $usageId > 0 ? $usageId : null
             );
+            $netTotalCost = $totalCost !== null
+                ? max(0.0, round($totalCost - (float) ($loyaltyResult['discount_mmk'] ?? 0), 2))
+                : null;
 
             // Persist loyalty figures on usage_history when columns exist (fail-soft).
             if ($usageId > 0) {
                 try {
                     $loyaltyHist = $pdo->prepare(
                         'UPDATE usage_history
-                         SET points_earned = :earned,
+                         SET total_cost = :net_total,
+                             points_earned = :earned,
                              points_redeemed = :redeemed,
                              discount_mmk = :discount,
                              is_internal = :is_internal,
@@ -241,6 +252,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                          WHERE usage_id = :usage_id'
                     );
                     $loyaltyHist->execute([
+                        ':net_total' => $netTotalCost,
                         ':earned' => (int) ($loyaltyResult['points_earned'] ?? 0),
                         ':redeemed' => (int) ($loyaltyResult['points_redeemed'] ?? 0),
                         ':discount' => (float) ($loyaltyResult['discount_mmk'] ?? 0),
@@ -259,12 +271,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     try {
                         $loyaltyHist = $pdo->prepare(
                             'UPDATE usage_history
-                             SET points_earned = :earned,
+                             SET total_cost = :net_total,
+                                 points_earned = :earned,
                                  points_redeemed = :redeemed,
                                  discount_mmk = :discount
                              WHERE usage_id = :usage_id'
                         );
                         $loyaltyHist->execute([
+                            ':net_total' => $netTotalCost,
                             ':earned' => (int) ($loyaltyResult['points_earned'] ?? 0),
                             ':redeemed' => (int) ($loyaltyResult['points_redeemed'] ?? 0),
                             ':discount' => (float) ($loyaltyResult['discount_mmk'] ?? 0),
@@ -291,7 +305,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             $message = $e->getMessage() === 'INSUFFICIENT_LIVE_STOCK'
                 ? 'The station no longer has enough live stock for this fill. Ask the branch manager to update stock before confirming.'
-                : 'Failed to save fill amount. Please try again.';
+                : ($e instanceof LoyaltyTransferException
+                    ? 'The HQ points transfer could not be completed, so this fill was not saved. Please try again.'
+                    : 'Failed to save fill amount. Please try again.');
             $status = $e->getMessage() === 'INSUFFICIENT_LIVE_STOCK' ? 422 : 500;
             respond(['success' => false, 'message' => $message], $ajax, $status, 'verify_detail.php?booking_id=' . urlencode((string)$bookingId));
         }

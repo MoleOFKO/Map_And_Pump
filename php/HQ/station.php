@@ -5,10 +5,23 @@ require_once __DIR__ . '/hq_guard.php';
  */
 include_once __DIR__ . '/../conn.php';
 require_once __DIR__ . '/../business_scope.php';
+require_once __DIR__ . '/../loyalty_points.php';
 $message = '';
 $error = '';
 $hqId = map_pump_current_hq_id($pdo);
+$billingSchemaReady = loyalty_countermeasures_schema_ready($pdo);
+$hqPointBalance = company_loyalty_get_balance($pdo, $hqId);
+$billingMonth = loyalty_current_year_month();
+$stationSlotCost = (int) LOYALTY_HQ_STATION_SLOT_MONTHLY_COST;
+$stationMonthlyFee = (int) LOYALTY_HQ_STATION_MONTHLY_FEE;
+$stationBillingCsrf = $_SESSION['hq_station_billing_csrf'] ?? '';
+if (!is_string($stationBillingCsrf) || strlen($stationBillingCsrf) < 32) {
+    $stationBillingCsrf = bin2hex(random_bytes(32));
+    $_SESSION['hq_station_billing_csrf'] = $stationBillingCsrf;
+}
 $stationLimit = null;
+$baseStationLimit = null;
+$monthlySlots = 0;
 $stationCount = 0;
 $stationLimitReached = false;
 $showStationLimitModal = false;
@@ -32,6 +45,103 @@ function map_pump_normalize_station_location(string $location): ?string
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
 
+    // Buy one additional station registration slot for the current month.
+    if ($action === 'buy_station_slot') {
+        try {
+            if (!$billingSchemaReady) {
+                throw new RuntimeException('HQ point billing is temporarily unavailable. Please try again later.');
+            }
+            if (!hash_equals($stationBillingCsrf, (string) ($_POST['billing_csrf'] ?? ''))) {
+                throw new RuntimeException('Your session expired. Refresh the page and try again.');
+            }
+
+            $pdo->beginTransaction();
+            $hqLockStmt = $pdo->prepare('SELECT station_count FROM headquarter WHERE headquarter_id = ? FOR UPDATE');
+            $hqLockStmt->execute([$hqId]);
+            $limitValue = $hqLockStmt->fetchColumn();
+            if ($limitValue === false || (int) $limitValue < 1) {
+                throw new RuntimeException('This HQ has unlimited station capacity and does not need monthly slots.');
+            }
+            if (!company_loyalty_redeem_credit($pdo, $hqId, $stationSlotCost, 'monthly station capacity slot')) {
+                throw new RuntimeException('INSUFFICIENT_HQ_POINTS');
+            }
+            $slotStmt = $pdo->prepare(
+                'INSERT INTO company_loyalty_station_slots (headquarter_id, year_month, slots_purchased, points_spent)
+                 VALUES (?, ?, 1, ?)
+                 ON DUPLICATE KEY UPDATE slots_purchased = slots_purchased + 1, points_spent = points_spent + VALUES(points_spent)'
+            );
+            $slotStmt->execute([$hqId, $billingMonth, $stationSlotCost]);
+            $pdo->commit();
+            $message = 'One additional station slot is available for this month.';
+        } catch (Throwable $e) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            $error = $e->getMessage() === 'INSUFFICIENT_HQ_POINTS'
+                ? 'Insufficient HQ points for this monthly fee. Contact a moderator or admin to negotiate IRL payment.'
+                : $e->getMessage();
+        }
+    }
+
+    // Pay one station's operating fee for the current month.
+    if ($action === 'pay_station_fee') {
+        $stationIdToPay = (int) ($_POST['station_id'] ?? 0);
+        try {
+            if (!$billingSchemaReady) {
+                throw new RuntimeException('HQ point billing is temporarily unavailable. Please try again later.');
+            }
+            if (!hash_equals($stationBillingCsrf, (string) ($_POST['billing_csrf'] ?? ''))) {
+                throw new RuntimeException('Your session expired. Refresh the page and try again.');
+            }
+            if ($stationIdToPay <= 0) {
+                throw new RuntimeException('Select a valid station.');
+            }
+
+            $pdo->beginTransaction();
+            $hqLockStmt = $pdo->prepare('SELECT headquarter_id FROM headquarter WHERE headquarter_id = ? FOR UPDATE');
+            $hqLockStmt->execute([$hqId]);
+            if ($hqLockStmt->fetchColumn() === false) {
+                throw new RuntimeException('Could not verify this HQ account.');
+            }
+            $stationLockStmt = $pdo->prepare(
+                'SELECT b.branch_id
+                 FROM branches b
+                 INNER JOIN station_business_scope sbs ON sbs.station_id = b.branch_id
+                 WHERE b.branch_id = ? AND sbs.headquarter_id = ? AND b.status <> \'closed\'
+                 FOR UPDATE'
+            );
+            $stationLockStmt->execute([$stationIdToPay, $hqId]);
+            if ($stationLockStmt->fetchColumn() === false) {
+                throw new RuntimeException('You can only pay fees for stations under your HQ.');
+            }
+            $paidCheck = $pdo->prepare(
+                'SELECT 1 FROM company_loyalty_station_fees
+                 WHERE headquarter_id = ? AND station_id = ? AND year_month = ? LIMIT 1'
+            );
+            $paidCheck->execute([$hqId, $stationIdToPay, $billingMonth]);
+            if ($paidCheck->fetchColumn()) {
+                throw new RuntimeException('This station is already paid for the current month.');
+            }
+            if (!company_loyalty_redeem_credit($pdo, $hqId, $stationMonthlyFee, 'station monthly operating fee')) {
+                throw new RuntimeException('INSUFFICIENT_HQ_POINTS');
+            }
+            $feeStmt = $pdo->prepare(
+                'INSERT INTO company_loyalty_station_fees (headquarter_id, station_id, year_month, points_paid)
+                 VALUES (?, ?, ?, ?)'
+            );
+            $feeStmt->execute([$hqId, $stationIdToPay, $billingMonth, $stationMonthlyFee]);
+            $pdo->commit();
+            $message = 'Station monthly fee paid. The station is eligible to operate for this month.';
+        } catch (Throwable $e) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            $error = $e->getMessage() === 'INSUFFICIENT_HQ_POINTS'
+                ? 'Insufficient HQ points for this monthly fee. Contact a moderator or admin to negotiate IRL payment.'
+                : $e->getMessage();
+        }
+    }
+
     // Register Station
     if ($action === 'register') {
         $station_name    = trim($_POST['station_name'] ?? '');
@@ -43,6 +153,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if (!empty($station_name) && $location !== null && !empty($manager_email)) {
             try {
+                if (!$billingSchemaReady) {
+                    throw new RuntimeException('HQ point billing is temporarily unavailable. Please try again later.');
+                }
                 $pdo->beginTransaction();
                 $hqLockStmt = $pdo->prepare("SELECT station_count FROM headquarter WHERE headquarter_id = ? FOR UPDATE");
                 $hqLockStmt->execute([$hqId]);
@@ -53,6 +166,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $stationLimit = (int) $stationLimitValue;
                 if ($stationLimit < 1) {
                     $stationLimit = null;
+                } else {
+                    $monthlySlots = company_loyalty_current_month_slots($pdo, $hqId);
+                    $baseStationLimit = $stationLimit;
+                    $stationLimit += $monthlySlots;
                 }
                 $stationCountStmt = $pdo->prepare(
                     "SELECT COUNT(*)
@@ -154,6 +271,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
                 if ($e->getMessage() === 'station_limit_reached') {
                     $showStationLimitModal = true;
+                } elseif ($e->getMessage() === 'INSUFFICIENT_HQ_POINTS') {
+                    $error = 'Insufficient HQ points for this monthly fee. Contact a moderator or admin to negotiate IRL payment.';
                 } else {
                     $error = $e->getMessage();
                 }
@@ -238,6 +357,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if (!empty($station_id) && in_array($new_status, ['Active', 'Maintenance'])) {
             try {
+                if ($new_status === 'Active' && !company_loyalty_station_is_paid($pdo, (int) $station_id)) {
+                    echo json_encode([
+                        'success' => false,
+                        'message' => 'This station is paused until its 10,000-point monthly fee is paid.'
+                    ]);
+                    exit;
+                }
                 $stmt = $pdo->prepare(
                     "UPDATE branches b
                      INNER JOIN station_business_scope sbs ON sbs.station_id = b.branch_id
@@ -278,11 +404,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $stations = [];
 $branchManagers = [];
 try {
+    $monthlyFeePaidSql = $billingSchemaReady
+        ? "EXISTS (
+                SELECT 1 FROM company_loyalty_station_fees fee
+                WHERE fee.headquarter_id = sbs.headquarter_id
+                  AND fee.station_id = b.branch_id
+                  AND fee.year_month = ?
+            )"
+        : '0';
     $stmt = $pdo->prepare(
         "SELECT b.branch_id AS station_id, b.branch_name AS station_name, b.address AS station_address,
                 b.manager_user_id AS business_user_id,
                 CASE WHEN b.latitude IS NOT NULL AND b.longitude IS NOT NULL THEN CONCAT(b.latitude, ', ', b.longitude) ELSE '' END AS location,
                 CASE b.status WHEN 'active' THEN 'Active' WHEN 'maintenance' THEN 'Maintenance' ELSE 'Decommissioned' END AS status,
+                {$monthlyFeePaidSql} AS monthly_fee_paid,
                 u.user_name AS manager_name, u.email AS manager_email
          FROM branches b
          INNER JOIN station_business_scope sbs ON sbs.station_id = b.branch_id
@@ -291,16 +426,18 @@ try {
            AND b.status <> 'closed'
          ORDER BY b.branch_id DESC"
     );
-    $stmt->execute([$hqId]);
+    $stmt->execute($billingSchemaReady ? [$billingMonth, $hqId] : [$hqId]);
     $stations = $stmt->fetchAll();
     $stationCount = count($stations);
     $limitStmt = $pdo->prepare("SELECT station_count FROM headquarter WHERE headquarter_id = ?");
     $limitStmt->execute([$hqId]);
-    $stationLimitValue = $limitStmt->fetchColumn();
-    $stationLimit = $stationLimitValue === false ? null : (int) $stationLimitValue;
-    if ($stationLimit !== null && $stationLimit < 1) {
-        $stationLimit = null;
+    $limitValue = $limitStmt->fetchColumn();
+    $baseStationLimit = $limitValue === false ? null : (int) $limitValue;
+    if ($baseStationLimit !== null && $baseStationLimit < 1) {
+        $baseStationLimit = null;
     }
+    $monthlySlots = company_loyalty_current_month_slots($pdo, $hqId);
+    $stationLimit = $baseStationLimit === null ? null : $baseStationLimit + $monthlySlots;
     $stationLimitReached = $stationLimit !== null && $stationCount >= $stationLimit;
 
     $managerStmt = $pdo->prepare(
@@ -479,6 +616,7 @@ try {
         .station-action-menu button i {
             font-size: 1rem;
         }
+        .station-billing-form { margin: 0; }
         #stationMap, #configMap { height: 220px; border-radius: 8px; border: 1px solid #373b3e; }
     </style>
 </head>
@@ -501,11 +639,22 @@ try {
             </div>
         <?php endif; ?>
 
+<?php
+$hqPointBalance = company_loyalty_get_balance($pdo, $hqId);
+?>
+
         <div class="card p-4 bg-dark text-light border-secondary">
             <div class="d-flex justify-content-between align-items-center mb-3">
                 <div>
                     <h3>Manage Deployed Stations</h3>
-                    <p class="subtitle mb-0">Monitor active nodes, update operational status, or remove configurations.</p>
+                    <p class="subtitle mb-0">Monitor stations, pay monthly operating fees, or manage registration capacity.</p>
+                    <p class="text-info small mb-0 mt-2"><i class="fa-solid fa-star me-1" aria-hidden="true"></i>HQ points: <strong><?= number_format($hqPointBalance) ?></strong></p>
+                    <p class="text-secondary small mb-0">Each station costs <?= number_format($stationMonthlyFee) ?> points/month; each additional slot costs <?= number_format($stationSlotCost) ?> points/month. Need IRL payment? <a href="report_to_admin.php" class="link-info">Contact a moderator or admin to negotiate.</a></p>
+                    <?php if ($stationLimit !== null): ?>
+                    <p class="text-secondary small mb-0">Capacity this month: <?= (int) $stationCount ?> / <?= (int) $stationLimit ?> stations (<?= (int) $monthlySlots ?> paid extra slots).</p>
+                    <?php else: ?>
+                    <p class="text-secondary small mb-0">Station registration capacity is unlimited for this HQ.</p>
+                    <?php endif; ?>
                 </div>
                 <div class="d-flex align-items-center gap-2 station-toolbar">
                     <div class="station-search" id="stationSearchWrap">
@@ -516,6 +665,15 @@ try {
                             <i class="fa-solid fa-xmark" aria-hidden="true"></i>
                         </button>
                     </div>
+                    <?php if ($baseStationLimit !== null): ?>
+                    <form method="POST" class="d-inline" onsubmit="return confirm('Spend <?= $stationSlotCost ?> HQ points to add one station slot for this month?')">
+                        <input type="hidden" name="action" value="buy_station_slot">
+                        <input type="hidden" name="billing_csrf" value="<?= htmlspecialchars($stationBillingCsrf, ENT_QUOTES, 'UTF-8') ?>">
+                        <button type="submit" class="btn btn-outline-info" title="Adds one registration slot for this month">
+                            <i class="fa-solid fa-plus me-1" aria-hidden="true"></i>Slot · <?= number_format($stationSlotCost) ?> pts/month
+                        </button>
+                    </form>
+                    <?php endif; ?>
                     <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="<?= $stationLimitReached ? '#stationLimitModal' : '#registerModal' ?>">+Add Station</button>
                 </div>
             </div>
@@ -538,8 +696,10 @@ try {
                             <?php foreach ($stations as $row): ?>
                                 <?php
                                     $isMaintenance = ($row['status'] === 'Maintenance');
-                                    $badgeClass = $isMaintenance ? 'badge bg-warning text-dark' : 'badge bg-success';
-                                    $statusText = $isMaintenance ? 'Maintenance' : 'Active';
+                                    $feePaid = (int) ($row['monthly_fee_paid'] ?? 0) === 1;
+                                    $isBillingPaused = !$feePaid;
+                                    $badgeClass = $isBillingPaused ? 'badge bg-danger' : ($isMaintenance ? 'badge bg-warning text-dark' : 'badge bg-success');
+                                    $statusText = $isBillingPaused ? 'Paused · monthly fee unpaid' : ($isMaintenance ? 'Maintenance' : 'Active');
                                     $btnClass = $isMaintenance ? 'btn btn-sm me-1 btn-outline-warning' : 'btn btn-sm me-1 btn-outline-info';
                                     $btnText = $isMaintenance ? 'Set Active' : 'Set Maintenance';
                                     $targetStatus = $isMaintenance ? 'Active' : 'Maintenance';
@@ -569,6 +729,18 @@ try {
                                             <button type="button" id="toggle-btn-<?= $row['station_id'] ?>" onclick="closeStationMenus(); toggleStatus(<?= $row['station_id'] ?>, '<?= $targetStatus ?>')">
                                                 <i class="bi <?= $isMaintenance ? 'bi-toggle2-on' : 'bi-tools' ?>"></i> <?= $btnText ?>
                                             </button>
+                                            <?php if (!$feePaid): ?>
+                                            <form method="POST" class="station-billing-form" onsubmit="return confirm('Pay <?= $stationMonthlyFee ?> HQ points for this station this month?')">
+                                                <input type="hidden" name="action" value="pay_station_fee">
+                                                <input type="hidden" name="station_id" value="<?= (int) $row['station_id'] ?>">
+                                                <input type="hidden" name="billing_csrf" value="<?= htmlspecialchars($stationBillingCsrf, ENT_QUOTES, 'UTF-8') ?>">
+                                                <button type="submit" title="Pay the monthly station fee">
+                                                    <i class="bi bi-credit-card"></i> Pay monthly fee · <?= number_format($stationMonthlyFee) ?> pts
+                                                </button>
+                                            </form>
+                                            <?php else: ?>
+                                            <span class="small text-success px-3 py-2 d-block">Monthly fee paid</span>
+                                            <?php endif; ?>
                                             <button type="button" data-bs-toggle="modal" data-bs-target="#configureModal"
                                                 onclick="closeStationMenus(); setConfigureData('<?= htmlspecialchars($row['station_id'], ENT_QUOTES) ?>', '<?= htmlspecialchars($row['station_name'], ENT_QUOTES) ?>', '<?= htmlspecialchars($row['station_address'], ENT_QUOTES) ?>', '<?= htmlspecialchars($row['manager_email'], ENT_QUOTES) ?>', '<?= htmlspecialchars($row['location'], ENT_QUOTES) ?>')">
                                                 <i class="bi bi-gear"></i> Configure
@@ -656,11 +828,16 @@ try {
                 </div>
                 <div class="modal-body">
                     <p class="mb-2">Your HQ has reached its configured limit of <?= (int) $stationLimit ?> stations.</p>
-                    <p class="text-secondary mb-0">Review the station estimate or contact your account administrator to update this limit.</p>
+                    <p class="text-secondary">Buy an additional station slot for <?= number_format($stationSlotCost) ?> HQ points for this month, then register the station.</p>
+                    <form method="POST" class="d-inline" onsubmit="return confirm('Spend <?= $stationSlotCost ?> HQ points to add one station slot for this month?')">
+                        <input type="hidden" name="action" value="buy_station_slot">
+                        <input type="hidden" name="billing_csrf" value="<?= htmlspecialchars($stationBillingCsrf, ENT_QUOTES, 'UTF-8') ?>">
+                        <button type="submit" class="btn btn-outline-info">Buy one monthly station slot</button>
+                    </form>
+                    <p class="text-secondary small mt-3 mb-0">If the HQ points balance is short, <a href="report_to_admin.php" class="link-info">contact a moderator or admin to negotiate IRL payment.</a></p>
                 </div>
                 <div class="modal-footer border-secondary">
                     <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Close</button>
-                    <a href="/HomePage.php#calc" target="_top" class="btn btn-warning"><i class="bi bi-calculator me-1"></i>Go to update the package</a>
                 </div>
             </div>
         </div>

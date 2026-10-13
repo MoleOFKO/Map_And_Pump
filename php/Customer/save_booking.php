@@ -56,7 +56,7 @@ if ($displayPayload === '') {
     $displayPayload = $bookingCode . '|' . $stationId . '|' . $fuelType . '|' . number_format($quantity, 1, '.', '') . 'L';
 }
 
-if (!customer_car_schema_ready($pdo) || !map_pump_usage_history_schema_ready($pdo)) {
+if (!customer_car_schema_ready($pdo) || !map_pump_usage_history_schema_ready($pdo) || !loyalty_countermeasures_schema_ready($pdo)) {
     http_response_code(500);
     echo json_encode(['success' => false, 'message' => 'Booking service is temporarily unavailable. Please try again later.']);
     exit;
@@ -94,6 +94,15 @@ try {
             AND latest_inventory.price_per_litre > 0
          WHERE b.branch_id = :station_id
            AND LOWER(COALESCE(b.status, 'active')) = 'active'
+           AND EXISTS (
+               SELECT 1
+               FROM station_business_scope sbs
+               INNER JOIN company_loyalty_station_fees monthly_fee
+                   ON monthly_fee.headquarter_id = sbs.headquarter_id
+                  AND monthly_fee.station_id = sbs.station_id
+                  AND monthly_fee.year_month = :billing_month
+               WHERE sbs.station_id = b.branch_id
+           )
            AND (
                b.is_24hr = 1
                OR b.opening_time IS NULL
@@ -106,6 +115,7 @@ try {
     $stationStmt->execute([
         ':station_id' => $stationId,
         ':fuel_type' => $fuelType,
+        ':billing_month' => loyalty_current_year_month(),
     ]);
     $stationFuel = $stationStmt->fetch(PDO::FETCH_ASSOC);
 
