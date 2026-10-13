@@ -11,6 +11,8 @@ try {
 }
 
 $managers = [];
+$stations = [];
+$branchManagers = [];
 $dbError = '';
 $statusMessage = '';
 $hqId = map_pump_current_hq_id($pdo);
@@ -93,17 +95,40 @@ try {
     $dbError = $e->getMessage();
 }
 
-$stations = [];
 try {
     $stationStmt = $pdo->prepare("SELECT s.branch_id AS station_id, s.branch_name AS station_name,
                                          CASE WHEN s.latitude IS NOT NULL AND s.longitude IS NOT NULL
-                                              THEN CONCAT(s.latitude, ', ', s.longitude) ELSE s.address END AS location
+                                              THEN CONCAT(s.latitude, ', ', s.longitude) ELSE s.address END AS location,
+                                         s.address AS station_address
                                   FROM branches s
                                   INNER JOIN station_business_scope sbs ON sbs.station_id = s.branch_id
                                   WHERE sbs.headquarter_id = ?
                                   ORDER BY s.branch_name");
     $stationStmt->execute([$hqId]);
     $stations = $stationStmt->fetchAll(PDO::FETCH_ASSOC);
+} catch (PDOException $e) {
+    $dbError = $e->getMessage();
+}
+
+try {
+    $branchManagerStmt = $pdo->prepare(
+        "SELECT u.user_id, u.email
+         FROM users u
+         LEFT JOIN business_account_scope bas ON bas.user_id = u.user_id
+         WHERE COALESCE(u.business_role_id, u.role_id) = 4
+           AND (
+               COALESCE(bas.headquarter_id, u.headquarter_id) = ?
+               OR EXISTS (
+                   SELECT 1 FROM station_business_scope sbs
+                   WHERE sbs.branch_manager_user_id = u.user_id
+                     AND sbs.headquarter_id = ?
+               )
+           )
+           AND LOWER(COALESCE(u.status, 'active')) NOT IN ('suspended', 'removed')
+         ORDER BY u.email"
+    );
+    $branchManagerStmt->execute([$hqId, $hqId]);
+    $branchManagers = $branchManagerStmt->fetchAll(PDO::FETCH_ASSOC);
 } catch (PDOException $e) {
     $dbError = $e->getMessage();
 }
@@ -114,6 +139,7 @@ try {
 <head>
     <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
     <script src="../../js/hq-theme.js"></script>
 <link rel="stylesheet" href="../../css/HQstyle.css">
@@ -310,13 +336,69 @@ endif; ?>
                         <input class="form-control mb-3" type="email" id="inviteEmail" name="email" required>
                         <label class="form-label" for="inviteRole">Role</label>
                         <select class="form-select mb-3" id="inviteRole" name="role" required><option value="manager">Branch Manager</option><option value="staff">Staff</option></select>
-                        <label class="form-label" for="inviteStation">Station</label>
+                        <div class="d-flex align-items-center justify-content-between gap-2 mb-2">
+                            <label class="form-label mb-0" for="inviteStation">Station</label>
+                            <button type="button" class="btn btn-sm btn-outline-info" data-bs-toggle="modal" data-bs-target="#quickStationModal">+ Add Station</button>
+                        </div>
                         <select class="form-select" id="inviteStation" name="station_id" required><option value="">Select an HQ station</option><?php foreach ($stations as $station): ?><option value="<?= (int)$station['station_id'] ?>"><?= htmlspecialchars((string)$station['station_name'] . ' — ' . (string)$station['location']) ?></option><?php endforeach; ?></select>
                         <?php if (empty($stations)): ?>
                             <div class="alert alert-warning mt-2 mb-0" role="alert">No stations are assigned to this HQ. Add a station before sending an invitation.</div>
                         <?php endif; ?>
                     </div>
                     <div class="modal-footer border-0"><button type="button" class="btn btn-outline-secondary text-white" data-bs-dismiss="modal">Cancel</button><button type="submit" class="btn btn-primary">Send Invitation</button></div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="quickStationModal" tabindex="-1" aria-labelledby="quickStationModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content" style="background: var(--bg, #111827); color: var(--slate-50, #f8fafc); border: 1px solid rgba(255,255,255,0.08); border-radius: 18px;">
+                <form method="POST" action="./station.php">
+                    <input type="hidden" name="action" value="register">
+                    <input type="hidden" name="return_to" value="account.php">
+                    <div class="modal-header border-0">
+                        <h5 class="modal-title" id="quickStationModalLabel">Add Station</h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label text-light">Station Name</label>
+                                <input type="text" name="station_name" class="form-control bg-dark text-light border-secondary" placeholder="e.g. Downtown Metro" required>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label text-light">Branch Manager Email</label>
+                                <select name="manager_email" class="form-select bg-dark text-light border-secondary" required>
+                                    <option value="">Choose a branch manager</option>
+                                    <?php foreach ($branchManagers as $manager): ?>
+                                        <option value="<?= htmlspecialchars($manager['email'], ENT_QUOTES, 'UTF-8') ?>"><?= htmlspecialchars($manager['email']) ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+                            <div class="col-12 mb-3">
+                                <label class="form-label text-light">Station Address</label>
+                                <input type="text" name="station_address" class="form-control bg-dark text-light border-secondary" placeholder="e.g. No. 45, Main Road, Township">
+                            </div>
+                            <div class="col-12 mb-3">
+                                <div class="d-flex justify-content-between align-items-center mb-1">
+                                    <label class="form-label text-light mb-0">Location (Coordinates)</label>
+                                    <button type="button" class="btn btn-sm btn-outline-info" id="quickAddTrackLocBtn">
+                                        <i class="bi bi-geo-alt-fill"></i> Track My Location
+                                    </button>
+                                </div>
+                                <input type="text" id="quickStationLocation" name="location" class="form-control bg-dark text-light border-secondary" placeholder="Click the map or track location" required readonly>
+                            </div>
+                            <div class="col-12">
+                                <div id="quickStationMap" aria-label="Choose station location on map" style="height: 220px; border-radius: 8px; border: 1px solid #373b3e;"></div>
+                                <small class="text-secondary">Click the map or use the button above to select coordinates.</small>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer border-0">
+                        <button type="button" class="btn btn-outline-secondary text-white" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-success">Save Station</button>
+                    </div>
                 </form>
             </div>
         </div>
@@ -341,9 +423,68 @@ endif; ?>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
         const statusModal = new bootstrap.Modal(document.getElementById('statusConfirmModal'));
+        let quickStationMap;
+        let quickStationMarker;
         let pendingForm = null;
+
+        function parseQuickStationCoordinates(value) {
+            const parts = (value || '').split(',');
+            if (parts.length !== 2) return null;
+            const latitude = Number.parseFloat(parts[0]);
+            const longitude = Number.parseFloat(parts[1]);
+            if (!Number.isFinite(latitude) || !Number.isFinite(longitude) || latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
+                return null;
+            }
+            return L.latLng(latitude, longitude);
+        }
+
+        function setQuickStationLocation(input, latLng) {
+            if (quickStationMarker) {
+                quickStationMarker.setLatLng(latLng);
+            } else {
+                quickStationMarker = L.marker(latLng).addTo(quickStationMap);
+            }
+            input.value = latLng.lat.toFixed(6) + ', ' + latLng.lng.toFixed(6);
+        }
+
+        function initializeQuickStationMap() {
+            const locationInput = document.getElementById('quickStationLocation');
+            const initialLocation = parseQuickStationCoordinates(locationInput.value);
+            if (!quickStationMap) {
+                quickStationMap = L.map('quickStationMap').setView(initialLocation || [21.9588, 96.0891], initialLocation ? 14 : 6);
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    maxZoom: 19,
+                    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                }).addTo(quickStationMap);
+                quickStationMap.on('click', event => setQuickStationLocation(locationInput, event.latlng));
+            } else if (initialLocation) {
+                quickStationMap.setView(initialLocation, 14);
+            }
+
+            if (initialLocation) {
+                setQuickStationLocation(locationInput, initialLocation);
+            }
+            window.setTimeout(() => quickStationMap.invalidateSize(), 100);
+        }
+
+        document.getElementById('quickStationModal').addEventListener('shown.bs.modal', initializeQuickStationMap);
+        document.getElementById('quickAddTrackLocBtn').addEventListener('click', () => {
+            if (!quickStationMap) {
+                initializeQuickStationMap();
+            }
+            if (!navigator.geolocation) {
+                alert('Location services are not available in this browser.');
+                return;
+            }
+            navigator.geolocation.getCurrentPosition(position => {
+                const location = L.latLng(position.coords.latitude, position.coords.longitude);
+                setQuickStationLocation(document.getElementById('quickStationLocation'), location);
+                quickStationMap.setView(location, 14);
+            }, () => alert('Could not get your location. Check browser location permissions and try again.'), { enableHighAccuracy: true, timeout: 10000 });
+        });
 
         document.querySelectorAll('.status-toggle-btn').forEach(function (button) {
             button.addEventListener('click', function () {
