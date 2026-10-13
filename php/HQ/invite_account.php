@@ -16,8 +16,21 @@ $stationId = filter_var($_POST['station_id'] ?? null, FILTER_VALIDATE_INT, ['opt
 $hqId = map_pump_current_hq_id($pdo);
 $roleId = $role === 'manager' ? 4 : ($role === 'staff' ? 5 : 0);
 
+if (!$stationId) {
+    $fallbackStationStmt = $pdo->prepare(
+        "SELECT s.branch_id
+         FROM branches s
+         INNER JOIN station_business_scope sbs ON sbs.station_id = s.branch_id
+         WHERE sbs.headquarter_id = ?
+         ORDER BY s.branch_id ASC
+         LIMIT 1"
+    );
+    $fallbackStationStmt->execute([$hqId]);
+    $stationId = (int) ($fallbackStationStmt->fetchColumn() ?: 0);
+}
+
 if ($hqId <= 0 || !filter_var($email, FILTER_VALIDATE_EMAIL) || $roleId <= 0 || !$stationId) {
-    $_SESSION['hq_account_message'] = ['type' => 'danger', 'text' => 'Please provide a valid email, role, and branch.'];
+    $_SESSION['hq_account_message'] = ['type' => 'danger', 'text' => 'Please provide a valid email and role. Create a station first if no station is available yet.'];
     header('Location: account.php');
     exit;
 }

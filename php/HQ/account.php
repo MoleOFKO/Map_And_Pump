@@ -338,7 +338,7 @@ endif; ?>
                         <select class="form-select mb-3" id="inviteRole" name="role" required><option value="manager">Branch Manager</option><option value="staff">Staff</option></select>
                         <div class="d-flex align-items-center justify-content-between gap-2 mb-2">
                             <label class="form-label mb-0" for="inviteStation">Station</label>
-                            <button type="button" class="btn btn-sm btn-outline-info" data-bs-toggle="modal" data-bs-target="#quickStationModal">+ Add Station</button>
+                            <button type="button" class="btn btn-sm btn-outline-info" data-bs-toggle="modal" data-bs-target="#quickStationModal" data-reopen-source="inviteAccountModal">+ Add Station</button>
                         </div>
                         <select class="form-select" id="inviteStation" name="station_id" required><option value="">Select an HQ station</option><?php foreach ($stations as $station): ?><option value="<?= (int)$station['station_id'] ?>"><?= htmlspecialchars((string)$station['station_name'] . ' — ' . (string)$station['location']) ?></option><?php endforeach; ?></select>
                         <?php if (empty($stations)): ?>
@@ -363,18 +363,9 @@ endif; ?>
                     </div>
                     <div class="modal-body">
                         <div class="row">
-                            <div class="col-md-6 mb-3">
+                            <div class="col-12 mb-3">
                                 <label class="form-label text-light">Station Name</label>
                                 <input type="text" name="station_name" class="form-control bg-dark text-light border-secondary" placeholder="e.g. Downtown Metro" required>
-                            </div>
-                            <div class="col-md-6 mb-3">
-                                <label class="form-label text-light">Branch Manager Email</label>
-                                <select name="manager_email" class="form-select bg-dark text-light border-secondary" required>
-                                    <option value="">Choose a branch manager</option>
-                                    <?php foreach ($branchManagers as $manager): ?>
-                                        <option value="<?= htmlspecialchars($manager['email'], ENT_QUOTES, 'UTF-8') ?>"><?= htmlspecialchars($manager['email']) ?></option>
-                                    <?php endforeach; ?>
-                                </select>
                             </div>
                             <div class="col-12 mb-3">
                                 <label class="form-label text-light">Station Address</label>
@@ -469,6 +460,36 @@ endif; ?>
             }
             window.setTimeout(() => quickStationMap.invalidateSize(), 100);
         }
+
+        document.querySelectorAll('[data-reopen-source]').forEach(button => {
+            button.addEventListener('click', function () {
+                const targetId = this.getAttribute('data-bs-target');
+                const targetModal = targetId ? document.querySelector(targetId) : null;
+                const sourceId = this.getAttribute('data-reopen-source');
+                if (targetModal && sourceId) {
+                    targetModal.setAttribute('data-reopen-source', sourceId);
+                }
+            });
+        });
+
+        document.querySelectorAll('.modal').forEach(modalEl => {
+            modalEl.addEventListener('hidden.bs.modal', function () {
+                const reopenSource = this.getAttribute('data-reopen-source');
+                if (!reopenSource) {
+                    return;
+                }
+
+                const sourceModal = document.getElementById(reopenSource);
+                if (sourceModal) {
+                    window.setTimeout(() => {
+                        const modalInstance = bootstrap.Modal.getOrCreateInstance(sourceModal);
+                        modalInstance.show();
+                    }, 120);
+                }
+
+                this.removeAttribute('data-reopen-source');
+            });
+        });
 
         document.getElementById('quickStationModal').addEventListener('shown.bs.modal', initializeQuickStationMap);
         document.getElementById('quickAddTrackLocBtn').addEventListener('click', () => {
