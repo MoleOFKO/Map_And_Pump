@@ -719,6 +719,16 @@ function company_loyalty_transfer_customer_redemption(
             throw new LoyaltyTransferException('Could not credit the station HQ points wallet.');
         }
 
+        $headquarterCredit = $pdo->prepare(
+            'UPDATE headquarter
+             SET has_points = COALESCE(has_points, 0) + ?
+             WHERE headquarter_id = ?'
+        );
+        $headquarterCredit->execute([$points, $headquarterId]);
+        if ($headquarterCredit->rowCount() !== 1) {
+            throw new LoyaltyTransferException('Could not save the redeemed points to the station HQ account.');
+        }
+
         loyalty_ledger_write($pdo, [
             'party_type' => 'company',
             'party_id' => $headquarterId,

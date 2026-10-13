@@ -5,8 +5,8 @@
  * Stability notes:
  * - Session is read then closed immediately so concurrent keystroke requests
  *   do not block each other on PHP's exclusive session lock.
- * - Admin gate accepts role_name "admin" or role_id 1 (common admin id),
- *   and also business_role when the account was promoted via hire.
+ * - Admin role and account status are confirmed from the database after the
+ *   session lock is released.
  * - Schema readiness is cached for the request lifetime inside
  *   moderator_schema_ready().
  */
@@ -27,45 +27,39 @@ function moderator_search_json(bool $ok, string $message = '', array $extra = []
 }
 
 $adminUserId = (int) ($_SESSION['user_id'] ?? 0);
-$roleName = strtolower(trim((string) ($_SESSION['role_name'] ?? '')));
-$roleId = (int) ($_SESSION['role_id'] ?? 0);
-$businessRoleName = strtolower(trim((string) ($_SESSION['business_role_name'] ?? '')));
-$businessRoleId = (int) ($_SESSION['business_role_id'] ?? 0);
 
 // Release the session lock before any DB work so rapid typeahead calls
 // do not queue behind each other (classic intermittent-search symptom).
 session_write_close();
-
-$isAdmin = $adminUserId > 0 && (
-    $roleName === 'admin'
-    || $businessRoleName === 'admin'
-    || $roleId === 1
-    || $businessRoleId === 1
-);
 
 if (!hq_db_available()) {
     error_log('[Moderator search] Database connection unavailable.');
     moderator_search_json(false, 'The account registry is temporarily unavailable.');
 }
 
-// When session role is stale/ambiguous, confirm admin from the database.
-if ($adminUserId > 0 && !$isAdmin) {
+$isAdmin = false;
+if ($adminUserId > 0) {
     $adminCheck = hq_prepare(
-        "SELECT 1
+        "SELECT u.status,
+                COALESCE(active_role.role_name, business_role.role_name, primary_role.role_name) AS role_name,
+                primary_role.role_name AS primary_role_name,
+                business_role.role_name AS business_role_name,
+                active_role.role_name AS active_role_name
          FROM users u
-         LEFT JOIN roles r ON r.role_id = u.role_id
-         LEFT JOIN roles br ON br.role_id = u.business_role_id
+         LEFT JOIN roles primary_role ON primary_role.role_id = u.role_id
+         LEFT JOIN roles business_role ON business_role.role_id = u.business_role_id
+         LEFT JOIN roles active_role ON active_role.role_id = u.current_role_id
          WHERE u.user_id = ?
-           AND (
-                LOWER(TRIM(COALESCE(r.role_name, ''))) = 'admin'
-             OR LOWER(TRIM(COALESCE(br.role_name, ''))) = 'admin'
-           )
          LIMIT 1",
         'i',
         [$adminUserId]
     );
     if ($adminCheck && $adminCheck->execute()) {
-        $isAdmin = (bool) $adminCheck->get_result()?->fetch_row();
+        $adminRecord = $adminCheck->get_result()?->fetch_assoc();
+        $adminStatus = strtolower(trim((string) ($adminRecord['status'] ?? '')));
+        $isAdmin = $adminRecord
+            && admin_user_has_role($adminRecord, ['admin'])
+            && in_array($adminStatus, ['approved', 'active'], true);
         $adminCheck->close();
     } elseif ($adminCheck) {
         $adminCheck->close();

@@ -197,6 +197,43 @@
         return url;
     }
 
+    function syncLogActions(form, filterUrl) {
+        if (!form || !filterUrl || !document.getElementById('clearLogsForm')) return;
+
+        const params = new URLSearchParams(filterUrl.searchParams);
+        const exportLink = document.querySelector('.js-export-logs');
+        if (exportLink) {
+            const exportUrl = new URL(exportLink.href, window.location.href);
+            exportUrl.search = '';
+            exportUrl.searchParams.set('action', 'export');
+            ['search', 'log_level', 'actor', 'date_from', 'date_to'].forEach((key) => {
+                const value = params.get(key) || '';
+                if (value !== '') exportUrl.searchParams.set(key, value);
+            });
+            exportLink.href = exportUrl.toString();
+        }
+
+        const clearForm = document.getElementById('clearLogsForm');
+        ['search', 'log_level', 'actor', 'date_from', 'date_to'].forEach((key) => {
+            const input = clearForm.querySelector(`[name="${key}"]`);
+            if (!input) return;
+            input.value = params.get(key) || (key === 'actor' || key === 'log_level' ? 'all' : '');
+        });
+
+        const actorLabels = { all: 'all actors', admin: 'Admin actions', moderator: 'Moderator actions' };
+        const actor = params.get('actor') || 'all';
+        const filters = [];
+        const search = params.get('search') || '';
+        const level = params.get('log_level') || 'all';
+        const dateFrom = params.get('date_from') || '';
+        const dateTo = params.get('date_to') || '';
+        if (search) filters.push(`search "${search}"`);
+        if (level !== 'all') filters.push(`${level.toUpperCase()} level`);
+        if (dateFrom) filters.push(`from ${dateFrom}`);
+        if (dateTo) filters.push(`through ${dateTo}`);
+        clearForm.dataset.confirmMessage = `Clear ${actorLabels[actor] || 'all actors'}${filters.length ? ` matching ${filters.join(', ')}` : ''}? This cannot be undone.`;
+    }
+
     /**
      * Locate the results panel that belongs to this filter form.
      * Markup patterns: form inside .dashboard-card, results in a following .analytics-card
@@ -296,6 +333,7 @@
             }
 
             const url = buildFilterUrl(form);
+            syncLogActions(form, url);
             const seq = ++requestSeq;
 
             if (abortCtrl) {

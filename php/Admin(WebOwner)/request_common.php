@@ -8,6 +8,7 @@ require_once __DIR__ . '/../Login/mail_templates.php';
 function request_type_label(?string $type): string
 {
     return match (strtolower(trim((string) $type))) {
+        'hq_registration' => 'HQ Registration',
         'station', 'new_station', 'new_station_registration' => 'New Station Registration',
         'license', 'license_modification' => 'License Modification',
         'deactivation', 'account_deactivation' => 'Account Deactivation',
@@ -18,6 +19,7 @@ function request_type_label(?string $type): string
 function request_type_short_label(?string $type): string
 {
     return match (strtolower(trim((string) $type))) {
+        'hq_registration' => 'HQ Registration',
         'station', 'new_station', 'new_station_registration' => 'New Station Reg',
         'license', 'license_modification' => 'License Mod',
         'deactivation', 'account_deactivation' => 'Account Deactivation',

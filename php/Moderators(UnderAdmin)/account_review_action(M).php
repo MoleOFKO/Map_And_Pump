@@ -26,7 +26,7 @@ if (mb_strlen($reason) > 2000) {
     request_redirect('view_requests(M).php');
 }
 
-if (!hq_db_available() || !hq_registry_schema_ready() || !request_schema_ready()) {
+if (!hq_db_available() || !user_account_review_schema_ready()) {
     request_flash('danger', hq_db_error_message());
     request_redirect('view_requests(M).php');
 }
@@ -37,9 +37,8 @@ try {
     $conn->begin_transaction();
 
     $targetQuery = $conn->prepare(
-        'SELECT u.user_id, u.user_name, u.email, u.status, u.license_id, r.role_name
+        'SELECT u.user_id, u.user_name, u.email, u.status, u.license_id
          FROM users u
-         INNER JOIN roles r ON r.role_id = COALESCE(u.current_role_id, u.business_role_id, u.role_id)
          WHERE u.user_id = ?
          FOR UPDATE'
     );
@@ -54,7 +53,7 @@ try {
     if (!$target) {
         throw new RuntimeException('That account could not be found.');
     }
-    if (!in_array(strtolower(trim((string) $target['status'])), ['pending', 'pending_verification'], true)) {
+    if (strtolower(trim((string) $target['status'])) !== 'pending_verification') {
         throw new RuntimeException('Only pending verification accounts can be approved or rejected.');
     }
 
@@ -69,7 +68,7 @@ try {
     }
     $update->close();
 
-    if (!empty($target['license_id'])) {
+    if (!empty($target['license_id']) && user_account_column_exists('user_license', 'status')) {
         $licenseStatus = $action === 'approve' ? 'approved' : 'rejected';
         $licenseUpdate = $conn->prepare('UPDATE user_license SET status = ?, updated_at = NOW() WHERE license_id = ?');
         if (!$licenseUpdate) {
