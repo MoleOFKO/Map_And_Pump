@@ -13,7 +13,7 @@ require __DIR__ . '/partials/nav.php';
             <span class="eyebrow">Terms of service</span>
             <h1>Clear rules for<br><span class="text-gradient-accent">using MAP &amp; PUMP.</span></h1>
             <p>These terms set the rules for using MAP &amp; PUMP as a school demonstration project.</p>
-            <p class="legal-updated"><i class="fa-regular fa-calendar me-2"></i>Last updated: September 17, 2026</p>
+            <p class="legal-updated"><i class="fa-regular fa-calendar me-2"></i>Last updated: October 13, 2026</p>
         </header>
 
         <article class="legal-content">
@@ -29,9 +29,9 @@ require __DIR__ . '/partials/nav.php';
             </section>
 
             <section>
-                <h2>3. No real personal or sensitive information</h2>
-                <p>You must use invented test data only. Do not submit real names, email addresses, phone numbers, addresses, vehicle or licence numbers, company information, passwords, identity documents, payment details, receipts, photographs, or any other personal or sensitive information belonging to you or anyone else.</p>
-                <p>If real data is submitted accidentally, contact the project team promptly so it can be removed. We may delete any submitted content or account without notice to protect privacy or maintain the test environment.</p>
+                <h2>3. Limited email use; fictional data otherwise</h2>
+                <p>You may provide a real email address that you control or are authorised to use in an email field required for an account, invitation, or project contact. It may be used for sign-in, verification, and essential account, security, invitation, and request-status notices. The project may use an email delivery provider to send those messages. Use fictional information in all other fields. Do not submit real names, phone numbers, street addresses, vehicle or licence numbers, company information, identity documents, payment details, receipts, photographs, precise location data, or personal information belonging to anyone else. Do not reuse passwords from other services.</p>
+                <p>If other real personal information is submitted accidentally, contact the project team promptly to request removal. We may delete submitted content or accounts to protect privacy or maintain the test environment.</p>
             </section>
 
             <section>
@@ -40,8 +40,8 @@ require __DIR__ . '/partials/nav.php';
             </section>
 
             <section>
-                <h2>5. No commercial transactions</h2>
-                <p>No information on this project creates a sale, booking, contract, payment obligation, partnership, or other commercial relationship. Do not send money or use real payment details through this site.</p>
+                <h2>5. No payments through the website</h2>
+                <p>The website does not process or hold payments. Any real-world money exchange, if it occurs, takes place outside the website and is not processed, arranged, or guaranteed by this project. Do not submit payment details or send money through the site. Site content does not create a sale, booking, contract, payment obligation, partnership, or other commercial relationship.</p>
             </section>
 
             <section>

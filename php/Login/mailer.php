@@ -236,15 +236,15 @@ function send_registration_code(string $email, string $code): void
 {
     $safeCode = htmlspecialchars($code, ENT_QUOTES, 'UTF-8');
     $html = '<div style="font-family:Arial,sans-serif;line-height:1.5;color:#111827">'
-        . '<h2>Verify your MAP &amp; PUMP school-project account</h2>'
-        . '<p>You requested a verification code for the MAP &amp; PUMP school project.</p>'
+        . '<h2>Verify your MAP &amp; PUMP account</h2>'
+        . '<p>You requested a verification code for your account in the MAP &amp; PUMP school demonstration project.</p>'
         . '<p>Your verification code is:</p>'
         . '<p style="font-size:28px;font-weight:700;letter-spacing:8px">' . $safeCode . '</p>'
         . '<p>This code expires in 10 minutes and can be used once. Do not share it with anyone.</p>'
         . '<p>If you did not start this registration, ignore this email. Do not reply with passwords, payment details, identity documents, or other personal information.</p>'
-        . '<p><strong>Privacy reminder:</strong> only your email address is needed for this verification. This is a school test project; use fictional data for every other field.</p>'
+        . '<p><strong>Privacy reminder:</strong> your email is used for verification and may receive essential account or security notices. Use fictional information for every other field in this school demo.</p>'
         . '</div>';
 
-    send_mail($email, 'Your MAP & PUMP school-project verification code', $html, "Your MAP & PUMP school-project verification code is {$code}. It expires in 10 minutes. Do not share it. If you did not request it, ignore this email. Only your email is needed for verification; use fictional data for all other fields.");
+    send_mail($email, 'Your MAP & PUMP account verification code', $html, "Your MAP & PUMP school demo account verification code is {$code}. It expires in 10 minutes and can be used once. Do not share it. If you did not request it, ignore this email. Your email is used for verification and may receive essential account or security notices; use fictional information for all other fields.");
 }
 

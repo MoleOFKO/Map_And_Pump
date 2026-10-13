@@ -3,7 +3,7 @@ require_once __DIR__ . '/hq_guard.php';
 require_once __DIR__ . '/../conn.php';
 require_once __DIR__ . '/../business_scope.php';
 require_once __DIR__ . '/../invitations_schema.php';
-require_once __DIR__ . '/../Login/mailer.php';
+require_once __DIR__ . '/../Login/mail_templates.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     header('Location: account.php');
@@ -98,15 +98,12 @@ try {
     $pdo->prepare('UPDATE invitations SET notification_id = ? WHERE invitation_id = ?')->execute([$notificationId, $invitationId]);
     $pdo->commit();
 
-    $deliveryStatus = 'failed';
-    $deliveryNote = 'Email delivery failed.';
-    try {
-        smtp_send_mail($email, $subject, '<p>' . htmlspecialchars($message, ENT_QUOTES, 'UTF-8') . '</p>', $message);
-        $deliveryStatus = 'sent';
-        $deliveryNote = 'Invitation email sent.';
-    } catch (Throwable $mailError) {
-        error_log('[HQ invitation] Email delivery failed: ' . $mailError->getMessage());
-    }
+    $emailNotice = mail_send_account_notice($email, [
+        'kind' => 'hq_invitation',
+        'action' => 'hq_invited',
+    ]);
+    $deliveryStatus = (string) ($emailNotice['status'] ?? 'failed');
+    $deliveryNote = (string) ($emailNotice['note'] ?? 'Email delivery failed.');
     $pdo->prepare('UPDATE notifications SET delivery_status = ?, delivery_note = ? WHERE notification_id = ?')->execute([$deliveryStatus, $deliveryNote, $notificationId]);
     $_SESSION['hq_account_message'] = ['type' => 'success', 'text' => 'Invitation created. The customer must Accept or Decline it before using the account. Email status: ' . $deliveryStatus . '.'];
 } catch (Throwable $error) {

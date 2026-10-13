@@ -79,7 +79,21 @@ try {
     $userUpdate->close();
     admin_record_log((int) $moderatorUser['user_id'], 'Updated Customer user #' . $userId . ' (' . $userName . ').');
     $conn->commit();
-    hq_flash('success', 'The user account was updated in the database.');
+
+    $oldEmail = (string) ($target['email'] ?? '');
+    $emailChanged = strcasecmp($oldEmail, $email) !== 0;
+    $profileChanged = trim((string) ($target['user_name'] ?? '')) !== $userName;
+    $notice = null;
+    if ($emailChanged || $profileChanged) {
+        $notice = mail_send_account_notice($oldEmail, [
+            'kind' => 'security',
+            'action' => $emailChanged ? 'email_changed' : 'profile_changed',
+        ]);
+    }
+    $noticeSuffix = $notice === null ? '' : (!empty($notice['sent'])
+        ? ' A notice was sent to the previous account email.'
+        : ' The profile was saved, but an email notice could not be delivered to the previous address.');
+    hq_flash('success', 'The user account was updated in the database.' . $noticeSuffix);
 } catch (Throwable $exception) {
     $conn->rollback();
     error_log('[Moderator Customer] Update failed: ' . $exception->getMessage());

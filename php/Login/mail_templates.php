@@ -41,19 +41,19 @@ function mail_legal_footer(): array
 {
     $html = '<hr style="border:none;border-top:1px solid #e5e7eb;margin:24px 0">'
         . '<p style="color:#6b7280;font-size:12px;line-height:1.5;margin:0 0 8px">'
-        . 'You received this message because a Map &amp; Pump account or request associated with this email address was updated by an administrator or moderator.'
+        . 'You received this message because a Map &amp; Pump account, invitation, request, or security event is associated with this email address.'
         . '</p>'
         . '<p style="color:#6b7280;font-size:12px;line-height:1.5;margin:0 0 8px">'
-        . 'MAP &amp; PUMP is a school demonstration project for learning and testing. It is not a live commercial fuel service, payment service, or emergency service. Do not rely on it for real-world operations.'
+        . 'MAP &amp; PUMP is a school demonstration project for learning and testing, not a live commercial fuel or emergency service. The website does not process payments; any real-world money exchange, if any, takes place outside the website and is not managed by this project.'
         . '</p>'
         . '<p style="color:#6b7280;font-size:12px;line-height:1.5;margin:0">'
-        . 'This is a transactional account notice, not marketing. For questions about this message, use the Contact options on the Map &amp; Pump site or reply only if your mail client allows a reply to the sender address configured for this project. Review the Terms of Service and Privacy Policy on the site for how the project handles data.'
+        . 'This is an account, invitation, request, or security service notice, not promotional email. For questions, contact map.and.pump@gmail.com. Review the Terms of Service and Privacy Policy on the Map &amp; Pump site for information about how the project handles data.'
         . '</p>';
 
     $text = "----\n"
-        . "You received this message because a Map & Pump account or request associated with this email address was updated by an administrator or moderator.\n\n"
-        . "MAP & PUMP is a school demonstration project for learning and testing. It is not a live commercial fuel service, payment service, or emergency service. Do not rely on it for real-world operations.\n\n"
-        . "This is a transactional account notice, not marketing. For questions about this message, use the Contact options on the Map & Pump site. Review the Terms of Service and Privacy Policy on the site for how the project handles data.\n";
+        . "You received this message because a Map & Pump account, invitation, request, or security event is associated with this email address.\n\n"
+        . "MAP & PUMP is a school demonstration project for learning and testing, not a live commercial fuel or emergency service. The website does not process payments; any real-world money exchange, if any, takes place outside the website and is not managed by this project.\n\n"
+        . "This is an account, invitation, request, or security service notice, not promotional email. For questions, contact map.and.pump@gmail.com. Review the Terms of Service and Privacy Policy on the Map & Pump site for information about how the project handles data.\n";
 
     return ['html' => $html, 'text' => $text];
 }
@@ -68,20 +68,55 @@ function mail_action_labels(string $action): array
     $action = strtolower(trim($action));
 
     return match ($action) {
-        'remove', 'removed', 'reject', 'rejected' => [
-            'title' => $action === 'reject' || $action === 'rejected' ? 'Rejected' : 'Removed',
-            'status' => $action === 'reject' || $action === 'rejected' ? 'rejected' : 'removed',
-            'effect' => 'Access associated with this account may be blocked or limited under the project rules.',
+        'created' => [
+            'title' => 'Created',
+            'status' => 'created',
+            'effect' => 'An administrator created a moderator account for this email address. Sign-in details will be provided separately. For security, do not send passwords by email.',
+        ],
+        'invited' => [
+            'title' => 'Invitation',
+            'status' => 'invited to review',
+            'effect' => 'An administrator invited this account to review a moderator role. Sign in to review the invitation and accept or decline it. Moderator access is not granted unless the invitation is accepted.',
+        ],
+        'hq_invited' => [
+            'title' => 'Invitation',
+            'status' => 'invited to review',
+            'effect' => 'A Map & Pump headquarters account invited this account to review a role and branch assignment. Sign in to review the invitation and accept or decline it. The role is not granted unless the invitation is accepted.',
+        ],
+        'email_changed' => [
+            'title' => 'Email address changed',
+            'status' => 'email address changed',
+            'effect' => 'An administrator changed the email address associated with this account. This notice was sent to the address previously on file. If you did not expect this change, contact project support.',
+        ],
+        'profile_changed' => [
+            'title' => 'Profile updated',
+            'status' => 'profile updated',
+            'effect' => 'An administrator changed profile details associated with this account. If you did not expect this change, contact project support.',
+        ],
+        'password_changed' => [
+            'title' => 'Password changed',
+            'status' => 'password changed',
+            'effect' => 'An administrator changed this account password. This email does not contain a password. If you did not expect this change, contact project support.',
+        ],
+        'remove', 'removed' => [
+            'title' => 'Removed',
+            'status' => 'removed',
+            'effect' => 'Sign-in to this account is disabled while its status is removed.',
+        ],
+        'reject', 'rejected' => [
+            'title' => 'Rejected',
+            'status' => 'rejected',
+            'effect' => 'The request was not approved. Sign in to review its details.',
         ],
         'restore', 'approved', 'approve' => [
             'title' => $action === 'approve' || $action === 'approved' ? 'Approved' : 'Restored',
             'status' => 'approved',
-            'effect' => 'The account may be used again under the project Terms of Service, subject to any other checks that still apply.',
+            'effect' => 'The account status is approved. Sign in to continue using the account.',
         ],
         'suspend', 'suspended' => [
             'title' => 'Suspended',
             'status' => 'suspended',
-            'effect' => 'Sign-in and use of this account may be limited while the status remains suspended.',
+            'effect' => 'Sign-in to this account is disabled while its status is suspended.',
         ],
         default => [
             'title' => 'Updated',
@@ -95,11 +130,11 @@ function mail_action_labels(string $action): array
  * Build a transactional account / HQ / verification / request notice.
  *
  * Expected $context keys:
- * - kind: account|hq|verification|request (default account)
- * - action: suspend|remove|restore|approve|reject|...
- * - account_label: display name (user or HQ)
- * - reason: optional staff reason
- * - extra_lines: optional list of plain strings
+ * - kind: account|hq|verification|request|moderator|moderator_invitation|hq_invitation|security (default account)
+ * - action: suspend|remove|restore|approve|reject|created|invited|hq_invited|email_changed|profile_changed|password_changed
+ * - account_label: accepted for compatibility but omitted to minimize personal data in email
+ * - reason: retained in action history but intentionally omitted from email
+ * - reference_code: optional request reference code
  *
  * @param array<string,mixed> $context
  * @return array{subject:string,html:string,text:string}
@@ -108,12 +143,6 @@ function mail_build_account_notice(array $context): array
 {
     $kind = strtolower(trim((string) ($context['kind'] ?? 'account')));
     $action = strtolower(trim((string) ($context['action'] ?? 'updated')));
-    $label = trim((string) ($context['account_label'] ?? ''));
-    $reason = trim((string) ($context['reason'] ?? ''));
-    if (mb_strlen($reason) > 2000) {
-        $reason = mb_substr($reason, 0, 2000);
-    }
-
     $labels = mail_action_labels($action);
     $footer = mail_legal_footer();
 
@@ -121,6 +150,10 @@ function mail_build_account_notice(array $context): array
         'hq' => 'HQ account',
         'verification' => 'account verification',
         'request' => 'request',
+        'moderator' => 'moderator account',
+        'moderator_invitation' => 'moderator invitation',
+        'hq_invitation' => 'HQ invitation',
+        'security' => 'account security',
         default => 'account',
     };
 
@@ -128,6 +161,10 @@ function mail_build_account_notice(array $context): array
         'verification' => 'Map & Pump account verification: ' . $labels['title'],
         'request' => 'Map & Pump request update: ' . $labels['title'],
         'hq' => 'Map & Pump HQ account status update: ' . $labels['title'],
+        'moderator_invitation' => 'Map & Pump moderator role invitation',
+        'moderator' => 'Map & Pump moderator account update: ' . $labels['title'],
+        'hq_invitation' => 'Map & Pump HQ invitation',
+        'security' => 'Map & Pump account security notice: ' . $labels['title'],
         default => 'Map & Pump account status update: ' . $labels['title'],
     };
 
@@ -135,28 +172,25 @@ function mail_build_account_notice(array $context): array
         'hq' => 'A Map & Pump headquarters account associated with this email address was updated by an administrator or moderator.',
         'verification' => 'A Map & Pump account verification decision was recorded for the account associated with this email address.',
         'request' => 'A Map & Pump request associated with this email address was updated by an administrator or moderator.',
+        'moderator' => 'A Map & Pump moderator account associated with this email address was updated by an administrator.',
+        'moderator_invitation' => 'A Map & Pump moderator role invitation is waiting for this account.',
+        'hq_invitation' => 'A Map & Pump headquarters invitation is waiting for this account.',
+        'security' => 'A security-related change was made to the Map & Pump account associated with this email address.',
         default => 'A Map & Pump account associated with this email address was updated by an administrator or moderator.',
     };
 
-    $targetLine = $label !== ''
-        ? 'Target: ' . $label
-        : 'Target: the account linked to this email address';
-
-    $statusLine = 'New status: ' . $labels['status'];
+    $statusPrefix = match ($kind) {
+        'security' => 'Change recorded: ',
+        'moderator_invitation', 'hq_invitation' => 'Invitation status: ',
+        default => 'New status: ',
+    };
+    $statusLine = $statusPrefix . $labels['status'];
     $effectLine = $labels['effect'];
     if (!empty($context['effect']) && is_string($context['effect'])) {
         $effectLine = trim($context['effect']);
     }
 
-    $extraLines = [];
-    if (!empty($context['extra_lines']) && is_array($context['extra_lines'])) {
-        foreach ($context['extra_lines'] as $line) {
-            $line = trim((string) $line);
-            if ($line !== '') {
-                $extraLines[] = $line;
-            }
-        }
-    }
+    $referenceCode = trim((string) ($context['reference_code'] ?? ''));
 
     // Plain text body
     $textParts = [
@@ -164,17 +198,11 @@ function mail_build_account_notice(array $context): array
         '',
         $intro,
         '',
-        $targetLine,
         $statusLine,
         $effectLine,
     ];
-    if ($reason !== '') {
-        $textParts[] = '';
-        $textParts[] = 'Reason provided:';
-        $textParts[] = $reason;
-    }
-    foreach ($extraLines as $line) {
-        $textParts[] = $line;
+    if ($referenceCode !== '') {
+        $textParts[] = 'Reference code: ' . $referenceCode;
     }
     $textParts[] = '';
     $textParts[] = $footer['text'];
@@ -183,21 +211,13 @@ function mail_build_account_notice(array $context): array
     // HTML body
     $html = '<div style="font-family:Arial,Helvetica,sans-serif;line-height:1.55;color:#111827;max-width:560px">'
         . '<p style="margin:0 0 12px;font-size:14px;color:#374151">Map &amp; Pump — ' . mail_h($scope) . ' notice</p>'
-        . '<h2 style="margin:0 0 16px;font-size:20px;color:#111827">Status update: ' . mail_h($labels['title']) . '</h2>'
+        . '<h2 style="margin:0 0 16px;font-size:20px;color:#111827">' . mail_h($labels['title']) . '</h2>'
         . '<p style="margin:0 0 12px">' . mail_h($intro) . '</p>'
-        . '<p style="margin:0 0 8px"><strong>' . mail_h($targetLine) . '</strong></p>'
         . '<p style="margin:0 0 8px"><strong>' . mail_h($statusLine) . '</strong></p>'
         . '<p style="margin:0 0 12px">' . mail_h($effectLine) . '</p>';
 
-    if ($reason !== '') {
-        $html .= '<p style="margin:16px 0 6px"><strong>Reason provided</strong></p>'
-            . '<p style="margin:0 0 12px;padding:12px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;white-space:pre-wrap">'
-            . mail_h($reason)
-            . '</p>';
-    }
-
-    foreach ($extraLines as $line) {
-        $html .= '<p style="margin:0 0 8px">' . mail_h($line) . '</p>';
+    if ($referenceCode !== '') {
+        $html .= '<p style="margin:0 0 8px"><strong>Reference code:</strong> ' . mail_h($referenceCode) . '</p>';
     }
 
     $html .= $footer['html'] . '</div>';
@@ -223,7 +243,7 @@ function mail_send_account_notice(string $recipient, array $context): array
         return [
             'sent' => false,
             'status' => 'skipped',
-            'note' => 'No valid email address was available; the reason was recorded in the action history.',
+            'note' => 'No valid email address was available; the action was saved in the application.',
         ];
     }
 
@@ -231,13 +251,14 @@ function mail_send_account_notice(string $recipient, array $context): array
         return [
             'sent' => false,
             'status' => 'not_configured',
-            'note' => 'Email delivery is not configured on this server; the reason was recorded in the action history.',
+            'note' => 'The action was saved in the application, but email delivery is not configured on this server.',
         ];
     }
 
-    $built = mail_build_account_notice($context);
-
+    $subject = '';
     try {
+        $built = mail_build_account_notice($context);
+        $subject = $built['subject'];
         smtp_send_mail($recipient, $built['subject'], $built['html'], $built['text']);
 
         return [
@@ -247,14 +268,17 @@ function mail_send_account_notice(string $recipient, array $context): array
             'subject' => $built['subject'],
         ];
     } catch (Throwable $e) {
-        $note = 'Email delivery failed: ' . $e->getMessage();
-        error_log('[mail_templates] ' . $note);
+        error_log('[mail_templates] Email delivery failed: ' . $e->getMessage());
 
-        return [
+        $result = [
             'sent' => false,
             'status' => 'failed',
-            'note' => substr($note, 0, 255),
-            'subject' => $built['subject'],
+            'note' => 'Email delivery failed; the account action was still saved.',
         ];
+        if ($subject !== '') {
+            $result['subject'] = $subject;
+        }
+
+        return $result;
     }
 }

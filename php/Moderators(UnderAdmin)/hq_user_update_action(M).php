@@ -29,7 +29,7 @@ if (!hq_db_available() || !hq_registry_schema_ready()) {
 
 global $conn;
 $targetQuery = $conn->prepare(
-    'SELECT u.user_id, u.headquarter_id, h.company_name,
+    'SELECT u.user_id, u.user_name, u.email AS user_email, u.headquarter_id, h.company_name,
             (SELECT MIN(u2.user_id)
              FROM users u2
              WHERE u2.headquarter_id = u.headquarter_id
@@ -109,7 +109,21 @@ try {
 
     admin_record_log((int) $moderatorUser['user_id'], 'Updated user #' . $userId . ' in HQ #' . $headquarterId . ' (' . $target['company_name'] . ').');
     $conn->commit();
-    hq_flash('success', 'The user account was updated and synchronized with the HQ record.');
+
+    $oldEmail = (string) ($target['user_email'] ?? '');
+    $emailChanged = strcasecmp($oldEmail, $email) !== 0;
+    $profileChanged = trim((string) ($target['user_name'] ?? '')) !== $userName;
+    $notice = null;
+    if ($emailChanged || $profileChanged) {
+        $notice = mail_send_account_notice($oldEmail, [
+            'kind' => 'security',
+            'action' => $emailChanged ? 'email_changed' : 'profile_changed',
+        ]);
+    }
+    $noticeSuffix = $notice === null ? '' : (!empty($notice['sent'])
+        ? ' A notice was sent to the previous account email.'
+        : ' The profile was saved, but an email notice could not be delivered to the previous address.');
+    hq_flash('success', 'The user account was updated and synchronized with the HQ record.' . $noticeSuffix);
 } catch (Throwable $exception) {
     $conn->rollback();
     error_log('[Moderator HQ user] Update failed: ' . $exception->getMessage());

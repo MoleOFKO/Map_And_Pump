@@ -28,7 +28,7 @@ if (!hq_db_available() || !hq_registry_schema_ready()) {
 }
 
 global $conn;
-$targetQuery = $conn->prepare("SELECT u.user_id FROM users u INNER JOIN roles r ON r.role_id = u.role_id WHERE u.user_id = ? AND u.role_id = 6 AND LOWER(TRIM(r.role_name)) = 'customer' AND (u.business_role_id IS NULL OR u.business_role_id = 6) AND (u.current_role_id IS NULL OR u.current_role_id = 6) LIMIT 1");
+$targetQuery = $conn->prepare("SELECT u.user_id, u.user_name, u.email FROM users u INNER JOIN roles r ON r.role_id = u.role_id WHERE u.user_id = ? AND u.role_id = 6 AND LOWER(TRIM(r.role_name)) = 'customer' AND (u.business_role_id IS NULL OR u.business_role_id = 6) AND (u.current_role_id IS NULL OR u.current_role_id = 6) LIMIT 1");
 if (!$targetQuery) {
     hq_flash('danger', 'The selected Customer account could not be loaded.');
     hq_redirect($redirect);
@@ -63,7 +63,21 @@ try {
     $reviewer = admin_current_user(false);
     admin_record_log((int) ($reviewer['user_id'] ?? 0), 'Updated Customer user #' . $userId . ' (' . $userName . ').');
     $conn->commit();
-    hq_flash('success', 'The user account was updated in the database.');
+
+    $oldEmail = (string) ($target['email'] ?? '');
+    $emailChanged = strcasecmp($oldEmail, $email) !== 0;
+    $profileChanged = trim((string) ($target['user_name'] ?? '')) !== $userName;
+    $notice = null;
+    if ($emailChanged || $profileChanged) {
+        $notice = mail_send_account_notice($oldEmail, [
+            'kind' => 'security',
+            'action' => $emailChanged ? 'email_changed' : 'profile_changed',
+        ]);
+    }
+    $noticeSuffix = $notice === null ? '' : (!empty($notice['sent'])
+        ? ' A notice was sent to the previous account email.'
+        : ' The profile was saved, but an email notice could not be delivered to the previous address.');
+    hq_flash('success', 'The user account was updated in the database.' . $noticeSuffix);
 } catch (Throwable $exception) {
     $conn->rollback();
     error_log('[Admin Customer] Update failed: ' . $exception->getMessage());

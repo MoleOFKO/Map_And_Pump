@@ -70,7 +70,7 @@ $registrationCsrf = $_SESSION['registration_csrf'];
             <div class="input-wrapper">
               <input type="email" id="register-email" name="email" placeholder="example123@gmail.com" required />
             </div>
-            <small style="display:block;margin-top:8px;color:#a8b3c7;line-height:1.45;">Use an email address you can access only to receive the verification code. Do not enter any other real personal or sensitive information in this school project.</small>
+            <small style="display:block;margin-top:8px;color:#a8b3c7;line-height:1.45;">Use an email address you can access for verification and essential account, security, invitation, or request-status notices. Use fictional information for every other field.</small>
           </div>
 
           <!-- Password Input -->
@@ -127,7 +127,7 @@ $registrationCsrf = $_SESSION['registration_csrf'];
 
           <label style="display:flex;gap:9px;align-items:flex-start;margin:4px 0 18px;color:#d5dceb;font-size:12px;line-height:1.45;cursor:pointer;">
             <input type="checkbox" id="test-data-acknowledgement" required style="margin-top:3px;accent-color:#0ea5e9;">
-            <span>I understand that this is a school test project. I will use my accessible email only for OTP verification and fictional data for every other field.</span>
+            <span>I understand that this is a school demo. I may use an accessible email for verification and essential account notices, and will use fictional information for every other field.</span>
           </label>
 
           <!-- Submit Button -->

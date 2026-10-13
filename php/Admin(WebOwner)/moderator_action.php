@@ -71,12 +71,13 @@ function moderator_duplicate_exists(string $userName, string $email, ?int $exclu
     return $exists;
 }
 
-function moderator_target_exists(int $userId): bool
+function moderator_target_data(int $userId): ?array
 {
     global $conn;
 
     $statement = $conn->prepare(
-        "SELECT u.user_id
+        "SELECT u.user_id, u.user_name, u.email, u.status,
+                COALESCE(u.current_role_id, u.business_role_id, u.role_id) AS effective_role_id
          FROM users u
          LEFT JOIN roles r ON r.role_id = u.role_id
          LEFT JOIN roles br ON br.role_id = u.business_role_id
@@ -94,14 +95,21 @@ function moderator_target_exists(int $userId): bool
          LIMIT 1"
     );
     if (!$statement) {
-        return false;
+        return null;
     }
     $statement->bind_param('i', $userId);
     $success = $statement->execute();
-    $exists = $success && (bool) ($statement->get_result()?->fetch_assoc());
+    $target = $success ? $statement->get_result()?->fetch_assoc() : null;
     $statement->close();
 
-    return $exists;
+    return is_array($target) ? $target : null;
+}
+
+function moderator_mail_result_note(array $result): string
+{
+    return !empty($result['sent'])
+        ? ' An email notice was sent.'
+        : ' The account action was saved, but the email notice could not be delivered.';
 }
 
 if ($action === 'create') {
@@ -153,7 +161,12 @@ if ($action === 'create') {
 
     admin_record_log((int) $adminUser['user_id'], 'Created moderator account #' . $newUserId . '.');
 
-    moderator_flash('success', 'Moderator access was created successfully.', ['user_id' => $newUserId]);
+    $notice = mail_send_account_notice($email, [
+        'kind' => 'moderator',
+        'action' => 'created',
+    ]);
+
+    moderator_flash('success', 'Moderator account was created successfully.' . moderator_mail_result_note($notice), ['user_id' => $newUserId]);
     moderator_redirect();
 }
 
@@ -186,6 +199,20 @@ if ($action === 'hire_existing') {
     }
     if (moderator_hire_pending_exists($targetUserId, $roleId)) {
         moderator_flash('danger', 'That account already has a pending hire invite for this role.');
+        moderator_redirect();
+    }
+
+    $contactQuery = $conn->prepare('SELECT email FROM users WHERE user_id = ? LIMIT 1');
+    if (!$contactQuery) {
+        moderator_flash('danger', 'The selected account contact details could not be loaded.');
+        moderator_redirect();
+    }
+    $contactQuery->bind_param('i', $targetUserId);
+    $contactQuery->execute();
+    $targetContact = $contactQuery->get_result()?->fetch_assoc();
+    $contactQuery->close();
+    if (!$targetContact) {
+        moderator_flash('danger', 'The selected account could not be loaded.');
         moderator_redirect();
     }
 
@@ -222,9 +249,14 @@ if ($action === 'hire_existing') {
     $notificationId = (int) $notify->insert_id;
     $notify->close();
 
-    admin_record_log((int) $adminUser['user_id'], 'Sent moderator hire invitation #' . $notificationId . ' to user #' . $targetUserId . '.');
+    $emailNotice = mail_send_account_notice((string) $targetContact['email'], [
+        'kind' => 'moderator_invitation',
+        'action' => 'invited',
+    ]);
 
-    moderator_flash('success', 'Hire message was saved in notifications. The selected account will see it the next time they sign in.', [
+    admin_record_log((int) $adminUser['user_id'], 'Sent moderator hire invitation #' . $notificationId . ' to user #' . $targetUserId . '; email ' . (string) ($emailNotice['status'] ?? 'unknown') . '.');
+
+    moderator_flash('success', 'Hire invitation was saved in notifications. The selected account can review it after signing in.' . moderator_mail_result_note($emailNotice), [
         'notification_id' => $notificationId,
         'target_user_id' => $targetUserId,
     ]);
@@ -233,7 +265,8 @@ if ($action === 'hire_existing') {
 
 
 $userId = (int) ($_POST['user_id'] ?? 0);
-if ($userId <= 0 || !moderator_target_exists($userId)) {
+$target = $userId > 0 ? moderator_target_data($userId) : null;
+if (!$target) {
     moderator_flash('danger', 'The selected system moderator account could not be found.');
     moderator_redirect();
 }
@@ -271,7 +304,20 @@ if ($action === 'update_profile') {
     }
     $statement->close();
     admin_record_log((int) $adminUser['user_id'], 'Updated moderator account #' . $userId . '.');
-    moderator_flash('success', 'The moderator profile was updated successfully.');
+
+    $oldEmail = (string) ($target['email'] ?? '');
+    $emailChanged = strcasecmp($oldEmail, $email) !== 0;
+    $profileChanged = trim((string) ($target['user_name'] ?? '')) !== $userName
+        || (int) ($target['effective_role_id'] ?? 0) !== $roleId;
+    $notice = null;
+    if ($emailChanged || $profileChanged) {
+        $notice = mail_send_account_notice($oldEmail, [
+            'kind' => 'security',
+            'action' => $emailChanged ? 'email_changed' : 'profile_changed',
+        ]);
+    }
+
+    moderator_flash('success', 'The moderator profile was updated successfully.' . ($notice !== null ? moderator_mail_result_note($notice) : ''));
     moderator_redirect();
 }
 
@@ -283,6 +329,7 @@ if ($action === 'update_status') {
         moderator_redirect();
     }
 
+    $previousStatus = strtolower(trim((string) ($target['status'] ?? '')));
     $statement = $conn->prepare(
         'UPDATE users SET status = ?, updated_at = NOW() WHERE user_id = ? AND headquarter_id IS NULL'
     );
@@ -300,7 +347,14 @@ if ($action === 'update_status') {
     }
     $statement->close();
     admin_record_log((int) $adminUser['user_id'], 'Changed moderator account #' . $userId . ' status to ' . $newStatus . '.');
-    moderator_flash('success', 'The moderator status was changed to ' . moderator_status_label($newStatus) . '.');
+    $notice = null;
+    if ($previousStatus !== $newStatus) {
+        $notice = mail_send_account_notice((string) ($target['email'] ?? ''), [
+            'kind' => 'moderator',
+            'action' => $newStatus,
+        ]);
+    }
+    moderator_flash('success', 'The moderator status was changed to ' . moderator_status_label($newStatus) . '.' . ($notice !== null ? moderator_mail_result_note($notice) : ''));
     moderator_redirect();
 }
 

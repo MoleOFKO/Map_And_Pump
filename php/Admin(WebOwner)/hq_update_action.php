@@ -54,7 +54,8 @@ if (!hq_db_available() || !hq_registry_schema_ready()) {
 
 global $conn;
 $targetQuery = $conn->prepare(
-    'SELECT h.headquarter_id, h.created_at, owner.user_id AS owner_user_id
+    'SELECT h.headquarter_id, h.created_at, h.headquarter_email,
+            owner.user_id AS owner_user_id, owner.user_name AS owner_user_name, owner.email AS owner_email
      FROM headquarter h
      LEFT JOIN (
          SELECT u.headquarter_id, MIN(u.user_id) AS owner_user_id
@@ -146,7 +147,24 @@ try {
     $reviewer = admin_current_user(false);
     admin_record_log((int) ($reviewer['user_id'] ?? 0), 'Updated HQ #' . $headquarterId . ' (' . $hqName . ').');
     $conn->commit();
-    hq_flash('success', 'HQ details and owner account were updated successfully.');
+
+    $previousEmail = trim((string) ($target['owner_email'] ?? ''));
+    if ($previousEmail === '') {
+        $previousEmail = trim((string) ($target['headquarter_email'] ?? ''));
+    }
+    $emailChanged = strcasecmp($previousEmail, $ownerEmail) !== 0;
+    $profileChanged = $ownerUserId > 0 && trim((string) ($target['owner_user_name'] ?? '')) !== $ownerName;
+    $notice = null;
+    if ($emailChanged || $profileChanged) {
+        $notice = mail_send_account_notice($previousEmail, [
+            'kind' => 'security',
+            'action' => $emailChanged ? 'email_changed' : 'profile_changed',
+        ]);
+    }
+    $noticeSuffix = $notice === null ? '' : (!empty($notice['sent'])
+        ? ' A notice was sent to the previous account email.'
+        : ' HQ details were saved, but an email notice could not be delivered to the previous address.');
+    hq_flash('success', 'HQ details and owner account were updated successfully.' . $noticeSuffix);
 } catch (Throwable $exception) {
     $conn->rollback();
     error_log('[Admin HQ] Update failed: ' . $exception->getMessage());
