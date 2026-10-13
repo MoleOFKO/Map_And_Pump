@@ -260,6 +260,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
                 $pdo->commit();
                 $message = "Station node created successfully.";
+                $returnTo = trim((string)($_POST['return_to'] ?? ''));
+                if ($returnTo !== '') {
+                    $_SESSION['hq_account_message'] = ['type' => 'success', 'text' => $message];
+                    header('Location: ' . $returnTo);
+                    exit;
+                }
             } catch (PDOException $e) {
                 if ($pdo->inTransaction()) {
                     $pdo->rollBack();
@@ -271,6 +277,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
                 if ($e->getMessage() === 'station_limit_reached') {
                     $showStationLimitModal = true;
+                    $returnTo = trim((string)($_POST['return_to'] ?? ''));
+                    if ($returnTo !== '') {
+                        $_SESSION['hq_account_message'] = ['type' => 'danger', 'text' => 'Station limit reached for this HQ.'];
+                        header('Location: ' . $returnTo);
+                        exit;
+                    }
                 } elseif ($e->getMessage() === 'INSUFFICIENT_HQ_POINTS') {
                     $error = 'Insufficient HQ points for this monthly fee. Contact a moderator or admin to negotiate IRL payment.';
                 } else {
@@ -279,6 +291,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         } else {
             $error = "Station name, branch manager email, and a valid map location are required.";
+        }
+
+        $returnTo = trim((string)($_POST['return_to'] ?? ''));
+        if ($returnTo !== '' && $error !== '') {
+            $_SESSION['hq_account_message'] = ['type' => 'danger', 'text' => $error];
+            header('Location: ' . $returnTo);
+            exit;
         }
     }
 
@@ -674,6 +693,7 @@ $hqPointBalance = company_loyalty_get_balance($pdo, $hqId);
                         </button>
                     </form>
                     <?php endif; ?>
+                    <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#inviteManagerModal">+Add Manager</button>
                     <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="<?= $stationLimitReached ? '#stationLimitModal' : '#registerModal' ?>">+Add Station</button>
                 </div>
             </div>
@@ -812,6 +832,42 @@ $hqPointBalance = company_loyalty_get_balance($pdo, $hqId);
                     <div class="modal-footer border-secondary">
                         <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Close</button>
                         <button type="submit" class="btn btn-success">Register Station</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="inviteManagerModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content modal-content-custom text-light">
+                <form method="POST" action="./invite_account.php">
+                    <div class="modal-header border-secondary">
+                        <h5 class="modal-title">Add Manager</h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <label class="form-label text-light">Customer Email</label>
+                        <input type="email" name="email" class="form-control bg-dark text-light border-secondary mb-3" placeholder="customer@example.com" required>
+                        <label class="form-label text-light">Role</label>
+                        <select name="role" class="form-select bg-dark text-light border-secondary mb-3" required>
+                            <option value="manager">Branch Manager</option>
+                            <option value="staff">Staff</option>
+                        </select>
+                        <label class="form-label text-light">Station</label>
+                        <select name="station_id" class="form-select bg-dark text-light border-secondary" required>
+                            <option value="">Select a station</option>
+                            <?php foreach ($stations as $stationRow): ?>
+                                <option value="<?= (int)$stationRow['station_id'] ?>"><?= htmlspecialchars((string)$stationRow['station_name'] . ' — ' . (string)$stationRow['station_address']) ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                        <?php if (empty($stations)): ?>
+                            <div class="alert alert-warning mt-3 mb-0" role="alert">Create a station before adding a manager or staff account.</div>
+                        <?php endif; ?>
+                    </div>
+                    <div class="modal-footer border-secondary">
+                        <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-primary">Send Invitation</button>
                     </div>
                 </form>
             </div>
