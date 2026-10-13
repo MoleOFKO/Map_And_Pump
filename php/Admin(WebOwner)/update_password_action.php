@@ -43,7 +43,13 @@ if (!hq_db_available() && $pdo instanceof PDO) {
     }
 
     admin_record_log((int) $user['user_id'], 'Updated admin password.');
-    admin_flash('success', 'Password updated successfully.');
+    $notice = mail_send_account_notice((string) ($user['email'] ?? ''), [
+        'kind' => 'security',
+        'action' => 'password_changed',
+    ]);
+    admin_flash('success', 'Password updated successfully.' . (!empty($notice['sent'])
+        ? ' A security notice was sent to the account email.'
+        : ' The password was saved, but a security email could not be delivered.'));
     admin_redirect('edit_profile.php');
 }
 
@@ -64,5 +70,11 @@ if (!$statement->execute()) {
 $statement->close();
 
 admin_record_log($userId, 'Updated admin password.');
-admin_flash('success', 'Password updated successfully.');
+$notice = mail_send_account_notice((string) ($user['email'] ?? ''), [
+    'kind' => 'security',
+    'action' => 'password_changed',
+]);
+admin_flash('success', 'Password updated successfully.' . (!empty($notice['sent'])
+    ? ' A security notice was sent to the account email.'
+    : ' The password was saved, but a security email could not be delivered.'));
 admin_redirect('edit_profile.php');

@@ -146,7 +146,7 @@ $password = (string) ($_POST['password'] ?? '');
 $confirmPassword = (string) ($_POST['confirm_password'] ?? '');
 
 if ((string) ($_POST['test_data_acknowledgement'] ?? '') !== 'yes') {
-    register_json(false, 'Please confirm that you will use your email only for OTP verification and fictional data for all other fields.');
+    register_json(false, 'Please confirm that you will use an accessible email only for verification and essential account notices, and fictional information for all other fields.');
 }
 
 if ($username === '' || strlen($username) > 225) {

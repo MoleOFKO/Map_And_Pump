@@ -201,9 +201,6 @@ function request_send_notification(string $recipient, string $subject = '', stri
     $result = mail_send_account_notice($recipient, [
         'kind' => 'request',
         'action' => 'updated',
-        'account_label' => '',
-        'reason' => trim($message),
-        'extra_lines' => $subject !== '' ? ['Reference: ' . $subject] : [],
         'effect' => 'A request associated with this email address was updated in Map & Pump.',
     ]);
 

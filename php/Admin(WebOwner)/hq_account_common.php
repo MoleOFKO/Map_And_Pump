@@ -285,7 +285,8 @@ function hq_action_table_ready(): bool
  * Send a transactional registry notice.
  *
  * Prefer passing $context (kind, action, account_label, reason) so the shared
- * legal template is used. Legacy $subject/$body are still accepted as a fallback.
+ * service notice is specific. Legacy $subject/$body remain accepted for callers,
+ * but free-form values are not included in the email.
  *
  * @param array<string,mixed>|null $context
  * @return array{sent:bool,status:string,note:string,subject?:string}
@@ -296,14 +297,11 @@ function hq_send_notification(string $recipient, string $subject = '', string $b
         return mail_send_account_notice($recipient, $context);
     }
 
-    // Legacy path: wrap plain subject/body in the same legal footer template.
+    // Legacy path: send a generic account update without including free-form text.
     return mail_send_account_notice($recipient, [
         'kind' => 'account',
         'action' => 'updated',
-        'account_label' => '',
-        'reason' => trim($body),
-        'extra_lines' => $subject !== '' ? ['Reference: ' . $subject] : [],
-        'effect' => trim($body) !== '' ? 'Please review the reason below for details about this update.' : 'The account status recorded in Map & Pump was updated.',
+        'effect' => 'The account status recorded in Map & Pump was updated. Sign in to review account details.',
     ]);
 }
 function hq_find_role_id(): int|false
