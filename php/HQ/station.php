@@ -151,7 +151,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         $location = map_pump_normalize_station_location($location);
 
-        if (!empty($station_name) && $location !== null && !empty($manager_email)) {
+        if (!empty($station_name) && $location !== null) {
             try {
                 if (!$billingSchemaReady) {
                     throw new RuntimeException('HQ point billing is temporarily unavailable. Please try again later.');
@@ -182,27 +182,52 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     throw new RuntimeException('station_limit_reached');
                 }
 
-                $managerStmt = $pdo->prepare(
-                    "SELECT u.user_id
-                     FROM users u
-                     LEFT JOIN business_account_scope bas ON bas.user_id = u.user_id
-                     WHERE u.email = ?
-                       AND COALESCE(u.business_role_id, u.role_id) = 4
-                       AND (
-                           COALESCE(bas.headquarter_id, u.headquarter_id) = ?
-                           OR EXISTS (
-                               SELECT 1 FROM station_business_scope sbs
-                               WHERE sbs.branch_manager_user_id = u.user_id
-                                 AND sbs.headquarter_id = ?
+                $manager_id = null;
+                if (!empty($manager_email)) {
+                    $managerStmt = $pdo->prepare(
+                        "SELECT u.user_id
+                         FROM users u
+                         LEFT JOIN business_account_scope bas ON bas.user_id = u.user_id
+                         WHERE u.email = ?
+                           AND COALESCE(u.business_role_id, u.role_id) = 4
+                           AND (
+                               COALESCE(bas.headquarter_id, u.headquarter_id) = ?
+                               OR EXISTS (
+                                   SELECT 1 FROM station_business_scope sbs
+                                   WHERE sbs.branch_manager_user_id = u.user_id
+                                     AND sbs.headquarter_id = ?
+                               )
                            )
-                       )
-                     LIMIT 1"
-                );
-                $managerStmt->execute([$manager_email, $hqId, $hqId]);
-                $manager_id = $managerStmt->fetchColumn();
+                         LIMIT 1"
+                    );
+                    $managerStmt->execute([$manager_email, $hqId, $hqId]);
+                    $manager_id = $managerStmt->fetchColumn();
+                }
 
                 if (!$manager_id) {
-                    throw new RuntimeException('Please select a valid branch manager.');
+                    $fallbackManagerStmt = $pdo->prepare(
+                        "SELECT u.user_id
+                         FROM users u
+                         LEFT JOIN business_account_scope bas ON bas.user_id = u.user_id
+                         WHERE COALESCE(u.business_role_id, u.role_id) = 4
+                           AND (
+                               COALESCE(bas.headquarter_id, u.headquarter_id) = ?
+                               OR EXISTS (
+                                   SELECT 1 FROM station_business_scope sbs
+                                   WHERE sbs.branch_manager_user_id = u.user_id
+                                     AND sbs.headquarter_id = ?
+                               )
+                           )
+                           AND LOWER(COALESCE(u.status, 'active')) NOT IN ('suspended', 'removed')
+                         ORDER BY u.user_id ASC
+                         LIMIT 1"
+                    );
+                    $fallbackManagerStmt->execute([$hqId, $hqId]);
+                    $manager_id = $fallbackManagerStmt->fetchColumn();
+                }
+
+                if (!$manager_id) {
+                    throw new RuntimeException('No branch manager is available for this HQ yet. Add a branch manager account first.');
                 }
 
                 $branchCodeStmt = $pdo->prepare("SELECT CONCAT('BR-', LPAD(COALESCE(MAX(branch_id), 0) + 1, 5, '0')) FROM branches");
@@ -795,24 +820,27 @@ $hqPointBalance = company_loyalty_get_balance($pdo, $hqId);
                     </div>
                     <div class="modal-body">
                         <div class="row">
-                            <div class="col-md-6 mb-3">
+                            <div class="col-12 mb-3">
                                 <label class="form-label text-light">Station Name</label>
                                 <input type="text" name="station_name" class="form-control bg-dark text-light border-secondary" placeholder="e.g. Downtown Metro" required>
-                            </div>
-                            <div class="col-md-6 mb-3">
-                                <label class="form-label text-light">Branch Manager Email</label>
-                                <select name="manager_email" class="form-select bg-dark text-light border-secondary" required>
-                                    <option value="">Choose a branch manager</option>
-                                    <?php foreach ($branchManagers as $manager): ?>
-                                        <option value="<?= htmlspecialchars($manager['email'], ENT_QUOTES, 'UTF-8') ?>">
-                                            <?= htmlspecialchars($manager['email']) ?>
-                                        </option>
-                                    <?php endforeach; ?>
-                                </select>
                             </div>
                             <div class="col-12 mb-3">
                                 <label class="form-label text-light">Station Address</label>
                                 <input type="text" name="station_address" class="form-control bg-dark text-light border-secondary" placeholder="e.g. No. 45, Main Road, Township">
+                            </div>
+                            <div class="col-12 mb-3">
+                                <div class="d-flex justify-content-between align-items-center mb-1">
+                                    <label class="form-label text-light mb-0">Branch Manager Email</label>
+                                    <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#inviteManagerModal" data-reopen-source="registerModal">
+                                        <i class="bi bi-person-plus"></i> Add Manager
+                                    </button>
+                                </div>
+                                <select name="manager_email" class="form-select bg-dark text-light border-secondary" required>
+                                    <option value="">Choose a branch manager</option>
+                                    <?php foreach ($branchManagers as $manager): ?>
+                                        <option value="<?= htmlspecialchars($manager['email'], ENT_QUOTES, 'UTF-8') ?>"><?= htmlspecialchars($manager['email']) ?></option>
+                                    <?php endforeach; ?>
+                                </select>
                             </div>
                             <div class="col-12 mb-3">
                                 <div class="d-flex justify-content-between align-items-center mb-1">
@@ -850,19 +878,11 @@ $hqPointBalance = company_loyalty_get_balance($pdo, $hqId);
                         <label class="form-label text-light">Customer Email</label>
                         <input type="email" name="email" class="form-control bg-dark text-light border-secondary mb-3" placeholder="customer@example.com" required>
                         <label class="form-label text-light">Role</label>
-                        <select name="role" class="form-select bg-dark text-light border-secondary mb-3" required>
+                        <select name="role" class="form-select bg-dark text-light border-secondary" required>
                             <option value="manager">Branch Manager</option>
-                            <option value="staff">Staff</option>
-                        </select>
-                        <label class="form-label text-light">Station</label>
-                        <select name="station_id" class="form-select bg-dark text-light border-secondary" required>
-                            <option value="">Select a station</option>
-                            <?php foreach ($stations as $stationRow): ?>
-                                <option value="<?= (int)$stationRow['station_id'] ?>"><?= htmlspecialchars((string)$stationRow['station_name'] . ' — ' . (string)$stationRow['station_address']) ?></option>
-                            <?php endforeach; ?>
                         </select>
                         <?php if (empty($stations)): ?>
-                            <div class="alert alert-warning mt-3 mb-0" role="alert">Create a station before adding a manager or staff account.</div>
+                            <div class="alert alert-warning mt-3 mb-0" role="alert">Create a station first so the manager can be assigned to it automatically.</div>
                         <?php endif; ?>
                     </div>
                     <div class="modal-footer border-secondary">
@@ -873,7 +893,10 @@ $hqPointBalance = company_loyalty_get_balance($pdo, $hqId);
             </div>
         </div>
     </div>
+<<<<<<< HEAD
 
+=======
+>>>>>>> 0b754c9 (Fix HQ station and manager modal flow)
     <!-- Station Limit Modal -->
     <div class="modal fade" id="stationLimitModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered">
@@ -1079,6 +1102,36 @@ $hqPointBalance = company_loyalty_get_balance($pdo, $hqId);
                 alert('Could not get your location. Check browser location permissions and try again.');
             }, { enableHighAccuracy: true, timeout: 10000 });
         }
+
+        document.querySelectorAll('[data-reopen-source]').forEach(button => {
+            button.addEventListener('click', function () {
+                const targetId = this.getAttribute('data-bs-target');
+                const targetModal = targetId ? document.querySelector(targetId) : null;
+                const sourceId = this.getAttribute('data-reopen-source');
+                if (targetModal && sourceId) {
+                    targetModal.setAttribute('data-reopen-source', sourceId);
+                }
+            });
+        });
+
+        document.querySelectorAll('.modal').forEach(modalEl => {
+            modalEl.addEventListener('hidden.bs.modal', function () {
+                const reopenSource = this.getAttribute('data-reopen-source');
+                if (!reopenSource) {
+                    return;
+                }
+
+                const sourceModal = document.getElementById(reopenSource);
+                if (sourceModal) {
+                    window.setTimeout(() => {
+                        const modalInstance = bootstrap.Modal.getOrCreateInstance(sourceModal);
+                        modalInstance.show();
+                    }, 120);
+                }
+
+                this.removeAttribute('data-reopen-source');
+            });
+        });
 
         document.getElementById('registerModal').addEventListener('shown.bs.modal', initializeStationMap);
         document.getElementById('configureModal').addEventListener('shown.bs.modal', initializeConfigMap);
