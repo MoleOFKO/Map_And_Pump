@@ -50,19 +50,14 @@ if (!function_exists('map_pump_env')) {
     }
 }
 
-$host = "gateway01.ap-southeast-1.prod.aws.tidbcloud.com";
-$dbname = "map_and_pump";
-$username = "3sdV1BWxtCzY7YS.root";
-$password = "GNfDltJeN7paYMLq";
-$port = 4000;
 
-// map_pump_load_local_env();
+map_pump_load_local_env();
 
-// $host = map_pump_env('DB_HOST');
-// $dbname = map_pump_env('DB_NAME');
-// $username = map_pump_env('DB_USERNAME');
-// $password = map_pump_env('DB_PASSWORD');
-// $port = (int) (map_pump_env('DB_PORT', '4000'));
+$host = map_pump_env('DB_HOST');
+$dbname = map_pump_env('DB_NAME');
+$username = map_pump_env('DB_USERNAME');
+$password = map_pump_env('DB_PASSWORD');
+$port = (int) (map_pump_env('DB_PORT', '4000'));
 
 try {
     if (!$host || !$dbname || !$username || !$password || $port <= 0) {
