@@ -3,10 +3,10 @@
    - file upload labels
    - submit -> payment modal
    - STEP 1: custom payment-method dropdown + bank logo picker
-   - STEP 2: transfer number + payment receipt photo upload
+   - STEP 2: external transfer declaration and registration submission
    ========================================================================== */
 
-/* ---------- File upload labels (company logo, license, receipt) ---------- */
+/* ---------- File upload labels (company logo and license only) ---------- */
 document.querySelectorAll('.upload-field input[type="file"]').forEach((input) => {
     input.addEventListener('change', () => {
         const label = document.getElementById(`${input.id}-label`);
@@ -37,7 +37,7 @@ const bankButtons = banksBox ? Array.from(banksBox.querySelectorAll('.payment-ba
 const bankInput = document.getElementById('payment-bank-input');
 const paymentError = document.getElementById('payment-error');
 
-/* ---------- Step 2: receipt ---------- */
+/* ---------- Step 2: external payment notice ---------- */
 const steps = paymentModal ? Array.from(paymentModal.querySelectorAll('.payment-step')) : [];
 const stepDots = paymentModal ? Array.from(paymentModal.querySelectorAll('[data-step-dot]')) : [];
 const backButton = document.getElementById('payment-back');
@@ -50,21 +50,11 @@ const transferName = document.getElementById('payment-transfer-name');
 const transferPhoneRow = document.getElementById('payment-transfer-phone-row');
 const transferPhone = document.getElementById('payment-transfer-phone');
 const copyButton = document.getElementById('payment-copy');
-const receiptInput = document.getElementById('payment-receipt');
-const receiptField = document.querySelector('.payment-receipt-field');
-const receiptLabel = document.getElementById('payment-receipt-label');
-const receiptPreview = document.getElementById('payment-receipt-preview');
-const receiptImage = document.getElementById('payment-receipt-image');
-const receiptName = document.getElementById('payment-receipt-name');
-const receiptSize = document.getElementById('payment-receipt-size');
-const receiptRemove = document.getElementById('payment-receipt-remove');
-const receiptError = document.getElementById('payment-receipt-error');
+const paymentStatusError = document.getElementById('payment-status-error');
 const paymentSubmit = document.getElementById('payment-submit');
 
-const MAX_RECEIPT_BYTES = 5 * 1024 * 1024;
 let activeIndex = -1;
 let previouslyFocusedElement;
-let previewUrl = null;
 
 /* ---------- helpers ---------- */
 const showError = (target, message) => {
@@ -75,15 +65,10 @@ const showError = (target, message) => {
 
 const clearError = () => {
     if (paymentError) paymentError.hidden = true;
-    if (receiptError) receiptError.hidden = true;
+    if (paymentStatusError) paymentStatusError.hidden = true;
     select?.classList.remove('has-error');
     banksBox?.classList.remove('has-error');
-    receiptField?.classList.remove('has-error');
 };
-
-const formatSize = (bytes) => (bytes < 1024 * 1024
-    ? `${Math.max(1, Math.round(bytes / 1024))} KB`
-    : `${(bytes / (1024 * 1024)).toFixed(1)} MB`);
 
 const setActive = (index) => {
     options.forEach((option, i) => option.classList.toggle('is-active', i === index));
@@ -155,13 +140,13 @@ const goToStep = (name) => {
     stepDots.forEach((dot) => {
         const isTarget = dot.dataset.stepDot === name;
         dot.classList.toggle('is-current', isTarget);
-        dot.classList.toggle('is-done', name === 'receipt' && dot.dataset.stepDot === 'method');
+        dot.classList.toggle('is-done', name === 'payment' && dot.dataset.stepDot === 'method');
     });
     paymentModal?.querySelector('.payment-card')?.scrollTo({ top: 0, behavior: 'smooth' });
 };
 
 /* Fill step 2 with the chosen method / bank details */
-const fillReceiptStep = () => {
+const fillPaymentStep = () => {
     const method = methodInput?.value || '';
     const bank = bankInput?.value || '';
     const key = method === 'Bank transfer' ? bank : method;
@@ -269,46 +254,6 @@ bankButtons.forEach((button) => {
     });
 });
 
-/* ---------- receipt upload ---------- */
-const resetReceipt = () => {
-    if (receiptInput) receiptInput.value = '';
-    if (previewUrl) { URL.revokeObjectURL(previewUrl); previewUrl = null; }
-    if (receiptPreview) receiptPreview.hidden = true;
-    if (receiptLabel) receiptLabel.textContent = 'Upload receipt photo';
-};
-
-receiptInput?.addEventListener('change', () => {
-    const file = receiptInput.files?.[0];
-    if (!file) { resetReceipt(); return; }
-
-    if (!file.type.startsWith('image/')) {
-        resetReceipt();
-        receiptField?.classList.add('has-error');
-        showError(receiptError, 'Please upload a photo (PNG, JPG, or WEBP).');
-        return;
-    }
-    if (file.size > MAX_RECEIPT_BYTES) {
-        resetReceipt();
-        receiptField?.classList.add('has-error');
-        showError(receiptError, 'That photo is larger than 5 MB. Please upload a smaller one.');
-        return;
-    }
-
-    clearError();
-    if (previewUrl) URL.revokeObjectURL(previewUrl);
-    previewUrl = URL.createObjectURL(file);
-    if (receiptImage) receiptImage.src = previewUrl;
-    if (receiptName) receiptName.textContent = file.name;
-    if (receiptSize) receiptSize.textContent = formatSize(file.size);
-    if (receiptPreview) receiptPreview.hidden = false;
-});
-
-receiptRemove?.addEventListener('click', () => {
-    resetReceipt();
-    clearError();
-    receiptInput?.focus();
-});
-
 copyButton?.addEventListener('click', async () => {
     const value = transferNumber?.textContent?.trim();
     if (!value) return;
@@ -376,8 +321,8 @@ paymentConfirm?.addEventListener('click', () => {
     }
 
     clearError();
-    fillReceiptStep();
-    goToStep('receipt');
+    fillPaymentStep();
+    goToStep('payment');
     backButton?.focus();
 });
 
@@ -388,15 +333,8 @@ backButton?.addEventListener('click', () => {
     toggle?.focus();
 });
 
-/* Final submit */
+/* Submit registration and the payer-declared external transfer status. */
 paymentSubmit?.addEventListener('click', async () => {
-    if (!receiptInput?.files?.length) {
-        receiptField?.classList.add('has-error');
-        showError(receiptError, 'Please upload a photo of your payment receipt.');
-        receiptInput?.focus();
-        return;
-    }
-
     const method = methodInput?.value;
     const bank = bankInput?.value;
     clearError();
@@ -407,7 +345,7 @@ paymentSubmit?.addEventListener('click', async () => {
         const formData = new FormData(registrationForm);
         formData.set('payment_method', method || '');
         formData.set('bank_name', bank || '');
-        formData.set('payment_receipt', receiptInput.files[0]);
+        formData.set('i_paid', '1');
         const response = await fetch(window.location.href, {
             method: 'POST',
             body: formData,
@@ -424,8 +362,8 @@ paymentSubmit?.addEventListener('click', async () => {
         }
         registrationForm.reset();
     } catch (error) {
-        showError(receiptError, error.message);
-        goToStep('receipt');
+        showError(paymentStatusError, error.message);
+        goToStep('payment');
     } finally {
         paymentSubmit.disabled = false;
         paymentSubmit.classList.remove('is-loading');

@@ -37,19 +37,20 @@ require __DIR__ . '/partials/nav.php';
         <article class="legal-content">
             <section>
                 <h2>1. Information you may enter</h2>
-                <p>MAP &amp; PUMP is a school demonstration project, not a production service. You may provide a real email address that you control or are authorised to use in an email field required for an account, invitation, or project contact. It may be used for sign-in, verification, and essential account, security, invitation, or request-status notices. Use fictional information for all other profile and project fields. Do not submit real names, phone numbers, street addresses, vehicle or licence numbers, company details, identity documents, payment details, receipts, photographs, precise location data, or personal information about another person.</p>
+                <p>MAP &amp; PUMP is a school demonstration project, not a production service. You may provide an email address you control for sign-in, verification, invitations, and essential account or request-status notices. Company registration forms may collect company and contact details, a business licence number and document, and a company logo for the registration review. Only submit information and documents you are authorised to share. Do not submit passwords, wallet PINs, full payment credentials, receipts, or personal information about another person.</p>
+                <p>For external payment-status records, the application stores the amount, payment category, selected method, a generated reference, the linked request or fuel fill, payer and intended recipient account identifiers, status, timestamps, and an optional recipient note. The application does not ask for or store payment account passwords, wallet PINs, or receipt images for these records.</p>
                 <p>The application stores account information, project records, account activity, and technical data needed to operate and secure the site, such as session data and server logs. Do not reuse a password from another service.</p>
             </section>
 
             <section>
                 <h2>2. How information is used</h2>
-                <p>Account and project information is used to operate and demonstrate the school project, authenticate accounts, send verification codes and essential account, security, invitation, and request-status notices, troubleshoot the application, assess coursework, and protect the test environment from misuse. We do not use email addresses for marketing.</p>
-                <p>The website does not process payments. Any real-world money exchange, if it occurs, takes place outside the website and is not managed or guaranteed by this project. Do not enter payment details or rely on the site for real bookings, payments, fuel availability, or business decisions.</p>
+                <p>Account and project information is used to operate and demonstrate the school project, authenticate accounts, send verification codes and essential account, security, invitation, and request-status notices, troubleshoot the application, assess coursework, and protect the test environment from misuse. Email addresses are not used for marketing.</p>
+                <p>Any money transfer takes place separately through the payer’s bank or wallet. MAP &amp; PUMP does not initiate, collect, hold, or independently verify funds. A payment record means that the payer reported a transfer and the recipient entered a response; it is not bank or wallet confirmation. Confirmed status may unlock the related project feature. Do not rely on the site for real fuel availability or business decisions.</p>
             </section>
 
             <section>
                 <h2>3. Access and email delivery</h2>
-                <p>Project members, instructors, and authorised demonstration participants may access information when needed to operate, troubleshoot, or assess the project. We do not sell account email addresses.</p>
+                <p>The payer can view their payment record. The intended recipient can view and respond to it. Admin accounts can review platform fees; the associated HQ can review fuel-payment records. Authorised project members and instructors may access records when needed to operate, troubleshoot, or assess the demonstration. We do not sell account email addresses.</p>
                 <p>Emails are sent through the email delivery service configured for the project. That service may process the recipient address, sender address, subject, message content, and delivery information to transmit and troubleshoot the email, under its own terms and practices. Email can also be visible to people with access to the recipient's mailbox. Do not assume project data or email is confidential.</p>
             </section>
 
@@ -60,7 +61,7 @@ require __DIR__ . '/partials/nav.php';
 
             <section>
                 <h2>5. Security</h2>
-                <p>We use project-level safeguards, but this is a school demonstration environment and we cannot guarantee its security, availability, or confidentiality. Keep account access secure and do not submit real personal or sensitive information beyond the email address described above.</p>
+                <p>We use project-level safeguards, but this is a school demonstration environment and we cannot guarantee its security, availability, or confidentiality. Use a unique password, never share account credentials or wallet PINs, and submit only information you are authorised to provide.</p>
             </section>
 
             <section>

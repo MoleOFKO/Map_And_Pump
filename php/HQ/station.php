@@ -6,18 +6,26 @@ require_once __DIR__ . '/hq_guard.php';
 include_once __DIR__ . '/../conn.php';
 require_once __DIR__ . '/../business_scope.php';
 require_once __DIR__ . '/../loyalty_points.php';
+require_once __DIR__ . '/../billing_config.php';
+require_once __DIR__ . '/../payment_transfers.php';
 $message = '';
 $error = '';
 $hqId = map_pump_current_hq_id($pdo);
 $billingSchemaReady = loyalty_countermeasures_schema_ready($pdo);
+$paymentTransferSchemaReady = payment_transfer_schema_ready($pdo);
 $hqPointBalance = company_loyalty_get_balance($pdo, $hqId);
 $billingMonth = loyalty_current_year_month();
 $stationSlotCost = (int) LOYALTY_HQ_STATION_SLOT_MONTHLY_COST;
 $stationMonthlyFee = (int) LOYALTY_HQ_STATION_MONTHLY_FEE;
+$extraStationMmkMonthly = (int) BILLING_HQ_EXTRA_STATION_MMK_MONTHLY;
+$paymentAccounts = billing_payment_receiving_accounts();
 $stationBillingCsrf = $_SESSION['hq_station_billing_csrf'] ?? '';
 if (!is_string($stationBillingCsrf) || strlen($stationBillingCsrf) < 32) {
     $stationBillingCsrf = bin2hex(random_bytes(32));
     $_SESSION['hq_station_billing_csrf'] = $stationBillingCsrf;
+}
+if (empty($_SESSION['payment_transfer_csrf'])) {
+    $_SESSION['payment_transfer_csrf'] = bin2hex(random_bytes(32));
 }
 $stationLimit = null;
 $baseStationLimit = null;
@@ -78,7 +86,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $pdo->rollBack();
             }
             $error = $e->getMessage() === 'INSUFFICIENT_HQ_POINTS'
-                ? 'Insufficient HQ points for this monthly fee. Contact a moderator or admin to negotiate IRL payment.'
+                ? 'Insufficient HQ points. Use Pay by MMK to request the published monthly charge for extra station capacity and operation.'
                 : $e->getMessage();
         }
     }
@@ -137,7 +145,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $pdo->rollBack();
             }
             $error = $e->getMessage() === 'INSUFFICIENT_HQ_POINTS'
-                ? 'Insufficient HQ points for this monthly fee. Contact a moderator or admin to negotiate IRL payment.'
+                ? 'Insufficient HQ points. Pay by MMK is available for extra stations; ask an Admin about arrangements for included-station point fees.'
                 : $e->getMessage();
         }
     }
@@ -248,6 +256,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                      VALUES (?, ?, ?)"
                 );
                 $scopeStmt->execute([$stationId, $hqId, $manager_id]);
+                if ($paymentTransferSchemaReady) {
+                    payment_transfer_assign_available_entitlements($pdo, $hqId);
+                }
 
                 $accountScopeStmt = $pdo->prepare(
                     "INSERT INTO business_account_scope
@@ -309,7 +320,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         exit;
                     }
                 } elseif ($e->getMessage() === 'INSUFFICIENT_HQ_POINTS') {
-                    $error = 'Insufficient HQ points for this monthly fee. Contact a moderator or admin to negotiate IRL payment.';
+                    $error = 'Insufficient HQ points. Use Pay by MMK for monthly extra-station capacity and operation; included-station operating fees remain points-based.';
                 } else {
                     $error = $e->getMessage();
                 }
@@ -404,7 +415,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($new_status === 'Active' && !company_loyalty_station_is_paid($pdo, (int) $station_id)) {
                     echo json_encode([
                         'success' => false,
-                        'message' => 'This station is paused until its 10,000-point monthly fee is paid.'
+                        'message' => 'This station is paused until its ' . number_format($stationMonthlyFee) . '-point monthly fee is paid.'
                     ]);
                     exit;
                 }
@@ -472,6 +483,12 @@ try {
     );
     $stmt->execute($billingSchemaReady ? [$billingMonth, $hqId] : [$hqId]);
     $stations = $stmt->fetchAll();
+    if ($billingSchemaReady) {
+        foreach ($stations as &$stationRow) {
+            $stationRow['monthly_fee_paid'] = company_loyalty_station_is_paid($pdo, (int) $stationRow['station_id']) ? 1 : 0;
+        }
+        unset($stationRow);
+    }
     $stationCount = count($stations);
     $limitStmt = $pdo->prepare("SELECT station_count FROM headquarter WHERE headquarter_id = ?");
     $limitStmt->execute([$hqId]);
@@ -693,7 +710,10 @@ $hqPointBalance = company_loyalty_get_balance($pdo, $hqId);
                     <h3>Manage Deployed Stations</h3>
                     <p class="subtitle mb-0">Monitor stations, pay monthly operating fees, or manage registration capacity.</p>
                     <p class="text-info small mb-0 mt-2"><i class="fa-solid fa-star me-1" aria-hidden="true"></i>HQ points: <strong><?= number_format($hqPointBalance) ?></strong></p>
-                    <p class="text-secondary small mb-0">Each station costs <?= number_format($stationMonthlyFee) ?> points/month; each additional slot costs <?= number_format($stationSlotCost) ?> points/month. Need IRL payment? <a href="report_to_admin.php" class="link-info">Contact a moderator or admin to negotiate.</a></p>
+                    <p class="text-secondary small mb-0">Points option: <?= number_format($stationMonthlyFee) ?> points/month for station operation and <?= number_format($stationSlotCost) ?> points/month for each extra slot. MMK option: <?= number_format($extraStationMmkMonthly) ?> MMK/month per station beyond the included <?= (int) BILLING_HQ_INCLUDED_STATION_SLOTS ?>; this covers both slot and operation. <a href="/php/payment_center.php" class="link-info">View payment status</a></p>
+                    <?php if (isset($_GET['payment']) && $_GET['payment'] === 'pending'): ?>
+                    <div class="alert alert-info mt-3 mb-0">Your external payment notice was submitted. Its amount and recipient status are available in <a href="/php/payment_center.php">Payment status</a>.</div>
+                    <?php endif; ?>
                     <?php if ($stationLimit !== null): ?>
                     <p class="text-secondary small mb-0">Capacity this month: <?= (int) $stationCount ?> / <?= (int) $stationLimit ?> stations (<?= (int) $monthlySlots ?> paid extra slots).</p>
                     <?php else: ?>
@@ -717,6 +737,9 @@ $hqPointBalance = company_loyalty_get_balance($pdo, $hqId);
                             <i class="fa-solid fa-plus me-1" aria-hidden="true"></i>Slot · <?= number_format($stationSlotCost) ?> pts/month
                         </button>
                     </form>
+                    <button type="button" class="btn btn-outline-success" data-bs-toggle="modal" data-bs-target="#mmkStationModal">
+                        <i class="fa-solid fa-money-bill-transfer me-1" aria-hidden="true"></i>Pay by MMK
+                    </button>
                     <?php endif; ?>
                     <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#inviteManagerModal">+Add Manager</button>
                     <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="<?= $stationLimitReached ? '#stationLimitModal' : '#registerModal' ?>">+Add Station</button>
@@ -893,10 +916,6 @@ $hqPointBalance = company_loyalty_get_balance($pdo, $hqId);
             </div>
         </div>
     </div>
-<<<<<<< HEAD
-
-=======
->>>>>>> 0b754c9 (Fix HQ station and manager modal flow)
     <!-- Station Limit Modal -->
     <div class="modal fade" id="stationLimitModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered">
@@ -907,13 +926,13 @@ $hqPointBalance = company_loyalty_get_balance($pdo, $hqId);
                 </div>
                 <div class="modal-body">
                     <p class="mb-2">Your HQ has reached its configured limit of <?= (int) $stationLimit ?> stations.</p>
-                    <p class="text-secondary">Buy an additional station slot for <?= number_format($stationSlotCost) ?> HQ points for this month, then register the station.</p>
+                    <p class="text-secondary">Buy an additional station slot for <?= number_format($stationSlotCost) ?> HQ points for this month, then register the station. The MMK option is <?= number_format($extraStationMmkMonthly) ?> per extra station per month and covers both the slot and station operation.</p>
                     <form method="POST" class="d-inline" onsubmit="return confirm('Spend <?= $stationSlotCost ?> HQ points to add one station slot for this month?')">
                         <input type="hidden" name="action" value="buy_station_slot">
                         <input type="hidden" name="billing_csrf" value="<?= htmlspecialchars($stationBillingCsrf, ENT_QUOTES, 'UTF-8') ?>">
                         <button type="submit" class="btn btn-outline-info">Buy one monthly station slot</button>
                     </form>
-                    <p class="text-secondary small mt-3 mb-0">If the HQ points balance is short, <a href="report_to_admin.php" class="link-info">contact a moderator or admin to negotiate IRL payment.</a></p>
+                    <p class="text-secondary small mt-3 mb-0">A confirmed MMK payment adds monthly capacity and covers monthly operation for the same number of extra stations.</p>
                 </div>
                 <div class="modal-footer border-secondary">
                     <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Close</button>
@@ -921,6 +940,62 @@ $hqPointBalance = company_loyalty_get_balance($pdo, $hqId);
             </div>
         </div>
     </div>
+
+    <?php if ($baseStationLimit !== null): ?>
+    <div class="modal fade" id="mmkStationModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered modal-lg">
+            <div class="modal-content modal-content-custom text-light">
+                <form method="post" action="/php/Payment/action.php" id="mmkStationForm" onsubmit="return confirm('Have you already sent this external payment? Submitting creates a status notice for Admin; it does not move or verify money.')">
+                    <input type="hidden" name="action" value="create_extra_station">
+                    <input type="hidden" name="i_paid" value="1">
+                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars((string) ($_SESSION['payment_transfer_csrf'] ?? ''), ENT_QUOTES, 'UTF-8') ?>">
+                    <div class="modal-header border-secondary">
+                        <h5 class="modal-title">Request monthly extra-station capacity</h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <p class="text-secondary">Each paid extra station costs <?= number_format($extraStationMmkMonthly) ?> MMK per month and covers both its registration slot and operation. Make the transfer externally, then submit the notice. Admin confirmation is required before capacity is added.</p>
+                        <div class="row g-3 mb-3">
+                            <div class="col-md-4">
+                                <label class="form-label" for="mmk-station-quantity">Extra stations</label>
+                                <input class="form-control" type="number" id="mmk-station-quantity" name="quantity" min="1" max="60" value="1" required>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label" for="mmk-station-term">Billing term</label>
+                                <select class="form-select" id="mmk-station-term" name="term_months" required>
+                                    <?php foreach (BILLING_HQ_TERM_DISCOUNTS as $term): ?>
+                                    <option value="<?= (int) $term['months'] ?>" data-discount="<?= (int) $term['percent'] ?>"><?= htmlspecialchars($term['label'], ENT_QUOTES, 'UTF-8') ?><?= (int) $term['percent'] > 0 ? ' · ' . (int) $term['percent'] . '% off' : '' ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label" for="mmk-station-method">Payment method</label>
+                                <select class="form-select" id="mmk-station-method" name="payment_method" required>
+                                    <option value="">Select a method</option>
+                                    <?php foreach (array_keys($paymentAccounts) as $method): ?>
+                                    <option value="<?= htmlspecialchars($method, ENT_QUOTES, 'UTF-8') ?>"><?= htmlspecialchars($method, ENT_QUOTES, 'UTF-8') ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+                        </div>
+                        <p class="rounded-3 bg-dark p-3">Estimated total after published quantity and term discounts: <strong id="mmk-station-estimate">2,000 MMK</strong>. The recorded server-calculated amount is authoritative.</p>
+                        <h6>Payment destinations</h6>
+                        <div class="row g-2 small">
+                            <?php foreach ($paymentAccounts as $method => $account): ?>
+                            <div class="col-md-6"><div class="border border-secondary rounded-3 p-2"><strong><?= htmlspecialchars($method, ENT_QUOTES, 'UTF-8') ?></strong><br><?= htmlspecialchars((string) $account['label'], ENT_QUOTES, 'UTF-8') ?>: <?= htmlspecialchars((string) $account['number'], ENT_QUOTES, 'UTF-8') ?><br>Account name: <?= htmlspecialchars(BILLING_PLATFORM_RECIPIENT_NAME, ENT_QUOTES, 'UTF-8') ?></div></div>
+                            <?php endforeach; ?>
+                        </div>
+                        <p class="text-secondary small mt-3 mb-0">After you make the external transfer, click “I paid”. This is a payer declaration; MAP &amp; PUMP does not move or independently verify funds.</p>
+                    </div>
+                    <div class="modal-footer border-secondary">
+                        <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-success">I paid · Submit notice</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    <?php endif; ?>
 
     <!-- Configure Modal -->
     <div class="modal fade" id="configureModal" tabindex="-1" aria-hidden="true">
@@ -1008,6 +1083,27 @@ $hqPointBalance = company_loyalty_get_balance($pdo, $hqId);
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
+        (() => {
+            const quantity = document.getElementById('mmk-station-quantity');
+            const term = document.getElementById('mmk-station-term');
+            const estimate = document.getElementById('mmk-station-estimate');
+            if (!quantity || !term || !estimate) return;
+            const tiers = <?= json_encode(BILLING_HQ_VOLUME_DISCOUNTS, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>;
+            const baseMonthlyPrice = <?= (int) BILLING_HQ_EXTRA_STATION_MMK_MONTHLY ?>;
+            const refreshEstimate = () => {
+                const count = Math.min(60, Math.max(1, parseInt(quantity.value || '1', 10)));
+                const months = Math.max(1, parseInt(term.value || '1', 10));
+                const termDiscount = parseInt(term.selectedOptions[0]?.dataset.discount || '0', 10);
+                let volumeDiscount = 0;
+                tiers.forEach((tier) => { if (count >= Number(tier.min)) volumeDiscount = Number(tier.percent); });
+                const total = baseMonthlyPrice * count * months * (1 - volumeDiscount / 100) * (1 - termDiscount / 100);
+                estimate.textContent = `${Math.round(total).toLocaleString()} MMK`;
+            };
+            quantity.addEventListener('input', refreshEstimate);
+            term.addEventListener('change', refreshEstimate);
+            refreshEstimate();
+        })();
+
         let stationMap;
         let stationMarker;
         let configMap;

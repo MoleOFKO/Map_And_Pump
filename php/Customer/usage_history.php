@@ -7,11 +7,16 @@ require_once __DIR__ . '/../conn.php';
 require_once __DIR__ . '/../usage_history_schema.php';
 require_once __DIR__ . '/../feedback_schema.php';
 require_once __DIR__ . '/../loyalty_points.php';
+require_once __DIR__ . '/../payment_transfers.php';
 
 $userId = (int) ($_SESSION['user_id'] ?? 0);
+if (empty($_SESSION['payment_transfer_csrf'])) {
+    $_SESSION['payment_transfer_csrf'] = bin2hex(random_bytes(32));
+}
 $usageRows = [];
 $usageHistoryReady = map_pump_usage_history_schema_ready($pdo);
 $feedbackReady = map_pump_feedback_schema_ready($pdo);
+$paymentReady = payment_transfer_schema_ready($pdo);
 // Best-effort: add points_earned / points_redeemed / discount_mmk if missing.
 loyalty_schema_ready($pdo);
 
@@ -20,7 +25,7 @@ if ($userId > 0 && $usageHistoryReady) {
         $stmt = $pdo->prepare(
                 'SELECT uh.usage_id, uh.booking_id, uh.qr_refrence_code, uh.filled_liters, uh.price_per_litre,
                     uh.staff_user_id,
-                    uh.total_cost, uh.status, uh.filled_at, s.branch_name AS station_name,
+                    uh.total_cost, uh.status, uh.is_internal, uh.filled_at, s.branch_name AS station_name,
                     CASE WHEN s.latitude IS NOT NULL AND s.longitude IS NOT NULL
                         THEN CONCAT(s.latitude, \', \', s.longitude) ELSE s.address END AS station_location,
                     o.oil_name, c.car_plate_number,
@@ -51,7 +56,7 @@ if ($userId > 0 && $usageHistoryReady) {
             $stmt = $pdo->prepare(
                 'SELECT uh.usage_id, uh.booking_id, uh.qr_refrence_code, uh.filled_liters, uh.price_per_litre,
                     uh.staff_user_id,
-                    uh.total_cost, uh.status, uh.filled_at, s.branch_name AS station_name,
+                    uh.total_cost, uh.status, uh.is_internal, uh.filled_at, s.branch_name AS station_name,
                     CASE WHEN s.latitude IS NOT NULL AND s.longitude IS NOT NULL
                         THEN CONCAT(s.latitude, \', \', s.longitude) ELSE s.address END AS station_location,
                     o.oil_name, c.car_plate_number,
@@ -77,6 +82,24 @@ if ($userId > 0 && $usageHistoryReady) {
             $usageRows = [];
         }
     }
+
+$paymentByUsage = [];
+if ($paymentReady && $usageRows !== []) {
+    $usageIds = array_values(array_unique(array_map(static fn (array $row): int => (int) $row['usage_id'], $usageRows)));
+    $placeholders = implode(',', array_fill(0, count($usageIds), '?'));
+    $paymentStmt = $pdo->prepare(
+        "SELECT usage_id, status, payment_transfer_id FROM payment_transfers
+         WHERE payment_type = 'fuel_purchase' AND usage_id IN ({$placeholders})
+         ORDER BY created_at DESC, payment_transfer_id DESC"
+    );
+    $paymentStmt->execute($usageIds);
+    foreach ($paymentStmt->fetchAll(PDO::FETCH_ASSOC) as $paymentRow) {
+        $key = (int) $paymentRow['usage_id'];
+        if (!isset($paymentByUsage[$key])) {
+            $paymentByUsage[$key] = $paymentRow;
+        }
+    }
+}
 }
 
 function customer_usage_fuel_class(?string $oilName): string
@@ -107,6 +130,7 @@ include 'share_header.php';
             <h3 class="text-white mb-1">Usage Log Reports</h3>
             <p class="text-secondary mb-0" style="font-size:13px;">Review historical system usage, transaction rates, and verified delivery logs.</p>
         </div>
+        <a class="btn btn-outline-info btn-sm" href="/php/payment_center.php"><i class="bi bi-cash-coin me-1"></i>Payment status</a>
 
         <div class="usage-date-picker">
             <label class="text-secondary d-block mb-1" style="font-size:10px; font-weight:700; letter-spacing:.06em; text-transform:uppercase;">Filter by date range</label>
@@ -171,6 +195,8 @@ include 'share_header.php';
                             $feedbackCount = (int) ($usage['feedback_count'] ?? 0);
                             $latestRating = (int) ($usage['latest_rating'] ?? 0);
                             $feedbackModalId = 'feedbackModal' . (int) $usage['usage_id'];
+                            $paymentRecord = $paymentByUsage[(int) $usage['usage_id']] ?? null;
+                            $paymentStatus = (string) ($paymentRecord['status'] ?? '');
                             $ptsEarned = (int) ($usage['points_earned'] ?? 0);
                             $ptsRedeemed = (int) ($usage['points_redeemed'] ?? 0);
                             $discountMmk = (float) ($usage['discount_mmk'] ?? 0);
@@ -193,7 +219,27 @@ include 'share_header.php';
                             <td class="py-3"><?php echo htmlspecialchars($liters); ?> Liters</td>
                             <td class="py-3"><span class="fuel-tag <?php echo htmlspecialchars(customer_usage_fuel_class($oilName)); ?>"><?php echo htmlspecialchars($oilName); ?></span></td>
                             <td class="py-3"><span class="text-warning" style="font-size:12px;"><?php echo htmlspecialchars($loyaltyText, ENT_QUOTES, 'UTF-8'); ?></span></td>
-                            <td class="py-3"><span class="status-pill active" style="font-size:9px;"><?php echo htmlspecialchars($status === 'Filled' ? 'Delivered' : $status); ?></span></td>
+                            <td class="py-3">
+                                <span class="status-pill active" style="font-size:9px;"><?php echo htmlspecialchars($status === 'Filled' ? 'Delivered' : $status); ?></span>
+                                <?php if ($paymentStatus === 'pending_transfer'): ?>
+                                    <div class="small text-warning mt-1">Payment notice awaiting HQ</div>
+                                <?php elseif ($paymentStatus === 'confirmed'): ?>
+                                    <div class="small text-success mt-1">HQ recorded receipt</div>
+                                <?php elseif ($paymentStatus === 'rejected'): ?>
+                                    <div class="small text-warning mt-1">HQ did not confirm receipt</div>
+                                <?php elseif ($paymentStatus === 'cancelled'): ?>
+                                    <div class="small text-secondary mt-1">Payment notice cancelled</div>
+                                <?php endif; ?>
+                                <?php if ($paymentReady && empty($usage['is_internal']) && (float) ($usage['total_cost'] ?? 0) > 0 && !in_array($paymentStatus, ['pending_transfer', 'confirmed'], true)): ?>
+                                    <form method="post" action="/php/Payment/action.php" class="mt-2" onsubmit="return confirm('Have you already paid this bill outside the website?')">
+                                        <input type="hidden" name="csrf_token" value="<?= htmlspecialchars((string) ($_SESSION['payment_transfer_csrf'] ?? ''), ENT_QUOTES, 'UTF-8') ?>">
+                                        <input type="hidden" name="action" value="customer_paid">
+                                        <input type="hidden" name="i_paid" value="1">
+                                        <input type="hidden" name="usage_id" value="<?= (int) $usage['usage_id'] ?>">
+                                        <button type="submit" class="btn btn-outline-warning btn-sm">I paid · <?= number_format((float) $usage['total_cost'], 0) ?> MMK</button>
+                                    </form>
+                                <?php endif; ?>
+                            </td>
                             <td class="py-3 text-end">
                                 <?php if (!empty($usage['staff_user_id'])): ?>
                                     <button type="button" class="btn btn-outline-info btn-sm rounded-pill px-3" data-bs-toggle="modal" data-bs-target="#<?php echo htmlspecialchars($feedbackModalId, ENT_QUOTES, 'UTF-8'); ?>">

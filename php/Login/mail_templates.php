@@ -44,7 +44,7 @@ function mail_legal_footer(): array
         . 'You received this message because a Map &amp; Pump account, invitation, request, or security event is associated with this email address.'
         . '</p>'
         . '<p style="color:#6b7280;font-size:12px;line-height:1.5;margin:0 0 8px">'
-        . 'MAP &amp; PUMP is a school demonstration project for learning and testing, not a live commercial fuel or emergency service. The website does not process payments; any real-world money exchange, if any, takes place outside the website and is not managed by this project.'
+        . 'MAP &amp; PUMP is a school demonstration project, not a bank, payment processor, live commercial fuel service, or emergency service. Payments occur outside the website. Payment records reflect user declarations and recipient confirmations only; they are not independent bank verification.'
         . '</p>'
         . '<p style="color:#6b7280;font-size:12px;line-height:1.5;margin:0">'
         . 'This is an account, invitation, request, or security service notice, not promotional email. For questions, contact map.and.pump@gmail.com. Review the Terms of Service and Privacy Policy on the Map &amp; Pump site for information about how the project handles data.'
@@ -52,7 +52,7 @@ function mail_legal_footer(): array
 
     $text = "----\n"
         . "You received this message because a Map & Pump account, invitation, request, or security event is associated with this email address.\n\n"
-        . "MAP & PUMP is a school demonstration project for learning and testing, not a live commercial fuel or emergency service. The website does not process payments; any real-world money exchange, if any, takes place outside the website and is not managed by this project.\n\n"
+        . "MAP & PUMP is a school demonstration project, not a bank, payment processor, live commercial fuel service, or emergency service. Payments occur outside the website. Payment records reflect user declarations and recipient confirmations only; they are not independent bank verification.\n\n"
         . "This is an account, invitation, request, or security service notice, not promotional email. For questions, contact map.and.pump@gmail.com. Review the Terms of Service and Privacy Policy on the Map & Pump site for information about how the project handles data.\n";
 
     return ['html' => $html, 'text' => $text];
@@ -145,6 +145,39 @@ function mail_build_account_notice(array $context): array
     $action = strtolower(trim((string) ($context['action'] ?? 'updated')));
     $labels = mail_action_labels($action);
     $footer = mail_legal_footer();
+
+    if ($kind === 'payment') {
+        $paymentStatus = match ($action) {
+            'pending' => 'Payment reported by payer; awaiting recipient response',
+            'confirmed' => 'Recipient recorded that the external payment was received',
+            'rejected' => 'Recipient recorded that the external payment was not received',
+            'cancelled' => 'Payer cancelled the pending payment notice',
+            default => 'External payment status updated',
+        };
+        $referenceCode = trim((string) ($context['reference_code'] ?? ''));
+        $amount = number_format((float) ($context['amount_mmk'] ?? 0), 2) . ' MMK';
+        $description = trim((string) ($context['description'] ?? 'External payment'));
+        $subject = 'Map & Pump external payment status: ' . match ($action) {
+            'pending' => 'Awaiting recipient',
+            'confirmed' => 'Recipient confirmed',
+            'rejected' => 'Not confirmed',
+            'cancelled' => 'Cancelled',
+            default => 'Updated',
+        };
+        $text = "Map & Pump — external payment status\n\n{$paymentStatus}.\n\n"
+            . "Description: {$description}\nAmount: {$amount}\n"
+            . ($referenceCode !== '' ? "Reference: {$referenceCode}\n" : '')
+            . "\nThis record does not move funds or verify a transfer with a bank or wallet provider. Review the payment status in your Map & Pump account.\n\n"
+            . $footer['text'];
+        $html = '<div style="font-family:Arial,Helvetica,sans-serif;line-height:1.55;color:#111827;max-width:560px">'
+            . '<p style="margin:0 0 12px;font-size:14px;color:#374151">Map &amp; Pump — external payment status</p>'
+            . '<h2 style="margin:0 0 16px;font-size:20px;color:#111827">' . mail_h($paymentStatus) . '</h2>'
+            . '<p><strong>Description:</strong> ' . mail_h($description) . '<br><strong>Amount:</strong> ' . mail_h($amount) . '</p>'
+            . ($referenceCode !== '' ? '<p><strong>Reference:</strong> ' . mail_h($referenceCode) . '</p>' : '')
+            . '<p>This record does not move funds or verify a transfer with a bank or wallet provider. Review the payment status in your Map &amp; Pump account.</p>'
+            . $footer['html'] . '</div>';
+        return ['subject' => $subject, 'html' => $html, 'text' => $text];
+    }
 
     $scope = match ($kind) {
         'hq' => 'HQ account',

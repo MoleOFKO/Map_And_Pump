@@ -1,25 +1,24 @@
 <?php
+if (session_status() !== PHP_SESSION_ACTIVE) {
+    session_start();
+}
 $page_title = 'Register your company | MAP & PUMP';
 $page_description = 'Submit your company details to join MAP & PUMP.';
 $page_styles = ['/css/CompanyRegistration.css'];
+require_once __DIR__ . '/../billing_config.php';
+require_once __DIR__ . '/../payment_transfers.php';
+
+if (empty($_SESSION['company_registration_csrf'])) {
+    $_SESSION['company_registration_csrf'] = bin2hex(random_bytes(32));
+}
 
 /* ==========================================================================
    PAYMENT RECEIVING ACCOUNTS  — edit these values only
    'number' is what the user is told to transfer to.
    ========================================================================== */
-$payment_receiver_name = 'MAP & PUMP Co., Ltd';
-$payment_default_phone = '09 795 123 456';
-
-$payment_accounts = [
-    'KPay'     => ['label' => 'KPay phone number',     'number' => $payment_default_phone],
-    'Wave Pay' => ['label' => 'Wave Pay phone number', 'number' => $payment_default_phone],
-    'AYA Pay'  => ['label' => 'AYA Pay phone number',  'number' => $payment_default_phone],
-    'CB Pay'   => ['label' => 'CB Pay phone number',   'number' => $payment_default_phone],
-    'AYA Bank'  => ['label' => 'AYA Bank account number',  'number' => '0012 3456 7890 1234', 'phone' => $payment_default_phone],
-    'CB Bank'   => ['label' => 'CB Bank account number',   'number' => '0022 3456 7890 1234', 'phone' => $payment_default_phone],
-    'KBZ Bank'  => ['label' => 'KBZ Bank account number',  'number' => '0032 3456 7890 1234', 'phone' => $payment_default_phone],
-    'YOMA Bank' => ['label' => 'YOMA Bank account number', 'number' => '0042 3456 7890 1234', 'phone' => $payment_default_phone],
-];
+$payment_receiver_name = BILLING_PLATFORM_RECIPIENT_NAME;
+$payment_default_phone = BILLING_PAYMENT_DEFAULT_PHONE;
+$payment_accounts = billing_payment_receiving_accounts();
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     header('Content-Type: application/json; charset=utf-8');
@@ -47,7 +46,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $contentLength = (int) ($_SERVER['CONTENT_LENGTH'] ?? 0);
     $postMaxBytes = $iniBytes((string) ini_get('post_max_size'));
     if ($contentLength > 0 && $postMaxBytes > 0 && $contentLength > $postMaxBytes) {
-        $respond(false, 'The uploaded files are too large. Please keep the total upload under 24 MB.', 413);
+        $respond(false, 'The company logo and business-license files are too large. Please keep the total upload under 24 MB.', 413);
     }
 
     $companyName = trim((string) ($_POST['company_name'] ?? ''));
@@ -60,6 +59,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $companyPhone = trim((string) ($_POST['company_phone'] ?? ''));
     $paymentMethod = trim((string) ($_POST['payment_method'] ?? ''));
     $bankName = trim((string) ($_POST['bank_name'] ?? ''));
+    $csrfToken = (string) ($_POST['csrf_token'] ?? '');
+
+    if (!hash_equals((string) $_SESSION['company_registration_csrf'], $csrfToken)) {
+        $respond(false, 'Your session expired. Refresh the page and try again.', 403);
+    }
+    if ((string) ($_POST['i_paid'] ?? '') !== '1') {
+        $respond(false, 'Confirm that you made the external transfer before submitting.', 422);
+    }
 
     $allowedMethods = ['Bank transfer', 'KPay', 'Wave Pay', 'AYA Pay', 'CB Pay'];
     $allowedBanks = ['AYA Bank', 'CB Bank', 'KBZ Bank', 'YOMA Bank'];
@@ -162,6 +169,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $savedFiles = [];
     try {
         require_once __DIR__ . '/../conn.php';
+        // Prepare runtime payment tables before opening the registration
+        // transaction; MySQL DDL can implicitly commit an active transaction.
+        if (!payment_transfer_schema_ready($pdo)) {
+            throw new RuntimeException('Payment status tracking is temporarily unavailable. Please try again later.');
+        }
         $duplicate = $pdo->prepare("SELECT request_id FROM system_requests WHERE request_type = 'hq_registration' AND status = 'pending' AND (headquarter_email = ? OR headquarter_owner_email = ?) LIMIT 1");
         $duplicate->execute([$companyEmail, $ownerEmail]);
         if ($duplicate->fetchColumn()) {
@@ -170,8 +182,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         $savedFiles[] = $logoPath = $upload('company_logo', ['image/jpeg', 'image/png', 'image/webp'], 5 * 1024 * 1024);
         $savedFiles[] = $licensePath = $upload('license_photo', ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'], 10 * 1024 * 1024);
-        $savedFiles[] = $receiptPath = $upload('payment_receipt', ['image/jpeg', 'image/png', 'image/webp'], 5 * 1024 * 1024);
-
         $details = json_encode([
             'company_address' => $companyAddress,
             'owner_phone' => $ownerPhone,
@@ -195,13 +205,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $licenseId, $licensePath, $ownerEmail, $companyEmail, $logoPath, $companyPhone, $licenseExpiry . ' 23:59:59',
         ]);
         $requestId = (int) $pdo->lastInsertId();
-        $receiptStmt = $pdo->prepare(
-            "INSERT INTO hq_receipt (hq_id, request_id, receipt_type, receipt_image)
-             VALUES (NULL, ?, 'registration', ?)"
-        );
-        $receiptStmt->execute([$requestId, $receiptPath]);
+        $transferId = payment_transfer_create($pdo, [
+            'payment_type' => 'hq_registration',
+            'amount_mmk' => BILLING_HQ_REGISTRATION_FEE_MMK,
+            'description' => 'One-time HQ registration fee',
+            'payer_user_id' => (int) ($_SESSION['user_id'] ?? 0) ?: null,
+            'payer_email' => $ownerEmail,
+            'recipient_role' => BILLING_PLATFORM_RECEIVER_ROLE,
+            'request_id' => $requestId,
+            'payment_method' => $paymentMethod === 'Bank transfer' ? $paymentMethod . ': ' . $bankName : $paymentMethod,
+        ]);
         $pdo->commit();
-        $respond(true, 'Registration submitted successfully. We will verify your documents and email you within 1 business day.', 201, ['reference' => $reference]);
+        payment_transfer_send_notices($pdo, $transferId, 'recipient', 'pending');
+        payment_transfer_send_notices($pdo, $transferId, 'payer', 'pending');
+        $respond(true, 'Registration and payment status submitted. The HQ request remains pending until an Admin records the transfer as received and reviews the registration.', 201, ['reference' => $reference]);
     } catch (Throwable $error) {
         if (isset($pdo) && $pdo instanceof PDO && $pdo->inTransaction()) {
             $pdo->rollBack();
@@ -230,6 +247,7 @@ require __DIR__ . '/../partials/nav.php';
         </div>
 
         <form class="company-registration-form" id="company-registration-form" method="post" enctype="multipart/form-data" novalidate>
+            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars((string) $_SESSION['company_registration_csrf'], ENT_QUOTES, 'UTF-8') ?>">
             <section class="registration-section">
                 <div class="registration-section-title">
                     <span class="registration-step">01</span>
@@ -285,7 +303,7 @@ require __DIR__ . '/../partials/nav.php';
                 </div>
             </section>
 
-            <div class="registration-actions"><button type="submit" class="btn btn-primary btn-lg px-5 py-3">Submit registration <i class="fa-solid fa-arrow-right ms-2"></i></button></div>
+            <div class="registration-actions"><button type="submit" class="btn btn-primary btn-lg px-5 py-3">Continue to payment details <i class="fa-solid fa-arrow-right ms-2"></i></button></div>
             <p id="registration-form-status" class="registration-form-status" aria-live="polite"></p>
         </form>
     </div>
@@ -297,22 +315,22 @@ require __DIR__ . '/../partials/nav.php';
     <div class="payment-modal-backdrop" data-payment-close></div>
     <div class="payment-card" role="document">
         <button type="button" class="payment-close" data-payment-close aria-label="Close payment window"><i class="fa-solid fa-xmark"></i></button>
-        <span class="payment-kicker"><i class="fa-solid fa-shield-halved"></i> Secure registration</span>
+        <span class="payment-kicker"><i class="fa-solid fa-building"></i> HQ registration</span>
 
         <!-- step indicator -->
         <ol class="payment-steps" id="payment-steps">
             <li class="payment-steps-item is-current" data-step-dot="method"><span>1</span> Payment method</li>
-            <li class="payment-steps-item" data-step-dot="receipt"><span>2</span> Upload receipt</li>
+            <li class="payment-steps-item" data-step-dot="payment"><span>2</span> Payment status</li>
         </ol>
 
         <!-- ============================ STEP 1 ============================ -->
         <div class="payment-step is-active" data-step="method">
             <h2 id="payment-modal-title">Complete your registration</h2>
-            <p class="payment-description">Choose how you would like to pay the company registration fee.</p>
+            <p class="payment-description">The one-time HQ registration fee includes capacity for <?= (int) BILLING_HQ_INCLUDED_STATION_SLOTS ?> stations. Choose how you would like to pay the registration fee.</p>
 
             <div class="payment-total">
                 <span>Registration fee</span>
-                <strong>2,999,999 <small>MMK</small></strong>
+                <strong><?= number_format(BILLING_HQ_REGISTRATION_FEE_MMK) ?> <small>MMK</small></strong>
             </div>
 
             <div class="payment-field">
@@ -406,15 +424,15 @@ require __DIR__ . '/../partials/nav.php';
             <p class="payment-error" id="payment-error" aria-live="polite" hidden></p>
 
             <button type="button" class="btn btn-primary payment-confirm" id="payment-confirm">Continue to payment <i class="fa-solid fa-arrow-right ms-2"></i></button>
-            <p class="payment-note"><i class="fa-solid fa-lock"></i> Payment details are handled securely by your chosen platform.</p>
+            <p class="payment-note">The website does not move or verify funds. Use the recipient account details shown in the next step.</p>
         </div>
 
         <!-- ============================ STEP 2 ============================ -->
-        <div class="payment-step" data-step="receipt" hidden>
+        <div class="payment-step" data-step="payment" hidden>
             <button type="button" class="payment-back" id="payment-back"><i class="fa-solid fa-arrow-left"></i> Change payment method</button>
 
-            <h2 class="payment-step-title">Transfer &amp; upload your receipt</h2>
-            <p class="payment-description">Transfer the fee to the account below, then upload a photo of the payment receipt.</p>
+            <h2 class="payment-step-title">Transfer, then report payment</h2>
+            <p class="payment-description">Make the transfer outside this website. After you have sent it, submit the status notice so an Admin can record whether it was received.</p>
 
             <div class="payment-summary">
                 <span class="payment-logo payment-logo-empty" id="payment-summary-logo"><i class="fa-solid fa-wallet"></i></span>
@@ -422,7 +440,7 @@ require __DIR__ . '/../partials/nav.php';
                     <strong id="payment-summary-method">&mdash;</strong>
                     <small id="payment-summary-sub">Selected payment method</small>
                 </span>
-                <span class="payment-summary-amount">2,999,999 <small>MMK</small></span>
+                <span class="payment-summary-amount"><?= number_format(BILLING_HQ_REGISTRATION_FEE_MMK) ?> <small>MMK</small></span>
             </div>
 
             <div class="payment-transfer">
@@ -437,28 +455,10 @@ require __DIR__ . '/../partials/nav.php';
                 </ul>
             </div>
 
-            <div class="payment-field">
-                <label class="payment-field-label" for="payment-receipt">Payment receipt photo</label>
-                <label class="upload-field payment-receipt-field" for="payment-receipt">
-                    <span class="upload-icon"><i class="fa-solid fa-receipt"></i></span>
-                    <span class="upload-copy"><strong id="payment-receipt-label">Upload receipt photo</strong><small>PNG, JPG, or WEBP &middot; max 5 MB</small></span>
-                    <input id="payment-receipt" name="payment_receipt" type="file" accept="image/png,image/jpeg,image/webp">
-                </label>
+            <p class="payment-error" id="payment-status-error" aria-live="polite" hidden></p>
 
-                <div class="payment-receipt-preview" id="payment-receipt-preview" hidden>
-                    <img id="payment-receipt-image" src="" alt="Receipt preview">
-                    <div class="payment-receipt-info">
-                        <strong id="payment-receipt-name">receipt.jpg</strong>
-                        <small id="payment-receipt-size"></small>
-                    </div>
-                    <button type="button" class="payment-receipt-remove" id="payment-receipt-remove" aria-label="Remove receipt photo"><i class="fa-solid fa-xmark"></i></button>
-                </div>
-            </div>
-
-            <p class="payment-error" id="payment-receipt-error" aria-live="polite" hidden></p>
-
-            <button type="button" class="btn btn-primary payment-confirm" id="payment-submit">Submit payment receipt <i class="fa-solid fa-check ms-2"></i></button>
-            <p class="payment-note"><i class="fa-solid fa-clock"></i> We verify receipts within 1 business day and email you the result.</p>
+            <button type="button" class="btn btn-primary payment-confirm" id="payment-submit">I paid and submit registration <i class="fa-solid fa-check ms-2"></i></button>
+            <p class="payment-note"><i class="fa-solid fa-circle-info"></i> “I paid” is your declaration. Only the receiving Admin can mark the transfer received; this is not bank verification.</p>
         </div>
     </div>
 </div>

@@ -183,24 +183,13 @@
 
     /* ======================================================================
        PRICING CALCULATOR
-       Free tier: first 3 stations (registration fee included).
-       Extra stations billed per station per month, with volume + duration
-       discounts. All rates live in the data-* attributes on #calc so you can
-       change your pricing in the HTML without touching this file.
+       Included registration slots, the extra-station MMK rate, and discounts
+       are supplied by billing_config.php through #calc data attributes.
        ====================================================================== */
     var calc = document.getElementById('calc');
     if (calc) {
-        var FREE      = parseInt(calc.dataset.free, 10) || 3;
-        var RATE      = parseInt(calc.dataset.rate, 10) || 2000;
-
-        // Volume discount tiers, applied on the number of PAID stations.
-        var VOLUME = [
-            { min: 23, off: 0.20 },
-            { min: 8,  off: 0.10 },
-            { min: 1,  off: 0.00 }
-        ];
-        // Duration discounts, keyed by months committed.
-        var DURATION = { 1: 0, 3: 0.05, 6: 0.10, 12: 0.20 };
+        var INCLUDED_SLOTS = parseInt(calc.dataset.free, 10);
+        var RATE      = parseInt(calc.dataset.rate, 10);
 
         var rangeEl   = document.getElementById('calc-range');
         var countEl   = document.getElementById('calc-count');
@@ -213,20 +202,27 @@
         var perEl     = document.getElementById('calc-per');
         var noteEl    = document.getElementById('calc-note');
 
+        var VOLUME = JSON.parse(calc.dataset.volumeDiscounts || '[]')
+            .sort(function (a, b) { return b.min - a.min; });
+        var DURATION = {};
+        JSON.parse(calc.dataset.termDiscounts || '[]').forEach(function (term) {
+            DURATION[term.months] = term.percent / 100;
+        });
+
         var months = 1;
 
         function fmt(n) { return Math.round(n).toLocaleString('en-US'); }
 
         function volumeOff(paid) {
             for (var i = 0; i < VOLUME.length; i++) {
-                if (paid >= VOLUME[i].min) return VOLUME[i].off;
+                if (paid >= VOLUME[i].min) return VOLUME[i].percent / 100;
             }
             return 0;
         }
 
         function update() {
             var stations = parseInt(rangeEl.value, 10);
-            var paid     = Math.max(0, stations - FREE);
+            var paid     = Math.max(0, stations - INCLUDED_SLOTS);
 
             var vOff = volumeOff(paid);
             var dOff = DURATION[months] || 0;
@@ -243,11 +239,11 @@
             totalEl.textContent = fmt(total) + ' MMK';
 
             perEl.textContent = paid > 0
-                ? fmt(total / paid / months) + ' MMK / station / month'
-                : 'Free';
+                ? fmt(total / paid / months) + ' MMK / extra station / month'
+                : 'No extra-station MMK fee';
 
             noteEl.textContent = paid === 0
-                ? 'Within your ' + FREE + ' free stations — registration fee only.'
+                ? 'Within your ' + INCLUDED_SLOTS + ' included capacity slots — monthly station operating fees may still apply.'
                 : months > 1
                     ? 'Total for ' + months + ' months, billed upfront.'
                     : 'Billed monthly.';
