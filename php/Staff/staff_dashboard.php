@@ -18,12 +18,22 @@ if ($roleName !== 'staff') {
 }
 
 $displayName = '';
+$headquarterName = 'Not assigned yet';
+$branchName = 'Not assigned yet';
+$branchCode = 'N/A';
 try {
     if (isset($pdo)) {
-        $stmt = $pdo->prepare('SELECT user_name FROM users WHERE user_id = ? LIMIT 1');
+        $stmt = $pdo->prepare('SELECT u.user_name, h.company_name AS headquarter_name, b.branch_name, b.branch_code
+            FROM users u
+            LEFT JOIN headquarter h ON h.headquarter_id = u.headquarter_id
+            LEFT JOIN branches b ON b.branch_id = u.branch_id
+            WHERE u.user_id = ? LIMIT 1');
         $stmt->execute([(int)$_SESSION['user_id']]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
         $displayName = trim((string)($row['user_name'] ?? ''));
+        $headquarterName = trim((string)($row['headquarter_name'] ?? '')) ?: 'Not assigned yet';
+        $branchName = trim((string)($row['branch_name'] ?? '')) ?: 'Not assigned yet';
+        $branchCode = trim((string)($row['branch_code'] ?? '')) ?: 'N/A';
     }
 } catch (Throwable $e) {
     // ignore
@@ -46,6 +56,52 @@ try {
     <style>
         .icon-box { font-size: calc(2.5rem + 1vw); color: var(--icon-color); margin-bottom: 15px; }
         .dashboard-card { cursor: pointer; }
+        .assignment-banner {
+            background: linear-gradient(135deg, rgba(15, 23, 42, 0.9), rgba(30, 41, 59, 0.82));
+            border: 1px solid rgba(88, 166, 255, 0.18);
+            border-radius: 14px;
+            padding: 0.7rem 0.8rem;
+            box-shadow: 0 12px 30px rgba(0, 0, 0, 0.12);
+        }
+        .assignment-badge {
+            width: 36px;
+            height: 36px;
+            border-radius: 10px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(0, 244, 255, 0.08);
+            border: 1px solid rgba(0, 244, 255, 0.2);
+            color: var(--neon-cyan);
+            font-size: 0.9rem;
+            flex-shrink: 0;
+        }
+        .assignment-pill {
+            background: rgba(15, 118, 110, 0.08);
+            border: 1px solid rgba(34, 197, 94, 0.14);
+            border-radius: 10px;
+            padding: 0.5rem 0.7rem;
+            min-width: 140px;
+        }
+        .assignment-label {
+            display: block;
+            color: rgba(255, 255, 255, 0.62);
+            font-size: 0.62rem;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            margin-bottom: 0.18rem;
+        }
+        .assignment-value {
+            color: #fff;
+            font-weight: 700;
+            font-size: 0.8rem;
+            line-height: 1.3;
+        }
+        .assignment-meta {
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 0.66rem;
+            margin-top: 0.06rem;
+        }
     </style>
 </head>
 <body class="background_color" id="background_color">
@@ -104,6 +160,28 @@ try {
                 </span>
                 <h1 class="fw-bold m-0 h4 text-white mt-2">Welcome Back, <?= htmlspecialchars($displayName ?: 'Staff') ?></h1>
                 <p class="text-white-50 m-0 small mt-1">Select an action below to manage active operations.</p>
+            </div>
+        </div>
+
+        <div class="assignment-banner mb-4">
+            <div class="d-flex align-items-center gap-2 flex-wrap">
+                <div class="assignment-badge">
+                    <i class="bi bi-geo-alt-fill"></i>
+                </div>
+                <div class="flex-grow-1">
+                    <div class="small text-white-50 text-uppercase mb-1" style="letter-spacing:0.08em; font-size:0.62rem;">Work location</div>
+                    <div class="d-flex flex-wrap gap-2">
+                        <div class="assignment-pill">
+                            <span class="assignment-label">HQ</span>
+                            <div class="assignment-value"><?= htmlspecialchars($headquarterName) ?></div>
+                        </div>
+                        <div class="assignment-pill">
+                            <span class="assignment-label">Branch</span>
+                            <div class="assignment-value"><?= htmlspecialchars($branchName) ?></div>
+                            <div class="assignment-meta">Code: <?= htmlspecialchars($branchCode) ?></div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
 
