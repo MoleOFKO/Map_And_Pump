@@ -148,8 +148,9 @@ function mail_build_account_notice(array $context): array
 
     if ($kind === 'payment') {
         $paymentStatus = match ($action) {
-            'pending' => 'Payment reported by payer; awaiting recipient response',
-            'confirmed' => 'Recipient recorded that the external payment was received',
+            'pending', 'pending_payment' => 'Payment request created; awaiting payment',
+            'payer_reported_paid' => 'Payer reported payment; awaiting recipient confirmation',
+            'confirmed', 'received' => 'Recipient recorded that the external payment was received',
             'rejected' => 'Recipient recorded that the external payment was not received',
             'cancelled' => 'Payer cancelled the pending payment notice',
             default => 'External payment status updated',
@@ -157,24 +158,28 @@ function mail_build_account_notice(array $context): array
         $referenceCode = trim((string) ($context['reference_code'] ?? ''));
         $amount = number_format((float) ($context['amount_mmk'] ?? 0), 2) . ' MMK';
         $description = trim((string) ($context['description'] ?? 'External payment'));
+        $recipient = trim((string) ($context['recipient_label'] ?? 'the designated recipient'));
         $subject = 'Map & Pump external payment status: ' . match ($action) {
-            'pending' => 'Awaiting recipient',
-            'confirmed' => 'Recipient confirmed',
+            'pending', 'pending_payment' => 'Awaiting payment',
+            'payer_reported_paid' => 'Awaiting recipient confirmation',
+            'confirmed', 'received' => 'Recipient recorded receipt',
             'rejected' => 'Not confirmed',
             'cancelled' => 'Cancelled',
             default => 'Updated',
         };
         $text = "Map & Pump — external payment status\n\n{$paymentStatus}.\n\n"
-            . "Description: {$description}\nAmount: {$amount}\n"
+            . "Description: {$description}\nAmount: {$amount}\nIntended recipient: {$recipient}\n"
             . ($referenceCode !== '' ? "Reference: {$referenceCode}\n" : '')
-            . "\nThis record does not move funds or verify a transfer with a bank or wallet provider. Review the payment status in your Map & Pump account.\n\n"
+            . (!empty($context['payment_url']) ? "Secure payment status link: " . (string) $context['payment_url'] . "\n" : '')
+            . "\nThis record does not move funds or verify a transfer with a bank or wallet provider. Review the status in the secure link provided, or in Payment status after signing in.\n\n"
             . $footer['text'];
         $html = '<div style="font-family:Arial,Helvetica,sans-serif;line-height:1.55;color:#111827;max-width:560px">'
             . '<p style="margin:0 0 12px;font-size:14px;color:#374151">Map &amp; Pump — external payment status</p>'
             . '<h2 style="margin:0 0 16px;font-size:20px;color:#111827">' . mail_h($paymentStatus) . '</h2>'
-            . '<p><strong>Description:</strong> ' . mail_h($description) . '<br><strong>Amount:</strong> ' . mail_h($amount) . '</p>'
+            . '<p><strong>Description:</strong> ' . mail_h($description) . '<br><strong>Amount:</strong> ' . mail_h($amount) . '<br><strong>Intended recipient:</strong> ' . mail_h($recipient) . '</p>'
             . ($referenceCode !== '' ? '<p><strong>Reference:</strong> ' . mail_h($referenceCode) . '</p>' : '')
-            . '<p>This record does not move funds or verify a transfer with a bank or wallet provider. Review the payment status in your Map &amp; Pump account.</p>'
+            . (!empty($context['payment_url']) ? '<p><a href="' . mail_h((string) $context['payment_url']) . '" style="display:inline-block;padding:10px 16px;background:#0b6bcb;color:#fff;text-decoration:none;border-radius:6px">Open secure payment status</a></p>' : '')
+            . '<p>This record does not move funds or verify a transfer with a bank or wallet provider. Review the status using the secure link provided, or in Payment status after signing in.</p>'
             . $footer['html'] . '</div>';
         return ['subject' => $subject, 'html' => $html, 'text' => $text];
     }

@@ -221,22 +221,23 @@ include 'share_header.php';
                             <td class="py-3"><span class="text-warning" style="font-size:12px;"><?php echo htmlspecialchars($loyaltyText, ENT_QUOTES, 'UTF-8'); ?></span></td>
                             <td class="py-3">
                                 <span class="status-pill active" style="font-size:9px;"><?php echo htmlspecialchars($status === 'Filled' ? 'Delivered' : $status); ?></span>
-                                <?php if ($paymentStatus === 'pending_transfer'): ?>
-                                    <div class="small text-warning mt-1">Payment notice awaiting HQ</div>
-                                <?php elseif ($paymentStatus === 'confirmed'): ?>
+                                <?php if ($paymentStatus === 'pending_payment'): ?>
+                                    <div class="small text-warning mt-1">Payment request awaiting your payment</div>
+                                <?php elseif ($paymentStatus === 'payer_reported_paid'): ?>
+                                    <div class="small text-warning mt-1">Payment reported · awaiting HQ</div>
+                                <?php elseif ($paymentStatus === 'received'): ?>
                                     <div class="small text-success mt-1">HQ recorded receipt</div>
                                 <?php elseif ($paymentStatus === 'rejected'): ?>
                                     <div class="small text-warning mt-1">HQ did not confirm receipt</div>
                                 <?php elseif ($paymentStatus === 'cancelled'): ?>
                                     <div class="small text-secondary mt-1">Payment notice cancelled</div>
                                 <?php endif; ?>
-                                <?php if ($paymentReady && empty($usage['is_internal']) && (float) ($usage['total_cost'] ?? 0) > 0 && !in_array($paymentStatus, ['pending_transfer', 'confirmed'], true)): ?>
-                                    <form method="post" action="/php/Payment/action.php" class="mt-2" onsubmit="return confirm('Have you already paid this bill outside the website?')">
+                                <?php if ($paymentReady && empty($usage['is_internal']) && (float) ($usage['total_cost'] ?? 0) > 0 && !in_array($paymentStatus, ['pending_payment', 'payer_reported_paid', 'received'], true)): ?>
+                                    <form method="post" action="/php/Payment/action.php" class="mt-2" onsubmit="return confirm('Create a payment request for this filled bill? The amount is based on the recorded net bill and the recipient is the station HQ.')">
                                         <input type="hidden" name="csrf_token" value="<?= htmlspecialchars((string) ($_SESSION['payment_transfer_csrf'] ?? ''), ENT_QUOTES, 'UTF-8') ?>">
-                                        <input type="hidden" name="action" value="customer_paid">
-                                        <input type="hidden" name="i_paid" value="1">
+                                        <input type="hidden" name="action" value="create_fuel_payment">
                                         <input type="hidden" name="usage_id" value="<?= (int) $usage['usage_id'] ?>">
-                                        <button type="submit" class="btn btn-outline-warning btn-sm">I paid · <?= number_format((float) $usage['total_cost'], 0) ?> MMK</button>
+                                        <button type="submit" class="btn btn-outline-warning btn-sm">Create payment request · <?= number_format((float) $usage['total_cost'], 0) ?> MMK</button>
                                     </form>
                                 <?php endif; ?>
                             </td>

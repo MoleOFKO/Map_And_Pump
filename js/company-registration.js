@@ -37,7 +37,7 @@ const bankButtons = banksBox ? Array.from(banksBox.querySelectorAll('.payment-ba
 const bankInput = document.getElementById('payment-bank-input');
 const paymentError = document.getElementById('payment-error');
 
-/* ---------- Step 2: external payment notice ---------- */
+/* ---------- Step 2: external payment request ---------- */
 const steps = paymentModal ? Array.from(paymentModal.querySelectorAll('.payment-step')) : [];
 const stepDots = paymentModal ? Array.from(paymentModal.querySelectorAll('[data-step-dot]')) : [];
 const backButton = document.getElementById('payment-back');
@@ -333,7 +333,7 @@ backButton?.addEventListener('click', () => {
     toggle?.focus();
 });
 
-/* Submit registration and the payer-declared external transfer status. */
+/* Submit the registration and create a fixed-amount payment request. */
 paymentSubmit?.addEventListener('click', async () => {
     const method = methodInput?.value;
     const bank = bankInput?.value;
@@ -345,7 +345,6 @@ paymentSubmit?.addEventListener('click', async () => {
         const formData = new FormData(registrationForm);
         formData.set('payment_method', method || '');
         formData.set('bank_name', bank || '');
-        formData.set('i_paid', '1');
         const response = await fetch(window.location.href, {
             method: 'POST',
             body: formData,

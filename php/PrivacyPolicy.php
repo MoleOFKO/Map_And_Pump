@@ -14,7 +14,7 @@ require __DIR__ . '/partials/nav.php';
             <span class="eyebrow">Privacy policy</span>
             <h1>School demo data,<br><span class="text-gradient-accent">with one email exception.</span></h1>
             <p>This policy explains how MAP &amp; PUMP handles information in its non-production school-project environment.</p>
-            <p class="legal-updated"><i class="fa-regular fa-calendar me-2"></i>Last updated: October 13, 2026</p>
+            <p class="legal-updated"><i class="fa-regular fa-calendar me-2"></i>Last updated: October 14, 2026</p>
         </header>
 
         <section class="legal-quick-contact" aria-label="MAP & PUMP privacy contact details">
@@ -37,20 +37,20 @@ require __DIR__ . '/partials/nav.php';
         <article class="legal-content">
             <section>
                 <h2>1. Information you may enter</h2>
-                <p>MAP &amp; PUMP is a school demonstration project, not a production service. You may provide an email address you control for sign-in, verification, invitations, and essential account or request-status notices. Company registration forms may collect company and contact details, a business licence number and document, and a company logo for the registration review. Only submit information and documents you are authorised to share. Do not submit passwords, wallet PINs, full payment credentials, receipts, or personal information about another person.</p>
-                <p>For external payment-status records, the application stores the amount, payment category, selected method, a generated reference, the linked request or fuel fill, payer and intended recipient account identifiers, status, timestamps, and an optional recipient note. The application does not ask for or store payment account passwords, wallet PINs, or receipt images for these records.</p>
+                <p>MAP &amp; PUMP is a school demonstration project, not a production service. You may provide an email address you control for sign-in, verification, invitations, secure payment-request access, and essential account or request-status notices. Company registration forms may collect company and contact details, a business licence number and document, and a company logo for the registration review. Only submit information and documents you are authorised to share. Do not submit passwords, wallet PINs, full payment credentials, or personal information about another person.</p>
+                <p>For external payment requests, the application stores the server-set amount and recipient, payment category, selected method, generated reference, linked request or fuel fill, payer and recipient identifiers, status history, timestamps, and recipient notes. A payer may optionally attach one JPG, PNG, WEBP, or PDF receipt of up to 5 MB. The file is stored with the payment record and is available only to the payer and designated recipient through an authenticated or time-limited payment link. A receipt is evidence only and is not treated as payment confirmation. The application does not ask for or store payment account passwords or wallet PINs.</p>
                 <p>The application stores account information, project records, account activity, and technical data needed to operate and secure the site, such as session data and server logs. Do not reuse a password from another service.</p>
             </section>
 
             <section>
                 <h2>2. How information is used</h2>
                 <p>Account and project information is used to operate and demonstrate the school project, authenticate accounts, send verification codes and essential account, security, invitation, and request-status notices, troubleshoot the application, assess coursework, and protect the test environment from misuse. Email addresses are not used for marketing.</p>
-                <p>Any money transfer takes place separately through the payer’s bank or wallet. MAP &amp; PUMP does not initiate, collect, hold, or independently verify funds. A payment record means that the payer reported a transfer and the recipient entered a response; it is not bank or wallet confirmation. Confirmed status may unlock the related project feature. Do not rely on the site for real fuel availability or business decisions.</p>
+                <p>Any money transfer takes place separately through the payer’s bank or wallet. MAP &amp; PUMP does not initiate, collect, hold, or independently verify funds. A payment request, payer report, and recipient response are recorded separately; none is bank or wallet confirmation. Only a response recorded by the designated recipient may unlock a related project feature. Do not rely on the site for real fuel availability or business decisions.</p>
             </section>
 
             <section>
                 <h2>3. Access and email delivery</h2>
-                <p>The payer can view their payment record. The intended recipient can view and respond to it. Admin accounts can review platform fees; the associated HQ can review fuel-payment records. Authorised project members and instructors may access records when needed to operate, troubleshoot, or assess the demonstration. We do not sell account email addresses.</p>
+                <p>The payer can view their payment record. For a public HQ application without an account, a random, time-limited link is sent to the owner email; anyone who can access that mailbox or link can view and report payment for that request, so keep the link private. The intended recipient can view and respond to the record. Admin accounts can review platform fees; the associated HQ can review fuel-payment records and their receipt evidence. Authorised project members and instructors may access underlying records or attachments when needed to operate, troubleshoot, or assess the demonstration. We do not sell account email addresses.</p>
                 <p>Emails are sent through the email delivery service configured for the project. That service may process the recipient address, sender address, subject, message content, and delivery information to transmit and troubleshoot the email, under its own terms and practices. Email can also be visible to people with access to the recipient's mailbox. Do not assume project data or email is confidential.</p>
             </section>
 

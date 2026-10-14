@@ -13,7 +13,7 @@ require __DIR__ . '/partials/nav.php';
             <span class="eyebrow">Terms of service</span>
             <h1>Clear rules for<br><span class="text-gradient-accent">using MAP &amp; PUMP.</span></h1>
             <p>These terms set the rules for using MAP &amp; PUMP as a school demonstration project.</p>
-            <p class="legal-updated"><i class="fa-regular fa-calendar me-2"></i>Last updated: October 13, 2026</p>
+            <p class="legal-updated"><i class="fa-regular fa-calendar me-2"></i>Last updated: October 14, 2026</p>
         </header>
 
         <article class="legal-content">
@@ -30,7 +30,7 @@ require __DIR__ . '/partials/nav.php';
 
             <section>
                 <h2>3. Email, registration information, and credential safety</h2>
-                <p>You may provide an email address you control for sign-in, verification, invitations, and essential account or request-status notices. Company registration forms may request company and contact details, a business licence number and document, and a company logo. Submit only information and documents you are authorised to share. Never submit passwords, wallet PINs, full payment credentials, receipt images, or another person’s information without authority. Do not reuse passwords from other services.</p>
+                <p>You may provide an email address you control for sign-in, verification, invitations, secure payment-request access, and essential account or request-status notices. A public HQ application may use a time-limited email link to access its payment request; anyone with that link may use it, so keep it private. Company registration forms may request company and contact details, a business licence number and document, and a company logo. Submit only information and documents you are authorised to share. Never submit passwords, wallet PINs, full payment credentials, or another person’s information without authority. Do not reuse passwords from other services.</p>
                 <p>If other real personal information is submitted accidentally, contact the project team promptly to request removal. We may delete submitted content or accounts to protect privacy or maintain the test environment.</p>
             </section>
 
@@ -41,7 +41,7 @@ require __DIR__ . '/partials/nav.php';
 
             <section>
                 <h2>5. External payments and status records</h2>
-                <p>Any money transfer is made separately through a bank or wallet service. MAP &amp; PUMP does not initiate, collect, hold, or independently verify funds. The site lets a payer report that an external transfer was made and lets the intended recipient record whether they received it. Those entries are user declarations, not bank or wallet confirmation. A recipient-confirmed status may enable a related feature in this demonstration. Do not send passwords, wallet PINs, full account credentials, or receipt images through the site. Any real-world arrangement between parties is separate from this demonstration, and the site does not guarantee a transfer, fuel availability, or commercial outcome.</p>
+                <p>Any money transfer is made separately through a bank or wallet service. MAP &amp; PUMP does not initiate, collect, hold, or independently verify funds. The payer may create a request and later report an external transfer. Only the designated recipient can record receipt; these entries are user declarations, not bank or wallet confirmation. An optional receipt file may be attached as evidence, but it does not confirm payment by itself. A recipient-recorded receipt may enable a related feature in this demonstration. Never upload passwords, wallet PINs, or full payment credentials. Any real-world arrangement between parties is separate from this demonstration, and the site does not guarantee a transfer, fuel availability, or commercial outcome.</p>
             </section>
 
             <section>

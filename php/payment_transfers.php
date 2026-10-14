@@ -25,7 +25,7 @@ function payment_transfer_schema_ready(PDO $pdo): bool
                 payment_transfer_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
                 reference_code VARCHAR(48) NOT NULL,
                 payment_type VARCHAR(40) NOT NULL,
-                status VARCHAR(24) NOT NULL DEFAULT 'pending_transfer',
+                status VARCHAR(24) NOT NULL DEFAULT 'pending_payment',
                 amount_mmk DECIMAL(14,2) NOT NULL,
                 description VARCHAR(255) NOT NULL,
                 quantity INT NOT NULL DEFAULT 1,
@@ -41,6 +41,11 @@ function payment_transfer_schema_ready(PDO $pdo): bool
                 station_id INT DEFAULT NULL,
                 payment_method VARCHAR(32) DEFAULT NULL,
                 paid_declared_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                reported_paid_at DATETIME DEFAULT NULL,
+                received_by_user_id INT DEFAULT NULL,
+                received_at DATETIME DEFAULT NULL,
+                payer_access_token_hash CHAR(64) DEFAULT NULL,
+                payer_access_expires_at DATETIME DEFAULT NULL,
                 confirmed_by_user_id INT DEFAULT NULL,
                 confirmed_at DATETIME DEFAULT NULL,
                 rejected_by_user_id INT DEFAULT NULL,
@@ -73,6 +78,70 @@ function payment_transfer_schema_ready(PDO $pdo): bool
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
         );
 
+        // Upgrade older installations without dropping their payment records.
+        $columns = [
+            'reported_paid_at' => 'DATETIME DEFAULT NULL',
+            'received_by_user_id' => 'INT DEFAULT NULL',
+            'received_at' => 'DATETIME DEFAULT NULL',
+            'payer_access_token_hash' => 'CHAR(64) DEFAULT NULL',
+            'payer_access_expires_at' => 'DATETIME DEFAULT NULL',
+        ];
+        foreach ($columns as $column => $definition) {
+            $check = $pdo->prepare("SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'payment_transfers' AND COLUMN_NAME = ?");
+            $check->execute([$column]);
+            if ((int) $check->fetchColumn() === 0) {
+                $pdo->exec("ALTER TABLE payment_transfers ADD COLUMN {$column} {$definition}");
+            }
+        }
+        $tokenIndex = $pdo->prepare("SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'payment_transfers' AND INDEX_NAME = 'idx_payment_transfer_access_token'");
+        $tokenIndex->execute();
+        if ((int) $tokenIndex->fetchColumn() === 0) {
+            $pdo->exec('ALTER TABLE payment_transfers ADD KEY idx_payment_transfer_access_token (payer_access_token_hash)');
+        }
+        $pdo->exec(
+            "CREATE TABLE IF NOT EXISTS payment_transfer_events (
+                event_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                payment_transfer_id BIGINT UNSIGNED NOT NULL,
+                previous_status VARCHAR(24) DEFAULT NULL,
+                new_status VARCHAR(24) NOT NULL,
+                actor_user_id INT DEFAULT NULL,
+                actor_email VARCHAR(255) DEFAULT NULL,
+                note VARCHAR(500) DEFAULT NULL,
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (event_id),
+                KEY idx_payment_transfer_events (payment_transfer_id, created_at)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+        );
+        $pdo->exec(
+            "CREATE TABLE IF NOT EXISTS payment_transfer_receipts (
+                payment_transfer_id BIGINT UNSIGNED NOT NULL,
+                file_name VARCHAR(255) NOT NULL,
+                mime_type VARCHAR(80) NOT NULL,
+                file_size INT UNSIGNED NOT NULL,
+                file_data MEDIUMBLOB NOT NULL,
+                uploaded_by_user_id INT DEFAULT NULL,
+                uploaded_by_email VARCHAR(255) DEFAULT NULL,
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (payment_transfer_id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+        );
+        $pdo->exec("INSERT INTO payment_transfer_events (payment_transfer_id, previous_status, new_status, actor_user_id, note, created_at)
+                    SELECT payment_transfer_id, 'pending_transfer', 'payer_reported_paid', payer_user_id, 'Legacy payer declaration migrated to the audited payment lifecycle.', COALESCE(paid_declared_at, created_at)
+                    FROM payment_transfers WHERE status = 'pending_transfer'");
+        $pdo->exec("INSERT INTO payment_transfer_events (payment_transfer_id, previous_status, new_status, actor_user_id, note, created_at)
+                    SELECT payment_transfer_id, 'confirmed', 'received', confirmed_by_user_id, 'Legacy recipient confirmation migrated to received status.', COALESCE(confirmed_at, created_at)
+                    FROM payment_transfers WHERE status = 'confirmed'");
+        $pdo->exec("UPDATE payment_transfers SET status = 'payer_reported_paid', reported_paid_at = COALESCE(reported_paid_at, paid_declared_at) WHERE status = 'pending_transfer'");
+        $pdo->exec("UPDATE payment_transfers SET status = 'received', received_by_user_id = COALESCE(received_by_user_id, confirmed_by_user_id), received_at = COALESCE(received_at, confirmed_at) WHERE status = 'confirmed'");
+        $pdo->exec("INSERT INTO payment_transfer_events (payment_transfer_id, new_status, actor_user_id, note, created_at)
+                    SELECT pt.payment_transfer_id, pt.status,
+                           CASE WHEN pt.status = 'rejected' THEN pt.rejected_by_user_id WHEN pt.status = 'received' THEN pt.received_by_user_id ELSE pt.payer_user_id END,
+                           'Existing payment status imported into the review history.',
+                           CASE WHEN pt.status = 'rejected' THEN COALESCE(pt.rejected_at, pt.updated_at) WHEN pt.status = 'received' THEN COALESCE(pt.received_at, pt.updated_at) ELSE pt.created_at END
+                    FROM payment_transfers pt
+                    WHERE pt.status IN ('pending_payment', 'payer_reported_paid', 'received', 'rejected', 'cancelled')
+                      AND NOT EXISTS (SELECT 1 FROM payment_transfer_events e WHERE e.payment_transfer_id = pt.payment_transfer_id)");
+
         // Upgrade installations that created the first version of this table.
         $oldUnique = $pdo->prepare(
             "SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS
@@ -103,14 +172,15 @@ function payment_transfer_create(PDO $pdo, array $values): int
         'INSERT INTO payment_transfers
             (reference_code, payment_type, status, amount_mmk, description, quantity, term_months,
              service_start_month, payer_user_id, payer_email, payer_headquarter_id, recipient_role,
-             recipient_headquarter_id, request_id, usage_id, station_id, payment_method)
-         VALUES (?, ?, \'pending_transfer\', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+             recipient_headquarter_id, request_id, usage_id, station_id, payment_method,
+             payer_access_token_hash, payer_access_expires_at)
+         VALUES (?, ?, \'pending_payment\', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
     );
     $stmt->execute([
         payment_transfer_new_reference(),
         (string) $values['payment_type'],
         number_format((float) $values['amount_mmk'], 2, '.', ''),
-        (string) $values['description'],
+        substr((string) $values['description'], 0, 255),
         max(1, (int) ($values['quantity'] ?? 1)),
         max(1, (int) ($values['term_months'] ?? 1)),
         $values['service_start_month'] ?? null,
@@ -123,8 +193,47 @@ function payment_transfer_create(PDO $pdo, array $values): int
         !empty($values['usage_id']) ? (int) $values['usage_id'] : null,
         !empty($values['station_id']) ? (int) $values['station_id'] : null,
         !empty($values['payment_method']) ? substr(trim((string) $values['payment_method']), 0, 32) : null,
+        !empty($values['payer_access_token_hash']) ? (string) $values['payer_access_token_hash'] : null,
+        !empty($values['payer_access_expires_at']) ? (string) $values['payer_access_expires_at'] : null,
     ]);
-    return (int) $pdo->lastInsertId();
+    $id = (int) $pdo->lastInsertId();
+    payment_transfer_record_event(
+        $pdo,
+        $id,
+        null,
+        'pending_payment',
+        array_key_exists('event_actor_user_id', $values) ? ($values['event_actor_user_id'] !== null ? (int) $values['event_actor_user_id'] : null) : (!empty($values['payer_user_id']) ? (int) $values['payer_user_id'] : null),
+        array_key_exists('event_actor_email', $values) ? ($values['event_actor_email'] !== null ? (string) $values['event_actor_email'] : null) : (!empty($values['payer_email']) ? (string) $values['payer_email'] : null),
+        (string) ($values['event_note'] ?? 'Payment request created with server-calculated amount and recipient.')
+    );
+    return $id;
+}
+
+function payment_transfer_record_event(PDO $pdo, int $transferId, ?string $previous, string $next, ?int $actorId, ?string $actorEmail, ?string $note = null): void
+{
+    $stmt = $pdo->prepare('INSERT INTO payment_transfer_events (payment_transfer_id, previous_status, new_status, actor_user_id, actor_email, note) VALUES (?, ?, ?, ?, ?, ?)');
+    $stmt->execute([$transferId, $previous, $next, $actorId, $actorEmail, $note !== null ? substr($note, 0, 500) : null]);
+}
+
+function payment_transfer_absolute_url(string $path): string
+{
+    $base = trim((string) (getenv('APP_BASE_URL') ?: ''));
+    if ($base === '' && !empty($_SERVER['HTTP_HOST'])) {
+        $host = preg_replace('/[^a-zA-Z0-9.:-]/', '', (string) $_SERVER['HTTP_HOST']);
+        $isLocal = in_array(strtolower($host), ['localhost', '127.0.0.1'], true);
+        $forwardedHttps = strtolower(trim(explode(',', (string) ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? ''))[0])) === 'https';
+        $scheme = $isLocal && empty($_SERVER['HTTPS']) && !$forwardedHttps ? 'http' : 'https';
+        $base = $scheme . '://' . $host;
+    } elseif ($base !== '') {
+        $parts = parse_url($base);
+        if (is_array($parts) && !empty($parts['host'])) {
+            $local = in_array(strtolower((string) $parts['host']), ['localhost', '127.0.0.1'], true);
+            $base = ($local ? ((string) ($parts['scheme'] ?? 'http')) : 'https') . '://' . $parts['host']
+                . (isset($parts['port']) ? ':' . (int) $parts['port'] : '')
+                . (isset($parts['path']) ? rtrim((string) $parts['path'], '/') : '');
+        }
+    }
+    return rtrim($base, '/') . '/' . ltrim($path, '/');
 }
 
 /** Return active platform Admin accounts that may receive platform-fee notices. */
@@ -232,7 +341,7 @@ function payment_transfer_assign_mmk_entitlements(PDO $pdo, int $headquarterId, 
              FROM hq_station_mmk_entitlements e
              INNER JOIN payment_transfers pt ON pt.payment_transfer_id = e.payment_transfer_id
              WHERE e.headquarter_id = ? AND e.year_month = ? AND e.station_id IS NULL
-               AND pt.status = 'confirmed'
+               AND pt.status = 'received'
              ORDER BY e.entitlement_id
              LIMIT 1 FOR UPDATE"
         );
@@ -277,8 +386,36 @@ function payment_transfer_assign_available_entitlements(PDO $pdo, int $headquart
     }
 }
 
+/** Apply a negotiated MMK operating-fee quote only after its recipient records receipt. */
+function payment_transfer_apply_operating_fee(PDO $pdo, array $transfer): bool
+{
+    $headquarterId = (int) ($transfer['payer_headquarter_id'] ?? 0);
+    $stationId = (int) ($transfer['station_id'] ?? 0);
+    $yearMonth = (string) ($transfer['service_start_month'] ?? '');
+    if ($headquarterId <= 0 || $stationId <= 0 || !preg_match('/^\d{4}-(0[1-9]|1[0-2])$/', $yearMonth)) {
+        throw new RuntimeException('The negotiated station-fee quote is missing its station or service month.');
+    }
+    $stationStmt = $pdo->prepare("SELECT b.status FROM branches b INNER JOIN station_business_scope sbs ON sbs.station_id = b.branch_id WHERE b.branch_id = ? AND sbs.headquarter_id = ? LIMIT 1 FOR UPDATE");
+    $stationStmt->execute([$stationId, $headquarterId]);
+    $stationStatus = $stationStmt->fetchColumn();
+    if ($stationStatus === false) {
+        throw new RuntimeException('The station is no longer linked to this HQ.');
+    }
+    if (strtolower((string) $stationStatus) === 'closed') {
+        return false;
+    }
+    $feeStmt = $pdo->prepare('SELECT payment_transfer_id FROM company_loyalty_station_fees WHERE headquarter_id = ? AND station_id = ? AND year_month = ? FOR UPDATE');
+    $feeStmt->execute([$headquarterId, $stationId, $yearMonth]);
+    if ($feeStmt->fetchColumn()) {
+        throw new RuntimeException('This station already has a fee record for the quoted month. Reject this quote and resolve the duplicate before confirming payment.');
+    }
+    $insert = $pdo->prepare("INSERT INTO company_loyalty_station_fees (headquarter_id, station_id, year_month, points_paid, payment_method, payment_transfer_id) VALUES (?, ?, ?, 0, 'mmk_quote', ?)");
+    $insert->execute([$headquarterId, $stationId, $yearMonth, (int) $transfer['payment_transfer_id']]);
+    return true;
+}
+
 /** Notify payers and recipients after status transactions commit. */
-function payment_transfer_send_notices(PDO $pdo, int $transferId, string $recipientSide, string $action): void
+function payment_transfer_send_notices(PDO $pdo, int $transferId, string $recipientSide, string $action, array $extraContext = []): void
 {
     try {
         $stmt = $pdo->prepare('SELECT * FROM payment_transfers WHERE payment_transfer_id = ? LIMIT 1');
@@ -300,12 +437,19 @@ function payment_transfer_send_notices(PDO $pdo, int $transferId, string $recipi
         }
 
         $subjectText = match ($action) {
-            'pending' => 'External payment reported; recipient confirmation is pending.',
-            'confirmed' => 'The recipient confirmed the external payment was received.',
+            'pending', 'pending_payment' => 'A payment request was created; payment is not yet reported.',
+            'payer_reported_paid' => 'The payer reported payment; recipient confirmation is pending.',
+            'confirmed', 'received' => 'The recipient recorded that the external payment was received.',
             'rejected' => 'The recipient reported that the external payment was not received.',
-            'cancelled' => 'The payer cancelled the pending external payment notice.',
+            'cancelled' => 'The payer cancelled the external payment request.',
             default => 'The external payment status was updated.',
         };
+        $recipientLabel = BILLING_PLATFORM_RECIPIENT_NAME . ' (Admin)';
+        if ($transfer['recipient_role'] === 'station_hq') {
+            $hqName = $pdo->prepare('SELECT company_name FROM headquarter WHERE headquarter_id = ? LIMIT 1');
+            $hqName->execute([(int) $transfer['recipient_headquarter_id']]);
+            $recipientLabel = trim((string) ($hqName->fetchColumn() ?: '')) ?: 'Station HQ #' . (int) $transfer['recipient_headquarter_id'];
+        }
         $type = 'payment_' . $action;
         $message = $subjectText . ' Reference ' . $transfer['reference_code'] . '; amount ' . number_format((float) $transfer['amount_mmk'], 2) . ' MMK. This is a status record for a payment made outside the website.';
         foreach ($recipients as $recipient) {
@@ -331,7 +475,8 @@ function payment_transfer_send_notices(PDO $pdo, int $transferId, string $recipi
                 'reference_code' => (string) $transfer['reference_code'],
                 'amount_mmk' => (string) $transfer['amount_mmk'],
                 'description' => (string) $transfer['description'],
-            ]);
+                'recipient_label' => $recipientLabel,
+            ] + ($recipientSide === 'payer' ? $extraContext : []));
             $update = $pdo->prepare('UPDATE notifications SET subject = ?, delivery_status = ?, delivery_note = ? WHERE notification_id = ?');
             $update->execute([
                 (string) ($mailResult['subject'] ?? 'Map & Pump external payment status'),

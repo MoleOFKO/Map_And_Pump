@@ -122,6 +122,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($stationLockStmt->fetchColumn() === false) {
                 throw new RuntimeException('You can only pay fees for stations under your HQ.');
             }
+            if ($paymentTransferSchemaReady) {
+                $quoteStmt = $pdo->prepare("SELECT 1 FROM payment_transfers WHERE payment_type = 'hq_station_operating_quote' AND payer_headquarter_id = ? AND station_id = ? AND service_start_month = ? AND status IN ('pending_payment', 'payer_reported_paid') LIMIT 1");
+                $quoteStmt->execute([$hqId, $stationIdToPay, $billingMonth]);
+                if ($quoteStmt->fetchColumn()) {
+                    throw new RuntimeException('An Admin-created MMK quote is pending for this station and month. Cancel the quote before paying this month with points.');
+                }
+            }
             $paidCheck = $pdo->prepare(
                 'SELECT 1 FROM company_loyalty_station_fees
                  WHERE headquarter_id = ? AND station_id = ? AND year_month = ? LIMIT 1'
@@ -712,7 +719,7 @@ $hqPointBalance = company_loyalty_get_balance($pdo, $hqId);
                     <p class="text-info small mb-0 mt-2"><i class="fa-solid fa-star me-1" aria-hidden="true"></i>HQ points: <strong><?= number_format($hqPointBalance) ?></strong></p>
                     <p class="text-secondary small mb-0">Points option: <?= number_format($stationMonthlyFee) ?> points/month for station operation and <?= number_format($stationSlotCost) ?> points/month for each extra slot. MMK option: <?= number_format($extraStationMmkMonthly) ?> MMK/month per station beyond the included <?= (int) BILLING_HQ_INCLUDED_STATION_SLOTS ?>; this covers both slot and operation. <a href="/php/payment_center.php" class="link-info">View payment status</a></p>
                     <?php if (isset($_GET['payment']) && $_GET['payment'] === 'pending'): ?>
-                    <div class="alert alert-info mt-3 mb-0">Your external payment notice was submitted. Its amount and recipient status are available in <a href="/php/payment_center.php">Payment status</a>.</div>
+                    <div class="alert alert-info mt-3 mb-0">Your payment request was created. Its fixed amount and recipient status are available in <a href="/php/payment_center.php">Payment status</a>.</div>
                     <?php endif; ?>
                     <?php if ($stationLimit !== null): ?>
                     <p class="text-secondary small mb-0">Capacity this month: <?= (int) $stationCount ?> / <?= (int) $stationLimit ?> stations (<?= (int) $monthlySlots ?> paid extra slots).</p>
@@ -932,7 +939,7 @@ $hqPointBalance = company_loyalty_get_balance($pdo, $hqId);
                         <input type="hidden" name="billing_csrf" value="<?= htmlspecialchars($stationBillingCsrf, ENT_QUOTES, 'UTF-8') ?>">
                         <button type="submit" class="btn btn-outline-info">Buy one monthly station slot</button>
                     </form>
-                    <p class="text-secondary small mt-3 mb-0">A confirmed MMK payment adds monthly capacity and covers monthly operation for the same number of extra stations.</p>
+                    <p class="text-secondary small mt-3 mb-0">A recipient-recorded MMK receipt adds monthly capacity and covers monthly operation for the same number of extra stations.</p>
                 </div>
                 <div class="modal-footer border-secondary">
                     <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Close</button>
@@ -945,16 +952,15 @@ $hqPointBalance = company_loyalty_get_balance($pdo, $hqId);
     <div class="modal fade" id="mmkStationModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered modal-lg">
             <div class="modal-content modal-content-custom text-light">
-                <form method="post" action="/php/Payment/action.php" id="mmkStationForm" onsubmit="return confirm('Have you already sent this external payment? Submitting creates a status notice for Admin; it does not move or verify money.')">
+                <form method="post" action="/php/Payment/action.php" id="mmkStationForm" onsubmit="return confirm('Create a payment request with this fixed amount? Capacity is added only after Admin records receipt.')">
                     <input type="hidden" name="action" value="create_extra_station">
-                    <input type="hidden" name="i_paid" value="1">
                     <input type="hidden" name="csrf_token" value="<?= htmlspecialchars((string) ($_SESSION['payment_transfer_csrf'] ?? ''), ENT_QUOTES, 'UTF-8') ?>">
                     <div class="modal-header border-secondary">
                         <h5 class="modal-title">Request monthly extra-station capacity</h5>
                         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
                     </div>
                     <div class="modal-body">
-                        <p class="text-secondary">Each paid extra station costs <?= number_format($extraStationMmkMonthly) ?> MMK per month and covers both its registration slot and operation. Make the transfer externally, then submit the notice. Admin confirmation is required before capacity is added.</p>
+                        <p class="text-secondary">Each extra station costs <?= number_format($extraStationMmkMonthly) ?> MMK per month and covers both its registration slot and operation. Create this request first, then report payment from Payment status after you send the transfer. Admin confirmation is required before capacity is added.</p>
                         <div class="row g-3 mb-3">
                             <div class="col-md-4">
                                 <label class="form-label" for="mmk-station-quantity">Extra stations</label>
@@ -985,11 +991,11 @@ $hqPointBalance = company_loyalty_get_balance($pdo, $hqId);
                             <div class="col-md-6"><div class="border border-secondary rounded-3 p-2"><strong><?= htmlspecialchars($method, ENT_QUOTES, 'UTF-8') ?></strong><br><?= htmlspecialchars((string) $account['label'], ENT_QUOTES, 'UTF-8') ?>: <?= htmlspecialchars((string) $account['number'], ENT_QUOTES, 'UTF-8') ?><br>Account name: <?= htmlspecialchars(BILLING_PLATFORM_RECIPIENT_NAME, ENT_QUOTES, 'UTF-8') ?></div></div>
                             <?php endforeach; ?>
                         </div>
-                        <p class="text-secondary small mt-3 mb-0">After you make the external transfer, click “I paid”. This is a payer declaration; MAP &amp; PUMP does not move or independently verify funds.</p>
+                        <p class="text-secondary small mt-3 mb-0">The payment request uses a server-calculated amount and the platform Admin as recipient. A receipt is optional evidence and does not confirm payment.</p>
                     </div>
                     <div class="modal-footer border-secondary">
                         <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Cancel</button>
-                        <button type="submit" class="btn btn-success">I paid · Submit notice</button>
+                        <button type="submit" class="btn btn-success">Create payment request</button>
                     </div>
                 </form>
             </div>

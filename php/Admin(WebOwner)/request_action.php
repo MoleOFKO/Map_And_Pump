@@ -83,8 +83,8 @@ try {
         }
         $paymentRow = $paymentCheck->get_result()?->fetch_assoc();
         $paymentCheck->close();
-        if (($paymentRow['status'] ?? '') !== 'confirmed') {
-            throw new RuntimeException('The HQ registration fee must be confirmed by an Admin in Payment status before approval.');
+        if (($paymentRow['status'] ?? '') !== 'received') {
+            throw new RuntimeException('The HQ registration fee must be recorded as received by an Admin in Payment status before approval.');
         }
     }
 

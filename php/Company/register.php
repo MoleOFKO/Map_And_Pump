@@ -64,9 +64,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!hash_equals((string) $_SESSION['company_registration_csrf'], $csrfToken)) {
         $respond(false, 'Your session expired. Refresh the page and try again.', 403);
     }
-    if ((string) ($_POST['i_paid'] ?? '') !== '1') {
-        $respond(false, 'Confirm that you made the external transfer before submitting.', 422);
-    }
 
     $allowedMethods = ['Bank transfer', 'KPay', 'Wave Pay', 'AYA Pay', 'CB Pay'];
     $allowedBanks = ['AYA Bank', 'CB Bank', 'KBZ Bank', 'YOMA Bank'];
@@ -205,20 +202,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $licenseId, $licensePath, $ownerEmail, $companyEmail, $logoPath, $companyPhone, $licenseExpiry . ' 23:59:59',
         ]);
         $requestId = (int) $pdo->lastInsertId();
+        $accessToken = rtrim(strtr(base64_encode(random_bytes(32)), '+/', '-_'), '=');
+        $payerUserId = null;
+        $sessionUserId = (int) ($_SESSION['user_id'] ?? 0);
+        if ($sessionUserId > 0) {
+            $ownerMatch = $pdo->prepare('SELECT user_id FROM users WHERE user_id = ? AND LOWER(email) = ? LIMIT 1');
+            $ownerMatch->execute([$sessionUserId, $ownerEmail]);
+            $payerUserId = (int) ($ownerMatch->fetchColumn() ?: 0) ?: null;
+        }
         $transferId = payment_transfer_create($pdo, [
             'payment_type' => 'hq_registration',
             'amount_mmk' => BILLING_HQ_REGISTRATION_FEE_MMK,
             'description' => 'One-time HQ registration fee',
-            'payer_user_id' => (int) ($_SESSION['user_id'] ?? 0) ?: null,
+            'payer_user_id' => $payerUserId,
             'payer_email' => $ownerEmail,
             'recipient_role' => BILLING_PLATFORM_RECEIVER_ROLE,
             'request_id' => $requestId,
             'payment_method' => $paymentMethod === 'Bank transfer' ? $paymentMethod . ': ' . $bankName : $paymentMethod,
+            'payer_access_token_hash' => hash('sha256', $accessToken),
+            'payer_access_expires_at' => date('Y-m-d H:i:s', time() + 30 * 86400),
+            'event_actor_user_id' => null,
+            'event_actor_email' => null,
+            'event_note' => 'HQ registration payment request created; payer access is linked to a time-limited owner-email link.',
         ]);
         $pdo->commit();
-        payment_transfer_send_notices($pdo, $transferId, 'recipient', 'pending');
-        payment_transfer_send_notices($pdo, $transferId, 'payer', 'pending');
-        $respond(true, 'Registration and payment status submitted. The HQ request remains pending until an Admin records the transfer as received and reviews the registration.', 201, ['reference' => $reference]);
+        payment_transfer_send_notices($pdo, $transferId, 'recipient', 'pending_payment');
+        $paymentUrl = payment_transfer_absolute_url('/php/payment_center.php?access=' . rawurlencode($accessToken));
+        payment_transfer_send_notices($pdo, $transferId, 'payer', 'pending_payment', ['payment_url' => $paymentUrl]);
+        $respond(true, 'Registration application and payment request created. Use the secure link sent to the owner email to report payment after you send it. Payment confirmation and document review are separate steps.', 201, ['reference' => $reference]);
     } catch (Throwable $error) {
         if (isset($pdo) && $pdo instanceof PDO && $pdo->inTransaction()) {
             $pdo->rollBack();
@@ -431,8 +442,8 @@ require __DIR__ . '/../partials/nav.php';
         <div class="payment-step" data-step="payment" hidden>
             <button type="button" class="payment-back" id="payment-back"><i class="fa-solid fa-arrow-left"></i> Change payment method</button>
 
-            <h2 class="payment-step-title">Transfer, then report payment</h2>
-            <p class="payment-description">Make the transfer outside this website. After you have sent it, submit the status notice so an Admin can record whether it was received.</p>
+            <h2 class="payment-step-title">Create registration payment request</h2>
+            <p class="payment-description">This creates your application and a fixed-amount payment request. The owner email will receive a secure link where payment can be reported after an external transfer.</p>
 
             <div class="payment-summary">
                 <span class="payment-logo payment-logo-empty" id="payment-summary-logo"><i class="fa-solid fa-wallet"></i></span>
@@ -457,8 +468,8 @@ require __DIR__ . '/../partials/nav.php';
 
             <p class="payment-error" id="payment-status-error" aria-live="polite" hidden></p>
 
-            <button type="button" class="btn btn-primary payment-confirm" id="payment-submit">I paid and submit registration <i class="fa-solid fa-check ms-2"></i></button>
-            <p class="payment-note"><i class="fa-solid fa-circle-info"></i> “I paid” is your declaration. Only the receiving Admin can mark the transfer received; this is not bank verification.</p>
+            <button type="button" class="btn btn-primary payment-confirm" id="payment-submit">Submit application and create request <i class="fa-solid fa-check ms-2"></i></button>
+            <p class="payment-note"><i class="fa-solid fa-circle-info"></i> Creating a request does not report or confirm payment. An Admin must separately record receipt before registration approval, and document review remains a separate step.</p>
         </div>
     </div>
 </div>
