@@ -82,6 +82,10 @@ function loyalty_compute_discount(float $filledLiters, ?float $totalCost, int $p
     // Keep the fixed 10 MMK/point value exact: when the bill is below the
     // requested redemption value, use only whole points that the bill can cover.
     $maxAffordablePoints = (int) floor(round((float) $totalCost, 2) / (float) LOYALTY_MMK_PER_POINT);
+    // Redemptions are issued in full units (currently 10 points = 100 MMK).
+    $maxAffordablePoints = $unit > 0
+        ? (int) (floor($maxAffordablePoints / $unit) * $unit)
+        : 0;
     $points = min($points, max(0, $maxAffordablePoints));
     if ($points <= 0) {
         return [
@@ -279,6 +283,7 @@ function loyalty_countermeasures_schema_ready(PDO $pdo): bool
                 headquarter_id INT NOT NULL,
                 year_month CHAR(7) NOT NULL,
                 slots_purchased INT NOT NULL DEFAULT 0,
+                mmk_slots_purchased INT NOT NULL DEFAULT 0,
                 points_spent INT NOT NULL DEFAULT 0,
                 updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                 PRIMARY KEY (headquarter_id, year_month)
@@ -291,11 +296,34 @@ function loyalty_countermeasures_schema_ready(PDO $pdo): bool
                 station_id INT NOT NULL,
                 year_month CHAR(7) NOT NULL,
                 points_paid INT NOT NULL DEFAULT 0,
+                payment_method VARCHAR(16) NOT NULL DEFAULT 'points',
+                payment_transfer_id BIGINT UNSIGNED DEFAULT NULL,
                 paid_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 PRIMARY KEY (headquarter_id, station_id, year_month),
                 KEY idx_company_station_fees_station_month (station_id, year_month)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
         );
+
+        foreach ([
+            'company_loyalty_station_slots' => [
+                'mmk_slots_purchased' => 'INT NOT NULL DEFAULT 0 AFTER slots_purchased',
+            ],
+            'company_loyalty_station_fees' => [
+                'payment_method' => "VARCHAR(16) NOT NULL DEFAULT 'points' AFTER points_paid",
+                'payment_transfer_id' => 'BIGINT UNSIGNED DEFAULT NULL AFTER payment_method',
+            ],
+        ] as $tableName => $columns) {
+            foreach ($columns as $columnName => $columnDefinition) {
+                $columnCheck = $pdo->prepare(
+                    'SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+                     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?'
+                );
+                $columnCheck->execute([$tableName, $columnName]);
+                if ((int) $columnCheck->fetchColumn() === 0) {
+                    $pdo->exec("ALTER TABLE `{$tableName}` ADD COLUMN `{$columnName}` {$columnDefinition}");
+                }
+            }
+        }
 
         $ready = true;
         return true;
@@ -642,7 +670,7 @@ function company_loyalty_current_month_slots(PDO $pdo, int $headquarterId): int
     }
     try {
         $stmt = $pdo->prepare(
-            'SELECT COALESCE(slots_purchased, 0)
+            'SELECT COALESCE(slots_purchased, 0) + COALESCE(mmk_slots_purchased, 0)
              FROM company_loyalty_station_slots
              WHERE headquarter_id = ? AND year_month = ? LIMIT 1'
         );
@@ -661,6 +689,32 @@ function company_loyalty_station_is_paid(PDO $pdo, int $stationId): bool
         return false;
     }
     try {
+        $stationStmt = $pdo->prepare(
+            "SELECT sbs.headquarter_id, GREATEST(0, COALESCE(h.station_count, 0)) AS base_slots,
+                    (SELECT COUNT(*)
+                     FROM branches ordered_branch
+                     INNER JOIN station_business_scope ordered_scope ON ordered_scope.station_id = ordered_branch.branch_id
+                     WHERE ordered_scope.headquarter_id = sbs.headquarter_id
+                       AND LOWER(COALESCE(ordered_branch.status, 'active')) <> 'closed'
+                       AND ordered_branch.branch_id <= b.branch_id) AS station_order
+             FROM station_business_scope sbs
+             INNER JOIN branches b ON b.branch_id = sbs.station_id
+             INNER JOIN headquarter h ON h.headquarter_id = sbs.headquarter_id
+             WHERE sbs.station_id = ?
+             LIMIT 1"
+        );
+        $stationStmt->execute([$stationId]);
+        $station = $stationStmt->fetch(PDO::FETCH_ASSOC);
+        if (!$station) {
+            return false;
+        }
+
+        $baseSlots = (int) $station['base_slots'];
+        $extraSlotRequired = $baseSlots < 1 ? 0 : max(0, (int) $station['station_order'] - $baseSlots);
+        if ($extraSlotRequired > company_loyalty_current_month_slots($pdo, (int) $station['headquarter_id'])) {
+            return false;
+        }
+
         $stmt = $pdo->prepare(
             'SELECT 1
              FROM station_business_scope sbs

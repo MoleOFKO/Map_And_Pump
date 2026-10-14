@@ -284,6 +284,7 @@ $flashType = $flash['type'] ?? '';
 
         <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3">
             <div><span class="stat-chip mb-2"><i class="bi bi-clipboard-check-fill txt-neon-cyan"></i> Review Pipeline</span><h1 class="fw-bold m-0 h4 text-white mt-2">Inbound System Requests</h1><p class="text-white-50 m-0 small mt-1">Approve or deny partner registration, station adjustments, and licensing requests.</p></div>
+            <a class="btn btn-outline-info" href="/php/payment_center.php"><i class="bi bi-cash-coin me-1"></i>Payment status inbox</a>
         </div>
 
         <?php if ($dbError): ?><div class="alert request-flash alert-danger mb-4" role="alert"><i class="bi bi-database-exclamation me-2"></i><?= hq_escape($dbError) ?></div><?php endif; ?>

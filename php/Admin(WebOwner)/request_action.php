@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/request_common.php';
 require_once __DIR__ . '/admin_common.php';
+require_once __DIR__ . '/../billing_config.php';
 
 if (session_status() !== PHP_SESSION_ACTIVE) {
     session_start();
@@ -64,6 +65,27 @@ try {
     }
     if (strtolower((string) $target['request_type']) === 'license_modification' && !admin_is_admin($reviewer)) {
         throw new RuntimeException('Only an Admin can approve, reject, or flag an HQ license renewal request.');
+    }
+
+    if ($action === 'approve' && strtolower((string) $target['request_type']) === 'hq_registration') {
+        $paymentCheck = $conn->prepare(
+            "SELECT status FROM payment_transfers
+             WHERE request_id = ? AND payment_type = 'hq_registration'
+             ORDER BY payment_transfer_id DESC LIMIT 1"
+        );
+        if (!$paymentCheck) {
+            throw new RuntimeException('Payment status is unavailable. The HQ registration cannot be approved yet.');
+        }
+        $paymentCheck->bind_param('i', $requestId);
+        if (!$paymentCheck->execute()) {
+            $paymentCheck->close();
+            throw new RuntimeException('Could not verify the HQ registration payment status.');
+        }
+        $paymentRow = $paymentCheck->get_result()?->fetch_assoc();
+        $paymentCheck->close();
+        if (($paymentRow['status'] ?? '') !== 'received') {
+            throw new RuntimeException('The HQ registration fee must be recorded as received by an Admin in Payment status before approval.');
+        }
     }
 
     // Flag keeps the request open for follow-up without approving or rejecting.
@@ -142,8 +164,8 @@ try {
         $headquarterInsert = $conn->prepare(
             'INSERT INTO headquarter
                 (company_name, company_logo, contact_number, headquarter_email, location,
-                 business_license, business_license_image, business_license_expire_date)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+                 business_license, business_license_image, business_license_expire_date, station_count)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ' . BILLING_HQ_INCLUDED_STATION_SLOTS . ')'
         );
         if (!$headquarterInsert) {
             throw new RuntimeException('Could not prepare the company account creation.');

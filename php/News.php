@@ -5,6 +5,7 @@
    ========================================================================== */
 
 require_once __DIR__ . '/data/fuel_prices.php';
+require_once __DIR__ . '/billing_config.php';
 
 $page_title       = 'News & Fuel Prices | MAP & PUMP';
 $page_description = 'Average fuel prices in MMK per litre by grade, by company and by region, plus supply and policy updates from across the fuel retail market.';
@@ -283,7 +284,7 @@ require __DIR__ . '/partials/nav.php';
                 <h2 class="section-title">Want your prices listed here?</h2>
                 <p class="text-light opacity-75 mb-4 px-md-4">
                     Companies on MAP &amp; PUMP publish their per-grade prices straight to this page
-                    and control their station availability on the live map. First three stations free.
+                    and control their station availability on the live map. HQ registration includes capacity for <?= (int) BILLING_HQ_INCLUDED_STATION_SLOTS ?> stations; monthly fees still apply.
                 </p>
                 <div class="d-sm-flex gap-3 justify-content-center">
                     <a href="/php/Login/login.php" class="btn btn-success btn-lg px-5 py-3 fw-bold mb-3 mb-sm-0 w-100 w-sm-auto">Register your company</a>
