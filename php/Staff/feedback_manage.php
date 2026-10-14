@@ -132,8 +132,18 @@ $showReplySuccess = isset($_GET['reply_sent']) && $_GET['reply_sent'] === '1';
         .feedback-tabs { display:flex; gap:8px; flex-wrap:wrap; border-bottom:1px solid rgba(255,255,255,.12); margin:28px 0 20px; padding-bottom:12px; }
         .feedback-tab { color:rgba(255,255,255,.66); text-decoration:none; border:1px solid rgba(255,255,255,.14); border-radius:7px; padding:8px 12px; font-size:.85rem; font-weight:700; }
         .feedback-tab:hover { color:#fff; border-color:rgba(0,200,255,.55); }
+        .feedback-tab:focus-visible { outline:2px solid #55d8ff; outline-offset:2px; }
         .feedback-tab.active { color:#06111d; background:#55d8ff; border-color:#55d8ff; }
         .feedback-tab .count { display:inline-flex; min-width:20px; justify-content:center; margin-left:5px; padding:0 5px; border-radius:999px; background:rgba(0,0,0,.16); font-size:.72rem; }
+        body.background_color.light-mode .feedback-tabs { border-bottom-color:rgba(15,23,42,.18); }
+        body.background_color.light-mode .feedback-tab { color:#334155; border-color:rgba(15,23,42,.2); }
+        body.background_color.light-mode .feedback-tab:hover { color:#084298; border-color:rgba(11,94,215,.55); background:rgba(11,94,215,.06); }
+        body.background_color.light-mode .feedback-tab.active,
+        body.background_color.light-mode .feedback-tab.active:hover { color:#06111d; background:#55d8ff; border-color:#55d8ff; }
+        body.background_color.light-mode .feedback-tab:focus-visible { outline-color:#084298; }
+        body.background_color.light-mode #createReportModal .modal-footer .btn-outline-light { color:#334155; border-color:rgba(15,23,42,.34); }
+        body.background_color.light-mode #createReportModal .modal-footer .btn-outline-light:hover,
+        body.background_color.light-mode #createReportModal .modal-footer .btn-outline-light:focus-visible { color:#084298; background:rgba(11,94,215,.08); border-color:#0b5ed7; }
         .feedback-card { border-left:4px solid rgba(255,255,255,.2); }
         .feedback-card.is-unread { border-left-color:#ffc107; box-shadow:0 0 0 1px rgba(255,193,7,.16); }
         .feedback-status { display:inline-flex; align-items:center; gap:6px; font-size:.76rem; font-weight:800; text-transform:uppercase; letter-spacing:.04em; }
@@ -227,13 +237,13 @@ $showReplySuccess = isset($_GET['reply_sent']) && $_GET['reply_sent'] === '1';
 
         <nav class="feedback-tabs" aria-label="Feedback inbox filters">
             <?php foreach (['all' => 'All', 'read' => 'Read', 'unread' => 'Unread', 'replies' => 'My replies'] as $tabKey => $tabLabel): ?>
-                <a class="feedback-tab <?= $activeTab === $tabKey ? 'active' : '' ?>" href="feedback_manage.php?tab=<?= $tabKey ?>">
+                <a class="feedback-tab <?= $activeTab === $tabKey ? 'active' : '' ?>" href="feedback_manage.php?tab=<?= $tabKey ?>" <?= $activeTab === $tabKey ? 'aria-current="page"' : '' ?>>
                     <?= $tabLabel ?><span class="count"><?= $feedbackCounts[$tabKey] ?></span>
                 </a>
             <?php endforeach; ?>
         </nav>
 
-        <div class="row g-4 px-2">
+        <div class="row g-4 px-2 feedback-results" aria-live="polite" aria-busy="false">
             <?php if ($activeTab === 'replies'): ?>
                 <?php if (empty($staffReplies)): ?>
                     <div class="col-12"><div class="dashboard-card text-center text-white-50 py-5">You have not sent any replies yet.</div></div>
