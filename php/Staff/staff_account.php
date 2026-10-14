@@ -127,11 +127,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'updat
 
 try {
     $stmt = $pdo->prepare(
-        'SELECT u.user_id, u.user_name, u.email, u.oauth_avatar_url, u.status, u.role_id, u.business_role_id, u.created_at,
-                r.role_name, br.role_name AS business_role_name
+        'SELECT u.user_id, u.user_name, u.email, u.oauth_avatar_url, u.status, u.role_id, u.business_role_id,
+                u.headquarter_id, u.branch_id, u.created_at,
+                r.role_name, br.role_name AS business_role_name,
+                h.company_name AS headquarter_name,
+                b.branch_name, b.branch_code
          FROM users u
          LEFT JOIN roles r ON r.role_id = u.role_id
          LEFT JOIN roles br ON br.role_id = u.business_role_id
+         LEFT JOIN headquarter h ON h.headquarter_id = u.headquarter_id
+         LEFT JOIN branches b ON b.branch_id = u.branch_id
          WHERE u.user_id = ?
          LIMIT 1'
     );
@@ -152,6 +157,9 @@ $avatarPath = trim((string) ($user['oauth_avatar_url'] ?? ''));
 $staffId = 'EMP-' . str_pad((string) $user['user_id'], 4, '0', STR_PAD_LEFT);
 $initial = map_pump_profile_initial($displayName, 'S');
 $accountRole = trim((string) ($user['role_name'] ?? 'Staff')) ?: 'Staff';
+$headquarterName = trim((string) ($user['headquarter_name'] ?? '')) ?: 'Not assigned yet';
+$branchName = trim((string) ($user['branch_name'] ?? '')) ?: 'Not assigned yet';
+$branchCode = trim((string) ($user['branch_code'] ?? '')) ?: 'N/A';
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -185,6 +193,28 @@ $accountRole = trim((string) ($user['role_name'] ?? 'Staff')) ?: 'Staff';
             width: 100%;
             height: 100%;
             object-fit: cover;
+        }
+        .assignment-panel {
+            background: linear-gradient(135deg, rgba(6, 17, 34, 0.82), rgba(24, 35, 52, 0.82));
+            border: 1px solid rgba(88, 166, 255, 0.16);
+            border-radius: 12px;
+            padding: 0.75rem 0.8rem;
+            margin-top: 0.75rem;
+        }
+        .assignment-inline {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            background: rgba(255, 255, 255, 0.025);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 10px;
+            padding: 0.45rem 0.6rem;
+            margin-top: 0.35rem;
+            font-size: 0.76rem;
+        }
+        .assignment-inline i {
+            color: var(--neon-cyan);
+            font-size: 0.8rem;
         }
         .staff-security-modal .modal-content {
             background: rgba(6, 12, 24, 0.98);
@@ -315,6 +345,18 @@ $accountRole = trim((string) ($user['role_name'] ?? 'Staff')) ?: 'Staff';
 
                                     <label class="form-label text-white-50 small mb-0">Email Address</label>
                                     <p class="text-white mb-0"><?= htmlspecialchars($displayEmail ?: 'Not set') ?></p>
+
+                                    <div class="assignment-panel">
+                                        <div class="small text-white-50 text-uppercase mb-2" style="letter-spacing:0.08em; font-size:0.62rem;">Work location</div>
+                                        <div class="assignment-inline">
+                                            <i class="bi bi-building"></i>
+                                            <span class="text-white"><?= htmlspecialchars($headquarterName) ?></span>
+                                        </div>
+                                        <div class="assignment-inline">
+                                            <i class="bi bi-shop"></i>
+                                            <span class="text-white"><?= htmlspecialchars($branchName) ?> (<?= htmlspecialchars($branchCode) ?>)</span>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
 
