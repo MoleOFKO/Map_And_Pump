@@ -131,12 +131,134 @@ function customer_account_status_options(): array
     return ['approved', 'pending', 'pending_verification', 'rejected', 'removed', 'suspended'];
 }
 
+/**
+ * Check optional account columns without assuming every deployed schema has
+ * already received the latest role and license migrations.
+ */
+function user_account_column_exists(string $table, string $column): bool
+{
+    global $conn;
+    static $cache = [];
+
+    $allowedColumns = [
+        'users' => ['current_role_id', 'user_public_id', 'last_login_at'],
+        'user_license' => ['status', 'face_image'],
+    ];
+    if (!isset($allowedColumns[$table]) || !in_array($column, $allowedColumns[$table], true)) {
+        return false;
+    }
+
+    $key = $table . '.' . $column;
+    if (array_key_exists($key, $cache)) {
+        return $cache[$key];
+    }
+    if (!hq_db_available()) {
+        return $cache[$key] = false;
+    }
+
+    $statement = $conn->prepare(
+        'SELECT 1 FROM information_schema.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ? LIMIT 1'
+    );
+    if (!$statement) {
+        return $cache[$key] = false;
+    }
+    $statement->bind_param('ss', $table, $column);
+    $exists = $statement->execute() && (bool) $statement->get_result()?->fetch_row();
+    $statement->close();
+
+    return $cache[$key] = $exists;
+}
+
+function user_account_schema_ready(): bool
+{
+    global $conn;
+    static $ready = null;
+
+    if ($ready !== null) {
+        return $ready;
+    }
+    if (!hq_db_available()) {
+        return $ready = false;
+    }
+
+    $requiredColumns = [
+        'roles' => ['role_id', 'role_name'],
+        'headquarter' => ['headquarter_id', 'company_name', 'location'],
+        'users' => ['user_id', 'user_name', 'email', 'headquarter_id', 'role_id', 'license_id', 'status', 'created_at', 'updated_at'],
+        'user_license' => ['license_id', 'license_image', 'license_number', 'license_name', 'phone_number', 'nrc_number', 'date_of_birth', 'blood_type', 'license_last_valid_date'],
+    ];
+    $tableSql = "'" . implode("','", array_keys($requiredColumns)) . "'";
+    $result = $conn->query(
+        "SELECT TABLE_NAME, COLUMN_NAME FROM information_schema.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN ($tableSql)"
+    );
+    if (!$result) {
+        error_log('[Account review] Schema check failed: ' . $conn->error);
+        return $ready = false;
+    }
+
+    $available = [];
+    while ($column = $result->fetch_assoc()) {
+        $available[$column['TABLE_NAME']][$column['COLUMN_NAME']] = true;
+    }
+    foreach ($requiredColumns as $table => $columns) {
+        foreach ($columns as $column) {
+            if (empty($available[$table][$column])) {
+                error_log(sprintf('[Account review] Required schema column is missing: %s.%s', $table, $column));
+                return $ready = false;
+            }
+        }
+    }
+
+    return $ready = true;
+}
+
+function user_account_review_schema_ready(): bool
+{
+    global $conn;
+    static $ready = null;
+
+    if ($ready !== null) {
+        return $ready;
+    }
+    if (!user_account_schema_ready()) {
+        return $ready = false;
+    }
+
+    $requiredColumns = [
+        'request_id', 'recipient_user_id', 'recipient_email', 'notification_type',
+        'subject', 'message', 'delivery_status', 'delivery_note',
+    ];
+    $result = $conn->query(
+        "SELECT COLUMN_NAME FROM information_schema.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'notifications'"
+    );
+    if (!$result) {
+        error_log('[Account review] Notification schema check failed: ' . $conn->error);
+        return $ready = false;
+    }
+
+    $available = [];
+    while ($column = $result->fetch_assoc()) {
+        $available[$column['COLUMN_NAME']] = true;
+    }
+    foreach ($requiredColumns as $column) {
+        if (empty($available[$column])) {
+            error_log('[Account review] Required schema column is missing: notifications.' . $column);
+            return $ready = false;
+        }
+    }
+
+    return $ready = true;
+}
+
 function pending_account_rows(string $search = ''): array
 {
     global $conn;
     $rows = [];
 
-    if (!hq_db_available() || !hq_registry_schema_ready()) {
+    if (!hq_db_available() || !user_account_schema_ready()) {
         return $rows;
     }
 
@@ -153,16 +275,26 @@ function pending_account_rows(string $search = ''): array
         $types .= 'sssss';
     }
 
-    $sql = <<<'SQL'
-SELECT u.user_id, u.user_public_id, u.user_name, u.email, u.status, u.created_at, u.updated_at,
+    $publicIdSelect = user_account_column_exists('users', 'user_public_id')
+        ? 'u.user_public_id'
+        : 'NULL AS user_public_id';
+    $licenseStatusSelect = user_account_column_exists('user_license', 'status')
+        ? 'l.status AS license_status'
+        : 'NULL AS license_status';
+    $faceImageSelect = user_account_column_exists('user_license', 'face_image')
+        ? 'l.face_image'
+        : 'NULL AS face_image';
+
+    $sql = <<<SQL
+SELECT u.user_id, {$publicIdSelect}, u.user_name, u.email, u.status, u.created_at, u.updated_at,
        u.license_id,
-       u.headquarter_id, COALESCE(u.current_role_id, u.business_role_id, u.role_id) AS role_id, r.role_name,
+       u.headquarter_id, u.role_id AS role_id, r.role_name,
        h.company_name AS headquarter_name, h.location AS headquarter_location,
        l.license_number, l.license_name, l.phone_number, l.nrc_number,
        l.date_of_birth, l.blood_type, l.license_last_valid_date,
-       l.status AS license_status, l.license_image, l.face_image
+       {$licenseStatusSelect}, l.license_image, {$faceImageSelect}
 FROM users u
-INNER JOIN roles r ON r.role_id = COALESCE(u.current_role_id, u.business_role_id, u.role_id)
+LEFT JOIN roles r ON r.role_id = u.role_id
 LEFT JOIN headquarter h ON h.headquarter_id = u.headquarter_id
 LEFT JOIN user_license l ON l.license_id = u.license_id
 SQL;
@@ -193,14 +325,13 @@ function pending_account_count(): int
 {
     global $conn;
 
-    if (!hq_db_available() || !hq_registry_schema_ready()) {
+    if (!hq_db_available() || !user_account_schema_ready()) {
         return 0;
     }
 
     $query = $conn->query(
         "SELECT COUNT(*) AS total
          FROM users u
-         INNER JOIN roles r ON r.role_id = COALESCE(u.current_role_id, u.business_role_id, u.role_id)
          WHERE LOWER(TRIM(u.status)) = 'pending_verification'"
     );
 

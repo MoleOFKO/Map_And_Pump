@@ -5,7 +5,7 @@ require_once __DIR__ . '/../conn.php';
 $reports = [];
 $logs = [];
 $managerRoleId = 4;
-$headquarterId = (int) ($_SESSION['headquarter_id'] ?? map_pump_current_hq_id($pdo, (int) ($_SESSION['user_id'] ?? 0)));
+$headquarterId = map_pump_current_hq_id($pdo, (int) ($_SESSION['user_id'] ?? 0));
 
 try {
     if ($headquarterId <= 0) {
@@ -14,22 +14,16 @@ try {
 
     $stmt = $pdo->prepare(
         'SELECT r.*, u.user_name
-         FROM report r
-         LEFT JOIN users u ON u.user_id = r.user_id
-         LEFT JOIN business_account_scope bas ON bas.user_id = u.user_id
-         WHERE (u.role_id = ? OR u.business_role_id = ? OR u.current_role_id = ?)
-           AND (
-                u.headquarter_id = ?
-                OR bas.headquarter_id = ?
-                OR EXISTS (
-                    SELECT 1
-                    FROM station_business_scope sbs
-                    WHERE sbs.branch_manager_user_id = u.user_id
-                      AND sbs.headquarter_id = ?
-                )
-           )
-         ORDER BY r.created_at DESC
-         LIMIT 5'
+        FROM report r
+        LEFT JOIN users u ON u.user_id = r.user_id
+        WHERE ' . map_pump_manager_report_scope_sql() . '
+        ORDER BY CASE
+                   WHEN LOWER(TRIM(COALESCE(r.importance, \'\'))) = \'high\'
+                    AND r.created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)
+                   THEN 0 ELSE 1
+                 END,
+                 r.created_at DESC
+        LIMIT 5'
     );
     $stmt->execute([$managerRoleId, $managerRoleId, $managerRoleId, $headquarterId, $headquarterId, $headquarterId]);
     $reports = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -172,8 +166,8 @@ endif; ?>
         <div class="card mb-4 p-3">
             <div style="display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap;">
                 <div>
-                    <h3 style="margin: 0;">Site Reports</h3>
-                    <p class="subtitle" style="margin-bottom: 0;">View shift-ending tallies submitted by field operators.</p>
+                    <h3 style="margin: 0;">Manager Reports</h3>
+                    <p class="subtitle" style="margin-bottom: 0;">Review reports submitted by your station managers.</p>
                 </div>
                 <?php if (!empty($reports)): ?>
                 <div class="report-search" id="reportSearchWrap">
@@ -189,7 +183,7 @@ endif; ?>
             <?php
 if (empty($reports)): ?>
                 <div style="background: var(--bg); padding: 15px; border-radius: 6px; font-size: 0.9rem; color: var(--slate-50); text-align: center;">
-                    No pending daily station reports require evaluation.
+                    No manager reports received yet.
                 </div>
             <?php
 else: ?>

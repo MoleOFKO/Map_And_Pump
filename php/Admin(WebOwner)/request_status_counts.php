@@ -7,8 +7,8 @@ header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
 
 $user = admin_current_user(false);
-$role = strtolower(trim((string) ($user['role_name'] ?? '')));
-if (!$user || !in_array($role, ['admin', 'moderator'], true)) {
+$status = strtolower(trim((string) ($user['status'] ?? '')));
+if (!$user || !admin_user_has_role($user, ['admin', 'moderator']) || !in_array($status, ['approved', 'active'], true)) {
     http_response_code(403);
     echo json_encode(['error' => 'Not authorized to view request totals.']);
     exit;

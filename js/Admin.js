@@ -197,6 +197,43 @@
         return url;
     }
 
+    function syncLogActions(form, filterUrl) {
+        if (!form || !filterUrl || !document.getElementById('clearLogsForm')) return;
+
+        const params = new URLSearchParams(filterUrl.searchParams);
+        const exportLink = document.querySelector('.js-export-logs');
+        if (exportLink) {
+            const exportUrl = new URL(exportLink.href, window.location.href);
+            exportUrl.search = '';
+            exportUrl.searchParams.set('action', 'export');
+            ['search', 'log_level', 'actor', 'date_from', 'date_to'].forEach((key) => {
+                const value = params.get(key) || '';
+                if (value !== '') exportUrl.searchParams.set(key, value);
+            });
+            exportLink.href = exportUrl.toString();
+        }
+
+        const clearForm = document.getElementById('clearLogsForm');
+        ['search', 'log_level', 'actor', 'date_from', 'date_to'].forEach((key) => {
+            const input = clearForm.querySelector(`[name="${key}"]`);
+            if (!input) return;
+            input.value = params.get(key) || (key === 'actor' || key === 'log_level' ? 'all' : '');
+        });
+
+        const actorLabels = { all: 'all actors', admin: 'Admin actions', moderator: 'Moderator actions' };
+        const actor = params.get('actor') || 'all';
+        const filters = [];
+        const search = params.get('search') || '';
+        const level = params.get('log_level') || 'all';
+        const dateFrom = params.get('date_from') || '';
+        const dateTo = params.get('date_to') || '';
+        if (search) filters.push(`search "${search}"`);
+        if (level !== 'all') filters.push(`${level.toUpperCase()} level`);
+        if (dateFrom) filters.push(`from ${dateFrom}`);
+        if (dateTo) filters.push(`through ${dateTo}`);
+        clearForm.dataset.confirmMessage = `Clear ${actorLabels[actor] || 'all actors'}${filters.length ? ` matching ${filters.join(', ')}` : ''}? This cannot be undone.`;
+    }
+
     /**
      * Locate the results panel that belongs to this filter form.
      * Markup patterns: form inside .dashboard-card, results in a following .analytics-card
@@ -296,6 +333,7 @@
             }
 
             const url = buildFilterUrl(form);
+            syncLogActions(form, url);
             const seq = ++requestSeq;
 
             if (abortCtrl) {
@@ -431,4 +469,97 @@
         initLiveRequestCounts();
         initLiveFilters();
     }
+})();
+
+/**
+ * Feedback inbox tabs — refresh the server-rendered results without navigating away.
+ */
+(function () {
+    const tabSelector = '.feedback-tabs';
+    let activeRequest = null;
+    let requestSequence = 0;
+
+    async function loadTab(url, pushHistory, fallbackToNavigation) {
+        const currentTabs = document.querySelector(tabSelector);
+        const currentResults = document.querySelector('.feedback-results');
+        if (!currentTabs || !currentResults) {
+            if (fallbackToNavigation) window.location.assign(url.href);
+            else window.location.reload();
+            return;
+        }
+
+        if (activeRequest) activeRequest.abort();
+        activeRequest = new AbortController();
+        const controller = activeRequest;
+        const sequence = ++requestSequence;
+        currentResults.setAttribute('aria-busy', 'true');
+
+        try {
+            const response = await fetch(url.href, {
+                credentials: 'same-origin',
+                headers: { 'X-Requested-With': 'XMLHttpRequest', Accept: 'text/html' },
+                signal: controller.signal,
+                cache: 'no-store',
+            });
+            if (sequence !== requestSequence) return;
+            if (!response.ok) throw new Error(`Feedback tab request failed (${response.status}).`);
+
+            const html = await response.text();
+            if (sequence !== requestSequence) return;
+
+            const doc = new DOMParser().parseFromString(html, 'text/html');
+            const nextTabs = doc.querySelector(tabSelector);
+            const nextResults = doc.querySelector('.feedback-results');
+            const nextAttachSelect = doc.querySelector('#attachFeedbackSelect');
+            const attachSelect = document.getElementById('attachFeedbackSelect');
+            const replyReturnTab = document.querySelector('#replyModal input[name="return_tab"]');
+            if (!nextTabs || !nextResults) throw new Error('Feedback tab response did not contain its results.');
+
+            currentTabs.replaceWith(nextTabs);
+            currentResults.replaceWith(nextResults);
+            if (attachSelect && nextAttachSelect) {
+                attachSelect.replaceChildren(...Array.from(nextAttachSelect.options, (option) => option.cloneNode(true)));
+            }
+
+            const tab = url.searchParams.get('tab') || 'all';
+            if (replyReturnTab) replyReturnTab.value = tab;
+            if (pushHistory) {
+                window.history.pushState({ feedbackTab: tab }, '', url.pathname + url.search + url.hash);
+                document.querySelector(`${tabSelector} .feedback-tab.active`)?.focus({ preventScroll: true });
+            }
+        } catch (error) {
+            if (error && error.name === 'AbortError') return;
+            if (sequence !== requestSequence) return;
+            console.warn('Feedback tab could not be refreshed.', error);
+            if (fallbackToNavigation) window.location.assign(url.href);
+            else window.location.reload();
+        } finally {
+            if (sequence === requestSequence) {
+                document.querySelector('.feedback-results')?.removeAttribute('aria-busy');
+                activeRequest = null;
+            }
+        }
+    }
+
+    document.addEventListener('click', (event) => {
+        if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+        if (!(event.target instanceof Element)) return;
+
+        const link = event.target.closest(`${tabSelector} a.feedback-tab`);
+        if (!link || (link.target && link.target !== '_self') || link.hasAttribute('download')) return;
+
+        const url = new URL(link.href, window.location.href);
+        if (url.origin !== window.location.origin || url.pathname !== window.location.pathname) return;
+
+        event.preventDefault();
+        if (url.href === window.location.href) return;
+        loadTab(url, true, true);
+    });
+
+    window.addEventListener('popstate', () => {
+        const url = new URL(window.location.href);
+        if (url.origin === window.location.origin && url.pathname === window.location.pathname) {
+            loadTab(url, false, false);
+        }
+    });
 })();

@@ -30,7 +30,7 @@ sort($allowedStatuses);
 $dbTypes = admin_filter_request_types();
 $allowedTypes = $dbTypes;
 // Ensure common type keywords remain selectable even if table is empty.
-foreach (['account', 'station', 'new_station', 'new_station_registration', 'license', 'license_modification', 'deactivation', 'account_deactivation'] as $fallbackType) {
+foreach (['account', 'hq_registration', 'station', 'new_station', 'new_station_registration', 'license', 'license_modification', 'deactivation', 'account_deactivation'] as $fallbackType) {
     if (!in_array($fallbackType, $allowedTypes, true)) {
         $allowedTypes[] = $fallbackType;
     }
@@ -134,12 +134,15 @@ SQL;
     }
     }
 
-    if (($requestType === '' || $requestType === 'account') && ($status === '' || $status === 'pending')) {
-        $accountRows = pending_account_rows($search);
-        $summary['pending'] = (int) $summary['pending'] + count($accountRows);
-    }
 } else {
     $dbError = 'The request database is temporarily unavailable.';
+}
+
+// Account verification is stored on users rather than system_requests. Keep it
+// available even when the separate system-request registry is unavailable.
+if (hq_db_available() && ($requestType === '' || $requestType === 'account') && ($status === '' || $status === 'pending')) {
+    $accountRows = pending_account_rows($search);
+    $summary['pending'] = (int) $summary['pending'] + count($accountRows);
 }
 
 $flashType = $flash['type'] ?? '';

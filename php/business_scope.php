@@ -21,6 +21,28 @@ if (!function_exists('map_pump_current_hq_id')) {
     }
 }
 
+if (!function_exists('map_pump_manager_report_scope_sql')) {
+    function map_pump_manager_report_scope_sql(): string
+    {
+        return "(u.role_id = ? OR u.business_role_id = ? OR u.current_role_id = ?)
+            AND (
+                u.headquarter_id = ?
+                OR EXISTS (
+                    SELECT 1
+                    FROM business_account_scope report_account_scope
+                    WHERE report_account_scope.user_id = u.user_id
+                      AND report_account_scope.headquarter_id = ?
+                )
+                OR EXISTS (
+                    SELECT 1
+                    FROM station_business_scope report_scope
+                    WHERE report_scope.branch_manager_user_id = u.user_id
+                      AND report_scope.headquarter_id = ?
+                )
+            )";
+    }
+}
+
 if (!function_exists('map_pump_manager_in_hq')) {
     function map_pump_manager_in_hq(PDO $pdo, int $managerId, int $hqId): bool
     {

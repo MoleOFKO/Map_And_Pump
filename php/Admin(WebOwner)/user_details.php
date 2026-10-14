@@ -21,29 +21,44 @@ if (!hq_db_available() || !hq_registry_schema_ready()) {
 }
 
 global $conn;
+$roleIdSql = user_account_column_exists('users', 'current_role_id')
+    ? 'COALESCE(u.current_role_id, u.business_role_id, u.role_id)'
+    : 'COALESCE(u.business_role_id, u.role_id)';
+$publicIdSelect = user_account_column_exists('users', 'user_public_id')
+    ? 'u.user_public_id'
+    : 'NULL AS user_public_id';
+$lastLoginSelect = user_account_column_exists('users', 'last_login_at')
+    ? 'u.last_login_at'
+    : 'NULL AS last_login_at';
+$licenseStatusSelect = user_account_column_exists('user_license', 'status')
+    ? 'l.status AS license_status'
+    : 'NULL AS license_status';
+$licenseFaceImageSelect = user_account_column_exists('user_license', 'face_image')
+    ? 'l.face_image'
+    : 'NULL AS face_image';
 $scopeCondition = $requestContext
     ? "AND LOWER(TRIM(u.status)) = 'pending_verification'"
     : "AND u.role_id = 6
        AND (u.business_role_id IS NULL OR u.business_role_id = 6)
-       AND (u.current_role_id IS NULL OR u.current_role_id = 6)
+       AND ({$roleIdSql} = 6)
        AND LOWER(TRIM(r.role_name)) = 'customer'";
 $statement = $conn->prepare(
-    'SELECT u.user_id, u.user_public_id, u.user_name, u.email, u.status, u.created_at, u.updated_at, u.last_login_at,
+    "SELECT u.user_id, {$publicIdSelect}, u.user_name, u.email, u.status, u.created_at, u.updated_at, {$lastLoginSelect},
             u.license_id, u.headquarter_id,
-            COALESCE(u.current_role_id, u.business_role_id, u.role_id) AS role_id,
+            {$roleIdSql} AS role_id,
             r.role_name,
             h.company_name AS headquarter_name, h.headquarters_owner_id, h.company_logo,
             h.contact_number, h.headquarter_email, h.headquarter_bio, h.location AS headquarter_location,
             h.business_license, h.business_license_image, h.business_license_expire_date, h.expire_at AS headquarter_expire_at,
             l.license_number, l.license_name, l.phone_number, l.nrc_number, l.date_of_birth,
-            l.blood_type, l.license_last_valid_date, l.status AS license_status,
-            l.license_image, l.face_image
+            l.blood_type, l.license_last_valid_date, {$licenseStatusSelect},
+            l.license_image, {$licenseFaceImageSelect}
      FROM users u
-     LEFT JOIN roles r ON r.role_id = COALESCE(u.current_role_id, u.business_role_id, u.role_id)
+     LEFT JOIN roles r ON r.role_id = {$roleIdSql}
      LEFT JOIN headquarter h ON h.headquarter_id = u.headquarter_id
      LEFT JOIN user_license l ON l.license_id = u.license_id
-     WHERE u.user_id = ? ' . $scopeCondition . '
-     LIMIT 1'
+     WHERE u.user_id = ? {$scopeCondition}
+     LIMIT 1"
 );
 
 if (!$statement) {
