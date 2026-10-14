@@ -4,6 +4,7 @@ ini_set('display_errors', '0');
 
 define('MAP_PUMP_JSON_RESPONSE', true);
 require_once __DIR__ . '/../conn.php';
+require_once __DIR__ . '/../Login/mail_templates.php';
 require_once __DIR__ . '/license_access.php';
 
 header('Content-Type: application/json; charset=utf-8');
@@ -305,6 +306,19 @@ try {
     $pdo->commit();
     $_SESSION['license_id'] = $licenseId;
     $_SESSION['license_status'] = 'pending';
+
+    $userEmailStmt = $pdo->prepare('SELECT email FROM users WHERE user_id = ? LIMIT 1');
+    $userEmailStmt->execute([$userId]);
+    $userEmail = trim((string) $userEmailStmt->fetchColumn());
+    if ($userEmail !== '') {
+        mail_send_account_notice($userEmail, [
+            'kind' => 'verification',
+            'action' => 'updated',
+            'account_label' => '',
+            'effect' => 'Your driver license was submitted to Map & Pump and is now waiting for moderator review before access is approved.',
+        ]);
+    }
+
     license_json(true, 'Driver license saved. Please wait for Moderator confirmation.', ['redirect' => '../Customer/license.php']);
 } catch (Throwable $e) {
     if ($pdo->inTransaction()) {

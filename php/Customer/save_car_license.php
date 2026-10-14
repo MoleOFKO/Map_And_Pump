@@ -4,6 +4,7 @@ ini_set('display_errors', '0');
 
 define('MAP_PUMP_JSON_RESPONSE', true);
 require_once __DIR__ . '/../conn.php';
+require_once __DIR__ . '/../Login/mail_templates.php';
 require_once __DIR__ . '/car_access.php';
 require_once __DIR__ . '/license_expiry.php';
 
@@ -310,6 +311,19 @@ try {
 
     $pdo->commit();
     $_SESSION['car_license_id'] = $savedCarId;
+
+    $userEmailStmt = $pdo->prepare('SELECT email FROM users WHERE user_id = ? LIMIT 1');
+    $userEmailStmt->execute([$userId]);
+    $userEmail = trim((string) $userEmailStmt->fetchColumn());
+    if ($userEmail !== '') {
+        mail_send_account_notice($userEmail, [
+            'kind' => 'verification',
+            'action' => 'updated',
+            'account_label' => '',
+            'effect' => 'Your car license was submitted to Map & Pump and is now waiting for moderator review before it can be used.',
+        ]);
+    }
+
     car_license_json(true, 'Car license saved.', ['redirect' => '/php/Customer/car_license.php?car_id=' . $savedCarId]);
 } catch (Throwable $e) {
     if ($pdo->inTransaction()) {

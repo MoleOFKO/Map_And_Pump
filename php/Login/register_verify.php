@@ -24,6 +24,7 @@ register_shutdown_function(function () {
 
 define('MAP_PUMP_JSON_RESPONSE', true);
 require_once __DIR__ . '/../conn.php';
+require_once __DIR__ . '/mail_templates.php';
 require_once __DIR__ . '/../role_state.php';
 
 function verify_json(bool $ok, string $message, array $extra = []): never
@@ -119,6 +120,13 @@ try {
     $update->execute($updateParams);
     $lastLoginUpdate = $pdo->prepare('UPDATE users SET last_login_at = NOW(), updated_at = NOW() WHERE user_id = ?');
     $lastLoginUpdate->execute([$userId]);
+
+    mail_send_account_notice($email, [
+        'kind' => 'account',
+        'action' => 'created',
+        'account_label' => (string) ($user['user_name'] ?? ''),
+        'effect' => 'Your Map & Pump account was created successfully. Your account is active, and you can continue by adding your driver license and any required car license details.',
+    ]);
 
     unset($_SESSION['pending_registration']);
     session_regenerate_id(true);
