@@ -174,6 +174,7 @@ $branchCode = trim((string) ($user['branch_code'] ?? '')) ?: 'N/A';
     <link rel="icon" type="image/png" href="/images/Logo.png">
     <link rel="stylesheet" href="../../css/Admin.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    <link rel="stylesheet" href="../../css/StaffDashboard.css">
     <style>
         .avatar-large { 
             width: 80px; 
@@ -250,9 +251,10 @@ $branchCode = trim((string) ($user['branch_code'] ?? '')) ?: 'N/A';
         }
     </style>
 </head>
-<body class="background_color" id="background_color">
+<body class="background_color staff-dashboard" id="background_color">
 
     <div class="page-load-bar"></div>
+    <?php $staffPageTitle = 'My account'; $staffActivePage = 'account'; require __DIR__ . '/staff_layout_start.php'; ?>
 
     <div class="container sticky-nav-wrapper">
         <nav class="navbar navbar-dark text-white navigation_style">
@@ -294,7 +296,7 @@ $branchCode = trim((string) ($user['branch_code'] ?? '')) ?: 'N/A';
         </nav>
     </div>
 
-    <div class="container my-5 text_color">
+    <div class="container staff-page-content text_color">
         <div class="row justify-content-center">
             <div class="col-12 col-md-10 col-lg-8 px-3">
                 
@@ -505,7 +507,7 @@ $branchCode = trim((string) ($user['branch_code'] ?? '')) ?: 'N/A';
     </div>
 
     <!-- SIDEBAR MAIN MENU -->
-    <div class="offcanvas offcanvas-end" tabindex="-1" id="mainMenuOffcanvas" style="width: 320px; background: rgba(6, 12, 24, 0.98); backdrop-filter: blur(28px); border-left: 1px solid rgba(0, 180, 255, 0.18);">
+    <div class="offcanvas offcanvas-end legacy-staff-menu" tabindex="-1" id="legacyMainMenuOffcanvas" style="width: 320px; background: rgba(6, 12, 24, 0.98); backdrop-filter: blur(28px); border-left: 1px solid rgba(0, 180, 255, 0.18);">
         <div class="offcanvas-header pb-2 border-bottom border-white border-opacity-10">
             <div>
                 <h5 class="offcanvas-title text-white fw-bold mb-0">Main Menu</h5>
@@ -555,6 +557,7 @@ $branchCode = trim((string) ($user['branch_code'] ?? '')) ?: 'N/A';
         </div>
     </div>
 
+    <?php require __DIR__ . '/staff_layout_end.php'; ?>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script src="/js/Admin.js"></script>
     <script>
