@@ -126,6 +126,7 @@ $showReplySuccess = isset($_GET['reply_sent']) && $_GET['reply_sent'] === '1';
     <link rel="icon" type="image/png" href="/images/Logo.png">
     <link rel="stylesheet" href="/css/Admin.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    <link rel="stylesheet" href="../../css/StaffDashboard.css">
     <style>
         .badge-resolved { background-color: rgba(27, 228, 148, 0.15); color: #1be494; border: 1px solid rgba(27, 228, 148, 0.25); }
         .badge-pending { background-color: rgba(255, 193, 7, 0.15); color: #ffc107; border: 1px solid rgba(255, 193, 7, 0.25); }
@@ -155,10 +156,11 @@ $showReplySuccess = isset($_GET['reply_sent']) && $_GET['reply_sent'] === '1';
         .reply-preview { margin-top:12px; padding:10px 12px; border-radius:7px; background:rgba(27,228,148,.08); border:1px solid rgba(27,228,148,.15); color:#c9d2e3; font-size:.84rem; }
     </style>
 </head>
-<body class="background_color" id="background_color">
+<body class="background_color staff-dashboard" id="background_color">
 
     <!-- TOP LOADING SHIMMER BAR -->
     <div class="page-load-bar"></div>
+    <?php $staffPageTitle = 'Feedback'; $staffActivePage = 'feedback'; require __DIR__ . '/staff_layout_start.php'; ?>
 
     <!-- IPHONE CAPSULE NAVBAR -->
     <div class="container sticky-nav-wrapper">
@@ -202,7 +204,7 @@ $showReplySuccess = isset($_GET['reply_sent']) && $_GET['reply_sent'] === '1';
     </div>
 
     <!-- MAIN DASHBOARD CONTENT -->
-    <div class="container my-5 text_color">
+    <div class="container staff-page-content text_color">
         <div class="row mb-4">
             <div class="col-12 px-3">
                 <div class="mb-2">
@@ -377,7 +379,7 @@ $showReplySuccess = isset($_GET['reply_sent']) && $_GET['reply_sent'] === '1';
             </div>
 
     <!-- SIDEBAR MAIN MENU -->
-    <div class="offcanvas offcanvas-end" tabindex="-1" id="mainMenuOffcanvas" style="width: 320px; background: rgba(6, 12, 24, 0.98); backdrop-filter: blur(28px); border-left: 1px solid rgba(0, 180, 255, 0.18);">
+    <div class="offcanvas offcanvas-end legacy-staff-menu" tabindex="-1" id="legacyMainMenuOffcanvas" style="width: 320px; background: rgba(6, 12, 24, 0.98); backdrop-filter: blur(28px); border-left: 1px solid rgba(0, 180, 255, 0.18);">
         <div class="offcanvas-header pb-2 border-bottom border-white border-opacity-10">
             <div>
                 <h5 class="offcanvas-title text-white fw-bold mb-0">Main Menu</h5>
@@ -427,7 +429,7 @@ $showReplySuccess = isset($_GET['reply_sent']) && $_GET['reply_sent'] === '1';
         </div>
     </div>
 
-    <footer class="text-white-50 text-center py-4 mt-5 small">&copy; 2026 Map & Pump | All Rights Reserved</footer>
+    <?php require __DIR__ . '/staff_layout_end.php'; ?>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script src="/js/Admin.js"></script>
     <script>

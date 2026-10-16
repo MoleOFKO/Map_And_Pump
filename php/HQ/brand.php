@@ -6,6 +6,7 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
 
 // // Database connection configuration
 require_once __DIR__ . '/../conn.php';
+require_once __DIR__ . '/../billing_config.php';
 // Handle form submission
 $message = '';
 $loggedUserId = isset($_SESSION['user_id']) ? (int) $_SESSION['user_id'] : 0;
@@ -143,7 +144,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     } else {
         // Insert new record
-        $insertStmt = $pdo->prepare("INSERT INTO headquarter (company_name, headquarter_bio, headquarter_email, contact_number, business_license, location, company_logo) VALUES (?, ?, ?, ?, ?, ?, ?)");
+        $insertStmt = $pdo->prepare("INSERT INTO headquarter (company_name, headquarter_bio, headquarter_email, contact_number, business_license, location, company_logo, station_count) VALUES (?, ?, ?, ?, ?, ?, ?, " . BILLING_HQ_INCLUDED_STATION_SLOTS . ")");
         $insertStmt->execute([$title, $info, $email, $phone, $businessLicense, $location, $logoPath]);
     }
 

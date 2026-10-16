@@ -79,7 +79,9 @@ try {
             if ($stationStatus === '') {
                 $stationStatus = 'Active';
             }
-            $feePaid = (int) ($stationRow['monthly_fee_paid'] ?? 0) === 1;
+            $feePaid = $billingReady
+                ? company_loyalty_station_is_paid($pdo, $stationId)
+                : ((int) ($stationRow['monthly_fee_paid'] ?? 0) === 1);
             $isStationActive = strcasecmp($stationStatus, 'Active') === 0 && $feePaid;
             if (!$feePaid && strcasecmp($stationStatus, 'Active') === 0) {
                 $stationStatus = 'Paused — monthly fee unpaid';

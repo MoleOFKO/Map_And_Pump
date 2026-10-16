@@ -6,9 +6,10 @@
    ========================================================================== */
 
 require_once __DIR__ . '/data/fuel_prices.php';
+require_once __DIR__ . '/billing_config.php';
 
 $page_title       = 'MAP & PUMP | Put Your Stations on the Map Drivers Actually Check';
-$page_description = 'MAP & PUMP is the availability layer for fuel retail. Show which of your stations have stock, switch a station off the moment it runs dry, and stop losing drivers to guesswork. Three stations free.';
+$page_description = 'MAP & PUMP is the availability layer for fuel retail. HQ registration includes three station slots. Extra stations have a published monthly MMK price or can use HQ points.';
 $active_nav       = 'home';
 
 require __DIR__ . '/partials/head.php';
@@ -19,10 +20,10 @@ require __DIR__ . '/partials/nav.php';
     <div class="project-consent__card">
         <span class="project-consent__label"><i class="fa-solid fa-flask me-2"></i>School project / test environment</span>
         <h1 id="project-consent-title">Before you continue</h1>
-        <p id="project-consent-description">MAP &amp; PUMP is a student project for demonstration and testing. It is not a production service and must not be used for real fuel bookings, payments, business decisions, or emergency information.</p>
+        <p id="project-consent-description">MAP &amp; PUMP is a student project for demonstration and testing, not a live fuel or payment service. Any money transfer happens outside the website; payment-status entries are user declarations, not bank verification. Do not rely on the site for fuel availability, business decisions, or emergency information.</p>
         <div class="project-consent__warning">
             <i class="fa-solid fa-shield-halved" aria-hidden="true"></i>
-            <p><strong>Use fictional information in project fields.</strong> You may provide an email address you can access for registration, verification, and essential account, security, invitation, or request-status notices. Do not enter other real personal or sensitive information, payment details, or documents.</p>
+            <p><strong>Protect sensitive information.</strong> You may provide an email address you control for account and request-status notices. Some project forms request business contact details or a licence document; submit only information you are authorised to share. Never enter account passwords, wallet PINs, full payment credentials, or receipts. Payment-status entries describe transfers made outside the website and are not bank verification.</p>
         </div>
         <label class="project-consent__check" for="project-consent-checkbox">
             <input id="project-consent-checkbox" type="checkbox">
@@ -64,7 +65,7 @@ require __DIR__ . '/partials/nav.php';
                 <p class="hero-sub mb-4" data-reveal style="--reveal-delay:160ms">
                     When a station runs dry, switch it off in one tap — drivers see it instantly
                     and stop queuing at the wrong forecourt. When you restock, switch it back on
-                    and they come to you. Three stations free, forever.
+                    and they come to you. HQ registration includes capacity for <?= (int) BILLING_HQ_INCLUDED_STATION_SLOTS ?> stations; monthly operating fees still apply.
                 </p>
 
                 <div class="hero-actions d-sm-flex gap-3 justify-content-center justify-content-lg-start" data-reveal style="--reveal-delay:240ms">
@@ -77,7 +78,7 @@ require __DIR__ . '/partials/nav.php';
                 </div>
 
                 <p class="small text-dim mt-3 mb-0" data-reveal style="--reveal-delay:280ms">
-                    3 stations free &middot; No hardware to install &middot; Set up in an afternoon
+                    <?= (int) BILLING_HQ_INCLUDED_STATION_SLOTS ?> registration slots included &middot; No hardware to install &middot; Set up in an afternoon
                 </p>
 
                 <div class="hero-trust" data-reveal style="--reveal-delay:320ms">
@@ -213,7 +214,7 @@ require __DIR__ . '/partials/nav.php';
                 <div class="step-card">
                     <div class="step-num">01</div>
                     <h3>Register the company</h3>
-                    <p>One account for your whole business. Registration fee covers your first three stations.</p>
+                    <p>One account for your whole business. The one-time registration fee includes capacity for <?= (int) BILLING_HQ_INCLUDED_STATION_SLOTS ?> stations.</p>
                 </div>
             </div>
             <div class="col-md-6 col-lg-3" data-reveal style="--reveal-delay:90ms">
@@ -249,10 +250,12 @@ require __DIR__ . '/partials/nav.php';
     <div class="container">
         <div class="text-center mb-4" data-reveal>
             <span class="eyebrow">Pricing</span>
-            <h2 class="section-title">Three stations free. Scale when you're ready.</h2>
+            <h2 class="section-title">Three registration slots included. Scale when you're ready.</h2>
             <p class="section-lead mx-auto">
-                Your registration fee covers your first three stations on the map. Need more visible?
-                Add them per station, per month — and the more you add, the cheaper each one gets.
+                The one-time HQ registration fee is <?= number_format(BILLING_HQ_REGISTRATION_FEE_MMK) ?> MMK and includes
+                capacity for <?= (int) BILLING_HQ_INCLUDED_STATION_SLOTS ?> stations. Each additional station costs
+                <?= number_format(BILLING_HQ_EXTRA_STATION_MMK_MONTHLY) ?> MMK per month, including both its capacity slot
+                and operating fee. Volume and multi-month discounts apply.
             </p>
         </div>
 
@@ -261,10 +264,11 @@ require __DIR__ . '/partials/nav.php';
                 <div class="plan-card h-100">
                     <div class="plan-tag">Included with registration</div>
                     <h3 class="plan-name">Starter</h3>
-                    <div class="plan-price">3 stations <span>free</span></div>
-                    <p class="plan-note">One-time registration fee, no monthly charge for these three.</p>
+                    <div class="plan-price"><?= (int) BILLING_HQ_INCLUDED_STATION_SLOTS ?> station slots <span>included</span></div>
+                    <p class="plan-note">One-time registration fee: <?= number_format(BILLING_HQ_REGISTRATION_FEE_MMK) ?> MMK. Included slots have no monthly capacity charge. Active station operating fees are separate.</p>
                     <ul class="plan-list">
-                        <li><i class="fa-solid fa-check"></i> 3 stations live on the map</li>
+                        <li><i class="fa-solid fa-check"></i> <?= (int) BILLING_HQ_INCLUDED_STATION_SLOTS ?> station registrations included</li>
+                        <li><i class="fa-solid fa-check"></i> Active station operation: <?= number_format(BILLING_HQ_STATION_OPERATION_POINTS_MONTHLY) ?> HQ points per station per month</li>
                         <li><i class="fa-solid fa-check"></i> Enable / disable per station</li>
                         <li><i class="fa-solid fa-check"></i> Per-grade stock status</li>
                         <li><i class="fa-solid fa-check"></i> Driver token bookings</li>
@@ -277,36 +281,40 @@ require __DIR__ . '/partials/nav.php';
                 <div class="plan-card plan-card-featured h-100">
                     <div class="plan-tag plan-tag-accent">Most companies land here</div>
                     <h3 class="plan-name">Growth</h3>
-                    <div class="plan-price">2,000 <span>MMK / station / month</span></div>
-                    <p class="plan-note">For every station beyond your free three. Volume and multi-month discounts applied automatically.</p>
+                    <div class="plan-price"><?= number_format(BILLING_HQ_EXTRA_STATION_MMK_MONTHLY) ?> <span>MMK / extra station / month</span></div>
+                    <p class="plan-note">For each station beyond the included capacity. This MMK price covers both the monthly capacity slot and station operation. The points option is <?= number_format(BILLING_HQ_STATION_SLOT_POINTS_MONTHLY) ?> points for the slot plus <?= number_format(BILLING_HQ_STATION_OPERATION_POINTS_MONTHLY) ?> points for operation, each month.</p>
 
                     <div class="discount-grid">
                         <div class="discount-cell">
                             <div class="discount-head">Volume</div>
-                            <div class="discount-row"><span>1–7 paid</span><strong>Standard</strong></div>
-                            <div class="discount-row"><span>8–22 paid</span><strong>10% off</strong></div>
-                            <div class="discount-row"><span>23+ paid</span><strong>20% off</strong></div>
+                            <?php foreach (BILLING_HQ_VOLUME_DISCOUNTS as $tier): ?>
+                                <div class="discount-row"><span><?= htmlspecialchars($tier['label'], ENT_QUOTES, 'UTF-8') ?></span><strong><?= (int) $tier['percent'] > 0 ? (int) $tier['percent'] . '% off' : 'Standard' ?></strong></div>
+                            <?php endforeach; ?>
                         </div>
                         <div class="discount-cell">
                             <div class="discount-head">Commitment</div>
-                            <div class="discount-row"><span>Monthly</span><strong>Standard</strong></div>
-                            <div class="discount-row"><span>3 months</span><strong>5% off</strong></div>
-                            <div class="discount-row"><span>6 months</span><strong>10% off</strong></div>
-                            <div class="discount-row"><span>12 months</span><strong>20% off</strong></div>
+                            <?php foreach (BILLING_HQ_TERM_DISCOUNTS as $term): ?>
+                                <div class="discount-row"><span><?= htmlspecialchars($term['label'], ENT_QUOTES, 'UTF-8') ?></span><strong><?= (int) $term['percent'] > 0 ? (int) $term['percent'] . '% off' : 'Standard' ?></strong></div>
+                            <?php endforeach; ?>
                         </div>
                     </div>
 
-                    <p class="small text-dim mb-0">Discounts stack — 30 stations on a 12-month term works out well under 1,500 MMK each.</p>
+                    <p class="small text-dim mb-0">External MMK transfers are made separately to <?= htmlspecialchars(BILLING_PLATFORM_RECIPIENT_NAME, ENT_QUOTES, 'UTF-8') ?>. The website records their reported status but does not move funds. HQ points and MMK are separate payment methods with no fixed conversion rate.</p>
                 </div>
             </div>
         </div>
 
         <!-- Calculator -->
-        <div class="calc-wrap" id="calc" data-free="3" data-rate="2000" data-reveal>
+        <div class="calc-wrap" id="calc"
+             data-free="<?= (int) BILLING_HQ_INCLUDED_STATION_SLOTS ?>"
+             data-rate="<?= (int) BILLING_HQ_EXTRA_STATION_MMK_MONTHLY ?>"
+             data-volume-discounts="<?= htmlspecialchars(json_encode(BILLING_HQ_VOLUME_DISCOUNTS), ENT_QUOTES, 'UTF-8') ?>"
+             data-term-discounts="<?= htmlspecialchars(json_encode(BILLING_HQ_TERM_DISCOUNTS), ENT_QUOTES, 'UTF-8') ?>"
+             data-reveal>
             <div class="row g-4 align-items-center">
                 <div class="col-lg-7">
                     <span class="eyebrow">Estimate</span>
-                    <h3 class="calc-title">What would your company pay?</h3>
+                    <h3 class="calc-title">Estimate your extra-station MMK fees</h3>
 
                     <label class="calc-label" for="calc-range">
                         Stations you want visible: <strong id="calc-count">6</strong>
@@ -316,32 +324,31 @@ require __DIR__ . '/partials/nav.php';
 
                     <div class="calc-label mt-4 mb-2">Commitment</div>
                     <div class="calc-months" id="calc-months">
-                        <button type="button" data-months="1" class="is-active">Monthly</button>
-                        <button type="button" data-months="3">3 months</button>
-                        <button type="button" data-months="6">6 months</button>
-                        <button type="button" data-months="12">12 months</button>
+                        <?php foreach (BILLING_HQ_TERM_DISCOUNTS as $term): ?>
+                            <button type="button" data-months="<?= (int) $term['months'] ?>" class="<?= (int) $term['months'] === 1 ? 'is-active' : '' ?>"><?= htmlspecialchars($term['label'], ENT_QUOTES, 'UTF-8') ?></button>
+                        <?php endforeach; ?>
                     </div>
                 </div>
 
                 <div class="col-lg-5">
                     <div class="calc-result">
-                        <div class="calc-line"><span>Free stations</span><strong>3</strong></div>
-                        <div class="calc-line"><span>Paid stations</span><strong id="calc-paid">3</strong></div>
-                        <div class="calc-line"><span>Base cost</span><strong id="calc-base">6,000 MMK</strong></div>
+                        <div class="calc-line"><span>Included slots</span><strong><?= (int) BILLING_HQ_INCLUDED_STATION_SLOTS ?></strong></div>
+                        <div class="calc-line"><span>Extra stations</span><strong id="calc-paid"><?= max(0, 6 - (int) BILLING_HQ_INCLUDED_STATION_SLOTS) ?></strong></div>
+                        <div class="calc-line"><span>Base cost</span><strong id="calc-base"><?= number_format(max(0, 6 - (int) BILLING_HQ_INCLUDED_STATION_SLOTS) * (int) BILLING_HQ_EXTRA_STATION_MMK_MONTHLY) ?> MMK</strong></div>
                         <div class="calc-line"><span>Volume discount</span><strong id="calc-vol">—</strong></div>
                         <div class="calc-line"><span>Term discount</span><strong id="calc-dur">—</strong></div>
                         <div class="calc-total">
-                            <span>You pay</span>
-                            <strong id="calc-total">6,000 MMK</strong>
+                            <span>MMK estimate</span>
+                            <strong id="calc-total"><?= number_format(max(0, 6 - (int) BILLING_HQ_INCLUDED_STATION_SLOTS) * (int) BILLING_HQ_EXTRA_STATION_MMK_MONTHLY) ?> MMK</strong>
                         </div>
-                        <div class="calc-per" id="calc-per">2,000 MMK / station / month</div>
+                        <div class="calc-per" id="calc-per"><?= number_format(BILLING_HQ_EXTRA_STATION_MMK_MONTHLY) ?> MMK / extra station / month</div>
                         <p class="calc-foot" id="calc-note">Billed monthly.</p>
-                        <a href="/php/Company/register.php" class="btn btn-primary w-100 py-3">Get started free</a>
+                        <a href="/php/Company/register.php" class="btn btn-primary w-100 py-3">Start HQ registration</a>
                     </div>
                 </div>
             </div>
             <p class="small text-dim mt-4 mb-0">
-                <i class="fa-solid fa-circle-info me-2"></i>Indicative pricing. Final rates confirmed at registration.
+                <i class="fa-solid fa-circle-info me-2"></i>This estimate covers extra-station MMK fees and published discounts; it excludes the one-time registration fee and any monthly HQ point fees. The points option has no fixed conversion to MMK.
             </p>
         </div>
     </div>
@@ -536,7 +543,7 @@ require __DIR__ . '/partials/nav.php';
                         </h2>
                         <div id="faq1" class="accordion-collapse collapse show" data-bs-parent="#faqAccordion">
                             <div class="accordion-body">
-                                Your company registration fee covers your first three stations on the map with the full feature set. Beyond that, each additional station is 2,000 MMK per month, with volume and multi-month discounts. It's always free for drivers.
+                                Your one-time <?= number_format(BILLING_HQ_REGISTRATION_FEE_MMK) ?> MMK registration fee includes capacity for <?= (int) BILLING_HQ_INCLUDED_STATION_SLOTS ?> stations. Active stations still have a <?= number_format(BILLING_HQ_STATION_OPERATION_POINTS_MONTHLY) ?>-point monthly operating fee. Each station beyond the included capacity costs <?= number_format(BILLING_HQ_EXTRA_STATION_MMK_MONTHLY) ?> MMK per month, covering both its slot and operation, with volume and multi-month discounts. In the points option, the monthly slot and operating charges are <?= number_format(BILLING_HQ_STATION_SLOT_POINTS_MONTHLY) ?> points each. It's always free for drivers.
                             </div>
                         </div>
                     </div>
@@ -594,9 +601,9 @@ require __DIR__ . '/partials/nav.php';
         <div class="bg-gradient-business text-center px-3 py-4 px-md-5" data-reveal>
             <div class="max-width-md mx-auto position-relative py-2">
                 <span class="eyebrow justify-content-center d-inline-flex">Get started</span>
-                <h2 class="section-title">Put your first three stations<br class="d-none d-md-block"> on the map for free</h2>
+                <h2 class="section-title">Start with <?= (int) BILLING_HQ_INCLUDED_STATION_SLOTS ?> included station slots</h2>
                 <p class="text-light opacity-75 mb-4 px-md-4">
-                    Set up takes an afternoon. No hardware, no integration, no long contract to sign.
+                    Pay the one-time HQ registration fee, then use HQ points for monthly active-station fees or the published MMK rate for extra stations. Set up takes an afternoon.
                 </p>
 
                 <div class="b2b-perks">

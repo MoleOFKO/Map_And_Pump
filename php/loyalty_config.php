@@ -1,4 +1,6 @@
 <?php
+require_once __DIR__ . '/billing_config.php';
+
 /**
  * Loyalty Reward Points — configuration (v2 countermeasures)
  * See: POINTS_COUNTERMEASURES_IMPLEMENTATION_PLAN.md
@@ -73,12 +75,13 @@ if (!defined('LOYALTY_COMPANY_POINT_EXPIRY_DAYS')) {
     define('LOYALTY_COMPANY_POINT_EXPIRY_DAYS', 90);
 }
 
-// HQ operating costs are points-only and billed monthly.
+// HQ monthly fees are sourced from billing_config.php; MMK is a separate
+// option, not a points conversion.
 if (!defined('LOYALTY_HQ_STATION_SLOT_MONTHLY_COST')) {
-    define('LOYALTY_HQ_STATION_SLOT_MONTHLY_COST', 10000);
+    define('LOYALTY_HQ_STATION_SLOT_MONTHLY_COST', BILLING_HQ_STATION_SLOT_POINTS_MONTHLY);
 }
 if (!defined('LOYALTY_HQ_STATION_MONTHLY_FEE')) {
-    define('LOYALTY_HQ_STATION_MONTHLY_FEE', 10000);
+    define('LOYALTY_HQ_STATION_MONTHLY_FEE', BILLING_HQ_STATION_OPERATION_POINTS_MONTHLY);
 }
 
 // ---------------------------------------------------------------------------
