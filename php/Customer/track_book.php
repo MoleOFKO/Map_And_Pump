@@ -3,6 +3,8 @@ include 'share_header.php';
 require_once __DIR__ . '/../business_scope.php';
 require_once __DIR__ . '/../booking_rules.php';
 require_once __DIR__ . '/../loyalty_points.php';
+require_once __DIR__ . '/../feedback_schema.php';
+require_once __DIR__ . '/../usage_history_schema.php';
 $billingReady = loyalty_countermeasures_schema_ready($pdo);
 $billingMonth = loyalty_current_year_month();
 $availableOilQuota = max(0.0, (float) ($_SESSION['oil_remaining'] ?? (((float) ($_SESSION['oil_limit'] ?? 35.0)) - ((float) ($_SESSION['oil_used'] ?? 0.0)))));
@@ -61,7 +63,6 @@ try {
          LEFT JOIN ({$latestInventorySql}) latest_inventory
             ON latest_inventory.station_id = b.branch_id
             AND latest_inventory.oil_type_id = ot.oil_type_id
-         WHERE LOWER(COALESCE(b.status, 'active')) <> 'closed'
          ORDER BY b.branch_id ASC, ot.oil_name ASC"
     );
     $stationStmt->execute($billingReady ? [$billingMonth] : []);
@@ -124,9 +125,64 @@ try {
         }
     }
     foreach ($stationsById as &$station) {
-        $station['isBookable'] = $station['isActive'] && $station['isOpen'] && !empty($station['fuels']);
+        $hasBookableFuel = false;
+        foreach ($station['fuels'] as $fuel) {
+            if (!empty($fuel['available'])) {
+                $hasBookableFuel = true;
+                break;
+            }
+        }
+        $station['isBookable'] = $station['isActive'] && $station['isOpen'] && $hasBookableFuel;
     }
     unset($station);
+
+    try {
+        if ($stationsById && map_pump_usage_history_schema_ready($pdo) && map_pump_feedback_schema_ready($pdo)) {
+            $reviewPlaceholders = implode(',', array_fill(0, count($stationsById), '?'));
+            $reviewStmt = $pdo->prepare(
+                "SELECT f.station_id, f.rating,
+                        CASE WHEN LOCATE(CHAR(10), f.feedback) > 0
+                             THEN TRIM(SUBSTRING(f.feedback, LOCATE(CHAR(10), f.feedback) + 1))
+                             ELSE TRIM(f.feedback) END AS review_text,
+                        u.user_name AS customer_name, f.created_at
+                 FROM feedback f
+                 INNER JOIN usage_history uh
+                    ON uh.usage_id = f.usage_id
+                    AND uh.station_id = f.station_id
+                    AND uh.user_id = f.user_id
+                 INNER JOIN users u ON u.user_id = f.user_id
+                 WHERE f.station_id IN ({$reviewPlaceholders})
+                   AND LOWER(uh.status) = 'filled'
+                   AND uh.staff_user_id IS NOT NULL
+                   AND COALESCE(uh.is_internal, 0) = 0
+                 ORDER BY f.station_id ASC, f.created_at DESC, f.feedback_id DESC"
+            );
+            $reviewStmt->execute(array_keys($stationsById));
+            foreach ($reviewStmt->fetchAll(PDO::FETCH_ASSOC) as $reviewRow) {
+                $stationId = (int) $reviewRow['station_id'];
+                if (count($stationsById[$stationId]['reviews'] ?? []) >= 5) {
+                    continue;
+                }
+
+                $reviewText = trim((string) ($reviewRow['review_text'] ?? ''));
+                if ($reviewText === 'Customer submitted a rating without a written comment.') {
+                    $reviewText = '';
+                }
+                if ($reviewText === '' && empty($reviewRow['rating'])) {
+                    continue;
+                }
+                $stationsById[$stationId]['reviews'][] = [
+                    'customer' => (string) ($reviewRow['customer_name'] ?? 'Customer'),
+                    'rating' => (int) ($reviewRow['rating'] ?? 0),
+                    'text' => $reviewText,
+                    'createdAt' => (string) ($reviewRow['created_at'] ?? ''),
+                ];
+            }
+        }
+    } catch (Throwable $e) {
+        error_log('Failed to load customer station reviews: ' . $e->getMessage());
+    }
+
     $customerStationsData = array_values($stationsById);
 } catch (Throwable $e) {
     error_log('Failed to load customer stations: ' . $e->getMessage());
@@ -587,7 +643,15 @@ body.customer-light-mode .customer-map-recenter-btn:hover {
 
             <div id="station-detail-fuels" class="d-flex flex-column gap-2"></div>
 
-            <button type="button" class="btn btn-info w-100 py-3 fw-bold rounded-4 mt-3" onclick="showBookingForm()">Book this station <i class="bi bi-qr-code ms-1"></i></button>
+            <button id="station-book-trigger" type="button" class="btn btn-info w-100 py-3 fw-bold rounded-4 mt-3" onclick="showBookingForm()">Book this station <i class="bi bi-qr-code ms-1"></i></button>
+            <small id="station-booking-status" class="text-secondary d-block mt-2" role="status"></small>
+            <button id="station-reviews-toggle" type="button" class="btn btn-outline-info w-100 mt-3" aria-expanded="false" onclick="toggleStationReviews()">
+                <i class="bi bi-chat-square-text me-1"></i> Customer reviews (0)
+            </button>
+            <section id="station-reviews" class="d-none mt-3" aria-live="polite" aria-label="Customer reviews for this station">
+                <h5 class="text-white mb-2">Customer reviews</h5>
+                <div id="station-reviews-list" class="d-flex flex-column gap-2"></div>
+            </section>
         </div>
 
         <div id="station-booking-form" class="d-none">
@@ -898,9 +962,7 @@ body.customer-light-mode .customer-map-recenter-btn:hover {
                     offset: [0, -16]
                 });
                 marker.bindPopup(createStationPopup(station));
-                if (station.isActive) {
-                    marker.on('click', () => selectStation(station.id));
-                }
+                marker.on('click', () => selectStation(station.id));
             });
             if (stationsData.length && !autoSelectNearest && !preselectStationId) {
                 mapInstance.fitBounds(stationsData.map(station => [station.lat, station.lng]), { padding: [40, 40], maxZoom: 13 });
@@ -951,7 +1013,7 @@ body.customer-light-mode .customer-map-recenter-btn:hover {
     }
 
     function getTopNearestStations(limit) {
-        return stationsData.filter(station => station.isActive)
+        return stationsData
             .map(station => ({
                 ...station,
                 distance: distanceKm(customerLocation[0], customerLocation[1], station.lat, station.lng)
@@ -965,7 +1027,7 @@ body.customer-light-mode .customer-map-recenter-btn:hover {
         if (!list) return;
         const top5 = getTopNearestStations(5);
         if (!top5.length) {
-            list.innerHTML = '<div class="text-secondary" style="font-size:13px;">No active stations are available right now.</div>';
+            list.innerHTML = '<div class="text-secondary" style="font-size:13px;">No stations with map locations are available.</div>';
             return;
         }
         list.innerHTML = top5.map((station, index) => `
@@ -1058,6 +1120,11 @@ body.customer-light-mode .customer-map-recenter-btn:hover {
         const nameBooking = document.getElementById('selected-station-name-booking');
         const addressBooking = document.getElementById('selected-station-address-booking');
         const detailList = document.getElementById('station-detail-fuels');
+        const bookingTrigger = document.getElementById('station-book-trigger');
+        const bookingStatus = document.getElementById('station-booking-status');
+        const reviewsToggle = document.getElementById('station-reviews-toggle');
+        const reviewsPanel = document.getElementById('station-reviews');
+        const reviewsList = document.getElementById('station-reviews-list');
         if (!station) return;
 
         name.textContent = station.name;
@@ -1066,6 +1133,53 @@ body.customer-light-mode .customer-map-recenter-btn:hover {
         addressBooking.textContent = station.address;
         stationImage.src = station.logo || '../../images/Logo.png';
         stationImage.onerror = () => { stationImage.src = '../../images/Logo.png'; };
+
+        bookingTrigger.disabled = !station.isBookable;
+        bookingStatus.textContent = station.isBookable
+            ? ''
+            : String(station.status).toLowerCase() === 'maintenance'
+                ? 'This station is under maintenance. Booking is unavailable.'
+                : !station.isOpen
+                    ? 'This station is outside opening hours. Booking is unavailable.'
+                    : !station.isActive
+                        ? 'This station is not currently available for booking.'
+                        : 'Fuel is currently unavailable for booking.';
+
+        const reviewCount = (station.reviews || []).length;
+        const reviewsIcon = document.createElement('i');
+        reviewsIcon.className = 'bi bi-chat-square-text me-1';
+        reviewsToggle.replaceChildren(reviewsIcon, document.createTextNode(`Customer reviews (${reviewCount})`));
+        reviewsPanel.classList.add('d-none');
+        reviewsToggle.setAttribute('aria-expanded', 'false');
+        reviewsList.replaceChildren();
+        if (station.reviews?.length) {
+            station.reviews.forEach(review => {
+                const reviewCard = document.createElement('article');
+                reviewCard.className = 'p-3 rounded-2 border border-secondary border-opacity-25';
+                const heading = document.createElement('div');
+                heading.className = 'd-flex justify-content-between gap-2';
+                const customer = document.createElement('strong');
+                customer.className = 'text-white';
+                customer.textContent = review.customer || 'Customer';
+                const rating = document.createElement('span');
+                rating.className = 'text-warning small';
+                rating.textContent = review.rating > 0 ? `Rating ${review.rating}/5` : 'No rating';
+                heading.append(customer, rating);
+                const date = document.createElement('small');
+                date.className = 'text-secondary d-block mt-1';
+                date.textContent = review.createdAt ? new Date(review.createdAt.replace(' ', 'T')).toLocaleDateString() : '';
+                const text = document.createElement('p');
+                text.className = 'text-secondary small mb-0 mt-2';
+                text.textContent = review.text || 'No written comment.';
+                reviewCard.append(heading, date, text);
+                reviewsList.append(reviewCard);
+            });
+        } else {
+            const emptyState = document.createElement('p');
+            emptyState.className = 'text-secondary small mb-0';
+            emptyState.textContent = 'No customer reviews for this station yet.';
+            reviewsList.append(emptyState);
+        }
 
         const fuels = station.fuels && station.fuels.length
             ? station.fuels
@@ -1125,8 +1239,7 @@ body.customer-light-mode .customer-map-recenter-btn:hover {
 
     function selectStation(stationId) {
         selectedStation = stationsData.find(station => Number(station.id) === Number(stationId));
-        if (!selectedStation || !selectedStation.isActive) {
-            alert('This station is not active. Please choose another station.');
+        if (!selectedStation) {
             return;
         }
         renderStationDetailCard(selectedStation);
@@ -1202,8 +1315,17 @@ body.customer-light-mode .customer-map-recenter-btn:hover {
     }
 
     function showBookingForm() {
+        if (!selectedStation?.isBookable) return;
         document.getElementById('station-detail-card').classList.add('d-none');
         document.getElementById('station-booking-form').classList.remove('d-none');
+    }
+
+    function toggleStationReviews() {
+        const panel = document.getElementById('station-reviews');
+        const button = document.getElementById('station-reviews-toggle');
+        const expanded = button.getAttribute('aria-expanded') === 'true';
+        panel.classList.toggle('d-none', expanded);
+        button.setAttribute('aria-expanded', String(!expanded));
     }
 
     function showStationDetails() {
