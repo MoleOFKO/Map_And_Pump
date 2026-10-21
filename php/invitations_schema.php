@@ -10,7 +10,7 @@ if (!function_exists('map_pump_ensure_invitation_schema')) {
                 invited_user_id INT NOT NULL,
                 invited_email VARCHAR(255) NOT NULL,
                 business_role_id INT NOT NULL,
-                station_id INT NOT NULL,
+                station_id INT DEFAULT NULL,
                 status VARCHAR(20) NOT NULL DEFAULT 'pending',
                 notification_id INT UNSIGNED DEFAULT NULL,
                 created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -24,5 +24,18 @@ if (!function_exists('map_pump_ensure_invitation_schema')) {
                 CONSTRAINT fk_invitations_station FOREIGN KEY (station_id) REFERENCES branches (branch_id) ON DELETE CASCADE
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
         );
+
+        $stmt = $pdo->prepare(
+            "SELECT IS_NULLABLE
+             FROM INFORMATION_SCHEMA.COLUMNS
+             WHERE TABLE_SCHEMA = DATABASE()
+               AND TABLE_NAME = 'invitations'
+               AND COLUMN_NAME = 'station_id'
+             LIMIT 1"
+        );
+        $stmt->execute();
+        if (strtoupper((string) $stmt->fetchColumn()) !== 'YES') {
+            $pdo->exec('ALTER TABLE invitations MODIFY COLUMN station_id INT NULL');
+        }
     }
 }

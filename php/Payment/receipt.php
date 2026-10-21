@@ -26,7 +26,9 @@ $isPayer = ($userId > 0 && (int) ($transfer['payer_user_id'] ?? 0) === $userId)
     || ($email !== '' && $email === strtolower((string) ($transfer['payer_email'] ?? '')))
     || $accessValid;
 $isRecipient = $userId > 0 && ($transfer['recipient_role'] === 'admin'
-    ? payment_transfer_user_is_admin($pdo, $userId)
+    ? ($transfer['payment_type'] === 'hq_period_extension'
+        ? payment_transfer_user_is_admin_or_moderator($pdo, $userId)
+        : payment_transfer_user_is_admin($pdo, $userId))
     : ($transfer['recipient_role'] === 'station_hq' && payment_transfer_user_owns_hq($pdo, $userId, (int) $transfer['recipient_headquarter_id'])));
 if ((!$isPayer && !$isRecipient) || ((empty($_SESSION['is_logged_in']) || $userId <= 0) && !$accessValid)) {
     http_response_code(403);
@@ -43,7 +45,8 @@ if (!$receipt) {
 $fileName = preg_replace('/[^A-Za-z0-9._-]/', '_', basename((string) $receipt['file_name'])) ?: 'receipt';
 header('Content-Type: ' . (string) $receipt['mime_type']);
 header('Content-Length: ' . (int) $receipt['file_size']);
-header('Content-Disposition: attachment; filename="' . $fileName . '"');
+$viewInline = (string) ($_GET['view'] ?? '') === '1' && str_starts_with((string) $receipt['mime_type'], 'image/');
+header('Content-Disposition: ' . ($viewInline ? 'inline' : 'attachment') . '; filename="' . $fileName . '"');
 header('X-Content-Type-Options: nosniff');
 header('Cache-Control: private, no-store, max-age=0');
 header('Referrer-Policy: no-referrer');

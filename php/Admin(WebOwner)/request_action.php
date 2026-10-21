@@ -2,12 +2,17 @@
 require_once __DIR__ . '/request_common.php';
 require_once __DIR__ . '/admin_common.php';
 require_once __DIR__ . '/../billing_config.php';
+require_once __DIR__ . '/../payment_transfers.php';
 
 if (session_status() !== PHP_SESSION_ACTIVE) {
     session_start();
 }
 
 $reviewer = admin_require_staff();
+if (!payment_transfer_schema_ready($pdo) || !payment_transfer_ensure_hq_service_expiry_schema($pdo)) {
+    request_flash('danger', 'Payment or HQ service-period storage is unavailable.');
+    request_redirect();
+}
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     request_redirect();
@@ -69,7 +74,7 @@ try {
 
     if ($action === 'approve' && strtolower((string) $target['request_type']) === 'hq_registration') {
         $paymentCheck = $conn->prepare(
-            "SELECT status FROM payment_transfers
+            "SELECT status, quantity, payment_transfer_id FROM payment_transfers
              WHERE request_id = ? AND payment_type = 'hq_registration'
              ORDER BY payment_transfer_id DESC LIMIT 1"
         );
@@ -195,6 +200,72 @@ try {
         }
         $createdHeadquarterId = (int) $conn->insert_id;
         $headquarterInsert->close();
+
+        $serviceExpiryUpdate = $conn->prepare(
+            'UPDATE headquarter
+             SET service_expires_at = DATE_ADD(NOW(), INTERVAL 1 MONTH),
+                 included_stations_free_until = DATE_ADD(NOW(), INTERVAL 1 MONTH)
+             WHERE headquarter_id = ?'
+        );
+        if (!$serviceExpiryUpdate) {
+            throw new RuntimeException('Could not initialize the company service period.');
+        }
+        $serviceExpiryUpdate->bind_param('i', $createdHeadquarterId);
+        if (!$serviceExpiryUpdate->execute()) {
+            throw new RuntimeException('Could not initialize the company service period.');
+        }
+        $serviceExpiryUpdate->close();
+
+        $registrationTransferId = (int) ($paymentRow['payment_transfer_id'] ?? 0);
+        $requestedStationCount = max(
+            BILLING_HQ_INCLUDED_STATION_SLOTS,
+            (int) ($details['requested_station_count'] ?? BILLING_HQ_INCLUDED_STATION_SLOTS)
+        );
+        $extraStationCount = $requestedStationCount - BILLING_HQ_INCLUDED_STATION_SLOTS;
+        if ($registrationTransferId > 0) {
+            $linkPayment = $conn->prepare('UPDATE payment_transfers SET payer_headquarter_id = ? WHERE payment_transfer_id = ?');
+            if (!$linkPayment) {
+                throw new RuntimeException('Could not link the registration payment to the new company.');
+            }
+            $linkPayment->bind_param('ii', $createdHeadquarterId, $registrationTransferId);
+            if (!$linkPayment->execute()) {
+                throw new RuntimeException('Could not link the registration payment to the new company.');
+            }
+            $linkPayment->close();
+        }
+        if ($extraStationCount > 0) {
+            $yearMonth = date('Y-m');
+            $slots = $conn->prepare(
+                'INSERT INTO company_loyalty_station_slots
+                    (headquarter_id, year_month, slots_purchased, mmk_slots_purchased, points_spent)
+                 VALUES (?, ?, 0, ?, 0)
+                 ON DUPLICATE KEY UPDATE mmk_slots_purchased = mmk_slots_purchased + VALUES(mmk_slots_purchased)'
+            );
+            if (!$slots) {
+                throw new RuntimeException('Could not apply paid extra-station capacity.');
+            }
+            $slots->bind_param('isi', $createdHeadquarterId, $yearMonth, $extraStationCount);
+            if (!$slots->execute()) {
+                throw new RuntimeException('Could not apply paid extra-station capacity.');
+            }
+            $slots->close();
+
+            $entitlements = $conn->prepare(
+                'INSERT INTO hq_station_mmk_entitlements
+                    (payment_transfer_id, headquarter_id, year_month, slot_number)
+                 VALUES (?, ?, ?, ?)'
+            );
+            if (!$entitlements) {
+                throw new RuntimeException('Could not create paid extra-station entitlements.');
+            }
+            for ($slotNumber = 1; $slotNumber <= $extraStationCount; $slotNumber++) {
+                $entitlements->bind_param('iisi', $registrationTransferId, $createdHeadquarterId, $yearMonth, $slotNumber);
+                if (!$entitlements->execute()) {
+                    throw new RuntimeException('Could not create paid extra-station entitlements.');
+                }
+            }
+            $entitlements->close();
+        }
 
         // A public registration has no submitter account.  Ensure every
         // approved HQ still receives a linked, role-3 login owner.

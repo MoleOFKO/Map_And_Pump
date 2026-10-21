@@ -120,6 +120,28 @@ if (!function_exists('map_pump_station_in_hq')) {
     }
 }
 
+if (!function_exists('map_pump_ensure_station_scope_manager_nullable')) {
+    function map_pump_ensure_station_scope_manager_nullable(PDO $pdo): void
+    {
+        $stmt = $pdo->prepare(
+            "SELECT IS_NULLABLE
+             FROM INFORMATION_SCHEMA.COLUMNS
+             WHERE TABLE_SCHEMA = DATABASE()
+               AND TABLE_NAME = 'station_business_scope'
+               AND COLUMN_NAME = 'branch_manager_user_id'
+             LIMIT 1"
+        );
+        $stmt->execute();
+        $nullable = $stmt->fetchColumn();
+        if ($nullable === false) {
+            throw new RuntimeException('Station business scope schema is unavailable.');
+        }
+        if (strtoupper((string) $nullable) !== 'YES') {
+            $pdo->exec('ALTER TABLE station_business_scope MODIFY COLUMN branch_manager_user_id INT NULL');
+        }
+    }
+}
+
 if (!function_exists('map_pump_latest_station_inventory_sql')) {
     function map_pump_latest_station_inventory_sql(): string
     {

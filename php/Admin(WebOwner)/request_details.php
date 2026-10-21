@@ -79,6 +79,7 @@ echo json_encode([
             'company_phone' => $registrationDetails['company_phone'] ?? null,
             'payment_method' => $registrationDetails['payment_method'] ?? null,
             'bank_name' => $registrationDetails['bank_name'] ?? null,
+            'requested_station_count' => isset($registrationDetails['requested_station_count']) ? (int) $registrationDetails['requested_station_count'] : null,
         ],
         'document_name' => $request['document_name'],
         'document_path' => $request['document_path'],

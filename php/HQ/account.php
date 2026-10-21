@@ -331,7 +331,7 @@ endif; ?>
                 <form method="POST" action="./invite_account.php" id="inviteAccountForm">
                     <div class="modal-header border-0"><h5 class="modal-title" id="inviteAccountModalLabel">Add Branch Manager</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button></div>
                     <div class="modal-body">
-                        <p class="small text-white-50">The email must belong to an existing customer account. That customer must Accept or Decline the invitation before continuing.</p>
+                        <p class="small text-white-50">The email must belong to an existing customer account. That customer must Accept or Decline the invitation before continuing. A station is optional for branch managers; staff require one.</p>
                         <label class="form-label" for="inviteEmail">Customer email</label>
                         <input class="form-control mb-3" type="email" id="inviteEmail" name="email" required>
                         <label class="form-label" for="inviteRole">Role</label>
@@ -340,9 +340,9 @@ endif; ?>
                             <label class="form-label mb-0" for="inviteStation">Station</label>
                             <button type="button" class="btn btn-sm btn-outline-info" data-bs-toggle="modal" data-bs-target="#quickStationModal" data-reopen-source="inviteAccountModal">+ Add Station</button>
                         </div>
-                        <select class="form-select" id="inviteStation" name="station_id" required><option value="">Select an HQ station</option><?php foreach ($stations as $station): ?><option value="<?= (int)$station['station_id'] ?>"><?= htmlspecialchars((string)$station['station_name'] . ' — ' . (string)$station['location']) ?></option><?php endforeach; ?></select>
+                        <select class="form-select" id="inviteStation" name="station_id"><option value="">No station assigned</option><?php foreach ($stations as $station): ?><option value="<?= (int)$station['station_id'] ?>"><?= htmlspecialchars((string)$station['station_name'] . ' — ' . (string)$station['location']) ?></option><?php endforeach; ?></select>
                         <?php if (empty($stations)): ?>
-                            <div class="alert alert-warning mt-2 mb-0" role="alert">No stations are assigned to this HQ. Add a station before sending an invitation.</div>
+                            <div class="alert alert-info mt-2 mb-0" role="alert">No stations are assigned to this HQ. You can still invite a branch manager without a station.</div>
                         <?php endif; ?>
                     </div>
                     <div class="modal-footer border-0"><button type="button" class="btn btn-outline-secondary text-white" data-bs-dismiss="modal">Cancel</button><button type="submit" class="btn btn-primary">Send Invitation</button></div>

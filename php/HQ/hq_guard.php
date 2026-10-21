@@ -6,6 +6,7 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
 require_once __DIR__ . '/../conn.php';
 require_once __DIR__ . '/../role_state.php';
 require_once __DIR__ . '/../business_scope.php';
+require_once __DIR__ . '/../payment_transfers.php';
 
 function hq_guard_redirect_top(string $url, string $message = ''): void
 {
@@ -47,6 +48,10 @@ if (empty($_SESSION['is_logged_in']) || empty($_SESSION['user_id'])) {
     hq_guard_redirect_top('/php/Login/login.php', 'Please sign in to continue.');
 }
 
+if (!payment_transfer_ensure_hq_service_expiry_schema($pdo)) {
+    error_log('HQ service period could not be checked because its schema is unavailable.');
+}
+
 $userId = (int) $_SESSION['user_id'];
 
 try {
@@ -56,7 +61,7 @@ try {
 
     $stmt = $pdo->prepare(
         "SELECT u.user_id, u.user_name, u.email, u.role_id, u.business_role_id, u.headquarter_id, u.status,
-            h.expire_at, h.business_license_expire_date,
+            h.expire_at, h.business_license_expire_date, h.service_expires_at,
                 {$currentRoleSelect}
                 r.role_name, br.role_name AS business_role_name
          FROM users u
@@ -104,14 +109,20 @@ $hqLicenseExpired = false;
 $hqHeadquarterId = (int) ($user['headquarter_id'] ?? 0);
 if ($hqHeadquarterId > 0 && ($activeRoleId === 3 || strtolower(trim($activeRoleName)) === 'hq')) {
     try {
-        $hqStmt = $pdo->prepare('SELECT expire_at FROM headquarter WHERE headquarter_id = ? LIMIT 1');
+        $hqStmt = $pdo->prepare('SELECT expire_at, service_expires_at FROM headquarter WHERE headquarter_id = ? LIMIT 1');
         if ($hqStmt && $hqStmt->execute([$hqHeadquarterId])) {
             $hqRow = $hqStmt->fetch(PDO::FETCH_ASSOC);
-            $expireAt = trim((string) ($hqRow['expire_at'] ?? ''));
-            if ($expireAt !== '') {
+            $serviceExpiry = trim((string) ($hqRow['service_expires_at'] ?? ''));
+            if ($serviceExpiry !== '') {
+                $serviceExpiryDate = new DateTimeImmutable($serviceExpiry);
+                $hqLicenseExpired = $serviceExpiryDate < new DateTimeImmutable();
+            } else {
+                $expireAt = trim((string) ($hqRow['expire_at'] ?? ''));
+                if ($expireAt !== '') {
                 $expireDate = DateTimeImmutable::createFromFormat('!Y-m-d', $expireAt);
                 if ($expireDate && $expireDate->format('Y-m-d') === $expireAt) {
-                    $hqLicenseExpired = $expireDate < new DateTimeImmutable('today');
+                        $hqLicenseExpired = $expireDate < new DateTimeImmutable('today');
+                    }
                 }
             }
         }
@@ -124,7 +135,7 @@ if (($user['status'] ?? '') === 'pending_deletion' && basename((string) ($_SERVE
     hq_guard_redirect_top('/php/HQ/profile.php');
 }
 if ($hqLicenseExpired && basename((string) ($_SERVER['PHP_SELF'] ?? '')) !== 'profile.php') {
-    hq_guard_redirect_top('/php/HQ/profile.php', 'Your business license has expired. You can only access your HQ profile until it is renewed.');
+    hq_guard_redirect_top('/php/HQ/profile.php', 'Your HQ service period or business license has expired. Access is limited until it is renewed.');
 }
 
 $_SESSION['role_id'] = $activeRoleId;

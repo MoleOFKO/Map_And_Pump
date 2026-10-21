@@ -160,9 +160,43 @@ function payment_transfer_schema_ready(PDO $pdo): bool
     }
 }
 
+function payment_transfer_ensure_hq_service_expiry_schema(PDO $pdo): bool
+{
+    try {
+        foreach ([
+            'service_expires_at' => 'DATETIME DEFAULT NULL AFTER expire_at',
+            'included_stations_free_until' => 'DATETIME DEFAULT NULL AFTER service_expires_at',
+        ] as $column => $definition) {
+            $stmt = $pdo->prepare(
+                "SELECT COUNT(*)
+                 FROM INFORMATION_SCHEMA.COLUMNS
+                 WHERE TABLE_SCHEMA = DATABASE()
+                   AND TABLE_NAME = 'headquarter'
+                   AND COLUMN_NAME = ?"
+            );
+            $stmt->execute([$column]);
+            if ((int) $stmt->fetchColumn() === 0) {
+                $pdo->exec("ALTER TABLE headquarter ADD COLUMN `{$column}` {$definition}");
+            }
+        }
+        return true;
+    } catch (Throwable $error) {
+        error_log('HQ service expiry schema upgrade failed: ' . $error->getMessage());
+        return false;
+    }
+}
+
 function payment_transfer_new_reference(): string
 {
     return 'PAY-' . date('YmdHis') . '-' . strtoupper(bin2hex(random_bytes(3)));
+}
+
+function payment_transfer_add_months_clamped(DateTimeImmutable $start, int $months): DateTimeImmutable
+{
+    $targetMonth = $start->modify('first day of this month')->modify('+' . $months . ' months');
+    $day = min((int) $start->format('j'), (int) $targetMonth->format('t'));
+    return $targetMonth->setDate((int) $targetMonth->format('Y'), (int) $targetMonth->format('n'), $day)
+        ->setTime((int) $start->format('H'), (int) $start->format('i'), (int) $start->format('s'));
 }
 
 /** Insert a status record for an external MMK payment, within the caller's transaction. */
@@ -282,6 +316,22 @@ function payment_transfer_user_is_admin(PDO $pdo, int $userId): bool
     );
     $stmt->execute([$userId]);
     return (bool) $stmt->fetchColumn();
+}
+
+function payment_transfer_user_is_admin_or_moderator(PDO $pdo, int $userId): bool
+{
+        $stmt = $pdo->prepare(
+                "SELECT 1 FROM users u
+                 WHERE u.user_id = ? AND LOWER(COALESCE(u.status, 'active')) IN ('active', 'approved')
+                     AND (
+                         EXISTS (SELECT 1 FROM roles r WHERE r.role_id = u.role_id AND LOWER(TRIM(r.role_name)) IN ('admin', 'moderator'))
+                         OR EXISTS (SELECT 1 FROM roles r WHERE r.role_id = u.business_role_id AND LOWER(TRIM(r.role_name)) IN ('admin', 'moderator'))
+                         OR EXISTS (SELECT 1 FROM roles r WHERE r.role_id = u.current_role_id AND LOWER(TRIM(r.role_name)) IN ('admin', 'moderator'))
+                     )
+                 LIMIT 1"
+        );
+        $stmt->execute([$userId]);
+        return (bool) $stmt->fetchColumn();
 }
 
 function payment_transfer_user_owns_hq(PDO $pdo, int $userId, int $headquarterId): bool

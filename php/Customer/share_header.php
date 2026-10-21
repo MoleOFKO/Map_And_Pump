@@ -114,7 +114,7 @@ try {
         "SELECT i.invitation_id, i.business_role_id, h.company_name, s.branch_name AS station_name
          FROM invitations i
          INNER JOIN headquarter h ON h.headquarter_id = i.headquarter_id
-         INNER JOIN branches s ON s.branch_id = i.station_id
+         LEFT JOIN branches s ON s.branch_id = i.station_id
          WHERE i.invited_user_id = ? AND i.status = 'pending'
          ORDER BY i.created_at ASC LIMIT 1"
     );
@@ -202,7 +202,7 @@ if ($currentPage == 'car_license.php') $viewTitle = "Car License Setup";
             <div class="modal-dialog modal-dialog-centered">
                 <div class="modal-content" style="background:#0a162c;color:#e8f3ff;border:1px solid rgba(13,110,253,.45);border-radius:18px;">
                     <div class="modal-header border-0"><h5 class="modal-title" id="hqInvitationTitle"><i class="bi bi-building-check me-2 text-info"></i>Business invitation</h5></div>
-                    <div class="modal-body"><p><strong><?= htmlspecialchars((string)$pendingInvitation['company_name'], ENT_QUOTES, 'UTF-8') ?></strong> invited you as a <strong><?= (int)$pendingInvitation['business_role_id'] === 4 ? 'Branch Manager' : 'Staff' ?></strong> for <strong><?= htmlspecialchars((string)$pendingInvitation['station_name'], ENT_QUOTES, 'UTF-8') ?></strong>.</p><p class="text-warning mb-0">You must Accept or Decline this invitation before you can use this account.</p></div>
+                    <div class="modal-body"><p><strong><?= htmlspecialchars((string)$pendingInvitation['company_name'], ENT_QUOTES, 'UTF-8') ?></strong> invited you as a <strong><?= (int)$pendingInvitation['business_role_id'] === 4 ? 'Branch Manager' : 'Staff' ?></strong><?php if (!empty($pendingInvitation['station_name'])): ?> for <strong><?= htmlspecialchars((string)$pendingInvitation['station_name'], ENT_QUOTES, 'UTF-8') ?></strong><?php else: ?> with no station assigned<?php endif; ?>.</p><p class="text-warning mb-0">You must Accept or Decline this invitation before you can use this account.</p></div>
                     <div class="modal-footer border-0">
                         <form method="POST" action="respond_invitation.php"><input type="hidden" name="invitation_id" value="<?= (int)$pendingInvitation['invitation_id'] ?>"><input type="hidden" name="decision" value="decline"><button type="submit" class="btn btn-outline-danger">Decline</button></form>
                         <form method="POST" action="respond_invitation.php"><input type="hidden" name="invitation_id" value="<?= (int)$pendingInvitation['invitation_id'] ?>"><input type="hidden" name="decision" value="accept"><button type="submit" class="btn btn-primary">Accept invitation</button></form>

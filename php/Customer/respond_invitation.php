@@ -52,18 +52,22 @@ try {
     if ($decision === 'accept') {
         $roleId = (int) $invitation['business_role_id'];
         $hqId = (int) $invitation['headquarter_id'];
-        $branchId = (int) $invitation['station_id'];
+        $branchId = $invitation['station_id'] === null ? null : (int) $invitation['station_id'];
 
-        $branchStmt = $pdo->prepare(
-            "SELECT b.branch_id
-             FROM branches b
-             INNER JOIN station_business_scope sbs ON sbs.station_id = b.branch_id
-             WHERE b.branch_id = ? AND sbs.headquarter_id = ?
-             LIMIT 1"
-        );
-        $branchStmt->execute([$branchId, $hqId]);
-        if (!$branchStmt->fetchColumn()) {
-            throw new RuntimeException('This invitation is not linked to a valid branch under its HQ.');
+        if ($branchId !== null) {
+            $branchStmt = $pdo->prepare(
+                "SELECT b.branch_id
+                 FROM branches b
+                 INNER JOIN station_business_scope sbs ON sbs.station_id = b.branch_id
+                 WHERE b.branch_id = ? AND sbs.headquarter_id = ?
+                 LIMIT 1"
+            );
+            $branchStmt->execute([$branchId, $hqId]);
+            if (!$branchStmt->fetchColumn()) {
+                throw new RuntimeException('This invitation is not linked to a valid branch under its HQ.');
+            }
+        } elseif ($roleId === 5) {
+            throw new RuntimeException('A staff invitation needs a station assignment before it can be accepted.');
         }
 
         $userDetails = $pdo->prepare('SELECT user_name, email FROM users WHERE user_id = ? LIMIT 1');

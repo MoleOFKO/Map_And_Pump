@@ -12,25 +12,13 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 
 $email = strtolower(trim((string)($_POST['email'] ?? '')));
 $role = strtolower(trim((string)($_POST['role'] ?? '')));
-$stationId = filter_var($_POST['station_id'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+$stationValue = trim((string)($_POST['station_id'] ?? ''));
+$stationId = $stationValue === '' ? null : filter_var($stationValue, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
 $hqId = map_pump_current_hq_id($pdo);
 $roleId = $role === 'manager' ? 4 : ($role === 'staff' ? 5 : 0);
 
-if (!$stationId) {
-    $fallbackStationStmt = $pdo->prepare(
-        "SELECT s.branch_id
-         FROM branches s
-         INNER JOIN station_business_scope sbs ON sbs.station_id = s.branch_id
-         WHERE sbs.headquarter_id = ?
-         ORDER BY s.branch_id ASC
-         LIMIT 1"
-    );
-    $fallbackStationStmt->execute([$hqId]);
-    $stationId = (int) ($fallbackStationStmt->fetchColumn() ?: 0);
-}
-
-if ($hqId <= 0 || !filter_var($email, FILTER_VALIDATE_EMAIL) || $roleId <= 0 || !$stationId) {
-    $_SESSION['hq_account_message'] = ['type' => 'danger', 'text' => 'Please provide a valid email and role. Create a station first if no station is available yet.'];
+if ($hqId <= 0 || !filter_var($email, FILTER_VALIDATE_EMAIL) || $roleId <= 0 || ($stationValue !== '' && !$stationId) || ($roleId === 5 && !$stationId)) {
+    $_SESSION['hq_account_message'] = ['type' => 'danger', 'text' => 'Please provide a valid email and role. Staff invitations require a station assignment.'];
     header('Location: account.php');
     exit;
 }
@@ -38,18 +26,21 @@ if ($hqId <= 0 || !filter_var($email, FILTER_VALIDATE_EMAIL) || $roleId <= 0 || 
 try {
     map_pump_ensure_invitation_schema($pdo);
 
-    $stationStmt = $pdo->prepare(
-        "SELECT s.branch_name AS station_name,
-            CASE WHEN s.latitude IS NOT NULL AND s.longitude IS NOT NULL
-                 THEN CONCAT(s.latitude, ', ', s.longitude) ELSE s.address END AS location
-         FROM branches s
-         INNER JOIN station_business_scope sbs ON sbs.station_id = s.branch_id
-         WHERE s.branch_id = ? AND sbs.headquarter_id = ? LIMIT 1"
-    );
-    $stationStmt->execute([$stationId, $hqId]);
-    $station = $stationStmt->fetch(PDO::FETCH_ASSOC);
-    if (!$station) {
-        throw new RuntimeException('That station is not related to your HQ.');
+    $station = null;
+    if ($stationId) {
+        $stationStmt = $pdo->prepare(
+            "SELECT s.branch_name AS station_name,
+                CASE WHEN s.latitude IS NOT NULL AND s.longitude IS NOT NULL
+                     THEN CONCAT(s.latitude, ', ', s.longitude) ELSE s.address END AS location
+             FROM branches s
+             INNER JOIN station_business_scope sbs ON sbs.station_id = s.branch_id
+             WHERE s.branch_id = ? AND sbs.headquarter_id = ? LIMIT 1"
+        );
+        $stationStmt->execute([$stationId, $hqId]);
+        $station = $stationStmt->fetch(PDO::FETCH_ASSOC);
+        if (!$station) {
+            throw new RuntimeException('That station is not related to your HQ.');
+        }
     }
 
     $userStmt = $pdo->prepare(
@@ -88,16 +79,16 @@ try {
         (string)($_SESSION['user_name'] ?? 'Your HQ administrator'),
         $companyName,
         $roleName,
-        (string)$station['station_name']
+        $station ? (string)$station['station_name'] : 'no assigned station'
     );
 
     $pdo->beginTransaction();
     $insert = $pdo->prepare(
         'INSERT INTO invitations
          (headquarter_id, invited_user_id, invited_email, business_role_id, station_id, status)
-         VALUES (?, ?, ?, ?, ?, \'pending\')'
+            VALUES (?, ?, ?, ?, ?, \'pending\')'
     );
-    $insert->execute([$hqId, (int)$invitee['user_id'], $email, $roleId, $stationId]);
+        $insert->execute([$hqId, (int)$invitee['user_id'], $email, $roleId, $stationId ?: null]);
     $invitationId = (int)$pdo->lastInsertId();
 
     $notification = $pdo->prepare(

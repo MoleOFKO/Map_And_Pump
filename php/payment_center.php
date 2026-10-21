@@ -32,6 +32,7 @@ if ((empty($_SESSION['is_logged_in']) || $userId <= 0)
 }
 
 $isAdmin = payment_transfer_user_is_admin($pdo, $userId);
+$isModeratorReviewer = !$isAdmin && payment_transfer_user_is_admin_or_moderator($pdo, $userId);
 $userStmt = $pdo->prepare('SELECT email, headquarter_id FROM users WHERE user_id = ? LIMIT 1');
 $userStmt->execute([$userId]);
 $currentUser = $userStmt->fetch(PDO::FETCH_ASSOC) ?: [];
@@ -59,15 +60,22 @@ if ($paymentReady) {
     }
     if ($isAdmin) {
         $conditions[] = "pt.recipient_role = 'admin'";
+    } elseif ($isModeratorReviewer) {
+        $conditions[] = "(pt.recipient_role = 'admin' AND pt.payment_type = 'hq_period_extension')";
     }
     if ($isHqRecipient) {
         $conditions[] = "(pt.recipient_role = 'station_hq' AND pt.recipient_headquarter_id = ?)";
         $params[] = $hqId;
     }
     $stmt = $pdo->prepare(
-        'SELECT pt.*, h.company_name AS recipient_hq_name, b.branch_name AS station_name
+        'SELECT pt.*, h.company_name AS recipient_hq_name,
+            COALESCE(payer_hq.company_name, registration.sender_entity) AS payer_hq_name,
+            COALESCE(payer_hq.headquarter_email, registration.headquarter_email, pt.payer_email) AS payer_hq_email,
+            b.branch_name AS station_name
          FROM payment_transfers pt
          LEFT JOIN headquarter h ON h.headquarter_id = pt.recipient_headquarter_id
+         LEFT JOIN headquarter payer_hq ON payer_hq.headquarter_id = pt.payer_headquarter_id
+         LEFT JOIN system_requests registration ON registration.request_id = pt.request_id AND pt.payment_type = \'hq_registration\'
          LEFT JOIN branches b ON b.branch_id = pt.station_id
          WHERE (' . implode(' OR ', $conditions) . ')
          ORDER BY (pt.status IN (\'pending_payment\', \'payer_reported_paid\')) DESC, pt.created_at DESC, pt.payment_transfer_id DESC
@@ -81,10 +89,13 @@ $eventsByTransfer = [];
 if ($transferRows) {
     $transferIds = array_values(array_unique(array_map(static fn (array $row): int => (int) $row['payment_transfer_id'], $transferRows)));
     $in = implode(',', array_fill(0, count($transferIds), '?'));
-    $receiptStmt = $pdo->prepare("SELECT payment_transfer_id, file_name FROM payment_transfer_receipts WHERE payment_transfer_id IN ({$in})");
+    $receiptStmt = $pdo->prepare("SELECT payment_transfer_id, file_name, mime_type FROM payment_transfer_receipts WHERE payment_transfer_id IN ({$in})");
     $receiptStmt->execute($transferIds);
     foreach ($receiptStmt->fetchAll(PDO::FETCH_ASSOC) as $receiptRow) {
-        $receiptByTransfer[(int) $receiptRow['payment_transfer_id']] = (string) $receiptRow['file_name'];
+        $receiptByTransfer[(int) $receiptRow['payment_transfer_id']] = [
+            'file_name' => (string) $receiptRow['file_name'],
+            'mime_type' => (string) $receiptRow['mime_type'],
+        ];
     }
     $eventStmt = $pdo->prepare("SELECT payment_transfer_id, previous_status, new_status, actor_email, note, created_at FROM payment_transfer_events WHERE payment_transfer_id IN ({$in}) ORDER BY created_at ASC, event_id ASC");
     $eventStmt->execute($transferIds);
@@ -180,8 +191,10 @@ $statusLabels = [
                         || (int) ($_SESSION['payment_transfer_access_id'] ?? 0) === (int) $transfer['payment_transfer_id'];
                     $isRecipient = $isAdmin
                         ? $transfer['recipient_role'] === 'admin'
-                        : ($isHqRecipient && $transfer['recipient_role'] === 'station_hq'
-                            && (int) $transfer['recipient_headquarter_id'] === $hqId);
+                        : ($isModeratorReviewer
+                            ? $transfer['recipient_role'] === 'admin' && $transfer['payment_type'] === 'hq_period_extension'
+                            : ($isHqRecipient && $transfer['recipient_role'] === 'station_hq'
+                                && (int) $transfer['recipient_headquarter_id'] === $hqId));
                     $canDecide = $isRecipient && !$isPayer && $transfer['status'] === 'payer_reported_paid';
                     $canCancel = $isPayer && in_array($transfer['status'], ['pending_payment', 'payer_reported_paid'], true);
                     $canReportPaid = $isPayer && $transfer['status'] === 'pending_payment';
@@ -191,6 +204,7 @@ $statusLabels = [
                         'hq_registration' => 'HQ registration fee',
                         'hq_extra_station' => 'Monthly extra-station capacity and operation',
                         'hq_station_operating_quote' => 'Negotiated monthly station operating fee',
+                        'hq_period_extension' => 'HQ service-period extension',
                         'fuel_purchase' => 'Customer fuel payment',
                         default => 'External payment',
                     };
@@ -217,10 +231,11 @@ $statusLabels = [
                             <div class="col-md-3"><span class="text-secondary">Selected method</span><div class="fw-semibold"><?= htmlspecialchars((string) ($transfer['payment_method'] ?: 'Not specified'), ENT_QUOTES, 'UTF-8') ?></div></div>
                              <div class="col-md-3"><span class="text-secondary">Requested</span><div class="fw-semibold"><?= htmlspecialchars((string) $transfer['created_at'], ENT_QUOTES, 'UTF-8') ?></div></div>
                             <div class="col-12"><span class="text-secondary">Details</span><div><?= htmlspecialchars((string) $transfer['description'], ENT_QUOTES, 'UTF-8') ?><?php if (!empty($transfer['station_name'])): ?> · <?= htmlspecialchars((string) $transfer['station_name'], ENT_QUOTES, 'UTF-8') ?><?php endif; ?></div></div>
+                            <?php if (in_array($transfer['payment_type'], ['hq_registration', 'hq_period_extension'], true)): ?><div class="col-md-6"><span class="text-secondary">Company</span><div><?= htmlspecialchars((string) ($transfer['payer_hq_name'] ?? 'Unknown company'), ENT_QUOTES, 'UTF-8') ?></div></div><div class="col-md-6"><span class="text-secondary">Company email</span><div><?= htmlspecialchars((string) ($transfer['payer_hq_email'] ?? $transfer['payer_email'] ?? ''), ENT_QUOTES, 'UTF-8') ?></div></div><?php endif; ?>
                             <?php if (!empty($transfer['request_id'])): ?><div class="col-12"><span class="text-secondary">Registration request</span><div>#<?= (int) $transfer['request_id'] ?></div></div><?php endif; ?>
                             <?php if (!empty($transfer['decision_note'])): ?><div class="col-12"><span class="text-secondary">Recipient note</span><div><?= htmlspecialchars((string) $transfer['decision_note'], ENT_QUOTES, 'UTF-8') ?></div></div><?php endif; ?>
                             <?php $receiptName = $receiptByTransfer[(int) $transfer['payment_transfer_id']] ?? null; $transferEvents = $eventsByTransfer[(int) $transfer['payment_transfer_id']] ?? []; ?>
-                            <?php if ($receiptName): ?><div class="col-12"><span class="text-secondary">Optional receipt evidence</span> · <a href="/php/Payment/receipt.php?id=<?= (int) $transfer['payment_transfer_id'] ?>" class="link-info"><?= htmlspecialchars((string) $receiptName, ENT_QUOTES, 'UTF-8') ?></a><div class="small text-secondary">A receipt attachment is evidence only; it does not confirm payment.</div></div><?php endif; ?>
+                            <?php if ($receiptName): ?><div class="col-12"><span class="text-secondary"><?= in_array($transfer['payment_type'], ['hq_registration', 'hq_period_extension'], true) ? 'Payment screenshot' : 'Optional receipt evidence' ?></span> · <a href="/php/Payment/receipt.php?id=<?= (int) $transfer['payment_transfer_id'] ?>" class="link-info"><?= htmlspecialchars((string) $receiptName['file_name'], ENT_QUOTES, 'UTF-8') ?></a><?php if (in_array($transfer['payment_type'], ['hq_registration', 'hq_period_extension'], true) && str_starts_with($receiptName['mime_type'], 'image/')): ?><div class="mt-2"><a href="/php/Payment/receipt.php?id=<?= (int) $transfer['payment_transfer_id'] ?>&amp;view=1" target="_blank" rel="noopener"><img src="/php/Payment/receipt.php?id=<?= (int) $transfer['payment_transfer_id'] ?>&amp;view=1" alt="Payment screenshot" style="display:block;max-width:320px;max-height:220px;object-fit:contain;border:1px solid rgba(255,255,255,.18);border-radius:6px"></a></div><?php endif; ?><div class="small text-secondary">The attachment is evidence for review; it does not independently confirm payment.</div></div><?php endif; ?>
                             <?php if ($transferEvents): ?><div class="col-12"><span class="text-secondary">Status history</span><ol class="mb-0 mt-1 ps-3"><?php foreach ($transferEvents as $event): ?><li><?= htmlspecialchars((string) $event['created_at'], ENT_QUOTES, 'UTF-8') ?> · <?= htmlspecialchars($statusLabels[(string) $event['new_status']] ?? ucfirst((string) $event['new_status']), ENT_QUOTES, 'UTF-8') ?><?php if (!empty($event['actor_email'])): ?> by <?= htmlspecialchars((string) $event['actor_email'], ENT_QUOTES, 'UTF-8') ?><?php endif; ?><?php if (!empty($event['note'])): ?> — <?= htmlspecialchars((string) $event['note'], ENT_QUOTES, 'UTF-8') ?><?php endif; ?></li><?php endforeach; ?></ol></div><?php endif; ?>
                         </div>
                         <?php if ($canReportPaid || $canDecide || $canCancel || $canRecreateRegistration): ?>
