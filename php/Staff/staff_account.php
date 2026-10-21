@@ -206,12 +206,54 @@ $branchCode = trim((string) ($user['branch_code'] ?? '')) ?: 'N/A';
             display: flex;
             align-items: center;
             gap: 0.5rem;
-            background: rgba(255, 255, 255, 0.025);
-            border: 1px solid rgba(255, 255, 255, 0.06);
-            border-radius: 10px;
-            padding: 0.45rem 0.6rem;
-            margin-top: 0.35rem;
-            font-size: 0.76rem;
+        }
+        .password-input-group {
+            display: flex;
+            align-items: center;
+            min-height: 46px;
+            overflow: hidden;
+            border: 1px solid var(--staff-border, rgba(13, 110, 253, 0.15));
+            border-radius: 12px;
+            background: rgba(4, 9, 21, 0.65);
+            transition: border-color 0.2s ease, box-shadow 0.2s ease;
+        }
+        .password-input-group:focus-within {
+            border-color: var(--neon-cyan);
+            box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.12), 0 0 15px rgba(13, 110, 253, 0.08);
+        }
+        .password-input-group .password-field-icon {
+            flex: 0 0 auto;
+            padding: 0 0 0 15px;
+            color: rgba(217, 230, 255, 0.55);
+        }
+        .password-input-group .password-field {
+            min-width: 0;
+            flex: 1 1 auto;
+            border: 0 !important;
+            border-radius: 0 !important;
+            background: transparent !important;
+            box-shadow: none !important;
+            padding: 10px 12px;
+        }
+        .password-input-group .password-field:focus {
+            outline: none;
+        }
+        .password-visibility-toggle {
+            display: grid;
+            flex: 0 0 46px;
+            align-self: stretch;
+            place-items: center;
+            padding: 0;
+            border: 0 !important;
+            border-radius: 0 !important;
+            background: transparent !important;
+            color: rgba(217, 230, 255, 0.65) !important;
+            cursor: pointer;
+        }
+        .password-visibility-toggle:hover,
+        .password-visibility-toggle:focus-visible {
+            color: var(--neon-cyan) !important;
+            outline: none;
         }
         .assignment-inline i {
             color: var(--neon-cyan);
@@ -227,6 +269,75 @@ $branchCode = trim((string) ($user['branch_code'] ?? '')) ?: 'N/A';
         .staff-security-modal .modal-header,
         .staff-security-modal .modal-footer {
             border-color: rgba(255, 255, 255, 0.08);
+        }
+        body.background_color.light-mode #changePasswordModal .modal-content,
+        body.background_color[data-theme="light"] #changePasswordModal .modal-content {
+            background: #fff;
+            border-color: #d8e0ea;
+            box-shadow: 0 24px 70px rgba(15, 23, 42, 0.2);
+            color: #1f2937;
+        }
+        body.background_color.light-mode #changePasswordModal .modal-title,
+        body.background_color[data-theme="light"] #changePasswordModal .modal-title,
+        body.background_color.light-mode #changePasswordModal .form-label,
+        body.background_color[data-theme="light"] #changePasswordModal .form-label,
+        body.background_color.light-mode #changePasswordModal .modal-header p,
+        body.background_color[data-theme="light"] #changePasswordModal .modal-header p {
+            color: #334155 !important;
+        }
+        body.background_color.light-mode #changePasswordModal .modal-header,
+        body.background_color[data-theme="light"] #changePasswordModal .modal-header,
+        body.background_color.light-mode #changePasswordModal .modal-footer,
+        body.background_color[data-theme="light"] #changePasswordModal .modal-footer {
+            border-color: #e2e8f0;
+        }
+        body.background_color.light-mode #changePasswordModal .staff-security-icon,
+        body.background_color[data-theme="light"] #changePasswordModal .staff-security-icon {
+            color: #334155;
+            background: #f1f5f9;
+            border-color: #dbe3ec;
+        }
+        body.background_color.light-mode #changePasswordModal .password-input-group,
+        body.background_color[data-theme="light"] #changePasswordModal .password-input-group {
+            background: #f8fafc;
+            border-color: #cbd5e1;
+        }
+        body.background_color.light-mode #changePasswordModal .password-input-group:focus-within,
+        body.background_color[data-theme="light"] #changePasswordModal .password-input-group:focus-within {
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.14);
+        }
+        body.background_color.light-mode #changePasswordModal .password-field-icon,
+        body.background_color[data-theme="light"] #changePasswordModal .password-field-icon,
+        body.background_color.light-mode #changePasswordModal .password-visibility-toggle,
+        body.background_color[data-theme="light"] #changePasswordModal .password-visibility-toggle {
+            color: #475569 !important;
+        }
+        body.background_color.light-mode #changePasswordModal .password-visibility-toggle:hover,
+        body.background_color[data-theme="light"] #changePasswordModal .password-visibility-toggle:hover,
+        body.background_color.light-mode #changePasswordModal .password-visibility-toggle:focus-visible,
+        body.background_color[data-theme="light"] #changePasswordModal .password-visibility-toggle:focus-visible {
+            color: #1d4ed8 !important;
+        }
+        body.background_color.light-mode #changePasswordModal .password-field,
+        body.background_color[data-theme="light"] #changePasswordModal .password-field {
+            color: #1f2937 !important;
+            caret-color: #1f2937;
+        }
+        body.background_color.light-mode #changePasswordModal .btn-close-white,
+        body.background_color[data-theme="light"] #changePasswordModal .btn-close-white {
+            filter: none;
+            opacity: 0.65;
+        }
+        body.background_color.light-mode #changePasswordModal .btn-outline-light,
+        body.background_color[data-theme="light"] #changePasswordModal .btn-outline-light {
+            color: #334155;
+            border-color: #cbd5e1;
+        }
+        body.background_color.light-mode #changePasswordModal .btn-outline-light:hover,
+        body.background_color[data-theme="light"] #changePasswordModal .btn-outline-light:hover {
+            color: #1e293b;
+            background: #f1f5f9;
         }
         .staff-security-icon {
             width: 42px;
@@ -471,25 +582,28 @@ $branchCode = trim((string) ($user['branch_code'] ?? '')) ?: 'N/A';
                     <div class="modal-body px-4">
                         <div class="mb-3">
                             <label for="currentPassword" class="form-label text-white-50 small">Current Password</label>
-                            <div class="input-group">
-                                <span class="input-group-text glass-input text-white-50 border-end-0"><i class="bi bi-lock"></i></span>
-                                <input type="password" class="form-control glass-input border-start-0" id="currentPassword" name="current_password" required>
+                            <div class="password-input-group">
+                                <span class="password-field-icon"><i class="bi bi-lock"></i></span>
+                                <input type="password" class="form-control glass-input password-field" id="currentPassword" name="current_password" required>
+                                <button type="button" class="password-visibility-toggle" data-password-target="currentPassword" aria-label="Show current password" aria-pressed="false"><i class="bi bi-eye" aria-hidden="true"></i></button>
                             </div>
                         </div>
 
                         <div class="mb-3">
                             <label for="newPassword" class="form-label text-white-50 small">New Password</label>
-                            <div class="input-group">
-                                <span class="input-group-text glass-input text-white-50 border-end-0"><i class="bi bi-key"></i></span>
-                                <input type="password" class="form-control glass-input border-start-0" id="newPassword" name="new_password" required>
+                            <div class="password-input-group">
+                                <span class="password-field-icon"><i class="bi bi-key"></i></span>
+                                <input type="password" class="form-control glass-input password-field" id="newPassword" name="new_password" required>
+                                <button type="button" class="password-visibility-toggle" data-password-target="newPassword" aria-label="Show new password" aria-pressed="false"><i class="bi bi-eye" aria-hidden="true"></i></button>
                             </div>
                         </div>
 
                         <div class="mb-0">
                             <label for="confirmPassword" class="form-label text-white-50 small">Confirm New Password</label>
-                            <div class="input-group">
-                                <span class="input-group-text glass-input text-white-50 border-end-0"><i class="bi bi-check2-circle"></i></span>
-                                <input type="password" class="form-control glass-input border-start-0" id="confirmPassword" name="confirm_password" required>
+                            <div class="password-input-group">
+                                <span class="password-field-icon"><i class="bi bi-check2-circle"></i></span>
+                                <input type="password" class="form-control glass-input password-field" id="confirmPassword" name="confirm_password" required>
+                                <button type="button" class="password-visibility-toggle" data-password-target="confirmPassword" aria-label="Show password confirmation" aria-pressed="false"><i class="bi bi-eye" aria-hidden="true"></i></button>
                             </div>
                         </div>
                     </div>
@@ -559,6 +673,10 @@ $branchCode = trim((string) ($user['branch_code'] ?? '')) ?: 'N/A';
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script src="/js/Admin.js"></script>
     <script>
+        document.querySelectorAll('#editProfileModal, #changePasswordModal').forEach((modal) => {
+            document.body.append(modal);
+        });
+
         const avatarUploadForm = document.getElementById('avatarUploadForm');
         const changeProfilePictureButton = document.getElementById('changeProfilePictureButton');
         const profileLogoInput = document.getElementById('profileLogoInput');
@@ -568,6 +686,21 @@ $branchCode = trim((string) ($user['branch_code'] ?? '')) ?: 'N/A';
             if (profileLogoInput.files.length > 0) {
                 avatarUploadForm.submit();
             }
+        });
+
+        document.querySelectorAll('.password-visibility-toggle').forEach((toggle) => {
+            toggle.addEventListener('click', () => {
+                const input = document.getElementById(toggle.dataset.passwordTarget);
+                const icon = toggle.querySelector('i');
+                if (!input || !icon) return;
+
+                const isVisible = input.type === 'password';
+                input.type = isVisible ? 'text' : 'password';
+                toggle.setAttribute('aria-pressed', String(isVisible));
+                toggle.setAttribute('aria-label', `${isVisible ? 'Hide' : 'Show'} ${toggle.dataset.passwordTarget === 'currentPassword' ? 'current password' : toggle.dataset.passwordTarget === 'newPassword' ? 'new password' : 'password confirmation'}`);
+                icon.classList.toggle('bi-eye', !isVisible);
+                icon.classList.toggle('bi-eye-slash', isVisible);
+            });
         });
 
         document.addEventListener('pointermove', (event) => {
