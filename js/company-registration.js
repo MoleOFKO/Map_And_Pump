@@ -52,6 +52,10 @@ const transferPhone = document.getElementById('payment-transfer-phone');
 const copyButton = document.getElementById('payment-copy');
 const paymentStatusError = document.getElementById('payment-status-error');
 const paymentSubmit = document.getElementById('payment-submit');
+const stationCountInput = document.getElementById('station-count');
+const registrationTotal = document.getElementById('registration-total');
+const paymentSummaryAmount = document.getElementById('payment-summary-amount');
+const paymentReceiptInput = document.getElementById('payment-receipt');
 
 let activeIndex = -1;
 let previouslyFocusedElement;
@@ -182,6 +186,20 @@ const fillPaymentStep = () => {
         if (copyText) copyText.textContent = 'Copy';
     }
 };
+
+const updateRegistrationAmount = () => {
+    if (!stationCountInput || !registrationTotal) return;
+    const extraCount = Math.max(0, Number(stationCountInput.value) - Number(registrationTotal.dataset.included));
+    const discounts = JSON.parse(registrationTotal.dataset.discounts || '[]');
+    const discount = discounts.reduce((current, tier) => extraCount >= Number(tier.min) ? Number(tier.percent) : current, 0);
+    const amount = Number(registrationTotal.dataset.base) + Number(registrationTotal.dataset.monthly) * extraCount * (1 - discount / 100);
+    const formatted = `${new Intl.NumberFormat().format(amount)} <small>MMK</small>`;
+    registrationTotal.innerHTML = formatted;
+    if (paymentSummaryAmount) paymentSummaryAmount.innerHTML = formatted;
+};
+
+stationCountInput?.addEventListener('change', updateRegistrationAmount);
+stationCountInput?.addEventListener('input', updateRegistrationAmount);
 
 /* ---------- dropdown events ---------- */
 toggle?.addEventListener('click', () => (isMenuOpen() ? closeMenu() : openMenu()));
@@ -338,6 +356,11 @@ paymentSubmit?.addEventListener('click', async () => {
     const method = methodInput?.value;
     const bank = bankInput?.value;
     clearError();
+    if (!paymentReceiptInput?.files?.length) {
+        showError(paymentStatusError, 'Upload the payment screenshot to submit the registration.');
+        paymentReceiptInput?.focus();
+        return;
+    }
     paymentSubmit.disabled = true;
     paymentSubmit.classList.add('is-loading');
 
@@ -345,6 +368,8 @@ paymentSubmit?.addEventListener('click', async () => {
         const formData = new FormData(registrationForm);
         formData.set('payment_method', method || '');
         formData.set('bank_name', bank || '');
+        formData.set('station_count', stationCountInput?.value || '');
+        formData.set('payment_receipt', paymentReceiptInput.files[0]);
         const response = await fetch(window.location.href, {
             method: 'POST',
             body: formData,

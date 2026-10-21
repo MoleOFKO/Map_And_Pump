@@ -49,6 +49,7 @@ $modMenuClass = static function (string $key) use ($moderatorActiveNav): string 
             <li><a href="view_hq_and_user_account(M).php" class="<?= $modMenuClass('view_hq') ?>"><i class="bi bi-building-gear me-3 txt-neon-cyan"></i> View/Manage HQ</a></li>
             <li><a href="view_users(M).php" class="<?= $modMenuClass('view_users') ?>"><i class="bi bi-people me-3 txt-neon-cyan"></i> View/Manage Users</a></li>
             <li><a href="view_requests(M).php" class="<?= $modMenuClass('requests') ?>"><i class="bi bi-file-earmark-check me-3 txt-neon-cyan"></i> View Requests</a></li>
+            <li><a href="/php/payment_center.php" class="<?= $modMenuClass('payments') ?>"><i class="bi bi-cash-coin me-3 txt-neon-cyan"></i> HQ Extension Payments</a></li>
             <li><a href="view_report(M).php" class="<?= $modMenuClass('report') ?>"><i class="bi bi-graph-up-arrow me-3 txt-neon-cyan"></i> View Report</a></li>
             <li><a href="edit_profile(M).php" class="<?= $modMenuClass('profile') ?>"><i class="bi bi-person-bounding-box me-3 txt-neon-blue"></i> Edit Profile</a></li>
             <li><a href="view_logs(M).php" class="<?= $modMenuClass('logs') ?>"><i class="bi bi-terminal-split me-3 text-danger"></i> View Log Files</a></li>

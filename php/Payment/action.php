@@ -146,8 +146,10 @@ try {
         $newAccessToken = rtrim(strtr(base64_encode(random_bytes(32)), '+/', '-_'), '=');
         $newTransferId = payment_transfer_create($pdo, [
             'payment_type' => 'hq_registration',
-            'amount_mmk' => BILLING_HQ_REGISTRATION_FEE_MMK,
-            'description' => 'One-time HQ registration fee',
+            'amount_mmk' => (float) $oldTransfer['amount_mmk'],
+            'description' => (string) $oldTransfer['description'],
+            'quantity' => (int) $oldTransfer['quantity'],
+            'term_months' => (int) $oldTransfer['term_months'],
             'payer_user_id' => $oldTransfer['payer_user_id'],
             'payer_email' => (string) $oldTransfer['payer_email'],
             'recipient_role' => BILLING_PLATFORM_RECEIVER_ROLE,
@@ -298,6 +300,10 @@ try {
             if (!$isPayer || (string) $transfer['status'] !== 'pending_payment') {
                 throw new RuntimeException('Only the payer can report payment for a request awaiting payment.');
             }
+            if ($transfer['payment_type'] === 'hq_registration'
+                && (!isset($_FILES['receipt']) || (int) ($_FILES['receipt']['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE)) {
+                throw new RuntimeException('Upload a payment screenshot before reporting the registration payment.');
+            }
             $update = $pdo->prepare("UPDATE payment_transfers SET status = 'payer_reported_paid', reported_paid_at = NOW(), paid_declared_at = NOW() WHERE payment_transfer_id = ? AND status = 'pending_payment'");
             $update->execute([$transferId]);
             if ($update->rowCount() !== 1) {
@@ -341,9 +347,11 @@ try {
             $noticeAction = 'cancelled';
             $noticeSide = 'recipient';
         } else {
-            $canReceive = $transfer['recipient_role'] === 'station_hq'
-                ? payment_transfer_user_owns_hq($pdo, $userId, (int) $transfer['recipient_headquarter_id'])
-                : payment_transfer_user_is_admin($pdo, $userId);
+            $canReceive = $transfer['payment_type'] === 'hq_period_extension'
+                ? payment_transfer_user_is_admin_or_moderator($pdo, $userId)
+                : ($transfer['recipient_role'] === 'station_hq'
+                    ? payment_transfer_user_owns_hq($pdo, $userId, (int) $transfer['recipient_headquarter_id'])
+                    : payment_transfer_user_is_admin($pdo, $userId));
             if (!$canReceive || $isPayer || (string) $transfer['status'] !== 'payer_reported_paid') {
                 throw new RuntimeException('Your account is not authorized to update this payment record.');
             }
@@ -358,6 +366,38 @@ try {
                     payment_transfer_apply_hq_entitlements($pdo, $transfer);
                 }
                 $eventNote = 'Designated recipient recorded receipt.';
+                if ($transfer['payment_type'] === 'hq_period_extension') {
+                    if (!payment_transfer_ensure_hq_service_expiry_schema($pdo)) {
+                        throw new RuntimeException('HQ service-period storage is unavailable.');
+                    }
+                    $headquarterId = (int) ($transfer['payer_headquarter_id'] ?? 0);
+                    $months = (int) ($transfer['term_months'] ?? 0);
+                    if ($headquarterId <= 0 || $months < 1 || $months > 24) {
+                        throw new RuntimeException('The service extension details are invalid.');
+                    }
+                    $expiryStmt = $pdo->prepare('SELECT service_expires_at FROM headquarter WHERE headquarter_id = ? FOR UPDATE');
+                    $expiryStmt->execute([$headquarterId]);
+                    $currentExpiry = $expiryStmt->fetchColumn();
+                    if ($currentExpiry === false) {
+                        throw new RuntimeException('The company account for this extension no longer exists.');
+                    }
+                    $now = new DateTimeImmutable();
+                    $start = $currentExpiry && new DateTimeImmutable((string) $currentExpiry) > $now
+                        ? new DateTimeImmutable((string) $currentExpiry)
+                        : $now;
+                    $newExpiry = payment_transfer_add_months_clamped($start, $months)->format('Y-m-d H:i:s');
+                    $expiryUpdate = $pdo->prepare('UPDATE headquarter SET service_expires_at = ? WHERE headquarter_id = ?');
+                    $expiryUpdate->execute([$newExpiry, $headquarterId]);
+                                        $ownerStatus = $pdo->prepare(
+                                                "UPDATE users u
+                                                 INNER JOIN headquarter h ON h.headquarters_owner_id = u.user_id
+                                                 SET u.status = 'active', u.updated_at = NOW()
+                                                 WHERE h.headquarter_id = ? AND LOWER(COALESCE(u.status, '')) = 'expired'
+                                                     AND (h.business_license_expire_date IS NULL OR h.business_license_expire_date = '' OR h.business_license_expire_date >= CURDATE())"
+                                        );
+                                        $ownerStatus->execute([$headquarterId]);
+                    $eventNote = 'Admin or Moderator recorded receipt and extended HQ service through ' . $newExpiry . '.';
+                }
                 if ($transfer['payment_type'] === 'hq_station_operating_quote') {
                     $applied = payment_transfer_apply_operating_fee($pdo, $transfer);
                     $eventNote = $applied

@@ -15,6 +15,7 @@
  */
 
 require_once __DIR__ . '/loyalty_config.php';
+require_once __DIR__ . '/billing_config.php';
 
 /** A failed redemption transfer must roll back the enclosing fuel fill. */
 class LoyaltyTransferException extends RuntimeException
@@ -690,7 +691,8 @@ function company_loyalty_station_is_paid(PDO $pdo, int $stationId): bool
     }
     try {
         $stationStmt = $pdo->prepare(
-            "SELECT sbs.headquarter_id, GREATEST(0, COALESCE(h.station_count, 0)) AS base_slots,
+                "SELECT sbs.headquarter_id, GREATEST(0, COALESCE(h.station_count, 0)) AS base_slots,
+                    h.included_stations_free_until,
                     (SELECT COUNT(*)
                      FROM branches ordered_branch
                      INNER JOIN station_business_scope ordered_scope ON ordered_scope.station_id = ordered_branch.branch_id
@@ -713,6 +715,11 @@ function company_loyalty_station_is_paid(PDO $pdo, int $stationId): bool
         $extraSlotRequired = $baseSlots < 1 ? 0 : max(0, (int) $station['station_order'] - $baseSlots);
         if ($extraSlotRequired > company_loyalty_current_month_slots($pdo, (int) $station['headquarter_id'])) {
             return false;
+        }
+        if ((int) $station['station_order'] <= BILLING_HQ_INCLUDED_STATION_SLOTS
+            && !empty($station['included_stations_free_until'])
+            && strtotime((string) $station['included_stations_free_until']) > time()) {
+            return true;
         }
 
         $stmt = $pdo->prepare(
