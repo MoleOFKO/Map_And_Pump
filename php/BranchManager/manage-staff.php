@@ -149,9 +149,42 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if ($action === 'delete') {
             $sid = (int)($_POST['staff_id'] ?? 0);
-            $stmt = $pdo->prepare("DELETE FROM staff WHERE staff_id = :sid AND branch_id = :b");
-            $stmt->execute([':sid' => $sid, ':b' => $bid]);
-            log_activity($pdo, $bid, 'user', $user['user_id'], $user['full_name'], "Deleted staff #{$sid}");
+
+            $pdo->beginTransaction();
+            $stmt = $pdo->prepare("
+                SELECT s.staff_id, s.user_id, s.full_name, s.staff_code
+                FROM staff s
+                INNER JOIN users u ON u.user_id = s.user_id
+                WHERE s.staff_id = :sid
+                  AND s.branch_id = :branch_id
+                  AND EXISTS (
+                      SELECT 1
+                      FROM roles r
+                      WHERE r.role_id IN (u.role_id, u.business_role_id, u.current_role_id)
+                        AND LOWER(r.role_name) = 'staff'
+                  )
+                FOR UPDATE
+            ");
+            $stmt->execute([':sid' => $sid, ':branch_id' => $bid]);
+            $target = $stmt->fetch(PDO::FETCH_ASSOC);
+            if (!$target) {
+                $pdo->rollBack();
+                json_out(['ok' => false, 'error' => 'That staff account is not available in your branch.'], 404);
+            }
+
+            $disable = $pdo->prepare("UPDATE users SET status = 'disabled', updated_at = NOW() WHERE user_id = :user_id");
+            $disable->execute([':user_id' => (int) $target['user_id']]);
+
+            $delete = $pdo->prepare("DELETE FROM staff WHERE staff_id = :sid AND branch_id = :branch_id");
+            $delete->execute([':sid' => $sid, ':branch_id' => $bid]);
+            if ($delete->rowCount() !== 1) {
+                $pdo->rollBack();
+                json_out(['ok' => false, 'error' => 'The staff account could not be deleted. Please refresh and try again.'], 409);
+            }
+            $pdo->commit();
+
+            $staffLabel = "{$target['full_name']} ({$target['staff_code']})";
+            log_activity($pdo, $bid, 'user', $user['user_id'], $user['full_name'], "Deleted staff account: {$staffLabel}");
             json_out(['ok' => true]);
         }
 
@@ -231,6 +264,7 @@ $activities = $stmt->fetchAll();
   @media (prefers-reduced-motion: reduce){ *{animation-duration:0.001ms !important; animation-iteration-count:1 !important; transition: none !important;} }
 
   .app-shell{display:flex; min-height:100vh;}
+  #delete-confirm-btn:disabled{opacity:.55; cursor:not-allowed !important;}
   
   /* ---------- sidebar ---------- */
   .sidebar{
@@ -408,10 +442,12 @@ $activities = $stmt->fetchAll();
   .chip.active{background:rgba(251,191,36,0.16); border-color:rgba(251,191,36,0.4); color:var(--amber-300);}
 
   .panel{background:linear-gradient(160deg, var(--navy-800), var(--navy-900)); border:1px solid rgba(255,255,255,0.07); border-radius:18px; overflow:hidden;}
+  #tab-manage .panel{overflow:visible;}
   table{width:100%; border-collapse:collapse;}
   thead th{text-align:left; font-size:11.5px; color:var(--slate-400); text-transform:uppercase; letter-spacing:0.4px; padding:14px 18px; border-bottom:1px solid rgba(255,255,255,0.07);}
   
   tbody tr { transition: opacity 0.2s ease, transform 0.2s ease, background-color 0.2s ease; }
+  tbody tr:focus-within{position:relative; z-index:2;}
   tbody td{padding:14px 18px; font-size:13.5px; border-bottom:1px solid rgba(255,255,255,0.05);}
   tbody tr:last-child td{border-bottom:none;}
   tbody tr:hover{background:rgba(255,255,255,0.02);}
@@ -485,6 +521,16 @@ $activities = $stmt->fetchAll();
     transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
   }
   .modal-overlay.active .modal-card-custom { transform: scale(1); }
+  .delete-modal-card{width:calc(100% - 32px); max-width:560px; padding:36px; border-color:rgba(248,113,113,0.35);}
+  .delete-modal-icon{width:60px; height:60px; border-radius:50%; background:rgba(248,113,113,0.16); color:var(--red-400); display:flex; align-items:center; justify-content:center; font-size:25px; margin-bottom:20px;}
+  .delete-modal-title{font-size:22px; line-height:1.3; font-weight:750; margin:0 0 12px; color:var(--slate-50);}
+  .delete-modal-message{font-size:15px; color:var(--slate-300); line-height:1.7; margin:0;}
+  .delete-modal-message p{margin:0 0 12px;}
+  .delete-target{display:block; margin:12px 0 16px; padding:16px 18px; border:1px solid rgba(251,191,36,0.4); border-radius:12px; background:rgba(251,191,36,0.1); color:#fff; font-size:22px; line-height:1.35; font-weight:750; overflow-wrap:anywhere;}
+  .delete-account-details{color:#dbe5f5; font-size:14px;}
+  #delete-modal .modal-actions{margin-top:28px; gap:14px;}
+  #delete-modal .modal-actions button{min-height:46px; padding:12px 20px; font-size:14px;}
+  @media (max-width:600px){.delete-modal-card{padding:26px 22px;}.delete-target{font-size:19px;}}
   
   .modal-header-custom { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
   .modal-header-custom h3 { font-size: 18px; font-weight: 700; margin: 0; }
@@ -764,14 +810,14 @@ $activities = $stmt->fetchAll();
 
 <!-- ---------- Delete Confirmation Modal (custom red danger dialog) ---------- -->
 <div class="modal-overlay" id="delete-modal">
-  <div class="modal-card-custom" style="max-width:440px; border:1px solid rgba(248,113,113,0.25);">
-    <div style="width:52px; height:52px; border-radius:50%; background:rgba(248,113,113,0.14); color:var(--red-400); display:flex; align-items:center; justify-content:center; font-size:22px; margin-bottom:16px;">
+  <div class="modal-card-custom delete-modal-card">
+    <div class="delete-modal-icon">
       <i class="fa-solid fa-triangle-exclamation"></i>
     </div>
-    <h3 style="font-size:17px; font-weight:700; margin-bottom:8px;">Delete Staff Account?</h3>
-    <p id="delete-modal-msg" style="font-size:13px; color:var(--slate-300); line-height:1.6; margin-bottom:22px;">
-      This will permanently remove this staff member and cannot be undone.
-    </p>
+    <h3 class="delete-modal-title">Delete Staff Account?</h3>
+    <div id="delete-modal-msg" class="delete-modal-message">
+      <p>Confirm that this is the correct staff account before continuing.</p>
+    </div>
     <div class="modal-actions">
       <button type="button" class="btn-secondary-custom" id="delete-cancel-btn">Cancel</button>
       <button type="button" id="delete-confirm-btn"
@@ -866,19 +912,52 @@ $activities = $stmt->fetchAll();
     const deleteCancel  = document.getElementById('delete-cancel-btn');
     const deleteConfirm = document.getElementById('delete-confirm-btn');
     let pendingDeleteRow = null;
+    let deleteCooldownTimer = null;
 
     function openDeleteModal(row) {
       pendingDeleteRow = row;
       const deleteAction = row.querySelector('.delete-action');
       const name = deleteAction?.dataset.name || 'this staff member';
       const code = deleteAction?.dataset.code || '';
-      deleteMsg.innerHTML = `You are about to permanently remove <b>${name}</b>${code ? ` (<b>${code}</b>)` : ''}. This action cannot be undone.`;
+      const intro = document.createElement('p');
+      intro.textContent = 'You are about to permanently remove this staff member and disable their login account. Please verify the account details:';
+      const highlightedName = document.createElement('strong');
+      highlightedName.className = 'delete-target';
+      highlightedName.textContent = name;
+      const details = document.createElement('p');
+      details.className = 'delete-account-details';
+      details.textContent = `${code ? `Staff ID: ${code}. ` : ''}This action cannot be undone.`;
+      deleteMsg.replaceChildren(
+        intro,
+        highlightedName,
+        details
+      );
+
+      if (deleteCooldownTimer !== null) clearInterval(deleteCooldownTimer);
+      let secondsRemaining = 10;
+      deleteConfirm.disabled = true;
+      deleteConfirm.textContent = `Please wait (${secondsRemaining}s)`;
+      deleteCooldownTimer = setInterval(() => {
+        secondsRemaining -= 1;
+        if (secondsRemaining <= 0) {
+          clearInterval(deleteCooldownTimer);
+          deleteCooldownTimer = null;
+          deleteConfirm.disabled = false;
+          deleteConfirm.textContent = 'Delete Permanently';
+          return;
+        }
+        deleteConfirm.textContent = `Please wait (${secondsRemaining}s)`;
+      }, 1000);
       deleteModal.classList.add('active');
     }
 
     function closeDeleteModal() {
       deleteModal.classList.remove('active');
       pendingDeleteRow = null;
+      if (deleteCooldownTimer !== null) {
+        clearInterval(deleteCooldownTimer);
+        deleteCooldownTimer = null;
+      }
     }
 
     function updateTotalMetrics() {
@@ -1008,7 +1087,7 @@ $activities = $stmt->fetchAll();
     });
 
     deleteConfirm.addEventListener('click', async () => {
-      if (!pendingDeleteRow) return;
+      if (!pendingDeleteRow || deleteConfirm.disabled) return;
       const row = pendingDeleteRow;
       const sid = row.dataset.id;
       deleteConfirm.disabled = true;
