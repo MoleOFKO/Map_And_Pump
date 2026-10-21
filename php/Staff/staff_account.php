@@ -406,8 +406,6 @@ $branchCode = trim((string) ($user['branch_code'] ?? '')) ?: 'N/A';
                     </a>
                 </div>
 
-                <div class="dashboard-card p-4 mt-4 border border-danger border-opacity-25" style="background:rgba(255,77,106,.045)!important;"><h6 class="fw-bold text-danger mb-2"><i class="bi bi-exclamation-triangle-fill me-2"></i>Delete Account</h6><p class="text-white-50 small">This deactivates your Staff account and signs you out. Type <code>DELETE</code> to continue.</p><form action="/php/account_self_delete.php" method="POST" class="row g-3 align-items-end"><input type="hidden" name="return_to" value="/php/Staff/staff_account.php"><div class="col-12 col-md-5"><input class="form-control glass-input" name="confirmation" autocomplete="off" placeholder="Type DELETE" required></div><div class="col-12 col-md-4"><label class="form-check text-white-50 small mb-0"><input class="form-check-input" type="checkbox" name="confirm_deletion" value="yes" required> I understand this disables my account.</label></div><div class="col-12 col-md-3"><button class="btn btn-outline-danger w-100" type="submit">Deactivate Account</button></div></form></div>
-
             </div>
         </div>
     </div>

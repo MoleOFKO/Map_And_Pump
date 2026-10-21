@@ -75,6 +75,10 @@ try {
         [$user['primary_role_name'] ?? '', $user['business_role_name'] ?? '', $user['active_role_name'] ?? '']
     );
     $isAdmin = in_array('admin', $roles, true);
+    if (in_array('staff', $roles, true)) {
+        self_delete_fail('Staff accounts can only be deleted by their branch manager.');
+    }
+
     if ($isAdmin) {
         $otherAdminCount = $pdo->query(
             "SELECT COUNT(*) FROM users u
