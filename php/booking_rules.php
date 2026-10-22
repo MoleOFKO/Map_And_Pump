@@ -2,13 +2,18 @@
 /**
  * MAP & PUMP — booking and fuel-quota rules (single source of truth).
  *
- * Product direction:
- * - One active booking per customer vehicle at a time.
- * - Booking quantity is chosen by the driver up to the remaining quota.
- * - Quota resets weekly (or monthly when configured).
- * - Bookings expire after a short window if not filled at the station.
+ * Product rules:
+ * - One active reservation per customer account across all stations.
+ * - A reservation holds the requested liters until it expires, is cancelled,
+ *   or is fulfilled. A completed fill permanently reduces tank stock.
+ * - Weekly fuel quota resets Sunday at 00:00 in Asia/Yangon.
  */
 
+if (!defined('MAP_PUMP_MAX_ACTIVE_PER_USER')) {
+    define('MAP_PUMP_MAX_ACTIVE_PER_USER', 1);
+}
+
+// Kept as a compatibility constant for any older UI still referring to it.
 if (!defined('MAP_PUMP_BOOKING_MAX_ACTIVE_PER_CAR')) {
     define('MAP_PUMP_BOOKING_MAX_ACTIVE_PER_CAR', 1);
 }
@@ -18,33 +23,58 @@ if (!defined('MAP_PUMP_FUEL_QUOTA_LITERS')) {
 }
 
 if (!defined('MAP_PUMP_FUEL_QUOTA_PERIOD')) {
-    $period = strtolower(trim((string) (getenv('MAP_PUMP_FUEL_QUOTA_PERIOD') ?: 'weekly')));
-    define('MAP_PUMP_FUEL_QUOTA_PERIOD', in_array($period, ['weekly', 'monthly'], true) ? $period : 'weekly');
+    define('MAP_PUMP_FUEL_QUOTA_PERIOD', 'weekly');
 }
 
 if (!defined('MAP_PUMP_BOOKING_EXPIRY_HOURS')) {
     define('MAP_PUMP_BOOKING_EXPIRY_HOURS', 1);
 }
 
+if (!function_exists('map_pump_booking_configure_timezone')) {
+    function map_pump_booking_configure_timezone(PDO $pdo): void
+    {
+        static $configured = false;
+        if ($configured) {
+            return;
+        }
+        date_default_timezone_set('Asia/Yangon');
+        // Avoid relying on the database's timezone tables for this fixed offset.
+        $pdo->exec("SET time_zone = '+06:30'");
+        $configured = true;
+    }
+}
+
+if (!function_exists('map_pump_fuel_quota_week_window')) {
+    /** Return [start, end) in Myanmar local time for the current Sunday week. */
+    function map_pump_fuel_quota_week_window(?DateTimeImmutable $now = null): array
+    {
+        $zone = new DateTimeZone('Asia/Yangon');
+        $now = ($now ?? new DateTimeImmutable('now', $zone))->setTimezone($zone);
+        $start = $now->setTime(0, 0, 0)->modify('-' . (int) $now->format('w') . ' days');
+        return [$start->format('Y-m-d H:i:s'), $start->modify('+7 days')->format('Y-m-d H:i:s')];
+    }
+}
+
 if (!function_exists('map_pump_fuel_quota_interval_sql')) {
     function map_pump_fuel_quota_interval_sql(): string
     {
-        return MAP_PUMP_FUEL_QUOTA_PERIOD === 'monthly' ? 'INTERVAL 30 DAY' : 'INTERVAL 7 DAY';
+        // Compatibility only. New quota logic must use calendar-week bounds.
+        return 'INTERVAL 7 DAY';
     }
 }
 
 if (!function_exists('map_pump_fuel_quota_period_label')) {
     function map_pump_fuel_quota_period_label(): string
     {
-        return MAP_PUMP_FUEL_QUOTA_PERIOD === 'monthly' ? 'monthly' : 'weekly';
+        return 'weekly';
     }
 }
 
 if (!function_exists('map_pump_booking_active_statuses')) {
-    /** Status values that count as an open booking for the one-booking-per-car rule. */
+    /** Statuses that continue to hold a reservation and its stock. */
     function map_pump_booking_active_statuses(): array
     {
-        return ['notfilled', 'serving'];
+        return ['notfilled', 'waiting', 'serving'];
     }
 }
 
@@ -53,13 +83,15 @@ if (!function_exists('map_pump_booking_rules_summary')) {
     {
         return [
             'marketplace' => 'Shared marketplace for drivers and participating fuel companies.',
-            'one_active_booking_per_car' => true,
-            'max_active_bookings_per_car' => MAP_PUMP_BOOKING_MAX_ACTIVE_PER_CAR,
+            'one_active_booking_per_user' => true,
+            'max_active_bookings_per_user' => MAP_PUMP_MAX_ACTIVE_PER_USER,
             'quota_liters' => MAP_PUMP_FUEL_QUOTA_LITERS,
-            'quota_period' => map_pump_fuel_quota_period_label(),
+            'quota_period' => 'weekly',
+            'quota_timezone' => 'Asia/Yangon',
+            'quota_reset' => 'Sunday 00:00 Asia/Yangon',
             'booking_expiry_hours' => MAP_PUMP_BOOKING_EXPIRY_HOURS,
-            'quantity_rule' => 'Driver selects liters up to remaining quota when booking.',
-            'stock_rule' => 'Branch managers update live tank stock and prices; public pages read the latest approved rows.',
+            'quantity_rule' => 'Driver reserves fixed liters up to the selected vehicle quota; accepted partial fills are recorded at actual liters.',
+            'stock_rule' => 'Active reservations reduce customer-facing available stock. Completed fills permanently reduce physical tank stock.',
             'company_isolation' => 'Each HQ company only sees and changes its own stations, staff, and inventory.',
         ];
     }

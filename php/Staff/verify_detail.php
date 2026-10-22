@@ -4,6 +4,7 @@ require_once __DIR__ . '/../Customer/car_access.php';
 require __DIR__ . '/../conn.php';
 require_once __DIR__ . '/../business_scope.php';
 require_once __DIR__ . '/../loyalty_points.php';
+require_once __DIR__ . '/../booking_reservations.php';
 
 $staffCanAccessBranch = static function (int $staffUserId, int $branchId) use ($pdo): bool {
     return function_exists('map_pump_staff_can_access_branch')
@@ -20,6 +21,8 @@ function redirect_to_login(string $message = 'Please sign in to continue.')
 if (empty($_SESSION['is_logged_in']) || empty($_SESSION['user_id'])) {
     redirect_to_login();
 }
+if (empty($_SESSION['staff_verify_csrf_token'])) $_SESSION['staff_verify_csrf_token'] = bin2hex(random_bytes(32));
+$staffVerifyCsrfToken = (string)$_SESSION['staff_verify_csrf_token'];
 
 $flash = $_SESSION['verify_flash'] ?? null;
 unset($_SESSION['verify_flash']);
@@ -32,10 +35,13 @@ $fillableLiters = $weeklyLimitLiters;
 if ($bookingId > 0) {
     $stmt = $pdo->prepare(
         'SELECT b.booking_id, b.user_id, b.station_id, b.oil_type_id, b.qr_code, b.qr_refrence_code,
+                r.requested_liters, po.offered_liters, po.status AS partial_offer_status,
                 b.status, b.filled_gas, b.time_of_filled, b.expire_at, b.created_at,
                 s.branch_name AS station_name, o.oil_name, u.user_name, b.car_license_id,
                 c.filled_gas AS weekly_filled_gas, c.updated_at AS car_license_updated_at
          FROM booking b
+         LEFT JOIN booking_reservations r ON r.booking_id = b.booking_id
+         LEFT JOIN booking_partial_offers po ON po.booking_id = b.booking_id
          LEFT JOIN branches s ON s.branch_id = b.station_id
          LEFT JOIN oil_types o ON o.oil_type_id = b.oil_type_id
          LEFT JOIN users u ON u.user_id = b.user_id
@@ -67,7 +73,8 @@ $customerUid = $booking['user_id'] ?? '';
 $oilType = $booking['oil_name'] ?? 'Unknown';
 $stationName = $booking['station_name'] ?? 'Unknown station';
 $bookingCode = $booking['qr_refrence_code'] ?? '';
-$isFilled = isset($booking['status']) && in_array(strtolower((string)$booking['status']), ['filled', 'completed', 'cancelled', 'expired'], true);
+$isFilled = isset($booking['status']) && in_array(strtolower((string)$booking['status']), ['filled', 'completed', 'cancelled', 'expired', 'station_unable_to_fulfill'], true);
+$maxFillLiters = $booking ? min($fillableLiters, (float)($booking['requested_liters'] ?? 0)) : 0.0;
 $customerName = $booking['user_name'] ?? 'Customer';
 $weeklyFilledDisplay = rtrim(rtrim(number_format($weeklyFilledLiters, 1, '.', ''), '0'), '.');
 $fillableDisplay = rtrim(rtrim(number_format($fillableLiters, 1, '.', ''), '0'), '.');
@@ -205,6 +212,8 @@ if (!empty($booking['user_id'])) {
                                 <div class="p-3 rounded-4" style="background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);">
                                     <div class="detail-label mb-2">Booking Code</div>
                                     <div class="detail-value"><?php echo htmlspecialchars($bookingCode, ENT_QUOTES, 'UTF-8'); ?></div>
+                                    <div class="text-white-50 small mt-2">Reserved: <?php echo htmlspecialchars(rtrim(rtrim(number_format((float)($booking['requested_liters'] ?? 0), 2, '.', ''), '0'), '.') . ' L', ENT_QUOTES, 'UTF-8'); ?></div>
+                                    <?php if (($booking['partial_offer_status'] ?? '') === 'pending'): ?><div class="text-warning small mt-2">Waiting for driver to accept <?php echo htmlspecialchars((string)$booking['offered_liters']); ?> L.</div><?php endif; ?>
                                 </div>
                             </div>
                             <div class="col-12">
@@ -256,12 +265,13 @@ if (!empty($booking['user_id'])) {
 
                         <form action="verify_process.php" method="POST" class="text-start">
                             <input type="hidden" name="action" value="confirm">
+                            <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($staffVerifyCsrfToken, ENT_QUOTES, 'UTF-8'); ?>">
                             <input type="hidden" name="booking_id" value="<?php echo htmlspecialchars($bookingId, ENT_QUOTES, 'UTF-8'); ?>">
 
                             <div class="mb-4">
                                 <label for="amountLiters" class="form-label text-white-50">Amount (Liters)</label>
-                                <input type="number" step="0.1" min="0.1" max="<?php echo htmlspecialchars((string)$fillableLiters, ENT_QUOTES, 'UTF-8'); ?>" class="form-control glass-input border-0 px-3 py-3 text-white" id="amountLiters" name="amount_liters" placeholder="Enter amount in liters" <?php echo ($isFilled || $fillableLiters <= 0) ? 'disabled' : 'required'; ?> <?php echo $isFilled ? 'value="0"' : ''; ?> style="color:#fff;" />
-                                <div class="form-text text-white-50">Available to fill: <?php echo htmlspecialchars($fillableDisplay, ENT_QUOTES, 'UTF-8'); ?> L</div>
+                                <input type="number" step="0.1" min="0.1" max="<?php echo htmlspecialchars((string)$maxFillLiters, ENT_QUOTES, 'UTF-8'); ?>" class="form-control glass-input border-0 px-3 py-3 text-white" id="amountLiters" name="amount_liters" placeholder="Enter actual dispensed liters" <?php echo ($isFilled || $maxFillLiters <= 0 || (($booking['partial_offer_status'] ?? '') === 'pending')) ? 'disabled' : 'required'; ?> <?php echo $isFilled ? 'value="0"' : ''; ?> style="color:#fff;" />
+                                <div class="form-text text-white-50">Maximum: <?php echo htmlspecialchars(rtrim(rtrim(number_format($maxFillLiters, 2, '.', ''), '0'), '.'), ENT_QUOTES, 'UTF-8'); ?> L. A smaller amount requires the driver's acceptance first.</div>
                             </div>
 
                             <button type="submit" class="btn btn-neon w-100 py-2 rounded-pill" <?php echo ($isFilled || $fillableLiters <= 0) ? 'disabled' : ''; ?> >
@@ -274,6 +284,24 @@ if (!empty($booking['user_id'])) {
                                 <p class="text-warning small mt-3">This customer has reached the weekly fuel limit.</p>
                             <?php endif; ?>
                         </form>
+                        <?php if (!$isFilled && !in_array(strtolower((string)($booking['partial_offer_status'] ?? '')), ['accepted'], true)): ?>
+                            <form action="verify_process.php" method="POST" class="text-start mt-3">
+                                <input type="hidden" name="action" value="offer_partial">
+                                <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($staffVerifyCsrfToken, ENT_QUOTES, 'UTF-8'); ?>">
+                                <input type="hidden" name="booking_id" value="<?php echo htmlspecialchars((string)$bookingId, ENT_QUOTES, 'UTF-8'); ?>">
+                                <label for="offerLiters" class="form-label text-white-50">Offer a smaller amount (driver must accept)</label>
+                                <input type="number" step="0.1" min="0.1" max="<?php echo htmlspecialchars((string)max(0.1, (float)($booking['requested_liters'] ?? 0) - 0.1), ENT_QUOTES, 'UTF-8'); ?>" class="form-control glass-input border-0 px-3 py-3 text-white mb-2" id="offerLiters" name="amount_liters" required>
+                                <button type="submit" class="btn btn-outline-warning w-100 py-2 rounded-pill">Send partial-fill offer to driver</button>
+                            </form>
+                        <?php endif; ?>
+                        <?php if (!$isFilled): ?>
+                            <form action="verify_process.php" method="POST" class="mt-2" onsubmit="return confirm('Close this reservation as unfulfillable and issue a full-value station coupon?');">
+                                <input type="hidden" name="action" value="unable_to_fulfill">
+                                <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($staffVerifyCsrfToken, ENT_QUOTES, 'UTF-8'); ?>">
+                                <input type="hidden" name="booking_id" value="<?php echo htmlspecialchars((string)$bookingId, ENT_QUOTES, 'UTF-8'); ?>">
+                                <button type="submit" class="btn btn-outline-danger w-100 py-2 rounded-pill">Unable to fulfill — issue full-value coupon</button>
+                            </form>
+                        <?php endif; ?>
                     <?php endif; ?>
                 </div>
             </div>

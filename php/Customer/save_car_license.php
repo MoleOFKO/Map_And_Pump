@@ -95,7 +95,7 @@ function customer_car_license_schema_ready(PDO $pdo): bool
                 vehicle_type varchar(100) NOT NULL,
                 chassis_number varchar(20) DEFAULT NULL,
                 location varchar(255) NOT NULL,
-                filled_gas int NOT NULL DEFAULT 0,
+                filled_gas decimal(10,2) NOT NULL DEFAULT 0.00,
                 issue_date date DEFAULT NULL,
                 license_expire_date date DEFAULT NULL,
                 status varchar(20) NOT NULL DEFAULT 'pending',

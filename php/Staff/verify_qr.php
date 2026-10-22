@@ -1,4 +1,9 @@
-<?php session_start(); $verifyFlash = $_SESSION['verify_flash'] ?? null; unset($_SESSION['verify_flash']); ?>
+<?php
+session_start();
+if (empty($_SESSION['staff_verify_csrf_token'])) $_SESSION['staff_verify_csrf_token'] = bin2hex(random_bytes(32));
+$staffVerifyCsrfToken = (string)$_SESSION['staff_verify_csrf_token'];
+$verifyFlash = $_SESSION['verify_flash'] ?? null; unset($_SESSION['verify_flash']);
+?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -85,6 +90,7 @@
                     
                     <form id="manualVerifyForm" action="verify_process.php" method="POST" class="text-start">
                         <input type="hidden" name="action" value="verify">
+                        <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($staffVerifyCsrfToken, ENT_QUOTES, 'UTF-8') ?>">
                         <div class="mb-4">
                             <label for="bookingCode" class="form-label text-white-50 small">Booking Reference Code</label>
                             <div class="input-group">
@@ -198,6 +204,7 @@
             const payload = new URLSearchParams();
             payload.append('action', 'verify');
             payload.append('booking_code', codeField.value.trim());
+            payload.append('csrf_token', <?= json_encode($staffVerifyCsrfToken) ?>);
             button.disabled = true;
             try {
                 await submitVerification(payload);
@@ -253,6 +260,7 @@
                             payload.append('action', 'verify');
                             payload.append('booking_code', bookingCode);
                             payload.append('qr_payload', raw);
+                            payload.append('csrf_token', <?= json_encode($staffVerifyCsrfToken) ?>);
 
                             try {
                                 try {

@@ -136,8 +136,8 @@ function customer_fuel_quota(PDO $pdo, int $userId): array
 
 function customer_fuel_quota_for_car(PDO $pdo, int $userId, int $carId): array
 {
+    map_pump_booking_configure_timezone($pdo);
     $limit = MAP_PUMP_FUEL_QUOTA_LITERS;
-    $intervalSql = map_pump_fuel_quota_interval_sql();
     $quota = [
         'limit' => $limit,
         'used' => 0.0,
@@ -150,8 +150,14 @@ function customer_fuel_quota_for_car(PDO $pdo, int $userId, int $carId): array
         return $quota;
     }
 
-    $carStmt = $pdo->prepare('SELECT filled_gas, updated_at FROM car_license WHERE car_license_id = ? LIMIT 1');
-    $carStmt->execute([$carId]);
+    $carStmt = $pdo->prepare(
+        'SELECT c.filled_gas, c.updated_at
+         FROM user_car uc
+         INNER JOIN car_license c ON c.car_license_id = uc.car_id
+         WHERE uc.user_id = ? AND uc.car_id = ?
+         LIMIT 1'
+    );
+    $carStmt->execute([$userId, $carId]);
     $car = $carStmt->fetch(PDO::FETCH_ASSOC) ?: [];
     if (!$car) {
         return $quota;
@@ -170,27 +176,21 @@ function customer_fuel_quota_for_car(PDO $pdo, int $userId, int $carId): array
     }
 
     if ($historyReady) {
+        [$weekStart, $weekEnd] = map_pump_fuel_quota_week_window();
         $usageStmt = $pdo->prepare(
             "SELECT COALESCE(SUM(filled_liters), 0)
              FROM usage_history
              WHERE user_id = ?
                AND car_license_id = ?
-               AND filled_at >= DATE_SUB(NOW(), {$intervalSql})"
+               AND LOWER(status) = 'filled'
+               AND filled_at >= ? AND filled_at < ?"
         );
-        $usageStmt->execute([$userId, $carId]);
+        $usageStmt->execute([$userId, $carId, $weekStart, $weekEnd]);
         $used = (float)$usageStmt->fetchColumn();
-    }
-
-    if ($used <= 0.0) {
-        $updatedAt = (string)($car['updated_at'] ?? '');
-        $resetDays = MAP_PUMP_FUEL_QUOTA_PERIOD === 'monthly' ? '-30 days' : '-7 days';
-        if ($updatedAt !== '' && strtotime($updatedAt) < strtotime($resetDays)) {
-            $resetStmt = $pdo->prepare('UPDATE car_license SET filled_gas = 0, updated_at = NOW() WHERE car_license_id = ?');
-            $resetStmt->execute([$carId]);
-            $used = 0.0;
-        } else {
-            $used = (float)($car['filled_gas'] ?? 0.0);
-        }
+    } else {
+        // Without the authoritative fill ledger, fail closed instead of
+        // trusting the legacy, period-ambiguous car_license counter.
+        $used = (float)$limit;
     }
 
     $used = max(0.0, min($limit, $used));

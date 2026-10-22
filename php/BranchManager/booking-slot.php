@@ -11,6 +11,11 @@ require_once __DIR__ . '/_helpers.php';
 require_once __DIR__ . '/../conn.php';
 require_branch_manager();
 require_once __DIR__ . '/../usage_history_schema.php';
+require_once __DIR__ . '/../booking_rules.php';
+require_once __DIR__ . '/../booking_reservations.php';
+require_once __DIR__ . '/../Customer/car_access.php';
+require_once __DIR__ . '/../Customer/license_access.php';
+require_once __DIR__ . '/../business_scope.php';
 require_once __DIR__ . '/../loyalty_points.php';
 
 $ctx      = current_context($pdo);
@@ -18,6 +23,8 @@ $user     = $ctx['user'];
 $branch   = $ctx['branch'];
 $initials = initials($user['full_name']);
 $bid      = (int)$branch['branch_id'];
+map_pump_booking_configure_timezone($pdo);
+customer_license_status_column_ready($pdo);
 
 // Prepare loyalty tables before any fill transaction (MySQL DDL can commit).
 map_pump_usage_history_schema_ready($pdo);
@@ -42,8 +49,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 INNER JOIN station_business_scope sbs ON sbs.station_id = bk.station_id
                 WHERE bk.booking_id = :t
                   AND bk.status IN ('notfilled', 'waiting')
+                  AND bk.expire_at > NOW()
                   AND sbs.branch_manager_user_id = :manager_id
-                LIMIT 1
+                LIMIT 1 FOR UPDATE
             ");
             $stmt->execute([':t' => $token_id, ':manager_id' => $user['user_id']]);
             $tok = $stmt->fetch();
@@ -54,13 +62,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 WHERE booking_id = :t AND status IN ('notfilled', 'waiting')
             ");
             $stmt->execute([':t' => $token_id]);
+            if ($stmt->rowCount() !== 1) { $pdo->rollBack(); json_out(['ok' => false, 'error' => 'Booking state changed. Refresh the queue.'], 409); }
 
             $stmt = $pdo->prepare("
               UPDATE pumps SET status = 'active', current_token = :tc
-              WHERE pump_id = :p AND branch_id = :b AND status IN ('idle', 'active')
+              WHERE pump_id = :p AND branch_id = :b AND status = 'idle' AND current_token IS NULL
             ");
             $stmt->execute([':tc' => $tok['token_code'], ':p' => $pump_id, ':b' => $bid]);
-            if ($stmt->rowCount() === 0) {
+            if ($stmt->rowCount() !== 1) {
               $pdo->rollBack();
               json_out(['ok' => false, 'error' => 'That pump is unavailable. Refresh and choose another pump.'], 409);
             }
@@ -68,6 +77,50 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             log_activity($pdo, $bid, 'user', $user['user_id'], $user['full_name'], "Called next token {$tok['token_code']} to pump #{$pump_id}");
             json_out(['ok' => true]);
+        }
+
+        if ($action === 'offer_partial') {
+            $token_id = (int)($_POST['token_id'] ?? 0);
+            $offered = round((float)($_POST['offered_liters'] ?? 0), 2);
+            $pdo->beginTransaction();
+            $stmt = $pdo->prepare("SELECT bk.booking_id, bk.station_id, bk.status, bk.expire_at, br.requested_liters
+                FROM booking bk INNER JOIN booking_reservations br ON br.booking_id = bk.booking_id
+                INNER JOIN station_business_scope sbs ON sbs.station_id = bk.station_id
+                WHERE bk.booking_id = ? AND sbs.branch_manager_user_id = ? LIMIT 1 FOR UPDATE");
+            $stmt->execute([$token_id, $user['user_id']]);
+            $bookingOffer = $stmt->fetch(PDO::FETCH_ASSOC);
+            if (!$bookingOffer || !in_array((string)$bookingOffer['status'], ['notfilled','waiting','serving'], true)
+                || strtotime((string)$bookingOffer['expire_at']) <= time() || $offered <= 0 || $offered >= (float)$bookingOffer['requested_liters']) {
+                $pdo->rollBack(); json_out(['ok' => false, 'error' => 'Invalid partial-fill offer.'], 409);
+            }
+            $stmt = $pdo->prepare("INSERT INTO booking_partial_offers (booking_id, offered_liters, status, offered_by, offered_at, answered_at)
+                VALUES (?, ?, 'pending', ?, NOW(), NULL)
+                ON DUPLICATE KEY UPDATE offered_liters = VALUES(offered_liters), status = 'pending', offered_by = VALUES(offered_by), offered_at = NOW(), answered_at = NULL");
+            $stmt->execute([$token_id, $offered, $user['user_id']]);
+            $pdo->commit();
+            json_out(['ok' => true]);
+        }
+
+        if ($action === 'unable_to_fulfill') {
+            $token_id = (int)($_POST['token_id'] ?? 0);
+            $pdo->beginTransaction();
+            $stmt = $pdo->prepare("SELECT bk.booking_id, bk.station_id, bk.status, bk.expire_at, p.pump_id
+                FROM booking bk INNER JOIN station_business_scope sbs ON sbs.station_id = bk.station_id
+                LEFT JOIN pumps p ON p.current_token = bk.qr_refrence_code AND p.branch_id = ?
+                WHERE bk.booking_id = ? AND sbs.branch_manager_user_id = ? LIMIT 1 FOR UPDATE");
+            $stmt->execute([$bid, $token_id, $user['user_id']]);
+            $unable = $stmt->fetch(PDO::FETCH_ASSOC);
+            if (!$unable || !in_array((string)$unable['status'], ['notfilled','waiting','serving'], true)
+                || strtotime((string)$unable['expire_at']) <= time()) { $pdo->rollBack(); json_out(['ok' => false, 'error' => 'Booking is no longer active.'], 409); }
+            $stmt = $pdo->prepare("UPDATE booking SET status = 'station_unable_to_fulfill' WHERE booking_id = ? AND status IN ('notfilled','waiting','serving')");
+            $stmt->execute([$token_id]);
+            map_pump_issue_shortfall_coupon($pdo, (int)$unable['booking_id'], 0.0);
+            if (!empty($unable['pump_id'])) {
+                $stmt = $pdo->prepare("UPDATE pumps SET status = 'idle', current_token = NULL WHERE pump_id = ?");
+                $stmt->execute([(int)$unable['pump_id']]);
+            }
+            $pdo->commit();
+            json_out(['ok' => true, 'message' => 'Closed and issued a full-value station coupon.']);
         }
 
         if ($action === 'complete') {
@@ -79,20 +132,44 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $pdo->beginTransaction();
             $stmt = $pdo->prepare("
                 SELECT bk.booking_id, bk.user_id, bk.car_license_id, bk.station_id, bk.oil_type_id,
+                       br.requested_liters, br.price_per_litre AS booking_price,
                        bk.qr_code, bk.qr_refrence_code AS token_code,
                        bk.created_at AS booked_at, bk.expire_at, p.pump_id,
                        COALESCE(bk.points_to_redeem, 0) AS points_to_redeem
                 FROM booking bk
+                INNER JOIN booking_reservations br ON br.booking_id = bk.booking_id
                 INNER JOIN station_business_scope sbs ON sbs.station_id = bk.station_id
                 LEFT JOIN pumps p ON p.current_token = bk.qr_refrence_code AND p.branch_id = :branch_id
                 WHERE bk.booking_id = :t
                   AND bk.status = 'serving'
                   AND sbs.branch_manager_user_id = :manager_id
-                LIMIT 1
+                  AND bk.expire_at > NOW()
+                LIMIT 1 FOR UPDATE
             ");
             $stmt->execute([':t' => $token_id, ':manager_id' => $user['user_id'], ':branch_id' => $bid]);
             $tok = $stmt->fetch();
             if (!$tok) { $pdo->rollBack(); json_out(['ok' => false, 'error' => 'Token not found']); }
+
+            if ($filled_liters > (float)$tok['requested_liters']) { $pdo->rollBack(); json_out(['ok' => false, 'error' => 'The fill cannot exceed the reserved quantity.'], 422); }
+            if ($filled_liters + 0.0001 < (float)$tok['requested_liters']) {
+                $offerCheck = $pdo->prepare("SELECT offered_liters FROM booking_partial_offers WHERE booking_id = ? AND status = 'accepted' LIMIT 1");
+                $offerCheck->execute([(int)$tok['booking_id']]);
+                $acceptedAmount = $offerCheck->fetchColumn();
+                if ($acceptedAmount === false || abs((float)$acceptedAmount - $filled_liters) > 0.01) { $pdo->rollBack(); json_out(['ok' => false, 'error' => 'The driver must accept this exact partial amount in their booking page.'], 409); }
+            }
+            $userLock = $pdo->prepare('SELECT user_id FROM users WHERE user_id = ? LIMIT 1 FOR UPDATE');
+            $userLock->execute([(int)$tok['user_id']]);
+            if (!$userLock->fetchColumn()) { $pdo->rollBack(); json_out(['ok' => false, 'error' => 'Customer account is unavailable.'], 409); }
+            if (!customer_license_valid_for_booking($pdo, (int)$tok['user_id'], true)) { $pdo->rollBack(); json_out(['ok' => false, 'error' => 'Driver license is expired or no longer approved.'], 403); }
+            $carLink = $pdo->prepare('SELECT 1 FROM user_car WHERE user_id = ? AND car_id = ? LIMIT 1 FOR UPDATE');
+            $carLink->execute([(int)$tok['user_id'], (int)$tok['car_license_id']]);
+            if (!$carLink->fetchColumn()) { $pdo->rollBack(); json_out(['ok' => false, 'error' => 'Vehicle is not linked to this customer.'], 403); }
+            $carStatus = $pdo->prepare('SELECT status, license_expire_date FROM car_license WHERE car_license_id = ? LIMIT 1 FOR UPDATE');
+            $carStatus->execute([(int)$tok['car_license_id']]);
+            $carData = $carStatus->fetch(PDO::FETCH_ASSOC);
+            if (!$carData || strtolower((string)$carData['status']) === 'expired' || (!empty($carData['license_expire_date']) && $carData['license_expire_date'] < date('Y-m-d'))) { $pdo->rollBack(); json_out(['ok' => false, 'error' => 'Vehicle registration is expired or invalid.'], 403); }
+            $quota = customer_fuel_quota_for_car($pdo, (int)$tok['user_id'], (int)$tok['car_license_id']);
+            if ($filled_liters > (float)$quota['remaining']) { $pdo->rollBack(); json_out(['ok' => false, 'error' => 'This fill exceeds the customer weekly quota.'], 422); }
 
             // Current unit price for this station + fuel (if configured).
             $priceStmt = $pdo->prepare("
@@ -103,11 +180,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ");
             $priceStmt->execute([':s' => $tok['station_id'], ':o' => $tok['oil_type_id']]);
             $invRow = $priceStmt->fetch();
-            $price  = $invRow ? (float)$invRow['price_per_litre'] : null;
+            $price  = (float)$tok['booking_price'];
             $total  = ($price !== null) ? round($price * $filled_liters, 2) : null;
 
             // Mark booking completed (store litres in filled_gas when provided).
-            $fg = $filled_liters > 0 ? (int)round($filled_liters) : 1;
+            $fg = $filled_liters;
             $stmt = $pdo->prepare("UPDATE booking SET status = 'completed', filled_gas = :fg, time_of_filled = NOW() WHERE booking_id = :t AND status = 'serving'");
             $stmt->execute([':fg' => $fg, ':t' => $token_id]);
 
@@ -164,6 +241,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             );
             $discount = (float) ($loyaltyResult['discount_mmk'] ?? 0);
             $netTotal = $total !== null ? max(0.0, round($total - $discount, 2)) : null;
+            $couponRedemption = $netTotal !== null
+                ? map_pump_redeem_company_coupon($pdo, (int)$tok['user_id'], (int)$tok['station_id'], $usageId, $netTotal)
+                : ['coupon_id' => null, 'discount_mmk' => 0.0];
+            if ($netTotal !== null) $netTotal = max(0.0, round($netTotal - (float)$couponRedemption['discount_mmk'], 2));
             $loyaltyUpdate = $pdo->prepare(
                 'UPDATE usage_history
                  SET total_cost = :net_total,
@@ -188,15 +269,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ':usage_id' => $usageId,
             ]);
 
-            // Draw down station inventory when a real quantity was recorded.
-            if ($invRow && $filled_liters > 0) {
-                $stmt = $pdo->prepare("
-                    UPDATE station_oil_inventory
-                    SET current_amount_liters = GREATEST(0, current_amount_liters - :liters)
-                    WHERE station_id = :s AND oil_type_id = :o
-                ");
-                $stmt->execute([':liters' => $filled_liters, ':s' => $tok['station_id'], ':o' => $tok['oil_type_id']]);
-            }
+            $oilStmt = $pdo->prepare('SELECT oil_name FROM oil_types WHERE oil_type_id = ?');
+            $oilStmt->execute([(int)$tok['oil_type_id']]);
+            $oilName = strtolower(preg_replace('/\s+/', '', (string)$oilStmt->fetchColumn()));
+            $fuelCode = match ($oilName) { 'octane92' => 'p92', 'octane95' => 'p95', 'disel', 'diesel' => 'dsl', 'premiumdisel', 'premiumdiesel' => 'pdsl', default => '' };
+            if ($fuelCode === '') throw new RuntimeException('Unknown booked fuel tank.');
+            $deduct = $pdo->prepare('UPDATE tanks SET current_l = current_l - ? WHERE branch_id = ? AND fuel_code = ? AND is_enabled = 1 AND current_l >= ?');
+            $deduct->execute([$filled_liters, (int)$tok['station_id'], $fuelCode, $filled_liters]);
+            if ($deduct->rowCount() !== 1) throw new RuntimeException('Insufficient live tank stock.');
+            $tankNow = $pdo->prepare('SELECT current_l FROM tanks WHERE branch_id = ? AND fuel_code = ? LIMIT 1');
+            $tankNow->execute([(int)$tok['station_id'], $fuelCode]);
+            map_pump_append_station_inventory_snapshot($pdo, (int)$tok['station_id'], (int)$tok['oil_type_id'], (float)$tankNow->fetchColumn());
+            if ($filled_liters + 0.0001 < (float)$tok['requested_liters']) map_pump_issue_shortfall_coupon($pdo, (int)$tok['booking_id'], $filled_liters);
 
             $pdo->commit();
             log_activity($pdo, $bid, 'user', $user['user_id'], $user['full_name'], "Completed token {$tok['token_code']}");
@@ -205,6 +289,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'filled_liters' => $filled_liters,
                 'total_cost' => $netTotal,
                 'discount_mmk' => $discount,
+                'station_coupon_discount_mmk' => (float)($couponRedemption['discount_mmk'] ?? 0),
                 'points_earned' => (int) ($loyaltyResult['points_earned'] ?? 0),
                 'points_redeemed' => (int) ($loyaltyResult['points_redeemed'] ?? 0),
                 'company_points_earned' => (int) ($loyaltyResult['company_points_earned'] ?? 0),
@@ -221,15 +306,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 LEFT JOIN pumps p ON p.current_token = bk.qr_refrence_code AND p.branch_id = :branch_id
                 WHERE bk.booking_id = :t
                   AND bk.status IN ('notfilled', 'waiting', 'serving')
+                  AND bk.expire_at > NOW()
                   AND sbs.branch_manager_user_id = :manager_id
-                LIMIT 1
+                LIMIT 1 FOR UPDATE
             ");
             $stmt->execute([':t' => $token_id, ':manager_id' => $user['user_id'], ':branch_id' => $bid]);
             $tok = $stmt->fetch();
             if (!$tok) { $pdo->rollBack(); json_out(['ok' => false, 'error' => 'Token not found']); }
 
-            $stmt = $pdo->prepare("UPDATE booking SET status = 'cancelled' WHERE booking_id = :t AND status IN ('notfilled', 'waiting', 'serving')");
+            $stmt = $pdo->prepare("UPDATE booking SET status = 'cancelled' WHERE booking_id = :t AND status IN ('notfilled', 'waiting', 'serving') AND expire_at > NOW()");
             $stmt->execute([':t' => $token_id]);
+            if ($stmt->rowCount() !== 1) { $pdo->rollBack(); json_out(['ok' => false, 'error' => 'Booking state changed. Refresh the queue.'], 409); }
             if ($tok['pump_id']) {
                 $stmt = $pdo->prepare("UPDATE pumps SET status = 'idle', current_token = NULL WHERE pump_id = :p");
                 $stmt->execute([':p' => $tok['pump_id']]);
@@ -842,12 +929,16 @@ $has_unread_notif = notif_unread_count($pdo, (int)$user['user_id']) > 0;
                   <td>
                     <?php if ($q['status'] === 'serving'): ?>
                       <a class="act-link btn-complete" data-token-id="<?= (int)$q['token_id'] ?>">Complete</a>
+                      <a class="act-link btn-partial" data-token-id="<?= (int)$q['token_id'] ?>">Offer partial</a>
                       <a class="act-link danger btn-cancel" data-token-id="<?= (int)$q['token_id'] ?>">Cancel</a>
+                      <a class="act-link danger btn-unable" data-token-id="<?= (int)$q['token_id'] ?>">Unable to fulfill</a>
                     <?php elseif ($q['status'] === 'waiting'): ?>
                       <?php if ($default_pump): ?>
                         <a class="act-link btn-next" data-token-id="<?= (int)$q['token_id'] ?>" data-pump-id="<?= (int)$default_pump['pump_id'] ?>">Call Next</a>
                       <?php endif; ?>
+                      <a class="act-link btn-partial" data-token-id="<?= (int)$q['token_id'] ?>">Offer partial</a>
                       <a class="act-link danger btn-cancel" data-token-id="<?= (int)$q['token_id'] ?>">Cancel</a>
+                      <a class="act-link danger btn-unable" data-token-id="<?= (int)$q['token_id'] ?>">Unable to fulfill</a>
                     <?php else: ?>
                       —
                     <?php endif; ?>
@@ -953,6 +1044,30 @@ $has_unread_notif = notif_unread_count($pdo, (int)$user['user_id']) > 0;
         }
         try {
           const data = await serverAction('complete', { token_id: tokenId, filled_liters: String(liters) });
+          if (!data.ok) { alert('Failed: ' + (data.error || 'unknown')); return; }
+          window.location.reload();
+        } catch (err) { alert('Network error: ' + err.message); }
+      }
+
+      if (target.classList.contains('btn-partial')) {
+        const tokenId = target.dataset.tokenId;
+        const litersText = prompt('Offer how many liters? The driver must accept in their booking page.');
+        if (litersText === null) return;
+        const liters = Number(litersText);
+        if (!Number.isFinite(liters) || liters <= 0) { alert('Enter a valid positive amount.'); return; }
+        try {
+          const data = await serverAction('offer_partial', { token_id: tokenId, offered_liters: String(liters) });
+          if (!data.ok) { alert('Failed: ' + (data.error || 'unknown')); return; }
+          alert('Offer sent. Wait for the driver to accept before completing the fill.');
+          window.location.reload();
+        } catch (err) { alert('Network error: ' + err.message); }
+      }
+
+      if (target.classList.contains('btn-unable')) {
+        const tokenId = target.dataset.tokenId;
+        if (!confirm('Close this reservation as unfulfillable and issue a full-value station coupon?')) return;
+        try {
+          const data = await serverAction('unable_to_fulfill', { token_id: tokenId });
           if (!data.ok) { alert('Failed: ' + (data.error || 'unknown')); return; }
           window.location.reload();
         } catch (err) { alert('Network error: ' + err.message); }

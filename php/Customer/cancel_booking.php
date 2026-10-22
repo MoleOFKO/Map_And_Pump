@@ -94,7 +94,7 @@ if (!booking_cancellation_schema_ready($pdo)) {
 try {
     $pdo->beginTransaction();
     $bookingStmt = $pdo->prepare(
-        'SELECT booking_id, status, expire_at, (expire_at > NOW()) AS is_not_expired
+        'SELECT booking_id, status, expire_at, qr_refrence_code, station_id, (expire_at > NOW()) AS is_not_expired
          FROM booking
          WHERE booking_id = :booking_id AND user_id = :user_id
          LIMIT 1 FOR UPDATE'
@@ -106,7 +106,7 @@ try {
         booking_cancellation_response(404, 'Booking not found.');
     }
 
-    if (!in_array(strtolower((string) $booking['status']), ['notfilled', 'serving'], true)
+    if (!in_array(strtolower((string) $booking['status']), ['notfilled', 'waiting', 'serving'], true)
         || (int) $booking['is_not_expired'] !== 1) {
         $pdo->rollBack();
         booking_cancellation_response(409, 'This booking is no longer active and cannot be cancelled.');
@@ -125,12 +125,15 @@ try {
 
     $cancel = $pdo->prepare(
         "UPDATE booking SET status = 'cancelled'
-         WHERE booking_id = :booking_id AND user_id = :user_id AND status IN ('notfilled', 'serving')"
+         WHERE booking_id = :booking_id AND user_id = :user_id AND status IN ('notfilled', 'waiting', 'serving')"
     );
     $cancel->execute([':booking_id' => $bookingId, ':user_id' => $userId]);
     if ($cancel->rowCount() !== 1) {
         throw new RuntimeException('Booking status changed while cancellation was being processed.');
     }
+    $freePump = $pdo->prepare("UPDATE pumps SET status = 'idle', current_token = NULL
+        WHERE branch_id = :station_id AND current_token = :booking_code AND status = 'active'");
+    $freePump->execute([':station_id' => (int)$booking['station_id'], ':booking_code' => (string)$booking['qr_refrence_code']]);
 
     $pdo->commit();
     echo json_encode(['success' => true, 'message' => 'Booking cancelled.']);

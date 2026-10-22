@@ -32,7 +32,8 @@ if ($userId > 0 && $usageHistoryReady) {
                     COALESCE(fb.feedback_count, 0) AS feedback_count, fb.latest_rating,
                     COALESCE(uh.points_earned, 0) AS points_earned,
                     COALESCE(uh.points_redeemed, 0) AS points_redeemed,
-                    COALESCE(uh.discount_mmk, 0) AS discount_mmk
+                    COALESCE(uh.discount_mmk, 0) AS discount_mmk,
+                    COALESCE(scr.applied_mmk, 0) AS station_coupon_discount
              FROM usage_history uh
              LEFT JOIN branches s ON s.branch_id = uh.station_id
              LEFT JOIN oil_types o ON o.oil_type_id = uh.oil_type_id
@@ -43,6 +44,7 @@ if ($userId > 0 && $usageHistoryReady) {
                  WHERE usage_id IS NOT NULL
                  GROUP BY usage_id
              ) fb ON fb.usage_id = uh.usage_id
+             LEFT JOIN station_coupon_redemptions scr ON scr.usage_id = uh.usage_id
                          WHERE uh.user_id = ?
                              AND LOWER(uh.status) = \'filled\'
              ORDER BY uh.filled_at DESC, uh.usage_id DESC'
@@ -60,7 +62,8 @@ if ($userId > 0 && $usageHistoryReady) {
                     CASE WHEN s.latitude IS NOT NULL AND s.longitude IS NOT NULL
                         THEN CONCAT(s.latitude, \', \', s.longitude) ELSE s.address END AS station_location,
                     o.oil_name, c.car_plate_number,
-                    COALESCE(fb.feedback_count, 0) AS feedback_count, fb.latest_rating
+                    COALESCE(fb.feedback_count, 0) AS feedback_count, fb.latest_rating,
+                    COALESCE(scr.applied_mmk, 0) AS station_coupon_discount
                  FROM usage_history uh
                  LEFT JOIN branches s ON s.branch_id = uh.station_id
                  LEFT JOIN oil_types o ON o.oil_type_id = uh.oil_type_id
@@ -71,6 +74,7 @@ if ($userId > 0 && $usageHistoryReady) {
                      WHERE usage_id IS NOT NULL
                      GROUP BY usage_id
                  ) fb ON fb.usage_id = uh.usage_id
+                 LEFT JOIN station_coupon_redemptions scr ON scr.usage_id = uh.usage_id
                  WHERE uh.user_id = ?
                    AND LOWER(uh.status) = \'filled\'
                  ORDER BY uh.filled_at DESC, uh.usage_id DESC'
@@ -209,6 +213,10 @@ include 'share_header.php';
                             }
                             if ($discountMmk > 0) {
                                 $loyaltyBits[] = number_format($discountMmk, 0) . ' MMK off';
+                            }
+                            $couponDiscount = (float)($usage['station_coupon_discount'] ?? 0);
+                            if ($couponDiscount > 0) {
+                                $loyaltyBits[] = number_format($couponDiscount, 0) . ' MMK station coupon';
                             }
                             $loyaltyText = $loyaltyBits !== [] ? implode(' · ', $loyaltyBits) : '—';
                         ?>
