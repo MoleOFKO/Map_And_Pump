@@ -2,6 +2,7 @@
 include 'share_header.php';
 require_once __DIR__ . '/../business_scope.php';
 require_once __DIR__ . '/../booking_rules.php';
+require_once __DIR__ . '/../booking_reservations.php';
 require_once __DIR__ . '/../loyalty_points.php';
 require_once __DIR__ . '/../feedback_schema.php';
 require_once __DIR__ . '/../usage_history_schema.php';
@@ -49,7 +50,14 @@ try {
                            OR (b.opening_time <= b.closing_time AND CURRENT_TIME() BETWEEN b.opening_time AND b.closing_time)
                            OR (b.opening_time > b.closing_time AND (CURRENT_TIME() >= b.opening_time OR CURRENT_TIME() <= b.closing_time))
                      THEN 1 ELSE 0 END AS is_open,
-                     t.current_l AS fuel_stock_liters,
+                     GREATEST(0, t.current_l - COALESCE((
+                         SELECT SUM(r.requested_liters)
+                         FROM booking_reservations r
+                         INNER JOIN booking active_b ON active_b.booking_id = r.booking_id
+                         WHERE r.station_id = b.branch_id AND r.oil_type_id = ot.oil_type_id
+                           AND active_b.status IN ('notfilled','waiting','serving')
+                           AND active_b.expire_at > NOW()
+                     ), 0)) AS fuel_stock_liters,
                      ot.oil_type_id, ot.oil_name,
                      latest_inventory.price_per_litre, latest_inventory.is_active AS price_is_active
          FROM branches b
@@ -233,10 +241,13 @@ try {
     if ($statusPlaceholders) {
         $bookingStmt = $pdo->prepare(
             'SELECT bk.booking_id, bk.station_id, bk.oil_type_id, bk.qr_code, bk.qr_refrence_code,
-                    bk.status, bk.expire_at, bk.created_at,
+                    bk.status, bk.expire_at, bk.created_at, r.requested_liters,
+                    po.offered_liters, po.status AS partial_offer_status,
                     b.branch_name AS station_name, b.address AS station_address,
                     ot.oil_name
              FROM booking bk
+             LEFT JOIN booking_reservations r ON r.booking_id = bk.booking_id
+             LEFT JOIN booking_partial_offers po ON po.booking_id = bk.booking_id
              LEFT JOIN branches b ON b.branch_id = bk.station_id
              LEFT JOIN oil_types ot ON ot.oil_type_id = bk.oil_type_id
              WHERE bk.user_id = :user_id
@@ -247,14 +258,26 @@ try {
         );
         $bookingStmt->execute($statusParams);
         $activeBooking = $bookingStmt->fetch(PDO::FETCH_ASSOC) ?: null;
-        if ($activeBooking && preg_match('/\|([0-9]+(?:\.[0-9]+)?)L\s*$/i', (string) $activeBooking['qr_code'], $matches)) {
-            $activeBooking['quantity_liters'] = (float) $matches[1];
+        if ($activeBooking) {
+            $activeBooking['quantity_liters'] = (float)($activeBooking['requested_liters'] ?? 0);
         }
     }
 } catch (Throwable $e) {
     error_log('Failed to load customer active booking: ' . $e->getMessage());
 }
 $hasActiveBooking = $activeBooking !== null;
+$availableStationCoupons = [];
+try {
+    $couponStmt = $pdo->prepare("SELECT c.coupon_id, c.face_value_mmk, c.expires_at, h.company_name
+        FROM station_shortfall_coupons c
+        LEFT JOIN headquarter h ON h.headquarter_id = c.headquarter_id
+        WHERE c.user_id = ? AND c.status = 'available' AND c.expires_at > NOW()
+        ORDER BY c.expires_at ASC, c.coupon_id ASC");
+    $couponStmt->execute([(int)($_SESSION['user_id'] ?? 0)]);
+    $availableStationCoupons = $couponStmt->fetchAll(PDO::FETCH_ASSOC);
+} catch (Throwable $e) {
+    error_log('Could not load station coupons: ' . $e->getMessage());
+}
 if (empty($_SESSION['booking_csrf_token'])) {
     $_SESSION['booking_csrf_token'] = bin2hex(random_bytes(32));
 }
@@ -282,6 +305,17 @@ $bookingCsrfToken = (string) $_SESSION['booking_csrf_token'];
                 <div class="col-12"><span class="text-secondary d-block">Expires</span><strong id="current-booking-expiry" class="text-white"><?php echo $hasActiveBooking && !empty($activeBooking['expire_at']) ? htmlspecialchars((string) $activeBooking['expire_at']) : 'When confirmed by station staff'; ?></strong></div>
             </div>
             <p class="text-secondary small mt-3 mb-0">Keep this booking QR available and show it to staff at the selected station.</p>
+            <?php if ($hasActiveBooking && ($activeBooking['partial_offer_status'] ?? '') === 'pending'): ?>
+                <div class="alert alert-warning mt-3 mb-0">
+                    <strong>Station offered a partial fill:</strong> <?= htmlspecialchars(rtrim(rtrim(number_format((float)$activeBooking['offered_liters'], 2, '.', ''), '0'), '.') . ' L', ENT_QUOTES, 'UTF-8') ?>.
+                    Accept only if you agree to this amount. Accepting records this amount and issues the station-funded coupon for the unfilled liters.
+                    <div class="d-flex gap-2 mt-2">
+                        <button type="button" class="btn btn-success btn-sm" onclick="respondToPartialOffer('accept')">Accept partial fill</button>
+                        <button type="button" class="btn btn-outline-danger btn-sm" onclick="respondToPartialOffer('decline')">Decline and close booking</button>
+                    </div>
+                    <div id="partial-offer-message" class="small mt-2" role="status"></div>
+                </div>
+            <?php endif; ?>
             <div class="d-flex flex-wrap gap-2 mt-3">
                 <button type="button" class="btn btn-outline-info btn-sm px-3 py-2 fw-bold" onclick="downloadBookingDetails()" title="Save a JPEG receipt with booking details and QR code"><i class="bi bi-download me-1"></i>Download receipt</button>
                 <button type="button" class="btn btn-outline-danger btn-sm px-3 py-2 fw-bold" onclick="openCancellationDialog()"><i class="bi bi-x-circle me-1"></i>Cancel booking</button>
@@ -289,6 +323,22 @@ $bookingCsrfToken = (string) $_SESSION['booking_csrf_token'];
         </div>
     </div>
 </section>
+
+<?php if ($availableStationCoupons): ?>
+<section class="dashboard-panel-card mt-3" aria-live="polite">
+    <h3 class="text-white mb-3">Available station coupons</h3>
+    <div class="d-grid gap-2">
+        <?php foreach ($availableStationCoupons as $stationCoupon): ?>
+            <div class="alert alert-success mb-0">
+                <strong><?= htmlspecialchars(number_format((float)$stationCoupon['face_value_mmk'], 0) . ' MMK', ENT_QUOTES, 'UTF-8') ?></strong>
+                for <?= htmlspecialchars((string)($stationCoupon['company_name'] ?? 'the issuing fuel company'), ENT_QUOTES, 'UTF-8') ?>,
+                until <?= htmlspecialchars((string)$stationCoupon['expires_at'], ENT_QUOTES, 'UTF-8') ?>.
+                Redeem once on a later fill at that company; any unused amount is forfeited.
+            </div>
+        <?php endforeach; ?>
+    </div>
+</section>
+<?php endif; ?>
 
 <dialog id="booking-cancellation-dialog" class="booking-cancellation-dialog" aria-labelledby="booking-cancellation-title">
     <form id="booking-cancellation-form">
@@ -733,6 +783,24 @@ body.customer-light-mode .customer-map-recenter-btn:hover {
     const stationsData = <?php echo json_encode($customerStationsData, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT); ?>;
     const savedActiveBooking = <?php echo json_encode($activeBooking, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT); ?>;
     const bookingCsrfToken = <?php echo json_encode($bookingCsrfToken); ?>;
+    window.respondToPartialOffer = async function(decision) {
+        const message = document.getElementById('partial-offer-message');
+        const formData = new FormData();
+        formData.append('booking_id', String((savedActiveBooking || {}).booking_id || ''));
+        formData.append('decision', decision);
+        formData.append('csrf_token', bookingCsrfToken);
+        try {
+            const response = await fetch('respond_partial_offer.php', { method: 'POST', body: formData });
+            const result = await response.json();
+            if (!response.ok || !result.success) {
+                if (message) message.textContent = result.message || 'Could not save your decision.';
+                return;
+            }
+            window.location.reload();
+        } catch (error) {
+            if (message) message.textContent = 'Could not reach the booking service. Try again.';
+        }
+    };
     let currentBooking = null;
 
     async function createBookingQrCanvas(payload, width, margin) {
@@ -1462,6 +1530,7 @@ body.customer-light-mode .customer-map-recenter-btn:hover {
         const displayPayload = `${code}|${selectedStation.name}|${fuel.name}|${quantity}L`;
 
         const formData = new FormData();
+        formData.append('csrf_token', bookingCsrfToken);
         formData.append('booking_code', code);
         formData.append('station_id', String(selectedStation.id));
         formData.append('fuel_type', fuel.name);

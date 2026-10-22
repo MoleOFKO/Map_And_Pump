@@ -89,7 +89,16 @@ if (!function_exists('map_pump_load_latest_station_prices')) {
                     s.hq_region AS station_region,
                     h.headquarter_id, h.company_name,
                     ot.oil_type_id, ot.oil_name, li.price_per_litre, li.is_active, li.updated_at,
-                    t.fuel_code, t.current_l, t.capacity_l, t.is_enabled
+                    t.fuel_code,
+                    GREATEST(0, t.current_l - COALESCE((
+                        SELECT SUM(r.requested_liters)
+                        FROM booking_reservations r
+                        INNER JOIN booking active_b ON active_b.booking_id = r.booking_id
+                        WHERE r.station_id = s.branch_id AND r.oil_type_id = ot.oil_type_id
+                          AND active_b.status IN ('notfilled','waiting','serving')
+                          AND active_b.expire_at > NOW()
+                    ), 0)) AS current_l,
+                    t.capacity_l, t.is_enabled
              FROM branches s
              INNER JOIN station_business_scope sbs ON sbs.station_id = s.branch_id
              INNER JOIN headquarter h ON h.headquarter_id = sbs.headquarter_id

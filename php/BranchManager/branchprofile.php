@@ -554,7 +554,7 @@ $flash = take_flash();
                 </div>
                 <div class="gauge-mini"><i style="width:<?= $pct ?>%; background:<?= $color ?>;"></i></div>
                 <div style="display:flex; justify-content:space-between; font-size:11.5px; color:var(--slate-400); margin-top:6px;">
-                  <span><?= number_format($t['current_l']) ?> L used of <?= number_format($t['capacity_l']) ?> L</span>
+                  <span><?= number_format((float)$t['current_l'], 2) ?> L used of <?= number_format((float)$t['capacity_l']) ?> L</span>
                   <span><?= $t['is_enabled'] ? 'Enabled' : 'Disabled' ?></span>
                 </div>
               </div>

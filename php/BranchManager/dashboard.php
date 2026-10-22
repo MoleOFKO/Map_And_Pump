@@ -593,7 +593,7 @@ $has_unread   = $unread_count > 0;
                   <div class="tank-body" aria-hidden="true">
                     <div class="tank-fill" style="height:<?= max(0, min(100, $pct)) ?>%; background:linear-gradient(180deg, <?= h($tankColor) ?>, rgba(255,255,255,0.28));"></div>
                   </div>
-                  <div class="tank-meta"><?= number_format((float)$t['current_l'], 0) ?>L / <?= number_format((float)$t['capacity_l'], 0) ?>L</div>
+                  <div class="tank-meta"><?= number_format((float)$t['current_l'], 2) ?>L / <?= number_format((float)$t['capacity_l'], 0) ?>L</div>
                   <div class="tank-meta"><?= $pct ?>%</div>
                   <div class="tank-status <?= $status_class ?>"><?= $status_class === 'low' ? 'Low Stock' : 'Healthy' ?></div>
                 </div>

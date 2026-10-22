@@ -131,7 +131,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
 
-            $new_level = min((int)$tank['capacity_l'], (int)$tank['current_l'] + $qty);
+            $new_level = min((float)$tank['capacity_l'], (float)$tank['current_l'] + $qty);
 
             $pdo->beginTransaction();
             map_pump_deliveries_proof_schema_ready($pdo);
@@ -786,7 +786,7 @@ function tank_flag(?array $t): string {
           foreach ($tank_defs as $fc => $def):
             $t = $tanks[$fc] ?? null;
             $cap = $t ? (int)$t['capacity_l'] : $def['cap'];
-            $cur = $t ? (int)$t['current_l'] : $def['rem'];
+            $cur = $t ? (float)$t['current_l'] : $def['rem'];
             $pct = $t ? tank_pct($t) : (int)round(($cur / $cap) * 100);
             $col = $t ? tank_color($t) : ($pct > 55 ? 'var(--mint-400)' : ($pct > 25 ? 'var(--amber-300)' : 'var(--red-400)'));
             $used = $cap - $cur;
@@ -883,7 +883,7 @@ function tank_flag(?array $t): string {
           $swatch_map = ['p92' => 'var(--sky-400)', 'p95' => 'var(--mint-400)', 'dsl' => 'var(--amber-400)', 'pdsl' => 'var(--blue-500)'];
           foreach ($tank_defs as $fc => $def):
             $t = $tanks[$fc] ?? null;
-            $cur = $t ? (int)$t['current_l'] : $def['rem'];
+            $cur = $t ? (float)$t['current_l'] : $def['rem'];
             $swatch = $swatch_map[$fc] ?? 'var(--slate-400)';
             $on = $t ? ((int)$t['is_enabled'] === 1) : true;
             $tank_id_attr = $t ? (int)$t['tank_id'] : '';
@@ -1108,10 +1108,10 @@ function tank_flag(?array $t): string {
 
     // 3. Local State Management (hydrated from server)
     const stockDB = {
-      p92: { capacity: <?= (int)($tanks['p92']['capacity_l'] ?? 15000) ?>, remaining: <?= (int)($tanks['p92']['current_l'] ?? 11100) ?> },
-      p95: { capacity: <?= (int)($tanks['p95']['capacity_l'] ?? 10000) ?>, remaining: <?= (int)($tanks['p95']['current_l'] ?? 4800) ?> },
-      dsl: { capacity: <?= (int)($tanks['dsl']['capacity_l'] ?? 12000) ?>, remaining: <?= (int)($tanks['dsl']['current_l'] ?? 2640) ?> },
-      pdsl: { capacity: <?= (int)($tanks['pdsl']['capacity_l'] ?? 12000) ?>, remaining: <?= (int)($tanks['pdsl']['current_l'] ?? 0) ?> }
+      p92: { capacity: <?= (int)($tanks['p92']['capacity_l'] ?? 15000) ?>, remaining: <?= json_encode((float)($tanks['p92']['current_l'] ?? 11100)) ?> },
+      p95: { capacity: <?= (int)($tanks['p95']['capacity_l'] ?? 10000) ?>, remaining: <?= json_encode((float)($tanks['p95']['current_l'] ?? 4800)) ?> },
+      dsl: { capacity: <?= (int)($tanks['dsl']['capacity_l'] ?? 12000) ?>, remaining: <?= json_encode((float)($tanks['dsl']['current_l'] ?? 2640)) ?> },
+      pdsl: { capacity: <?= (int)($tanks['pdsl']['capacity_l'] ?? 12000) ?>, remaining: <?= json_encode((float)($tanks['pdsl']['current_l'] ?? 0)) ?> }
     };
 
     let oilLimits = {

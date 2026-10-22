@@ -27,7 +27,7 @@ function car_license_page_schema_ready(PDO $pdo): void
                 vehicle_type varchar(100) NOT NULL,
                 chassis_number varchar(20) DEFAULT NULL,
                 location varchar(255) NOT NULL,
-                filled_gas int NOT NULL DEFAULT 0,
+                filled_gas decimal(10,2) NOT NULL DEFAULT 0.00,
                 issue_date date DEFAULT NULL,
                 created_at timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,

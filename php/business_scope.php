@@ -158,35 +158,57 @@ if (!function_exists('map_pump_latest_station_inventory_sql')) {
 if (!function_exists('map_pump_append_station_price')) {
     function map_pump_append_station_price(PDO $pdo, int $stationId, int $oilTypeId, int $pricePerLitre, ?int $active = null): void
     {
-        $stmt = $pdo->prepare(
-            "SELECT is_active, current_amount_liters
-             FROM station_oil_inventory
-             WHERE station_id = :station_id AND oil_type_id = :oil_type_id
-             ORDER BY inventory_id DESC
-             LIMIT 1"
-        );
-        $stmt->execute([
-            ':station_id' => $stationId,
-            ':oil_type_id' => $oilTypeId,
-        ]);
-        $latest = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
+        $ownsTransaction = !$pdo->inTransaction();
+        if ($ownsTransaction) {
+            $pdo->beginTransaction();
+        }
+        try {
+            // Booking creation locks this same branch row before its final
+            // price read, so a newly published price cannot race the snapshot.
+            $branchLock = $pdo->prepare('SELECT branch_id FROM branches WHERE branch_id = ? LIMIT 1 FOR UPDATE');
+            $branchLock->execute([$stationId]);
+            if (!$branchLock->fetchColumn()) {
+                throw new RuntimeException('Cannot publish a price for a missing station.');
+            }
 
-        $isActive = $active ?? (int)($latest['is_active'] ?? 1);
-        $currentAmount = (float)($latest['current_amount_liters'] ?? 0);
+            $stmt = $pdo->prepare(
+                "SELECT is_active, current_amount_liters
+                 FROM station_oil_inventory
+                 WHERE station_id = :station_id AND oil_type_id = :oil_type_id
+                 ORDER BY inventory_id DESC
+                 LIMIT 1"
+            );
+            $stmt->execute([
+                ':station_id' => $stationId,
+                ':oil_type_id' => $oilTypeId,
+            ]);
+            $latest = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
 
-        $insert = $pdo->prepare(
-            "INSERT INTO station_oil_inventory
-                (station_id, oil_type_id, price_per_litre, is_active, current_amount_liters, updated_at)
-             VALUES
-                (:station_id, :oil_type_id, :price_per_litre, :is_active, :current_amount_liters, NOW())"
-        );
-        $insert->execute([
-            ':station_id' => $stationId,
-            ':oil_type_id' => $oilTypeId,
-            ':price_per_litre' => $pricePerLitre,
-            ':is_active' => $isActive ? 1 : 0,
-            ':current_amount_liters' => $currentAmount,
-        ]);
+            $isActive = $active ?? (int)($latest['is_active'] ?? 1);
+            $currentAmount = (float)($latest['current_amount_liters'] ?? 0);
+
+            $insert = $pdo->prepare(
+                "INSERT INTO station_oil_inventory
+                    (station_id, oil_type_id, price_per_litre, is_active, current_amount_liters, updated_at)
+                 VALUES
+                    (:station_id, :oil_type_id, :price_per_litre, :is_active, :current_amount_liters, NOW())"
+            );
+            $insert->execute([
+                ':station_id' => $stationId,
+                ':oil_type_id' => $oilTypeId,
+                ':price_per_litre' => $pricePerLitre,
+                ':is_active' => $isActive ? 1 : 0,
+                ':current_amount_liters' => $currentAmount,
+            ]);
+            if ($ownsTransaction) {
+                $pdo->commit();
+            }
+        } catch (Throwable $e) {
+            if ($ownsTransaction && $pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            throw $e;
+        }
     }
 }
 

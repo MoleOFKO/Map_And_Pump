@@ -8,6 +8,7 @@ require_once __DIR__ . '/car_access.php';
 require_once __DIR__ . '/../usage_history_schema.php';
 require_once __DIR__ . '/../business_scope.php';
 require_once __DIR__ . '/../booking_rules.php';
+require_once __DIR__ . '/../booking_reservations.php';
 require_once __DIR__ . '/../loyalty_points.php';
 
 header('Content-Type: application/json');
@@ -21,12 +22,12 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 $bookingCode = isset($_POST['booking_code']) ? strtoupper(preg_replace('/\s+/', '', trim((string)$_POST['booking_code']))) : '';
 $stationId = isset($_POST['station_id']) ? (int)$_POST['station_id'] : 0;
 $fuelType = isset($_POST['fuel_type']) ? trim($_POST['fuel_type']) : '';
-$quantity = isset($_POST['quantity_liters']) ? (float)$_POST['quantity_liters'] : 0;
+$quantity = isset($_POST['quantity_liters']) ? round((float)$_POST['quantity_liters'], 1) : 0;
 $requestedCarLicenseId = isset($_POST['car_license_id']) ? (int)$_POST['car_license_id'] : 0;
 $requestedPointsToRedeem = isset($_POST['points_to_redeem']) ? (int)$_POST['points_to_redeem'] : 0;
 $userId = (int)($_SESSION['user_id'] ?? 0);
 
-if ($bookingCode === '' || $stationId <= 0 || $fuelType === '' || $quantity <= 0 || $requestedCarLicenseId < 0) {
+if ($bookingCode === '' || $stationId <= 0 || $fuelType === '' || !is_finite($quantity) || $quantity <= 0 || $requestedCarLicenseId < 0) {
     http_response_code(422);
     echo json_encode(['success' => false, 'message' => 'Missing booking details.']);
     exit;
@@ -35,6 +36,12 @@ if ($bookingCode === '' || $stationId <= 0 || $fuelType === '' || $quantity <= 0
 if ($userId <= 0) {
     http_response_code(401);
     echo json_encode(['success' => false, 'message' => 'Please sign in with a valid customer account before booking.']);
+    exit;
+}
+$bookingCsrf = (string)($_SESSION['booking_csrf_token'] ?? '');
+if ($bookingCsrf === '' || !hash_equals($bookingCsrf, (string)($_POST['csrf_token'] ?? ''))) {
+    http_response_code(403);
+    echo json_encode(['success' => false, 'message' => 'Your session expired. Refresh the booking page and try again.']);
     exit;
 }
 
@@ -56,7 +63,8 @@ if ($displayPayload === '') {
     $displayPayload = $bookingCode . '|' . $stationId . '|' . $fuelType . '|' . number_format($quantity, 1, '.', '') . 'L';
 }
 
-if (!customer_car_schema_ready($pdo) || !map_pump_usage_history_schema_ready($pdo) || !loyalty_countermeasures_schema_ready($pdo)) {
+map_pump_booking_configure_timezone($pdo);
+if (!customer_car_schema_ready($pdo) || !map_pump_booking_schema_ready($pdo) || !map_pump_usage_history_schema_ready($pdo) || !loyalty_countermeasures_schema_ready($pdo) || !loyalty_schema_ready($pdo)) {
     http_response_code(500);
     echo json_encode(['success' => false, 'message' => 'Booking service is temporarily unavailable. Please try again later.']);
     exit;
@@ -131,26 +139,28 @@ try {
         exit;
     }
 
-    if ($quantity > (float)($stationFuel['available_liters'] ?? 0)) {
-        http_response_code(422);
-        echo json_encode([
-            'success' => false,
-            'message' => 'Only ' . number_format((float)$stationFuel['available_liters'], 1) . ' liters of this fuel are currently available at the selected station.'
-        ]);
-        exit;
-    }
-
     $oilTypeId = (int)$stationFuel['oil_type_id'];
     $fuelType = (string)$stationFuel['oil_name'];
     $stationName = (string)($stationFuel['station_name'] ?? ('Station #' . $stationId));
     $displayPayload = $bookingCode . '|' . $stationName . '|' . $fuelType . '|' . rtrim(rtrim(number_format($quantity, 1, '.', ''), '0'), '.') . 'L';
 
-    /*
-     * Lock the selected car while checking and creating the booking. This
-     * makes the "one active booking per customer/car" rule reliable even if
-     * the customer submits the form twice or has two browser tabs open.
-     */
+    // Serialize account-wide reservations, then lock the station tank before
+    // counting existing holds. A competing reservation or fill must wait.
     $pdo->beginTransaction();
+    $userLock = $pdo->prepare('SELECT user_id FROM users WHERE user_id = ? LIMIT 1 FOR UPDATE');
+    $userLock->execute([$userId]);
+    if (!$userLock->fetchColumn()) {
+        $pdo->rollBack();
+        http_response_code(401);
+        echo json_encode(['success' => false, 'message' => 'Please sign in again before booking.']);
+        exit;
+    }
+    if (!customer_license_valid_for_booking($pdo, $userId, true)) {
+        $pdo->rollBack();
+        http_response_code(403);
+        echo json_encode(['success' => false, 'message' => 'Your approved driver license is expired or no longer valid.']);
+        exit;
+    }
     if ($requestedCarLicenseId > 0) {
         $carLock = $pdo->prepare(
             'SELECT uc.car_id
@@ -216,18 +226,17 @@ try {
         "SELECT booking_id
          FROM booking
          WHERE user_id = ?
-           AND car_license_id = ?
            AND status IN ({$statusPlaceholders})
-           AND (expire_at IS NULL OR expire_at > NOW())
+           AND expire_at > NOW()
          LIMIT 1 FOR UPDATE"
     );
-    $activeBooking->execute(array_merge([$userId, $activeCarLicenseId], $activeStatuses));
+    $activeBooking->execute(array_merge([$userId], $activeStatuses));
     if ($activeBooking->fetchColumn()) {
         $pdo->rollBack();
         http_response_code(409);
         echo json_encode([
             'success' => false,
-            'message' => 'This vehicle already has an active fuel booking. Use, cancel, or wait for that booking to expire before creating another one.'
+            'message' => 'You already have an active fuel reservation. Use, cancel, or wait for it to expire before creating another one.'
         ]);
         exit;
     }
@@ -254,17 +263,86 @@ try {
     }
 
     $stationId = (int)$stationFuel['station_id'];
-    $finalStationCheck = $pdo->prepare('SELECT branch_id FROM branches WHERE branch_id = :station_id LIMIT 1');
-    $finalStationCheck->execute([':station_id' => $stationId]);
-    if (!$finalStationCheck->fetchColumn()) {
+    $tankFuelCode = match (strtolower(preg_replace('/\s+/', '', $fuelType))) {
+        'octane92' => 'p92', 'octane95' => 'p95', 'disel', 'diesel' => 'dsl',
+        'premiumdisel', 'premiumdiesel' => 'pdsl', default => '',
+    };
+    $tankStmt = $pdo->prepare('SELECT tank_id, current_l FROM tanks WHERE branch_id = ? AND fuel_code = ? AND is_enabled = 1 LIMIT 1 FOR UPDATE');
+    $tankStmt->execute([$stationId, $tankFuelCode]);
+    $tankRow = $tankStmt->fetch(PDO::FETCH_ASSOC);
+    if (!$tankRow || $tankFuelCode === '') {
         $pdo->rollBack();
         http_response_code(422);
-        echo json_encode(['success' => false, 'message' => 'This station is no longer available. Please refresh and choose another station.']);
+        echo json_encode(['success' => false, 'message' => 'This station or fuel type is no longer available. Please refresh and choose another station.']);
+        exit;
+    }
+
+    // Lock and recheck the mutable station predicates inside the reservation
+    // transaction. Price writers take the same branch lock before appending.
+    $stationLock = $pdo->prepare("SELECT branch_id, branch_name
+        FROM branches
+        WHERE branch_id = ?
+          AND LOWER(COALESCE(status, 'active')) = 'active'
+          AND (
+              is_24hr = 1
+              OR opening_time IS NULL
+              OR closing_time IS NULL
+              OR (opening_time <= closing_time AND CURRENT_TIME() BETWEEN opening_time AND closing_time)
+              OR (opening_time > closing_time AND (CURRENT_TIME() >= opening_time OR CURRENT_TIME() <= closing_time))
+          )
+        LIMIT 1 FOR UPDATE");
+    $stationLock->execute([$stationId]);
+    $lockedStation = $stationLock->fetch(PDO::FETCH_ASSOC);
+    if (!$lockedStation) {
+        $pdo->rollBack();
+        http_response_code(409);
+        echo json_encode(['success' => false, 'message' => 'This station is closed or unavailable now. Please refresh and choose another station.']);
+        exit;
+    }
+
+    $feeLock = $pdo->prepare("SELECT sbs.headquarter_id
+        FROM station_business_scope sbs
+        INNER JOIN company_loyalty_station_fees fee
+            ON fee.headquarter_id = sbs.headquarter_id
+           AND fee.station_id = sbs.station_id
+           AND fee.year_month = ?
+        WHERE sbs.station_id = ?
+        LIMIT 1 FOR UPDATE");
+    $feeLock->execute([loyalty_current_year_month(), $stationId]);
+    if (!$feeLock->fetchColumn()) {
+        $pdo->rollBack();
+        http_response_code(409);
+        echo json_encode(['success' => false, 'message' => 'This station is not eligible to accept bookings for the current month. Please refresh and choose another station.']);
+        exit;
+    }
+
+    $priceLock = $pdo->prepare("SELECT inventory_id, price_per_litre, is_active
+        FROM station_oil_inventory
+        WHERE station_id = ? AND oil_type_id = ?
+        ORDER BY inventory_id DESC
+        LIMIT 1 FOR UPDATE");
+    $priceLock->execute([$stationId, $oilTypeId]);
+    $lockedPrice = $priceLock->fetch(PDO::FETCH_ASSOC);
+    if (!$lockedPrice || (int)$lockedPrice['is_active'] !== 1 || (float)$lockedPrice['price_per_litre'] <= 0) {
+        $pdo->rollBack();
+        http_response_code(409);
+        echo json_encode(['success' => false, 'message' => 'This fuel is no longer offered at the selected station. Please refresh and choose another option.']);
+        exit;
+    }
+    $stationFuel['price_per_litre'] = (float)$lockedPrice['price_per_litre'];
+    $stationName = (string)$lockedStation['branch_name'];
+    $displayPayload = $bookingCode . '|' . $stationName . '|' . $fuelType . '|' . rtrim(rtrim(number_format($quantity, 1, '.', ''), '0'), '.') . 'L';
+
+    $reservedLiters = map_pump_booking_reserved_liters($pdo, $stationId, $oilTypeId, null, true);
+    $availableLiters = max(0.0, (float)$tankRow['current_l'] - $reservedLiters);
+    if ($quantity > $availableLiters) {
+        $pdo->rollBack();
+        http_response_code(409);
+        echo json_encode(['success' => false, 'message' => 'Only ' . number_format($availableLiters, 1) . ' liters remain available after existing reservations.']);
         exit;
     }
 
     // Loyalty redeem intent (0 / 10 / 20). Debit happens only on successful fill.
-    loyalty_schema_ready($pdo);
     $pointsToRedeem = 0;
     try {
         $pointsToRedeem = loyalty_validate_redeem_intent($pdo, $userId, $requestedPointsToRedeem);
@@ -276,18 +354,21 @@ try {
     }
 
     $expiryHours = (int) MAP_PUMP_BOOKING_EXPIRY_HOURS;
-    $insert = $pdo->prepare('INSERT INTO booking (user_id, car_license_id, station_id, oil_type_id, qr_code, qr_refrence_code, status, filled_gas, expire_at, created_at) VALUES (:user_id, :car_license_id, :station_id, :oil_type_id, :qr_code, :qr_refrence_code, :status, :filled_gas, DATE_ADD(NOW(), INTERVAL ' . $expiryHours . ' HOUR), NOW())');
+    $insert = $pdo->prepare('INSERT INTO booking (user_id, car_license_id, station_id, oil_type_id, requested_liters, qr_code, qr_refrence_code, status, filled_gas, expire_at, created_at) VALUES (:user_id, :car_license_id, :station_id, :oil_type_id, :requested_liters, :qr_code, :qr_refrence_code, :status, :filled_gas, DATE_ADD(NOW(), INTERVAL ' . $expiryHours . ' HOUR), NOW())');
     $insert->execute([
         ':user_id' => $userId,
         ':car_license_id' => $activeCarLicenseId,
         ':station_id' => $stationId,
         ':oil_type_id' => $oilTypeId,
+        ':requested_liters' => round($quantity, 2),
         ':qr_code' => $displayPayload,
         ':qr_refrence_code' => $bookingCode,
         ':status' => 'notfilled',
         ':filled_gas' => 0
     ]);
     $bookingId = (int) $pdo->lastInsertId();
+    $reservation = $pdo->prepare('INSERT INTO booking_reservations (booking_id, station_id, oil_type_id, requested_liters, price_per_litre) VALUES (?, ?, ?, ?, ?)');
+    $reservation->execute([$bookingId, $stationId, $oilTypeId, round($quantity, 2), (float)$stationFuel['price_per_litre']]);
 
     if ($pointsToRedeem > 0 && $bookingId > 0) {
         try {
@@ -328,6 +409,15 @@ try {
     }
     $message = $e->getMessage();
     error_log('Booking save failed: ' . $message);
+    $driverErrorCode = (int)($e->errorInfo[1] ?? 0);
+    $isTransactionConflict = (string)$e->getCode() === '40001'
+        || in_array($driverErrorCode, [1205, 1213, 9007], true)
+        || stripos($message, 'write conflict') !== false;
+    if ($isTransactionConflict) {
+        http_response_code(409);
+        echo json_encode(['success' => false, 'message' => 'Stock or booking details changed while you were reserving. Refresh the station information and try again.']);
+        exit;
+    }
     if ($e->getCode() === '23000' && (strpos($message, 'fk_booking_branch_id') !== false || strpos($message, 'fk_booking_station_id') !== false)) {
         http_response_code(422);
         echo json_encode(['success' => false, 'message' => 'This station is not available in the database. Please refresh the booking page and choose a listed station.']);

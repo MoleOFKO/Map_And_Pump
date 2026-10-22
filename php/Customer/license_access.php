@@ -54,6 +54,21 @@ function customer_license_access(PDO $pdo, int $userId): array
     ];
 }
 
+function customer_license_valid_for_booking(PDO $pdo, int $userId, bool $lock = false): bool
+{
+    if ($userId <= 0 || !customer_license_status_column_ready($pdo)) return false;
+    $sql = "SELECT l.status, l.license_last_valid_date
+            FROM users u INNER JOIN user_license l ON l.license_id = u.license_id
+            WHERE u.user_id = ? LIMIT 1" . ($lock ? ' FOR UPDATE' : '');
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute([$userId]);
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+    return $row
+        && in_array(strtolower(trim((string)$row['status'])), ['approved', 'confirmed', 'active'], true)
+        && !empty($row['license_last_valid_date'])
+        && (string)$row['license_last_valid_date'] >= date('Y-m-d');
+}
+
 function customer_license_status_label(?string $status): string
 {
     return match (strtolower(trim((string) $status))) {

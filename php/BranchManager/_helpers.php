@@ -418,7 +418,7 @@ function notif_low_stock_scan(PDO $db, int $branch_id, int $recipient_user_id): 
         $msg = sprintf(
             '%s is at %d%% (%s / %s L), below the %d%% alert level.',
             $t['fuel_name'], (int)$t['pct'],
-            number_format((int)$t['current_l']), number_format((int)$t['capacity_l']),
+            number_format((float)$t['current_l'], 2), number_format((int)$t['capacity_l']),
             (int)$t['alert_pct']
         );
         notif_create($db, $recipient_user_id, null, 'stock_low', $subject, $msg);
