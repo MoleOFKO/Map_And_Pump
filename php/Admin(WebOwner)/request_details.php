@@ -21,7 +21,7 @@ if (!hq_db_available() || !request_schema_ready()) {
 
 global $conn;
 $statement = $conn->prepare(
-    'SELECT r.request_id, r.reference_code, r.request_type, r.status,
+    'SELECT r.request_id, r.headquarter_id, r.reference_code, r.request_type, r.status,
             r.sender_entity, r.sender_name, r.sender_email, r.location,
             r.request_details, r.document_name, r.document_path,
             r.headquarter_owner_email, r.headquarter_email, r.headquarter_company_logo,
@@ -63,10 +63,13 @@ if (strtolower((string) $request['request_type']) === 'hq_registration' && payme
                 receipt.file_name, receipt.mime_type
          FROM payment_transfers pt
          LEFT JOIN payment_transfer_receipts receipt ON receipt.payment_transfer_id = pt.payment_transfer_id
-         WHERE pt.request_id = ? AND pt.payment_type = 'hq_registration'
-         ORDER BY pt.payment_transfer_id DESC LIMIT 1"
+         WHERE pt.payment_type = 'hq_registration'
+           AND (pt.request_id = ? OR (COALESCE(pt.request_id, 0) = 0 AND pt.payer_headquarter_id = ? AND ? > 0))
+         ORDER BY CASE WHEN pt.request_id = ? THEN 0 ELSE 1 END, pt.payment_transfer_id DESC
+         LIMIT 1"
     );
-    $paymentStmt->execute([$requestId]);
+    $headquarterId = (int) ($request['headquarter_id'] ?? 0);
+    $paymentStmt->execute([$requestId, $headquarterId, $headquarterId, $requestId]);
     $paymentRow = $paymentStmt->fetch(PDO::FETCH_ASSOC);
     if ($paymentRow) {
         $reviewerId = (int) ($_SESSION['user_id'] ?? 0);

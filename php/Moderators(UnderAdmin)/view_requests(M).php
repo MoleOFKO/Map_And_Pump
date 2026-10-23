@@ -57,16 +57,9 @@ $requestTypeOption = function_exists('admin_request_type_filter_value')
         default => $requestType,
     };
 $requestRows = in_array($requestType, ['account', 'payment'], true) ? [] : moderator_request_rows($search, $requestType, $status);
-$standalonePaymentRows = [];
-if (($requestType === '' || $requestType === 'payment') && ($status === '' || $status === 'pending')) {
-    $standalonePaymentRows = request_standalone_payment_rows(true);
-    if ($search !== '') {
-        $searchLower = strtolower($search);
-        $standalonePaymentRows = array_values(array_filter($standalonePaymentRows, static function (array $row) use ($searchLower): bool {
-            return str_contains(strtolower(implode(' ', [(string) ($row['payment_transfer_id'] ?? ''), (string) ($row['payer_hq_name'] ?? ''), (string) ($row['payer_name'] ?? ''), (string) ($row['payer_email'] ?? ''), (string) ($row['description'] ?? '')])), $searchLower);
-        }));
-    }
-}
+$paymentRows = in_array($requestType, ['', 'payment'], true)
+    ? request_payment_verification_rows('moderator', $search, $status)
+    : [];
 $accountRows = [];
 $carLicenseRows = [];
 if (($requestType === '' || $requestType === 'account') && ($status === '' || $status === 'pending')) {
@@ -76,7 +69,7 @@ if (($requestType === '' || $requestType === 'account') && ($status === '' || $s
 
 $summary = moderator_request_summary();
 $summary['pending'] += count($accountRows) + count($carLicenseRows);
-$summary['pending'] += count($standalonePaymentRows);
+$summary['pending'] += count(array_filter($paymentRows, static fn (array $row): bool => ($row['status'] ?? '') === 'payer_reported_paid'));
 $dbError = $summary['error'] ?? (hq_db_available() ? null : 'The request database is temporarily unavailable.');
 $flashType = (string) ($flash['type'] ?? '');
 ?>
@@ -235,7 +228,7 @@ $flashType = (string) ($flash['type'] ?? '');
     </div></div>
 
     <div class="col-12"><div class="analytics-card"><div class="table-responsive"><table class="table table-dark-custom align-middle m-0"><thead><tr><th>Ref ID</th><th>Sender Entity</th><th>Type of Request</th><th>Submission Date</th><th>Status</th><th class="text-end">Command</th></tr></thead><tbody>
-        <?php if (!$accountRows && !$carLicenseRows && !$requestRows && !$standalonePaymentRows): ?>
+        <?php if (!$accountRows && !$carLicenseRows && !$requestRows && !$paymentRows): ?>
             <tr><td colspan="6" class="text-center text-white-50 py-5"><i class="bi bi-inbox fs-3 d-block mb-2"></i>No requests match the current filter.</td></tr>
         <?php endif; ?>
         <?php foreach ($accountRows as $row): ?>
@@ -290,31 +283,34 @@ $flashType = (string) ($flash['type'] ?? '');
                 </div></td>
             </tr>
         <?php endforeach; ?>
-        <?php foreach ($standalonePaymentRows as $paymentRow): ?>
-            <?php
-            $paymentId = (int) $paymentRow['payment_transfer_id'];
-            $paymentPayerEmail = strtolower(trim((string) ($paymentRow['payer_email'] ?? '')));
-            $currentEmail = strtolower(trim((string) ($_SESSION['user_email'] ?? '')));
-            $isPaymentPayer = ((int) ($paymentRow['payer_user_id'] ?? 0) === (int) ($_SESSION['user_id'] ?? 0)) || ($currentEmail !== '' && $currentEmail === $paymentPayerEmail);
-            ?>
+        <?php foreach ($paymentRows as $paymentRow): ?>
+            <?php $paymentId = (int) $paymentRow['payment_transfer_id']; $paymentState = (string) $paymentRow['status']; $paymentStatus = $paymentState === 'payer_reported_paid' ? 'pending' : ($paymentState === 'received' ? 'approved' : 'rejected'); $isPayer = ((int) ($paymentRow['payer_user_id'] ?? 0) === (int) ($_SESSION['user_id'] ?? 0)) || (strtolower((string) ($_SESSION['user_email'] ?? '')) !== '' && strtolower((string) ($_SESSION['user_email'] ?? '')) === strtolower((string) ($paymentRow['payer_email'] ?? ''))); ?>
             <tr>
                 <td class="fw-bold txt-neon-cyan">#PAY-<?= $paymentId ?></td>
                 <td><div class="fw-semibold text-white"><?= moderator_escape((string) ($paymentRow['payer_hq_name'] ?: $paymentRow['payer_name'] ?: 'HQ payer')) ?></div><div class="text-white-50 small"><?= moderator_escape((string) ($paymentRow['description'] ?? '')) ?></div><div class="text-white-50 small"><?= number_format((float) $paymentRow['amount_mmk'], 2) ?> MMK · <?= moderator_escape((string) ($paymentRow['payer_email'] ?? '')) ?></div></td>
-                <td><span class="badge rounded-pill bg-info bg-opacity-10 text-info border border-info border-opacity-25 px-2 py-1">Payment Verification · HQ Service Extension</span></td>
+                <td><span class="badge rounded-pill bg-info bg-opacity-10 text-info border border-info border-opacity-25 px-2 py-1">Payment Verification</span><div class="text-white-50 small mt-1">HQ Service Extension</div></td>
                 <td class="text-white-50"><?= moderator_escape(moderator_format_date((string) $paymentRow['created_at'])) ?></td>
-                <td><span class="request-status request-status-pending">Payer reported paid</span></td>
-                <td class="text-end"><div class="d-flex flex-wrap gap-2 justify-content-end align-items-center">
-                    <?php if (!empty($paymentRow['receipt_name'])): ?><a class="btn-action" href="/php/Payment/receipt.php?id=<?= $paymentId ?>" target="_blank" rel="noopener" title="Open payment evidence"><i class="bi bi-receipt"></i></a><?php endif; ?>
-                    <?php if ($isPaymentPayer): ?><span class="text-warning small">A different reviewer must review this payment.</span><?php else: ?>
-                        <form action="/php/Payment/action.php" method="POST" class="m-0"><input type="hidden" name="csrf_token" value="<?= moderator_escape((string) $_SESSION['payment_transfer_csrf']) ?>"><input type="hidden" name="transfer_id" value="<?= $paymentId ?>"><input type="hidden" name="action" value="confirm_received"><input type="hidden" name="return_to" value="/php/Moderators(UnderAdmin)/view_requests(M).php"><button type="submit" class="btn btn-sm btn-success" onclick="return confirm('Confirm receipt only after checking your bank or wallet records.')">Confirm received</button></form>
-                        <form action="/php/Payment/action.php" method="POST" class="m-0"><input type="hidden" name="csrf_token" value="<?= moderator_escape((string) $_SESSION['payment_transfer_csrf']) ?>"><input type="hidden" name="transfer_id" value="<?= $paymentId ?>"><input type="hidden" name="action" value="mark_not_received"><input type="hidden" name="return_to" value="/php/Moderators(UnderAdmin)/view_requests(M).php"><input type="hidden" name="decision_note" value="Payment not verified by Moderator."><button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Record that the payment was not received or could not be verified?')">Mark not received</button></form>
-                    <?php endif; ?>
+                <td><span class="request-status <?= moderator_escape(request_status_class($paymentStatus)) ?>"><?= moderator_escape($paymentStatus === 'pending' ? 'Payer reported paid' : request_status_label($paymentStatus)) ?></span></td>
+                <td class="text-end"><div class="d-flex gap-2 justify-content-end align-items-center">
+                    <button type="button" class="btn-action js-view-payment" title="View payment verification details" aria-label="View payment verification #PAY-<?= $paymentId ?> details"
+                        data-payment-id="<?= $paymentId ?>" data-payment-type="HQ Service Extension"
+                        data-payment-status="<?= moderator_escape($paymentState) ?>" data-payment-name="<?= moderator_escape((string) ($paymentRow['payer_hq_name'] ?: $paymentRow['payer_name'] ?: 'HQ payer')) ?>"
+                        data-payment-email="<?= moderator_escape((string) ($paymentRow['payer_email'] ?? '')) ?>" data-payment-description="<?= moderator_escape((string) ($paymentRow['description'] ?? '')) ?>"
+                        data-payment-amount="<?= moderator_escape(number_format((float) $paymentRow['amount_mmk'], 2)) ?>" data-payment-date="<?= moderator_escape(moderator_format_date((string) $paymentRow['created_at'])) ?>"
+                        data-payment-method="<?= moderator_escape((string) ($paymentRow['payment_method'] ?? 'Not provided')) ?>" data-receipt-name="<?= moderator_escape((string) ($paymentRow['receipt_name'] ?? '')) ?>"
+                        data-receipt-mime="<?= moderator_escape((string) ($paymentRow['receipt_mime_type'] ?? '')) ?>" data-is-payer="<?= $isPayer ? 'yes' : 'no' ?>"><i class="bi bi-eye-fill"></i></button>
+                    <?php if ($paymentState === 'payer_reported_paid' && !$isPayer): ?><div class="d-none" id="paymentActions<?= $paymentId ?>">
+                        <form action="/php/Payment/action.php" method="POST" class="m-0 flex-fill"><input type="hidden" name="csrf_token" value="<?= moderator_escape((string) ($_SESSION['payment_transfer_csrf'] ?? '')) ?>"><input type="hidden" name="transfer_id" value="<?= $paymentId ?>"><input type="hidden" name="action" value="confirm_received"><input type="hidden" name="return_to" value="/php/Moderators(UnderAdmin)/view_requests(M).php"><button type="submit" class="btn btn-success w-100" onclick="return confirm('Confirm receipt only after checking your bank or wallet records.')">I have confirmed</button></form>
+                        <form action="/php/Payment/action.php" method="POST" class="m-0 flex-fill"><input type="hidden" name="csrf_token" value="<?= moderator_escape((string) ($_SESSION['payment_transfer_csrf'] ?? '')) ?>"><input type="hidden" name="transfer_id" value="<?= $paymentId ?>"><input type="hidden" name="action" value="mark_not_received"><input type="hidden" name="return_to" value="/php/Moderators(UnderAdmin)/view_requests(M).php"><input type="hidden" name="decision_note" value="Payment not verified by Moderator."><button type="submit" class="btn btn-outline-danger w-100" onclick="return confirm('Record that the payment was not received or could not be verified?')">The payment wasn’t received</button></form>
+                    </div><?php endif; ?>
                 </div></td>
             </tr>
         <?php endforeach; ?>
     </tbody></table></div></div></div>
     </div>
 </main>
+
+<div class="modal fade glass-modal request-detail-modal" id="paymentDetailsModal" tabindex="-1" aria-labelledby="paymentDetailsTitle" aria-hidden="true"><div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-xl"><div class="modal-content"><div class="modal-header"><h5 class="modal-title fw-bold" id="paymentDetailsTitle"><i class="bi bi-receipt-cutoff txt-neon-cyan me-2"></i> Payment Verification Details</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button></div><div class="modal-body" id="paymentDetailsBody"></div><div class="modal-footer" id="paymentDetailsFooter"><button type="button" class="btn btn-outline-secondary rounded-3 text-white-50 border-secondary border-opacity-20" data-bs-dismiss="modal">Close</button></div></div></div></div>
 
 <form action="request_action(M).php" method="POST" id="approveRequestForm" class="d-none"><input type="hidden" name="request_id" id="approveRequestId"><input type="hidden" name="action" value="approve"><input type="hidden" name="return_to" value="view_requests(M).php"></form>
 
@@ -538,6 +534,33 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 });
+</script>
+<script>
+(() => {
+    const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('paymentDetailsModal'));
+    const body = document.getElementById('paymentDetailsBody');
+    const footer = document.getElementById('paymentDetailsFooter');
+    const escape = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+    document.addEventListener('click', event => {
+        const button = event.target.closest('.js-view-payment');
+        if (!button) return;
+        const data = button.dataset;
+        const receiptUrl = '/php/Payment/receipt.php?id=' + encodeURIComponent(data.paymentId) + '&view=1';
+        let evidence = '<div class="text-white-50">No payment evidence was uploaded.</div>';
+        if (data.receiptName && data.receiptMime.startsWith('image/')) {
+            evidence = '<img src="' + receiptUrl + '" alt="Payment evidence: ' + escape(data.receiptName) + '" class="img-fluid rounded-3" style="display:block;max-width:100%;max-height:60vh;object-fit:contain;margin:auto;border:1px solid var(--glass-border);background:rgba(255,255,255,.04);padding:.35rem;">';
+        } else if (data.receiptName && data.receiptMime === 'application/pdf') {
+            evidence = '<iframe src="' + receiptUrl + '" title="Payment evidence: ' + escape(data.receiptName) + '" style="width:100%;height:60vh;border:1px solid var(--glass-border);border-radius:12px;background:#fff"></iframe>';
+        } else if (data.receiptName) {
+            evidence = '<div class="text-white-50">Preview is unavailable for this file type. <a href="' + receiptUrl + '" target="_blank" rel="noopener">Open ' + escape(data.receiptName) + '</a></div>';
+        }
+        const statusLabel = data.paymentStatus === 'payer_reported_paid' ? 'Payer reported paid · Awaiting independent verification' : (data.paymentStatus === 'received' ? 'Payment received' : 'Payment not received');
+        body.innerHTML = '<div class="row g-4"><div class="col-12 col-lg-5"><h6 class="fw-semibold text-white mb-3" style="letter-spacing:.5px;font-size:.78rem;text-transform:uppercase">Payment Information</h6><div class="mb-3"><div class="request-detail-label">Payer / HQ</div><div class="request-detail-value">' + escape(data.paymentName) + '</div></div><div class="mb-3"><div class="request-detail-label">Email</div><div class="request-detail-value">' + escape(data.paymentEmail || 'Not provided') + '</div></div><div class="mb-3"><div class="request-detail-label">Payment Type</div><div class="request-detail-value">' + escape(data.paymentType) + '</div></div><div class="mb-3"><div class="request-detail-label">Amount</div><div class="request-detail-value">' + escape(data.paymentAmount) + ' MMK</div></div><div class="mb-3"><div class="request-detail-label">Payment Method</div><div class="request-detail-value">' + escape(data.paymentMethod || 'Not provided') + '</div></div><div class="mb-3"><div class="request-detail-label">Submitted</div><div class="request-detail-value">' + escape(data.paymentDate) + '</div></div><div class="mb-3"><div class="request-detail-label">Status</div><div class="request-detail-value">' + escape(statusLabel) + '</div></div><div class="mb-3"><div class="request-detail-label">Description</div><div class="request-detail-value">' + escape(data.paymentDescription || 'No additional details provided.') + '</div></div></div><div class="col-12 col-lg-7"><h6 class="fw-semibold text-white mb-3" style="letter-spacing:.5px;font-size:.78rem;text-transform:uppercase">Payment Evidence</h6><div class="request-detail-value p-3 rounded-3" style="background:rgba(0,244,255,.04);border:1px solid var(--glass-border);min-height:220px">' + evidence + '</div><div class="small text-white-50 mt-2">A payer declaration or screenshot is evidence for review, not proof of received money.</div></div></div>';
+        const actions = document.getElementById('paymentActions' + data.paymentId);
+        footer.innerHTML = (actions ? actions.innerHTML : (data.paymentStatus === 'payer_reported_paid' && data.isPayer === 'yes' ? '<div class="small text-warning me-auto">You submitted this payment. Another reviewer must review it.</div>' : '')) + '<button type="button" class="btn btn-outline-secondary rounded-3 text-white-50 border-secondary border-opacity-20" data-bs-dismiss="modal">Close</button>';
+        modal.show();
+    });
+})();
 </script>
 </body>
 </html>
