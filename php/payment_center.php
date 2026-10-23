@@ -1,4 +1,6 @@
 <?php
+require_once __DIR__ . '/Login/session_helper.php';
+map_pump_configure_session(!empty($_COOKIE[MAP_PUMP_REMEMBER_EMAIL_COOKIE]));
 if (session_status() !== PHP_SESSION_ACTIVE) {
     session_start();
 }
@@ -138,7 +140,7 @@ $statusLabels = [
                 <h1 class="h2 text-white mb-2">Payment status</h1>
                 <p class="text-secondary mb-0">The website records the payer’s declaration and the recipient’s response. It does not send, hold, or independently verify money.</p>
             </div>
-            <a class="btn btn-outline-light" href="/php/HomePage.php">Return to MAP &amp; PUMP</a>
+            <a class="btn btn-outline-light" href="<?= $isAdmin ? '/php/Admin(WebOwner)/view_requests.php' : ($isModeratorReviewer ? '/php/Moderators(UnderAdmin)/view_requests(M).php' : '/php/HomePage.php') ?>"><?= ($isAdmin || $isModeratorReviewer) ? 'Return to View Requests' : 'Return to MAP &amp; PUMP' ?></a>
         </div>
 
         <?php if (is_array($paymentFlash)): ?>

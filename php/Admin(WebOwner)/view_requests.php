@@ -10,6 +10,11 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
 }
 
 $flash = request_pull_flash();
+$paymentFlash = $_SESSION['payment_transfer_flash'] ?? null;
+unset($_SESSION['payment_transfer_flash']);
+if (empty($_SESSION['payment_transfer_csrf'])) {
+    $_SESSION['payment_transfer_csrf'] = bin2hex(random_bytes(32));
+}
 $accountReviewSuccess = $_SESSION['account_review_success'] ?? null;
 unset($_SESSION['account_review_success']);
 if (!is_array($accountReviewSuccess) || !in_array($accountReviewSuccess['action'] ?? '', ['approval', 'rejection'], true)) {
@@ -30,7 +35,7 @@ sort($allowedStatuses);
 $dbTypes = admin_filter_request_types();
 $allowedTypes = $dbTypes;
 // Ensure common type keywords remain selectable even if table is empty.
-foreach (['account', 'hq_registration', 'station', 'new_station', 'new_station_registration', 'license', 'license_modification', 'deactivation', 'account_deactivation'] as $fallbackType) {
+foreach (['account', 'payment', 'hq_registration', 'station', 'new_station', 'new_station_registration', 'license', 'license_modification', 'deactivation', 'account_deactivation'] as $fallbackType) {
     if (!in_array($fallbackType, $allowedTypes, true)) {
         $allowedTypes[] = $fallbackType;
     }
@@ -70,7 +75,7 @@ if (hq_db_available() && request_schema_ready()) {
         $types .= 'sss';
     }
 
-    if ($requestType !== '') {
+    if ($requestType !== '' && $requestType !== 'payment') {
         // Exact keyword from DB, plus related aliases for grouped types.
         $typeValues = match ($requestType) {
             'account' => ['account'],
@@ -112,7 +117,7 @@ FROM system_requests r
 LEFT JOIN users u ON u.user_id = r.submitter_user_id
 SQL;
 
-    if ($requestType === 'account') {
+    if (in_array($requestType, ['account', 'payment'], true)) {
         $requestRows = [];
     } else {
     if ($where) {
@@ -149,6 +154,24 @@ if (hq_db_available() && ($requestType === '' || $requestType === 'account') && 
     $accountRows = pending_account_rows($search);
     $carLicenseRows = pending_car_license_rows($search);
     $summary['pending'] = (int) $summary['pending'] + count($accountRows) + count($carLicenseRows);
+}
+$paymentReviewByRequest = request_payment_review_map($requestRows);
+$standalonePaymentRows = [];
+if (($requestType === '' || $requestType === 'payment') && ($status === '' || $status === 'pending')) {
+    $standalonePaymentRows = request_standalone_payment_rows();
+    if ($search !== '') {
+        $searchLower = strtolower($search);
+        $standalonePaymentRows = array_values(array_filter($standalonePaymentRows, static function (array $row) use ($searchLower): bool {
+            return str_contains(strtolower(implode(' ', [
+                (string) ($row['payment_transfer_id'] ?? ''),
+                (string) ($row['payer_hq_name'] ?? ''),
+                (string) ($row['payer_name'] ?? ''),
+                (string) ($row['payer_email'] ?? ''),
+                (string) ($row['description'] ?? ''),
+            ])), $searchLower);
+        }));
+    }
+    $summary['pending'] += count($standalonePaymentRows);
 }
 
 $flashType = $flash['type'] ?? '';
@@ -281,6 +304,7 @@ $flashType = $flash['type'] ?? '';
     
 
     <main class="container my-5">
+        <?php if (is_array($paymentFlash)): ?><div class="alert request-flash alert-<?= hq_escape((string) ($paymentFlash['type'] ?? 'info')) ?> alert-dismissible fade show mb-4" role="status"><?= hq_escape((string) ($paymentFlash['message'] ?? 'Payment status updated.')) ?><button type="button" class="btn-close btn-close-white" data-bs-dismiss="alert" aria-label="Close"></button></div><?php endif; ?>
         <?php if ($flash && $flashType && !$accountReviewSuccess): ?>
             <div class="alert request-flash alert-<?= hq_escape($flashType) ?> alert-dismissible fade show mb-4" role="alert">
                 <i class="bi <?= $flashType === 'success' ? 'bi-check-circle-fill text-success' : 'bi-exclamation-triangle-fill text-danger' ?> me-2"></i><?= hq_escape($flash['message'] ?? '') ?>
@@ -289,8 +313,7 @@ $flashType = $flash['type'] ?? '';
         <?php endif; ?>
 
         <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3">
-            <div><span class="stat-chip mb-2"><i class="bi bi-clipboard-check-fill txt-neon-cyan"></i> Review Pipeline</span><h1 class="fw-bold m-0 h4 text-white mt-2">Inbound System Requests</h1><p class="text-white-50 m-0 small mt-1">Approve or deny partner registration, station adjustments, and licensing requests.</p></div>
-            <a class="btn btn-outline-info" href="/php/payment_center.php"><i class="bi bi-cash-coin me-1"></i>Payment status inbox</a>
+            <div><span class="stat-chip mb-2"><i class="bi bi-clipboard-check-fill txt-neon-cyan"></i> Review Pipeline</span><h1 class="fw-bold m-0 h4 text-white mt-2">Inbound Requests &amp; Payment Verifications</h1><p class="text-white-50 m-0 small mt-1">Registration, licensing, station, and payment reviews are handled in this queue.</p></div>
         </div>
 
         <?php if ($dbError): ?><div class="alert request-flash alert-danger mb-4" role="alert"><i class="bi bi-database-exclamation me-2"></i><?= hq_escape($dbError) ?></div><?php endif; ?>
@@ -312,7 +335,7 @@ $flashType = $flash['type'] ?? '';
             </form></div></div>
 
             <div class="col-12"><div class="analytics-card"><div class="table-responsive"><table class="table table-dark-custom align-middle m-0"><thead><tr><th>Ref ID</th><th>Sender Entity</th><th>Type of Request</th><th>Submission Date</th><th>Status</th><th class="text-end">Command</th></tr></thead><tbody>
-                <?php if (!$accountRows && !$carLicenseRows && !$requestRows): ?><tr><td colspan="6" class="text-center text-white-50 py-5"><i class="bi bi-inbox fs-3 d-block mb-2"></i>No requests match the current filter.</td></tr><?php endif; ?>
+                <?php if (!$accountRows && !$carLicenseRows && !$requestRows && !$standalonePaymentRows): ?><tr><td colspan="6" class="text-center text-white-50 py-5"><i class="bi bi-inbox fs-3 d-block mb-2"></i>No requests match the current filter.</td></tr><?php endif; ?>
                 <?php foreach ($accountRows as $row): ?>
                     <?php
                     $roleName = (string) ($row['role_name'] ?? 'User');
@@ -344,16 +367,44 @@ $flashType = $flash['type'] ?? '';
                     </tr>
                 <?php endforeach; ?>
                 <?php foreach ($requestRows as $row): ?>
-                    <?php $sender = (string) ($row['sender_entity'] ?: $row['sender_name'] ?: 'Unknown sender'); $location = (string) ($row['location'] ?: 'Location not provided'); $rowStatus = (string) ($row['status'] ?: 'pending'); ?>
+                    <?php $sender = (string) ($row['sender_entity'] ?: $row['sender_name'] ?: 'Unknown sender'); $location = (string) ($row['location'] ?: 'Location not provided'); $rowStatus = (string) ($row['status'] ?: 'pending'); $payment = $paymentReviewByRequest[(int) $row['request_id']] ?? null; $paymentState = strtolower((string) ($payment['status'] ?? '')); ?>
                     <tr>
                         <td class="fw-bold txt-neon-cyan">#<?= hq_escape($row['reference_code']) ?></td>
                         <td><div class="fw-semibold text-white"><?= hq_escape($sender) ?></div><div class="text-white-50 small" style="font-size:.8rem;"><?= hq_escape($location) ?></div></td>
                         <td><span class="badge rounded-pill bg-info bg-opacity-10 text-info border border-info border-opacity-25 px-2 py-1"><?= hq_escape(request_type_short_label($row['request_type'])) ?></span></td>
                         <td class="text-white-50"><?= hq_escape(request_date($row['created_at'])) ?></td>
-                        <td><span class="request-status <?= request_status_class($rowStatus) ?>"><?= hq_escape(request_status_label($rowStatus)) ?></span></td>
+                        <td><span class="request-status <?= request_status_class($rowStatus) ?>"><?= hq_escape(request_status_label($rowStatus)) ?></span><?php if (strtolower((string) $row['request_type']) === 'hq_registration'): ?><div class="mt-1"><span class="badge rounded-pill <?= $paymentState === 'received' ? 'bg-success' : ($paymentState === 'payer_reported_paid' ? 'bg-warning text-dark' : 'bg-secondary') ?>"><?= hq_escape(match ($paymentState) { 'received' => 'Payment received', 'payer_reported_paid' => 'Payment needs verification', 'rejected' => 'Payment not received', 'cancelled' => 'Payment cancelled', 'pending_payment' => 'Awaiting payer', default => 'Payment record missing' }) ?></span></div><?php endif; ?></td>
                         <td class="text-end"><div class="d-flex gap-2 justify-content-end">
                             <button type="button" class="btn-action js-view-request" title="View Request Details" aria-label="View request <?= hq_escape($row['reference_code']) ?> details" data-request-id="<?= (int) $row['request_id'] ?>"><i class="bi bi-eye-fill"></i></button>
                             <?php if (strtolower($rowStatus) === 'pending'): ?><a href="#" class="btn-action btn-action-success js-request-approve" title="Approve" aria-label="Approve request <?= hq_escape($row['reference_code']) ?>" data-request-id="<?= (int) $row['request_id'] ?>" data-reference="<?= hq_escape($row['reference_code']) ?>"><i class="bi bi-check-lg"></i></a><a href="#" class="btn-action btn-action-danger js-request-reject" title="Reject" aria-label="Reject request <?= hq_escape($row['reference_code']) ?>" data-request-id="<?= (int) $row['request_id'] ?>" data-reference="<?= hq_escape($row['reference_code']) ?>" data-sender="<?= hq_escape($sender) ?>"><i class="bi bi-x-lg"></i></a><?php endif; ?>
+                        </div></td>
+                    </tr>
+                <?php endforeach; ?>
+                <?php foreach ($standalonePaymentRows as $paymentRow): ?>
+                    <?php
+                    $paymentId = (int) $paymentRow['payment_transfer_id'];
+                    $paymentPayerEmail = strtolower(trim((string) ($paymentRow['payer_email'] ?? '')));
+                    $currentEmail = strtolower(trim((string) ($_SESSION['user_email'] ?? '')));
+                    $isPaymentPayer = ((int) ($paymentRow['payer_user_id'] ?? 0) === (int) ($_SESSION['user_id'] ?? 0)) || ($currentEmail !== '' && $currentEmail === $paymentPayerEmail);
+                    $paymentTypeLabel = match ((string) $paymentRow['payment_type']) {
+                        'hq_period_extension' => 'HQ Service Extension',
+                        'hq_extra_station' => 'Extra Stations',
+                        'hq_station_operating_quote' => 'Station Operating Fee',
+                        default => 'Payment',
+                    };
+                    ?>
+                    <tr>
+                        <td class="fw-bold txt-neon-cyan">#PAY-<?= $paymentId ?></td>
+                        <td><div class="fw-semibold text-white"><?= hq_escape((string) ($paymentRow['payer_hq_name'] ?: $paymentRow['payer_name'] ?: 'HQ payer')) ?></div><div class="text-white-50 small"><?= hq_escape((string) ($paymentRow['description'] ?? '')) ?></div><div class="text-white-50 small"><?= number_format((float) $paymentRow['amount_mmk'], 2) ?> MMK · <?= hq_escape((string) ($paymentRow['payer_email'] ?? '')) ?></div></td>
+                        <td><span class="badge rounded-pill bg-info bg-opacity-10 text-info border border-info border-opacity-25 px-2 py-1">Payment Verification</span><div class="text-white-50 small mt-1"><?= hq_escape($paymentTypeLabel) ?></div></td>
+                        <td class="text-white-50"><?= hq_escape(request_date((string) $paymentRow['created_at'])) ?></td>
+                        <td><span class="request-status request-status-pending">Pending Review</span></td>
+                        <td class="text-end"><div class="d-flex flex-wrap gap-2 justify-content-end align-items-center">
+                            <?php if (!empty($paymentRow['receipt_name'])): ?><a class="btn-action" href="/php/Payment/receipt.php?id=<?= $paymentId ?>" target="_blank" rel="noopener" title="Open payment evidence"><i class="bi bi-receipt"></i></a><?php endif; ?>
+                            <?php if ($isPaymentPayer): ?><span class="text-warning small">A different Admin must review this payment.</span><?php else: ?>
+                                <form action="/php/Payment/action.php" method="POST" class="m-0"><input type="hidden" name="csrf_token" value="<?= hq_escape((string) $_SESSION['payment_transfer_csrf']) ?>"><input type="hidden" name="transfer_id" value="<?= $paymentId ?>"><input type="hidden" name="action" value="confirm_received"><input type="hidden" name="return_to" value="/php/Admin(WebOwner)/view_requests.php"><button type="submit" class="btn btn-sm btn-success" onclick="return confirm('Confirm receipt only after checking your bank or wallet records.')">Confirm received</button></form>
+                                <form action="/php/Payment/action.php" method="POST" class="m-0"><input type="hidden" name="csrf_token" value="<?= hq_escape((string) $_SESSION['payment_transfer_csrf']) ?>"><input type="hidden" name="transfer_id" value="<?= $paymentId ?>"><input type="hidden" name="action" value="mark_not_received"><input type="hidden" name="return_to" value="/php/Admin(WebOwner)/view_requests.php"><input type="hidden" name="decision_note" value="Payment not verified by Admin."><button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Record that the payment was not received or could not be verified?')">Mark not received</button></form>
+                            <?php endif; ?>
                         </div></td>
                     </tr>
                 <?php endforeach; ?>
@@ -483,9 +534,19 @@ $flashType = $flash['type'] ?? '';
                 const readableDetails = detailRows || (Object.keys(parsedDetails).length ? Object.entries(parsedDetails).map(([key,value]) => '<div class="mb-2"><div class="request-detail-label">' + escapeHtml(key.replaceAll('_',' ')) + '</div><div class="request-detail-value">' + escapeHtml(value) + '</div></div>').join('') : escapeHtml(request.request_details || 'No additional details provided.'));
                 detailsBody.innerHTML = '<div class="row g-4"><div class="col-12 col-md-6"><h6 class="fw-semibold text-white mb-3" style="letter-spacing:.5px;font-size:.78rem;text-transform:uppercase;">Submitter Info</h6><div class="mb-3"><div class="request-detail-label">Corporate Partner</div><div class="request-detail-value">' + escapeHtml(request.sender_entity || request.hq_company_name || 'Not available') + '</div></div><div class="mb-3"><div class="request-detail-label">Authorized Official</div><div class="request-detail-value">' + escapeHtml(request.sender_name || request.submitter_username || 'Not available') + (request.sender_email ? ' (' + escapeHtml(request.sender_email) + ')' : '') + '</div></div><div class="mb-3"><div class="request-detail-label">Operation Hub Location</div><div class="request-detail-value">' + escapeHtml(request.location || 'Not provided') + '</div></div></div><div class="col-12 col-md-6"><h6 class="fw-semibold text-white mb-3" style="letter-spacing:.5px;font-size:.78rem;text-transform:uppercase;">Request Specifics</h6><div class="mb-3"><div class="request-detail-label">Request Type</div><div class="request-detail-value">' + escapeHtml(request.request_type_label || request.request_type || 'Not available') + '</div></div><div class="mb-3"><div class="request-detail-label">Status</div><div><span class="request-status ' + statusClass(request.status) + '">' + escapeHtml(request.status_label || statusLabel(request.status)) + '</span></div></div><div class="mb-3"><div class="request-detail-label">Submitted</div><div class="request-detail-value">' + escapeHtml(formatDate(request.created_at)) + '</div></div><div class="mb-3"><div class="request-detail-label">Verification Document</div><div class="request-detail-value">' + documentMarkup + '</div></div></div><div class="col-12"><h6 class="fw-semibold text-white mb-2" style="letter-spacing:.5px;font-size:.78rem;text-transform:uppercase;">Request Details</h6><div class="request-detail-value request-detail-scroll p-3 rounded-3" style="background:rgba(0,244,255,.04);border:1px solid var(--glass-border);">' + readableDetails + '</div></div>' + (request.review_reason ? '<div class="col-12"><div class="request-detail-label">Review Message</div><div class="request-detail-value request-detail-scroll">' + escapeHtml(request.review_reason) + '</div></div>' : '') + '</div>';
                 detailsBody.insertAdjacentHTML('afterbegin', '<div class="mb-3"><div class="request-detail-label">Business License</div><div class="request-detail-value">' + licenseMarkup + documentMarkup + '</div></div><div class="mb-3"><div class="request-detail-label">Payment Receipt</div><div class="request-detail-value">' + receiptMarkup + '</div></div>');
+                const payment = request.registration_payment;
+                if (payment) {
+                    const paymentLabels = {pending_payment:'Awaiting payer declaration', payer_reported_paid:'Payer reported paid — verify receipt', received:'Payment recorded received', rejected:'Payment not received', cancelled:'Payment cancelled'};
+                    const paymentReceipt = payment.receipt_name ? '<a href="/php/Payment/receipt.php?id=' + encodeURIComponent(payment.payment_transfer_id) + '" target="_blank" rel="noopener">' + escapeHtml(payment.receipt_name) + '</a>' : 'No payment evidence uploaded';
+                    detailsBody.insertAdjacentHTML('afterbegin', '<div class="mb-3 p-3 rounded-3" style="background:rgba(255,193,7,.06);border:1px solid rgba(255,193,7,.25)"><div class="request-detail-label">Registration payment verification</div><div class="request-detail-value fw-semibold">' + escapeHtml(paymentLabels[payment.status] || payment.status) + '</div><div class="request-detail-value small mt-1">Amount: ' + escapeHtml(Number(payment.amount_mmk).toLocaleString()) + ' MMK · Method: ' + escapeHtml(payment.payment_method || 'Not provided') + '</div><div class="request-detail-value small mt-1">' + paymentReceipt + '</div><div class="small text-white-50 mt-2">A screenshot or payer declaration is evidence for review, not proof of received money.</div>' + (payment.is_current_user_payer ? '<div class="small text-warning mt-2">You submitted this payment. Another Admin must review it.</div>' : '') + '</div>');
+                }
                 if (String(request.status || '').toLowerCase() === 'pending') {
+                    const paymentNeedsReview = String(request.request_type || '').toLowerCase() === 'hq_registration' && (!payment || payment.status !== 'received');
+                    const paymentActions = payment && payment.status === 'payer_reported_paid' && request.can_review_registration_payment
+                        ? '<form action="/php/Payment/action.php" method="POST" class="m-0 flex-grow-1"><input type="hidden" name="csrf_token" value="' + escapeHtml(request.payment_transfer_csrf) + '"><input type="hidden" name="transfer_id" value="' + escapeHtml(payment.payment_transfer_id) + '"><input type="hidden" name="action" value="confirm_received"><input type="hidden" name="return_to" value="/php/Admin(WebOwner)/view_requests.php"><button type="submit" class="btn btn-success w-100" onclick="return confirm(\'Confirm receipt only after checking your bank or wallet records.\')">Confirm payment received</button></form><form action="/php/Payment/action.php" method="POST" class="m-0 flex-grow-1"><input type="hidden" name="csrf_token" value="' + escapeHtml(request.payment_transfer_csrf) + '"><input type="hidden" name="transfer_id" value="' + escapeHtml(payment.payment_transfer_id) + '"><input type="hidden" name="action" value="mark_not_received"><input type="hidden" name="return_to" value="/php/Admin(WebOwner)/view_requests.php"><input type="hidden" name="decision_note" value="Registration payment not verified by Admin."><button type="submit" class="btn btn-outline-danger w-100" onclick="return confirm(\'Record that the payment was not received or could not be verified?\')">Mark not received</button></form>' : '';
                     setFooter(
-                        '<form action="request_action.php" method="POST" class="m-0 flex-grow-1"><input type="hidden" name="request_id" value="' + escapeHtml(request.request_id) + '"><input type="hidden" name="action" value="approve"><input type="hidden" name="return_to" value="view_requests.php"><button type="submit" class="btn btn-success w-100">Approve</button></form>' +
+                        paymentActions +
+                        '<form action="request_action.php" method="POST" class="m-0 flex-grow-1"><input type="hidden" name="request_id" value="' + escapeHtml(request.request_id) + '"><input type="hidden" name="action" value="approve"><input type="hidden" name="return_to" value="view_requests.php"><button type="submit" class="btn btn-success w-100" ' + (paymentNeedsReview ? 'disabled title="Payment must be recorded as received first"' : '') + '>Approve</button></form>' +
                         '<button type="button" class="btn btn-warning js-modal-flag flex-grow-1">Flag</button>' +
                         '<button type="button" class="btn btn-danger js-modal-reject flex-grow-1">Reject</button>'
                     );

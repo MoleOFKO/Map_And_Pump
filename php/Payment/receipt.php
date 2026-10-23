@@ -1,4 +1,6 @@
 <?php
+require_once __DIR__ . '/../Login/session_helper.php';
+map_pump_configure_session(!empty($_COOKIE[MAP_PUMP_REMEMBER_EMAIL_COOKIE]));
 if (session_status() !== PHP_SESSION_ACTIVE) {
     session_start();
 }

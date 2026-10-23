@@ -3,6 +3,11 @@ require_once __DIR__ . '/moderator_common.php';
 
 $moderatorUser = moderator_require_user();
 $flash = request_pull_flash();
+$paymentFlash = $_SESSION['payment_transfer_flash'] ?? null;
+unset($_SESSION['payment_transfer_flash']);
+if (empty($_SESSION['payment_transfer_csrf'])) {
+    $_SESSION['payment_transfer_csrf'] = bin2hex(random_bytes(32));
+}
 $search = trim((string) ($_GET['search'] ?? ''));
 $requestType = strtolower(trim((string) ($_GET['type'] ?? '')));
 $status = strtolower(trim((string) ($_GET['status'] ?? '')));
@@ -20,7 +25,7 @@ sort($allowedStatuses);
 
 $dbTypes = function_exists('admin_filter_request_types') ? admin_filter_request_types() : [];
 $allowedTypes = $dbTypes;
-foreach (['account', 'hq_registration', 'station', 'new_station', 'new_station_registration', 'license', 'license_modification', 'deactivation', 'account_deactivation'] as $fallbackType) {
+foreach (['account', 'payment', 'hq_registration', 'station', 'new_station', 'new_station_registration', 'license', 'license_modification', 'deactivation', 'account_deactivation'] as $fallbackType) {
     if (!in_array($fallbackType, $allowedTypes, true)) {
         $allowedTypes[] = $fallbackType;
     }
@@ -51,7 +56,17 @@ $requestTypeOption = function_exists('admin_request_type_filter_value')
         'account_deactivation' => 'deactivation',
         default => $requestType,
     };
-$requestRows = ($requestType === 'account') ? [] : moderator_request_rows($search, $requestType, $status);
+$requestRows = in_array($requestType, ['account', 'payment'], true) ? [] : moderator_request_rows($search, $requestType, $status);
+$standalonePaymentRows = [];
+if (($requestType === '' || $requestType === 'payment') && ($status === '' || $status === 'pending')) {
+    $standalonePaymentRows = request_standalone_payment_rows(true);
+    if ($search !== '') {
+        $searchLower = strtolower($search);
+        $standalonePaymentRows = array_values(array_filter($standalonePaymentRows, static function (array $row) use ($searchLower): bool {
+            return str_contains(strtolower(implode(' ', [(string) ($row['payment_transfer_id'] ?? ''), (string) ($row['payer_hq_name'] ?? ''), (string) ($row['payer_name'] ?? ''), (string) ($row['payer_email'] ?? ''), (string) ($row['description'] ?? '')])), $searchLower);
+        }));
+    }
+}
 $accountRows = [];
 $carLicenseRows = [];
 if (($requestType === '' || $requestType === 'account') && ($status === '' || $status === 'pending')) {
@@ -61,6 +76,7 @@ if (($requestType === '' || $requestType === 'account') && ($status === '' || $s
 
 $summary = moderator_request_summary();
 $summary['pending'] += count($accountRows) + count($carLicenseRows);
+$summary['pending'] += count($standalonePaymentRows);
 $dbError = $summary['error'] ?? (hq_db_available() ? null : 'The request database is temporarily unavailable.');
 $flashType = (string) ($flash['type'] ?? '');
 ?>
@@ -185,6 +201,7 @@ $flashType = (string) ($flash['type'] ?? '');
 <body class="background_color" id="background_color">
 <?php include __DIR__ . '/includes/moderator_navbar.php'; ?>
 <main class="container my-5">
+    <?php if (is_array($paymentFlash)): ?><div class="alert request-flash alert-<?= moderator_escape((string) ($paymentFlash['type'] ?? 'info')) ?> alert-dismissible fade show mb-4" role="status"><?= moderator_escape((string) ($paymentFlash['message'] ?? 'Payment status updated.')) ?><button type="button" class="btn-close btn-close-white" data-bs-dismiss="alert" aria-label="Close"></button></div><?php endif; ?>
     <?php if ($flash && $flashType): ?>
         <div class="alert request-flash alert-<?= moderator_escape($flashType) ?> alert-dismissible fade show mb-4" role="alert">
             <i class="bi <?= $flashType === 'success' ? 'bi-check-circle-fill text-success' : 'bi-exclamation-triangle-fill text-danger' ?> me-2"></i><?= moderator_escape((string) ($flash['message'] ?? '')) ?>
@@ -218,7 +235,7 @@ $flashType = (string) ($flash['type'] ?? '');
     </div></div>
 
     <div class="col-12"><div class="analytics-card"><div class="table-responsive"><table class="table table-dark-custom align-middle m-0"><thead><tr><th>Ref ID</th><th>Sender Entity</th><th>Type of Request</th><th>Submission Date</th><th>Status</th><th class="text-end">Command</th></tr></thead><tbody>
-        <?php if (!$accountRows && !$carLicenseRows && !$requestRows): ?>
+        <?php if (!$accountRows && !$carLicenseRows && !$requestRows && !$standalonePaymentRows): ?>
             <tr><td colspan="6" class="text-center text-white-50 py-5"><i class="bi bi-inbox fs-3 d-block mb-2"></i>No requests match the current filter.</td></tr>
         <?php endif; ?>
         <?php foreach ($accountRows as $row): ?>
@@ -269,6 +286,28 @@ $flashType = (string) ($flash['type'] ?? '');
                         <a href="#" class="btn-action btn-action-success js-request-approve" title="Approve" aria-label="Approve request <?= moderator_escape((string) $row['reference_code']) ?>" data-request-id="<?= (int) $row['request_id'] ?>" data-reference="<?= moderator_escape((string) $row['reference_code']) ?>"><i class="bi bi-check-lg"></i></a>
                         <a href="#" class="btn-action js-request-flag" title="Flag" aria-label="Flag request <?= moderator_escape((string) $row['reference_code']) ?>" data-request-id="<?= (int) $row['request_id'] ?>" data-reference="<?= moderator_escape((string) $row['reference_code']) ?>"><i class="bi bi-flag-fill text-warning"></i></a>
                         <a href="#" class="btn-action btn-action-danger js-request-reject" title="Reject" aria-label="Reject request <?= moderator_escape((string) $row['reference_code']) ?>" data-request-id="<?= (int) $row['request_id'] ?>" data-reference="<?= moderator_escape((string) $row['reference_code']) ?>" data-sender="<?= moderator_escape($sender) ?>"><i class="bi bi-x-lg"></i></a>
+                    <?php endif; ?>
+                </div></td>
+            </tr>
+        <?php endforeach; ?>
+        <?php foreach ($standalonePaymentRows as $paymentRow): ?>
+            <?php
+            $paymentId = (int) $paymentRow['payment_transfer_id'];
+            $paymentPayerEmail = strtolower(trim((string) ($paymentRow['payer_email'] ?? '')));
+            $currentEmail = strtolower(trim((string) ($_SESSION['user_email'] ?? '')));
+            $isPaymentPayer = ((int) ($paymentRow['payer_user_id'] ?? 0) === (int) ($_SESSION['user_id'] ?? 0)) || ($currentEmail !== '' && $currentEmail === $paymentPayerEmail);
+            ?>
+            <tr>
+                <td class="fw-bold txt-neon-cyan">#PAY-<?= $paymentId ?></td>
+                <td><div class="fw-semibold text-white"><?= moderator_escape((string) ($paymentRow['payer_hq_name'] ?: $paymentRow['payer_name'] ?: 'HQ payer')) ?></div><div class="text-white-50 small"><?= moderator_escape((string) ($paymentRow['description'] ?? '')) ?></div><div class="text-white-50 small"><?= number_format((float) $paymentRow['amount_mmk'], 2) ?> MMK · <?= moderator_escape((string) ($paymentRow['payer_email'] ?? '')) ?></div></td>
+                <td><span class="badge rounded-pill bg-info bg-opacity-10 text-info border border-info border-opacity-25 px-2 py-1">Payment Verification · HQ Service Extension</span></td>
+                <td class="text-white-50"><?= moderator_escape(moderator_format_date((string) $paymentRow['created_at'])) ?></td>
+                <td><span class="request-status request-status-pending">Payer reported paid</span></td>
+                <td class="text-end"><div class="d-flex flex-wrap gap-2 justify-content-end align-items-center">
+                    <?php if (!empty($paymentRow['receipt_name'])): ?><a class="btn-action" href="/php/Payment/receipt.php?id=<?= $paymentId ?>" target="_blank" rel="noopener" title="Open payment evidence"><i class="bi bi-receipt"></i></a><?php endif; ?>
+                    <?php if ($isPaymentPayer): ?><span class="text-warning small">A different reviewer must review this payment.</span><?php else: ?>
+                        <form action="/php/Payment/action.php" method="POST" class="m-0"><input type="hidden" name="csrf_token" value="<?= moderator_escape((string) $_SESSION['payment_transfer_csrf']) ?>"><input type="hidden" name="transfer_id" value="<?= $paymentId ?>"><input type="hidden" name="action" value="confirm_received"><input type="hidden" name="return_to" value="/php/Moderators(UnderAdmin)/view_requests(M).php"><button type="submit" class="btn btn-sm btn-success" onclick="return confirm('Confirm receipt only after checking your bank or wallet records.')">Confirm received</button></form>
+                        <form action="/php/Payment/action.php" method="POST" class="m-0"><input type="hidden" name="csrf_token" value="<?= moderator_escape((string) $_SESSION['payment_transfer_csrf']) ?>"><input type="hidden" name="transfer_id" value="<?= $paymentId ?>"><input type="hidden" name="action" value="mark_not_received"><input type="hidden" name="return_to" value="/php/Moderators(UnderAdmin)/view_requests(M).php"><input type="hidden" name="decision_note" value="Payment not verified by Moderator."><button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Record that the payment was not received or could not be verified?')">Mark not received</button></form>
                     <?php endif; ?>
                 </div></td>
             </tr>

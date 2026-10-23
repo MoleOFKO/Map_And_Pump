@@ -1,4 +1,6 @@
 <?php
+require_once __DIR__ . '/../Login/session_helper.php';
+map_pump_configure_session(!empty($_COOKIE[MAP_PUMP_REMEMBER_EMAIL_COOKIE]));
 if (session_status() !== PHP_SESSION_ACTIVE) {
     session_start();
 }
@@ -34,6 +36,14 @@ $action = trim((string) ($_POST['action'] ?? ''));
 $transferId = (int) ($_POST['transfer_id'] ?? 0);
 $statusMessage = '';
 $redirect = '/php/payment_center.php';
+$returnTo = trim((string) ($_POST['return_to'] ?? ''));
+$allowedReturnTargets = [
+    '/php/Admin(WebOwner)/view_requests.php',
+    '/php/Moderators(UnderAdmin)/view_requests(M).php',
+];
+if (in_array($returnTo, $allowedReturnTargets, true)) {
+    $redirect = $returnTo;
+}
 if ($action === 'create_fuel_payment') {
     $redirect = '/php/Customer/usage_history.php';
 } elseif ($action === 'create_extra_station') {
@@ -422,7 +432,9 @@ try {
         }
         $pdo->commit();
         payment_transfer_send_notices($pdo, $transferId, $noticeSide, $noticeAction);
-        $redirect = '/php/payment_center.php?updated=' . rawurlencode($nextStatus);
+        $redirect = in_array($returnTo, $allowedReturnTargets, true)
+            ? $returnTo
+            : '/php/payment_center.php?updated=' . rawurlencode($nextStatus);
     } else {
         throw new RuntimeException('Unknown payment action.');
     }

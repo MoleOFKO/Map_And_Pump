@@ -523,6 +523,7 @@ function admin_filter_label(string $value): string
         'mandalay' => 'Mandalay',
         'naypyidaw' => 'Naypyidaw',
         'account' => 'Account verification',
+        'payment' => 'Payment verification',
         'station' => 'New station registration',
         'new_station' => 'New station registration',
         'new_station_registration' => 'New station registration',

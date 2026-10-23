@@ -72,28 +72,25 @@ try {
         $requestedStations = is_array($registrationDetails)
             ? (int) ($registrationDetails['requested_station_count'] ?? 0)
             : 0;
-        $noPaymentDue = $requestedStations === BILLING_HQ_INCLUDED_STATION_SLOTS;
         $paymentRow = null;
 
-        if (!$noPaymentDue) {
-            $paymentCheck = $conn->prepare(
-                "SELECT status, amount_mmk, quantity, payment_transfer_id FROM payment_transfers
-                 WHERE request_id = ? AND payment_type = 'hq_registration'
-                 ORDER BY payment_transfer_id DESC LIMIT 1"
-            );
-            if (!$paymentCheck) {
-                throw new RuntimeException('Payment status is unavailable. The HQ registration cannot be approved yet.');
-            }
-            $paymentCheck->bind_param('i', $requestId);
-            if (!$paymentCheck->execute()) {
-                $paymentCheck->close();
-                throw new RuntimeException('Could not verify the HQ registration payment status.');
-            }
-            $paymentRow = $paymentCheck->get_result()?->fetch_assoc();
+        $paymentCheck = $conn->prepare(
+            "SELECT status, amount_mmk, quantity, payment_transfer_id FROM payment_transfers
+             WHERE request_id = ? AND payment_type = 'hq_registration'
+             ORDER BY payment_transfer_id DESC LIMIT 1"
+        );
+        if (!$paymentCheck) {
+            throw new RuntimeException('Payment status is unavailable. The HQ registration cannot be approved yet.');
+        }
+        $paymentCheck->bind_param('i', $requestId);
+        if (!$paymentCheck->execute()) {
             $paymentCheck->close();
-            if (($paymentRow['status'] ?? '') !== 'received' || (float) ($paymentRow['amount_mmk'] ?? 0) <= 0) {
-                throw new RuntimeException('The HQ registration fee must be recorded as received by an Admin in Payment status before approval.');
-            }
+            throw new RuntimeException('Could not verify the HQ registration payment status.');
+        }
+        $paymentRow = $paymentCheck->get_result()?->fetch_assoc();
+        $paymentCheck->close();
+        if (($paymentRow['status'] ?? '') !== 'received' || (float) ($paymentRow['amount_mmk'] ?? 0) <= 0) {
+            throw new RuntimeException('The HQ registration fee must be recorded as received by an Admin before approval.');
         }
     }
 
