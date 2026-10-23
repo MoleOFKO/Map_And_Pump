@@ -60,7 +60,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $paymentMethod = trim((string) ($_POST['payment_method'] ?? ''));
     $bankName = trim((string) ($_POST['bank_name'] ?? ''));
     $requestedStations = filter_var($_POST['station_count'] ?? null, FILTER_VALIDATE_INT);
-    $noPaymentRequired = $requestedStations === BILLING_HQ_INCLUDED_STATION_SLOTS;
+    // The registration fee is always due. Three included stations waive their
+    // monthly maintenance charges, not the one-time HQ registration fee.
+    $noPaymentRequired = false;
     $csrfToken = (string) ($_POST['csrf_token'] ?? '');
 
     if (!hash_equals((string) $_SESSION['company_registration_csrf'], $csrfToken)) {
@@ -241,7 +243,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $transferId = payment_transfer_create($pdo, [
                 'payment_type' => 'hq_registration',
                 'amount_mmk' => $registrationAmount,
-                'description' => sprintf('HQ registration; %d stations included for the first month, %d additional station(s) for the first month', BILLING_HQ_INCLUDED_STATION_SLOTS, $extraStationCount),
+                'description' => sprintf('HQ registration fee; first %d stations have permanent monthly maintenance fee exemption; %d additional station(s) billed for the first month', BILLING_HQ_INCLUDED_STATION_SLOTS, $extraStationCount),
                 'quantity' => $extraStationCount,
                 'term_months' => 1,
                 'payer_user_id' => $payerUserId,
@@ -274,7 +276,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         $pdo->commit();
         if ($noPaymentRequired) {
-            $respond(true, 'Registration application submitted with no payment due for the three included stations. An Admin must review the application before approving the company.', 201, ['reference' => $reference]);
+            $respond(true, 'Registration application and payment details submitted. An Admin must confirm receipt before approving the company.', 201, ['reference' => $reference]);
         }
         payment_transfer_send_notices($pdo, $transferId, 'recipient', 'payer_reported_paid');
         $paymentUrl = payment_transfer_absolute_url('/php/payment_center.php?access=' . rawurlencode($accessToken));
@@ -387,7 +389,7 @@ require __DIR__ . '/../partials/nav.php';
         <!-- ============================ STEP 1 ============================ -->
         <div class="payment-step is-active" data-step="method">
             <h2 id="payment-modal-title">Complete your registration</h2>
-            <p class="payment-description">The first <?= (int) BILLING_HQ_INCLUDED_STATION_SLOTS ?> stations are included at no charge. Registration and first-month fees apply when you add more stations.</p>
+            <p class="payment-description">The registration fee is due for every HQ. The first <?= (int) BILLING_HQ_INCLUDED_STATION_SLOTS ?> stations have no monthly maintenance fee; additional stations are billed monthly.</p>
 
             <div class="payment-field">
                 <label class="payment-field-label" for="station-count">Stations requested</label>
@@ -494,7 +496,7 @@ require __DIR__ . '/../partials/nav.php';
             <p class="payment-error" id="payment-error" aria-live="polite" hidden></p>
 
             <button type="button" class="btn btn-primary payment-confirm" id="payment-confirm">Continue to payment <i class="fa-solid fa-arrow-right ms-2"></i></button>
-            <p class="payment-note" id="payment-note">No payment is due for the three included stations. An Admin must review the registration.</p>
+            <p class="payment-note" id="payment-note">The registration fee is due for every HQ. The first three stations have no monthly maintenance fee; additional stations are billed monthly.</p>
         </div>
 
         <!-- ============================ STEP 2 ============================ -->

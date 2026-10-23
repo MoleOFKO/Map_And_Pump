@@ -211,6 +211,8 @@ function moderator_request_rows(string $search, string $requestType, string $sta
         $where[] = 'LOWER(r.status) = ?';
         $params[] = $status;
         $types .= 's';
+    } else {
+        $where[] = "LOWER(r.status) = 'pending'";
     }
 
     $sql = 'SELECT r.request_id, r.reference_code, r.request_type, r.status, r.sender_entity,

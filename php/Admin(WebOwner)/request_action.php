@@ -45,9 +45,11 @@ try {
     $conn->begin_transaction();
 
     $targetQuery = $conn->prepare(
-        'SELECT r.*, u.user_id AS existing_user_id, u.email AS user_email
+        'SELECT r.*, u.user_id AS existing_user_id, u.email AS user_email,
+                h.expire_at AS current_hq_expire_at
          FROM system_requests r
          LEFT JOIN users u ON u.user_id = r.submitter_user_id
+         LEFT JOIN headquarter h ON h.headquarter_id = r.headquarter_id
          WHERE r.request_id = ?
          FOR UPDATE'
     );
@@ -65,10 +67,6 @@ try {
     if (strtolower((string) $target['status']) !== 'pending') {
         throw new RuntimeException('Only pending requests can be approved, rejected, or flagged.');
     }
-    if (strtolower((string) $target['request_type']) === 'license_modification' && !admin_is_admin($reviewer)) {
-        throw new RuntimeException('Only an Admin can approve, reject, or flag an HQ license renewal request.');
-    }
-
     if ($action === 'approve' && strtolower((string) $target['request_type']) === 'hq_registration') {
         $registrationDetails = json_decode((string) ($target['request_details'] ?? ''), true);
         $requestedStations = is_array($registrationDetails)
@@ -146,6 +144,10 @@ try {
         }
         if (empty($target['headquarter_id'])) {
             throw new RuntimeException('The license renewal is not linked to an HQ account.');
+        }
+        $currentExpiryDate = substr(trim((string) ($target['current_hq_expire_at'] ?? '')), 0, 10);
+        if ($currentExpiryDate !== '' && $renewalExpiryDate <= $currentExpiryDate) {
+            throw new RuntimeException('The new license expiry date must extend the current HQ deadline.');
         }
         if ($action === 'approve') {
             $expiryTimestamp = $renewalExpiryDate . ' 23:59:59';

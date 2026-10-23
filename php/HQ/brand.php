@@ -75,10 +75,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($licenseChanged) {
             $parsedExpiry = DateTime::createFromFormat('!Y-m-d', $licenseExpiry);
             $expiryErrors = DateTime::getLastErrors();
+            $currentExpiryDate = substr($currentExpiry, 0, 10);
             if (trim((string) $businessLicense) === '' || !$parsedExpiry
                 || ($expiryErrors !== false && ($expiryErrors['warning_count'] > 0 || $expiryErrors['error_count'] > 0))
-                || $parsedExpiry->format('Y-m-d') !== $licenseExpiry || $licenseExpiry < date('Y-m-d')) {
-                $message = 'Enter a valid business license number and an expiry date of today or later.';
+                || $parsedExpiry->format('Y-m-d') !== $licenseExpiry || $licenseExpiry < date('Y-m-d')
+                || ($currentExpiryDate !== '' && $licenseExpiry <= $currentExpiryDate)) {
+                $message = 'Enter a valid business license number and an expiry date later than the current HQ deadline.';
             } else {
                 $pendingRequest = $pdo->prepare("SELECT request_id FROM system_requests WHERE headquarter_id = ? AND request_type = 'license_modification' AND status = 'pending' LIMIT 1");
                 $pendingRequest->execute([(int) $config['headquarter_id']]);
