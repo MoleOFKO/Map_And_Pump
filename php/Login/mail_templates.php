@@ -184,6 +184,31 @@ function mail_build_account_notice(array $context): array
         return ['subject' => $subject, 'html' => $html, 'text' => $text];
     }
 
+    if ($kind === 'license_conflict') {
+        $licenseKind = strtolower(trim((string) ($context['license_kind'] ?? 'license')));
+        $licenseLabel = $licenseKind === 'car' ? 'car license plate' : 'driver license';
+        $licenseNumber = trim((string) ($context['license_number'] ?? ''));
+        $decision = strtolower(trim((string) ($context['recipient_decision'] ?? 'allowed_all')));
+        $reason = trim((string) ($context['reason'] ?? ''));
+        $subject = 'Map & Pump duplicate ' . $licenseLabel . ' review';
+        $message = match ($decision) {
+            'blocked' => 'Your ' . $licenseLabel . ' was blocked by an Admin or Moderator. The matching record was allowed. Reviewer reason: ' . $reason,
+            'blocked_all' => 'All matching ' . $licenseKind . ' license records were blocked by an Admin or Moderator. Reviewer reason: ' . $reason,
+            'other_blocked' => 'A duplicate ' . $licenseLabel . ' was found. Your record was allowed, while the other matching record was blocked after review. Contact Map & Pump support if you need more information.',
+            default => 'A duplicate ' . $licenseLabel . ' was found. After review, both matching records were allowed. Contact Map & Pump support if you need more information.',
+        };
+        $text = "Map & Pump — duplicate license review\n\n{$message}\n"
+            . ($licenseNumber !== '' ? "License number: {$licenseNumber}\n" : '')
+            . "\n{$footer['text']}";
+        $html = '<div style="font-family:Arial,Helvetica,sans-serif;line-height:1.55;color:#111827;max-width:560px">'
+            . '<p style="margin:0 0 12px;font-size:14px;color:#374151">Map &amp; Pump — duplicate license review</p>'
+            . '<h2 style="margin:0 0 16px;font-size:20px;color:#111827">' . mail_h($subject) . '</h2>'
+            . '<p>' . mail_h($message) . '</p>'
+            . ($licenseNumber !== '' ? '<p><strong>License number:</strong> ' . mail_h($licenseNumber) . '</p>' : '')
+            . $footer['html'] . '</div>';
+        return ['subject' => $subject, 'html' => $html, 'text' => $text];
+    }
+
     $scope = match ($kind) {
         'hq' => 'HQ account',
         'verification' => 'account verification',

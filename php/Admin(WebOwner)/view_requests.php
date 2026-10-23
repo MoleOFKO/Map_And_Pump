@@ -52,6 +52,7 @@ $summary = [
 ];
 $requestRows = [];
 $accountRows = [];
+$carLicenseRows = [];
 $dbError = null;
 
 if (hq_db_available() && request_schema_ready()) {
@@ -146,7 +147,8 @@ SQL;
 // available even when the separate system-request registry is unavailable.
 if (hq_db_available() && ($requestType === '' || $requestType === 'account') && ($status === '' || $status === 'pending')) {
     $accountRows = pending_account_rows($search);
-    $summary['pending'] = (int) $summary['pending'] + count($accountRows);
+    $carLicenseRows = pending_car_license_rows($search);
+    $summary['pending'] = (int) $summary['pending'] + count($accountRows) + count($carLicenseRows);
 }
 
 $flashType = $flash['type'] ?? '';
@@ -310,7 +312,7 @@ $flashType = $flash['type'] ?? '';
             </form></div></div>
 
             <div class="col-12"><div class="analytics-card"><div class="table-responsive"><table class="table table-dark-custom align-middle m-0"><thead><tr><th>Ref ID</th><th>Sender Entity</th><th>Type of Request</th><th>Submission Date</th><th>Status</th><th class="text-end">Command</th></tr></thead><tbody>
-                <?php if (!$accountRows && !$requestRows): ?><tr><td colspan="6" class="text-center text-white-50 py-5"><i class="bi bi-inbox fs-3 d-block mb-2"></i>No requests match the current filter.</td></tr><?php endif; ?>
+                <?php if (!$accountRows && !$carLicenseRows && !$requestRows): ?><tr><td colspan="6" class="text-center text-white-50 py-5"><i class="bi bi-inbox fs-3 d-block mb-2"></i>No requests match the current filter.</td></tr><?php endif; ?>
                 <?php foreach ($accountRows as $row): ?>
                     <?php
                     $roleName = (string) ($row['role_name'] ?? 'User');
@@ -320,11 +322,24 @@ $flashType = $flash['type'] ?? '';
                     <tr>
                         <td class="fw-bold txt-neon-cyan">#ACCT-<?= (int) $row['user_id'] ?></td>
                         <td><div class="fw-semibold text-white"><?= hq_escape($sender) ?></div><div class="text-white-50 small" style="font-size:.8rem;"><?= hq_escape((string) ($row['email'] ?? 'No email')) ?></div></td>
-                        <td><span class="badge rounded-pill bg-info bg-opacity-10 text-info border border-info border-opacity-25 px-2 py-1">Account Verification</span></td>
+                        <td><span class="badge rounded-pill bg-info bg-opacity-10 text-info border border-info border-opacity-25 px-2 py-1">Account Verification</span><?php if ((int) ($row['license_conflict_count'] ?? 0) > 0): ?><span class="badge bg-warning text-dark ms-1">Duplicate license</span><?php endif; ?></td>
                         <td class="text-white-50"><?= hq_escape(request_date($row['created_at'])) ?></td>
                         <td><span class="request-status request-status-pending">Pending Verification</span></td>
                         <td class="text-end"><div class="d-flex gap-2 justify-content-end">
                             <button type="button" class="btn-action js-view-account-request" title="View Account Details" aria-label="View account ACCT-<?= (int) $row['user_id'] ?> details" data-user-id="<?= (int) $row['user_id'] ?>" data-role-name="<?= hq_escape($roleName) ?>"><i class="bi bi-eye-fill"></i></button>
+                        </div></td>
+                    </tr>
+                <?php endforeach; ?>
+                <?php foreach ($carLicenseRows as $row): ?>
+                    <?php $carSender = (string) ($row['user_name'] ?: $row['car_owner_name'] ?: 'Unknown owner'); ?>
+                    <tr>
+                        <td class="fw-bold txt-neon-cyan">#CAR-<?= (int) $row['car_license_id'] ?></td>
+                        <td><div class="fw-semibold text-white"><?= hq_escape($carSender) ?></div><div class="text-white-50 small"><?= hq_escape((string) ($row['car_plate_number'] ?? '')) ?><?= !empty($row['email']) ? ' · ' . hq_escape((string) $row['email']) : '' ?></div></td>
+                        <td><span class="badge rounded-pill bg-info bg-opacity-10 text-info border border-info border-opacity-25 px-2 py-1">Car License Review</span><?php if ((int) $row['conflict_count'] > 0): ?><span class="badge bg-warning text-dark ms-1">Duplicate plate</span><?php endif; ?></td>
+                        <td class="text-white-50"><?= hq_escape(request_date($row['created_at'])) ?></td>
+                        <td><span class="request-status request-status-pending">Pending Review</span></td>
+                        <td class="text-end"><div class="d-flex gap-2 justify-content-end">
+                            <button type="button" class="btn-action js-view-car-license" title="Compare car license" aria-label="Review car license #<?= (int) $row['car_license_id'] ?>" data-car-license-id="<?= (int) $row['car_license_id'] ?>"><i class="bi bi-eye-fill"></i></button>
                         </div></td>
                     </tr>
                 <?php endforeach; ?>
@@ -389,6 +404,13 @@ $flashType = $flash['type'] ?? '';
                 if (!path) return '<div class="acct-doc-card"><div class="acct-doc-empty"><i class="bi bi-file-earmark-x"></i></div><div class="acct-doc-label">Not uploaded</div></div>';
                 const inner = isImagePath(path) ? '<img src="' + escapeHtml(path) + '" alt="' + escapeHtml(label) + '" class="acct-doc-thumb" loading="lazy">' : '<div class="acct-doc-empty"><i class="bi ' + icon + '"></i></div>';
                 return '<a href="' + escapeHtml(path) + '" target="_blank" rel="noopener" class="acct-doc-card" title="' + escapeHtml(label) + '">' + inner + '<div class="acct-doc-label">' + escapeHtml(label) + '</div></a>';
+            };
+            const licenseConflictMarkup = (current, conflicts) => {
+                if (!current || !Array.isArray(conflicts) || !conflicts.length) return '';
+                const recordCard = (title, record, currentRecord = false) => '<div class="col-12 col-lg-6"><section class="acct-section h-100"><div class="acct-section-title">' + escapeHtml(title) + '</div>' + fieldRow('bi-person', 'Customer', escapeHtml(record.user_name || 'Unknown')) + fieldRow('bi-envelope', 'Email', escapeHtml(record.email || 'Not provided')) + fieldRow('bi-hash', 'License number', escapeHtml(record.license_number || 'Not provided')) + fieldRow('bi-card-checklist', 'Decision status', escapeHtml(currentRecord ? (record.status || 'pending') : (record.license_status || 'pending'))) + '<div class="request-detail-label mb-2">License and face images</div><div class="acct-doc-grid">' + docCard(record.license_image, 'License image', 'bi-card-image') + docCard(record.face_image, 'Face image', 'bi-person-bounding-box') + '</div></section></div>';
+                const comparisons = conflicts.map((record) => recordCard('Matching record · ACCT-' + record.user_id, record)).join('');
+                const decisions = '<form action="license_conflict_action.php" method="POST" class="acct-section mt-3" data-license-conflict-form><input type="hidden" name="license_type" value="driver"><input type="hidden" name="record_id" value="' + escapeHtml(current.license_id) + '"><label class="form-label text-white-50 small" for="driver-license-decision">Decision for matching licenses</label><select class="form-select glass-select" id="driver-license-decision" name="decision" data-conflict-decision><option value="allow_all">Allow all matching licenses</option><option value="block_current">Block this license; allow the other matches</option><option value="block_all">Block all matching licenses</option></select><div class="mt-3" data-conflict-reason hidden><label class="form-label text-white-50 small" for="driver-license-reason">Reason required for blocking</label><textarea class="form-control glass-input" id="driver-license-reason" name="reason" rows="3" maxlength="2000" placeholder="Explain why the duplicate license record(s) are blocked."></textarea></div><button type="submit" class="btn btn-warning mt-3">Confirm license decision and notify users</button></form>';
+                return '<div class="alert alert-warning d-flex align-items-center justify-content-between gap-3 flex-wrap"><span><i class="bi bi-exclamation-triangle-fill me-2"></i>Same driver-license number found on ' + conflicts.length + ' other record(s). You can decide each matching set independently.</span><button type="button" class="btn btn-sm btn-outline-warning" data-license-compare-toggle aria-expanded="false"><i class="bi bi-layout-split me-1"></i>Compare</button></div><div data-license-comparison hidden><div class="row g-3">' + recordCard('Current · ACCT-' + current.user_id, current, true) + comparisons + '</div>' + decisions + '</div>';
             };
             const markUnavailableDocImages = (root) => root.querySelectorAll('img.acct-doc-thumb').forEach((image) => {
                 image.addEventListener('error', () => {
@@ -544,13 +566,79 @@ $flashType = $flash['type'] ?? '';
                             '</div><div class="mt-2"><div class="request-detail-label mb-2">Uploaded Documents</div><div class="acct-doc-grid">' + docCard(h.company_logo, 'Company logo', 'bi-image') + docCard(h.business_license_image, 'License / receipt', 'bi-file-earmark-text') + '</div></div></div>'
                             : '';
 
-                        detailsBody.innerHTML = profileHeader + accountInfoSection + verificationSection + licenseReviewWarning + licenseBlock + companyBlock;
+                        detailsBody.innerHTML = profileHeader + accountInfoSection + verificationSection + licenseReviewWarning + licenseConflictMarkup(l, payload.license_conflicts || []) + licenseBlock + companyBlock;
                         markUnavailableDocImages(detailsBody);
-                        setFooter('<form action="account_review_action.php" method="POST" class="m-0"><input type="hidden" name="user_id" value="' + escapeHtml(u.user_id) + '"><input type="hidden" name="action" value="approve"><input type="hidden" name="return_to" value="view_requests.php"><button type="submit" class="acct-btn acct-btn-approve"><i class="bi bi-check-lg"></i>Approve</button></form><button type="button" class="acct-btn acct-btn-reject js-modal-reject"><i class="bi bi-x-lg"></i>Reject</button>');
-                        detailsFooter.querySelector('.js-modal-reject').addEventListener('click', () => rejectTarget('account', u.user_id, label, u.user_name || u.email || 'Unknown user'));
+                        detailsBody.querySelector('[data-license-compare-toggle]')?.addEventListener('click', (event) => {
+                            const button = event.currentTarget;
+                            const comparison = detailsBody.querySelector('[data-license-comparison]');
+                            if (!comparison) return;
+                            comparison.hidden = !comparison.hidden;
+                            button.setAttribute('aria-expanded', String(!comparison.hidden));
+                            button.innerHTML = comparison.hidden ? '<i class="bi bi-layout-split me-1"></i>Compare' : '<i class="bi bi-eye-slash me-1"></i>Hide comparison';
+                            markUnavailableDocImages(comparison);
+                        });
+                        detailsBody.querySelector('[data-conflict-decision]')?.addEventListener('change', (event) => {
+                            const reasonField = detailsBody.querySelector('[data-conflict-reason]');
+                            const reasonInput = reasonField?.querySelector('textarea');
+                            const blocking = event.currentTarget.value !== 'allow_all';
+                            if (reasonField) reasonField.hidden = !blocking;
+                            if (reasonInput) reasonInput.required = blocking;
+                        });
+                        if (Array.isArray(payload.license_conflicts) && payload.license_conflicts.length) {
+                            setFooter('<div class="small text-warning w-100 text-center">Use Compare to approve or block the matching records together.</div>');
+                        } else {
+                            setFooter('<form action="account_review_action.php" method="POST" class="m-0"><input type="hidden" name="user_id" value="' + escapeHtml(u.user_id) + '"><input type="hidden" name="action" value="approve"><input type="hidden" name="return_to" value="view_requests.php"><button type="submit" class="acct-btn acct-btn-approve"><i class="bi bi-check-lg"></i>Approve</button></form><button type="button" class="acct-btn acct-btn-reject js-modal-reject"><i class="bi bi-x-lg"></i>Reject</button>');
+                            detailsFooter.querySelector('.js-modal-reject').addEventListener('click', () => rejectTarget('account', u.user_id, label, u.user_name || u.email || 'Unknown user'));
+                        }
                     } catch (error) {
                         detailsBody.innerHTML = '<div class="alert request-flash alert-danger"><i class="bi bi-exclamation-triangle me-2"></i>' + escapeHtml(error.message) + '</div>';
                     }
+            });
+
+            document.addEventListener('click', async (event) => {
+                const button = event.target.closest('.js-view-car-license');
+                if (!button) return;
+                detailsTitle.innerHTML = '<i class="bi bi-car-front txt-neon-cyan me-2"></i> Car License Review';
+                detailsBody.innerHTML = '<div class="text-center text-white-50 py-5">Loading car-license details…</div>';
+                setFooter();
+                detailsModal.show();
+                try {
+                    const response = await fetch('car_license_details.php?id=' + encodeURIComponent(button.dataset.carLicenseId), { headers: { Accept: 'application/json' } });
+                    const payload = await response.json();
+                    if (!response.ok || !payload.success) throw new Error(payload.message || 'Could not load car-license details.');
+                    const car = payload.car || {};
+                    const conflicts = payload.conflicts || [];
+                    const owners = (items) => (items || []).map((owner) => escapeHtml(owner.user_name || 'Unknown') + ' (' + escapeHtml(owner.email || 'No email') + ')').join('<br>') || '<span class="text-white-50">No linked customer</span>';
+                    const card = (title, record, ownerList = []) => '<div class="col-12 col-lg-6"><section class="acct-section h-100"><div class="acct-section-title">' + escapeHtml(title) + '</div>' + fieldRow('bi-person', 'Customer account(s)', owners(ownerList)) + fieldRow('bi-person-vcard', 'Registered owner', escapeHtml(record.car_owner_name || 'Not provided')) + fieldRow('bi-hash', 'Plate number', escapeHtml(record.car_plate_number || 'Not provided')) + fieldRow('bi-car-front', 'Vehicle', escapeHtml([record.vehicle_name, record.vehicle_type].filter(Boolean).join(' · ') || 'Not provided')) + fieldRow('bi-upc-scan', 'Chassis number', escapeHtml(record.chassis_number || 'Not provided')) + fieldRow('bi-card-checklist', 'Status', escapeHtml(record.status || 'pending')) + '<div class="request-detail-label mb-2">License images</div><div class="acct-doc-grid">' + docCard(record.front_image, 'Front image', 'bi-card-image') + docCard(record.back_image, 'Back image', 'bi-card-image') + '</div></section></div>';
+                    const decisionForm = '<form action="license_conflict_action.php" method="POST" class="acct-section mt-3" data-conflict-decision-form><input type="hidden" name="license_type" value="car"><input type="hidden" name="record_id" value="' + escapeHtml(car.car_license_id) + '"><label class="form-label text-white-50 small" for="car-license-decision">Decision for matching plates</label><select class="form-select glass-select" id="car-license-decision" name="decision" data-conflict-decision><option value="allow_all">Allow all matching plates</option><option value="block_current">Block this plate; allow the other matches</option><option value="block_all">Block all matching plates</option></select><div class="mt-3" data-conflict-reason hidden><label class="form-label text-white-50 small" for="car-license-reason">Reason required for blocking</label><textarea class="form-control glass-input" id="car-license-reason" name="reason" rows="3" maxlength="2000" placeholder="Explain why the duplicate car-license record(s) are blocked."></textarea></div><button type="submit" class="btn btn-warning mt-3">Confirm license decision and notify users</button></form>';
+                    const conflictMarkup = conflicts.length
+                        ? '<div class="alert alert-warning d-flex align-items-center justify-content-between gap-3 flex-wrap"><span><i class="bi bi-exclamation-triangle-fill me-2"></i>Same normalized plate found on ' + conflicts.length + ' other record(s).</span><button type="button" class="btn btn-sm btn-outline-warning" data-car-compare-toggle aria-expanded="false"><i class="bi bi-layout-split me-1"></i>Compare</button></div><div data-car-comparison hidden><div class="row g-3">' + card('Current · CAR-' + car.car_license_id, car, car.owners) + conflicts.map((match) => card('Matching record · CAR-' + match.car_license_id, match, match.user_id ? [{ user_id: match.user_id, user_name: match.user_name, email: match.email }] : [])).join('') + '</div>' + decisionForm + '</div>'
+                        : '<div class="alert alert-success">No matching plate records found.</div>';
+                    detailsBody.innerHTML = '<div class="acct-section">' + fieldRow('bi-hash', 'Plate number', escapeHtml(car.car_plate_number || '')) + fieldRow('bi-person', 'Customer account(s)', owners(car.owners)) + fieldRow('bi-calendar', 'Submitted', escapeHtml(formatDate(car.created_at))) + '</div>' + conflictMarkup;
+                    detailsBody.querySelector('[data-car-compare-toggle]')?.addEventListener('click', (compareEvent) => {
+                        const compareButton = compareEvent.currentTarget;
+                        const comparison = detailsBody.querySelector('[data-car-comparison]');
+                        if (!comparison) return;
+                        comparison.hidden = !comparison.hidden;
+                        compareButton.setAttribute('aria-expanded', String(!comparison.hidden));
+                        compareButton.innerHTML = comparison.hidden ? '<i class="bi bi-layout-split me-1"></i>Compare' : '<i class="bi bi-eye-slash me-1"></i>Hide comparison';
+                        markUnavailableDocImages(comparison);
+                    });
+                    detailsBody.querySelector('[data-conflict-decision]')?.addEventListener('change', (decisionEvent) => {
+                        const reasonField = detailsBody.querySelector('[data-conflict-reason]');
+                        const reasonInput = reasonField?.querySelector('textarea');
+                        const blocking = decisionEvent.currentTarget.value !== 'allow_all';
+                        if (reasonField) reasonField.hidden = !blocking;
+                        if (reasonInput) reasonInput.required = blocking;
+                    });
+                    markUnavailableDocImages(detailsBody);
+                    const carId = escapeHtml(car.car_license_id);
+                    setFooter(conflicts.length
+                        ? '<button type="button" class="btn btn-outline-secondary w-100" data-bs-dismiss="modal">Close</button>'
+                        : '<form action="car_license_review_action.php" method="POST" class="m-0"><input type="hidden" name="car_license_id" value="' + carId + '"><input type="hidden" name="action" value="approve"><input type="hidden" name="return_to" value="view_requests.php"><button type="submit" class="acct-btn acct-btn-approve">Approve this license</button></form><form action="car_license_review_action.php" method="POST" class="m-0"><input type="hidden" name="car_license_id" value="' + carId + '"><input type="hidden" name="action" value="reject"><input type="hidden" name="return_to" value="view_requests.php"><button type="submit" class="acct-btn acct-btn-reject">Reject this license</button></form>');
+                } catch (error) {
+                    detailsBody.innerHTML = '<div class="alert request-flash alert-danger"><i class="bi bi-exclamation-triangle me-2"></i>' + escapeHtml(error.message) + '</div>';
+                }
             });
         })();
     </script>

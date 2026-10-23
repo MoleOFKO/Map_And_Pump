@@ -568,13 +568,13 @@ include 'share_header.php';
         carSwitchInputs.forEach((input) => input.addEventListener('change', refreshCarSwitchState));
         refreshCarSwitchState();
 
-        function showCarStatus(message, ok = false) {
+        function showCarStatus(message, ok = false, warning = false) {
             if (!carStatus) return;
             carStatus.textContent = message;
             carStatus.classList.toggle('d-none', !message);
-            carStatus.style.background = ok ? 'rgba(27, 228, 148, 0.1)' : 'rgba(255, 77, 106, 0.1)';
-            carStatus.style.border = ok ? '1px solid rgba(27, 228, 148, 0.25)' : '1px solid rgba(255, 77, 106, 0.25)';
-            carStatus.style.color = ok ? '#bfffe5' : '#ffd4dc';
+            carStatus.style.background = warning ? 'rgba(255, 193, 7, 0.12)' : (ok ? 'rgba(27, 228, 148, 0.1)' : 'rgba(255, 77, 106, 0.1)');
+            carStatus.style.border = warning ? '1px solid rgba(255, 193, 7, 0.3)' : (ok ? '1px solid rgba(27, 228, 148, 0.25)' : '1px solid rgba(255, 77, 106, 0.25)');
+            carStatus.style.color = warning ? '#ffe6a3' : (ok ? '#bfffe5' : '#ffd4dc');
         }
 
         async function submitCarForm(form, submitButton, defaultLabel) {
@@ -603,8 +603,10 @@ include 'share_header.php';
                     }
                     return;
                 }
-                showCarStatus(result.message || 'Car license saved.', true);
-                window.setTimeout(() => window.location.href = result.redirect || 'profile_page.php', 650);
+                showCarStatus(result.message || 'Car license saved.', true, Boolean(result.license_conflict));
+                if (!result.license_conflict) {
+                    window.setTimeout(() => window.location.href = result.redirect || 'profile_page.php', 650);
+                }
             } catch (error) {
                 showCarStatus('Could not contact the server. Please try again.');
             } finally {

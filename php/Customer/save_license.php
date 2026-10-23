@@ -126,6 +126,18 @@ try {
     $existingLicenseId = (int) ($existingLicense['license_id'] ?? 0);
     $licensePublicPath = (string) ($existingLicense['license_image'] ?? '');
     $hasLicenseUpload = isset($_FILES['license_image']) && is_uploaded_file($_FILES['license_image']['tmp_name']);
+        $normalizedLicenseNumber = preg_replace('/\s+/', '', $licenseNumber) ?: $licenseNumber;
+        $conflictStmt = $pdo->prepare(
+                'SELECT u.user_id, u.user_name, u.email, l.license_id, l.license_number,
+                                l.license_name, l.license_image, l.face_image, l.status
+                 FROM user_license l
+                 INNER JOIN users u ON u.license_id = l.license_id
+                 WHERE UPPER(REPLACE(TRIM(l.license_number), \' \', \'\')) = ?
+                     AND l.license_id <> ? AND u.user_id <> ?
+                 ORDER BY l.license_id'
+        );
+        $conflictStmt->execute([$normalizedLicenseNumber, $existingLicenseId, $userId]);
+        $licenseConflicts = $conflictStmt->fetchAll(PDO::FETCH_ASSOC);
 
     if (!$existingLicenseId && !$hasLicenseUpload) {
         license_json(false, 'Please upload a driver license image.');
@@ -319,7 +331,14 @@ try {
         ]);
     }
 
-    license_json(true, 'Driver license saved. Please wait for Moderator confirmation.', ['redirect' => '../Customer/license.php']);
+    $responseMessage = $licenseConflicts
+        ? 'This driver-license number matches another customer record. Your request was saved and flagged for reviewer comparison.'
+        : 'Driver license saved. Please wait for Moderator confirmation.';
+    license_json(true, $responseMessage, [
+        'redirect' => '../Customer/license.php',
+        'license_conflict' => (bool) $licenseConflicts,
+        'conflict_count' => count($licenseConflicts),
+    ]);
 } catch (Throwable $e) {
     if ($pdo->inTransaction()) {
         $pdo->rollBack();
