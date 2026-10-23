@@ -196,7 +196,7 @@ const getRegistrationAmount = () => {
     const extraCount = Math.max(0, Number(stationCountInput.value) - Number(registrationTotal.dataset.included));
     const discounts = JSON.parse(registrationTotal.dataset.discounts || '[]');
     const discount = discounts.reduce((current, tier) => extraCount >= Number(tier.min) ? Number(tier.percent) : current, 0);
-    const registrationFee = extraCount > 0 ? Number(registrationTotal.dataset.base) : 0;
+    const registrationFee = Number(registrationTotal.dataset.base);
     return registrationFee + Number(registrationTotal.dataset.monthly) * extraCount * (1 - discount / 100);
 };
 
@@ -206,16 +206,14 @@ const updateRegistrationAmount = () => {
     const formatted = `${new Intl.NumberFormat().format(amount)} <small>MMK</small>`;
     registrationTotal.innerHTML = formatted;
     if (paymentSummaryAmount) paymentSummaryAmount.innerHTML = formatted;
-    const isFree = amount === 0;
+    const isFree = false;
     if (paymentMethodField) paymentMethodField.hidden = isFree;
     if (paymentSteps) paymentSteps.hidden = isFree;
     if (banksBox) banksBox.hidden = isFree || methodInput?.value !== 'Bank transfer';
     if (paymentConfirmButton) paymentConfirmButton.innerHTML = isFree
         ? 'Submit registration <i class="fa-solid fa-check ms-2"></i>'
         : 'Continue to payment <i class="fa-solid fa-arrow-right ms-2"></i>';
-    if (paymentNote) paymentNote.textContent = isFree
-        ? 'No payment is due for the three included stations. An Admin must review the registration.'
-        : 'The website does not move or verify funds. Use the recipient account details shown in the next step.';
+    if (paymentNote) paymentNote.textContent = 'The registration fee is due for every HQ. The first three stations have no monthly maintenance fee; additional stations are billed monthly.';
 };
 
 stationCountInput?.addEventListener('change', updateRegistrationAmount);

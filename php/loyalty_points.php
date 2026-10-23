@@ -697,7 +697,6 @@ function company_loyalty_station_is_paid(PDO $pdo, int $stationId): bool
                      FROM branches ordered_branch
                      INNER JOIN station_business_scope ordered_scope ON ordered_scope.station_id = ordered_branch.branch_id
                      WHERE ordered_scope.headquarter_id = sbs.headquarter_id
-                       AND LOWER(COALESCE(ordered_branch.status, 'active')) <> 'closed'
                        AND ordered_branch.branch_id <= b.branch_id) AS station_order
              FROM station_business_scope sbs
              INNER JOIN branches b ON b.branch_id = sbs.station_id
@@ -716,9 +715,7 @@ function company_loyalty_station_is_paid(PDO $pdo, int $stationId): bool
         if ($extraSlotRequired > company_loyalty_current_month_slots($pdo, (int) $station['headquarter_id'])) {
             return false;
         }
-        if ((int) $station['station_order'] <= BILLING_HQ_INCLUDED_STATION_SLOTS
-            && !empty($station['included_stations_free_until'])
-            && strtotime((string) $station['included_stations_free_until']) > time()) {
+        if ((int) $station['station_order'] <= BILLING_HQ_INCLUDED_STATION_SLOTS) {
             return true;
         }
 
