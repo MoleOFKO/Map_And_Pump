@@ -9,8 +9,8 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
 }
 
 $reviewer = admin_require_staff();
-if (!payment_transfer_schema_ready($pdo) || !payment_transfer_ensure_hq_service_expiry_schema($pdo)) {
-    request_flash('danger', 'Payment or HQ service-period storage is unavailable.');
+if (!payment_transfer_ensure_hq_service_expiry_schema($pdo)) {
+    request_flash('danger', 'HQ service-period storage is unavailable.');
     request_redirect();
 }
 
@@ -65,31 +65,37 @@ try {
     if (strtolower((string) $target['status']) !== 'pending') {
         throw new RuntimeException('Only pending requests can be approved, rejected, or flagged.');
     }
-    if (strtolower((string) $target['request_type']) === 'hq_registration' && !admin_is_admin($reviewer)) {
-        throw new RuntimeException('Only an Admin can approve, reject, or flag an HQ registration request.');
-    }
     if (strtolower((string) $target['request_type']) === 'license_modification' && !admin_is_admin($reviewer)) {
         throw new RuntimeException('Only an Admin can approve, reject, or flag an HQ license renewal request.');
     }
 
     if ($action === 'approve' && strtolower((string) $target['request_type']) === 'hq_registration') {
-        $paymentCheck = $conn->prepare(
-            "SELECT status, quantity, payment_transfer_id FROM payment_transfers
-             WHERE request_id = ? AND payment_type = 'hq_registration'
-             ORDER BY payment_transfer_id DESC LIMIT 1"
-        );
-        if (!$paymentCheck) {
-            throw new RuntimeException('Payment status is unavailable. The HQ registration cannot be approved yet.');
-        }
-        $paymentCheck->bind_param('i', $requestId);
-        if (!$paymentCheck->execute()) {
+        $registrationDetails = json_decode((string) ($target['request_details'] ?? ''), true);
+        $requestedStations = is_array($registrationDetails)
+            ? (int) ($registrationDetails['requested_station_count'] ?? 0)
+            : 0;
+        $noPaymentDue = $requestedStations === BILLING_HQ_INCLUDED_STATION_SLOTS;
+        $paymentRow = null;
+
+        if (!$noPaymentDue) {
+            $paymentCheck = $conn->prepare(
+                "SELECT status, amount_mmk, quantity, payment_transfer_id FROM payment_transfers
+                 WHERE request_id = ? AND payment_type = 'hq_registration'
+                 ORDER BY payment_transfer_id DESC LIMIT 1"
+            );
+            if (!$paymentCheck) {
+                throw new RuntimeException('Payment status is unavailable. The HQ registration cannot be approved yet.');
+            }
+            $paymentCheck->bind_param('i', $requestId);
+            if (!$paymentCheck->execute()) {
+                $paymentCheck->close();
+                throw new RuntimeException('Could not verify the HQ registration payment status.');
+            }
+            $paymentRow = $paymentCheck->get_result()?->fetch_assoc();
             $paymentCheck->close();
-            throw new RuntimeException('Could not verify the HQ registration payment status.');
-        }
-        $paymentRow = $paymentCheck->get_result()?->fetch_assoc();
-        $paymentCheck->close();
-        if (($paymentRow['status'] ?? '') !== 'received') {
-            throw new RuntimeException('The HQ registration fee must be recorded as received by an Admin in Payment status before approval.');
+            if (($paymentRow['status'] ?? '') !== 'received' || (float) ($paymentRow['amount_mmk'] ?? 0) <= 0) {
+                throw new RuntimeException('The HQ registration fee must be recorded as received by an Admin in Payment status before approval.');
+            }
         }
     }
 
@@ -270,8 +276,8 @@ try {
         // A public registration has no submitter account.  Ensure every
         // approved HQ still receives a linked, role-3 login owner.
         $hqRoleId = hq_hq_role_id();
-        if ($hqRoleId <= 0) {
-            throw new RuntimeException('Could not identify the HQ account role.');
+        if ($hqRoleId !== 3) {
+            throw new RuntimeException('The HQ account role must use role ID 3.');
         }
         $ownerEmail = strtolower(trim((string) ($target['headquarter_owner_email'] ?: $target['sender_email'])));
         if (!filter_var($ownerEmail, FILTER_VALIDATE_EMAIL)) {
@@ -330,6 +336,26 @@ try {
             throw new RuntimeException('Could not link the HQ owner.');
         }
         $hqOwnerUpdate->close();
+
+        $ownerScope = $conn->prepare(
+            "INSERT INTO business_account_scope
+                (user_id, business_role_id, headquarter_id, branch_manager_user_id, station_id, status)
+             VALUES (?, ?, ?, NULL, NULL, 'approved')
+             ON DUPLICATE KEY UPDATE
+                business_role_id = VALUES(business_role_id),
+                headquarter_id = VALUES(headquarter_id),
+                branch_manager_user_id = NULL,
+                station_id = NULL,
+                status = 'approved'"
+        );
+        if (!$ownerScope) {
+            throw new RuntimeException('Could not prepare the HQ owner business-role link.');
+        }
+        $ownerScope->bind_param('iii', $createdOwnerUserId, $hqRoleId, $createdHeadquarterId);
+        if (!$ownerScope->execute()) {
+            throw new RuntimeException('Could not save the HQ owner business-role link.');
+        }
+        $ownerScope->close();
 
         $requestHqUpdate = $conn->prepare('UPDATE system_requests SET headquarter_id = ? WHERE request_id = ?');
         if (!$requestHqUpdate) {

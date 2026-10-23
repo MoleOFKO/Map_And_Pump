@@ -252,11 +252,11 @@ function loyalty_countermeasures_schema_ready(PDO $pdo): bool
             "CREATE TABLE IF NOT EXISTS loyalty_tier_pool (
                 pool_id INT NOT NULL AUTO_INCREMENT,
                 tier_code VARCHAR(20) NOT NULL,
-                year_month CHAR(7) NOT NULL,
+                `year_month` CHAR(7) NOT NULL,
                 budget_mmk DECIMAL(14,2) NOT NULL DEFAULT 0,
                 spent_mmk DECIMAL(14,2) NOT NULL DEFAULT 0,
                 PRIMARY KEY (pool_id),
-                UNIQUE KEY uq_loyalty_tier_pool (tier_code, year_month)
+                UNIQUE KEY uq_loyalty_tier_pool (tier_code, `year_month`)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
         );
 
@@ -273,21 +273,21 @@ function loyalty_countermeasures_schema_ready(PDO $pdo): bool
         $pdo->exec(
             "CREATE TABLE IF NOT EXISTS company_loyalty_monthly (
                 headquarter_id INT NOT NULL,
-                year_month CHAR(7) NOT NULL,
+                `year_month` CHAR(7) NOT NULL,
                 earned INT NOT NULL DEFAULT 0,
-                PRIMARY KEY (headquarter_id, year_month)
+                PRIMARY KEY (headquarter_id, `year_month`)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
         );
 
         $pdo->exec(
             "CREATE TABLE IF NOT EXISTS company_loyalty_station_slots (
                 headquarter_id INT NOT NULL,
-                year_month CHAR(7) NOT NULL,
+                `year_month` CHAR(7) NOT NULL,
                 slots_purchased INT NOT NULL DEFAULT 0,
                 mmk_slots_purchased INT NOT NULL DEFAULT 0,
                 points_spent INT NOT NULL DEFAULT 0,
                 updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-                PRIMARY KEY (headquarter_id, year_month)
+                PRIMARY KEY (headquarter_id, `year_month`)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
         );
 
@@ -295,13 +295,13 @@ function loyalty_countermeasures_schema_ready(PDO $pdo): bool
             "CREATE TABLE IF NOT EXISTS company_loyalty_station_fees (
                 headquarter_id INT NOT NULL,
                 station_id INT NOT NULL,
-                year_month CHAR(7) NOT NULL,
+                `year_month` CHAR(7) NOT NULL,
                 points_paid INT NOT NULL DEFAULT 0,
                 payment_method VARCHAR(16) NOT NULL DEFAULT 'points',
                 payment_transfer_id BIGINT UNSIGNED DEFAULT NULL,
                 paid_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                PRIMARY KEY (headquarter_id, station_id, year_month),
-                KEY idx_company_station_fees_station_month (station_id, year_month)
+                PRIMARY KEY (headquarter_id, station_id, `year_month`),
+                KEY idx_company_station_fees_station_month (station_id, `year_month`)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
         );
 

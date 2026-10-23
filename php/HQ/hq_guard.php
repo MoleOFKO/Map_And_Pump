@@ -134,7 +134,7 @@ if ($hqHeadquarterId > 0 && ($activeRoleId === 3 || strtolower(trim($activeRoleN
 if (($user['status'] ?? '') === 'pending_deletion' && basename((string) ($_SERVER['PHP_SELF'] ?? '')) !== 'profile.php') {
     hq_guard_redirect_top('/php/HQ/profile.php');
 }
-if ($hqLicenseExpired && basename((string) ($_SERVER['PHP_SELF'] ?? '')) !== 'profile.php') {
+if ($hqLicenseExpired && !in_array(basename((string) ($_SERVER['PHP_SELF'] ?? '')), ['profile.php', 'extend_period.php'], true)) {
     hq_guard_redirect_top('/php/HQ/profile.php', 'Your HQ service period or business license has expired. Access is limited until it is renewed.');
 }
 
@@ -155,7 +155,7 @@ if ($activeRoleId !== 3 && $activeRoleKey !== 'hq') {
 
 if ($hqAccessRestricted) {
     $page = basename((string) ($_SERVER['PHP_SELF'] ?? ''));
-    if (!in_array($page, ['index.php', 'brand.php', 'profile.php'], true)) {
+    if (!in_array($page, ['index.php', 'brand.php', 'profile.php', 'extend_period.php'], true)) {
         hq_guard_redirect_top('/php/HQ/brand.php');
     }
 }

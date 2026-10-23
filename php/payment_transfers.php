@@ -67,14 +67,14 @@ function payment_transfer_schema_ready(PDO $pdo): bool
                 entitlement_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
                 payment_transfer_id BIGINT UNSIGNED NOT NULL,
                 headquarter_id INT NOT NULL,
-                year_month CHAR(7) NOT NULL,
+                `year_month` CHAR(7) NOT NULL,
                 slot_number INT NOT NULL,
                 station_id INT DEFAULT NULL,
                 created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 PRIMARY KEY (entitlement_id),
-                UNIQUE KEY uq_hq_mmk_entitlement (payment_transfer_id, year_month, slot_number),
-                KEY idx_hq_mmk_entitlement_available (headquarter_id, year_month, station_id),
-                KEY idx_hq_mmk_entitlement_station (station_id, year_month)
+                UNIQUE KEY uq_hq_mmk_entitlement (payment_transfer_id, `year_month`, slot_number),
+                KEY idx_hq_mmk_entitlement_available (headquarter_id, `year_month`, station_id),
+                KEY idx_hq_mmk_entitlement_station (station_id, `year_month`)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
         );
 

@@ -60,6 +60,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $paymentMethod = trim((string) ($_POST['payment_method'] ?? ''));
     $bankName = trim((string) ($_POST['bank_name'] ?? ''));
     $requestedStations = filter_var($_POST['station_count'] ?? null, FILTER_VALIDATE_INT);
+    $noPaymentRequired = $requestedStations === BILLING_HQ_INCLUDED_STATION_SLOTS;
     $csrfToken = (string) ($_POST['csrf_token'] ?? '');
 
     if (!hash_equals((string) $_SESSION['company_registration_csrf'], $csrfToken)) {
@@ -81,7 +82,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!filter_var($companyEmail, FILTER_VALIDATE_EMAIL)) $validationErrors[] = 'company email';
     if ($ownerPhone === '') $validationErrors[] = 'owner phone';
     if ($companyPhone === '') $validationErrors[] = 'company phone';
-    if (!in_array($paymentMethod, $allowedMethods, true)) $validationErrors[] = 'payment method';
+    if (!$noPaymentRequired && !in_array($paymentMethod, $allowedMethods, true)) $validationErrors[] = 'payment method';
     if ($paymentMethod === 'Bank transfer' && !in_array($bankName, $allowedBanks, true)) $validationErrors[] = 'bank';
     if ($requestedStations === false || $requestedStations < BILLING_HQ_INCLUDED_STATION_SLOTS || $requestedStations > 60) $validationErrors[] = 'station count (3 to 60)';
     if ($validationErrors) {
@@ -168,20 +169,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $savedFiles = [];
     try {
         require_once __DIR__ . '/../conn.php';
-        // Prepare runtime payment tables before opening the registration
-        // transaction; MySQL DDL can implicitly commit an active transaction.
-        if (!payment_transfer_schema_ready($pdo)) {
+        // Payment schema upgrades can implicitly commit, so prepare them only
+        // for registrations that actually require payment.
+        if (!$noPaymentRequired && !payment_transfer_schema_ready($pdo)) {
             throw new RuntimeException('Payment status tracking is temporarily unavailable. Please try again later.');
         }
         $receiptFile = $_FILES['payment_receipt'] ?? null;
-        if (!is_array($receiptFile) || (int) ($receiptFile['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK
-            || (int) ($receiptFile['size'] ?? 0) <= 0 || (int) $receiptFile['size'] > 5 * 1024 * 1024
-            || !is_uploaded_file((string) ($receiptFile['tmp_name'] ?? ''))) {
-            throw new RuntimeException('Upload a payment screenshot no larger than 5 MB.');
-        }
-        $receiptMime = (new finfo(FILEINFO_MIME_TYPE))->file((string) $receiptFile['tmp_name']);
-        if (!in_array($receiptMime, ['image/jpeg', 'image/png', 'image/webp'], true)) {
-            throw new RuntimeException('The payment screenshot must be a JPG, PNG, or WEBP image.');
+        $receiptMime = null;
+        if (!$noPaymentRequired) {
+            if (!is_array($receiptFile) || (int) ($receiptFile['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK
+                || (int) ($receiptFile['size'] ?? 0) <= 0 || (int) $receiptFile['size'] > 5 * 1024 * 1024
+                || !is_uploaded_file((string) ($receiptFile['tmp_name'] ?? ''))) {
+                throw new RuntimeException('Upload a payment screenshot no larger than 5 MB.');
+            }
+            $receiptMime = (new finfo(FILEINFO_MIME_TYPE))->file((string) $receiptFile['tmp_name']);
+            if (!in_array($receiptMime, ['image/jpeg', 'image/png', 'image/webp'], true)) {
+                throw new RuntimeException('The payment screenshot must be a JPG, PNG, or WEBP image.');
+            }
         }
         $duplicate = $pdo->prepare("SELECT request_id FROM system_requests WHERE request_type = 'hq_registration' AND status = 'pending' AND (headquarter_email = ? OR headquarter_owner_email = ?) LIMIT 1");
         $duplicate->execute([$companyEmail, $ownerEmail]);
@@ -215,57 +219,63 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $licenseId, $licensePath, $ownerEmail, $companyEmail, $logoPath, $companyPhone, $licenseExpiry . ' 23:59:59',
         ]);
         $requestId = (int) $pdo->lastInsertId();
-        $accessToken = rtrim(strtr(base64_encode(random_bytes(32)), '+/', '-_'), '=');
-        $payerUserId = null;
-        $sessionUserId = (int) ($_SESSION['user_id'] ?? 0);
-        if ($sessionUserId > 0) {
-            $ownerMatch = $pdo->prepare('SELECT user_id FROM users WHERE user_id = ? AND LOWER(email) = ? LIMIT 1');
-            $ownerMatch->execute([$sessionUserId, $ownerEmail]);
-            $payerUserId = (int) ($ownerMatch->fetchColumn() ?: 0) ?: null;
-        }
-        $extraStationCount = max(0, (int) $requestedStations - BILLING_HQ_INCLUDED_STATION_SLOTS);
-        $volumeDiscount = 0;
-        foreach (BILLING_HQ_VOLUME_DISCOUNTS as $tier) {
-            if ($extraStationCount >= (int) $tier['min']) {
-                $volumeDiscount = (int) $tier['percent'];
+        $accessToken = '';
+        if (!$noPaymentRequired) {
+            $accessToken = rtrim(strtr(base64_encode(random_bytes(32)), '+/', '-_'), '=');
+            $payerUserId = null;
+            $sessionUserId = (int) ($_SESSION['user_id'] ?? 0);
+            if ($sessionUserId > 0) {
+                $ownerMatch = $pdo->prepare('SELECT user_id FROM users WHERE user_id = ? AND LOWER(email) = ? LIMIT 1');
+                $ownerMatch->execute([$sessionUserId, $ownerEmail]);
+                $payerUserId = (int) ($ownerMatch->fetchColumn() ?: 0) ?: null;
             }
+            $extraStationCount = max(0, (int) $requestedStations - BILLING_HQ_INCLUDED_STATION_SLOTS);
+            $volumeDiscount = 0;
+            foreach (BILLING_HQ_VOLUME_DISCOUNTS as $tier) {
+                if ($extraStationCount >= (int) $tier['min']) {
+                    $volumeDiscount = (int) $tier['percent'];
+                }
+            }
+            $extraStationAmount = round(BILLING_HQ_EXTRA_STATION_MMK_MONTHLY * $extraStationCount * (1 - $volumeDiscount / 100), 2);
+            $registrationAmount = BILLING_HQ_REGISTRATION_FEE_MMK + $extraStationAmount;
+            $transferId = payment_transfer_create($pdo, [
+                'payment_type' => 'hq_registration',
+                'amount_mmk' => $registrationAmount,
+                'description' => sprintf('HQ registration; %d stations included for the first month, %d additional station(s) for the first month', BILLING_HQ_INCLUDED_STATION_SLOTS, $extraStationCount),
+                'quantity' => $extraStationCount,
+                'term_months' => 1,
+                'payer_user_id' => $payerUserId,
+                'payer_email' => $ownerEmail,
+                'recipient_role' => BILLING_PLATFORM_RECEIVER_ROLE,
+                'request_id' => $requestId,
+                'payment_method' => $paymentMethod === 'Bank transfer' ? $paymentMethod . ': ' . $bankName : $paymentMethod,
+                'payer_access_token_hash' => hash('sha256', $accessToken),
+                'payer_access_expires_at' => date('Y-m-d H:i:s', time() + 30 * 86400),
+                'event_actor_user_id' => null,
+                'event_actor_email' => null,
+                'event_note' => 'HQ registration payment request created; payer access is linked to a time-limited owner-email link.',
+            ]);
+            $paidUpdate = $pdo->prepare("UPDATE payment_transfers SET status = 'payer_reported_paid', reported_paid_at = NOW(), paid_declared_at = NOW() WHERE payment_transfer_id = ?");
+            $paidUpdate->execute([$transferId]);
+            $receipt = $pdo->prepare(
+                'INSERT INTO payment_transfer_receipts
+                    (payment_transfer_id, file_name, mime_type, file_size, file_data, uploaded_by_user_id, uploaded_by_email)
+                 VALUES (?, ?, ?, ?, ?, ?, ?)'
+            );
+            $receipt->bindValue(1, $transferId, PDO::PARAM_INT);
+            $receipt->bindValue(2, substr(basename((string) ($receiptFile['name'] ?? 'payment-screenshot')), 0, 255));
+            $receipt->bindValue(3, (string) $receiptMime);
+            $receipt->bindValue(4, (int) $receiptFile['size'], PDO::PARAM_INT);
+            $receipt->bindValue(5, file_get_contents((string) $receiptFile['tmp_name']), PDO::PARAM_LOB);
+            $receipt->bindValue(6, $payerUserId, $payerUserId !== null ? PDO::PARAM_INT : PDO::PARAM_NULL);
+            $receipt->bindValue(7, $ownerEmail);
+            $receipt->execute();
+            payment_transfer_record_event($pdo, $transferId, 'pending_payment', 'payer_reported_paid', $payerUserId, $ownerEmail, 'Registration payment method and transfer screenshot submitted for Admin review.');
         }
-        $extraStationAmount = round(BILLING_HQ_EXTRA_STATION_MMK_MONTHLY * $extraStationCount * (1 - $volumeDiscount / 100), 2);
-        $registrationAmount = BILLING_HQ_REGISTRATION_FEE_MMK + $extraStationAmount;
-        $transferId = payment_transfer_create($pdo, [
-            'payment_type' => 'hq_registration',
-            'amount_mmk' => $registrationAmount,
-            'description' => sprintf('HQ registration; %d stations included for the first month, %d additional station(s) for the first month', BILLING_HQ_INCLUDED_STATION_SLOTS, $extraStationCount),
-            'quantity' => $extraStationCount,
-            'term_months' => 1,
-            'payer_user_id' => $payerUserId,
-            'payer_email' => $ownerEmail,
-            'recipient_role' => BILLING_PLATFORM_RECEIVER_ROLE,
-            'request_id' => $requestId,
-            'payment_method' => $paymentMethod === 'Bank transfer' ? $paymentMethod . ': ' . $bankName : $paymentMethod,
-            'payer_access_token_hash' => hash('sha256', $accessToken),
-            'payer_access_expires_at' => date('Y-m-d H:i:s', time() + 30 * 86400),
-            'event_actor_user_id' => null,
-            'event_actor_email' => null,
-            'event_note' => 'HQ registration payment request created; payer access is linked to a time-limited owner-email link.',
-        ]);
-        $paidUpdate = $pdo->prepare("UPDATE payment_transfers SET status = 'payer_reported_paid', reported_paid_at = NOW(), paid_declared_at = NOW() WHERE payment_transfer_id = ?");
-        $paidUpdate->execute([$transferId]);
-        $receipt = $pdo->prepare(
-            'INSERT INTO payment_transfer_receipts
-                (payment_transfer_id, file_name, mime_type, file_size, file_data, uploaded_by_user_id, uploaded_by_email)
-             VALUES (?, ?, ?, ?, ?, ?, ?)'
-        );
-        $receipt->bindValue(1, $transferId, PDO::PARAM_INT);
-        $receipt->bindValue(2, substr(basename((string) ($receiptFile['name'] ?? 'payment-screenshot')), 0, 255));
-        $receipt->bindValue(3, (string) $receiptMime);
-        $receipt->bindValue(4, (int) $receiptFile['size'], PDO::PARAM_INT);
-        $receipt->bindValue(5, file_get_contents((string) $receiptFile['tmp_name']), PDO::PARAM_LOB);
-        $receipt->bindValue(6, $payerUserId, $payerUserId !== null ? PDO::PARAM_INT : PDO::PARAM_NULL);
-        $receipt->bindValue(7, $ownerEmail);
-        $receipt->execute();
-        payment_transfer_record_event($pdo, $transferId, 'pending_payment', 'payer_reported_paid', $payerUserId, $ownerEmail, 'Registration payment method and transfer screenshot submitted for Admin review.');
         $pdo->commit();
+        if ($noPaymentRequired) {
+            $respond(true, 'Registration application submitted with no payment due for the three included stations. An Admin must review the application before approving the company.', 201, ['reference' => $reference]);
+        }
         payment_transfer_send_notices($pdo, $transferId, 'recipient', 'payer_reported_paid');
         $paymentUrl = payment_transfer_absolute_url('/php/payment_center.php?access=' . rawurlencode($accessToken));
         payment_transfer_send_notices($pdo, $transferId, 'payer', 'payer_reported_paid', ['payment_url' => $paymentUrl]);
@@ -377,7 +387,7 @@ require __DIR__ . '/../partials/nav.php';
         <!-- ============================ STEP 1 ============================ -->
         <div class="payment-step is-active" data-step="method">
             <h2 id="payment-modal-title">Complete your registration</h2>
-            <p class="payment-description">The registration fee includes <?= (int) BILLING_HQ_INCLUDED_STATION_SLOTS ?> stations for the first month. Additional stations receive the configured volume discount.</p>
+            <p class="payment-description">The first <?= (int) BILLING_HQ_INCLUDED_STATION_SLOTS ?> stations are included at no charge. Registration and first-month fees apply when you add more stations.</p>
 
             <div class="payment-field">
                 <label class="payment-field-label" for="station-count">Stations requested</label>
@@ -390,10 +400,10 @@ require __DIR__ . '/../partials/nav.php';
 
             <div class="payment-total">
                 <span>Registration + first-month station fees</span>
-                <strong id="registration-total" data-base="<?= (int) BILLING_HQ_REGISTRATION_FEE_MMK ?>" data-monthly="<?= (int) BILLING_HQ_EXTRA_STATION_MMK_MONTHLY ?>" data-included="<?= (int) BILLING_HQ_INCLUDED_STATION_SLOTS ?>" data-discounts="<?= htmlspecialchars(json_encode(BILLING_HQ_VOLUME_DISCOUNTS), ENT_QUOTES, 'UTF-8') ?>"><?= number_format(BILLING_HQ_REGISTRATION_FEE_MMK) ?> <small>MMK</small></strong>
+                <strong id="registration-total" data-base="<?= (int) BILLING_HQ_REGISTRATION_FEE_MMK ?>" data-monthly="<?= (int) BILLING_HQ_EXTRA_STATION_MMK_MONTHLY ?>" data-included="<?= (int) BILLING_HQ_INCLUDED_STATION_SLOTS ?>" data-discounts="<?= htmlspecialchars(json_encode(BILLING_HQ_VOLUME_DISCOUNTS), ENT_QUOTES, 'UTF-8') ?>">0 <small>MMK</small></strong>
             </div>
 
-            <div class="payment-field">
+            <div class="payment-field" id="payment-method-field">
                 <label class="payment-field-label" id="payment-method-label" for="payment-select-toggle">Payment method</label>
 
                 <div class="payment-select" id="payment-select">
@@ -484,7 +494,7 @@ require __DIR__ . '/../partials/nav.php';
             <p class="payment-error" id="payment-error" aria-live="polite" hidden></p>
 
             <button type="button" class="btn btn-primary payment-confirm" id="payment-confirm">Continue to payment <i class="fa-solid fa-arrow-right ms-2"></i></button>
-            <p class="payment-note">The website does not move or verify funds. Use the recipient account details shown in the next step.</p>
+            <p class="payment-note" id="payment-note">No payment is due for the three included stations. An Admin must review the registration.</p>
         </div>
 
         <!-- ============================ STEP 2 ============================ -->
@@ -500,7 +510,7 @@ require __DIR__ . '/../partials/nav.php';
                     <strong id="payment-summary-method">&mdash;</strong>
                     <small id="payment-summary-sub">Selected payment method</small>
                 </span>
-                <span class="payment-summary-amount" id="payment-summary-amount"><?= number_format(BILLING_HQ_REGISTRATION_FEE_MMK) ?> <small>MMK</small></span>
+                <span class="payment-summary-amount" id="payment-summary-amount">0 <small>MMK</small></span>
             </div>
 
             <div class="payment-transfer">
@@ -517,7 +527,7 @@ require __DIR__ . '/../partials/nav.php';
 
             <div class="payment-field">
                 <label class="payment-field-label" for="payment-receipt">Payment screenshot (JPG, PNG, or WEBP; max 5 MB)</label>
-                <input class="form-control" type="file" id="payment-receipt" name="payment_receipt" accept="image/jpeg,image/png,image/webp" required>
+                <input class="form-control" type="file" id="payment-receipt" name="payment_receipt" accept="image/jpeg,image/png,image/webp">
             </div>
 
             <p class="payment-error" id="payment-status-error" aria-live="polite" hidden></p>

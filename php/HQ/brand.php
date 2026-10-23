@@ -154,23 +154,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 // Fetch current configuration to populate the form
-if ($loggedUserId > 0) {
-    $stmt = $pdo->prepare("SELECT h.*, COALESCE(owner.user_name, u.user_name) AS owner_name, COALESCE((SELECT MIN(request.created_at) FROM system_requests request WHERE request.headquarter_id = h.headquarter_id AND request.request_type = 'hq_registration'), h.created_at) AS registration_date FROM users u JOIN headquarter h ON h.headquarter_id = u.headquarter_id LEFT JOIN users owner ON owner.user_id = h.headquarters_owner_id WHERE u.user_id = ? LIMIT 1");
-    $stmt->execute([$loggedUserId]);
-} elseif ($loggedHqId > 0) {
+if ($loggedHqId > 0) {
     $stmt = $pdo->prepare("SELECT h.*, owner.user_name AS owner_name, COALESCE((SELECT MIN(request.created_at) FROM system_requests request WHERE request.headquarter_id = h.headquarter_id AND request.request_type = 'hq_registration'), h.created_at) AS registration_date FROM headquarter h LEFT JOIN users owner ON owner.user_id = h.headquarters_owner_id WHERE h.headquarter_id = ? LIMIT 1");
     $stmt->execute([$loggedHqId]);
+} elseif ($loggedUserId > 0) {
+    $stmt = $pdo->prepare("SELECT h.*, COALESCE(owner.user_name, u.user_name) AS owner_name, COALESCE((SELECT MIN(request.created_at) FROM system_requests request WHERE request.headquarter_id = h.headquarter_id AND request.request_type = 'hq_registration'), h.created_at) AS registration_date FROM users u JOIN headquarter h ON h.headquarter_id = u.headquarter_id LEFT JOIN users owner ON owner.user_id = h.headquarters_owner_id WHERE u.user_id = ? LIMIT 1");
+    $stmt->execute([$loggedUserId]);
 } else {
     $stmt = $pdo->query("SELECT h.*, owner.user_name AS owner_name, COALESCE((SELECT MIN(request.created_at) FROM system_requests request WHERE request.headquarter_id = h.headquarter_id AND request.request_type = 'hq_registration'), h.created_at) AS registration_date FROM headquarter h LEFT JOIN users owner ON owner.user_id = h.headquarters_owner_id LIMIT 1");
 }
-$currentConfig = $stmt->fetch(PDO::FETCH_ASSOC);
+$currentConfig = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
 
 $brandTitle = $currentConfig['company_name'] ?? 'Apex Fuel & Gas';
 $brandInfo = $currentConfig['headquarter_bio'] ?? '';
 $brandEmail = $currentConfig['headquarter_email'] ?? 'hq@apexfuelgas.com';
 $brandPhone = $currentConfig['contact_number'] ?? '+1 (800) 555-APEX';
 $businessLicense = $currentConfig['business_license'] ?? '';
-$licenseExpireDate = $currentConfig['business_license_expire_date'] ?: substr((string) ($currentConfig['expire_at'] ?? ''), 0, 10);
+$licenseExpireDate = ($currentConfig['business_license_expire_date'] ?? '') ?: substr((string) ($currentConfig['expire_at'] ?? ''), 0, 10);
 $ownerName = $currentConfig['owner_name'] ?? '';
 $registerDate = !empty($currentConfig['registration_date']) ? substr((string) $currentConfig['registration_date'], 0, 10) : '';
 $licenseExpiryValue = trim((string) $licenseExpireDate);
