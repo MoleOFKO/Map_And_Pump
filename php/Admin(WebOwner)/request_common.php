@@ -4,6 +4,80 @@
  */
 require_once __DIR__ . '/hq_account_common.php';
 require_once __DIR__ . '/../Login/mail_templates.php';
+require_once __DIR__ . '/../payment_transfers.php';
+
+/** Latest registration payment state keyed by system request id. */
+function request_payment_review_map(array $requestRows): array
+{
+    global $pdo;
+    $requestIds = [];
+    foreach ($requestRows as $row) {
+        if (strtolower((string) ($row['request_type'] ?? '')) === 'hq_registration') {
+            $requestIds[] = (int) ($row['request_id'] ?? 0);
+        }
+    }
+    $requestIds = array_values(array_filter(array_unique($requestIds), static fn (int $id): bool => $id > 0));
+    if (!$requestIds || !isset($pdo) || !payment_transfer_schema_ready($pdo)) {
+        return [];
+    }
+
+    try {
+        $placeholders = implode(',', array_fill(0, count($requestIds), '?'));
+        $stmt = $pdo->prepare(
+            "SELECT payment_transfer_id, request_id, status, amount_mmk
+             FROM payment_transfers
+             WHERE payment_type = 'hq_registration' AND request_id IN ({$placeholders})
+             ORDER BY payment_transfer_id DESC"
+        );
+        $stmt->execute($requestIds);
+        $map = [];
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $payment) {
+            $requestId = (int) $payment['request_id'];
+            $map[$requestId] ??= $payment;
+        }
+        return $map;
+    } catch (Throwable $e) {
+        error_log('request_payment_review_map: ' . $e->getMessage());
+        return [];
+    }
+}
+
+/** Actionable payment declarations that have no matching HQ registration row. */
+function request_standalone_payment_rows(bool $moderatorOnly = false): array
+{
+    global $pdo;
+    if (!isset($pdo) || !payment_transfer_schema_ready($pdo)) {
+        return [];
+    }
+    try {
+        $paymentTypes = $moderatorOnly
+            ? ['hq_period_extension']
+            : ['hq_period_extension', 'hq_extra_station', 'hq_station_operating_quote'];
+        $placeholders = implode(',', array_fill(0, count($paymentTypes), '?'));
+        $stmt = $pdo->prepare(
+            "SELECT pt.payment_transfer_id, pt.request_id, pt.payment_type, pt.status,
+                    pt.amount_mmk, pt.description, pt.payment_method, pt.payer_user_id,
+                    pt.payer_email, pt.created_at, pt.payer_headquarter_id,
+                    h.company_name AS payer_hq_name, owner.user_name AS payer_name,
+                    (SELECT receipt.file_name
+                     FROM payment_transfer_receipts receipt
+                     WHERE receipt.payment_transfer_id = pt.payment_transfer_id
+                     LIMIT 1) AS receipt_name
+             FROM payment_transfers pt
+             LEFT JOIN headquarter h ON h.headquarter_id = pt.payer_headquarter_id
+             LEFT JOIN users owner ON owner.user_id = h.headquarters_owner_id
+             WHERE pt.recipient_role = 'admin'
+               AND pt.status = 'payer_reported_paid'
+               AND pt.payment_type IN ({$placeholders})
+             ORDER BY pt.created_at DESC, pt.payment_transfer_id DESC"
+        );
+        $stmt->execute($paymentTypes);
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    } catch (Throwable $e) {
+        error_log('request_standalone_payment_rows: ' . $e->getMessage());
+        return [];
+    }
+}
 
 function request_type_label(?string $type): string
 {

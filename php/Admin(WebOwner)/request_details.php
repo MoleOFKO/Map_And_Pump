@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/request_common.php';
 require_once __DIR__ . '/admin_common.php';
+require_once __DIR__ . '/../payment_transfers.php';
 
 admin_require_staff();
 
@@ -54,6 +55,40 @@ if (!$request) {
     exit;
 }
 
+$registrationPayment = null;
+if (strtolower((string) $request['request_type']) === 'hq_registration' && payment_transfer_schema_ready($pdo)) {
+    $paymentStmt = $pdo->prepare(
+        "SELECT pt.payment_transfer_id, pt.status, pt.amount_mmk, pt.payment_method,
+                pt.payer_user_id, pt.payer_email,
+                receipt.file_name, receipt.mime_type
+         FROM payment_transfers pt
+         LEFT JOIN payment_transfer_receipts receipt ON receipt.payment_transfer_id = pt.payment_transfer_id
+         WHERE pt.request_id = ? AND pt.payment_type = 'hq_registration'
+         ORDER BY pt.payment_transfer_id DESC LIMIT 1"
+    );
+    $paymentStmt->execute([$requestId]);
+    $paymentRow = $paymentStmt->fetch(PDO::FETCH_ASSOC);
+    if ($paymentRow) {
+        $reviewerId = (int) ($_SESSION['user_id'] ?? 0);
+        $reviewerEmail = strtolower(trim((string) ($_SESSION['user_email'] ?? '')));
+        $isPayer = ((int) ($paymentRow['payer_user_id'] ?? 0) === $reviewerId && $reviewerId > 0)
+            || ($reviewerEmail !== '' && $reviewerEmail === strtolower(trim((string) ($paymentRow['payer_email'] ?? ''))));
+        $registrationPayment = [
+            'payment_transfer_id' => (int) $paymentRow['payment_transfer_id'],
+            'status' => (string) $paymentRow['status'],
+            'amount_mmk' => (float) $paymentRow['amount_mmk'],
+            'payment_method' => (string) ($paymentRow['payment_method'] ?? ''),
+            'receipt_name' => $paymentRow['file_name'],
+            'receipt_mime' => $paymentRow['mime_type'],
+            'is_current_user_payer' => $isPayer,
+            'can_review' => payment_transfer_user_is_admin($pdo, $reviewerId) && !$isPayer,
+        ];
+    }
+}
+if (empty($_SESSION['payment_transfer_csrf'])) {
+    $_SESSION['payment_transfer_csrf'] = bin2hex(random_bytes(32));
+}
+
 $registrationDetails = json_decode((string) ($request['request_details'] ?? ''), true);
 $registrationDetails = is_array($registrationDetails) ? $registrationDetails : [];
 
@@ -104,5 +139,8 @@ echo json_encode([
         'business_license_expire_date' => $request['business_license_expire_date'],
         'receipt_type' => $request['receipt_type'],
         'receipt_image' => $request['receipt_image'],
+        'registration_payment' => $registrationPayment,
+        'payment_transfer_csrf' => (string) $_SESSION['payment_transfer_csrf'],
+        'can_review_registration_payment' => (bool) ($registrationPayment['can_review'] ?? false),
     ],
 ]);
