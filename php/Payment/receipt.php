@@ -47,7 +47,9 @@ if (!$receipt) {
 $fileName = preg_replace('/[^A-Za-z0-9._-]/', '_', basename((string) $receipt['file_name'])) ?: 'receipt';
 header('Content-Type: ' . (string) $receipt['mime_type']);
 header('Content-Length: ' . (int) $receipt['file_size']);
-$viewInline = (string) ($_GET['view'] ?? '') === '1' && str_starts_with((string) $receipt['mime_type'], 'image/');
+$mimeType = strtolower(trim((string) $receipt['mime_type']));
+$viewInline = (string) ($_GET['view'] ?? '') === '1'
+    && (str_starts_with($mimeType, 'image/') || $mimeType === 'application/pdf');
 header('Content-Disposition: ' . ($viewInline ? 'inline' : 'attachment') . '; filename="' . $fileName . '"');
 header('X-Content-Type-Options: nosniff');
 header('Cache-Control: private, no-store, max-age=0');

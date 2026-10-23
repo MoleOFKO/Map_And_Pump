@@ -5,15 +5,19 @@
 require_once __DIR__ . '/hq_account_common.php';
 require_once __DIR__ . '/../Login/mail_templates.php';
 require_once __DIR__ . '/../payment_transfers.php';
-
 /** Latest registration payment state keyed by system request id. */
 function request_payment_review_map(array $requestRows): array
 {
     global $pdo;
     $requestIds = [];
+    $requestHeadquarters = [];
     foreach ($requestRows as $row) {
         if (strtolower((string) ($row['request_type'] ?? '')) === 'hq_registration') {
-            $requestIds[] = (int) ($row['request_id'] ?? 0);
+            $requestId = (int) ($row['request_id'] ?? 0);
+            if ($requestId > 0) {
+                $requestIds[] = $requestId;
+                $requestHeadquarters[$requestId] = (int) ($row['headquarter_id'] ?? 0);
+            }
         }
     }
     $requestIds = array_values(array_filter(array_unique($requestIds), static fn (int $id): bool => $id > 0));
@@ -35,46 +39,36 @@ function request_payment_review_map(array $requestRows): array
             $requestId = (int) $payment['request_id'];
             $map[$requestId] ??= $payment;
         }
+
+        // Older approved HQ registrations can have a payment transfer linked
+        // to the created HQ but missing its original request_id. Use the HQ
+        // foreign key only as a fallback, and only for otherwise-unmatched
+        // registrations, so one HQ's payment cannot mask another request.
+        $unmatchedRequestIds = array_values(array_filter(
+            $requestIds,
+            static fn (int $id): bool => !isset($map[$id]) && ($requestHeadquarters[$id] ?? 0) > 0
+        ));
+        if ($unmatchedRequestIds) {
+            $fallbackMarks = implode(',', array_fill(0, count($unmatchedRequestIds), '?'));
+            $fallback = $pdo->prepare(
+                "SELECT r.request_id, pt.payment_transfer_id, pt.status, pt.amount_mmk
+                 FROM system_requests r
+                 INNER JOIN payment_transfers pt
+                    ON pt.payment_type = 'hq_registration'
+                   AND pt.payer_headquarter_id = r.headquarter_id
+                   AND (pt.request_id IS NULL OR pt.request_id = 0)
+                 WHERE r.request_id IN ({$fallbackMarks})
+                 ORDER BY pt.payment_transfer_id DESC"
+            );
+            $fallback->execute($unmatchedRequestIds);
+            foreach ($fallback->fetchAll(PDO::FETCH_ASSOC) as $payment) {
+                $requestId = (int) $payment['request_id'];
+                $map[$requestId] ??= $payment;
+            }
+        }
         return $map;
     } catch (Throwable $e) {
         error_log('request_payment_review_map: ' . $e->getMessage());
-        return [];
-    }
-}
-
-/** Actionable payment declarations that have no matching HQ registration row. */
-function request_standalone_payment_rows(bool $moderatorOnly = false): array
-{
-    global $pdo;
-    if (!isset($pdo) || !payment_transfer_schema_ready($pdo)) {
-        return [];
-    }
-    try {
-        $paymentTypes = $moderatorOnly
-            ? ['hq_period_extension']
-            : ['hq_period_extension', 'hq_extra_station', 'hq_station_operating_quote'];
-        $placeholders = implode(',', array_fill(0, count($paymentTypes), '?'));
-        $stmt = $pdo->prepare(
-            "SELECT pt.payment_transfer_id, pt.request_id, pt.payment_type, pt.status,
-                    pt.amount_mmk, pt.description, pt.payment_method, pt.payer_user_id,
-                    pt.payer_email, pt.created_at, pt.payer_headquarter_id,
-                    h.company_name AS payer_hq_name, owner.user_name AS payer_name,
-                    (SELECT receipt.file_name
-                     FROM payment_transfer_receipts receipt
-                     WHERE receipt.payment_transfer_id = pt.payment_transfer_id
-                     LIMIT 1) AS receipt_name
-             FROM payment_transfers pt
-             LEFT JOIN headquarter h ON h.headquarter_id = pt.payer_headquarter_id
-             LEFT JOIN users owner ON owner.user_id = h.headquarters_owner_id
-             WHERE pt.recipient_role = 'admin'
-               AND pt.status = 'payer_reported_paid'
-               AND pt.payment_type IN ({$placeholders})
-             ORDER BY pt.created_at DESC, pt.payment_transfer_id DESC"
-        );
-        $stmt->execute($paymentTypes);
-        return $stmt->fetchAll(PDO::FETCH_ASSOC);
-    } catch (Throwable $e) {
-        error_log('request_standalone_payment_rows: ' . $e->getMessage());
         return [];
     }
 }
@@ -99,6 +93,58 @@ function request_type_short_label(?string $type): string
         'deactivation', 'account_deactivation' => 'Account Deactivation',
         default => request_type_label($type),
     };
+}
+
+/** Payment confirmations shown in the shared request queue. */
+function request_payment_verification_rows(string $reviewerRole, string $search, string $status, bool $includeRegistration = false): array
+{
+    global $pdo;
+    if (!isset($pdo) || !payment_transfer_schema_ready($pdo)) {
+        return [];
+    }
+    $reviewerRole = strtolower(trim($reviewerRole));
+    $types = $reviewerRole === 'moderator'
+        ? ['hq_period_extension']
+        : ['hq_period_extension', 'hq_extra_station', 'hq_station_operating_quote'];
+    if ($reviewerRole !== 'moderator' && $includeRegistration) {
+        $types[] = 'hq_registration';
+    }
+    $statusMap = ['pending' => 'payer_reported_paid', 'approved' => 'received', 'rejected' => 'rejected'];
+    $paymentStatuses = $status === '' ? array_values($statusMap) : (isset($statusMap[$status]) ? [$statusMap[$status]] : []);
+    if (!$paymentStatuses) {
+        return [];
+    }
+    $typeMarks = implode(',', array_fill(0, count($types), '?'));
+    $statusMarks = implode(',', array_fill(0, count($paymentStatuses), '?'));
+    $sql = "SELECT pt.payment_transfer_id, pt.payment_type, pt.status, pt.amount_mmk, pt.description, pt.payment_method,
+                   pt.payer_user_id, pt.payer_email, pt.created_at, h.company_name AS payer_hq_name,
+                   owner.user_name AS payer_name,
+                   (SELECT r.file_name FROM payment_transfer_receipts r
+                    WHERE r.payment_transfer_id = pt.payment_transfer_id LIMIT 1) AS receipt_name,
+                   (SELECT r.mime_type FROM payment_transfer_receipts r
+                     WHERE r.payment_transfer_id = pt.payment_transfer_id LIMIT 1) AS receipt_mime_type
+            FROM payment_transfers pt
+            LEFT JOIN headquarter h ON h.headquarter_id = pt.payer_headquarter_id
+            LEFT JOIN users owner ON owner.user_id = h.headquarters_owner_id
+            WHERE pt.recipient_role = 'admin' AND pt.payment_type IN ({$typeMarks})
+              AND pt.status IN ({$statusMarks})";
+    $params = array_merge($types, $paymentStatuses);
+    if ($search !== '') {
+        $sql .= " AND (CAST(pt.payment_transfer_id AS CHAR) LIKE ? OR LOWER(COALESCE(h.company_name, '')) LIKE ?
+                  OR LOWER(COALESCE(owner.user_name, '')) LIKE ? OR LOWER(COALESCE(pt.payer_email, '')) LIKE ?
+                  OR LOWER(COALESCE(pt.description, '')) LIKE ?)";
+        $like = '%' . strtolower($search) . '%';
+        array_push($params, '%' . $search . '%', $like, $like, $like, $like);
+    }
+    $sql .= ' ORDER BY pt.created_at DESC, pt.payment_transfer_id DESC';
+    try {
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute($params);
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    } catch (Throwable $e) {
+        error_log('request_payment_verification_rows: ' . $e->getMessage());
+        return [];
+    }
 }
 
 function request_status_label(?string $status): string
