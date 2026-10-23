@@ -9,7 +9,20 @@ if (!function_exists('map_pump_current_hq_id')) {
         }
 
         $stmt = $pdo->prepare(
-            "SELECT COALESCE(u.headquarter_id, bas.headquarter_id) AS headquarter_id
+                "SELECT COALESCE(
+                    NULLIF(u.headquarter_id, 0),
+                    NULLIF(bas.headquarter_id, 0),
+                    (SELECT owned_hq.headquarter_id
+                     FROM headquarter owned_hq
+                     WHERE owned_hq.headquarters_owner_id = u.user_id
+                     ORDER BY owned_hq.headquarter_id DESC
+                     LIMIT 1),
+                    (SELECT email_hq.headquarter_id
+                     FROM headquarter email_hq
+                     WHERE LOWER(TRIM(email_hq.headquarter_email)) = LOWER(TRIM(u.email))
+                     ORDER BY email_hq.headquarter_id DESC
+                     LIMIT 1)
+                    ) AS headquarter_id
              FROM users u
              LEFT JOIN business_account_scope bas ON bas.user_id = u.user_id
              WHERE u.user_id = ?

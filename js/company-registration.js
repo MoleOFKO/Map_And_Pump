@@ -56,6 +56,10 @@ const stationCountInput = document.getElementById('station-count');
 const registrationTotal = document.getElementById('registration-total');
 const paymentSummaryAmount = document.getElementById('payment-summary-amount');
 const paymentReceiptInput = document.getElementById('payment-receipt');
+const paymentMethodField = document.getElementById('payment-method-field');
+const paymentConfirmButton = document.getElementById('payment-confirm');
+const paymentNote = document.getElementById('payment-note');
+const paymentSteps = document.getElementById('payment-steps');
 
 let activeIndex = -1;
 let previouslyFocusedElement;
@@ -187,19 +191,82 @@ const fillPaymentStep = () => {
     }
 };
 
-const updateRegistrationAmount = () => {
-    if (!stationCountInput || !registrationTotal) return;
+const getRegistrationAmount = () => {
+    if (!stationCountInput || !registrationTotal) return 0;
     const extraCount = Math.max(0, Number(stationCountInput.value) - Number(registrationTotal.dataset.included));
     const discounts = JSON.parse(registrationTotal.dataset.discounts || '[]');
     const discount = discounts.reduce((current, tier) => extraCount >= Number(tier.min) ? Number(tier.percent) : current, 0);
-    const amount = Number(registrationTotal.dataset.base) + Number(registrationTotal.dataset.monthly) * extraCount * (1 - discount / 100);
+    const registrationFee = extraCount > 0 ? Number(registrationTotal.dataset.base) : 0;
+    return registrationFee + Number(registrationTotal.dataset.monthly) * extraCount * (1 - discount / 100);
+};
+
+const updateRegistrationAmount = () => {
+    if (!registrationTotal) return;
+    const amount = getRegistrationAmount();
     const formatted = `${new Intl.NumberFormat().format(amount)} <small>MMK</small>`;
     registrationTotal.innerHTML = formatted;
     if (paymentSummaryAmount) paymentSummaryAmount.innerHTML = formatted;
+    const isFree = amount === 0;
+    if (paymentMethodField) paymentMethodField.hidden = isFree;
+    if (paymentSteps) paymentSteps.hidden = isFree;
+    if (banksBox) banksBox.hidden = isFree || methodInput?.value !== 'Bank transfer';
+    if (paymentConfirmButton) paymentConfirmButton.innerHTML = isFree
+        ? 'Submit registration <i class="fa-solid fa-check ms-2"></i>'
+        : 'Continue to payment <i class="fa-solid fa-arrow-right ms-2"></i>';
+    if (paymentNote) paymentNote.textContent = isFree
+        ? 'No payment is due for the three included stations. An Admin must review the registration.'
+        : 'The website does not move or verify funds. Use the recipient account details shown in the next step.';
 };
 
 stationCountInput?.addEventListener('change', updateRegistrationAmount);
 stationCountInput?.addEventListener('input', updateRegistrationAmount);
+updateRegistrationAmount();
+
+const submitRegistration = async (requiresPayment) => {
+    if (requiresPayment && !paymentReceiptInput?.files?.length) {
+        showError(paymentStatusError, 'Upload the payment screenshot to submit the registration.');
+        paymentReceiptInput?.focus();
+        return;
+    }
+    const submitButton = requiresPayment ? paymentSubmit : paymentConfirmButton;
+    if (submitButton) {
+        submitButton.disabled = true;
+        submitButton.classList.add('is-loading');
+    }
+    try {
+        const formData = new FormData(registrationForm);
+        formData.set('payment_method', requiresPayment ? methodInput?.value || '' : '');
+        formData.set('bank_name', requiresPayment ? bankInput?.value || '' : '');
+        formData.set('station_count', stationCountInput?.value || '');
+        if (requiresPayment && paymentReceiptInput?.files?.[0]) {
+            formData.set('payment_receipt', paymentReceiptInput.files[0]);
+        }
+        const response = await fetch(window.location.href, {
+            method: 'POST',
+            body: formData,
+            headers: { Accept: 'application/json' },
+        });
+        const result = await response.json();
+        if (!response.ok || !result.success) throw new Error(result.message || 'Registration could not be submitted.');
+
+        closePaymentModal();
+        if (formStatus) {
+            formStatus.classList.remove('is-error');
+            formStatus.classList.add('is-success');
+            formStatus.textContent = result.message;
+        }
+        registrationForm.reset();
+        updateRegistrationAmount();
+    } catch (error) {
+        showError(requiresPayment ? paymentStatusError : paymentError, error.message);
+        if (requiresPayment) goToStep('payment');
+    } finally {
+        if (submitButton) {
+            submitButton.disabled = false;
+            submitButton.classList.remove('is-loading');
+        }
+    }
+};
 
 /* ---------- dropdown events ---------- */
 toggle?.addEventListener('click', () => (isMenuOpen() ? closeMenu() : openMenu()));
@@ -324,6 +391,10 @@ paymentModal?.querySelectorAll('[data-payment-close]').forEach((element) => {
 
 /* Step 1 -> Step 2 */
 paymentConfirm?.addEventListener('click', () => {
+    if (getRegistrationAmount() === 0) {
+        submitRegistration(false);
+        return;
+    }
     const method = methodInput?.value;
     if (!method) {
         select?.classList.add('has-error');
@@ -353,45 +424,8 @@ backButton?.addEventListener('click', () => {
 
 /* Submit the registration and create a fixed-amount payment request. */
 paymentSubmit?.addEventListener('click', async () => {
-    const method = methodInput?.value;
-    const bank = bankInput?.value;
     clearError();
-    if (!paymentReceiptInput?.files?.length) {
-        showError(paymentStatusError, 'Upload the payment screenshot to submit the registration.');
-        paymentReceiptInput?.focus();
-        return;
-    }
-    paymentSubmit.disabled = true;
-    paymentSubmit.classList.add('is-loading');
-
-    try {
-        const formData = new FormData(registrationForm);
-        formData.set('payment_method', method || '');
-        formData.set('bank_name', bank || '');
-        formData.set('station_count', stationCountInput?.value || '');
-        formData.set('payment_receipt', paymentReceiptInput.files[0]);
-        const response = await fetch(window.location.href, {
-            method: 'POST',
-            body: formData,
-            headers: { Accept: 'application/json' },
-        });
-        const result = await response.json();
-        if (!response.ok || !result.success) throw new Error(result.message || 'Registration could not be submitted.');
-
-        closePaymentModal();
-        if (formStatus) {
-            formStatus.classList.remove('is-error');
-            formStatus.classList.add('is-success');
-            formStatus.textContent = result.message;
-        }
-        registrationForm.reset();
-    } catch (error) {
-        showError(paymentStatusError, error.message);
-        goToStep('payment');
-    } finally {
-        paymentSubmit.disabled = false;
-        paymentSubmit.classList.remove('is-loading');
-    }
+    await submitRegistration(true);
 });
 
 document.addEventListener('keydown', (event) => {
