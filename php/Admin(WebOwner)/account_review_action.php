@@ -61,6 +61,9 @@ try {
     if (strtolower(trim((string) $target['status'])) !== 'pending_verification') {
         throw new RuntimeException('Only pending verification accounts can be approved or rejected.');
     }
+    if (!empty($target['license_id']) && duplicate_license_record_count('driver', (int) $target['license_id']) !== 0) {
+        throw new RuntimeException('This account has a duplicate driver license. Use Compare to record the decision and notify every affected customer.');
+    }
 
     $newStatus = $action === 'approve' ? 'approved' : 'rejected';
     $update = $conn->prepare('UPDATE users SET status = ?, updated_at = NOW() WHERE user_id = ?');

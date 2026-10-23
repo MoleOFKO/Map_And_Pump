@@ -79,6 +79,42 @@ if (!$user) {
 }
 
 $actions = user_action_rows((int) $userId);
+$licenseConflicts = [];
+if (!empty($user['license_id']) && trim((string) ($user['license_number'] ?? '')) !== '') {
+    $conflictStatement = $conn->prepare(
+        "SELECT u.user_id, u.user_name, u.email, u.status AS account_status,
+                l.license_id, l.license_number, l.license_name, l.status AS license_status,
+                l.license_image, l.face_image
+         FROM user_license l
+         INNER JOIN users u ON u.license_id = l.license_id
+         WHERE UPPER(REPLACE(TRIM(l.license_number), ' ', '')) = UPPER(REPLACE(TRIM(?), ' ', ''))
+           AND l.license_id <> ?
+         ORDER BY CASE WHEN LOWER(TRIM(l.status)) = 'approved' THEN 0 ELSE 1 END,
+                  l.license_id DESC"
+    );
+    if ($conflictStatement) {
+        $licenseId = (int) $user['license_id'];
+        $conflictStatement->bind_param('si', $user['license_number'], $licenseId);
+        if ($conflictStatement->execute()) {
+            $conflictResult = $conflictStatement->get_result();
+            while ($conflictResult && ($conflict = $conflictResult->fetch_assoc())) {
+                $licenseConflicts[] = [
+                    'user_id' => (int) $conflict['user_id'],
+                    'user_name' => $conflict['user_name'],
+                    'email' => $conflict['email'],
+                    'account_status' => $conflict['account_status'],
+                    'license_id' => (int) $conflict['license_id'],
+                    'license_number' => $conflict['license_number'],
+                    'license_name' => $conflict['license_name'],
+                    'license_status' => $conflict['license_status'],
+                    'license_image' => $conflict['license_image'],
+                    'face_image' => $conflict['face_image'],
+                ];
+            }
+        }
+        $conflictStatement->close();
+    }
+}
 
 echo json_encode([
     'success' => true,
@@ -111,6 +147,7 @@ echo json_encode([
         'license_image' => $user['license_image'],
         'face_image' => $user['face_image'],
     ] : null,
+    'license_conflicts' => $licenseConflicts,
     'headquarter' => $user['headquarter_id'] !== null ? [
         'headquarter_id' => (int) $user['headquarter_id'],
         'company_name' => $user['headquarter_name'],

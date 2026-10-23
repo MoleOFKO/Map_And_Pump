@@ -82,6 +82,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!$expiryValid) $validationErrors[] = 'license expiry date';
     if (!filter_var($ownerEmail, FILTER_VALIDATE_EMAIL)) $validationErrors[] = 'owner email';
     if (!filter_var($companyEmail, FILTER_VALIDATE_EMAIL)) $validationErrors[] = 'company email';
+    if ($ownerEmail !== '' && $ownerEmail === $companyEmail) $validationErrors[] = 'different owner and company emails';
     if ($ownerPhone === '') $validationErrors[] = 'owner phone';
     if ($companyPhone === '') $validationErrors[] = 'company phone';
     if (!$noPaymentRequired && !in_array($paymentMethod, $allowedMethods, true)) $validationErrors[] = 'payment method';
@@ -189,8 +190,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 throw new RuntimeException('The payment screenshot must be a JPG, PNG, or WEBP image.');
             }
         }
-        $duplicate = $pdo->prepare("SELECT request_id FROM system_requests WHERE request_type = 'hq_registration' AND status = 'pending' AND (headquarter_email = ? OR headquarter_owner_email = ?) LIMIT 1");
-        $duplicate->execute([$companyEmail, $ownerEmail]);
+                $emailConflict = $pdo->prepare(
+                        'SELECT EXISTS(SELECT 1 FROM users WHERE LOWER(TRIM(email)) IN (?, ?))
+                                 OR EXISTS(SELECT 1 FROM headquarter WHERE LOWER(TRIM(headquarter_email)) IN (?, ?))'
+                );
+                $emailConflict->execute([$ownerEmail, $companyEmail, $ownerEmail, $companyEmail]);
+                if ((int) $emailConflict->fetchColumn() > 0) {
+                        $respond(false, 'The owner and company emails must be new. One is already registered to a user or HQ.', 409);
+                }
+
+                $duplicate = $pdo->prepare(
+                        "SELECT request_id FROM system_requests
+                         WHERE request_type = 'hq_registration' AND status = 'pending'
+                             AND (LOWER(TRIM(headquarter_email)) IN (?, ?) OR LOWER(TRIM(headquarter_owner_email)) IN (?, ?))
+                         LIMIT 1"
+                );
+                $duplicate->execute([$ownerEmail, $companyEmail, $ownerEmail, $companyEmail]);
         if ($duplicate->fetchColumn()) {
             $respond(false, 'A pending registration already exists for this email address.', 409);
         }

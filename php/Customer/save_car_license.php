@@ -231,6 +231,21 @@ try {
         car_license_json(false, 'Please enter a valid car license expiry date that is today or later.');
     }
 
+        $normalizedPlate = strtoupper(preg_replace('/[^0-9A-Z]/', '', $plateNumber) ?: '');
+        $conflictStmt = $pdo->prepare(
+                "SELECT c.car_license_id, c.car_plate_number, c.car_owner_name, c.vehicle_name,
+                                c.vehicle_type, c.chassis_number, c.location, c.car_license_front_image,
+                                c.car_license_back_image, c.status, u.user_id, u.user_name, u.email
+                 FROM car_license c
+                 LEFT JOIN user_car uc ON uc.car_id = c.car_license_id
+                 LEFT JOIN users u ON u.user_id = uc.user_id
+                 WHERE UPPER(REPLACE(REPLACE(REPLACE(TRIM(c.car_plate_number), '/', ''), ' ', ''), '-', '')) = ?
+                     AND c.car_license_id <> ?
+                 ORDER BY c.car_license_id"
+        );
+        $conflictStmt->execute([$normalizedPlate, $carId]);
+        $carLicenseConflicts = $conflictStmt->fetchAll(PDO::FETCH_ASSOC);
+
     $existingCar = [];
     if ($carId > 0) {
         $owned = $pdo->prepare(
@@ -324,7 +339,14 @@ try {
         ]);
     }
 
-    car_license_json(true, 'Car license saved.', ['redirect' => '/php/Customer/car_license.php?car_id=' . $savedCarId]);
+    $responseMessage = $carLicenseConflicts
+        ? 'This car plate matches another customer record. Your request was saved and flagged for reviewer comparison.'
+        : 'Car license saved.';
+    car_license_json(true, $responseMessage, [
+        'redirect' => '/php/Customer/car_license.php?car_id=' . $savedCarId,
+        'license_conflict' => (bool) $carLicenseConflicts,
+        'conflict_count' => count($carLicenseConflicts),
+    ]);
 } catch (Throwable $e) {
     if ($pdo->inTransaction()) {
         $pdo->rollBack();

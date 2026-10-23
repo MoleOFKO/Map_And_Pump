@@ -292,6 +292,9 @@ SELECT u.user_id, {$publicIdSelect}, u.user_name, u.email, u.status, u.created_a
        h.company_name AS headquarter_name, h.location AS headquarter_location,
        l.license_number, l.license_name, l.phone_number, l.nrc_number,
        l.date_of_birth, l.blood_type, l.license_last_valid_date,
+             (SELECT COUNT(*) FROM user_license duplicate
+                WHERE UPPER(REPLACE(TRIM(duplicate.license_number), ' ', '')) = UPPER(REPLACE(TRIM(l.license_number), ' ', ''))
+                    AND duplicate.license_id <> l.license_id) AS license_conflict_count,
        {$licenseStatusSelect}, l.license_image, {$faceImageSelect}
 FROM users u
 LEFT JOIN roles r ON r.role_id = u.role_id
@@ -319,6 +322,97 @@ SQL;
     $statement->close();
 
     return $rows;
+}
+
+function pending_car_license_rows(string $search = ''): array
+{
+    global $conn;
+    $rows = [];
+
+    if (!hq_db_available()
+        || !user_account_column_exists('car_license', 'car_license_id')
+        || !user_account_column_exists('user_car', 'car_id')
+        || !user_account_column_exists('user_car', 'user_id')) {
+        return $rows;
+    }
+
+    $sql = "SELECT c.car_license_id, c.car_plate_number, c.car_owner_name,
+                   c.vehicle_name, c.vehicle_type, c.chassis_number, c.location,
+                   c.status, c.created_at, c.car_license_front_image, c.car_license_back_image,
+                   owner.user_id, owner.user_name, owner.email,
+                   (SELECT COUNT(*) FROM car_license duplicate
+                    WHERE UPPER(REPLACE(REPLACE(REPLACE(TRIM(duplicate.car_plate_number), '/', ''), ' ', ''), '-', '')) =
+                          UPPER(REPLACE(REPLACE(REPLACE(TRIM(c.car_plate_number), '/', ''), ' ', ''), '-', ''))
+                      AND duplicate.car_license_id <> c.car_license_id) AS conflict_count
+            FROM car_license c
+            LEFT JOIN (
+                SELECT uc.car_id, MIN(u.user_id) AS user_id
+                FROM user_car uc INNER JOIN users u ON u.user_id = uc.user_id
+                GROUP BY uc.car_id
+            ) owner_link ON owner_link.car_id = c.car_license_id
+            LEFT JOIN users owner ON owner.user_id = owner_link.user_id
+            WHERE LOWER(TRIM(c.status)) IN ('pending', 'pending_verification')";
+    $params = [];
+    $types = '';
+    if ($search !== '') {
+        $sql .= " AND (LOWER(c.car_plate_number) LIKE ? OR LOWER(COALESCE(c.car_owner_name, '')) LIKE ?
+                       OR LOWER(COALESCE(c.vehicle_name, '')) LIKE ? OR LOWER(COALESCE(owner.user_name, '')) LIKE ?
+                       OR LOWER(COALESCE(owner.email, '')) LIKE ?)";
+        $like = '%' . strtolower($search) . '%';
+        array_push($params, $like, $like, $like, $like, $like);
+        $types = 'sssss';
+    }
+    $sql .= ' ORDER BY c.created_at DESC, c.car_license_id DESC';
+
+    $statement = $conn->prepare($sql);
+    if (!$statement) {
+        return $rows;
+    }
+    if ($types !== '') {
+        $bound = array_values($params);
+        hq_bind($statement, $types, $bound);
+    }
+    if ($statement->execute()) {
+        $result = $statement->get_result();
+        while ($result && ($row = $result->fetch_assoc())) {
+            $rows[] = $row;
+        }
+    }
+    $statement->close();
+    return $rows;
+}
+
+function duplicate_license_record_count(string $licenseType, int $recordId): int
+{
+    global $conn;
+    if ($recordId <= 0 || !in_array($licenseType, ['driver', 'car'], true)) {
+        return 0;
+    }
+
+    $sql = $licenseType === 'driver'
+        ? "SELECT COUNT(*) FROM user_license current_license
+           INNER JOIN user_license duplicate
+             ON UPPER(REPLACE(TRIM(duplicate.license_number), ' ', '')) = UPPER(REPLACE(TRIM(current_license.license_number), ' ', ''))
+            AND duplicate.license_id <> current_license.license_id
+           WHERE current_license.license_id = ?"
+        : "SELECT COUNT(*) FROM car_license current_license
+           INNER JOIN car_license duplicate
+             ON UPPER(REPLACE(REPLACE(REPLACE(TRIM(duplicate.car_plate_number), '/', ''), ' ', ''), '-', '')) =
+                UPPER(REPLACE(REPLACE(REPLACE(TRIM(current_license.car_plate_number), '/', ''), ' ', ''), '-', ''))
+            AND duplicate.car_license_id <> current_license.car_license_id
+           WHERE current_license.car_license_id = ?";
+    $statement = $conn->prepare($sql);
+    if (!$statement) {
+        return -1;
+    }
+    $statement->bind_param('i', $recordId);
+    if (!$statement->execute()) {
+        $statement->close();
+        return -1;
+    }
+    $row = $statement->get_result()?->fetch_row();
+    $statement->close();
+    return is_array($row) ? (int) $row[0] : -1;
 }
 
 function pending_account_count(): int
