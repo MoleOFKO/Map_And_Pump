@@ -7,6 +7,7 @@ $page_description = 'Submit your company details to join MAP & PUMP.';
 $page_styles = ['/css/CompanyRegistration.css'];
 require_once __DIR__ . '/../billing_config.php';
 require_once __DIR__ . '/../payment_transfers.php';
+require_once __DIR__ . '/../imgbb_image_host.php';
 
 if (empty($_SESSION['company_registration_csrf'])) {
     $_SESSION['company_registration_csrf'] = bin2hex(random_bytes(32));
@@ -142,7 +143,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     };
 
     $uploadDir = __DIR__ . '/uploads/';
-    $upload = static function (string $field, array $allowedMimes, int $maxBytes) use ($uploadDir, $uploadErrorMessages, $detectMime): string {
+    $upload = static function (string $field, array $allowedMimes, int $maxBytes, bool $publicImage = false) use ($uploadDir, $uploadErrorMessages, $detectMime): string {
         if (!isset($_FILES[$field]) || !is_array($_FILES[$field])) {
             throw new RuntimeException('Please upload all required documents.');
         }
@@ -160,6 +161,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         $extensions = ['image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp', 'application/pdf' => 'pdf'];
         $fileName = bin2hex(random_bytes(16)) . '.' . $extensions[$mime];
+        if ($publicImage && map_pump_imgbb_enabled()) {
+            $imageBytes = @file_get_contents((string) $file['tmp_name']);
+            if (!is_string($imageBytes)) {
+                throw new RuntimeException('The company logo could not be read.');
+            }
+            return map_pump_imgbb_upload($imageBytes, $fileName, $mime);
+        }
         if (!is_dir($uploadDir) && !mkdir($uploadDir, 0755, true) && !is_dir($uploadDir)) {
             throw new RuntimeException('The upload folder could not be created.');
         }
@@ -210,7 +218,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $respond(false, 'A pending registration already exists for this email address.', 409);
         }
 
-        $savedFiles[] = $logoPath = $upload('company_logo', ['image/jpeg', 'image/png', 'image/webp'], 5 * 1024 * 1024);
+        $savedFiles[] = $logoPath = $upload('company_logo', ['image/jpeg', 'image/png', 'image/webp'], 5 * 1024 * 1024, true);
         $savedFiles[] = $licensePath = $upload('license_photo', ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'], 10 * 1024 * 1024);
         $details = json_encode([
             'company_address' => $companyAddress,
@@ -302,7 +310,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $pdo->rollBack();
         }
         foreach ($savedFiles as $path) {
-            @unlink(__DIR__ . '/uploads/' . basename($path));
+            if (str_starts_with($path, '/php/Company/uploads/')) {
+                @unlink(__DIR__ . '/uploads/' . basename($path));
+            }
         }
         error_log('Company registration failed: ' . $error->getMessage());
         $message = $error instanceof RuntimeException

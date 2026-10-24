@@ -10,6 +10,7 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
 require_once __DIR__ . '/_helpers.php';
 require_once __DIR__ . '/../conn.php';
 require_once __DIR__ . '/../profile_avatar.php';
+require_once __DIR__ . '/../imgbb_image_host.php';
 
 
 require_branch_manager();
@@ -49,25 +50,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'uploa
     }
     $ext = $allowedMime[$mime];
 
-    // Ensure destination folder exists (relative to this file)
-    $uploadDir = __DIR__ . '/uploads';
-    if (!is_dir($uploadDir)) { @mkdir($uploadDir, 0775, true); }
-    if (!is_writable($uploadDir)) {
-        echo json_encode(['ok' => false, 'error' => 'Upload folder is not writable']);
-        exit;
-    }
-
     $uid      = (int)$_SESSION['user_id'];
     $filename = 'branchmgr-' . $uid . '-' . bin2hex(random_bytes(6)) . '.' . $ext;
-    $destPath = $uploadDir . '/' . $filename;
-
-    if (!move_uploaded_file($file['tmp_name'], $destPath)) {
+    $publicUrl = 'BranchManager/uploads/' . $filename;
+    $destPath = null;
+    if (map_pump_imgbb_enabled()) {
+      $imageBytes = @file_get_contents((string) $file['tmp_name']);
+      try {
+        if (!is_string($imageBytes)) {
+          throw new RuntimeException('Could not read the uploaded profile image.');
+        }
+        $publicUrl = map_pump_imgbb_upload($imageBytes, $filename, $mime);
+      } catch (Throwable $e) {
+        error_log('Branch manager avatar ImgBB upload failed: ' . $e->getMessage());
+        echo json_encode(['ok' => false, 'error' => 'Could not upload the profile image']);
+        exit;
+      }
+    } else {
+      $uploadDir = __DIR__ . '/uploads';
+      if (!is_dir($uploadDir)) { @mkdir($uploadDir, 0775, true); }
+      if (!is_writable($uploadDir)) {
+        echo json_encode(['ok' => false, 'error' => 'Upload folder is not writable']);
+        exit;
+      }
+      $destPath = $uploadDir . '/' . $filename;
+      if (!move_uploaded_file($file['tmp_name'], $destPath)) {
         echo json_encode(['ok' => false, 'error' => 'Could not save the uploaded file']);
         exit;
+      }
     }
-
-    // Web-accessible URL (relative to project root — BranchManager/uploads/…)
-    $publicUrl = 'BranchManager/uploads/' . $filename;
 
     try {
         // Reuse oauth_avatar_url column since the app already uses it for local avatars.
@@ -80,7 +91,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'uploa
 
         echo json_encode(['ok' => true, 'url' => '/' . ltrim($publicUrl, '/')]);
     } catch (PDOException $e) {
+      if ($destPath !== null) {
         @unlink($destPath);
+      }
         echo json_encode(['ok' => false, 'error' => 'Database error saving avatar']);
     }
     exit;

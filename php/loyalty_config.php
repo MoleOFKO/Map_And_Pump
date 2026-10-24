@@ -13,20 +13,20 @@ require_once __DIR__ . '/billing_config.php';
 
 // Earn: flat points per successful external fill
 if (!defined('LOYALTY_POINTS_PER_FILL')) {
-    define('LOYALTY_POINTS_PER_FILL', 3);
+    define('LOYALTY_POINTS_PER_FILL', 5);
 }
 
-// Redeem: multiples of this unit only (0, 10, 20)
-if (!defined('LOYALTY_REDEEM_UNIT_POINTS')) {
-    define('LOYALTY_REDEEM_UNIT_POINTS', 10);
+// Fixed redemption options: customer points => MMK discount.
+if (!defined('LOYALTY_REDEMPTION_OPTIONS')) {
+    define('LOYALTY_REDEMPTION_OPTIONS', [
+        100 => 1000,
+        199 => 2000,
+        299 => 3000,
+        399 => 5000,
+    ]);
 }
 
-// Hard max points a customer may apply on a single fill
-if (!defined('LOYALTY_MAX_POINTS_PER_FILL')) {
-    define('LOYALTY_MAX_POINTS_PER_FILL', 20);
-}
-
-// Fixed customer redemption value: 1 point = 10 MMK (10 points = 100 MMK).
+// Retained for compatibility with older integrations; redemption uses fixed tiers above.
 if (!defined('LOYALTY_MMK_PER_POINT')) {
     define('LOYALTY_MMK_PER_POINT', 10);
 }

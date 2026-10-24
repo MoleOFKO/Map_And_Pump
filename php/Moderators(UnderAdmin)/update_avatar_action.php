@@ -2,6 +2,7 @@
 session_start();
 
 require_once __DIR__ . '/moderator_common.php';
+require_once __DIR__ . '/../imgbb_image_host.php';
 
 $moderatorUser = moderator_require_user();
 
@@ -13,7 +14,6 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST' || empty($_FILES['profile_avatar']['na
 }
 
 $userId = (int) $moderatorUser['user_id'];
-$targetDir = __DIR__ . '/uploads/';
 $file = $_FILES['profile_avatar'];
 $maxBytes = 2 * 1024 * 1024;
 if ((int) ($file['size'] ?? 0) > $maxBytes) {
@@ -40,24 +40,37 @@ if (!isset($extensions[$mime])) {
     exit;
 }
 
-if (!is_dir($targetDir) && !mkdir($targetDir, 0755, true) && !is_dir($targetDir)) {
-    $_SESSION['flash_message'] = 'The profile image directory could not be created.';
-    $_SESSION['flash_type'] = 'danger';
-    header('Location: edit_profile(M).php');
-    exit;
-}
-
 $filename = 'moderator_' . $userId . '_' . bin2hex(random_bytes(8)) . '.' . $extensions[$mime];
-$destination = $targetDir . $filename;
-
-if (!move_uploaded_file($file['tmp_name'], $destination)) {
-    $_SESSION['flash_message'] = 'Unable to save the uploaded image.';
-    $_SESSION['flash_type'] = 'danger';
-    header('Location: edit_profile(M).php');
-    exit;
-}
-
 $relativePath = '/php/Moderators(UnderAdmin)/uploads/' . $filename;
+if (map_pump_imgbb_enabled()) {
+    $imageBytes = @file_get_contents((string) $file['tmp_name']);
+    try {
+        if (!is_string($imageBytes)) {
+            throw new RuntimeException('Unable to read the uploaded image.');
+        }
+        $relativePath = map_pump_imgbb_upload($imageBytes, $filename, $mime);
+    } catch (Throwable $e) {
+        error_log('Moderator avatar ImgBB upload failed: ' . $e->getMessage());
+        $_SESSION['flash_message'] = 'Unable to upload the profile picture right now.';
+        $_SESSION['flash_type'] = 'danger';
+        header('Location: edit_profile(M).php');
+        exit;
+    }
+} else {
+    $targetDir = __DIR__ . '/uploads/';
+    if (!is_dir($targetDir) && !mkdir($targetDir, 0755, true) && !is_dir($targetDir)) {
+        $_SESSION['flash_message'] = 'The profile image directory could not be created.';
+        $_SESSION['flash_type'] = 'danger';
+        header('Location: edit_profile(M).php');
+        exit;
+    }
+    if (!move_uploaded_file($file['tmp_name'], $targetDir . $filename)) {
+        $_SESSION['flash_message'] = 'Unable to save the uploaded image.';
+        $_SESSION['flash_type'] = 'danger';
+        header('Location: edit_profile(M).php');
+        exit;
+    }
+}
 
 try {
     $stmt = $pdo->prepare('UPDATE users SET oauth_avatar_url = ?, updated_at = NOW() WHERE user_id = ?');

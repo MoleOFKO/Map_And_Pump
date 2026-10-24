@@ -9,6 +9,8 @@ services:
         value: true
       - key: APP_ENV
         value: production
+      - key: IMGBB_API_KEY
+        sync: false
       - key: APP_BASE_URL
         value: https://map-and-pump.site
       - key: DB_HOST

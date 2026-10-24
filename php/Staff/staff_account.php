@@ -3,6 +3,7 @@ session_start();
 
 require_once __DIR__ . '/../conn.php';
 require_once __DIR__ . '/../profile_avatar.php';
+require_once __DIR__ . '/../imgbb_image_host.php';
 require_once __DIR__ . '/../activity_log.php';
 
 function redirect_to_login(string $message = 'Please sign in to continue.')
@@ -33,32 +34,45 @@ if ($roleName !== 'staff') {
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'update_avatar') {
     if (isset($_FILES['profile_logo']) && $_FILES['profile_logo']['error'] === UPLOAD_ERR_OK) {
         $fileTmpPath = $_FILES['profile_logo']['tmp_name'];
-        $fileName = $_FILES['profile_logo']['name'];
         $fileSize = $_FILES['profile_logo']['size'];
-        $fileType = $_FILES['profile_logo']['type'];
-        
-        $allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
+        $fileType = (new finfo(FILEINFO_MIME_TYPE))->file($fileTmpPath);
+        $allowedTypes = ['image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp'];
         $maxFileSize = 2 * 1024 * 1024; // 2MB
 
-        if (!in_array($fileType, $allowedTypes)) {
+        if (!isset($allowedTypes[$fileType])) {
             $_SESSION['flash_message'] = 'Only JPG, PNG, and WEBP images are allowed.';
             $_SESSION['flash_type'] = 'error';
         } elseif ($fileSize > $maxFileSize) {
             $_SESSION['flash_message'] = 'Image size must not exceed 2MB.';
             $_SESSION['flash_type'] = 'error';
         } else {
-            $ext = pathinfo($fileName, PATHINFO_EXTENSION);
-            $newFileName = 'avatar_' . $userId . '_' . time() . '.' . $ext;
-            $uploadDir = __DIR__ . '/../../uploads/avatars/';
-            
-            if (!is_dir($uploadDir)) {
-                mkdir($uploadDir, 0755, true);
+            $newFileName = 'avatar_' . $userId . '_' . bin2hex(random_bytes(8)) . '.' . $allowedTypes[$fileType];
+            $relativePath = '/uploads/avatars/' . $newFileName;
+            $imageStored = false;
+            if (map_pump_imgbb_enabled()) {
+                $imageBytes = @file_get_contents($fileTmpPath);
+                try {
+                    if (!is_string($imageBytes)) {
+                        throw new RuntimeException('Could not read the profile image.');
+                    }
+                    $relativePath = map_pump_imgbb_upload($imageBytes, $newFileName, $fileType);
+                    $imageStored = true;
+                } catch (Throwable $e) {
+                    error_log('Staff avatar ImgBB upload failed: ' . $e->getMessage());
+                    $_SESSION['flash_message'] = 'Could not upload the profile image.';
+                    $_SESSION['flash_type'] = 'error';
+                }
+            } else {
+                $uploadDir = __DIR__ . '/../../uploads/avatars/';
+                if (!is_dir($uploadDir) && !mkdir($uploadDir, 0755, true) && !is_dir($uploadDir)) {
+                    $_SESSION['flash_message'] = 'Could not prepare the profile image folder.';
+                    $_SESSION['flash_type'] = 'error';
+                } elseif (move_uploaded_file($fileTmpPath, $uploadDir . $newFileName)) {
+                    $imageStored = true;
+                }
             }
 
-            $destPath = $uploadDir . $newFileName;
-            $relativePath = '/uploads/avatars/' . $newFileName;
-
-            if (move_uploaded_file($fileTmpPath, $destPath)) {
+            if ($imageStored) {
                 try {
                     $update = $pdo->prepare('UPDATE users SET oauth_avatar_url = ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?');
                     $update->execute([$relativePath, $userId]);

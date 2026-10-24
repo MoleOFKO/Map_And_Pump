@@ -9,7 +9,7 @@ require_once __DIR__ . '/../usage_history_schema.php';
 $billingReady = loyalty_countermeasures_schema_ready($pdo);
 $billingMonth = loyalty_current_year_month();
 $availableOilQuota = max(0.0, (float) ($_SESSION['oil_remaining'] ?? (((float) ($_SESSION['oil_limit'] ?? 35.0)) - ((float) ($_SESSION['oil_used'] ?? 0.0)))));
-$loyaltyBalance = loyalty_get_balance($pdo, (int) ($_SESSION['user_id'] ?? 0));
+$loyaltyBalance = loyalty_get_available_balance($pdo, (int) ($_SESSION['user_id'] ?? 0));
 $loyaltyTierCode = loyalty_resolve_tier($loyaltyBalance);
 $loyaltyTierLabel = loyalty_tier_label($loyaltyTierCode);
 
@@ -745,14 +745,16 @@ body.customer-light-mode .customer-map-recenter-btn:hover {
                 <label class="form-label text-secondary" for="loyalty-points-select" style="font-size:10px; font-weight:600;">LOYALTY POINTS TO USE (PER FILL)</label>
                 <select id="loyalty-points-select" class="form-select custom-form-field">
                     <option value="0" selected>0 — no discount</option>
-                    <option value="10" <?php echo $loyaltyBalance < 10 ? 'disabled' : ''; ?>>10 points</option>
-                    <option value="20" <?php echo $loyaltyBalance < 20 ? 'disabled' : ''; ?>>20 points (max)</option>
+                    <?php foreach (LOYALTY_REDEMPTION_OPTIONS as $points => $discount): ?>
+                        <option value="<?php echo (int) $points; ?>" <?php echo $loyaltyBalance < (int) $points ? 'disabled' : ''; ?>>
+                            <?php echo (int) $points; ?> points — <?php echo number_format((int) $discount); ?> MMK off
+                        </option>
+                    <?php endforeach; ?>
                 </select>
                 <small class="text-secondary d-block mt-2">
                     Balance: <strong class="text-warning"><?php echo (int) $loyaltyBalance; ?></strong> pts
                     · <?php echo htmlspecialchars($loyaltyTierLabel, ENT_QUOTES, 'UTF-8'); ?> tier.
-                    10 points = <?php echo (int) (10 * LOYALTY_MMK_PER_POINT); ?> MMK off.
-                    Up to 20 points per fill. Only enough points to cover the bill are deducted when staff confirms the fill.
+                    Points are held while this booking is active and released if it is cancelled or expires. Applied points go to the station's HQ after a completed fill.
                 </small>
                 <small id="loyalty-discount-estimate" class="text-sky-400 d-block mt-1"></small>
             </div>
@@ -1488,7 +1490,7 @@ body.customer-light-mode .customer-map-recenter-btn:hover {
     }
 
     const loyaltyBalanceClient = <?php echo (int) $loyaltyBalance; ?>;
-    const LOYALTY_MMK_PER_POINT = <?php echo json_encode((float) LOYALTY_MMK_PER_POINT); ?>;
+    const loyaltyRedemptionOptions = <?php echo json_encode(LOYALTY_REDEMPTION_OPTIONS); ?>;
 
     function updateLoyaltyEstimate() {
         const estimateEl = document.getElementById('loyalty-discount-estimate');
@@ -1502,9 +1504,17 @@ body.customer-light-mode .customer-map-recenter-btn:hover {
             return;
         }
         const totalCost = quantity * Number(fuel.price);
-        const pointsToUse = Math.min(points, Math.floor(totalCost / LOYALTY_MMK_PER_POINT));
-        const discountMmk = Math.min(totalCost, pointsToUse * LOYALTY_MMK_PER_POINT);
-        estimateEl.textContent = `Estimated ${Math.round(discountMmk).toLocaleString()} MMK off using ${pointsToUse} points. Final discount uses the liters staff actually fill and cannot exceed the bill.`;
+        const affordableOption = Object.entries(loyaltyRedemptionOptions)
+            .map(([optionPoints, optionDiscount]) => [Number(optionPoints), Number(optionDiscount)])
+            .filter(([optionPoints, optionDiscount]) => optionPoints <= points && optionPoints <= loyaltyBalanceClient && optionDiscount <= totalCost)
+            .sort((left, right) => right[0] - left[0])[0];
+        if (!affordableOption) {
+            const minimumDiscount = Math.min(...Object.values(loyaltyRedemptionOptions).map(Number));
+            estimateEl.textContent = `Estimated bill must be at least ${minimumDiscount.toLocaleString()} MMK for this reward. Points not applied to the final fill are released.`;
+            return;
+        }
+        const [pointsToUse, discountMmk] = affordableOption;
+        estimateEl.textContent = `Estimated ${discountMmk.toLocaleString()} MMK off using ${pointsToUse} points. A lower reward tier may apply if staff fills fewer liters.`;
     }
 
     document.getElementById('loyalty-points-select')?.addEventListener('change', updateLoyaltyEstimate);
