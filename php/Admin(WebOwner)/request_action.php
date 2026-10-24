@@ -171,17 +171,25 @@ try {
             throw new RuntimeException('The company registration details are invalid.');
         }
 
+        // License expiry must be stored on both business_license_expire_date and expire_at.
+        // created_at = registration time; expire_at = submitted license end date (not "now").
+        $licenseExpiryRaw = trim((string) ($target['headquarter_expire_at'] ?? ''));
+        $licenseExpiryDate = $licenseExpiryRaw !== '' ? substr($licenseExpiryRaw, 0, 10) : '';
+        if ($licenseExpiryDate === '' || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $licenseExpiryDate)) {
+            throw new RuntimeException('The HQ registration is missing a valid license expiry date.');
+        }
+        $licenseExpiryTs = $licenseExpiryDate . ' 23:59:59';
+
         $headquarterInsert = $conn->prepare(
             'INSERT INTO headquarter
                 (company_name, company_logo, contact_number, headquarter_email, location,
-                 business_license, business_license_image, business_license_expire_date, station_count)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ' . BILLING_HQ_INCLUDED_STATION_SLOTS . ')'
+                 business_license, business_license_image, business_license_expire_date,
+                 expire_at, station_count)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ' . BILLING_HQ_INCLUDED_STATION_SLOTS . ')'
         );
         if (!$headquarterInsert) {
             throw new RuntimeException('Could not prepare the company account creation.');
         }
-        $licenseExpiry = trim((string) ($target['headquarter_expire_at'] ?? ''));
-        $licenseExpiry = $licenseExpiry !== '' ? substr($licenseExpiry, 0, 10) : null;
         $companyName = (string) $target['sender_entity'];
         $companyLogo = (string) $target['headquarter_company_logo'];
         $companyPhone = (string) $target['headquarter_contact_number'];
@@ -190,7 +198,7 @@ try {
         $businessLicense = (string) $target['document_name'];
         $licenseImage = (string) $target['document_path'];
         $headquarterInsert->bind_param(
-            'ssssssss',
+            'sssssssss',
             $companyName,
             $companyLogo,
             $companyPhone,
@@ -198,7 +206,8 @@ try {
             $companyLocation,
             $businessLicense,
             $licenseImage,
-            $licenseExpiry
+            $licenseExpiryDate,
+            $licenseExpiryTs
         );
         if (!$headquarterInsert->execute()) {
             throw new RuntimeException('Could not create the approved company account.');
@@ -206,16 +215,20 @@ try {
         $createdHeadquarterId = (int) $conn->insert_id;
         $headquarterInsert->close();
 
+        // Set service period without clobbering license expire_at / created_at.
+        // Re-assert expire_at here in case the column still has ON UPDATE CURRENT_TIMESTAMP.
         $serviceExpiryUpdate = $conn->prepare(
             'UPDATE headquarter
              SET service_expires_at = DATE_ADD(NOW(), INTERVAL 1 MONTH),
-                 included_stations_free_until = DATE_ADD(NOW(), INTERVAL 1 MONTH)
+                 included_stations_free_until = DATE_ADD(NOW(), INTERVAL 1 MONTH),
+                 expire_at = ?,
+                 business_license_expire_date = ?
              WHERE headquarter_id = ?'
         );
         if (!$serviceExpiryUpdate) {
             throw new RuntimeException('Could not initialize the company service period.');
         }
-        $serviceExpiryUpdate->bind_param('i', $createdHeadquarterId);
+        $serviceExpiryUpdate->bind_param('ssi', $licenseExpiryTs, $licenseExpiryDate, $createdHeadquarterId);
         if (!$serviceExpiryUpdate->execute()) {
             throw new RuntimeException('Could not initialize the company service period.');
         }

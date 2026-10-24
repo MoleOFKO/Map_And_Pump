@@ -41,11 +41,14 @@ $metrics = ['total' => 0, 'security' => 0, 'warn' => 0, 'error' => 0, 'info' => 
 $dbError = null;
 $displayLimit = 500;
 
-// Actor scopes for Admin audit trail (full system by default).
+// Actor scopes for Admin audit trail: Admin + Moderator only (never Branch Manager / HQ / Customer).
+$adminActorSql = '(l.role_id = 1 OR (l.role_id IS NULL AND (COALESCE(u.current_role_id, u.business_role_id, u.role_id) = 1 OR LOWER(TRIM(COALESCE(r.role_name, \'\'))) = \'admin\')))';
+$moderatorActorSql = '(l.role_id = 2 OR (l.role_id IS NULL AND (COALESCE(u.current_role_id, u.business_role_id, u.role_id) = 2 OR LOWER(TRIM(COALESCE(r.role_name, \'\'))) = \'moderator\')))';
 $actorSql = match ($actor) {
-    'admin' => '(l.role_id = 1 OR (l.role_id IS NULL AND (u.role_id = 1 OR u.business_role_id = 1 OR LOWER(TRIM(COALESCE(r.role_name, \'\'))) = \'admin\')))',
-    'moderator' => '(l.role_id = 2 OR (l.role_id IS NULL AND (u.role_id = 2 OR u.business_role_id = 2 OR u.current_role_id = 2 OR LOWER(TRIM(COALESCE(r.role_name, \'\'))) = \'moderator\')))',
-    default => '1=1',
+    'admin' => $adminActorSql,
+    'moderator' => $moderatorActorSql,
+    // "all" = Admin + Moderator only (not the rest of the system).
+    default => '(' . $adminActorSql . ' OR ' . $moderatorActorSql . ')',
 };
 
 if (hq_db_available()) {
@@ -192,7 +195,7 @@ $exportQuery = http_build_query([
             <div class="dashboard-card metric-card">
                 <p class="mb-1 metric-label">Entries in scope</p>
                 <h4 class="fw-bold text-white mb-0"><?= (int) $metrics['total'] ?></h4>
-                <small class="text-white-50">Actor filter: <?= hq_escape(ucfirst($actor)) ?></small>
+                <small class="text-white-50">Actor filter: <?= hq_escape($actor === 'all' ? 'Admin & Moderator' : ucfirst($actor)) ?></small>
             </div>
         </div>
         <div class="col-12 col-sm-6 col-md-3">
@@ -230,9 +233,9 @@ $exportQuery = http_build_query([
             <div class="col-6 col-xl-2">
                 <label class="form-label text-white-50 small mb-1" for="logActor">Actor</label>
                 <select id="logActor" class="form-select glass-select" name="actor">
-                    <option value="all" <?= $actor === 'all' ? 'selected' : '' ?>>All actors</option>
-                    <option value="admin" <?= $actor === 'admin' ? 'selected' : '' ?>>Admin</option>
-                    <option value="moderator" <?= $actor === 'moderator' ? 'selected' : '' ?>>Moderator</option>
+                    <option value="all" <?= $actor === 'all' ? 'selected' : '' ?>>Admin &amp; Moderator</option>
+                    <option value="admin" <?= $actor === 'admin' ? 'selected' : '' ?>>Admin only</option>
+                    <option value="moderator" <?= $actor === 'moderator' ? 'selected' : '' ?>>Moderator only</option>
                 </select>
             </div>
             <div class="col-6 col-xl-2">
