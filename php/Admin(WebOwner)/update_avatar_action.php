@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/admin_common.php';
+require_once __DIR__ . '/../imgbb_image_host.php';
 
 if (session_status() !== PHP_SESSION_ACTIVE) {
     session_start();
@@ -35,22 +36,34 @@ if (!isset($extensions[$mime])) {
     admin_redirect('edit_profile.php');
 }
 
-$directory = __DIR__ . '/uploads';
-if (!is_dir($directory) && !mkdir($directory, 0755, true) && !is_dir($directory)) {
-    admin_flash('danger', 'The profile image directory could not be created.');
-    admin_redirect('edit_profile.php');
-}
-
 $fileName = 'admin-' . (int) $user['user_id'] . '-' . bin2hex(random_bytes(8)) . '.' . $extensions[$mime];
+$directory = __DIR__ . '/uploads';
 $destination = $directory . DIRECTORY_SEPARATOR . $fileName;
-if (!move_uploaded_file($temporaryPath, $destination)) {
-    admin_flash('danger', 'The profile image could not be saved.');
-    admin_redirect('edit_profile.php');
+$avatarUrl = '/php/Admin(WebOwner)/uploads/' . $fileName;
+if (map_pump_imgbb_enabled()) {
+    $imageBytes = @file_get_contents($temporaryPath);
+    try {
+        if (!is_string($imageBytes)) {
+            throw new RuntimeException('The profile image could not be read.');
+        }
+        $avatarUrl = map_pump_imgbb_upload($imageBytes, $fileName, $mime);
+    } catch (Throwable $e) {
+        admin_flash('danger', 'The profile image could not be uploaded. Please try again.');
+        admin_redirect('edit_profile.php');
+    }
+} else {
+    if (!is_dir($directory) && !mkdir($directory, 0755, true) && !is_dir($directory)) {
+        admin_flash('danger', 'The profile image directory could not be created.');
+        admin_redirect('edit_profile.php');
+    }
+    if (!move_uploaded_file($temporaryPath, $destination)) {
+        admin_flash('danger', 'The profile image could not be saved.');
+        admin_redirect('edit_profile.php');
+    }
 }
 
 global $conn;
 global $pdo;
-$avatarUrl = '/php/Admin(WebOwner)/uploads/' . $fileName;
 if (!hq_db_available() && $pdo instanceof PDO) {
     $statement = $pdo->prepare('UPDATE users SET oauth_avatar_url = ?, updated_at = NOW() WHERE user_id = ?');
     if (!$statement->execute([$avatarUrl, (int) $user['user_id']])) {

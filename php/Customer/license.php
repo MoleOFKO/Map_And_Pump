@@ -22,6 +22,22 @@ $stmt = $pdo->prepare(
 $stmt->execute([$userId]);
 $license = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
 $hasLicense = !empty($license['license_id']);
+$customerLicenseImageUrl = static function (?string $imagePath): string {
+    $imagePath = trim(str_replace('\\', '/', (string) $imagePath));
+    if ($imagePath === '' || preg_match('#^(https?:)?//#i', $imagePath) || str_starts_with($imagePath, 'data:')) {
+        return $imagePath;
+    }
+    $imagePath = preg_replace('#^(?:\.\./)+#', '', ltrim($imagePath, '/')) ?? $imagePath;
+    if (str_starts_with($imagePath, 'Customer/uploads/licenses/')) {
+        return '/php/' . $imagePath;
+    }
+    if (str_starts_with($imagePath, 'uploads/')) {
+        return '/php/Customer/' . $imagePath;
+    }
+    return '/' . ltrim($imagePath, '/');
+};
+$licenseImageUrl = $customerLicenseImageUrl((string) ($license['license_image'] ?? ''));
+$faceImageUrl = $customerLicenseImageUrl((string) ($license['face_image'] ?? ''));
 $licenseAccess = customer_license_access($pdo, $userId);
 $licenseStatus = (string) ($license['status'] ?? $licenseAccess['status'] ?? 'pending');
 $isApproved = (bool) ($licenseAccess['is_approved'] ?? false);
@@ -99,6 +115,10 @@ include 'share_header.php';
         display: none;
         object-fit: contain;
     }
+    .license-saved-documents { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr)); gap: 16px; }
+    .license-saved-document { display: block; min-width: 0; padding: 12px; border: 1px solid rgba(13, 110, 253, 0.2); border-radius: 10px; background: rgba(10, 22, 44, 0.4); color: inherit; text-decoration: none; }
+    .license-saved-document img { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: contain; border-radius: 6px; background: rgba(0, 0, 0, 0.3); }
+    .license-saved-document span { display: block; margin-top: 9px; color: #d7e3ef; font-size: 12px; font-weight: 600; }
     /* .license-face-capture {
         border: 1px solid var(--customer-border);
         border-radius: 18px;
@@ -290,6 +310,26 @@ include 'share_header.php';
                         <a href="license.php?update=1" class="btn btn-outline-info btn-sm rounded-3 px-3 fw-bold">Update</a>
                     <?php endif; ?>
                 </div>
+            <?php endif; ?>
+
+            <?php if ($hasLicense && ($licenseImageUrl !== '' || $faceImageUrl !== '')): ?>
+                <section class="mb-4" aria-label="Saved license documents">
+                    <h5 class="text-white mb-3" style="font-size:14px;">Saved license documents</h5>
+                    <div class="license-saved-documents">
+                        <?php if ($licenseImageUrl !== ''): ?>
+                            <a class="license-saved-document" href="<?php echo htmlspecialchars($licenseImageUrl, ENT_QUOTES, 'UTF-8'); ?>" target="_blank" rel="noopener">
+                                <img src="<?php echo htmlspecialchars($licenseImageUrl, ENT_QUOTES, 'UTF-8'); ?>" alt="Saved driver license" loading="lazy">
+                                <span>Driver license image</span>
+                            </a>
+                        <?php endif; ?>
+                        <?php if ($faceImageUrl !== ''): ?>
+                            <a class="license-saved-document" href="<?php echo htmlspecialchars($faceImageUrl, ENT_QUOTES, 'UTF-8'); ?>" target="_blank" rel="noopener">
+                                <img src="<?php echo htmlspecialchars($faceImageUrl, ENT_QUOTES, 'UTF-8'); ?>" alt="Saved face verification photo" loading="lazy">
+                                <span>Face verification photo</span>
+                            </a>
+                        <?php endif; ?>
+                    </div>
+                </section>
             <?php endif; ?>
 
             <div id="license-status" role="alert" class="mb-4 d-none rounded-3 px-3 py-3" style="font-size:13px;"></div>

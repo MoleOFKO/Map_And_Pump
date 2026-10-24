@@ -7,6 +7,7 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
 // // Database connection configuration
 require_once __DIR__ . '/../conn.php';
 require_once __DIR__ . '/../billing_config.php';
+require_once __DIR__ . '/../imgbb_image_host.php';
 // Handle form submission
 $message = '';
 $loggedUserId = isset($_SESSION['user_id']) ? (int) $_SESSION['user_id'] : 0;
@@ -36,17 +37,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ((int) ($logoUpload['size'] ?? 0) > 2 * 1024 * 1024 || !isset($extensions[$mime])) {
             $message = 'Company logos must be JPG, PNG, GIF, or WebP images no larger than 2 MB.';
         } else {
-            $uploadDir = __DIR__ . '/uploads/';
-            if (!is_dir($uploadDir) && !mkdir($uploadDir, 0755, true) && !is_dir($uploadDir)) {
-                $message = 'The company logo folder could not be created.';
+            $fileName = 'logo_' . bin2hex(random_bytes(12)) . '.' . $extensions[$mime];
+            if (map_pump_imgbb_enabled()) {
+                $imageBytes = @file_get_contents((string) $logoUpload['tmp_name']);
+                try {
+                    if (!is_string($imageBytes)) {
+                        throw new RuntimeException('The company logo could not be read.');
+                    }
+                    $logoPath = map_pump_imgbb_upload($imageBytes, $fileName, $mime);
+                } catch (Throwable $e) {
+                    error_log('HQ logo ImgBB upload failed: ' . $e->getMessage());
+                    $message = 'The company logo could not be uploaded.';
+                }
             } else {
-                $fileName = 'logo_' . bin2hex(random_bytes(12)) . '.' . $extensions[$mime];
-                $uploadFile = $uploadDir . $fileName;
-
-                if (move_uploaded_file((string) $logoUpload['tmp_name'], $uploadFile)) {
-                    $logoPath = 'uploads/' . $fileName;
+                $uploadDir = __DIR__ . '/uploads/';
+                if (!is_dir($uploadDir) && !mkdir($uploadDir, 0755, true) && !is_dir($uploadDir)) {
+                    $message = 'The company logo folder could not be created.';
                 } else {
-                    $message = 'The company logo could not be saved.';
+                    $uploadFile = $uploadDir . $fileName;
+                    if (move_uploaded_file((string) $logoUpload['tmp_name'], $uploadFile)) {
+                        $logoPath = 'uploads/' . $fileName;
+                    } else {
+                        $message = 'The company logo could not be saved.';
+                    }
                 }
             }
         }

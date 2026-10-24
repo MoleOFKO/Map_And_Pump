@@ -298,7 +298,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ]);
             $usageId = (int) $pdo->lastInsertId();
 
-            // Loyalty: read redeem intent from booking (0 if column missing), then apply redeem + earn (+3).
+            // Loyalty: read the booking reward intent, then settle redemption and earn on fill.
             $pointsIntent = 0;
             try {
                 $intentStmt = $pdo->prepare(

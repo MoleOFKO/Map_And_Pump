@@ -3,8 +3,23 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
     session_start();
 }
 
+if (empty($_SESSION['customer_profile_csrf_token'])) {
+    $_SESSION['customer_profile_csrf_token'] = bin2hex(random_bytes(32));
+}
+$profileCsrfToken = (string) $_SESSION['customer_profile_csrf_token'];
+$profilePostAction = $_POST['action'] ?? '';
+if ($_SERVER['REQUEST_METHOD'] === 'POST'
+    && in_array($profilePostAction, ['delete_account', 'change_password', 'update_profile'], true)) {
+    $submittedCsrfToken = (string) ($_POST['csrf_token'] ?? '');
+    if (!hash_equals($profileCsrfToken, $submittedCsrfToken)) {
+        http_response_code(403);
+        exit('Your session expired. Refresh the page and try again.');
+    }
+}
+
 require_once __DIR__ . '/../conn.php';
 require_once __DIR__ . '/../profile_avatar.php';
+require_once __DIR__ . '/../imgbb_image_host.php';
 require_once __DIR__ . '/../Login/session_helper.php';
 require_once __DIR__ . '/car_access.php';
 
@@ -47,11 +62,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delet
 
 function customer_profile_image_public_path(int $userId, array $file, string $imageData): ?string
 {
-    $uploadDir = __DIR__ . '/uploads/profile';
-    if (!is_dir($uploadDir) && !mkdir($uploadDir, 0775, true)) {
-        throw new RuntimeException('Could not prepare the profile upload folder.');
-    }
-
     $bytes = null;
     $mime = null;
     if ($imageData !== '') {
@@ -93,6 +103,21 @@ function customer_profile_image_public_path(int $userId, array $file, string $im
     }
 
     $fileName = 'profile-' . $userId . '-' . bin2hex(random_bytes(8)) . '.' . $extensions[$mime];
+    if ($bytes === null) {
+        $bytes = @file_get_contents((string) ($file['tmp_name'] ?? ''));
+    }
+    $verifiedImage = is_string($bytes) ? @getimagesizefromstring($bytes) : false;
+    if (!is_string($bytes) || strlen($bytes) > 5 * 1024 * 1024 || ($verifiedImage['mime'] ?? '') !== $mime) {
+        throw new RuntimeException('Could not validate the uploaded profile image.');
+    }
+    if (map_pump_imgbb_enabled()) {
+        return map_pump_imgbb_upload($bytes, $fileName, $mime);
+    }
+
+    $uploadDir = __DIR__ . '/uploads/profile';
+    if (!is_dir($uploadDir) && !mkdir($uploadDir, 0775, true)) {
+        throw new RuntimeException('Could not prepare the profile upload folder.');
+    }
     $targetPath = $uploadDir . '/' . $fileName;
     if ($bytes !== null) {
         if (strlen($bytes) > 5 * 1024 * 1024 || file_put_contents($targetPath, $bytes) === false) {
@@ -266,6 +291,7 @@ include 'share_header.php';
 
             <form class="space-y-4" action="profile_page.php" method="POST" enctype="multipart/form-data">
                 <input type="hidden" name="action" value="update_profile">
+                <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($profileCsrfToken, ENT_QUOTES, 'UTF-8'); ?>">
                 <div class="mb-3 text-center">
                     <label class="form-label text-secondary" style="font-size:11px; font-weight:600;">PROFILE IMAGE</label>
                     <div class="d-flex flex-column align-items-center gap-3">
@@ -488,6 +514,7 @@ include 'share_header.php';
             <form action="profile_page.php" method="POST">
                 <div class="modal-body">
                     <input type="hidden" name="action" value="update_profile">
+                    <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($profileCsrfToken, ENT_QUOTES, 'UTF-8'); ?>">
                     <div class="mb-3">
                         <label class="form-label text-secondary" for="modalProfileUserName">DISPLAY FULL NAME</label>
                         <input type="text" id="modalProfileUserName" name="user_name" value="<?php echo htmlspecialchars($_SESSION['user_name']); ?>" class="form-control custom-form-field" maxlength="225" required>
@@ -517,6 +544,7 @@ include 'share_header.php';
             <form action="profile_page.php" method="POST">
                 <div class="modal-body">
                     <input type="hidden" name="action" value="change_password">
+                    <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($profileCsrfToken, ENT_QUOTES, 'UTF-8'); ?>">
                     <div class="mb-3">
                         <label class="form-label text-secondary" for="modalCurrentPassword">CURRENT PASSWORD</label>
                         <input type="password" id="modalCurrentPassword" name="current_password" class="form-control custom-form-field" autocomplete="current-password" required>
@@ -556,6 +584,7 @@ include 'share_header.php';
             <form action="profile_page.php" method="POST">
                 <div class="modal-body">
                     <input type="hidden" name="action" value="delete_account">
+                    <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($profileCsrfToken, ENT_QUOTES, 'UTF-8'); ?>">
                     <div class="delete-account-notice">
                         <i class="bi bi-shield-exclamation"></i>
                         <p>Your account will be disabled and you will be signed out. Your account record will remain in the database.</p>

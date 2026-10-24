@@ -371,17 +371,15 @@ try {
     $reservation->execute([$bookingId, $stationId, $oilTypeId, round($quantity, 2), (float)$stationFuel['price_per_litre']]);
 
     if ($pointsToRedeem > 0 && $bookingId > 0) {
-        try {
-            $ptsUpdate = $pdo->prepare(
-                'UPDATE booking SET points_to_redeem = :pts WHERE booking_id = :bid'
-            );
-            $ptsUpdate->execute([
-                ':pts' => $pointsToRedeem,
-                ':bid' => $bookingId,
-            ]);
-        } catch (Throwable $ptsEx) {
-            // Column may be missing if schema alter failed; booking still valid without intent.
-            error_log('Could not store points_to_redeem on booking: ' . $ptsEx->getMessage());
+        $ptsUpdate = $pdo->prepare(
+            'UPDATE booking SET points_to_redeem = :pts WHERE booking_id = :bid'
+        );
+        $ptsUpdate->execute([
+            ':pts' => $pointsToRedeem,
+            ':bid' => $bookingId,
+        ]);
+        if ($ptsUpdate->rowCount() !== 1) {
+            throw new RuntimeException('Could not reserve the selected loyalty points for this booking.');
         }
     }
 

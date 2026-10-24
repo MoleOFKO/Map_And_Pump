@@ -8,7 +8,7 @@ $oilPercent = max(0.0, min(100.0, ($oilRemaining / $oilLimit) * 100));
 
 $monthly_visits = 3;
 require_once __DIR__ . '/../loyalty_points.php';
-$reward_points = loyalty_get_balance($pdo, (int) $_SESSION['user_id']);
+$reward_points = loyalty_get_available_balance($pdo, (int) $_SESSION['user_id']);
 $reward_tier_code = loyalty_resolve_tier($reward_points);
 $reward_tier = loyalty_tier_label($reward_tier_code);
 ?>
@@ -49,7 +49,7 @@ $reward_tier = loyalty_tier_label($reward_tier_code);
             <p class="customer-reward-tier customer-reward-tier-<?php echo htmlspecialchars(strtolower($reward_tier_code), ENT_QUOTES, 'UTF-8'); ?> mb-0 mt-3">
                 <i class="bi bi-award-fill me-1"></i><?php echo htmlspecialchars($reward_tier, ENT_QUOTES, 'UTF-8'); ?> tier
             </p>
-            <p class="text-secondary mb-0 mt-1" style="font-size:12px;">3 points per successful external fill · 10 points = 100 MMK off · up to 20 points per fill.</p>
+            <p class="text-secondary mb-0 mt-1" style="font-size:12px;">5 points per qualifying completed fill · rewards from 100 points for up to 5,000 MMK off.</p>
         </div>
     </div>
 </div>

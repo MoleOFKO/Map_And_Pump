@@ -246,7 +246,7 @@ $flashType = $flash['type'] ?? '';
         .acct-doc-grid{display:flex;flex-wrap:wrap;gap:.85rem;margin-top:.3rem;}
         .acct-doc-card{width:128px;border-radius:12px;overflow:hidden;border:1px solid var(--glass-border);background:rgba(255,255,255,.02);text-decoration:none;transition:transform .15s ease,border-color .15s ease,box-shadow .15s ease;display:block;}
         .acct-doc-card:hover{transform:translateY(-3px);border-color:var(--neon-cyan);box-shadow:0 8px 20px rgba(0,244,255,.15);}
-        .acct-doc-thumb{width:100%;height:88px;object-fit:cover;display:block;background:rgba(0,0,0,.25);}
+        .acct-doc-thumb{width:100%;height:128px;object-fit:contain;display:block;background:rgba(0,0,0,.25);}
         .acct-doc-empty{width:100%;height:88px;display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:1.4rem;background:rgba(255,255,255,.02);}
         .acct-doc-label{font-size:.66rem;color:rgba(255,255,255,.65);padding:.4rem .5rem;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;border-top:1px solid var(--glass-border);}
         .acct-empty-note{border-radius:12px;border:1px dashed var(--glass-border);padding:.9rem 1.1rem;color:rgba(255,255,255,.55);font-size:.82rem;display:flex;align-items:center;gap:.6rem;}
@@ -438,11 +438,21 @@ $flashType = $flash['type'] ?? '';
             const setFooter = (html = defaultFooter) => { detailsFooter.innerHTML = html; };
             const fileLink = (path, label) => path ? '<a href="' + escapeHtml(path) + '" target="_blank" rel="noopener" class="txt-neon-blue text-decoration-none"><i class="bi bi-box-arrow-up-right me-1"></i>' + escapeHtml(label || 'Open file') + '</a>' : '<span class="text-white-50">Not uploaded</span>';
             const isImagePath = (path) => /\.(png|jpe?g|gif|webp|bmp|svg)(\?.*)?$/i.test(String(path || ''));
+            const publicDocumentUrl = (value) => {
+                const path = String(value || '').trim().replace(/\\/g, '/');
+                if (!path || /^(https?:)?\/\//i.test(path) || /^data:/i.test(path)) return path;
+                const customerUploadPath = path.replace(/^\.?\//, '').replace(/^Customer\//, '');
+                if (customerUploadPath.startsWith('uploads/licenses/')) return '/php/Customer/' + customerUploadPath;
+                if (path.startsWith('/')) return path;
+                if (/^(\.\.\/|\.\/)/.test(path)) return new URL(path, window.location.href).pathname;
+                return '/' + path;
+            };
             const initialsOf = (name) => { const parts = String(name || '').trim().split(/\s+/).filter(Boolean); if (!parts.length) return '?'; return (parts[0][0] + (parts.length > 1 ? parts[parts.length - 1][0] : '')).toUpperCase(); };
             const docCard = (path, label, icon = 'bi-file-earmark-text') => {
                 if (!path) return '<div class="acct-doc-card"><div class="acct-doc-empty"><i class="bi bi-file-earmark-x"></i></div><div class="acct-doc-label">Not uploaded</div></div>';
-                const inner = isImagePath(path) ? '<img src="' + escapeHtml(path) + '" alt="' + escapeHtml(label) + '" class="acct-doc-thumb" loading="lazy">' : '<div class="acct-doc-empty"><i class="bi ' + icon + '"></i></div>';
-                return '<a href="' + escapeHtml(path) + '" target="_blank" rel="noopener" class="acct-doc-card" title="' + escapeHtml(label) + '">' + inner + '<div class="acct-doc-label">' + escapeHtml(label) + '</div></a>';
+                const url = publicDocumentUrl(path);
+                const inner = isImagePath(path) ? '<img src="' + escapeHtml(url) + '" alt="' + escapeHtml(label) + '" class="acct-doc-thumb" loading="lazy">' : '<div class="acct-doc-empty"><i class="bi ' + icon + '"></i></div>';
+                return '<a href="' + escapeHtml(url) + '" target="_blank" rel="noopener" class="acct-doc-card" title="' + escapeHtml(label) + '">' + inner + '<div class="acct-doc-label">' + escapeHtml(label) + '</div></a>';
             };
             const licenseConflictMarkup = (current, conflicts) => {
                 if (!current || !Array.isArray(conflicts) || !conflicts.length) return '';

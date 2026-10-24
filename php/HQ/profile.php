@@ -3,6 +3,7 @@ require_once __DIR__ . '/hq_guard.php';
 require_once __DIR__ . '/../conn.php';
 require_once __DIR__ . '/../account_deletion.php';
 require_once __DIR__ . '/../profile_avatar.php';
+require_once __DIR__ . '/../imgbb_image_host.php';
 
 if (empty($_SESSION['user_id'])) {
     $loginUrl = '../Login/login.php';
@@ -119,22 +120,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 exit;
             }
 
-            $uploadDir = __DIR__ . '/uploads/profile';
-            if (!is_dir($uploadDir) && !mkdir($uploadDir, 0775, true)) {
-                http_response_code(500);
-                echo json_encode(['ok' => false, 'message' => 'The profile picture folder could not be prepared.']);
-                exit;
-            }
-
             $fileName = 'hq-profile-' . $userId . '-' . bin2hex(random_bytes(8)) . '.' . $extensions[$mime];
-            $targetPath = $uploadDir . '/' . $fileName;
-            if (!move_uploaded_file((string) $upload['tmp_name'], $targetPath)) {
-                http_response_code(500);
-                echo json_encode(['ok' => false, 'message' => 'The profile picture could not be saved.']);
-                exit;
+            $avatarUrl = '/php/HQ/uploads/profile/' . $fileName;
+            if (map_pump_imgbb_enabled()) {
+                $imageBytes = @file_get_contents((string) $upload['tmp_name']);
+                try {
+                    if (!is_string($imageBytes)) {
+                        throw new RuntimeException('The profile picture could not be read.');
+                    }
+                    $avatarUrl = map_pump_imgbb_upload($imageBytes, $fileName, $mime);
+                } catch (Throwable $e) {
+                    error_log('HQ avatar ImgBB upload failed: ' . $e->getMessage());
+                    http_response_code(502);
+                    echo json_encode(['ok' => false, 'message' => 'The profile picture could not be uploaded.']);
+                    exit;
+                }
+            } else {
+                $uploadDir = __DIR__ . '/uploads/profile';
+                if (!is_dir($uploadDir) && !mkdir($uploadDir, 0775, true)) {
+                    http_response_code(500);
+                    echo json_encode(['ok' => false, 'message' => 'The profile picture folder could not be prepared.']);
+                    exit;
+                }
+                if (!move_uploaded_file((string) $upload['tmp_name'], $uploadDir . '/' . $fileName)) {
+                    http_response_code(500);
+                    echo json_encode(['ok' => false, 'message' => 'The profile picture could not be saved.']);
+                    exit;
+                }
             }
 
-            $avatarUrl = '/php/HQ/uploads/profile/' . $fileName;
             $update = $pdo->prepare('UPDATE users SET oauth_avatar_url = ?, updated_at = NOW() WHERE user_id = ?');
             $update->execute([$avatarUrl, $userId]);
             $_SESSION['oauth_avatar_url'] = $avatarUrl;

@@ -44,19 +44,40 @@ function loyalty_get_balance(PDO $pdo, int $userId): int
     }
 }
 
+/** Balance after subtracting points held by active, unexpired bookings. */
+function loyalty_get_available_balance(PDO $pdo, int $userId): int
+{
+    if ($userId <= 0 || !loyalty_schema_ready($pdo)) {
+        return 0;
+    }
+
+    try {
+        $stmt = $pdo->prepare(
+            "SELECT GREATEST(0, COALESCE(u.had_point, 0) - COALESCE((
+                SELECT SUM(bk.points_to_redeem)
+                FROM booking bk
+                WHERE bk.user_id = u.user_id
+                  AND bk.status IN ('notfilled', 'waiting', 'serving')
+                  AND bk.expire_at > NOW()
+            ), 0))
+             FROM users u
+             WHERE u.user_id = ?
+             LIMIT 1"
+        );
+        $stmt->execute([$userId]);
+        return max(0, (int) $stmt->fetchColumn());
+    } catch (Throwable $e) {
+        error_log('loyalty_get_available_balance: ' . $e->getMessage());
+        return 0;
+    }
+}
+
 /**
- * Normalize redeem intent to allowed values: 0, 10, or 20 (and ≤ max).
+ * Normalize redeem intent to one of the configured fixed redemption options.
  */
 function loyalty_normalize_points_intent(int $points): int
 {
-    $unit = (int) LOYALTY_REDEEM_UNIT_POINTS;
-    $max = (int) LOYALTY_MAX_POINTS_PER_FILL;
-    if ($points <= 0 || $unit <= 0) {
-        return 0;
-    }
-    $points = min($points, $max);
-    $points = (int) (floor($points / $unit) * $unit);
-    return max(0, min($points, $max));
+    return array_key_exists($points, LOYALTY_REDEMPTION_OPTIONS) ? $points : 0;
 }
 
 /**
@@ -67,11 +88,7 @@ function loyalty_normalize_points_intent(int $points): int
  */
 function loyalty_compute_discount(float $filledLiters, ?float $totalCost, int $pointsToUse): array
 {
-    $points = loyalty_normalize_points_intent($pointsToUse);
-    $unit = (int) LOYALTY_REDEEM_UNIT_POINTS;
-    $units = $unit > 0 ? (int) ($points / $unit) : 0;
-
-    if ($units <= 0 || $filledLiters <= 0 || $totalCost === null || $totalCost <= 0) {
+    if ($pointsToUse <= 0 || $filledLiters <= 0 || $totalCost === null || $totalCost <= 0) {
         return [
             'points' => 0,
             'units' => 0,
@@ -80,14 +97,17 @@ function loyalty_compute_discount(float $filledLiters, ?float $totalCost, int $p
         ];
     }
 
-    // Keep the fixed 10 MMK/point value exact: when the bill is below the
-    // requested redemption value, use only whole points that the bill can cover.
-    $maxAffordablePoints = (int) floor(round((float) $totalCost, 2) / (float) LOYALTY_MMK_PER_POINT);
-    // Redemptions are issued in full units (currently 10 points = 100 MMK).
-    $maxAffordablePoints = $unit > 0
-        ? (int) (floor($maxAffordablePoints / $unit) * $unit)
-        : 0;
-    $points = min($points, max(0, $maxAffordablePoints));
+    $points = 0;
+    $discountMmk = 0.0;
+    $options = LOYALTY_REDEMPTION_OPTIONS;
+    krsort($options, SORT_NUMERIC);
+    foreach ($options as $optionPoints => $optionDiscount) {
+        if ((int) $optionPoints <= $pointsToUse && (float) $optionDiscount <= round($totalCost, 2)) {
+            $points = (int) $optionPoints;
+            $discountMmk = (float) $optionDiscount;
+            break;
+        }
+    }
     if ($points <= 0) {
         return [
             'points' => 0,
@@ -97,16 +117,11 @@ function loyalty_compute_discount(float $filledLiters, ?float $totalCost, int $p
         ];
     }
 
-    $discountMmk = min(
-        round((float) $totalCost, 2),
-        round($points * (float) LOYALTY_MMK_PER_POINT, 2)
-    );
-    $discountMmk = max(0.0, $discountMmk);
     $discountPct = $totalCost > 0 ? ($discountMmk / (float) $totalCost) * 100.0 : 0.0;
 
     return [
         'points' => $points,
-        'units' => $unit > 0 ? (int) ceil($points / $unit) : 0,
+        'units' => 1,
         'discount_pct' => round($discountPct, 2),
         'discount_mmk' => $discountMmk,
     ];
@@ -927,8 +942,7 @@ function loyalty_apply_on_fill(
 
         $balance = loyalty_get_balance($pdo, $userId);
         $result['tier'] = loyalty_resolve_tier($balance);
-        $intent = loyalty_normalize_points_intent($pointsIntent);
-        $intent = min($intent, $balance);
+        $intent = min(max(0, $pointsIntent), $balance);
 
         $discount = loyalty_compute_discount($filledLiters, $totalCost, $intent);
         $pointsToRedeem = (int) $discount['points'];
@@ -992,7 +1006,7 @@ function loyalty_apply_on_fill(
             }
         }
 
-        // Credit earn (+3 per successful external fill)
+        // Credit earn after a successful external fill.
         $earnPts = (int) LOYALTY_POINTS_PER_FILL;
         if ($earnPts > 0) {
             $credit = $pdo->prepare(
@@ -1072,36 +1086,27 @@ function loyalty_apply_on_fill(
 
 /**
  * Validate redeem intent for booking API (before storing intent).
- * Returns normalized points or throws InvalidArgumentException with message.
+ * Returns selected points or throws InvalidArgumentException with message.
  * Does NOT hard-fail on tier pool.
  */
 function loyalty_validate_redeem_intent(PDO $pdo, int $userId, int $requestedPoints): int
 {
-    $unit = (int) LOYALTY_REDEEM_UNIT_POINTS;
-    $max = (int) LOYALTY_MAX_POINTS_PER_FILL;
-
     if ($requestedPoints < 0) {
         throw new InvalidArgumentException('Loyalty points to redeem cannot be negative.');
     }
-    if ($requestedPoints > $max) {
+    if ($requestedPoints > 0 && !array_key_exists($requestedPoints, LOYALTY_REDEMPTION_OPTIONS)) {
         throw new InvalidArgumentException(
-            'You can use at most ' . $max . ' loyalty points per fill.'
-        );
-    }
-    if ($requestedPoints > 0 && $unit > 0 && ($requestedPoints % $unit) !== 0) {
-        throw new InvalidArgumentException(
-            'Loyalty points to redeem must be 0, ' . $unit . ', or ' . $max . '.'
+            'Choose one of the available fixed loyalty reward options.'
         );
     }
 
-    $normalized = loyalty_normalize_points_intent($requestedPoints);
-    if ($normalized > 0) {
+    if ($requestedPoints > 0) {
         $balance = loyalty_get_balance($pdo, $userId);
-        if ($normalized > $balance) {
+        if ($requestedPoints > $balance) {
             throw new InvalidArgumentException(
                 'Not enough loyalty points. You have ' . $balance . ' point(s).'
             );
         }
     }
-    return $normalized;
+    return $requestedPoints;
 }
