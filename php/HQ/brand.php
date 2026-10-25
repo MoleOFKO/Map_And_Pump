@@ -93,18 +93,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 || ($expiryErrors !== false && ($expiryErrors['warning_count'] > 0 || $expiryErrors['error_count'] > 0))
                 || $parsedExpiry->format('Y-m-d') !== $licenseExpiry || $licenseExpiry < date('Y-m-d')
                 || ($currentExpiryDate !== '' && $licenseExpiry <= $currentExpiryDate)) {
-                $message = 'Enter a valid business license number and an expiry date later than the current HQ deadline.';
+                $message = 'License extension request failed: enter a valid license number and a new expiry date later than the current HQ deadline ('
+                    . ($currentExpiryDate !== '' ? $currentExpiryDate : 'not set') . ').';
             } else {
                 $pendingRequest = $pdo->prepare("SELECT request_id FROM system_requests WHERE headquarter_id = ? AND request_type = 'license_modification' AND status = 'pending' LIMIT 1");
                 $pendingRequest->execute([(int) $config['headquarter_id']]);
                 if ($pendingRequest->fetchColumn()) {
-                    $message = 'A license renewal request is already waiting for admin review.';
+                    $message = 'License extension request failed: a request is already pending Admin or Moderator review.';
                 } else {
                     try {
                         $pdo->beginTransaction();
+                        $previousStatus = strtolower(trim((string) ($_SESSION['user_status'] ?? 'approved')));
+                        if ($previousStatus === '' || $previousStatus === 'pending') {
+                            $previousStatus = 'approved';
+                        }
                         $details = json_encode([
                             'renewal_license_number' => trim((string) $businessLicense),
-                            'previous_status' => (string) ($_SESSION['user_status'] ?? 'expired'),
+                            'previous_status' => $previousStatus,
+                            'previous_expire_at' => $currentExpiryDate,
+                            'requested_expire_at' => $licenseExpiry,
+                            'request_kind' => 'license_expiry_extension',
                         ], JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
                         $reference = 'HQ-LIC-' . date('YmdHis') . '-' . strtoupper(bin2hex(random_bytes(3)));
                         $request = $pdo->prepare(
@@ -129,13 +137,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $updateStatus->execute([$loggedUserId]);
                         $pdo->commit();
                         $_SESSION['user_status'] = 'pending';
-                        $message = 'License renewal submitted. HQ access will return after admin approval.';
+                        $message = 'License expiry extension submitted (' . $reference . '). '
+                            . 'An Admin or Moderator must approve it before the new expiry date is applied.';
                     } catch (Throwable $e) {
                         if ($pdo->inTransaction()) {
                             $pdo->rollBack();
                         }
                         error_log('HQ license renewal submission failed: ' . $e->getMessage());
-                        $message = 'The license renewal request could not be submitted.';
+                        $message = 'License extension request failed: ' . $e->getMessage();
                     }
                 }
             }

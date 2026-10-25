@@ -172,7 +172,7 @@ if ($action === 'create') {
 
 if ($action === 'hire_existing') {
     if (!moderator_hire_schema_ready()) {
-        moderator_flash('danger', 'The notifications table is unavailable, so the hire message could not be stored.');
+        moderator_flash('danger', 'Hire failed: the notifications table is unavailable, so the invite could not be stored.');
         moderator_redirect();
     }
 
@@ -182,29 +182,36 @@ if ($action === 'hire_existing') {
     $invitedBy = (int) ($_SESSION['user_id'] ?? 0);
 
     if ($invitedBy <= 0) {
-        moderator_flash('danger', 'Your admin session expired. Please sign in again.');
+        moderator_flash('danger', 'Hire failed: your admin session expired. Please sign in again.');
         moderator_redirect();
     }
-    if ($targetUserId <= 0 || !moderator_hire_target_eligible($targetUserId)) {
-        moderator_flash('danger', 'Select an existing customer or operational account that is not already an admin or moderator.');
+    if ($targetUserId <= 0) {
+        moderator_flash('danger', 'Hire failed: no account was selected. Search and choose an existing user first.');
+        moderator_redirect();
+    }
+    if (!moderator_hire_target_eligible($targetUserId)) {
+        moderator_flash(
+            'danger',
+            'Hire failed: that account is not eligible. Choose a customer or operational account that is not already Admin or Moderator.'
+        );
         moderator_redirect();
     }
     if (!moderator_role_is_allowed($roleId)) {
-        moderator_flash('danger', 'Please select the Moderator role.');
+        moderator_flash('danger', 'Hire failed: please select the Moderator role before provisioning access.');
         moderator_redirect();
     }
     if ($message === '' || strlen($message) > 2000) {
-        moderator_flash('danger', 'Please write a hire message between 1 and 2000 characters.');
+        moderator_flash('danger', 'Hire failed: write a hire message between 1 and 2000 characters.');
         moderator_redirect();
     }
     if (moderator_hire_pending_exists($targetUserId, $roleId)) {
-        moderator_flash('danger', 'That account already has a pending hire invite for this role.');
+        moderator_flash('danger', 'Hire failed: that account already has a pending Moderator invite. Wait for them to accept or decline it.');
         moderator_redirect();
     }
 
-    $contactQuery = $conn->prepare('SELECT email FROM users WHERE user_id = ? LIMIT 1');
+    $contactQuery = $conn->prepare('SELECT user_id, user_name, email FROM users WHERE user_id = ? LIMIT 1');
     if (!$contactQuery) {
-        moderator_flash('danger', 'The selected account contact details could not be loaded.');
+        moderator_flash('danger', 'Hire failed: the selected account could not be loaded (query prepare error).');
         moderator_redirect();
     }
     $contactQuery->bind_param('i', $targetUserId);
@@ -212,7 +219,7 @@ if ($action === 'hire_existing') {
     $targetContact = $contactQuery->get_result()?->fetch_assoc();
     $contactQuery->close();
     if (!$targetContact) {
-        moderator_flash('danger', 'The selected account could not be loaded.');
+        moderator_flash('danger', 'Hire failed: the selected account was not found in the database.');
         moderator_redirect();
     }
 
@@ -225,41 +232,66 @@ if ($action === 'hire_existing') {
     }
     $subject = 'Moderator access invitation';
     $deliveryNote = moderator_hire_meta_encode($roleId, $invitedBy, $roleLabel);
+    if (strlen($deliveryNote) > 255) {
+        // notifications.delivery_note is varchar(255); keep invite usable if labels grow.
+        $deliveryNote = moderator_hire_meta_encode($roleId, $invitedBy, 'Moderator');
+    }
+    $recipientEmail = trim((string) ($targetContact['email'] ?? ''));
+    if ($recipientEmail === '') {
+        moderator_flash('danger', 'Hire failed: the selected account has no email address.');
+        moderator_redirect();
+    }
 
     $notify = $conn->prepare(
         "INSERT INTO notifications
             (request_id, recipient_user_id, recipient_email, notification_type, subject, message, delivery_status, delivery_note, created_at)
-         SELECT NULL, u.user_id, u.email, 'moderator_hire', ?, ?, 'pending', ?, NOW()
-         FROM users u
-         WHERE u.user_id = ?
-         LIMIT 1"
+         VALUES (NULL, ?, ?, 'moderator_hire', ?, ?, 'pending', ?, NOW())"
     );
     if (!$notify) {
-        moderator_flash('danger', 'The hire message could not be prepared for the notifications table.');
+        moderator_flash('danger', 'Hire failed: could not prepare the notifications insert.');
         moderator_redirect();
     }
-    $notify->bind_param('sssi', $subject, $message, $deliveryNote, $targetUserId);
+    $notify->bind_param('issss', $targetUserId, $recipientEmail, $subject, $message, $deliveryNote);
     if (!$notify->execute()) {
         $error = $notify->error;
         $notify->close();
         error_log('[Moderator hire] notifications insert failed: ' . $error);
-        moderator_flash('danger', 'The hire message could not be saved in notifications.');
+        moderator_flash('danger', 'Hire failed: the invite could not be saved in notifications. (' . $error . ')');
         moderator_redirect();
     }
     $notificationId = (int) $notify->insert_id;
+    $affected = (int) $notify->affected_rows;
     $notify->close();
 
-    $emailNotice = mail_send_account_notice((string) $targetContact['email'], [
+    if ($affected < 1 || $notificationId <= 0) {
+        error_log('[Moderator hire] insert reported success but notification_id=' . $notificationId . ' affected=' . $affected);
+        moderator_flash('danger', 'Hire failed: the invite was not stored (no notification id). Please try again.');
+        moderator_redirect();
+    }
+
+    $emailNotice = mail_send_account_notice($recipientEmail, [
         'kind' => 'moderator_invitation',
         'action' => 'invited',
     ]);
 
-    admin_record_log((int) $adminUser['user_id'], 'Sent moderator hire invitation #' . $notificationId . ' to user #' . $targetUserId . '; email ' . (string) ($emailNotice['status'] ?? 'unknown') . '.');
+    admin_record_log(
+        (int) $adminUser['user_id'],
+        'Sent moderator hire invitation #' . $notificationId . ' to user #' . $targetUserId . '; email ' . (string) ($emailNotice['status'] ?? 'unknown') . '.'
+    );
 
-    moderator_flash('success', 'Hire invitation was saved in notifications. The selected account can review it after signing in.' . moderator_mail_result_note($emailNotice), [
-        'notification_id' => $notificationId,
-        'target_user_id' => $targetUserId,
-    ]);
+    $targetLabel = trim((string) ($targetContact['user_name'] ?? '')) !== ''
+        ? (string) $targetContact['user_name']
+        : $recipientEmail;
+    moderator_flash(
+        'success',
+        'Hire invite sent to ' . $targetLabel . ' (notification #' . $notificationId . '). '
+        . 'They will see a popup after signing in and can accept or decline.'
+        . moderator_mail_result_note($emailNotice),
+        [
+            'notification_id' => $notificationId,
+            'target_user_id' => $targetUserId,
+        ]
+    );
     moderator_redirect();
 }
 

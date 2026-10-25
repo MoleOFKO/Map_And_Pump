@@ -154,12 +154,15 @@ try {
                  WHERE headquarter_id = ?'
             );
             if (!$hqLicenseUpdate) {
-                throw new RuntimeException('Could not prepare the HQ license update.');
+                throw new RuntimeException('License extension approve failed: could not prepare the HQ license update.');
             }
             $headquarterId = (int) $target['headquarter_id'];
             $hqLicenseUpdate->bind_param('sssi', $renewalLicense, $renewalExpiryDate, $expiryTimestamp, $headquarterId);
             if (!$hqLicenseUpdate->execute()) {
-                throw new RuntimeException('Could not apply the approved HQ license renewal.');
+                throw new RuntimeException('License extension approve failed: could not apply the new expiry date.');
+            }
+            if ($hqLicenseUpdate->affected_rows < 1) {
+                error_log('[Request registry] License extension update affected 0 rows for HQ #' . $headquarterId);
             }
             $hqLicenseUpdate->close();
         }
@@ -393,7 +396,9 @@ try {
     }
 
     $newStatus = $action === 'approve' ? 'approved' : 'rejected';
-    $reviewReason = $action === 'approve' ? 'Approved by administrator.' : $reason;
+    $reviewerRoleName = strtolower(trim((string) ($reviewer['role_name'] ?? $reviewer['business_role_name'] ?? '')));
+    $reviewerLabel = $reviewerRoleName === 'moderator' ? 'Moderator' : 'Administrator';
+    $reviewReason = $action === 'approve' ? ('Approved by ' . $reviewerLabel . '.') : $reason;
     $reviewerId = (int) $reviewer['user_id'];
     $recipientUserId = $createdOwnerUserId ?? (!empty($target['existing_user_id']) ? (int) $target['existing_user_id'] : null);
     $recipientEmail = $createdOwnerEmail ?? trim((string) ($target['user_email'] ?: $target['sender_email']));
@@ -473,13 +478,31 @@ try {
     $conn->commit();
     admin_record_log(
         (int) $reviewer['user_id'],
-        ucfirst($action) . ' request #' . $requestId . ' (' . $target['reference_code'] . ').'
+        ucfirst($action) . ' request #' . $requestId . ' (' . $target['reference_code'] . ') as ' . $reviewerLabel . '.'
     );
-    request_flash('success', sprintf('Request %s was %s.', $target['reference_code'], $newStatus));
+    if ($requestType === 'license_modification' && $action === 'approve') {
+        $appliedExpiry = substr(trim((string) ($target['headquarter_expire_at'] ?? '')), 0, 10);
+        request_flash(
+            'success',
+            sprintf(
+                'License extension request %s was approved by %s. HQ license expiry is now %s.',
+                $target['reference_code'],
+                $reviewerLabel,
+                $appliedExpiry !== '' ? $appliedExpiry : 'updated'
+            )
+        );
+    } elseif ($requestType === 'license_modification' && $action === 'reject') {
+        request_flash(
+            'success',
+            sprintf('License extension request %s was rejected by %s.', $target['reference_code'], $reviewerLabel)
+        );
+    } else {
+        request_flash('success', sprintf('Request %s was %s by %s.', $target['reference_code'], $newStatus, $reviewerLabel));
+    }
 } catch (Throwable $exception) {
     $conn->rollback();
     error_log('[Request registry] Review failed: ' . $exception->getMessage());
-    request_flash('danger', 'The request could not be updated. No partial changes were saved.');
+    request_flash('danger', 'The request could not be updated: ' . $exception->getMessage());
 }
 
 request_redirect();
