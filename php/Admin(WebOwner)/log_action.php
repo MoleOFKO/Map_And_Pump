@@ -5,9 +5,11 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
     session_start();
 }
 
-// Clear/export are Admin-only. View remains available to active staff via their routes.
-$user = admin_require_staff();
-$isAdmin = admin_is_admin($user);
+// Log maintenance (clear / export) is Admin-only.
+// Moderators may only view logs via Moderators(UnderAdmin)/view_logs(M).php
+// and must never reach this endpoint.
+$user = admin_require_admin();
+$isAdmin = true;
 
 global $conn;
 $action = strtolower(trim((string) ($_POST['action'] ?? $_GET['action'] ?? '')));
@@ -16,13 +18,17 @@ $returnTo = $returnRaw === 'view_logs.php' ? 'view_logs.php' : 'view_logs.php';
 
 /**
  * Build actor SQL fragment for log queries.
+ * Default ("all") is Admin + Moderator only — not Branch Manager / HQ / Customer.
  */
 function admin_log_actor_sql(string $actor): string
 {
+    $adminSql = '(l.role_id = 1 OR (l.role_id IS NULL AND (COALESCE(u.current_role_id, u.business_role_id, u.role_id) = 1 OR LOWER(TRIM(COALESCE(r.role_name, \'\'))) = \'admin\')))';
+    $moderatorSql = '(l.role_id = 2 OR (l.role_id IS NULL AND (COALESCE(u.current_role_id, u.business_role_id, u.role_id) = 2 OR LOWER(TRIM(COALESCE(r.role_name, \'\'))) = \'moderator\')))';
+
     return match ($actor) {
-        'admin' => '(l.role_id = 1 OR (l.role_id IS NULL AND (u.role_id = 1 OR u.business_role_id = 1 OR LOWER(TRIM(COALESCE(r.role_name, \'\'))) = \'admin\')))',
-        'moderator' => '(l.role_id = 2 OR (l.role_id IS NULL AND (u.role_id = 2 OR u.business_role_id = 2 OR u.current_role_id = 2 OR LOWER(TRIM(COALESCE(r.role_name, \'\'))) = \'moderator\')))',
-        default => '1=1',
+        'admin' => $adminSql,
+        'moderator' => $moderatorSql,
+        default => '(' . $adminSql . ' OR ' . $moderatorSql . ')',
     };
 }
 

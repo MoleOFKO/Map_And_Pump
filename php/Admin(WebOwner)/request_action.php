@@ -154,12 +154,15 @@ try {
                  WHERE headquarter_id = ?'
             );
             if (!$hqLicenseUpdate) {
-                throw new RuntimeException('Could not prepare the HQ license update.');
+                throw new RuntimeException('License extension approve failed: could not prepare the HQ license update.');
             }
             $headquarterId = (int) $target['headquarter_id'];
             $hqLicenseUpdate->bind_param('sssi', $renewalLicense, $renewalExpiryDate, $expiryTimestamp, $headquarterId);
             if (!$hqLicenseUpdate->execute()) {
-                throw new RuntimeException('Could not apply the approved HQ license renewal.');
+                throw new RuntimeException('License extension approve failed: could not apply the new expiry date.');
+            }
+            if ($hqLicenseUpdate->affected_rows < 1) {
+                error_log('[Request registry] License extension update affected 0 rows for HQ #' . $headquarterId);
             }
             $hqLicenseUpdate->close();
         }
@@ -171,17 +174,25 @@ try {
             throw new RuntimeException('The company registration details are invalid.');
         }
 
+        // License expiry must be stored on both business_license_expire_date and expire_at.
+        // created_at = registration time; expire_at = submitted license end date (not "now").
+        $licenseExpiryRaw = trim((string) ($target['headquarter_expire_at'] ?? ''));
+        $licenseExpiryDate = $licenseExpiryRaw !== '' ? substr($licenseExpiryRaw, 0, 10) : '';
+        if ($licenseExpiryDate === '' || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $licenseExpiryDate)) {
+            throw new RuntimeException('The HQ registration is missing a valid license expiry date.');
+        }
+        $licenseExpiryTs = $licenseExpiryDate . ' 23:59:59';
+
         $headquarterInsert = $conn->prepare(
             'INSERT INTO headquarter
                 (company_name, company_logo, contact_number, headquarter_email, location,
-                 business_license, business_license_image, business_license_expire_date, station_count)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ' . BILLING_HQ_INCLUDED_STATION_SLOTS . ')'
+                 business_license, business_license_image, business_license_expire_date,
+                 expire_at, station_count)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ' . BILLING_HQ_INCLUDED_STATION_SLOTS . ')'
         );
         if (!$headquarterInsert) {
             throw new RuntimeException('Could not prepare the company account creation.');
         }
-        $licenseExpiry = trim((string) ($target['headquarter_expire_at'] ?? ''));
-        $licenseExpiry = $licenseExpiry !== '' ? substr($licenseExpiry, 0, 10) : null;
         $companyName = (string) $target['sender_entity'];
         $companyLogo = (string) $target['headquarter_company_logo'];
         $companyPhone = (string) $target['headquarter_contact_number'];
@@ -190,7 +201,7 @@ try {
         $businessLicense = (string) $target['document_name'];
         $licenseImage = (string) $target['document_path'];
         $headquarterInsert->bind_param(
-            'ssssssss',
+            'sssssssss',
             $companyName,
             $companyLogo,
             $companyPhone,
@@ -198,7 +209,8 @@ try {
             $companyLocation,
             $businessLicense,
             $licenseImage,
-            $licenseExpiry
+            $licenseExpiryDate,
+            $licenseExpiryTs
         );
         if (!$headquarterInsert->execute()) {
             throw new RuntimeException('Could not create the approved company account.');
@@ -206,16 +218,20 @@ try {
         $createdHeadquarterId = (int) $conn->insert_id;
         $headquarterInsert->close();
 
+        // Set service period without clobbering license expire_at / created_at.
+        // Re-assert expire_at here in case the column still has ON UPDATE CURRENT_TIMESTAMP.
         $serviceExpiryUpdate = $conn->prepare(
             'UPDATE headquarter
              SET service_expires_at = DATE_ADD(NOW(), INTERVAL 1 MONTH),
-                 included_stations_free_until = DATE_ADD(NOW(), INTERVAL 1 MONTH)
+                 included_stations_free_until = DATE_ADD(NOW(), INTERVAL 1 MONTH),
+                 expire_at = ?,
+                 business_license_expire_date = ?
              WHERE headquarter_id = ?'
         );
         if (!$serviceExpiryUpdate) {
             throw new RuntimeException('Could not initialize the company service period.');
         }
-        $serviceExpiryUpdate->bind_param('i', $createdHeadquarterId);
+        $serviceExpiryUpdate->bind_param('ssi', $licenseExpiryTs, $licenseExpiryDate, $createdHeadquarterId);
         if (!$serviceExpiryUpdate->execute()) {
             throw new RuntimeException('Could not initialize the company service period.');
         }
@@ -380,7 +396,9 @@ try {
     }
 
     $newStatus = $action === 'approve' ? 'approved' : 'rejected';
-    $reviewReason = $action === 'approve' ? 'Approved by administrator.' : $reason;
+    $reviewerRoleName = strtolower(trim((string) ($reviewer['role_name'] ?? $reviewer['business_role_name'] ?? '')));
+    $reviewerLabel = $reviewerRoleName === 'moderator' ? 'Moderator' : 'Administrator';
+    $reviewReason = $action === 'approve' ? ('Approved by ' . $reviewerLabel . '.') : $reason;
     $reviewerId = (int) $reviewer['user_id'];
     $recipientUserId = $createdOwnerUserId ?? (!empty($target['existing_user_id']) ? (int) $target['existing_user_id'] : null);
     $recipientEmail = $createdOwnerEmail ?? trim((string) ($target['user_email'] ?: $target['sender_email']));
@@ -460,13 +478,31 @@ try {
     $conn->commit();
     admin_record_log(
         (int) $reviewer['user_id'],
-        ucfirst($action) . ' request #' . $requestId . ' (' . $target['reference_code'] . ').'
+        ucfirst($action) . ' request #' . $requestId . ' (' . $target['reference_code'] . ') as ' . $reviewerLabel . '.'
     );
-    request_flash('success', sprintf('Request %s was %s.', $target['reference_code'], $newStatus));
+    if ($requestType === 'license_modification' && $action === 'approve') {
+        $appliedExpiry = substr(trim((string) ($target['headquarter_expire_at'] ?? '')), 0, 10);
+        request_flash(
+            'success',
+            sprintf(
+                'License extension request %s was approved by %s. HQ license expiry is now %s.',
+                $target['reference_code'],
+                $reviewerLabel,
+                $appliedExpiry !== '' ? $appliedExpiry : 'updated'
+            )
+        );
+    } elseif ($requestType === 'license_modification' && $action === 'reject') {
+        request_flash(
+            'success',
+            sprintf('License extension request %s was rejected by %s.', $target['reference_code'], $reviewerLabel)
+        );
+    } else {
+        request_flash('success', sprintf('Request %s was %s by %s.', $target['reference_code'], $newStatus, $reviewerLabel));
+    }
 } catch (Throwable $exception) {
     $conn->rollback();
     error_log('[Request registry] Review failed: ' . $exception->getMessage());
-    request_flash('danger', 'The request could not be updated. No partial changes were saved.');
+    request_flash('danger', 'The request could not be updated: ' . $exception->getMessage());
 }
 
 request_redirect();

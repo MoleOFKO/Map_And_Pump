@@ -146,6 +146,23 @@ $updatedLabel = $updatedAt ? moderator_format_date($updatedAt) : 'Not available'
 <?php include __DIR__ . '/includes/moderator_navbar.php'; ?>
 
 <main class="container my-5">
+    <?php
+    $hireFlash = '';
+    if (session_status() === PHP_SESSION_ACTIVE && !empty($_SESSION['moderator_hire_flash'])) {
+        $hireFlash = (string) $_SESSION['moderator_hire_flash'];
+        unset($_SESSION['moderator_hire_flash']);
+    }
+    $registryFlash = function_exists('moderator_pull_flash') ? moderator_pull_flash() : null;
+    ?>
+    <?php if ($hireFlash !== ''): ?>
+        <div class="alert hq-flash alert-success mb-4" role="alert">
+            <i class="bi bi-check-circle-fill text-success me-2"></i><?= moderator_escape($hireFlash) ?>
+        </div>
+    <?php elseif (is_array($registryFlash) && trim((string) ($registryFlash['message'] ?? '')) !== ''): ?>
+        <div class="alert hq-flash alert-<?= moderator_escape((string) ($registryFlash['type'] ?? 'success')) ?> mb-4" role="alert">
+            <i class="bi bi-info-circle-fill me-2"></i><?= moderator_escape((string) ($registryFlash['message'] ?? '')) ?>
+        </div>
+    <?php endif; ?>
     <?php if (function_exists('expiry_render_page_banners')) { expiry_render_page_banners('moderator', true); } ?>
     <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3">
         <div>

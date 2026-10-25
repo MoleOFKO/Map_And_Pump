@@ -40,9 +40,11 @@ if ($userId <= 0) {
     exit;
 }
 if ($inviteId <= 0 || !in_array($decision, ['accepted', 'declined'], true)) {
+    $_SESSION['moderator_hire_flash'] = 'Hire response failed: invalid invitation or decision.';
     hire_response_redirect();
 }
 if (!moderator_hire_notifications_ready_pdo($pdo)) {
+    $_SESSION['moderator_hire_flash'] = 'Hire response failed: notifications storage is unavailable.';
     hire_response_redirect();
 }
 
@@ -59,6 +61,7 @@ try {
     $invite = $stmt->fetch(PDO::FETCH_ASSOC);
     if (!$invite || strtolower((string) ($invite['delivery_status'] ?? '')) !== 'pending') {
         moderator_hire_remove_from_session($inviteId);
+        $_SESSION['moderator_hire_flash'] = 'Hire response failed: this invitation is missing or was already answered.';
         hire_response_redirect();
     }
 
@@ -75,7 +78,7 @@ try {
         );
         $update->execute([$inviteId, $userId]);
         moderator_hire_remove_from_session($inviteId);
-        $_SESSION['moderator_hire_flash'] = 'You declined the moderator access invitation.';
+        $_SESSION['moderator_hire_flash'] = 'You declined the Moderator access invitation. No role changes were made.';
         hire_response_redirect();
     }
 
@@ -95,7 +98,7 @@ try {
                AND LOWER(delivery_status) = 'pending'"
         )->execute([$inviteId, $userId]);
         moderator_hire_remove_from_session($inviteId);
-        $_SESSION['moderator_hire_flash'] = 'This invitation is no longer valid. Only Moderator access can be granted through this workflow.';
+        $_SESSION['moderator_hire_flash'] = 'Hire failed: this invitation is invalid (Moderator role not found). The invite was closed.';
         hire_response_redirect();
     }
 
@@ -120,6 +123,10 @@ try {
         );
         $apply->execute([$roleId, $userId]);
     }
+    if ($apply->rowCount() < 1) {
+        $_SESSION['moderator_hire_flash'] = 'Hire failed: your account role could not be updated. Please contact an administrator.';
+        hire_response_redirect();
+    }
 
     $update = $pdo->prepare(
         "UPDATE notifications
@@ -141,16 +148,21 @@ try {
 
     moderator_hire_remove_from_session($inviteId);
     $_SESSION['business_role_id'] = $roleId;
-    $_SESSION['role_id'] = $roleId;
+    $_SESSION['business_role_name'] = (string) $role['role_name'];
+    $_SESSION['current_role_id'] = $roleId;
     $_SESSION['role_name'] = (string) $role['role_name'];
     $_SESSION['has_business'] = true;
-    $_SESSION['moderator_hire_flash'] = 'Moderator access accepted. Your account role has been updated.';
+    $_SESSION['moderator_hire_flash'] = 'Moderator access accepted. Your account now has Moderator access.';
+    // Also surface on Moderator portal pages that read registry flash.
+    $_SESSION['moderator_registry_flash'] = [
+        'type' => 'success',
+        'message' => 'Moderator access accepted. Welcome to the Moderator portal.',
+    ];
 
-    $roleName = strtolower(trim((string) $role['role_name']));
     header('Location: /php/Moderators(UnderAdmin)/moderator_dashboard.php');
     exit;
 } catch (Throwable $e) {
     error_log('[Moderator hire] Response failed: ' . $e->getMessage());
-    $_SESSION['moderator_hire_flash'] = 'Could not process the hire invitation. Please try again.';
+    $_SESSION['moderator_hire_flash'] = 'Hire failed: could not process the invitation (' . $e->getMessage() . '). Please try again.';
     hire_response_redirect();
 }
