@@ -381,8 +381,7 @@ try {
                 }
                 $eventNote = 'Designated recipient recorded receipt.';
                 if ($transfer['payment_type'] === 'hq_registration') {
-                    $pendingHeadquarterId = payment_transfer_create_pending_registration_hq($pdo, $transfer, $userId);
-                    $eventNote = 'Admin or Moderator confirmed the registration receipt; HQ #' . $pendingHeadquarterId . ' is pending activation.';
+                    $eventNote = 'Admin or Moderator confirmed the registration payment. The HQ will be created when the registration request is approved.';
                 }
                 if ($transfer['payment_type'] === 'hq_period_extension') {
                     if (!payment_transfer_ensure_hq_service_expiry_schema($pdo)) {

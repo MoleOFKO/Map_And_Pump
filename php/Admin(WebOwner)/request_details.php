@@ -84,7 +84,7 @@ if (strtolower((string) $request['request_type']) === 'hq_registration' && payme
             'receipt_name' => $paymentRow['file_name'],
             'receipt_mime' => $paymentRow['mime_type'],
             'is_current_user_payer' => $isPayer,
-            'can_review' => payment_transfer_user_is_admin($pdo, $reviewerId) && !$isPayer,
+            'can_review' => payment_transfer_user_is_admin_or_moderator($pdo, $reviewerId) && !$isPayer,
         ];
     }
 }

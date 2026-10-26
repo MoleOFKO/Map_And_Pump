@@ -374,7 +374,7 @@ try {
         $ownerScope = $conn->prepare(
             "INSERT INTO business_account_scope
                 (user_id, business_role_id, headquarter_id, branch_manager_user_id, station_id, status)
-             VALUES (?, ?, ?, NULL, NULL, 'approved')
+             VALUES (?, ?, ?, NULL, NULL, 'pending')
              ON DUPLICATE KEY UPDATE
                 business_role_id = VALUES(business_role_id),
                 headquarter_id = VALUES(headquarter_id),
