@@ -72,25 +72,37 @@ try {
         $requestedStations = is_array($registrationDetails)
             ? (int) ($registrationDetails['requested_station_count'] ?? 0)
             : 0;
+        $requestedMonths = is_array($registrationDetails)
+            ? (int) ($registrationDetails['requested_service_months'] ?? 1)
+            : 1;
+        $extraStationCount = max(0, $requestedStations - BILLING_HQ_INCLUDED_STATION_SLOTS);
         $paymentRow = null;
 
-        $paymentCheck = $conn->prepare(
-            "SELECT status, amount_mmk, quantity, payment_transfer_id FROM payment_transfers
-             WHERE request_id = ? AND payment_type = 'hq_registration'
-             ORDER BY payment_transfer_id DESC LIMIT 1"
-        );
-        if (!$paymentCheck) {
-            throw new RuntimeException('Payment status is unavailable. The HQ registration cannot be approved yet.');
+        if ($requestedStations < BILLING_HQ_INCLUDED_STATION_SLOTS || $requestedStations > 60
+            || $requestedMonths < 1 || $requestedMonths > 24) {
+            throw new RuntimeException('The requested station count or service period is invalid.');
         }
-        $paymentCheck->bind_param('i', $requestId);
-        if (!$paymentCheck->execute()) {
+        if ($extraStationCount > 0) {
+            $paymentCheck = $conn->prepare(
+                "SELECT status, amount_mmk, quantity, term_months, payment_transfer_id FROM payment_transfers
+                 WHERE request_id = ? AND payment_type = 'hq_registration'
+                 ORDER BY payment_transfer_id DESC LIMIT 1"
+            );
+            if (!$paymentCheck) {
+                throw new RuntimeException('Payment status is unavailable. The HQ registration cannot be approved yet.');
+            }
+            $paymentCheck->bind_param('i', $requestId);
+            if (!$paymentCheck->execute()) {
+                $paymentCheck->close();
+                throw new RuntimeException('Could not verify the HQ registration payment status.');
+            }
+            $paymentRow = $paymentCheck->get_result()?->fetch_assoc();
             $paymentCheck->close();
-            throw new RuntimeException('Could not verify the HQ registration payment status.');
-        }
-        $paymentRow = $paymentCheck->get_result()?->fetch_assoc();
-        $paymentCheck->close();
-        if (($paymentRow['status'] ?? '') !== 'received' || (float) ($paymentRow['amount_mmk'] ?? 0) <= 0) {
-            throw new RuntimeException('The HQ registration fee must be recorded as received by an Admin before approval.');
+            if (($paymentRow['status'] ?? '') !== 'received' || (float) ($paymentRow['amount_mmk'] ?? 0) <= 0
+                || (int) ($paymentRow['quantity'] ?? 0) < $extraStationCount
+                || (int) ($paymentRow['term_months'] ?? 0) !== $requestedMonths) {
+                throw new RuntimeException('The selected HQ station term must be recorded as received before approval.');
+            }
         }
     }
 
@@ -182,13 +194,19 @@ try {
             throw new RuntimeException('The HQ registration is missing a valid license expiry date.');
         }
         $licenseExpiryTs = $licenseExpiryDate . ' 23:59:59';
+        $requestedStationCount = max(
+            BILLING_HQ_INCLUDED_STATION_SLOTS,
+            (int) ($details['requested_station_count'] ?? BILLING_HQ_INCLUDED_STATION_SLOTS)
+        );
+        $requestedServiceMonths = max(1, min(24, (int) ($details['requested_service_months'] ?? 1)));
+        $extraStationCount = $requestedStationCount - BILLING_HQ_INCLUDED_STATION_SLOTS;
 
         $headquarterInsert = $conn->prepare(
             'INSERT INTO headquarter
                 (company_name, company_logo, contact_number, headquarter_email, location,
                  business_license, business_license_image, business_license_expire_date,
-                 expire_at, station_count)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ' . BILLING_HQ_INCLUDED_STATION_SLOTS . ')'
+                 expire_at, station_count, status)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, \'pending\')'
         );
         if (!$headquarterInsert) {
             throw new RuntimeException('Could not prepare the company account creation.');
@@ -201,7 +219,7 @@ try {
         $businessLicense = (string) $target['document_name'];
         $licenseImage = (string) $target['document_path'];
         $headquarterInsert->bind_param(
-            'sssssssss',
+            'sssssssssi',
             $companyName,
             $companyLogo,
             $companyPhone,
@@ -210,7 +228,8 @@ try {
             $businessLicense,
             $licenseImage,
             $licenseExpiryDate,
-            $licenseExpiryTs
+            $licenseExpiryTs,
+            $requestedStationCount
         );
         if (!$headquarterInsert->execute()) {
             throw new RuntimeException('Could not create the approved company account.');
@@ -220,10 +239,13 @@ try {
 
         // Set service period without clobbering license expire_at / created_at.
         // Re-assert expire_at here in case the column still has ON UPDATE CURRENT_TIMESTAMP.
+        $serviceExpiry = $extraStationCount > 0
+            ? payment_transfer_add_months_clamped(new DateTimeImmutable(), $requestedServiceMonths)->format('Y-m-d H:i:s')
+            : null;
         $serviceExpiryUpdate = $conn->prepare(
             'UPDATE headquarter
-             SET service_expires_at = DATE_ADD(NOW(), INTERVAL 1 MONTH),
-                 included_stations_free_until = DATE_ADD(NOW(), INTERVAL 1 MONTH),
+             SET service_expires_at = ?,
+                 included_stations_free_until = NULL,
                  expire_at = ?,
                  business_license_expire_date = ?
              WHERE headquarter_id = ?'
@@ -231,18 +253,13 @@ try {
         if (!$serviceExpiryUpdate) {
             throw new RuntimeException('Could not initialize the company service period.');
         }
-        $serviceExpiryUpdate->bind_param('ssi', $licenseExpiryTs, $licenseExpiryDate, $createdHeadquarterId);
+        $serviceExpiryUpdate->bind_param('sssi', $serviceExpiry, $licenseExpiryTs, $licenseExpiryDate, $createdHeadquarterId);
         if (!$serviceExpiryUpdate->execute()) {
             throw new RuntimeException('Could not initialize the company service period.');
         }
         $serviceExpiryUpdate->close();
 
         $registrationTransferId = (int) ($paymentRow['payment_transfer_id'] ?? 0);
-        $requestedStationCount = max(
-            BILLING_HQ_INCLUDED_STATION_SLOTS,
-            (int) ($details['requested_station_count'] ?? BILLING_HQ_INCLUDED_STATION_SLOTS)
-        );
-        $extraStationCount = $requestedStationCount - BILLING_HQ_INCLUDED_STATION_SLOTS;
         if ($registrationTransferId > 0) {
             $linkPayment = $conn->prepare('UPDATE payment_transfers SET payer_headquarter_id = ? WHERE payment_transfer_id = ?');
             if (!$linkPayment) {
@@ -255,7 +272,7 @@ try {
             $linkPayment->close();
         }
         if ($extraStationCount > 0) {
-            $yearMonth = date('Y-m');
+            $monthStart = new DateTimeImmutable('first day of this month 00:00:00');
             $slots = $conn->prepare(
                 'INSERT INTO company_loyalty_station_slots
                     (headquarter_id, year_month, slots_purchased, mmk_slots_purchased, points_spent)
@@ -265,12 +282,6 @@ try {
             if (!$slots) {
                 throw new RuntimeException('Could not apply paid extra-station capacity.');
             }
-            $slots->bind_param('isi', $createdHeadquarterId, $yearMonth, $extraStationCount);
-            if (!$slots->execute()) {
-                throw new RuntimeException('Could not apply paid extra-station capacity.');
-            }
-            $slots->close();
-
             $entitlements = $conn->prepare(
                 'INSERT INTO hq_station_mmk_entitlements
                     (payment_transfer_id, headquarter_id, year_month, slot_number)
@@ -279,12 +290,20 @@ try {
             if (!$entitlements) {
                 throw new RuntimeException('Could not create paid extra-station entitlements.');
             }
-            for ($slotNumber = 1; $slotNumber <= $extraStationCount; $slotNumber++) {
-                $entitlements->bind_param('iisi', $registrationTransferId, $createdHeadquarterId, $yearMonth, $slotNumber);
-                if (!$entitlements->execute()) {
-                    throw new RuntimeException('Could not create paid extra-station entitlements.');
+            for ($monthIndex = 0; $monthIndex < $requestedServiceMonths; $monthIndex++) {
+                $yearMonth = $monthStart->modify('+' . $monthIndex . ' months')->format('Y-m');
+                $slots->bind_param('isi', $createdHeadquarterId, $yearMonth, $extraStationCount);
+                if (!$slots->execute()) {
+                    throw new RuntimeException('Could not apply paid extra-station capacity.');
+                }
+                for ($slotNumber = 1; $slotNumber <= $extraStationCount; $slotNumber++) {
+                    $entitlements->bind_param('iisi', $registrationTransferId, $createdHeadquarterId, $yearMonth, $slotNumber);
+                    if (!$entitlements->execute()) {
+                        throw new RuntimeException('Could not create paid extra-station entitlements.');
+                    }
                 }
             }
+            $slots->close();
             $entitlements->close();
         }
 
@@ -312,12 +331,12 @@ try {
         if ($existingOwner) {
             $createdOwnerUserId = (int) $existingOwner['user_id'];
             $ownerUpdate = $conn->prepare(
-                'UPDATE users SET headquarter_id = ?, role_id = ?, business_role_id = ?, current_role_id = ?, status = \'approved\', updated_at = NOW() WHERE user_id = ?'
+                'UPDATE users SET headquarter_id = ?, business_role_id = ?, status = \'pending\', updated_at = NOW() WHERE user_id = ?'
             );
             if (!$ownerUpdate) {
                 throw new RuntimeException('Could not link the existing HQ owner account.');
             }
-            $ownerUpdate->bind_param('iiiii', $createdHeadquarterId, $hqRoleId, $hqRoleId, $hqRoleId, $createdOwnerUserId);
+            $ownerUpdate->bind_param('iii', $createdHeadquarterId, $hqRoleId, $createdOwnerUserId);
             if (!$ownerUpdate->execute()) {
                 throw new RuntimeException('Could not link the existing HQ owner account.');
             }
@@ -328,7 +347,7 @@ try {
             $passwordHash = password_hash($oneTimeSecret, PASSWORD_DEFAULT);
             $ownerInsert = $conn->prepare(
                 "INSERT INTO users (user_name, email, hashed_password, headquarter_id, role_id, business_role_id, current_role_id, status, created_at, updated_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, 'approved', NOW(), NOW())"
+                 VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', NOW(), NOW())"
             );
             if (!$ownerInsert) {
                 throw new RuntimeException('Could not prepare the HQ owner account.');
@@ -361,7 +380,7 @@ try {
                 headquarter_id = VALUES(headquarter_id),
                 branch_manager_user_id = NULL,
                 station_id = NULL,
-                status = 'approved'"
+                 status = 'pending'"
         );
         if (!$ownerScope) {
             throw new RuntimeException('Could not prepare the HQ owner business-role link.');
@@ -417,7 +436,17 @@ try {
     }
     $requestUpdate->close();
 
-    if ($recipientUserId !== null && in_array($requestType, ['hq_registration', 'license_modification'], true)) {
+    if ($recipientUserId !== null && $requestType === 'hq_registration' && $action === 'approve') {
+        $userUpdate = $conn->prepare('UPDATE users SET status = \'pending\', updated_at = NOW() WHERE user_id = ?');
+        if (!$userUpdate) {
+            throw new RuntimeException('Could not prepare the pending HQ owner status update.');
+        }
+        $userUpdate->bind_param('i', $recipientUserId);
+        if (!$userUpdate->execute()) {
+            throw new RuntimeException('Could not set the HQ owner account to pending.');
+        }
+        $userUpdate->close();
+    } elseif ($recipientUserId !== null && $requestType === 'license_modification') {
         $accountStatus = $newStatus;
         if ($requestType === 'license_modification' && $action === 'reject') {
             $previousStatus = strtolower(trim((string) ($renewalDetails['previous_status'] ?? 'expired')));

@@ -15,8 +15,8 @@ $headquarterId = filter_var($_POST['headquarter_id'] ?? null, FILTER_VALIDATE_IN
 $actionType = strtolower(trim((string) ($_POST['action_type'] ?? '')));
 $reason = trim((string) ($_POST['reason'] ?? ''));
 
-if (!$headquarterId || !in_array($actionType, ['suspend', 'remove', 'restore'], true) || $reason === '') {
-    hq_flash('danger', 'Choose suspend, remove, or restore and provide a reason before submitting.');
+if (!$headquarterId || !in_array($actionType, ['activate', 'suspend', 'remove', 'restore'], true) || $reason === '') {
+    hq_flash('danger', 'Choose activate, suspend, remove, or restore and provide a reason before submitting.');
     hq_redirect('view_hq_and_user_account.php');
 }
 
@@ -43,7 +43,7 @@ if ($hqRoleId <= 0) {
 // Match HQ accounts on any role slot (base / business / current). Older rows
 // sometimes only populate current_role_id after role switching.
 $targetQuery = $conn->prepare(
-    "SELECT h.company_name, owner.user_id, owner.email
+    "SELECT h.company_name, h.status AS hq_status, owner.user_id, owner.email
      FROM headquarter h
      LEFT JOIN (
          SELECT u.headquarter_id, MIN(u.user_id) AS owner_user_id
@@ -70,14 +70,26 @@ if (!$target) {
     hq_flash('danger', 'That HQ account could not be found.');
     hq_redirect('view_hq_and_user_account.php');
 }
+if ($actionType === 'activate' && strtolower(trim((string) $target['hq_status'])) !== 'pending') {
+    hq_flash('danger', 'Only a pending HQ can be activated.');
+    hq_redirect('view_hq_and_user_account.php');
+}
 
 $statusMap = [
+    'activate' => 'approved',
     'remove' => 'removed',
     'suspend' => 'suspended',
     'restore' => 'approved',
 ];
+$hqStatusMap = [
+    'activate' => 'active',
+    'remove' => 'removed',
+    'suspend' => 'suspended',
+    'restore' => 'active',
+];
 $newStatus = $statusMap[$actionType] ?? 'suspended';
 $actionVerb = match ($actionType) {
+    'activate' => 'activated',
     'remove' => 'removed',
     'restore' => 'restored (approved)',
     default => 'suspended',
@@ -109,6 +121,29 @@ try {
             'No HQ-role user is linked to this headquarters, so the account status could not be changed.'
         );
     }
+
+    $hqStatusUpdate = $conn->prepare('UPDATE headquarter SET status = ? WHERE headquarter_id = ?');
+    if (!$hqStatusUpdate) {
+        throw new RuntimeException('Could not prepare the HQ status update: ' . $conn->error);
+    }
+    $newHqStatus = $hqStatusMap[$actionType] ?? 'suspended';
+    $hqStatusUpdate->bind_param('si', $newHqStatus, $headquarterId);
+    if (!$hqStatusUpdate->execute()) {
+        throw new RuntimeException('Could not update the HQ status: ' . $hqStatusUpdate->error);
+    }
+    $hqStatusUpdate->close();
+
+    $scopeUpdate = $conn->prepare(
+        'UPDATE business_account_scope SET status = ? WHERE headquarter_id = ? AND business_role_id = ?'
+    );
+    if (!$scopeUpdate) {
+        throw new RuntimeException('Could not prepare the HQ business-scope update: ' . $conn->error);
+    }
+    $scopeUpdate->bind_param('sii', $newStatus, $headquarterId, $hqRoleId);
+    if (!$scopeUpdate->execute()) {
+        throw new RuntimeException('Could not update the HQ business scope: ' . $scopeUpdate->error);
+    }
+    $scopeUpdate->close();
 
     $actionId = 0;
     if ($historyReady) {
@@ -184,6 +219,7 @@ try {
     );
 
     $message = match ($actionType) {
+        'activate' => 'The HQ account was activated.',
         'remove' => 'The HQ account was marked as removed.',
         'restore' => 'The HQ account was restored to approved status.',
         default => 'The HQ account was suspended.',

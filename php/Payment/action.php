@@ -31,6 +31,10 @@ if (!payment_transfer_schema_ready($pdo)) {
     http_response_code(503);
     exit('Payment status tracking is temporarily unavailable.');
 }
+if (!payment_transfer_ensure_hq_service_expiry_schema($pdo)) {
+    http_response_code(503);
+    exit('HQ service-period storage is temporarily unavailable.');
+}
 
 $action = trim((string) ($_POST['action'] ?? ''));
 $transferId = (int) ($_POST['transfer_id'] ?? 0);
@@ -357,7 +361,7 @@ try {
             $noticeAction = 'cancelled';
             $noticeSide = 'recipient';
         } else {
-            $canReceive = $transfer['payment_type'] === 'hq_period_extension'
+            $canReceive = in_array($transfer['payment_type'], ['hq_period_extension', 'hq_registration'], true)
                 ? payment_transfer_user_is_admin_or_moderator($pdo, $userId)
                 : ($transfer['recipient_role'] === 'station_hq'
                     ? payment_transfer_user_owns_hq($pdo, $userId, (int) $transfer['recipient_headquarter_id'])
@@ -376,6 +380,10 @@ try {
                     payment_transfer_apply_hq_entitlements($pdo, $transfer);
                 }
                 $eventNote = 'Designated recipient recorded receipt.';
+                if ($transfer['payment_type'] === 'hq_registration') {
+                    $pendingHeadquarterId = payment_transfer_create_pending_registration_hq($pdo, $transfer, $userId);
+                    $eventNote = 'Admin or Moderator confirmed the registration receipt; HQ #' . $pendingHeadquarterId . ' is pending activation.';
+                }
                 if ($transfer['payment_type'] === 'hq_period_extension') {
                     if (!payment_transfer_ensure_hq_service_expiry_schema($pdo)) {
                         throw new RuntimeException('HQ service-period storage is unavailable.');
@@ -480,4 +488,153 @@ function payment_transfer_apply_hq_entitlements(PDO $pdo, array $transfer): void
         }
         payment_transfer_assign_mmk_entitlements($pdo, $hqId, $yearMonth);
     }
+}
+
+function payment_transfer_create_pending_registration_hq(PDO $pdo, array $transfer, int $reviewerId): int
+{
+    $requestId = (int) ($transfer['request_id'] ?? 0);
+    $transferId = (int) ($transfer['payment_transfer_id'] ?? 0);
+    if ($requestId <= 0 || $transferId <= 0) {
+        throw new RuntimeException('The registration payment is not linked to a valid request.');
+    }
+
+    $requestStmt = $pdo->prepare('SELECT * FROM system_requests WHERE request_id = ? FOR UPDATE');
+    $requestStmt->execute([$requestId]);
+    $request = $requestStmt->fetch(PDO::FETCH_ASSOC);
+    if (!$request || (string) $request['request_type'] !== 'hq_registration') {
+        throw new RuntimeException('The HQ registration request could not be verified.');
+    }
+    if ((int) ($request['headquarter_id'] ?? 0) > 0) {
+        throw new RuntimeException('This registration request is already linked to an HQ.');
+    }
+    if (strtolower((string) $request['status']) !== 'pending') {
+        throw new RuntimeException('Only a pending HQ registration can create an HQ profile.');
+    }
+
+    $details = json_decode((string) ($request['request_details'] ?? ''), true);
+    if (!is_array($details)) {
+        throw new RuntimeException('The company registration details are invalid.');
+    }
+    $stationCount = (int) ($details['requested_station_count'] ?? 0);
+    $months = (int) ($details['requested_service_months'] ?? 1);
+    $extraStationCount = $stationCount - BILLING_HQ_INCLUDED_STATION_SLOTS;
+    if ($extraStationCount < 1 || $stationCount > 60 || $months < 1 || $months > 24) {
+        throw new RuntimeException('The paid station count or service period is invalid.');
+    }
+
+    $paymentCheck = $pdo->prepare(
+        "SELECT status, amount_mmk, quantity, term_months
+         FROM payment_transfers
+         WHERE payment_transfer_id = ? AND request_id = ? AND payment_type = 'hq_registration'
+         FOR UPDATE"
+    );
+    $paymentCheck->execute([$transferId, $requestId]);
+    $payment = $paymentCheck->fetch(PDO::FETCH_ASSOC);
+    if (!$payment || (string) $payment['status'] !== 'received' || (float) $payment['amount_mmk'] <= 0
+        || (int) $payment['quantity'] < $extraStationCount || (int) $payment['term_months'] !== $months) {
+        throw new RuntimeException('The received payment does not match the requested HQ service term.');
+    }
+    $receiptCheck = $pdo->prepare('SELECT 1 FROM payment_transfer_receipts WHERE payment_transfer_id = ? LIMIT 1');
+    $receiptCheck->execute([$transferId]);
+    if (!$receiptCheck->fetchColumn()) {
+        throw new RuntimeException('The registration payment screenshot is missing.');
+    }
+
+    $ownerEmail = strtolower(trim((string) ($request['headquarter_owner_email'] ?: $request['sender_email'])));
+    $ownerStmt = $pdo->prepare('SELECT user_id, headquarter_id FROM users WHERE LOWER(TRIM(email)) = ? LIMIT 1 FOR UPDATE');
+    $ownerStmt->execute([$ownerEmail]);
+    $owner = $ownerStmt->fetch(PDO::FETCH_ASSOC);
+    if (!$owner || (int) ($owner['headquarter_id'] ?? 0) > 0) {
+        throw new RuntimeException('The owner account is unavailable or already linked to an HQ.');
+    }
+    $roleStmt = $pdo->prepare("SELECT role_id FROM roles WHERE LOWER(TRIM(role_name)) IN ('hq', 'headquarter', 'headquarters') ORDER BY (role_id = 3) DESC LIMIT 1");
+    $roleStmt->execute();
+    $hqRoleId = (int) ($roleStmt->fetchColumn() ?: 0);
+    if ($hqRoleId !== 3) {
+        throw new RuntimeException('The HQ account role must use role ID 3.');
+    }
+
+    $licenseExpiryDate = substr(trim((string) ($request['headquarter_expire_at'] ?? '')), 0, 10);
+    $licenseExpiry = DateTimeImmutable::createFromFormat('!Y-m-d', $licenseExpiryDate);
+    $expiryErrors = DateTimeImmutable::getLastErrors();
+    if (!$licenseExpiry || ($expiryErrors !== false && ($expiryErrors['warning_count'] > 0 || $expiryErrors['error_count'] > 0))
+        || $licenseExpiry->format('Y-m-d') !== $licenseExpiryDate) {
+        throw new RuntimeException('The HQ registration is missing a valid license expiry date.');
+    }
+
+    $serviceExpiry = payment_transfer_add_months_clamped(new DateTimeImmutable(), $months)->format('Y-m-d H:i:s');
+    $headquarterInsert = $pdo->prepare(
+        "INSERT INTO headquarter
+            (company_name, company_logo, contact_number, headquarter_email, location,
+             business_license, business_license_image, business_license_expire_date,
+             expire_at, station_count, status, service_expires_at, included_stations_free_until)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, NULL)"
+    );
+    $headquarterInsert->execute([
+        (string) $request['sender_entity'],
+        (string) $request['headquarter_company_logo'],
+        (string) $request['headquarter_contact_number'],
+        (string) $request['headquarter_email'],
+        (string) $request['location'],
+        (string) $request['document_name'],
+        (string) $request['document_path'],
+        $licenseExpiryDate,
+        $licenseExpiryDate . ' 23:59:59',
+        $stationCount,
+        $serviceExpiry,
+    ]);
+    $headquarterId = (int) $pdo->lastInsertId();
+
+    $ownerUpdate = $pdo->prepare(
+        "UPDATE users SET headquarter_id = ?, business_role_id = ?, status = 'pending', updated_at = NOW()
+         WHERE user_id = ? AND (headquarter_id IS NULL OR headquarter_id = 0)"
+    );
+    $ownerUpdate->execute([$headquarterId, $hqRoleId, (int) $owner['user_id']]);
+    if ($ownerUpdate->rowCount() !== 1) {
+        throw new RuntimeException('Could not link the owner account to the pending HQ.');
+    }
+    $hqOwnerUpdate = $pdo->prepare('UPDATE headquarter SET headquarters_owner_id = ? WHERE headquarter_id = ?');
+    $hqOwnerUpdate->execute([(int) $owner['user_id'], $headquarterId]);
+
+    $scope = $pdo->prepare(
+        "INSERT INTO business_account_scope
+            (user_id, business_role_id, headquarter_id, branch_manager_user_id, station_id, status)
+         VALUES (?, ?, ?, NULL, NULL, 'pending')
+         ON DUPLICATE KEY UPDATE headquarter_id = VALUES(headquarter_id), status = 'pending'"
+    );
+    $scope->execute([(int) $owner['user_id'], $hqRoleId, $headquarterId]);
+
+    $monthStart = new DateTimeImmutable('first day of this month 00:00:00');
+    $slotInsert = $pdo->prepare(
+        'INSERT INTO company_loyalty_station_slots
+            (headquarter_id, year_month, slots_purchased, mmk_slots_purchased, points_spent)
+         VALUES (?, ?, 0, ?, 0)
+         ON DUPLICATE KEY UPDATE mmk_slots_purchased = mmk_slots_purchased + VALUES(mmk_slots_purchased)'
+    );
+    $entitlementInsert = $pdo->prepare(
+        'INSERT INTO hq_station_mmk_entitlements (payment_transfer_id, headquarter_id, year_month, slot_number)
+         VALUES (?, ?, ?, ?)'
+    );
+    for ($monthIndex = 0; $monthIndex < $months; $monthIndex++) {
+        $yearMonth = $monthStart->modify('+' . $monthIndex . ' months')->format('Y-m');
+        $slotInsert->execute([$headquarterId, $yearMonth, $extraStationCount]);
+        for ($slotNumber = 1; $slotNumber <= $extraStationCount; $slotNumber++) {
+            $entitlementInsert->execute([$transferId, $headquarterId, $yearMonth, $slotNumber]);
+        }
+    }
+
+    $paymentLink = $pdo->prepare('UPDATE payment_transfers SET payer_headquarter_id = ? WHERE payment_transfer_id = ?');
+    $paymentLink->execute([$headquarterId, $transferId]);
+    $requestUpdate = $pdo->prepare(
+        "UPDATE system_requests
+         SET headquarter_id = ?, status = 'approved', review_reason = 'Payment receipt confirmed; HQ pending activation.',
+             reviewed_at = NOW(), reviewed_by = ?, updated_at = NOW()
+         WHERE request_id = ? AND status = 'pending' AND headquarter_id IS NULL"
+    );
+    $requestUpdate->execute([$headquarterId, $reviewerId, $requestId]);
+    if ($requestUpdate->rowCount() !== 1) {
+        throw new RuntimeException('The registration request changed before the HQ could be linked.');
+    }
+
+    return $headquarterId;
 }

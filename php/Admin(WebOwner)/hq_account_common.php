@@ -81,7 +81,8 @@ function hq_redirect(string $location = 'view_hq_and_user_account.php'): never
 function hq_status_label(?string $status): string
 {
     return match (strtolower(trim((string) $status))) {
-        'active', 'approved' => 'Approved',
+        'active' => 'Active',
+        'approved' => 'Approved',
         'suspended' => 'Suspended',
         'removed' => 'Removed',
         'rejected' => 'Rejected',
@@ -213,7 +214,7 @@ function hq_registry_schema_ready(): bool
         'roles' => ['role_id', 'role_name'],
         'headquarter' => [
             'headquarter_id', 'company_name', 'company_logo', 'contact_number',
-            'headquarter_email', 'location', 'business_license', 'created_at', 'expire_at',
+            'headquarter_email', 'location', 'business_license', 'status', 'created_at', 'expire_at',
         ],
         'users' => [
             'user_id', 'user_name', 'email', 'hashed_password', 'headquarter_id',

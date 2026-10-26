@@ -55,6 +55,8 @@ const copyButton = document.getElementById('payment-copy');
 const paymentStatusError = document.getElementById('payment-status-error');
 const paymentSubmit = document.getElementById('payment-submit');
 const stationCountInput = document.getElementById('station-count');
+const registrationTermField = document.getElementById('registration-term-field');
+const registrationTermInput = document.getElementById('registration-term-months');
 const registrationTotal = document.getElementById('registration-total');
 const paymentSummaryAmount = document.getElementById('payment-summary-amount');
 const paymentReceiptInput = document.getElementById('payment-receipt');
@@ -198,16 +200,21 @@ const getRegistrationAmount = () => {
     const extraCount = Math.max(0, Number(stationCountInput.value) - Number(registrationTotal.dataset.included));
     const discounts = JSON.parse(registrationTotal.dataset.discounts || '[]');
     const discount = discounts.reduce((current, tier) => extraCount >= Number(tier.min) ? Number(tier.percent) : current, 0);
-    return Number(registrationTotal.dataset.monthly) * extraCount * (1 - discount / 100);
+    const months = Number(registrationTermInput?.value || 1);
+    const termDiscounts = JSON.parse(registrationTotal.dataset.termDiscounts || '[]');
+    const termDiscount = Number(termDiscounts.find((term) => Number(term.months) === months)?.percent || 0);
+    return Number(registrationTotal.dataset.monthly) * extraCount * months * (1 - discount / 100) * (1 - termDiscount / 100);
 };
 
 const updateRegistrationAmount = () => {
     if (!registrationTotal) return;
     const amount = getRegistrationAmount();
+    const extraCount = Math.max(0, Number(stationCountInput?.value || 0) - Number(registrationTotal.dataset.included));
     const formatted = `${new Intl.NumberFormat().format(amount)} <small>MMK</small>`;
     registrationTotal.innerHTML = formatted;
     if (paymentSummaryAmount) paymentSummaryAmount.innerHTML = formatted;
-    const isFree = false;
+    const isFree = amount <= 0;
+    if (registrationTermField) registrationTermField.hidden = extraCount === 0;
     if (paymentMethodField) paymentMethodField.hidden = isFree;
     if (paymentSteps) paymentSteps.hidden = isFree;
     if (banksBox) banksBox.hidden = isFree || methodInput?.value !== 'Bank transfer';
@@ -219,6 +226,8 @@ const updateRegistrationAmount = () => {
 
 stationCountInput?.addEventListener('change', updateRegistrationAmount);
 stationCountInput?.addEventListener('input', updateRegistrationAmount);
+registrationTermInput?.addEventListener('change', updateRegistrationAmount);
+registrationTermInput?.addEventListener('input', updateRegistrationAmount);
 updateRegistrationAmount();
 
 const submitRegistration = async (requiresPayment) => {
@@ -237,6 +246,7 @@ const submitRegistration = async (requiresPayment) => {
         formData.set('payment_method', requiresPayment ? methodInput?.value || '' : '');
         formData.set('bank_name', requiresPayment ? bankInput?.value || '' : '');
         formData.set('station_count', stationCountInput?.value || '');
+        formData.set('service_months', registrationTermInput?.value || '1');
         if (requiresPayment && paymentReceiptInput?.files?.[0]) {
             formData.set('payment_receipt', paymentReceiptInput.files[0]);
         }
