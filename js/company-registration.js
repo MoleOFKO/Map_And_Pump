@@ -18,6 +18,8 @@ const registrationForm = document.getElementById('company-registration-form');
 const formStatus = document.getElementById('registration-form-status');
 const paymentModal = document.getElementById('payment-modal');
 const paymentConfirm = document.getElementById('payment-confirm');
+const ownerEmailInput = document.getElementById('owner-email');
+const companyEmailInput = document.getElementById('company-email');
 
 /* Receiving accounts rendered by PHP: { "KPay": { label, number, phone? }, ... } */
 let accounts = {};
@@ -196,8 +198,7 @@ const getRegistrationAmount = () => {
     const extraCount = Math.max(0, Number(stationCountInput.value) - Number(registrationTotal.dataset.included));
     const discounts = JSON.parse(registrationTotal.dataset.discounts || '[]');
     const discount = discounts.reduce((current, tier) => extraCount >= Number(tier.min) ? Number(tier.percent) : current, 0);
-    const registrationFee = Number(registrationTotal.dataset.base);
-    return registrationFee + Number(registrationTotal.dataset.monthly) * extraCount * (1 - discount / 100);
+    return Number(registrationTotal.dataset.monthly) * extraCount * (1 - discount / 100);
 };
 
 const updateRegistrationAmount = () => {
@@ -213,7 +214,7 @@ const updateRegistrationAmount = () => {
     if (paymentConfirmButton) paymentConfirmButton.innerHTML = isFree
         ? 'Submit registration <i class="fa-solid fa-check ms-2"></i>'
         : 'Continue to payment <i class="fa-solid fa-arrow-right ms-2"></i>';
-    if (paymentNote) paymentNote.textContent = 'The registration fee is due for every HQ. The first three stations have no monthly maintenance fee; additional stations are billed monthly.';
+    if (paymentNote) paymentNote.textContent = 'The first three stations are included for life. Active station operation fees are billed separately in HQ points.';
 };
 
 stationCountInput?.addEventListener('change', updateRegistrationAmount);
@@ -368,10 +369,46 @@ const closePaymentModal = () => {
     previouslyFocusedElement?.focus();
 };
 
-registrationForm?.addEventListener('submit', (event) => {
+const setRegistrationStatus = (message, isError = false, showAccountLink = false) => {
+    if (!formStatus) return;
+    formStatus.classList.toggle('is-error', isError);
+    formStatus.classList.toggle('is-success', !isError);
+    formStatus.textContent = message;
+    if (showAccountLink) {
+        const link = document.createElement('a');
+        link.href = '/php/Login/register.php';
+        link.textContent = ' Create an account';
+        formStatus.append(link);
+    }
+};
+
+registrationForm?.addEventListener('submit', async (event) => {
     event.preventDefault();
     if (!registrationForm.checkValidity()) {
         registrationForm.classList.add('was-validated');
+        return;
+    }
+
+    setRegistrationStatus('');
+    const emailCheck = new FormData();
+    emailCheck.set('action', 'verify_registration_emails');
+    emailCheck.set('csrf_token', registrationForm.querySelector('[name="csrf_token"]')?.value || '');
+    emailCheck.set('owner_email', ownerEmailInput?.value.trim() || '');
+    emailCheck.set('company_email', companyEmailInput?.value.trim() || '');
+    try {
+        const response = await fetch(window.location.href, {
+            method: 'POST',
+            body: emailCheck,
+            headers: { Accept: 'application/json' },
+        });
+        const result = await response.json();
+        if (!response.ok || !result.success) {
+            setRegistrationStatus(result.message || 'Please check the owner and company emails.', true, result.code === 'owner_unregistered');
+            if (result.code === 'owner_unregistered') ownerEmailInput?.focus();
+            return;
+        }
+    } catch (error) {
+        setRegistrationStatus('Email verification is temporarily unavailable. Please try again.', true);
         return;
     }
 
