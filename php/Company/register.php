@@ -61,13 +61,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $paymentMethod = trim((string) ($_POST['payment_method'] ?? ''));
     $bankName = trim((string) ($_POST['bank_name'] ?? ''));
     $requestedStations = filter_var($_POST['station_count'] ?? null, FILTER_VALIDATE_INT);
-    // The registration fee is always due. Three included stations waive their
-    // monthly maintenance charges, not the one-time HQ registration fee.
     $noPaymentRequired = false;
     $csrfToken = (string) ($_POST['csrf_token'] ?? '');
 
     if (!hash_equals((string) $_SESSION['company_registration_csrf'], $csrfToken)) {
         $respond(false, 'Your session expired. Refresh the page and try again.', 403);
+    }
+
+    if (($_POST['action'] ?? '') === 'verify_registration_emails') {
+        require_once __DIR__ . '/../conn.php';
+        $ownerLookup = $pdo->prepare('SELECT user_id FROM users WHERE LOWER(TRIM(email)) = ? LIMIT 1');
+        $ownerLookup->execute([$ownerEmail]);
+        $ownerUserId = (int) ($ownerLookup->fetchColumn() ?: 0);
+        if ($ownerUserId <= 0) {
+            $respond(false, 'This owner email is not registered yet.', 409, ['code' => 'owner_unregistered']);
+        }
+        if ($ownerEmail === $companyEmail) {
+            $respond(false, 'Use a separate email for the HQ owner and the company.', 422);
+        }
+        $existingHq = $pdo->prepare('SELECT 1 FROM headquarter WHERE headquarters_owner_id = ? OR LOWER(TRIM(headquarter_email)) = ? LIMIT 1');
+        $existingHq->execute([$ownerUserId, $companyEmail]);
+        if ($existingHq->fetchColumn()) {
+            $respond(false, 'This owner account or company email is already linked to an HQ.', 409);
+        }
+        $pendingRequest = $pdo->prepare(
+            "SELECT 1 FROM system_requests
+             WHERE request_type = 'hq_registration' AND status = 'pending'
+               AND (LOWER(TRIM(headquarter_email)) IN (?, ?) OR LOWER(TRIM(headquarter_owner_email)) = ?)
+             LIMIT 1"
+        );
+        $pendingRequest->execute([$ownerEmail, $companyEmail, $ownerEmail]);
+        if ($pendingRequest->fetchColumn()) {
+            $respond(false, 'A pending registration already exists for this email address.', 409);
+        }
+        $respond(true, 'Owner account and company email are available.');
     }
 
     $allowedMethods = ['Bank transfer', 'KPay', 'Wave Pay', 'AYA Pay', 'CB Pay'];
@@ -92,6 +119,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($validationErrors) {
         $respond(false, 'Please check: ' . implode(', ', $validationErrors) . '.', 422);
     }
+    $noPaymentRequired = $requestedStations === BILLING_HQ_INCLUDED_STATION_SLOTS;
 
     if (strlen($companyName) > 255 || strlen($companyAddress) > 255 || strlen($licenseId) > 255
         || strlen($ownerEmail) > 255 || strlen($companyEmail) > 255 || strlen($ownerPhone) > 50 || strlen($companyPhone) > 50) {
@@ -198,14 +226,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 throw new RuntimeException('The payment screenshot must be a JPG, PNG, or WEBP image.');
             }
         }
-                $emailConflict = $pdo->prepare(
-                        'SELECT EXISTS(SELECT 1 FROM users WHERE LOWER(TRIM(email)) IN (?, ?))
-                                 OR EXISTS(SELECT 1 FROM headquarter WHERE LOWER(TRIM(headquarter_email)) IN (?, ?))'
-                );
-                $emailConflict->execute([$ownerEmail, $companyEmail, $ownerEmail, $companyEmail]);
-                if ((int) $emailConflict->fetchColumn() > 0) {
-                        $respond(false, 'The owner and company emails must be new. One is already registered to a user or HQ.', 409);
-                }
+        $ownerLookup = $pdo->prepare('SELECT user_id FROM users WHERE LOWER(TRIM(email)) = ? LIMIT 1');
+        $ownerLookup->execute([$ownerEmail]);
+        $ownerUserId = (int) ($ownerLookup->fetchColumn() ?: 0);
+        if ($ownerUserId <= 0) {
+            $respond(false, 'This owner email is not registered yet.', 409, ['code' => 'owner_unregistered']);
+        }
+        $emailConflict = $pdo->prepare(
+            'SELECT 1 FROM headquarter
+             WHERE headquarters_owner_id = ? OR LOWER(TRIM(headquarter_email)) = ?
+             LIMIT 1'
+        );
+        $emailConflict->execute([$ownerUserId, $companyEmail]);
+        if ($emailConflict->fetchColumn()) {
+            $respond(false, 'This owner account or company email is already linked to an HQ.', 409);
+        }
 
                 $duplicate = $pdo->prepare(
                         "SELECT request_id FROM system_requests
@@ -238,7 +273,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                  headquarter_company_logo, headquarter_contact_number, headquarter_expire_at)
              VALUES (?, 'hq_registration', 'pending', ?, 3, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
         );
-        $submitterId = (int) ($_SESSION['user_id'] ?? 0) ?: null;
+        $submitterId = $ownerUserId;
         $stmt->execute([
             $reference, $submitterId, $companyName, $companyName, $ownerEmail, $companyAddress, $details,
             $licenseId, $licensePath, $ownerEmail, $companyEmail, $logoPath, $companyPhone, $licenseExpiry . ' 23:59:59',
@@ -247,13 +282,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $accessToken = '';
         if (!$noPaymentRequired) {
             $accessToken = rtrim(strtr(base64_encode(random_bytes(32)), '+/', '-_'), '=');
-            $payerUserId = null;
-            $sessionUserId = (int) ($_SESSION['user_id'] ?? 0);
-            if ($sessionUserId > 0) {
-                $ownerMatch = $pdo->prepare('SELECT user_id FROM users WHERE user_id = ? AND LOWER(email) = ? LIMIT 1');
-                $ownerMatch->execute([$sessionUserId, $ownerEmail]);
-                $payerUserId = (int) ($ownerMatch->fetchColumn() ?: 0) ?: null;
-            }
+            $payerUserId = $ownerUserId;
             $extraStationCount = max(0, (int) $requestedStations - BILLING_HQ_INCLUDED_STATION_SLOTS);
             $volumeDiscount = 0;
             foreach (BILLING_HQ_VOLUME_DISCOUNTS as $tier) {
@@ -262,11 +291,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
             $extraStationAmount = round(BILLING_HQ_EXTRA_STATION_MMK_MONTHLY * $extraStationCount * (1 - $volumeDiscount / 100), 2);
-            $registrationAmount = BILLING_HQ_REGISTRATION_FEE_MMK + $extraStationAmount;
+            $registrationAmount = $extraStationAmount;
             $transferId = payment_transfer_create($pdo, [
                 'payment_type' => 'hq_registration',
                 'amount_mmk' => $registrationAmount,
-                'description' => sprintf('HQ registration fee; first %d stations have permanent monthly maintenance fee exemption; %d additional station(s) billed for the first month', BILLING_HQ_INCLUDED_STATION_SLOTS, $extraStationCount),
+                'description' => sprintf('HQ registration; first %d stations included for life; %d additional station(s) billed for the first month', BILLING_HQ_INCLUDED_STATION_SLOTS, $extraStationCount),
                 'quantity' => $extraStationCount,
                 'term_months' => 1,
                 'payer_user_id' => $payerUserId,
@@ -299,7 +328,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         $pdo->commit();
         if ($noPaymentRequired) {
-            $respond(true, 'Registration application and payment details submitted. An Admin must confirm receipt before approving the company.', 201, ['reference' => $reference]);
+            $respond(true, 'Registration application submitted. The first three stations are included for life; operation fees are billed separately in HQ points.', 201, ['reference' => $reference]);
         }
         payment_transfer_send_notices($pdo, $transferId, 'recipient', 'payer_reported_paid');
         $paymentUrl = payment_transfer_absolute_url('/php/payment_center.php?access=' . rawurlencode($accessToken));
@@ -414,7 +443,7 @@ require __DIR__ . '/../partials/nav.php';
         <!-- ============================ STEP 1 ============================ -->
         <div class="payment-step is-active" data-step="method">
             <h2 id="payment-modal-title">Complete your registration</h2>
-            <p class="payment-description">The registration fee is due for every HQ. The first <?= (int) BILLING_HQ_INCLUDED_STATION_SLOTS ?> stations have no monthly maintenance fee; additional stations are billed monthly.</p>
+            <p class="payment-description">Your first <?= (int) BILLING_HQ_INCLUDED_STATION_SLOTS ?> stations are included for life. Additional stations are billed monthly; station operation fees are separate.</p>
 
             <div class="payment-field">
                 <label class="payment-field-label" for="station-count">Stations requested</label>
@@ -426,8 +455,8 @@ require __DIR__ . '/../partials/nav.php';
             </div>
 
             <div class="payment-total">
-                <span>Registration + first-month station fees</span>
-                <strong id="registration-total" data-base="<?= (int) BILLING_HQ_REGISTRATION_FEE_MMK ?>" data-monthly="<?= (int) BILLING_HQ_EXTRA_STATION_MMK_MONTHLY ?>" data-included="<?= (int) BILLING_HQ_INCLUDED_STATION_SLOTS ?>" data-discounts="<?= htmlspecialchars(json_encode(BILLING_HQ_VOLUME_DISCOUNTS), ENT_QUOTES, 'UTF-8') ?>">0 <small>MMK</small></strong>
+                <span>Additional stations, first month</span>
+                <strong id="registration-total" data-base="0" data-monthly="<?= (int) BILLING_HQ_EXTRA_STATION_MMK_MONTHLY ?>" data-included="<?= (int) BILLING_HQ_INCLUDED_STATION_SLOTS ?>" data-discounts="<?= htmlspecialchars(json_encode(BILLING_HQ_VOLUME_DISCOUNTS), ENT_QUOTES, 'UTF-8') ?>">0 <small>MMK</small></strong>
             </div>
 
             <div class="payment-field" id="payment-method-field">
@@ -521,7 +550,7 @@ require __DIR__ . '/../partials/nav.php';
             <p class="payment-error" id="payment-error" aria-live="polite" hidden></p>
 
             <button type="button" class="btn btn-primary payment-confirm" id="payment-confirm">Continue to payment <i class="fa-solid fa-arrow-right ms-2"></i></button>
-            <p class="payment-note" id="payment-note">The registration fee is due for every HQ. The first three stations have no monthly maintenance fee; additional stations are billed monthly.</p>
+            <p class="payment-note" id="payment-note">The first three stations are included for life. Active station operation fees are billed separately in HQ points.</p>
         </div>
 
         <!-- ============================ STEP 2 ============================ -->
