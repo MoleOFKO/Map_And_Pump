@@ -326,7 +326,10 @@ function social_sign_in_user(PDO $pdo, string $provider, string $providerId, str
     }
 
     $status = strtolower((string) ($user['status'] ?? ''));
-    if ($status !== '' && !in_array($status, ['active', 'approved', 'enabled', 'ready'], true)) {
+    if (in_array($status, ['disabled', 'banned', 'suspended', 'removed'], true)) {
+        social_login_fail('This account is disabled or banned. Please contact support.');
+    }
+    if ($status !== '' && !in_array($status, ['active', 'approved', 'enabled', 'ready', 'pending'], true)) {
         social_login_fail('Your account is not active. Please contact support.');
     }
 

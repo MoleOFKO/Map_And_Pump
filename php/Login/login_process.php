@@ -95,10 +95,14 @@ try {
     }
 
     $status = strtolower((string) ($user['status'] ?? ''));
-    $allowedStatuses = ['active', 'approved', 'enabled', 'ready'];
+    $blockedStatuses = ['disabled', 'banned', 'suspended', 'removed'];
+    if (in_array($status, $blockedStatuses, true)) {
+        auth_redirect_to_login('This account is disabled or banned. Please contact support.', $email);
+    }
+    $allowedStatuses = ['active', 'approved', 'enabled', 'ready', 'pending'];
     $isHqAccount = (int) ($user['business_role_id'] ?? 0) === 3 || (int) ($user['role_id'] ?? 0) === 3;
     if ($isHqAccount) {
-        $allowedStatuses = array_merge($allowedStatuses, ['expired', 'pending']);
+        $allowedStatuses[] = 'expired';
     }
     $isExpiredCustomer = $status === 'license_expired' && strtolower(trim((string) ($user['role_name'] ?? ''))) === 'customer';
     if ($isExpiredCustomer) {
