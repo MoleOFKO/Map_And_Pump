@@ -284,7 +284,7 @@ try {
             }
             $entitlements = $conn->prepare(
                 'INSERT INTO hq_station_mmk_entitlements
-                    (payment_transfer_id, headquarter_id, year_month, slot_number)
+                    (payment_transfer_id, headquarter_id, `year_month`, slot_number)
                  VALUES (?, ?, ?, ?)'
             );
             if (!$entitlements) {

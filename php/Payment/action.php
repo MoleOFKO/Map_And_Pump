@@ -479,7 +479,7 @@ function payment_transfer_apply_hq_entitlements(PDO $pdo, array $transfer): void
         $slotInsert->execute([$hqId, $yearMonth, $quantity]);
 
         $entitlement = $pdo->prepare(
-            'INSERT INTO hq_station_mmk_entitlements (payment_transfer_id, headquarter_id, year_month, slot_number)
+            'INSERT INTO hq_station_mmk_entitlements (payment_transfer_id, headquarter_id, `year_month`, slot_number)
              VALUES (?, ?, ?, ?)'
         );
         for ($slotNumber = 1; $slotNumber <= $quantity; $slotNumber++) {
@@ -611,7 +611,7 @@ function payment_transfer_create_pending_registration_hq(PDO $pdo, array $transf
          ON DUPLICATE KEY UPDATE mmk_slots_purchased = mmk_slots_purchased + VALUES(mmk_slots_purchased)'
     );
     $entitlementInsert = $pdo->prepare(
-        'INSERT INTO hq_station_mmk_entitlements (payment_transfer_id, headquarter_id, year_month, slot_number)
+        'INSERT INTO hq_station_mmk_entitlements (payment_transfer_id, headquarter_id, `year_month`, slot_number)
          VALUES (?, ?, ?, ?)'
     );
     for ($monthIndex = 0; $monthIndex < $months; $monthIndex++) {
