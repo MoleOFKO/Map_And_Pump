@@ -473,7 +473,7 @@ function payment_transfer_apply_hq_entitlements(PDO $pdo, array $transfer): void
         $yearMonth = $month->modify('+' . $monthIndex . ' months')->format('Y-m');
         $slotInsert = $pdo->prepare(
             'INSERT INTO company_loyalty_station_slots
-                (headquarter_id, year_month, slots_purchased, mmk_slots_purchased, points_spent)
+                (headquarter_id, `year_month`, slots_purchased, mmk_slots_purchased, points_spent)
              VALUES (?, ?, 0, ?, 0)
              ON DUPLICATE KEY UPDATE mmk_slots_purchased = mmk_slots_purchased + VALUES(mmk_slots_purchased)'
         );

@@ -275,7 +275,7 @@ try {
             $monthStart = new DateTimeImmutable('first day of this month 00:00:00');
             $slots = $conn->prepare(
                 'INSERT INTO company_loyalty_station_slots
-                    (headquarter_id, year_month, slots_purchased, mmk_slots_purchased, points_spent)
+                    (headquarter_id, `year_month`, slots_purchased, mmk_slots_purchased, points_spent)
                  VALUES (?, ?, 0, ?, 0)
                  ON DUPLICATE KEY UPDATE mmk_slots_purchased = mmk_slots_purchased + VALUES(mmk_slots_purchased)'
             );
