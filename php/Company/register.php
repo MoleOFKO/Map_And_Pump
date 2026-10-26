@@ -61,7 +61,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $paymentMethod = trim((string) ($_POST['payment_method'] ?? ''));
     $bankName = trim((string) ($_POST['bank_name'] ?? ''));
     $requestedStations = filter_var($_POST['station_count'] ?? null, FILTER_VALIDATE_INT);
-    $noPaymentRequired = false;
+    $serviceMonths = filter_var($_POST['service_months'] ?? 1, FILTER_VALIDATE_INT);
+    $noPaymentRequired = $requestedStations === BILLING_HQ_INCLUDED_STATION_SLOTS;
     $csrfToken = (string) ($_POST['csrf_token'] ?? '');
 
     if (!hash_equals((string) $_SESSION['company_registration_csrf'], $csrfToken)) {
@@ -116,6 +117,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!$noPaymentRequired && !in_array($paymentMethod, $allowedMethods, true)) $validationErrors[] = 'payment method';
     if ($paymentMethod === 'Bank transfer' && !in_array($bankName, $allowedBanks, true)) $validationErrors[] = 'bank';
     if ($requestedStations === false || $requestedStations < BILLING_HQ_INCLUDED_STATION_SLOTS || $requestedStations > 60) $validationErrors[] = 'station count (3 to 60)';
+    if ($serviceMonths === false || $serviceMonths < 1 || $serviceMonths > 24) $validationErrors[] = 'service period (1 to 24 months)';
     if ($validationErrors) {
         $respond(false, 'Please check: ' . implode(', ', $validationErrors) . '.', 422);
     }
@@ -263,6 +265,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'payment_method' => $paymentMethod,
             'bank_name' => $bankName,
             'requested_station_count' => $requestedStations,
+            'requested_service_months' => $serviceMonths,
         ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
         $reference = 'HQ-REG-' . date('YmdHis') . '-' . strtoupper(bin2hex(random_bytes(3)));
         $pdo->beginTransaction();
@@ -290,14 +293,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $volumeDiscount = (int) $tier['percent'];
                 }
             }
-            $extraStationAmount = round(BILLING_HQ_EXTRA_STATION_MMK_MONTHLY * $extraStationCount * (1 - $volumeDiscount / 100), 2);
+            $termDiscount = 0;
+            foreach (BILLING_HQ_TERM_DISCOUNTS as $term) {
+                if ((int) $term['months'] === $serviceMonths) {
+                    $termDiscount = (int) $term['percent'];
+                    break;
+                }
+            }
+            $extraStationAmount = round(
+                BILLING_HQ_EXTRA_STATION_MMK_MONTHLY * $extraStationCount * $serviceMonths
+                * (1 - $volumeDiscount / 100) * (1 - $termDiscount / 100),
+                2
+            );
             $registrationAmount = $extraStationAmount;
             $transferId = payment_transfer_create($pdo, [
                 'payment_type' => 'hq_registration',
                 'amount_mmk' => $registrationAmount,
-                'description' => sprintf('HQ registration; first %d stations included for life; %d additional station(s) billed for the first month', BILLING_HQ_INCLUDED_STATION_SLOTS, $extraStationCount),
+                'description' => sprintf('HQ registration; first %d stations included for life; %d additional station(s) for %d month(s)', BILLING_HQ_INCLUDED_STATION_SLOTS, $extraStationCount, $serviceMonths),
                 'quantity' => $extraStationCount,
-                'term_months' => 1,
+                'term_months' => $serviceMonths,
                 'payer_user_id' => $payerUserId,
                 'payer_email' => $ownerEmail,
                 'recipient_role' => BILLING_PLATFORM_RECEIVER_ROLE,
@@ -454,9 +468,18 @@ require __DIR__ . '/../partials/nav.php';
                 </select>
             </div>
 
+            <div class="payment-field" id="registration-term-field" hidden>
+                <label class="payment-field-label" for="registration-term-months">Additional station service period</label>
+                <select class="form-select" id="registration-term-months" name="service_months" form="company-registration-form" required>
+                    <?php for ($serviceMonthOption = 1; $serviceMonthOption <= 24; $serviceMonthOption++): ?>
+                        <option value="<?= $serviceMonthOption ?>"><?= $serviceMonthOption ?> month<?= $serviceMonthOption === 1 ? '' : 's' ?></option>
+                    <?php endfor; ?>
+                </select>
+            </div>
+
             <div class="payment-total">
-                <span>Additional stations, first month</span>
-                <strong id="registration-total" data-base="0" data-monthly="<?= (int) BILLING_HQ_EXTRA_STATION_MMK_MONTHLY ?>" data-included="<?= (int) BILLING_HQ_INCLUDED_STATION_SLOTS ?>" data-discounts="<?= htmlspecialchars(json_encode(BILLING_HQ_VOLUME_DISCOUNTS), ENT_QUOTES, 'UTF-8') ?>">0 <small>MMK</small></strong>
+                <span>Additional stations, selected term</span>
+                <strong id="registration-total" data-base="0" data-monthly="<?= (int) BILLING_HQ_EXTRA_STATION_MMK_MONTHLY ?>" data-included="<?= (int) BILLING_HQ_INCLUDED_STATION_SLOTS ?>" data-discounts="<?= htmlspecialchars(json_encode(BILLING_HQ_VOLUME_DISCOUNTS), ENT_QUOTES, 'UTF-8') ?>" data-term-discounts="<?= htmlspecialchars(json_encode(BILLING_HQ_TERM_DISCOUNTS), ENT_QUOTES, 'UTF-8') ?>">0 <small>MMK</small></strong>
             </div>
 
             <div class="payment-field" id="payment-method-field">

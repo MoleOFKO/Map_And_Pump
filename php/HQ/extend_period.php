@@ -191,7 +191,7 @@ $pendingExtension = $pendingStmt->fetch(PDO::FETCH_ASSOC) ?: null;
             <h1 class="extend-title">Extend service period</h1>
             <p class="extend-subtitle">Choose how many months to add, transfer the displayed amount, and submit a screenshot for review.</p>
         </div>
-        <div class="extend-expiry"><span>Current service expiry</span><strong><?= htmlspecialchars((string) ($hq['service_expires_at'] ?: 'Not set'), ENT_QUOTES, 'UTF-8') ?></strong></div>
+        <div class="extend-expiry"><span>Current service expiry</span><strong><?= htmlspecialchars((string) ($hq['service_expires_at'] ?: 'No expiry for included stations'), ENT_QUOTES, 'UTF-8') ?></strong></div>
     </header>
 
     <?php if ($message !== ''): ?><div class="alert alert-success extend-status" role="status"><?= htmlspecialchars($message, ENT_QUOTES, 'UTF-8') ?></div><?php endif; ?>

@@ -103,6 +103,11 @@ function mail_action_labels(string $action): array
             'status' => 'removed',
             'effect' => 'Sign-in to this account is disabled while its status is removed.',
         ],
+        'activate', 'activated' => [
+            'title' => 'HQ activated',
+            'status' => 'active',
+            'effect' => 'Your HQ profile is active. Sign in and switch to your HQ profile to use its management tools.',
+        ],
         'reject', 'rejected' => [
             'title' => 'Rejected',
             'status' => 'rejected',

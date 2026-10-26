@@ -61,7 +61,7 @@ try {
 
     $stmt = $pdo->prepare(
         "SELECT u.user_id, u.user_name, u.email, u.role_id, u.business_role_id, u.headquarter_id, u.status,
-            h.expire_at, h.business_license_expire_date, h.service_expires_at,
+            h.expire_at, h.business_license_expire_date, h.service_expires_at, h.status AS headquarter_status,
                 {$currentRoleSelect}
                 r.role_name, br.role_name AS business_role_name
          FROM users u
@@ -86,6 +86,8 @@ if (!$user) {
 [$activeRoleId, $activeRoleName] = map_pump_session_role($user);
 $activeRoleKey = strtolower(trim($activeRoleName));
 $userStatus = strtolower(trim((string) ($user['status'] ?? '')));
+$hqActivationPending = strtolower(trim((string) ($user['headquarter_status'] ?? ''))) === 'pending';
+$_SESSION['hq_activation_pending'] = $hqActivationPending;
 $licenseExpiry = trim((string) ($user['business_license_expire_date'] ?? ''));
 if ($licenseExpiry === '') {
     $licenseExpiry = trim((string) ($user['expire_at'] ?? ''));
@@ -103,7 +105,7 @@ if ($expiryTimestamp !== false && date('Y-m-d', $expiryTimestamp) < date('Y-m-d'
 }
 
 $_SESSION['user_status'] = $userStatus;
-$hqAccessRestricted = in_array($userStatus, ['expired', 'pending'], true);
+$hqAccessRestricted = in_array($userStatus, ['expired', 'pending'], true) || $hqActivationPending;
 
 $hqLicenseExpired = false;
 $hqHeadquarterId = (int) ($user['headquarter_id'] ?? 0);
@@ -133,6 +135,10 @@ if ($hqHeadquarterId > 0 && ($activeRoleId === 3 || strtolower(trim($activeRoleN
 
 if (($user['status'] ?? '') === 'pending_deletion' && basename((string) ($_SERVER['PHP_SELF'] ?? '')) !== 'profile.php') {
     hq_guard_redirect_top('/php/HQ/profile.php');
+}
+$hqPage = basename((string) ($_SERVER['PHP_SELF'] ?? ''));
+if ($hqActivationPending && !in_array($hqPage, ['index.php', 'profile.php'], true)) {
+    hq_guard_redirect_top('/php/HQ/index.php', 'Your HQ is pending Admin or Moderator activation.');
 }
 if ($hqLicenseExpired && !in_array(basename((string) ($_SERVER['PHP_SELF'] ?? '')), ['profile.php', 'extend_period.php'], true)) {
     hq_guard_redirect_top('/php/HQ/profile.php', 'Your HQ service period or business license has expired. Access is limited until it is renewed.');

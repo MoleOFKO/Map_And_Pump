@@ -94,7 +94,8 @@ function moderator_hq_rows(string $search, string $region, string $status, strin
 
     // Do not hide historic HQ records solely because their owner was not linked.
     // Keep unlinked HQ records visible and classify them as pending below.
-    $where = ['(owner.user_id IS NULL OR ' . hq_manageable_status_sql("COALESCE(owner.status, 'pending')") . ')'];
+    $hqStateSql = "COALESCE(NULLIF(h.status, ''), COALESCE(owner.status, 'pending'))";
+    $where = ['(owner.user_id IS NULL OR ' . hq_manageable_status_sql($hqStateSql) . ')'];
     $params = [];
     $types = '';
     if ($search !== '') {
@@ -111,11 +112,11 @@ function moderator_hq_rows(string $search, string $region, string $status, strin
     }
     if ($status !== '') {
         if (in_array($status, ['approved', 'active'], true)) {
-            $where[] = "LOWER(COALESCE(owner.status, 'pending')) IN ('approved', 'active')";
+            $where[] = "LOWER($hqStateSql) IN ('approved', 'active')";
         } elseif (in_array($status, ['pending', 'pending_verification'], true)) {
-            $where[] = "LOWER(COALESCE(owner.status, 'pending')) IN ('pending', 'pending_verification')";
+            $where[] = "LOWER($hqStateSql) IN ('pending', 'pending_verification')";
         } else {
-            $where[] = "LOWER(COALESCE(owner.status, 'pending')) = ?";
+            $where[] = "LOWER($hqStateSql) = ?";
             $params[] = $status;
             $types .= 's';
         }
@@ -137,7 +138,7 @@ function moderator_hq_rows(string $search, string $region, string $status, strin
     $sql = "SELECT h.headquarter_id, h.company_name, h.company_logo, h.location, h.headquarter_email,
        h.contact_number, h.business_license, h.created_at, h.expire_at,
        owner.user_name AS owner_name, owner.email AS owner_email,
-       COALESCE(owner.status, 'pending') AS account_status,
+    {$hqStateSql} AS account_status,
        COALESCE(user_counts.user_count, 0) AS user_count,
        COALESCE(station_counts.station_count, 0) AS station_count
    FROM headquarter h

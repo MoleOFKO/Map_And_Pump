@@ -196,8 +196,10 @@ echo $brand_title; ?></span>
                     <?php if (!$hqAccessRestricted): ?>
                     <li class="active"><button type="button" onclick="routeTo('dashboard.php')"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3h7v7H3z M14 3h7v7h-7z M3 14h7v7H3z M14 14h7v7h-7z"/></svg>Overview</button></li>
                     <?php endif; ?>
+                    <?php if (empty($_SESSION['hq_activation_pending'])): ?>
                     <li class="<?= $hqAccessRestricted ? 'active' : '' ?>"><button type="button" onclick="routeTo('brand.php')"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l9 5v8l-9 5-9-5V8z M3 8l9 5 9-5 M12 13v8"/></svg>Brand Setting</button></li>
                     <li><button type="button" onclick="routeTo('extend_period.php')"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2 M16 2l3 3 M8 2 5 5"/></svg>Extend Service Period</button></li>
+                    <?php endif; ?>
                     <?php if (!$hqAccessRestricted): ?>
                     <li><button type="button" onclick="routeTo('pricing.php')"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18 M17 7H9a3 3 0 000 6h6a3 3 0 010 6H6"/></svg>Oil Types & Pricing</button></li>
                     <li><button type="button" onclick="routeTo('station.php')"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 21V4h10v17 M3 21h12 M6 7h6v5H6z M14 10h3l3 3v5a2 2 0 01-4 0v-4"/></svg>Manage Stations</button></li>
@@ -215,6 +217,7 @@ echo $brand_title; ?></span>
 
         <!-- Main Dynamic Viewport -->
         <main class="main-viewport">
+            <?php if (!empty($_SESSION['hq_activation_pending'])): ?><div role="status" style="margin:1rem 1.25rem;padding:1rem 1.25rem;border:1px solid rgba(255,193,7,.38);border-radius:10px;background:rgba(255,193,7,.08);color:#fef3c7;">Your HQ is pending Admin or Moderator approval. Management tools will be available after activation.</div><?php endif; ?>
             <div class="top-nav-bar"><div class="hq-breadcrumb">Headquarters / <span id="currentPageLabel">Overview</span></div>
                 <div style="display: flex; align-items: center; gap: 12px; position: relative;">
                     <button type="button" class="user-menu-button hq-theme-toggle" data-hq-theme-toggle aria-label="Switch to light mode" aria-pressed="false">

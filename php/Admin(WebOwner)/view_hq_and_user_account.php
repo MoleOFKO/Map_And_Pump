@@ -23,7 +23,7 @@ $allowedStatuses = admin_filter_user_statuses(
      )"
 );
 // Keep actionable statuses available even if not yet present in rows.
-foreach (['approved', 'pending', 'rejected', 'suspended', 'removed'] as $fallbackStatus) {
+foreach (['active', 'approved', 'pending', 'rejected', 'suspended', 'removed'] as $fallbackStatus) {
     if (!in_array($fallbackStatus, $allowedStatuses, true)) {
         $allowedStatuses[] = $fallbackStatus;
     }
@@ -44,7 +44,8 @@ if (hq_db_available() && hq_registry_schema_ready()) {
    $hqRoleId = hq_hq_role_id();
    if ($hqRoleId > 0) {
        // Keep unlinked HQ records visible and classify them as pending below.
-       $where = ['(owner.user_id IS NULL OR ' . hq_manageable_status_sql("COALESCE(owner.status, 'pending')") . ')'];
+       $hqStateSql = "COALESCE(NULLIF(h.status, ''), COALESCE(owner.status, 'pending'))";
+       $where = ['(owner.user_id IS NULL OR ' . hq_manageable_status_sql($hqStateSql) . ')'];
        $params = [];
        $types = '';
 
@@ -63,11 +64,11 @@ if (hq_db_available() && hq_registry_schema_ready()) {
 
        if ($status !== '') {
            if (in_array($status, ['approved', 'active'], true)) {
-               $where[] = "LOWER(COALESCE(owner.status, 'pending')) IN ('approved', 'active')";
+               $where[] = "LOWER($hqStateSql) IN ('approved', 'active')";
            } elseif (in_array($status, ['pending', 'pending_verification'], true)) {
-               $where[] = "LOWER(COALESCE(owner.status, 'pending')) IN ('pending', 'pending_verification')";
+               $where[] = "LOWER($hqStateSql) IN ('pending', 'pending_verification')";
            } else {
-               $where[] = "LOWER(COALESCE(owner.status, 'pending')) = ?";
+               $where[] = "LOWER($hqStateSql) = ?";
                $params[] = $status;
                $types .= 's';
            }
@@ -90,7 +91,7 @@ if (hq_db_available() && hq_registry_schema_ready()) {
             h.expire_at,
             owner.user_name AS owner_name,
             owner.email AS owner_email,
-            COALESCE(owner.status, 'pending') AS account_status,
+            {$hqStateSql} AS account_status,
             COALESCE(user_counts.user_count, 0) AS user_count,
             COALESCE(station_counts.station_count, 0) AS station_count
         FROM headquarter h
@@ -321,7 +322,7 @@ $flashContext = $flash['context'] ?? [];
                                         <td class="text-end">
                                             <div class="d-flex gap-2 justify-content-end">
                                                 <a href="#" class="btn-action js-view-hq" title="View Stations &amp; Users" aria-label="View <?= hq_escape($companyName) ?> details" data-hq-id="<?= (int) $row['headquarter_id'] ?>"><i class="bi bi-eye-fill"></i></a>
-                                                <a href="#" class="btn-action btn-action-danger js-account-action" title="Suspend / Remove / Restore" aria-label="Change status for <?= hq_escape($companyName) ?>" data-hq-id="<?= (int) $row['headquarter_id'] ?>" data-hq-name="<?= hq_escape($companyName) ?>" data-hq-status="<?= hq_escape($rowStatus) ?>"><i class="bi bi-gear-fill"></i></a>
+                                                <a href="#" class="btn-action btn-action-danger js-account-action" title="Activate / Suspend / Remove HQ" aria-label="Change status for <?= hq_escape($companyName) ?>" data-hq-id="<?= (int) $row['headquarter_id'] ?>" data-hq-name="<?= hq_escape($companyName) ?>" data-hq-status="<?= hq_escape($rowStatus) ?>"><i class="bi bi-gear-fill"></i></a>
                                             </div>
                                         </td>
                                     </tr>
@@ -337,12 +338,12 @@ $flashContext = $flash['context'] ?? [];
     <div class="modal fade glass-modal" id="accountActionModal" tabindex="-1" aria-labelledby="accountActionModalLabel" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
             <div class="modal-content">
-                <div class="modal-header"><h5 class="modal-title fw-bold" id="accountActionModalLabel"><i class="bi bi-shield-exclamation text-danger me-2"></i> Suspend or Remove HQ</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button></div>
+                <div class="modal-header"><h5 class="modal-title fw-bold" id="accountActionModalLabel"><i class="bi bi-shield-exclamation text-danger me-2"></i> HQ Account Review</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button></div>
                 <form action="hq_account_action.php" method="POST">
                     <div class="modal-body d-flex flex-column gap-3">
                         <input type="hidden" name="headquarter_id" id="actionHQId"><input type="hidden" name="return_to" value="view_hq_and_user_account.php">
                         <div class="small text-white-50">Target HQ: <span class="txt-neon-cyan fw-semibold" id="actionHQName">—</span></div>
-                        <div><label class="form-label text-white-50 small" for="actionType">Account action</label><select class="form-select glass-select account-action-select" name="action_type" id="actionType" required><option value="suspend">Suspend account</option><option value="remove">Remove account</option><option value="restore">Restore (approve again)</option></select></div>
+                        <div><label class="form-label text-white-50 small" for="actionType">Account action</label><select class="form-select glass-select account-action-select" name="action_type" id="actionType" required><option value="activate">Activate pending HQ</option><option value="suspend">Suspend account</option><option value="remove">Remove account</option><option value="restore">Restore (approve again)</option></select></div>
                         <div><label class="form-label text-white-50 small" for="actionReason">Reason to record and notify</label><textarea class="form-control glass-input" name="reason" id="actionReason" rows="5" maxlength="2000" placeholder="Explain why this HQ account is being suspended, removed, or restored..." required style="resize:none;"></textarea></div>
                         <div class="small text-white-50"><i class="bi bi-envelope me-1 txt-neon-cyan"></i>The reason is saved to the HQ action history. An email notice is sent after the account action succeeds, using the configured mail provider.</div>
                     </div>
@@ -384,16 +385,16 @@ $flashContext = $flash['context'] ?? [];
             const escapeHtml = (value) => String(value ?? '').replace(/[&<>'"]/g, (character) => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#039;','"':'&quot;'}[character]));
             const formatDate = (value) => value ? new Date(String(value).replace(' ', 'T')).toLocaleString() : 'Not available';
             const statusClass = (status) => ({active:'hq-status-active', approved:'hq-status-active', suspended:'hq-status-suspended', removed:'hq-status-removed'}[String(status || '').toLowerCase()] || 'hq-status-pending');
-            const statusLabel = (status) => ({active:'Approved', approved:'Approved', suspended:'Suspended', removed:'Removed', pending:'Pending Verification', pending_verification:'Pending Verification'}[String(status || '').toLowerCase()] || (status ? String(status) : 'Unknown'));
+            const statusLabel = (status) => ({active:'Active', approved:'Approved', suspended:'Suspended', removed:'Removed', pending:'Pending Verification', pending_verification:'Pending Verification'}[String(status || '').toLowerCase()] || (status ? String(status) : 'Unknown'));
             const stationStatusLabel = (status) => ({active:'Active', approved:'Active', decommissioned:'Decommissioned', suspended:'Suspended', removed:'Removed', offline:'Offline'}[String(status || '').toLowerCase()] || (status ? String(status) : 'Unknown'));
 
-            actionType.addEventListener('change', () => {
+            const updateActionButton = () => {
                 const kind = actionType.value;
-                actionSubmit.textContent = kind === 'remove' ? 'Confirm Remove' : (kind === 'restore' ? 'Confirm Restore' : 'Confirm Suspend');
-                actionSubmit.classList.toggle('btn-danger', kind !== 'restore');
-                actionSubmit.classList.toggle('btn-neon', kind === 'restore');
-                actionSubmit.classList.toggle('btn-danger', true);
-            });
+                actionSubmit.textContent = ({activate:'Confirm Activation', remove:'Confirm Remove', restore:'Confirm Restore', suspend:'Confirm Suspend'})[kind];
+                actionSubmit.classList.toggle('btn-danger', !['activate', 'restore'].includes(kind));
+                actionSubmit.classList.toggle('btn-neon', ['activate', 'restore'].includes(kind));
+            };
+            actionType.addEventListener('change', updateActionButton);
 
             document.addEventListener('click', (event) => {
                 const button = event.target.closest('.js-account-action');
@@ -401,8 +402,8 @@ $flashContext = $flash['context'] ?? [];
                 event.preventDefault();
                 actionId.value = button.dataset.hqId || '';
                 actionName.textContent = button.dataset.hqName || 'Selected HQ';
-                actionType.value = 'suspend';
-                actionSubmit.textContent = 'Confirm Suspend';
+                actionType.value = button.dataset.hqStatus === 'pending' ? 'activate' : 'suspend';
+                updateActionButton();
                 document.getElementById('actionReason').value = '';
                 actionModal.show();
             });
