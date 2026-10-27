@@ -254,7 +254,8 @@ function payment_transfer_absolute_url(string $path): string
     $base = trim((string) (getenv('APP_BASE_URL') ?: ''));
     if ($base === '' && !empty($_SERVER['HTTP_HOST'])) {
         $host = preg_replace('/[^a-zA-Z0-9.:-]/', '', (string) $_SERVER['HTTP_HOST']);
-        $isLocal = in_array(strtolower($host), ['localhost', '127.0.0.1'], true);
+        $hostName = strtolower((string) preg_replace('/:\d+$/', '', $host));
+        $isLocal = in_array($hostName, ['localhost', '127.0.0.1'], true);
         $forwardedHttps = strtolower(trim(explode(',', (string) ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? ''))[0])) === 'https';
         $scheme = $isLocal && empty($_SERVER['HTTPS']) && !$forwardedHttps ? 'http' : 'https';
         $base = $scheme . '://' . $host;

@@ -13,7 +13,7 @@ require_once __DIR__ . '/../conn.php';   // provides $pdo and $conn
 
 // -------- Auth guard --------
 // Redirects to login if the current visitor is not signed in as a branch manager.
-function require_branch_manager(): void {
+function require_branch_manager(bool $allowUnassigned = false): void {
     $roleName = strtolower(trim((string) ($_SESSION['role_name'] ?? $_SESSION['role'] ?? '')));
     $roleName = str_replace([' ', '_'], '', $roleName);
     $roleId = (int) ($_SESSION['role_id'] ?? $_SESSION['current_role_id'] ?? 0);
@@ -25,6 +25,23 @@ function require_branch_manager(): void {
     ) {
         header('Location: login.php');
         exit;
+    }
+
+    if (!$allowUnassigned) {
+        global $pdo;
+        $assignment = $pdo->prepare(
+            'SELECT 1
+             FROM station_business_scope sbs
+             INNER JOIN branches b ON b.branch_id = sbs.station_id
+             WHERE sbs.branch_manager_user_id = ? AND b.manager_user_id = ?
+             LIMIT 1'
+        );
+        $userId = (int) $_SESSION['user_id'];
+        $assignment->execute([$userId, $userId]);
+        if (!$assignment->fetchColumn()) {
+            header('Location: /php/BranchManager/unassigned.php');
+            exit;
+        }
     }
 }
 

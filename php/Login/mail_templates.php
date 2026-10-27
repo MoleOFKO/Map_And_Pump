@@ -151,6 +151,32 @@ function mail_build_account_notice(array $context): array
     $labels = mail_action_labels($action);
     $footer = mail_legal_footer();
 
+    if ($kind === 'account_password_setup') {
+        $accountLabel = trim((string) ($context['account_label'] ?? 'account'));
+        $accountLabel = preg_replace('/[\r\n\t]+/', ' ', $accountLabel) ?: 'account';
+        $accountLabel = mb_substr($accountLabel, 0, 50);
+        $accountName = trim((string) ($context['account_name'] ?? ''));
+        $setupUrl = trim((string) ($context['setup_url'] ?? ''));
+        $referenceCode = trim((string) ($context['reference_code'] ?? ''));
+        $subject = 'Set up your Map & Pump ' . $accountLabel . ' password';
+        $text = "Your {$accountLabel} account" . ($accountName !== '' ? " for {$accountName}" : '') . " is ready.\n\n"
+            . "Set a password for this login by opening the one-time link within 48 hours:\n"
+            . $setupUrl . "\n\nThe link can only be used once. Your password is never sent by email.\n"
+            . ($referenceCode !== '' ? "Reference code: {$referenceCode}\n" : '')
+            . "\nIf you did not expect this message, contact Map & Pump support.\n\n"
+            . $footer['text'];
+        $html = '<div style="font-family:Arial,Helvetica,sans-serif;line-height:1.55;color:#111827;max-width:560px">'
+            . '<p style="margin:0 0 12px;font-size:14px;color:#374151">Map &amp; Pump account setup</p>'
+            . '<h2 style="margin:0 0 16px;font-size:20px;color:#111827">Set up your ' . mail_h($accountLabel) . ' account</h2>'
+            . '<p>Your ' . mail_h($accountLabel) . ' account' . ($accountName !== '' ? ' for <strong>' . mail_h($accountName) . '</strong>' : '') . ' is ready. Set a password for this login.</p>'
+            . '<p><a href="' . mail_h($setupUrl) . '" style="display:inline-block;padding:10px 16px;background:#0b6bcb;color:#fff;text-decoration:none;border-radius:6px">Set password</a></p>'
+            . '<p>This one-time link expires in 48 hours. Your password is never sent by email.</p>'
+            . ($referenceCode !== '' ? '<p><strong>Reference code:</strong> ' . mail_h($referenceCode) . '</p>' : '')
+            . '<p>If you did not expect this message, contact Map &amp; Pump support.</p>'
+            . $footer['html'] . '</div>';
+        return ['subject' => $subject, 'html' => $html, 'text' => $text];
+    }
+
     if ($kind === 'payment') {
         $paymentStatus = match ($action) {
             'pending', 'pending_payment' => 'Payment request created; awaiting payment',
