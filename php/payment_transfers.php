@@ -288,6 +288,23 @@ function payment_transfer_admin_recipients(PDO $pdo): array
     return $stmt->fetchAll(PDO::FETCH_ASSOC);
 }
 
+/** Return active Admin and Moderator accounts for extension-payment review notices. */
+function payment_transfer_review_recipients(PDO $pdo): array
+{
+    $stmt = $pdo->query(
+        "SELECT DISTINCT u.user_id, u.email
+         FROM users u
+         WHERE LOWER(COALESCE(u.status, 'active')) IN ('active', 'approved')
+           AND (
+             EXISTS (SELECT 1 FROM roles r WHERE r.role_id = u.role_id AND LOWER(TRIM(r.role_name)) IN ('admin', 'moderator'))
+             OR EXISTS (SELECT 1 FROM roles r WHERE r.role_id = u.business_role_id AND LOWER(TRIM(r.role_name)) IN ('admin', 'moderator'))
+             OR EXISTS (SELECT 1 FROM roles r WHERE r.role_id = u.current_role_id AND LOWER(TRIM(r.role_name)) IN ('admin', 'moderator'))
+           )
+         ORDER BY u.user_id"
+    );
+    return $stmt->fetchAll(PDO::FETCH_ASSOC);
+}
+
 /** Return the owning HQ account contact for customer fuel payment notices. */
 function payment_transfer_hq_recipient(PDO $pdo, int $headquarterId): ?array
 {
@@ -479,7 +496,9 @@ function payment_transfer_send_notices(PDO $pdo, int $transferId, string $recipi
         if ($recipientSide === 'recipient') {
             $recipients = $transfer['recipient_role'] === 'station_hq'
                 ? array_filter([payment_transfer_hq_recipient($pdo, (int) $transfer['recipient_headquarter_id'])])
-                : payment_transfer_admin_recipients($pdo);
+                : (($transfer['payment_type'] === 'hq_period_extension' && $action === 'payer_reported_paid')
+                    ? payment_transfer_review_recipients($pdo)
+                    : payment_transfer_admin_recipients($pdo));
         } else {
             $recipients = [[
                 'user_id' => $transfer['payer_user_id'] ?? null,

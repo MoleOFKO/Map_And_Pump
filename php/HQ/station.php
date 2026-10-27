@@ -699,7 +699,7 @@ $hqPointBalance = company_loyalty_get_balance($pdo, $hqId);
                     </div>
                     <?php if ($baseStationLimit !== null): ?>
                     <button type="button" class="btn btn-outline-success" onclick="window.top.routeTo('extend_period.php')">
-                        <i class="fa-solid fa-money-bill-transfer me-1" aria-hidden="true"></i>Pay by MMK
+                        <i class="fa-solid fa-money-bill-transfer me-1" aria-hidden="true"></i>Extend Service
                     </button>
                     <?php endif; ?>
                     <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#inviteManagerModal">+Add Manager</button>

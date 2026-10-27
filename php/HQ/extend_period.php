@@ -52,7 +52,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
         $action = (string) ($_POST['action'] ?? 'submit_payment');
         $usePoints = $action === 'use_points';
-        if (!$usePoints && $action !== 'submit_payment') {
+        $cancelUnreportedPayment = $action === 'cancel_unreported_payment';
+        if (!$usePoints && !$cancelUnreportedPayment && $action !== 'submit_payment') {
             throw new RuntimeException('Choose a valid extension payment method.');
         }
         if (!hash_equals((string) $_SESSION['hq_extension_csrf'], (string) ($_POST['csrf_token'] ?? ''))) {
@@ -60,6 +61,56 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         if (!payment_transfer_schema_ready($pdo) || !payment_transfer_ensure_hq_service_expiry_schema($pdo)) {
             throw new RuntimeException('Payment and service-period storage is unavailable. Please try again later.');
+        }
+
+        if ($cancelUnreportedPayment) {
+            $pdo->beginTransaction();
+            $cancelStmt = $pdo->prepare(
+                "SELECT payment_transfer_id
+                 FROM payment_transfers
+                 WHERE payer_headquarter_id = ? AND payment_type = 'hq_period_extension'
+                   AND status = 'pending_payment'
+                 ORDER BY payment_transfer_id DESC
+                 LIMIT 1 FOR UPDATE"
+            );
+            $cancelStmt->execute([$hqId]);
+            $transferId = $cancelStmt->fetchColumn();
+            if ($transferId === false) {
+                throw new RuntimeException('This payment has already been reported or is no longer available to cancel.');
+            }
+            $cancelUpdate = $pdo->prepare(
+                "UPDATE payment_transfers SET status = 'cancelled'
+                 WHERE payment_transfer_id = ? AND payer_headquarter_id = ?
+                   AND payment_type = 'hq_period_extension' AND status = 'pending_payment'"
+            );
+            $cancelUpdate->execute([(int) $transferId, $hqId]);
+            if ($cancelUpdate->rowCount() !== 1) {
+                throw new RuntimeException('This payment request has already changed.');
+            }
+            payment_transfer_record_event(
+                $pdo,
+                (int) $transferId,
+                'pending_payment',
+                'cancelled',
+                $userId,
+                strtolower((string) $hq['headquarter_email']),
+                'HQ payer cancelled the unreported service extension payment request.'
+            );
+            $pdo->commit();
+            payment_transfer_send_notices($pdo, (int) $transferId, 'recipient', 'cancelled');
+
+            $_SESSION['hq_extension_flash'] = [
+                'message' => 'The unreported extension payment request was cancelled.',
+                'show_payment_status' => false,
+            ];
+            $returnUrl = '/php/HQ/index.php?extension_payment=cancelled&return_to=' . rawurlencode($returnTo);
+            header('Content-Type: text/html; charset=UTF-8');
+            header('Cache-Control: no-store');
+            echo '<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Payment request cancelled</title></head><body>';
+            echo '<p>Payment request cancelled. Returning to your previous page… <a href="' . htmlspecialchars($returnUrl, ENT_QUOTES, 'UTF-8') . '">Continue</a></p>';
+            echo '<script>window.top.location.replace(' . json_encode($returnUrl, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) . ');</script>';
+            echo '</body></html>';
+            exit;
         }
 
         $email = strtolower(trim((string) ($_POST['company_email'] ?? '')));
@@ -245,7 +296,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $pendingStmt = $pdo->prepare(
-    "SELECT amount_mmk, term_months, payment_method, status, created_at
+    "SELECT payment_transfer_id, amount_mmk, term_months, payment_method, status, created_at
      FROM payment_transfers
      WHERE payer_headquarter_id = ? AND payment_type = 'hq_period_extension'
        AND status IN ('pending_payment', 'payer_reported_paid')
@@ -287,6 +338,7 @@ $showPaymentForm = ($_GET['show_payment_form'] ?? '') === '1';
         .payment-alternative { display:grid; gap:6px; margin-top:10px; text-align:center; }
         .payment-or { color:var(--muted); font-weight:600; }
         .extension-points-note { color:var(--muted); font-size:.75rem; }
+        .extension-points-error { margin:8px 0 0; color:#dc3545; font-size:.85rem; }
         .transfer-number { display:flex; gap:10px; align-items:center; margin:8px 0; }
         .transfer-number strong { overflow-wrap:anywhere; font-size:1.05rem; }
         .transfer-copy { flex:0 0 auto; }
@@ -295,6 +347,22 @@ $showPaymentForm = ($_GET['show_payment_form'] ?? '') === '1';
         .extend-submit { width:100%; margin-top:16px; }
         .extend-status { margin-bottom:18px; }
         .extend-return-payment { margin-top:12px; }
+        .receipt-dialog { width:min(720px, calc(100% - 32px)); max-width:none; max-height:calc(100% - 32px); padding:0; border:1px solid var(--border); border-radius:14px; color:var(--slate-50); background:var(--card-bg); box-shadow:0 24px 80px rgba(0,0,0,.45); }
+        .receipt-dialog::backdrop { background:rgba(5,10,20,.72); backdrop-filter:blur(3px); }
+        .receipt-dialog-header,.receipt-dialog-footer { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:18px 22px; }
+        .receipt-dialog-header { border-bottom:1px solid var(--border); }
+        .receipt-dialog-header h2 { margin:0; font-size:1.15rem; }
+        .receipt-dialog-close { padding:0 4px; border:0; color:var(--muted); background:transparent; font-size:1.6rem; line-height:1; }
+        .cancel-payment-button { border-color:#dc3545 !important; color:#dc3545 !important; }
+        .cancel-payment-button:hover { background:#dc3545 !important; color:#fff !important; }
+        .receipt-dialog-body { display:grid; gap:14px; overflow:auto; padding:20px 22px; }
+        .receipt-summary-card { padding:22px; }
+        .receipt-summary-card .extend-total { padding:10px 0; }
+        .receipt-company-details { margin:0 0 18px; color:var(--muted); font-size:.85rem; line-height:1.6; }
+        .receipt-transfer-method { margin:0 0 6px; color:var(--muted); font-size:.85rem; }
+        .receipt-dialog-footer { justify-content:flex-end; flex-wrap:nowrap; border-top:1px solid var(--border); }
+        .receipt-dialog-footer .btn { flex:1 1 0; min-width:0; padding:.55rem .3rem; font-size:clamp(.62rem, 1.5vw, .82rem); white-space:nowrap; }
+        @media(max-width:480px) { .receipt-dialog-header,.receipt-dialog-body,.receipt-dialog-footer { padding-left:16px; padding-right:16px; } .receipt-dialog-footer { gap:6px; } }
         @media(max-width:760px) { body { padding:22px 16px; } .extend-header { display:block; } .extend-expiry { margin-top:16px; } .extend-grid { grid-template-columns:1fr; } }
         @media(max-width:480px) { .extend-fields { grid-template-columns:1fr; } .extend-field-wide,.extension-period-fieldset,.payment-method-field { grid-column:auto; } }
     </style>
@@ -314,14 +382,33 @@ $showPaymentForm = ($_GET['show_payment_form'] ?? '') === '1';
     <?php if ($error !== ''): ?><div class="alert alert-danger extend-status" role="alert"><?= htmlspecialchars($error, ENT_QUOTES, 'UTF-8') ?></div><?php endif; ?>
     <?php if ($pendingExtension && !$showPaymentForm): ?>
         <div class="alert extend-status" role="status">
-            An extension payment for <?= (int) $pendingExtension['term_months'] ?> month(s) is awaiting review: <?= number_format((float) $pendingExtension['amount_mmk'], 2) ?> MMK via <?= htmlspecialchars((string) $pendingExtension['payment_method'], ENT_QUOTES, 'UTF-8') ?>.
-            <div><a class="btn btn-outline-secondary extend-return-payment" href="extend_period.php?show_payment_form=1">Return to payment</a></div>
+            An extension payment for <?= (int) $pendingExtension['term_months'] ?> month(s) is <?= $pendingExtension['status'] === 'pending_payment' ? 'awaiting payment' : 'awaiting review' ?>: <?= number_format((float) $pendingExtension['amount_mmk'], 2) ?> MMK via <?= htmlspecialchars((string) $pendingExtension['payment_method'], ENT_QUOTES, 'UTF-8') ?>.
+            <?php if ($pendingExtension['status'] === 'pending_payment'): ?>
+                <p class="extend-note mt-2 mb-0">This request has not been reported as paid yet, so it can still be cancelled.</p>
+                <form method="post" class="extend-return-payment" onsubmit="return confirm('Cancel this unreported extension payment request?');">
+                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars((string) $_SESSION['hq_extension_csrf'], ENT_QUOTES, 'UTF-8') ?>">
+                    <input type="hidden" name="return_to" value="<?= htmlspecialchars($returnTo, ENT_QUOTES, 'UTF-8') ?>">
+                    <button class="btn btn-outline-secondary cancel-payment-button" type="submit" name="action" value="cancel_unreported_payment">Cancel payment request</button>
+                </form>
+            <?php else: ?>
+                <p class="extend-note mt-2 mb-0">Payment has already been reported and is awaiting review, so it cannot be cancelled here.</p>
+                <div><a class="btn btn-outline-secondary extend-return-payment" href="extend_period.php?show_payment_form=1">Return to payment</a></div>
+            <?php endif; ?>
         </div>
     <?php else: ?>
         <?php if ($pendingExtension): ?>
             <div class="alert extend-status" role="status">
-                Your previous payment for <?= (int) $pendingExtension['term_months'] ?> month(s) is still awaiting review. You may review the payment form, but cannot submit another request until the pending payment is resolved.
-                <a href="/php/payment_center.php">View payment status</a>.
+                <?php if ($pendingExtension['status'] === 'pending_payment'): ?>
+                    Your previous payment request for <?= (int) $pendingExtension['term_months'] ?> month(s) is awaiting payment. You cannot submit another request until it is resolved.
+                    <form method="post" class="extend-return-payment" onsubmit="return confirm('Cancel this unreported extension payment request?');">
+                        <input type="hidden" name="csrf_token" value="<?= htmlspecialchars((string) $_SESSION['hq_extension_csrf'], ENT_QUOTES, 'UTF-8') ?>">
+                        <input type="hidden" name="return_to" value="<?= htmlspecialchars($returnTo, ENT_QUOTES, 'UTF-8') ?>">
+                        <button class="btn btn-outline-secondary cancel-payment-button" type="submit" name="action" value="cancel_unreported_payment">Cancel payment request</button>
+                    </form>
+                <?php else: ?>
+                    Your previous payment for <?= (int) $pendingExtension['term_months'] ?> month(s) has been reported and is awaiting review. You may review the payment form, but cannot submit another request until the payment is resolved.
+                    <a href="/php/payment_center.php">View payment status</a>.
+                <?php endif; ?>
             </div>
         <?php endif; ?>
         <form method="post" enctype="multipart/form-data" class="extend-grid" data-accounts="<?= htmlspecialchars(json_encode($accounts), ENT_QUOTES, 'UTF-8') ?>">
@@ -362,6 +449,7 @@ $showPaymentForm = ($_GET['show_payment_form'] ?? '') === '1';
                             <span class="payment-or">or</span>
                             <button class="btn btn-outline-secondary extension-points-button" id="use-points" type="submit" name="action" value="use_points" formnovalidate data-balance="<?= $hqPointBalance ?>" data-ready="<?= $hqPointsReady ? '1' : '0' ?>" data-pending="<?= $pendingExtension ? '1' : '0' ?>" disabled>Use points</button>
                             <small class="extension-points-note" id="extension-points-cost"><?php if ($hqPointsReady): ?>Balance: <?= number_format($hqPointBalance) ?> points. Cost: <?= number_format(BILLING_HQ_EXTENSION_POINTS_PER_STATION_MONTHLY) ?> points per station/month; no term discount.<?php else: ?>HQ points are temporarily unavailable.<?php endif; ?></small>
+                            <p class="extension-points-error" id="extension-points-error" role="alert" hidden></p>
                         </div>
                     </div>
                     <div class="extend-field-wide">
@@ -379,9 +467,46 @@ $showPaymentForm = ($_GET['show_payment_form'] ?? '') === '1';
                 <div class="extend-total"><span>Discount <span id="extension-discount-rate">(0%)</span></span><strong id="extension-discount">0 MMK</strong></div>
                 <div class="extend-total"><span>Total due</span><strong id="extension-total"><?= number_format(BILLING_HQ_EXTENSION_MMK_PER_STATION_MONTHLY * $stationCountInput) ?> MMK</strong></div>
                 <p class="extend-note" style="margin:14px 0 0">Longer terms receive configured discounts. Access updates after payment receipt is confirmed by an Admin or Moderator.</p>
-                <button class="btn extend-submit" type="submit" name="action" value="submit_payment" <?= $pendingExtension ? 'disabled' : '' ?>>Submit payment for review</button>
+                <button class="btn extend-submit" id="submit-payment" type="submit" name="action" value="submit_payment" <?= $pendingExtension ? 'disabled' : '' ?>>Submit payment for review</button>
             </aside>
         </form>
+        <dialog class="receipt-dialog" id="payment-confirmation" aria-labelledby="payment-confirmation-title">
+            <div class="receipt-dialog-header">
+                <h2 id="payment-confirmation-title">Review payment details</h2>
+                <button type="button" class="receipt-dialog-close" id="close-payment-confirmation" aria-label="Close">×</button>
+            </div>
+            <div class="receipt-dialog-body">
+                <section class="extend-card receipt-summary-card">
+                    <h2>Transfer and total</h2>
+                    <p class="receipt-company-details">
+                        <strong id="receipt-company"></strong><br>
+                        <span id="receipt-email"></span><br>
+                        <span><span id="receipt-stations"></span> stations · <span id="receipt-period"></span></span>
+                    </p>
+                    <div id="receipt-transfer-details">
+                        <p class="receipt-transfer-method">Payment method: <strong id="receipt-method"></strong></p>
+                        <div class="transfer-number"><strong id="receipt-account"></strong></div>
+                        <p class="extend-note">Account name: <?= htmlspecialchars(BILLING_PLATFORM_RECIPIENT_NAME, ENT_QUOTES, 'UTF-8') ?></p>
+                        <div class="extend-total"><span>Actual value</span><strong id="receipt-actual"></strong></div>
+                        <div class="extend-total"><span>Discount <span id="receipt-discount-rate"></span></span><strong id="receipt-discount"></strong></div>
+                        <div class="extend-total"><span>Total due</span><strong id="receipt-total"></strong></div>
+                    </div>
+                    <div id="receipt-points-details" hidden>
+                        <p class="receipt-transfer-method">Points payment</p>
+                        <div class="extend-total"><span>Points balance</span><strong id="receipt-points-balance"></strong></div>
+                        <div class="extend-total"><span>Points required</span><strong id="receipt-points-required"></strong></div>
+                        <div class="extend-total"><span>Balance after extension</span><strong id="receipt-points-remaining"></strong></div>
+                    </div>
+                </section>
+                <p class="extend-note mb-0">Download or print this receipt for your records. Confirm to submit the payment screenshot and details for review.</p>
+            </div>
+            <div class="receipt-dialog-footer">
+                <button type="button" class="btn btn-outline-secondary" id="download-payment-receipt" title="Download receipt as HTML" aria-label="Download receipt as HTML">Download</button>
+                <button type="button" class="btn btn-outline-secondary" id="print-payment-receipt" title="Print or save receipt as PDF" aria-label="Print or save receipt as PDF">Print PDF</button>
+                <button type="button" class="btn btn-outline-secondary" id="cancel-payment-confirmation">Back</button>
+                <button type="button" class="btn btn-success" id="confirm-payment-submission" title="Confirm and submit payment for review" aria-label="Confirm and submit payment for review">Submit</button>
+            </div>
+        </dialog>
     <?php endif; ?>
 </main>
 <script>
@@ -397,15 +522,33 @@ $showPaymentForm = ($_GET['show_payment_form'] ?? '') === '1';
     const copy = document.getElementById('copy-number');
     const usePoints = document.getElementById('use-points');
     const pointsCost = document.getElementById('extension-points-cost');
+    const pointsError = document.getElementById('extension-points-error');
     const actual = document.getElementById('extension-actual');
     const discountValue = document.getElementById('extension-discount');
     const discountRate = document.getElementById('extension-discount-rate');
     const total = document.getElementById('extension-total');
+    const submitPayment = document.getElementById('submit-payment');
+    const confirmation = document.getElementById('payment-confirmation');
+    const confirmSubmission = document.getElementById('confirm-payment-submission');
+    const confirmationTitle = document.getElementById('payment-confirmation-title');
+    const transferDetails = document.getElementById('receipt-transfer-details');
+    const pointsDetails = document.getElementById('receipt-points-details');
+    const receiptNote = confirmation.querySelector('.receipt-dialog-body > .extend-note');
+    const pointsBalanceRow = document.getElementById('receipt-points-balance');
+    const pointsRequiredRow = document.getElementById('receipt-points-required');
+    const pointsRemainingRow = document.getElementById('receipt-points-remaining');
+    const pointsPerStationMonth = <?= (int) BILLING_HQ_EXTENSION_POINTS_PER_STATION_MONTHLY ?>;
+    const confirmationValues = {
+        company: <?= json_encode((string) $hq['company_name'], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>,
+        email: <?= json_encode((string) $hq['headquarter_email'], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>,
+        recipient: <?= json_encode(BILLING_PLATFORM_RECIPIENT_NAME, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>
+    };
     const termDiscounts = <?= json_encode(BILLING_HQ_EXTENSION_TERM_DISCOUNTS) ?>;
     const moneyFormat = new Intl.NumberFormat();
     const pointsBalance = Number(usePoints.dataset.balance || 0);
     const pointsWalletReady = usePoints.dataset.ready === '1';
     const hasPendingPayment = usePoints.dataset.pending === '1';
+    let confirmedAction = null;
     const validatePeriod = () => {
         const totalMonths = Number(years.value) * 12 + Number(months.value);
         const valid = Number.isInteger(totalMonths) && totalMonths >= 1 && totalMonths <= <?= (int) BILLING_HQ_EXTENSION_MAX_MONTHS ?>;
@@ -418,13 +561,15 @@ $showPaymentForm = ($_GET['show_payment_form'] ?? '') === '1';
         copy.disabled = !account.number;
         const totalMonths = validatePeriod();
         const stationCountValue = Number(stationCount.value);
-        const pointsRequired = <?= (int) BILLING_HQ_EXTENSION_POINTS_PER_STATION_MONTHLY ?> * stationCountValue * totalMonths;
+        const pointsRequired = pointsPerStationMonth * stationCountValue * totalMonths;
         const pointsInputsValid = Number.isInteger(totalMonths) && totalMonths >= 1 && totalMonths <= <?= (int) BILLING_HQ_EXTENSION_MAX_MONTHS ?>
             && Number.isInteger(stationCountValue) && stationCountValue >= 1 && stationCountValue <= 1000000;
         pointsCost.textContent = pointsWalletReady
             ? `Balance: ${moneyFormat.format(pointsBalance)} points. Cost: ${moneyFormat.format(pointsRequired)} points; no term discount.`
             : 'HQ points are temporarily unavailable.';
-        usePoints.disabled = hasPendingPayment || !pointsWalletReady || !pointsInputsValid || pointsRequired > pointsBalance;
+        usePoints.disabled = hasPendingPayment || !pointsWalletReady || !pointsInputsValid;
+        pointsError.hidden = true;
+        pointsError.textContent = '';
         const discount = termDiscounts.find((term) => totalMonths >= Number(term.min_months));
         const actualAmount = <?= (int) BILLING_HQ_EXTENSION_MMK_PER_STATION_MONTHLY ?> * stationCountValue * totalMonths;
         const percent = Number(discount?.percent || 0);
@@ -435,23 +580,196 @@ $showPaymentForm = ($_GET['show_payment_form'] ?? '') === '1';
         discountValue.textContent = `${moneyFormat.format(savings)} MMK`;
         total.textContent = `${moneyFormat.format(amount)} MMK`;
     };
+    const receiptData = (usePointsMode = false) => {
+        const account = accounts[method.value] || {};
+        const totalMonths = Number(years.value) * 12 + Number(months.value);
+        const pointsRequired = pointsPerStationMonth * Number(stationCount.value) * totalMonths;
+        const discount = termDiscounts.find((term) => totalMonths >= Number(term.min_months));
+        const yearCount = Math.floor(totalMonths / 12);
+        const monthCount = totalMonths % 12;
+        const period = [
+            yearCount ? `${yearCount} year${yearCount === 1 ? '' : 's'}` : '',
+            monthCount ? `${monthCount} month${monthCount === 1 ? '' : 's'}` : ''
+        ].filter(Boolean).join(' ');
+        return {
+            company: confirmationValues.company,
+            email: confirmationValues.email,
+            stations: moneyFormat.format(Number(stationCount.value)),
+            period: period || `${totalMonths} months`,
+            method: method.options[method.selectedIndex]?.text || '',
+            accountNumber: account.number || '',
+            recipient: confirmationValues.recipient,
+            actual: actual.textContent,
+            discountRate: `${Number(discount?.percent || 0)}%`,
+            discount: discountValue.textContent,
+            total: total.textContent,
+            createdAt: new Date().toLocaleString(),
+            usePoints: usePointsMode,
+            pointsBalance,
+            pointsRequired,
+            pointsRemaining: pointsBalance - pointsRequired
+        };
+    };
+    const escapeHtml = value => String(value).replace(/[&<>"']/g, character => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;'
+    })[character]);
+    const receiptDocument = data => {
+        const paymentDetails = data.usePoints
+            ? `<p class="method">Points payment</p>
+<div class="total"><span>Points balance</span><strong>${moneyFormat.format(data.pointsBalance)}</strong></div>
+<div class="total"><span>Points required</span><strong>${moneyFormat.format(data.pointsRequired)}</strong></div>
+<div class="total"><span>Balance after extension</span><strong>${moneyFormat.format(data.pointsRemaining)}</strong></div>`
+            : `<p class="method">Payment method: <strong>${escapeHtml(data.method)}</strong></p>
+<div class="account"><strong>${escapeHtml(data.accountNumber)}</strong></div>
+<p class="note">Account name: ${escapeHtml(data.recipient)}</p>
+<div class="total"><span>Actual value</span><strong>${escapeHtml(data.actual)}</strong></div>
+<div class="total"><span>Discount (${escapeHtml(data.discountRate)})</span><strong>${escapeHtml(data.discount)}</strong></div>
+<div class="total"><span>Total due</span><strong>${escapeHtml(data.total)}</strong></div>`;
+        return `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>HQ extension summary</title><style>
+:root{color-scheme:dark}
+*{box-sizing:border-box}
+@page{size:A4;margin:18mm}
+body{margin:0;padding:24px;background:#0c1422;color:#edf3fb;font:14px/1.5 Arial,sans-serif;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.receipt{width:100%;max-width:620px;margin:24px auto}
+.header{display:flex;align-items:center;min-height:54px;padding:16px 22px;border:1px solid #29394e;border-radius:14px 14px 0 0;background:#142033}
+.header h1{margin:0;font-size:18px;font-weight:600}
+.card{padding:22px;border:1px solid #29394e;border-top:0;border-radius:0 0 14px 14px;background:#142033;break-inside:avoid}
+.card h2{margin:0 0 16px;font-size:16px;font-weight:600}
+.company{margin:0 0 18px;color:#a1b1c6;font-size:12px;line-height:1.6}
+.company strong{color:#edf3fb;font-size:14px}
+.method{margin:0 0 6px;color:#a1b1c6;font-size:12px}
+.account{display:flex;align-items:center;margin:8px 0;font-size:17px;overflow-wrap:anywhere}
+.note{margin:0 0 14px;color:#a1b1c6;font-size:12px}
+.total{display:flex;justify-content:space-between;gap:16px;padding:10px 0;border-top:1px solid #29394e;border-bottom:1px solid #29394e;font-variant-numeric:tabular-nums}
+.total span{color:#a1b1c6}.total strong{text-align:right;overflow-wrap:anywhere}
+.disclaimer{margin:18px 0 0;color:#a1b1c6;font-size:11px}
+@media print{body{padding:0;background:#0c1422}.receipt{max-width:none;margin:0}.header,.card{background:#142033!important;color:#edf3fb!important;box-shadow:none}}
+</style></head><body><main class="receipt">
+<header class="header"><h1>${data.usePoints ? 'Review extension details' : 'Review payment details'}</h1></header>
+<section class="card"><h2>${data.usePoints ? 'Extension total' : 'Transfer and total'}</h2>
+<p class="company"><strong>${escapeHtml(data.company)}</strong><br>
+${escapeHtml(data.email)}<br>
+${escapeHtml(data.stations)} stations · ${escapeHtml(data.period)}</p>
+${paymentDetails}
+<p class="disclaimer">Prepared ${escapeHtml(data.createdAt)}. This summary records the extension details and is not proof of payment confirmation.</p>
+</section></main></body></html>`;
+    };
+    const updateConfirmation = (usePointsMode = false) => {
+        const data = receiptData(usePointsMode);
+        confirmationTitle.textContent = usePointsMode ? 'Review extension details' : 'Review payment details';
+        confirmation.querySelector('.receipt-summary-card h2').textContent = usePointsMode ? 'Extension total' : 'Transfer and total';
+        transferDetails.hidden = usePointsMode;
+        pointsDetails.hidden = !usePointsMode;
+        receiptNote.textContent = usePointsMode
+            ? 'Confirm to extend your service period using HQ points.'
+            : 'Download or print this receipt for your records. Confirm to submit the payment screenshot and details for review.';
+        confirmSubmission.textContent = usePointsMode ? 'Use points' : 'Submit';
+        confirmSubmission.setAttribute('aria-label', usePointsMode ? 'Confirm extension using points' : 'Confirm and submit payment for review');
+        pointsBalanceRow.textContent = moneyFormat.format(data.pointsBalance);
+        pointsRequiredRow.textContent = moneyFormat.format(data.pointsRequired);
+        pointsRemainingRow.textContent = moneyFormat.format(data.pointsRemaining);
+        document.getElementById('receipt-company').textContent = data.company;
+        document.getElementById('receipt-email').textContent = data.email;
+        document.getElementById('receipt-stations').textContent = data.stations;
+        document.getElementById('receipt-period').textContent = data.period;
+        document.getElementById('receipt-method').textContent = data.method;
+        document.getElementById('receipt-account').textContent = data.accountNumber;
+        document.getElementById('receipt-actual').textContent = data.actual;
+        document.getElementById('receipt-discount-rate').textContent = `(${data.discountRate})`;
+        document.getElementById('receipt-discount').textContent = data.discount;
+        document.getElementById('receipt-total').textContent = data.total;
+    };
     method.addEventListener('change', update);
     years.addEventListener('input', update);
     months.addEventListener('change', update);
     months.addEventListener('input', update);
     form.addEventListener('submit', event => {
         if (event.submitter === usePoints) {
-            const totalMonths = Number(years.value) * 12 + Number(months.value);
-            const pointsRequired = <?= (int) BILLING_HQ_EXTENSION_POINTS_PER_STATION_MONTHLY ?> * Number(stationCount.value) * totalMonths;
-            if (!window.confirm(`Use ${moneyFormat.format(pointsRequired)} HQ points to extend service for ${totalMonths} month(s)? Points payments do not receive term discounts.`)) {
-                event.preventDefault();
+            if (confirmedAction === 'use_points') {
+                confirmedAction = null;
+                pointsError.hidden = true;
+                return;
             }
+            event.preventDefault();
+            const totalMonths = validatePeriod();
+            if (!stationCount.checkValidity() || !years.checkValidity() || !months.checkValidity()) {
+                stationCount.reportValidity();
+                years.reportValidity();
+                months.reportValidity();
+                return;
+            }
+            const pointsRequired = pointsPerStationMonth * Number(stationCount.value) * totalMonths;
+            if (pointsRequired > pointsBalance) {
+                pointsError.textContent = `Not enough HQ points. This extension requires ${moneyFormat.format(pointsRequired)} points, but the available balance is ${moneyFormat.format(pointsBalance)} points.`;
+                pointsError.hidden = false;
+                return;
+            }
+            pointsError.hidden = true;
+            updateConfirmation(true);
+            confirmation.showModal();
+            return;
+        }
+        if (confirmedAction === 'submit_payment') {
+            confirmedAction = null;
             return;
         }
         if (!form.checkValidity()) {
             event.preventDefault();
             form.reportValidity();
+            return;
         }
+        event.preventDefault();
+        updateConfirmation(false);
+        confirmation.showModal();
+    });
+    document.getElementById('close-payment-confirmation').addEventListener('click', () => confirmation.close());
+    document.getElementById('cancel-payment-confirmation').addEventListener('click', () => confirmation.close());
+    document.getElementById('confirm-payment-submission').addEventListener('click', () => {
+        const actionButton = pointsDetails.hidden ? submitPayment : usePoints;
+        if (actionButton === submitPayment && !form.reportValidity()) return;
+        if (actionButton === usePoints) {
+            const totalMonths = validatePeriod();
+            const pointsRequired = pointsPerStationMonth * Number(stationCount.value) * totalMonths;
+            if (pointsRequired > pointsBalance) {
+                confirmation.close();
+                pointsError.textContent = `Not enough HQ points. This extension requires ${moneyFormat.format(pointsRequired)} points, but the available balance is ${moneyFormat.format(pointsBalance)} points.`;
+                pointsError.hidden = false;
+                return;
+            }
+        }
+        confirmedAction = actionButton === usePoints ? 'use_points' : 'submit_payment';
+        confirmation.close();
+        form.requestSubmit(actionButton);
+    });
+    document.getElementById('download-payment-receipt').addEventListener('click', () => {
+        const blob = new Blob([receiptDocument(receiptData(!pointsDetails.hidden))], {type: 'text/html;charset=utf-8'});
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        const filename = confirmationValues.company.trim().replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '') || 'hq';
+        link.href = url;
+        link.download = `${filename}-extension-payment-receipt.html`;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    });
+    document.getElementById('print-payment-receipt').addEventListener('click', () => {
+        const printWindow = window.open('', '_blank');
+        if (!printWindow) {
+            window.alert('Allow pop-ups to print or save this receipt as a PDF.');
+            return;
+        }
+        printWindow.document.open();
+        printWindow.document.write(receiptDocument(receiptData(!pointsDetails.hidden)));
+        printWindow.document.close();
+        printWindow.focus();
+        printWindow.print();
     });
     update();
     stationCount.addEventListener('input', update);

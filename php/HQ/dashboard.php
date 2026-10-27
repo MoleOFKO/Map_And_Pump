@@ -12,7 +12,7 @@ $stationTanks = [];
 $tankStmt = $pdo->prepare(
   "SELECT s.branch_id AS station_id, s.branch_name AS station_name,
           t.fuel_code, COALESCE(ot.oil_name, t.fuel_name) AS fuel_name,
-          t.current_l, t.capacity_l
+          t.fuel_price
     FROM branches s
     INNER JOIN station_business_scope sbs ON sbs.station_id = s.branch_id
     INNER JOIN tanks t ON t.branch_id = s.branch_id
@@ -44,31 +44,47 @@ $recentReports = $reportsStmt->fetchAll(PDO::FETCH_ASSOC);
 $stations = [];
 $stationStatusSql = $hqBillingReady
     ? "CASE
-           WHEN LOWER(COALESCE(s.status, 'active')) = 'active'
+           WHEN LOWER(TRIM(COALESCE(s.status, 'active'))) = 'active'
             AND NOT EXISTS (
                 SELECT 1 FROM company_loyalty_station_fees fee
                 WHERE fee.headquarter_id = sbs.headquarter_id
                   AND fee.station_id = s.branch_id
                   AND fee.`year_month` = ?
             ) THEN 'Paused'
-           WHEN LOWER(COALESCE(s.status, 'active')) = 'maintenance' THEN 'Maintenance'
-           WHEN LOWER(COALESCE(s.status, 'active')) = 'active' THEN 'Active'
-           ELSE s.status
+           WHEN LOWER(TRIM(COALESCE(s.status, 'active'))) = 'maintenance' THEN 'Maintenance'
+           WHEN LOWER(TRIM(COALESCE(s.status, 'active'))) = 'active' THEN 'Active'
+           WHEN LOWER(TRIM(COALESCE(s.status, ''))) = 'closed' THEN 'Closed'
+           WHEN LOWER(TRIM(COALESCE(s.status, ''))) = 'decommissioned' THEN 'Decommissioned'
+           ELSE CONCAT(
+               UCASE(LEFT(COALESCE(NULLIF(TRIM(s.status), ''), 'Unknown'), 1)),
+               SUBSTRING(COALESCE(NULLIF(TRIM(s.status), ''), 'Unknown'), 2)
+           )
        END"
-    : "CASE WHEN LOWER(COALESCE(s.status, 'active')) = 'active' THEN 'Paused' ELSE s.status END";
+    : "CASE
+           WHEN LOWER(TRIM(COALESCE(s.status, 'active'))) = 'active' THEN 'Active'
+           WHEN LOWER(TRIM(COALESCE(s.status, 'active'))) = 'maintenance' THEN 'Maintenance'
+           WHEN LOWER(TRIM(COALESCE(s.status, ''))) = 'closed' THEN 'Closed'
+           WHEN LOWER(TRIM(COALESCE(s.status, ''))) = 'decommissioned' THEN 'Decommissioned'
+           ELSE CONCAT(
+               UCASE(LEFT(COALESCE(NULLIF(TRIM(s.status), ''), 'Unknown'), 1)),
+               SUBSTRING(COALESCE(NULLIF(TRIM(s.status), ''), 'Unknown'), 2)
+           )
+       END";
 $stationsStmt = $pdo->prepare(
   "SELECT s.branch_id AS station_id, s.branch_name AS station_name,
         s.status AS branch_status,
-        CASE WHEN s.latitude IS NOT NULL AND s.longitude IS NOT NULL
-          THEN CONCAT(s.latitude, ', ', s.longitude) ELSE s.address END AS location,
+        s.address,
         {$stationStatusSql} AS status
     FROM branches s
     INNER JOIN station_business_scope sbs ON sbs.station_id = s.branch_id
      WHERE sbs.headquarter_id = ?
+       AND LOWER(TRIM(COALESCE(s.status, 'active'))) <> 'closed'
     ORDER BY s.branch_id DESC"
 );
 $stationsStmt->execute($hqBillingReady ? [$hqBillingMonth, $hqId] : [$hqId]);
 $stations = $stationsStmt->fetchAll(PDO::FETCH_ASSOC);
+$activeStationCount = count(array_filter($stations, static fn (array $station): bool => ($station['status'] ?? '') === 'Active'));
+$maintenanceStationCount = count(array_filter($stations, static fn (array $station): bool => ($station['status'] ?? '') === 'Maintenance'));
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -245,8 +261,8 @@ $stations = $stationsStmt->fetchAll(PDO::FETCH_ASSOC);
   <div class="hq-eyebrow">Operations at a glance</div>
   <div class="hq-metrics" aria-label="Station summary">
     <a class="hq-metric" href="station.php" onclick="event.preventDefault(); navigateTo('station.php')"><i class="fa-solid fa-gas-pump" aria-hidden="true"></i><div><strong><?= count($stations) ?></strong><span>Total stations</span></div></a>
-    <a class="hq-metric" href="station.php" onclick="event.preventDefault(); navigateTo('station.php')"><i class="fa-solid fa-circle-check" aria-hidden="true"></i><div><strong><?= count(array_filter($stations, static fn($s) => strtolower((string) ($s['branch_status'] ?? '')) === 'active')) ?></strong><span>Active stations</span></div></a>
-    <a class="hq-metric" href="station.php" onclick="event.preventDefault(); navigateTo('station.php')"><i class="fa-solid fa-wrench" aria-hidden="true"></i><div><strong><?= count(array_filter($stations, static fn($s) => $s['status'] === 'Maintenance')) ?></strong><span>Under maintenance</span></div></a>
+    <a class="hq-metric" href="station.php" onclick="event.preventDefault(); navigateTo('station.php')"><i class="fa-solid fa-circle-check" aria-hidden="true"></i><div><strong><?= $activeStationCount ?></strong><span>Active stations</span></div></a>
+    <a class="hq-metric" href="station.php" onclick="event.preventDefault(); navigateTo('station.php')"><i class="fa-solid fa-wrench" aria-hidden="true"></i><div><strong><?= $maintenanceStationCount ?></strong><span>Under maintenance</span></div></a>
     <div class="hq-metric"><i class="fa-solid fa-star" aria-hidden="true"></i><div><strong><?= number_format($hqPointBalance) ?></strong><span>HQ points</span></div></div>
   </div>
 
@@ -254,12 +270,12 @@ $stations = $stationsStmt->fetchAll(PDO::FETCH_ASSOC);
     <!-- Station fuel tanks Card -->
     <div class="card">
       <div class="d-flex justify-content-between align-items-center mb-2">
-        <h3 class="mb-0">Station fuel tanks</h3>
+        <h3 class="mb-0">Station Fuel Pricing</h3>
         <a class="small text-info" href="pricing.php" onclick="event.stopPropagation(); event.preventDefault(); navigateTo('pricing.php')">Manage fuel prices <i class="fa-solid fa-arrow-right ms-1"></i></a>
       </div>
       <div class="dash-scroll">
       <table>
-        <thead><tr><th>Station</th><th>Fuel type</th><th>Current (L)</th><th>Capacity (L)</th></tr></thead>
+        <thead><tr><th>Station</th><th>Fuel type</th><th>Price / L</th></tr></thead>
         <tbody>
           <?php
 if (!empty($stationTanks)): ?>
@@ -271,15 +287,13 @@ echo htmlspecialchars((string) $tank['station_name'], ENT_QUOTES, 'UTF-8'); ?></
                 <td><?php
 echo htmlspecialchars((string) $tank['fuel_name'], ENT_QUOTES, 'UTF-8'); ?></td>
                 <td><?php
-echo number_format((float) $tank['current_l'], 2); ?></td>
-                <td><?php
-echo number_format((float) $tank['capacity_l'], 0); ?></td>
+echo (float) $tank['fuel_price'] > 0 ? number_format((float) $tank['fuel_price']) . ' MMK' : 'Not set'; ?></td>
               </tr>
             <?php
 endforeach; ?>
           <?php
 else: ?>
-            <tr><td colspan="4">No active station tanks found.</td></tr>
+            <tr><td colspan="3">No active station price found.</td></tr>
           <?php
 endif; ?>
         </tbody>
@@ -329,21 +343,31 @@ endif; ?>
       </div>
       <div class="dash-scroll">
       <table>
-        <thead><tr><th>Branch ID</th><th>Branch Name</th><th>Location</th><th>Status</th></tr></thead>
+        <thead><tr><th>Branch ID</th><th>Branch Name</th><th>Address</th><th>Status</th></tr></thead>
         <tbody>
           <?php
 if (!empty($stations)): ?>
             <?php
 foreach ($stations as $station): ?>
+              <?php
+              $stationStatus = (string) ($station['status'] ?? 'Unknown');
+              $stationStatusClass = match ($stationStatus) {
+                  'Active' => 'bg-success',
+                  'Maintenance' => 'bg-warning',
+                  'Paused' => 'bg-secondary',
+                  'Closed', 'Decommissioned' => 'bg-dark',
+                  default => 'bg-secondary',
+              };
+              ?>
               <tr>
                 <td><?php
 echo htmlspecialchars($station['station_id']); ?></td>
                 <td><?php
 echo htmlspecialchars($station['station_name']); ?></td>
                 <td><?php
-echo htmlspecialchars($station['location']); ?></td>
-                <td><span class="badge <?= ($station['status'] ?? '') === 'Maintenance' ? 'bg-warning' : ((($station['status'] ?: 'Active') === 'Active') ? 'bg-success' : 'bg-secondary') ?>"><?php
-echo htmlspecialchars($station['status'] ?: 'Active'); ?></span></td>
+echo htmlspecialchars((string) ($station['address'] ?? '')); ?></td>
+                <td><span class="badge <?= $stationStatusClass ?>"><?php
+echo htmlspecialchars($stationStatus, ENT_QUOTES, 'UTF-8'); ?></span></td>
               </tr>
             <?php
 endforeach; ?>
