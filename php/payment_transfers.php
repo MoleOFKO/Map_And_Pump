@@ -367,7 +367,7 @@ function payment_transfer_assign_mmk_entitlements(PDO $pdo, int $headquarterId, 
     $pointSlotsStmt = $pdo->prepare(
         'SELECT COALESCE(slots_purchased, 0)
          FROM company_loyalty_station_slots
-         WHERE headquarter_id = ? AND year_month = ? LIMIT 1'
+         WHERE headquarter_id = ? AND `year_month` = ? LIMIT 1'
     );
     $pointSlotsStmt->execute([$headquarterId, $yearMonth]);
     $pointSlots = max(0, (int) $pointSlotsStmt->fetchColumn());
@@ -391,7 +391,7 @@ function payment_transfer_assign_mmk_entitlements(PDO $pdo, int $headquarterId, 
             "SELECT e.entitlement_id, e.payment_transfer_id
              FROM hq_station_mmk_entitlements e
              INNER JOIN payment_transfers pt ON pt.payment_transfer_id = e.payment_transfer_id
-             WHERE e.headquarter_id = ? AND e.year_month = ? AND e.station_id IS NULL
+             WHERE e.headquarter_id = ? AND e.`year_month` = ? AND e.station_id IS NULL
                AND pt.status = 'received'
              ORDER BY e.entitlement_id
              LIMIT 1 FOR UPDATE"
@@ -409,7 +409,7 @@ function payment_transfer_assign_mmk_entitlements(PDO $pdo, int $headquarterId, 
         }
         $feeCheck = $pdo->prepare(
             'SELECT 1 FROM company_loyalty_station_fees
-             WHERE headquarter_id = ? AND station_id = ? AND year_month = ? LIMIT 1'
+             WHERE headquarter_id = ? AND station_id = ? AND `year_month` = ? LIMIT 1'
         );
         $feeCheck->execute([$headquarterId, $stationId, $yearMonth]);
         if ($feeCheck->fetchColumn()) {
@@ -417,7 +417,7 @@ function payment_transfer_assign_mmk_entitlements(PDO $pdo, int $headquarterId, 
         }
         $fee = $pdo->prepare(
             "INSERT INTO company_loyalty_station_fees
-                (headquarter_id, station_id, year_month, points_paid, payment_method, payment_transfer_id)
+                (headquarter_id, station_id, `year_month`, points_paid, payment_method, payment_transfer_id)
              VALUES (?, ?, ?, 0, 'mmk', ?)"
         );
         $fee->execute([$headquarterId, $stationId, $yearMonth, (int) $credit['payment_transfer_id']]);
@@ -428,8 +428,8 @@ function payment_transfer_assign_mmk_entitlements(PDO $pdo, int $headquarterId, 
 function payment_transfer_assign_available_entitlements(PDO $pdo, int $headquarterId): void
 {
     $stmt = $pdo->prepare(
-        'SELECT DISTINCT year_month FROM hq_station_mmk_entitlements
-         WHERE headquarter_id = ? AND station_id IS NULL ORDER BY year_month'
+        'SELECT DISTINCT `year_month` FROM hq_station_mmk_entitlements
+         WHERE headquarter_id = ? AND station_id IS NULL ORDER BY `year_month`'
     );
     $stmt->execute([$headquarterId]);
     foreach ($stmt->fetchAll(PDO::FETCH_COLUMN) as $yearMonth) {
@@ -455,12 +455,12 @@ function payment_transfer_apply_operating_fee(PDO $pdo, array $transfer): bool
     if (strtolower((string) $stationStatus) === 'closed') {
         return false;
     }
-    $feeStmt = $pdo->prepare('SELECT payment_transfer_id FROM company_loyalty_station_fees WHERE headquarter_id = ? AND station_id = ? AND year_month = ? FOR UPDATE');
+    $feeStmt = $pdo->prepare('SELECT payment_transfer_id FROM company_loyalty_station_fees WHERE headquarter_id = ? AND station_id = ? AND `year_month` = ? FOR UPDATE');
     $feeStmt->execute([$headquarterId, $stationId, $yearMonth]);
     if ($feeStmt->fetchColumn()) {
         throw new RuntimeException('This station already has a fee record for the quoted month. Reject this quote and resolve the duplicate before confirming payment.');
     }
-    $insert = $pdo->prepare("INSERT INTO company_loyalty_station_fees (headquarter_id, station_id, year_month, points_paid, payment_method, payment_transfer_id) VALUES (?, ?, ?, 0, 'mmk_quote', ?)");
+    $insert = $pdo->prepare("INSERT INTO company_loyalty_station_fees (headquarter_id, station_id, `year_month`, points_paid, payment_method, payment_transfer_id) VALUES (?, ?, ?, 0, 'mmk_quote', ?)");
     $insert->execute([$headquarterId, $stationId, $yearMonth, (int) $transfer['payment_transfer_id']]);
     return true;
 }
@@ -540,4 +540,3 @@ function payment_transfer_send_notices(PDO $pdo, int $transferId, string $recipi
         error_log('payment_transfer_send_notices: ' . $e->getMessage());
     }
 }
-

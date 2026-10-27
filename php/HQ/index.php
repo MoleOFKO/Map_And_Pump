@@ -9,6 +9,15 @@ require_once __DIR__ . '/../profile_avatar.php';
 
 $loggedUserId = isset($_SESSION['user_id']) ? (int) $_SESSION['user_id'] : '';
 $loggedUserEmail = isset($_SESSION['user_email']) ? trim((string) $_SESSION['user_email']) : '';
+$extensionReturnPages = ['dashboard.php', 'brand.php', 'station.php', 'pricing.php', 'report_from_manager.php', 'report_to_admin.php', 'account.php', 'profile.php'];
+$extensionReturnTo = basename((string) ($_GET['return_to'] ?? ''));
+$extensionPaymentSubmitted = ($_GET['extension_payment'] ?? '') === 'submitted'
+    && in_array($extensionReturnTo, $extensionReturnPages, true);
+$extensionPaymentFlash = null;
+if ($extensionPaymentSubmitted && isset($_SESSION['hq_extension_flash']) && is_array($_SESSION['hq_extension_flash'])) {
+    $extensionPaymentFlash = $_SESSION['hq_extension_flash'];
+    unset($_SESSION['hq_extension_flash']);
+}
 
 function resolveImageUrl(?string $imagePath, string $fallback): string
 {
@@ -218,6 +227,7 @@ echo $brand_title; ?></span>
         <!-- Main Dynamic Viewport -->
         <main class="main-viewport">
             <?php if (!empty($_SESSION['hq_activation_pending'])): ?><div role="status" style="margin:1rem 1.25rem;padding:1rem 1.25rem;border:1px solid rgba(255,193,7,.38);border-radius:10px;background:rgba(255,193,7,.08);color:#fef3c7;">Your HQ is pending Admin or Moderator approval. Management tools will be available after activation.</div><?php endif; ?>
+            <?php if (is_array($extensionPaymentFlash) && !empty($extensionPaymentFlash['message'])): ?><div class="alert alert-success" role="status" style="margin:1rem 1.25rem;"> <?= htmlspecialchars((string) $extensionPaymentFlash['message'], ENT_QUOTES, 'UTF-8') ?><?php if (!empty($extensionPaymentFlash['show_payment_status'])): ?> <a href="/php/payment_center.php">View payment status and review process</a>.<?php endif; ?></div><?php endif; ?>
             <div class="top-nav-bar"><div class="hq-breadcrumb">Headquarters / <span id="currentPageLabel">Overview</span></div>
                 <div style="display: flex; align-items: center; gap: 12px; position: relative;">
                     <button type="button" class="user-menu-button hq-theme-toggle" data-hq-theme-toggle aria-label="Switch to light mode" aria-pressed="false">
@@ -303,7 +313,7 @@ echo $user_email_display; ?></p>
                     Your business license <?= $userStatus === 'expired' ? 'has expired' : 'renewal is awaiting admin approval' ?>. Access to HQ operations is paused until the license is approved.
                 </div>
             <?php endif; ?>
-            <iframe title="HQ workspace content" id="viewport" class="content-frame" src="<?= $hqAccessRestricted ? 'brand.php' : 'dashboard.php' ?>"></iframe>
+            <iframe title="HQ workspace content" id="viewport" class="content-frame" src="<?= htmlspecialchars($hqAccessRestricted ? 'brand.php' : ($extensionPaymentSubmitted ? $extensionReturnTo : 'dashboard.php'), ENT_QUOTES, 'UTF-8') ?>"></iframe>
         </main>
     </div>
 
@@ -317,6 +327,13 @@ echo $user_email_display; ?></p>
     });
     function routeTo(path) {
         path = path.trim();
+        const targetPage = path;
+        if (path === 'extend_period.php') {
+            const previousPage = new URL(document.getElementById('viewport').src, window.location.href).pathname.split('/').pop();
+            const allowedReturnPages = ['dashboard.php', 'brand.php', 'station.php', 'pricing.php', 'report_from_manager.php', 'report_to_admin.php', 'account.php', 'profile.php'];
+            const returnTo = allowedReturnPages.includes(previousPage) ? previousPage : 'dashboard.php';
+            path += '?return_to=' + encodeURIComponent(returnTo);
+        }
         if (path === 'profile.php') document.getElementById('currentPageLabel').textContent = 'Profile';
         document.getElementById('viewport').src = path;
     
@@ -326,7 +343,7 @@ echo $user_email_display; ?></p>
             const onclickAttr = button?.getAttribute('onclick') || '';
             button?.removeAttribute('aria-current');
             const match = onclickAttr.match(/routeTo\(['"]([^'"]+)['"]\)/);
-            if (match && match[1] === path) {
+            if (match && match[1] === targetPage) {
                 item.classList.add('active');
                 button.setAttribute('aria-current', 'page');
                 document.getElementById('currentPageLabel').textContent = button.textContent;
