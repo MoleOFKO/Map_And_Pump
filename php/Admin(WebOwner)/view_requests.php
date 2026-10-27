@@ -23,6 +23,9 @@ if (!is_array($accountReviewSuccess) || !in_array($accountReviewSuccess['action'
 $search = trim((string) ($_GET['search'] ?? ''));
 $requestType = strtolower(trim((string) ($_GET['type'] ?? '')));
 $status = strtolower(trim((string) ($_GET['status'] ?? '')));
+if (in_array($status, ['rejected', 'flagged'], true)) {
+    $status = 'reject';
+}
 // Keywords from system_requests (live).
 $allowedStatuses = admin_filter_request_statuses();
 foreach (['pending', 'approved', 'rejected', 'flagged'] as $fallbackStatus) {
@@ -31,6 +34,12 @@ foreach (['pending', 'approved', 'rejected', 'flagged'] as $fallbackStatus) {
     }
 }
 sort($allowedStatuses);
+$statusOptions = array_values(array_diff($allowedStatuses, ['rejected', 'flagged', 'reject']));
+$statusOptions[] = 'reject';
+sort($statusOptions);
+$requestStatusLabel = static fn (string $value): string => in_array(strtolower($value), ['rejected', 'flagged'], true)
+    ? 'Reject'
+    : request_status_label($value);
 
 $dbTypes = admin_filter_request_types();
 $allowedTypes = $dbTypes;
@@ -46,7 +55,7 @@ $requestTypeOptions = admin_request_type_filter_options($allowedTypes);
 if ($requestType !== '' && !in_array($requestType, $allowedTypes, true)) {
     $requestType = '';
 }
-if ($status !== '' && !in_array($status, $allowedStatuses, true)) {
+if ($status !== '' && !in_array($status, $statusOptions, true)) {
     $status = '';
 }
 
@@ -91,7 +100,9 @@ if (hq_db_available() && request_schema_ready()) {
         }
     }
 
-    if ($status !== '') {
+    if ($status === 'reject') {
+        $where[] = "LOWER(r.status) IN ('rejected', 'flagged')";
+    } elseif ($status !== '') {
         $where[] = 'LOWER(r.status) = ?';
         $params[] = $status;
         $types .= 's';
@@ -198,10 +209,27 @@ $flashType = $flash['type'] ?? '';
         .request-detail-scroll::-webkit-scrollbar-thumb {
             background:rgba(0,244,255,.35); border-radius:999px;
         }
-        .request-detail-modal .modal-content { overflow:hidden; }
-        .request-detail-modal .modal-header { padding:1.1rem 1.35rem; border-bottom-color:rgba(0,244,255,.16); background:linear-gradient(120deg,rgba(0,244,255,.09),rgba(37,99,235,.035) 58%,transparent); }
-        .request-detail-modal .modal-body { padding:1.35rem; }
-        .request-detail-modal .modal-footer { padding:1rem 1.35rem; border-top-color:rgba(255,255,255,.09); background:rgba(4,13,30,.34); }
+        .request-detail-modal .modal-content { overflow:hidden; border:1px solid rgba(148,163,184,.2); border-radius:18px; background:#101722 !important; color:#e7edf5; box-shadow:0 28px 80px rgba(0,0,0,.48); }
+        .request-detail-modal .modal-header { padding:1.1rem 1.4rem; border-bottom-color:rgba(148,163,184,.14); background:#121b27; }
+        .request-detail-modal .modal-title { color:#f1f5f9; font-size:1rem; font-weight:650 !important; letter-spacing:-.01em; }
+        .request-detail-modal .modal-body { padding:1.4rem; color:#d5deea; font-size:.9rem; line-height:1.55; }
+        .request-detail-modal .modal-body h6 { color:#e8eef6 !important; font-size:.72rem !important; font-weight:650 !important; letter-spacing:.075em !important; }
+        .request-detail-modal .request-action-row { box-sizing:border-box; position:relative; z-index:1; display:flex; flex-wrap:wrap; gap:.65rem; overflow:visible; padding:1rem 1.4rem; border-top:1px solid rgba(148,163,184,.14); background:#0d141e; }
+        .request-detail-modal .request-action-row form { box-sizing:border-box; display:flex; flex:1 1 11rem; min-width:0; margin:0; }
+        .request-detail-modal .request-action-row > .request-action-btn { flex:1 1 11rem; }
+        .request-detail-modal .request-action-btn { box-sizing:border-box; display:inline-flex; min-height:44px; align-items:center; justify-content:center; gap:.45rem; width:100%; padding:.65rem 1rem; border:1px solid transparent; border-radius:10px; background:transparent; color:#dce5ef; font-family:inherit; font-size:.84rem; font-weight:600; line-height:1.25; text-align:center; text-decoration:none; transition:background-color .16s ease,border-color .16s ease,color .16s ease,box-shadow .16s ease; }
+        .request-detail-modal .request-action-btn:hover { border-color:currentColor; }
+        .request-detail-modal .request-action-btn:focus-visible { outline:2px solid #a9c5df; outline-offset:3px; box-shadow:none; }
+        .request-detail-modal .request-action-btn:disabled { cursor:not-allowed; opacity:.5; }
+        .request-detail-modal .request-action-btn--approve { border-color:#4f8d72; background:#4f8d72; color:#fff; box-shadow:0 2px 6px rgba(39,93,68,.22); }
+        .request-detail-modal .request-action-btn--approve:hover { border-color:#3e795f; background:#3e795f; color:#fff; box-shadow:0 0 0 3px rgba(95,164,132,.14); }
+        .request-detail-modal .request-action-btn--reject { border-color:#a96572; background:transparent; color:#e5bfc6; }
+        .request-detail-modal .request-action-btn--reject:hover { border-color:#a96572; background:rgba(154,79,94,.2); color:#ffe8eb; }
+        .request-detail-modal .request-detail-label { color:#9aa9bb; font-size:.68rem; font-weight:600; letter-spacing:.075em; }
+        .request-detail-modal .request-detail-value { color:#e1e8f0; font-size:.88rem; line-height:1.55; }
+        .request-detail-modal .request-detail-card { border-color:rgba(148,163,184,.16); border-radius:12px; background:rgba(148,163,184,.035); }
+        .request-detail-modal .request-detail-section + .request-detail-section { border-top-color:rgba(148,163,184,.14); }
+        .request-detail-modal .request-detail-callout { border-color:rgba(125,155,190,.24); background:rgba(83,112,148,.08); }
         .request-account-hero { display:flex; align-items:center; gap:1rem; padding:1rem 1.1rem; border:1px solid rgba(0,244,255,.2); border-radius:16px; background:linear-gradient(135deg,rgba(0,244,255,.1),rgba(27,228,148,.035)); box-shadow:inset 0 1px 0 rgba(255,255,255,.05); }
         .request-account-avatar { width:3.15rem; height:3.15rem; flex:0 0 3.15rem; display:grid; place-items:center; border:1px solid rgba(0,244,255,.35); border-radius:13px; color:var(--neon-cyan); background:rgba(0,244,255,.09); font-weight:800; letter-spacing:.03em; }
         .request-account-kicker { color:var(--text-muted); font-size:.7rem; letter-spacing:.09em; text-transform:uppercase; }
@@ -219,11 +247,93 @@ $flashType = $flash['type'] ?? '';
         .request-detail-callout { padding:1rem; border:1px solid rgba(0,244,255,.18); border-radius:12px; background:rgba(0,244,255,.045); }
         .request-review-success .modal-content { border-color:rgba(27,228,148,.35); }
         .request-review-success-icon { width:4.25rem; height:4.25rem; display:grid; place-items:center; margin:0 auto 1rem; border:1px solid rgba(27,228,148,.45); border-radius:50%; background:rgba(27,228,148,.12); color:#1be494; font-size:1.85rem; box-shadow:0 0 24px rgba(27,228,148,.12); }
-        body.background_color.light-mode .request-detail-modal .modal-header { background:linear-gradient(120deg,rgba(0,164,180,.1),rgba(37,99,235,.04) 58%,transparent); }
-        body.background_color.light-mode .request-detail-modal .modal-footer { background:rgba(255,255,255,.55); }
-        body.background_color.light-mode .request-account-hero { background:linear-gradient(135deg,rgba(0,190,210,.1),rgba(27,228,148,.045)); }
-        body.background_color.light-mode .request-detail-card { background:rgba(255,255,255,.62); }
-        @media (max-width:767.98px) { .request-detail-modal .modal-body { padding:1rem; } .request-detail-grid, .request-detail-grid--two { grid-template-columns:1fr; } .request-detail-card--wide, .request-detail-card--full { grid-column:auto; } }
+        body.background_color.light-mode .request-detail-modal .modal-content,
+        body.background_color[data-theme="light"] .request-detail-modal .modal-content { border-color:#d8dee8; background:#fff !important; color:#202a38; box-shadow:0 24px 64px rgba(15,23,42,.18); }
+        body.background_color.light-mode .request-detail-modal .modal-header,
+        body.background_color[data-theme="light"] .request-detail-modal .modal-header { border-bottom-color:#e5e9f0; background:#fff; }
+        body.background_color.light-mode .request-detail-modal .modal-title,
+        body.background_color[data-theme="light"] .request-detail-modal .modal-title,
+        body.background_color.light-mode .request-detail-modal .modal-body h6,
+        body.background_color[data-theme="light"] .request-detail-modal .modal-body h6 { color:#202a38 !important; }
+        body.background_color.light-mode .request-detail-modal .modal-body,
+        body.background_color[data-theme="light"] .request-detail-modal .modal-body,
+        body.background_color.light-mode .request-detail-modal .text-white,
+        body.background_color[data-theme="light"] .request-detail-modal .text-white { color:#263244 !important; }
+        body.background_color.light-mode .request-detail-modal .text-white-50,
+        body.background_color[data-theme="light"] .request-detail-modal .text-white-50 { color:#596779 !important; }
+        body.background_color.light-mode .request-detail-modal .request-detail-label,
+        body.background_color[data-theme="light"] .request-detail-modal .request-detail-label { color:#667487 !important; }
+        body.background_color.light-mode .request-detail-modal .request-detail-value,
+        body.background_color[data-theme="light"] .request-detail-modal .request-detail-value { color:#263244 !important; }
+        body.background_color.light-mode .request-detail-modal .txt-neon-cyan,
+        body.background_color[data-theme="light"] .request-detail-modal .txt-neon-cyan { color:#08758a !important; }
+        body.background_color.light-mode .request-detail-modal .txt-neon-blue,
+        body.background_color[data-theme="light"] .request-detail-modal .txt-neon-blue { color:#245db2 !important; }
+        body.background_color.light-mode .request-detail-modal .request-action-row,
+        body.background_color[data-theme="light"] .request-detail-modal .request-action-row { border-top-color:#e2e7ee; background:#f3f5f8; }
+        body.background_color.light-mode .request-detail-modal .btn-close-white,
+        body.background_color[data-theme="light"] .request-detail-modal .btn-close-white { filter:brightness(0) saturate(100%); opacity:.65; }
+        body.background_color.light-mode .request-detail-modal .request-action-btn,
+        body.background_color[data-theme="light"] .request-detail-modal .request-action-btn { border-color:#cbd4e0; background:transparent; color:#344256; }
+        body.background_color.light-mode .request-detail-modal .request-action-btn:hover,
+        body.background_color[data-theme="light"] .request-detail-modal .request-action-btn:hover { border-color:#9aa9bc; background:#f1f5f9; color:#172335; }
+        body.background_color.light-mode .request-detail-modal .request-action-btn--approve,
+        body.background_color[data-theme="light"] .request-detail-modal .request-action-btn--approve { border-color:#4f8d72; background:#4f8d72; color:#fff; box-shadow:0 2px 5px rgba(39,93,68,.16); }
+        body.background_color.light-mode .request-detail-modal .request-action-btn--approve:hover,
+        body.background_color[data-theme="light"] .request-detail-modal .request-action-btn--approve:hover { border-color:#3e795f; background:#3e795f; color:#fff; box-shadow:0 0 0 3px rgba(79,141,114,.14); }
+        body.background_color.light-mode .request-detail-modal .request-action-btn--secondary,
+        body.background_color[data-theme="light"] .request-detail-modal .request-action-btn--secondary { border-color:#c5ceda; background:transparent; color:#344256; }
+        body.background_color.light-mode .request-detail-modal .request-action-btn--secondary:hover,
+        body.background_color[data-theme="light"] .request-detail-modal .request-action-btn--secondary:hover { border-color:#8e9caf; background:#edf1f5; color:#172335; }
+        body.background_color.light-mode .request-detail-modal .request-action-btn--reject,
+        body.background_color[data-theme="light"] .request-detail-modal .request-action-btn--reject { border-color:#bd6a75; background:transparent; color:#923b48; }
+        body.background_color.light-mode .request-detail-modal .request-action-btn--reject:hover,
+        body.background_color[data-theme="light"] .request-detail-modal .request-action-btn--reject:hover { border-color:#a94f5c; background:#fff4f4; color:#7f2937; }
+        body.background_color.light-mode .request-account-hero,
+        body.background_color[data-theme="light"] .request-account-hero { border-color:#d8e2eb; background:#f5f9fc; box-shadow:none; }
+        body.background_color.light-mode .request-account-name,
+        body.background_color[data-theme="light"] .request-account-name { color:#202a38; }
+        body.background_color.light-mode .request-account-kicker,
+        body.background_color[data-theme="light"] .request-account-kicker { color:#667487; }
+        body.background_color.light-mode .request-account-avatar,
+        body.background_color[data-theme="light"] .request-account-avatar { border-color:#b9dbe2; background:#e9f4f6; color:#08758a; }
+        body.background_color.light-mode .request-detail-card,
+        body.background_color[data-theme="light"] .request-detail-card { border-color:#e0e6ee; background:#f8fafc; }
+        body.background_color.light-mode .request-detail-section + .request-detail-section,
+        body.background_color[data-theme="light"] .request-detail-section + .request-detail-section { border-top-color:#e2e8f0; }
+        body.background_color.light-mode .request-detail-callout,
+        body.background_color[data-theme="light"] .request-detail-callout { border-color:#cbd9e7; background:#f2f7fb; }
+        body.background_color.light-mode .request-detail-scroll,
+        body.background_color[data-theme="light"] .request-detail-scroll { scrollbar-color:#9aa9bc #f1f5f9; }
+        body.background_color.light-mode .request-detail-scroll::-webkit-scrollbar-thumb,
+        body.background_color[data-theme="light"] .request-detail-scroll::-webkit-scrollbar-thumb { background:#9aa9bc; }
+        body.background_color.light-mode .request-detail-modal .request-detail-value a,
+        body.background_color[data-theme="light"] .request-detail-modal .request-detail-value a { color:#245db2; }
+        body.background_color.light-mode .request-detail-modal .text-warning,
+        body.background_color[data-theme="light"] .request-detail-modal .text-warning { color:#8a5a00 !important; }
+        body.background_color.light-mode .request-detail-modal .request-status,
+        body.background_color[data-theme="light"] .request-detail-modal .request-status { color:#465568; }
+        body.background_color.light-mode .request-detail-modal .acct-profile-name,
+        body.background_color[data-theme="light"] .request-detail-modal .acct-profile-name,
+        body.background_color.light-mode .request-detail-modal .acct-section-title,
+        body.background_color[data-theme="light"] .request-detail-modal .acct-section-title { color:#202a38; }
+        body.background_color.light-mode .request-detail-modal .acct-profile-sub,
+        body.background_color[data-theme="light"] .request-detail-modal .acct-profile-sub { color:#596779; }
+        body.background_color.light-mode .request-detail-modal .acct-section,
+        body.background_color[data-theme="light"] .request-detail-modal .acct-section { border-color:#e0e6ee; background:#f8fafc; }
+        body.background_color.light-mode .request-detail-modal .acct-field-icon,
+        body.background_color[data-theme="light"] .request-detail-modal .acct-field-icon { background:#e9f4f6; color:#08758a; }
+        body.background_color.light-mode .request-detail-modal .acct-doc-card,
+        body.background_color[data-theme="light"] .request-detail-modal .acct-doc-card { border-color:#d8dee8; background:#fff; }
+        body.background_color.light-mode .request-detail-modal .acct-doc-thumb,
+        body.background_color[data-theme="light"] .request-detail-modal .acct-doc-thumb { background:#f1f5f9; }
+        body.background_color.light-mode .request-detail-modal .acct-doc-label,
+        body.background_color[data-theme="light"] .request-detail-modal .acct-doc-label { border-top-color:#e0e6ee; color:#465568; }
+        body.background_color.light-mode .request-detail-modal .acct-badge-pending,
+        body.background_color[data-theme="light"] .request-detail-modal .acct-badge-pending { border-color:#e8c879; background:#fff8e6; color:#77520a; }
+        body.background_color.light-mode .request-detail-modal .acct-badge-role,
+        body.background_color[data-theme="light"] .request-detail-modal .acct-badge-role { border-color:#b9dbe2; background:#e9f4f6; color:#08758a; }
+        @media (max-width:767.98px) { .request-detail-modal .modal-body { padding:1rem; } .request-detail-modal .modal-header { padding:1rem; } .request-detail-modal .request-action-row { padding:.85rem 1rem; } .request-detail-modal .request-action-row form, .request-detail-modal .request-action-row > .request-action-btn { flex-basis:100%; } .request-detail-grid, .request-detail-grid--two { grid-template-columns:1fr; } .request-detail-card--wide, .request-detail-card--full { grid-column:auto; } }
         body.background_color.light-mode .request-flash { background:rgba(255,255,255,.9); }
         body.background_color.light-mode .request-status { color:var(--text-muted); }
 
@@ -251,32 +361,6 @@ $flashType = $flash['type'] ?? '';
         .acct-doc-label{font-size:.66rem;color:rgba(255,255,255,.65);padding:.4rem .5rem;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;border-top:1px solid var(--glass-border);}
         .acct-empty-note{border-radius:12px;border:1px dashed var(--glass-border);padding:.9rem 1.1rem;color:rgba(255,255,255,.55);font-size:.82rem;display:flex;align-items:center;gap:.6rem;}
         
-        /* Modal footer action styles: Make buttons long & centered */
-        #requestDetailsFooter { display: flex; gap: 0.75rem; width: 100%; }
-        #requestDetailsFooter form { display: flex; flex: 1; margin: 0; }
-        .acct-btn {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            text-align: center;
-            width: 100%;
-            gap: 0.5rem;
-            padding: 0.65rem 2rem;
-            border-radius: 999px;
-            font-size: 0.85rem;
-            font-weight: 700;
-            letter-spacing: 0.02em;
-            border: 1px solid transparent;
-            background: rgba(255, 255, 255, 0.02);
-            cursor: pointer;
-            transition: transform .15s ease, box-shadow .15s ease, background .15s ease;
-            flex: 1;
-        }
-        .acct-btn:active{transform:translateY(1px);}
-        .acct-btn-approve{color:#1be494;border-color:rgba(27,228,148,.4);background:rgba(27,228,148,.08);}
-        .acct-btn-approve:hover{background:rgba(27,228,148,.16);box-shadow:0 0 18px rgba(27,228,148,.35);color:#1be494;}
-        .acct-btn-reject{color:#ff4d6a;border-color:rgba(255,77,106,.4);background:rgba(255,77,106,.08);}
-        .acct-btn-reject:hover{background:rgba(255,77,106,.16);box-shadow:0 0 18px rgba(255,77,106,.35);color:#ff4d6a;}
         body.background_color.light-mode .acct-profile-header{background:linear-gradient(135deg,rgba(0,150,220,.08),rgba(0,150,220,.02));}
         body.background_color.light-mode .acct-profile-name{color:#12233f;}
     </style>
@@ -306,14 +390,14 @@ $flashType = $flash['type'] ?? '';
         <div class="row g-3 mb-4">
             <div class="col-12 col-sm-4"><div class="request-indicator-card"><div><p class="text-white-50 mb-1 small fw-semibold" style="text-transform:uppercase;letter-spacing:.06em;font-size:.72rem;">Pending Verification</p><h4 class="fw-bold text-warning mb-0" style="font-size:1.8rem;letter-spacing:-.04em;"><?= (int) $summary['pending'] ?></h4></div><span class="fs-3 text-warning"><i class="bi bi-hourglass-split"></i></span></div></div>
             <div class="col-12 col-sm-4"><div class="request-indicator-card"><div><p class="text-white-50 mb-1 small fw-semibold" style="text-transform:uppercase;letter-spacing:.06em;font-size:.72rem;">Approved Today</p><h4 class="fw-bold mb-0" data-live-request-count="approved_today" style="font-size:1.8rem;letter-spacing:-.04em;color:#1be494;"><?= (int) $summary['approved_today'] ?></h4></div><span class="fs-3" style="color:#1be494;"><i class="bi bi-patch-check-fill"></i></span></div></div>
-            <div class="col-12 col-sm-4"><div class="request-indicator-card"><div><p class="text-white-50 mb-1 small fw-semibold" style="text-transform:uppercase;letter-spacing:.06em;font-size:.72rem;">Declined / Flagged</p><h4 class="fw-bold mb-0" data-live-request-count="declined_flagged" style="font-size:1.8rem;letter-spacing:-.04em;color:#ff4d6a;"><?= (int) $summary['declined_flagged'] ?></h4></div><span class="fs-3" style="color:#ff4d6a;"><i class="bi bi-shield-x"></i></span></div></div>
+            <div class="col-12 col-sm-4"><div class="request-indicator-card"><div><p class="text-white-50 mb-1 small fw-semibold" style="text-transform:uppercase;letter-spacing:.06em;font-size:.72rem;">Reject</p><h4 class="fw-bold mb-0" data-live-request-count="declined_flagged" style="font-size:1.8rem;letter-spacing:-.04em;color:#ff4d6a;"><?= (int) $summary['declined_flagged'] ?></h4></div><span class="fs-3" style="color:#ff4d6a;"><i class="bi bi-shield-x"></i></span></div></div>
         </div>
 
         <div class="row g-4">
             <div class="col-12"><div class="dashboard-card py-3 px-4"><form class="row g-3 align-items-center" method="GET" action="view_requests.php">
                 <div class="col-12 col-md-5"><div class="input-group"><span class="input-group-text bg-transparent border-end-0" style="border-color:var(--glass-border);color:var(--neon-cyan);border-radius:12px 0 0 12px;"><i class="bi bi-funnel-fill"></i></span><input type="text" class="form-control glass-input border-start-0" placeholder="Filter by company, sender name, or reference ID..." name="search" value="<?= hq_escape($search) ?>"></div></div>
                 <div class="col-12 col-md-3"><select class="form-select glass-select" name="type"><option value="" <?= $requestType === '' ? 'selected' : '' ?>>All Request Types</option><?php foreach ($requestTypeOptions as $option): ?><option value="<?= hq_escape($option) ?>" <?= admin_request_type_filter_value($requestType) === $option ? 'selected' : '' ?>><?= hq_escape(admin_filter_label($option)) ?></option><?php endforeach; ?></select></div>
-                <div class="col-12 col-md-2"><select class="form-select glass-select" name="status"><option value="" <?= $status === '' ? 'selected' : '' ?>>All Status</option><?php foreach ($allowedStatuses as $option): ?><option value="<?= hq_escape($option) ?>" <?= $status === $option ? 'selected' : '' ?>><?= hq_escape(admin_filter_label($option)) ?></option><?php endforeach; ?></select></div>
+                <div class="col-12 col-md-2"><select class="form-select glass-select" name="status"><option value="" <?= $status === '' ? 'selected' : '' ?>>All Status</option><?php foreach ($statusOptions as $option): ?><option value="<?= hq_escape($option) ?>" <?= $status === $option ? 'selected' : '' ?>><?= hq_escape($option === 'reject' ? 'Reject' : admin_filter_label($option)) ?></option><?php endforeach; ?></select></div>
                 <div class="col-12 col-md-2 d-flex gap-2">
                     <button type="button" class="btn btn-neon flex-grow-1 js-clear-filters" title="Clear filters">Clear</button>
                 </div>
@@ -358,7 +442,7 @@ $flashType = $flash['type'] ?? '';
                         <td><div class="fw-semibold text-white"><?= hq_escape($sender) ?></div><div class="text-white-50 small" style="font-size:.8rem;"><?= hq_escape($location) ?></div></td>
                         <td><span class="badge rounded-pill bg-info bg-opacity-10 text-info border border-info border-opacity-25 px-2 py-1"><?= hq_escape(request_type_short_label($row['request_type'])) ?></span></td>
                         <td class="text-white-50"><?= hq_escape(request_date($row['created_at'])) ?></td>
-                        <td><span class="request-status <?= request_status_class($rowStatus) ?>"><?= hq_escape(request_status_label($rowStatus)) ?></span><?php if (strtolower((string) $row['request_type']) === 'hq_registration'): ?><div class="mt-1"><span class="badge rounded-pill <?= $paymentState === 'received' ? 'bg-success' : ($paymentState === 'payer_reported_paid' ? 'bg-warning text-dark' : 'bg-secondary') ?>"><?= hq_escape(match ($paymentState) { 'received' => 'Payment received', 'payer_reported_paid' => 'Payment needs verification', 'rejected' => 'Payment not received', 'cancelled' => 'Payment cancelled', 'pending_payment' => 'Awaiting payer', default => 'Payment record missing' }) ?></span></div><?php endif; ?></td>
+                        <td><span class="request-status <?= request_status_class($rowStatus) ?>"><?= hq_escape($requestStatusLabel($rowStatus)) ?></span><?php if (strtolower((string) $row['request_type']) === 'hq_registration'): ?><div class="mt-1"><span class="badge rounded-pill <?= $paymentState === 'received' ? 'bg-success' : ($paymentState === 'payer_reported_paid' ? 'bg-warning text-dark' : 'bg-secondary') ?>"><?= hq_escape(match ($paymentState) { 'received' => 'Payment received', 'payer_reported_paid' => 'Payment needs verification', 'rejected' => 'Payment not received', 'cancelled' => 'Payment cancelled', 'pending_payment' => 'Awaiting payer', default => 'Payment record missing' }) ?></span></div><?php endif; ?></td>
                         <td class="text-end"><div class="d-flex gap-2 justify-content-end">
                             <button type="button" class="btn-action js-view-request" title="View Request Details" aria-label="View request <?= hq_escape($row['reference_code']) ?> details" data-request-id="<?= (int) $row['request_id'] ?>"><i class="bi bi-eye-fill"></i></button>
                             <?php if (strtolower($rowStatus) === 'pending'): ?><?php if ($canApproveRequest): ?><a href="#" class="btn-action btn-action-success js-request-approve" title="<?= $requiresRegistrationPayment ? 'Approve and create pending HQ' : 'Approve request' ?>" aria-label="Approve request <?= hq_escape($row['reference_code']) ?>" data-request-id="<?= (int) $row['request_id'] ?>" data-reference="<?= hq_escape($row['reference_code']) ?>"><i class="bi bi-check-lg"></i></a><?php else: ?><button type="button" class="btn-action btn-action-success" disabled title="Confirm the registration payment before approving"><i class="bi bi-check-lg"></i></button><?php endif; ?><a href="#" class="btn-action btn-action-danger js-request-reject" title="Reject" aria-label="Reject request <?= hq_escape($row['reference_code']) ?>" data-request-id="<?= (int) $row['request_id'] ?>" data-reference="<?= hq_escape($row['reference_code']) ?>" data-sender="<?= hq_escape($sender) ?>"><i class="bi bi-x-lg"></i></a><?php endif; ?>
@@ -378,7 +462,7 @@ $flashType = $flash['type'] ?? '';
                         <td><div class="fw-semibold text-white"><?= hq_escape((string) ($paymentRow['payer_hq_name'] ?: $paymentRow['payer_name'] ?: 'HQ payer')) ?></div><div class="text-white-50 small"><?= hq_escape((string) ($paymentRow['description'] ?? '')) ?></div><div class="text-white-50 small"><?= number_format((float) $paymentRow['amount_mmk'], 2) ?> MMK · <?= hq_escape((string) ($paymentRow['payer_email'] ?? '')) ?></div></td>
                         <td><span class="badge rounded-pill bg-info bg-opacity-10 text-info border border-info border-opacity-25 px-2 py-1">Payment Verification</span><div class="text-white-50 small mt-1"><?= hq_escape($paymentTypeLabel) ?></div></td>
                         <td class="text-white-50"><?= hq_escape(request_date((string) $paymentRow['created_at'])) ?></td>
-                        <td><span class="request-status <?= request_status_class($paymentStatus) ?>"><?= hq_escape($paymentStatus === 'pending' ? 'Payer reported paid' : request_status_label($paymentStatus)) ?></span></td>
+                        <td><span class="request-status <?= request_status_class($paymentStatus) ?>"><?= hq_escape($paymentStatus === 'pending' ? 'Payer reported paid' : $requestStatusLabel($paymentStatus)) ?></span></td>
                         <td class="text-end"><div class="d-flex gap-2 justify-content-end align-items-center">
                             <button type="button" class="btn-action js-view-payment" title="View payment verification details" aria-label="View payment verification #PAY-<?= $paymentId ?> details"
                                 data-payment-id="<?= $paymentId ?>" data-payment-type="<?= hq_escape($paymentTypeLabel) ?>"
@@ -388,8 +472,8 @@ $flashType = $flash['type'] ?? '';
                                 data-payment-method="<?= hq_escape((string) ($paymentRow['payment_method'] ?? 'Not provided')) ?>" data-receipt-name="<?= hq_escape((string) ($paymentRow['receipt_name'] ?? '')) ?>"
                                 data-receipt-mime="<?= hq_escape((string) ($paymentRow['receipt_mime_type'] ?? '')) ?>" data-is-payer="<?= $isPayer ? 'yes' : 'no' ?>"><i class="bi bi-eye-fill"></i></button>
                             <?php if ($paymentState === 'payer_reported_paid' && !$isPayer): ?><div class="d-none" id="paymentActions<?= $paymentId ?>">
-                                <form action="/php/Payment/action.php" method="POST" class="m-0 flex-fill"><input type="hidden" name="csrf_token" value="<?= hq_escape((string) $_SESSION['payment_transfer_csrf']) ?>"><input type="hidden" name="transfer_id" value="<?= $paymentId ?>"><input type="hidden" name="action" value="confirm_received"><input type="hidden" name="return_to" value="/php/Admin(WebOwner)/view_requests.php"><button type="submit" class="btn btn-success w-100" onclick="return confirm('Confirm receipt only after checking your bank or wallet records.')">I have confirmed</button></form>
-                                <form action="/php/Payment/action.php" method="POST" class="m-0 flex-fill"><input type="hidden" name="csrf_token" value="<?= hq_escape((string) $_SESSION['payment_transfer_csrf']) ?>"><input type="hidden" name="transfer_id" value="<?= $paymentId ?>"><input type="hidden" name="action" value="mark_not_received"><input type="hidden" name="return_to" value="/php/Admin(WebOwner)/view_requests.php"><input type="hidden" name="decision_note" value="Payment not verified by Admin."><button type="submit" class="btn btn-outline-danger w-100" onclick="return confirm('Record that the payment was not received or could not be verified?')">The payment wasn’t received</button></form>
+                                <form action="/php/Payment/action.php" method="POST" class="m-0 flex-fill"><input type="hidden" name="csrf_token" value="<?= hq_escape((string) $_SESSION['payment_transfer_csrf']) ?>"><input type="hidden" name="transfer_id" value="<?= $paymentId ?>"><input type="hidden" name="action" value="confirm_received"><input type="hidden" name="return_to" value="/php/Admin(WebOwner)/view_requests.php"><button type="submit" class="request-action-btn request-action-btn--secondary" onclick="return confirm('Confirm receipt only after checking your bank or wallet records.')">Confirm payment</button></form>
+                                <form action="/php/Payment/action.php" method="POST" class="m-0 flex-fill"><input type="hidden" name="csrf_token" value="<?= hq_escape((string) $_SESSION['payment_transfer_csrf']) ?>"><input type="hidden" name="transfer_id" value="<?= $paymentId ?>"><input type="hidden" name="action" value="mark_not_received"><input type="hidden" name="return_to" value="/php/Admin(WebOwner)/view_requests.php"><input type="hidden" name="decision_note" value="Payment not verified by Admin."><button type="submit" class="request-action-btn request-action-btn--secondary" onclick="return confirm('Record that the payment was not received or could not be verified?')">Mark not received</button></form>
                             </div><?php endif; ?>
                         </div></td>
                     </tr>
@@ -398,19 +482,17 @@ $flashType = $flash['type'] ?? '';
         </div>
     </main>
 
-    <div class="modal fade glass-modal request-detail-modal" id="paymentDetailsModal" tabindex="-1" aria-labelledby="paymentDetailsTitle" aria-hidden="true"><div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-xl"><div class="modal-content"><div class="modal-header"><h5 class="modal-title fw-bold" id="paymentDetailsTitle"><i class="bi bi-receipt-cutoff txt-neon-cyan me-2"></i> Payment Verification Details</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button></div><div class="modal-body" id="paymentDetailsBody"></div><div class="modal-footer" id="paymentDetailsFooter"><button type="button" class="btn btn-outline-secondary rounded-3 text-white-50 border-secondary border-opacity-20" data-bs-dismiss="modal">Close</button></div></div></div></div>
+    <div class="modal fade glass-modal request-detail-modal" id="paymentDetailsModal" tabindex="-1" aria-labelledby="paymentDetailsTitle" aria-hidden="true"><div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-xl"><div class="modal-content"><div class="modal-header"><h5 class="modal-title fw-bold" id="paymentDetailsTitle"><i class="bi bi-receipt-cutoff txt-neon-cyan me-2"></i> Payment Verification Details</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button></div><div class="modal-body" id="paymentDetailsBody"></div><div class="modal-footer request-action-row" id="paymentDetailsFooter"><button type="button" class="btn btn-outline-secondary rounded-3 text-white-50 border-secondary border-opacity-20" data-bs-dismiss="modal">Close</button></div></div></div></div>
 
     <form action="request_action.php" method="POST" id="approveRequestForm" class="d-none"><input type="hidden" name="request_id" id="approveRequestId"><input type="hidden" name="action" value="approve"></form>
 
-    <div class="modal fade glass-modal request-detail-modal" id="viewReqModal" tabindex="-1" aria-labelledby="viewReqModalLabel" aria-hidden="true"><div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-xl"><div class="modal-content"><div class="modal-header"><h5 class="modal-title fw-bold" id="viewReqModalLabel"><i class="bi bi-file-earmark-text txt-neon-cyan me-2"></i> Request Details</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button></div><div class="modal-body" id="requestDetailsBody"><div class="text-center text-white-50 py-5"><div class="spinner-border spinner-border-sm txt-neon-cyan mb-2" role="status"></div><div>Loading request details…</div></div></div><div class="modal-footer" id="requestDetailsFooter"><button type="button" class="btn btn-outline-secondary rounded-3 text-white-50 border-secondary border-opacity-20" data-bs-dismiss="modal">Close</button></div></div></div></div>
+    <div class="modal fade glass-modal request-detail-modal" id="viewReqModal" tabindex="-1" aria-labelledby="viewReqModalLabel" aria-hidden="true"><div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-xl"><div class="modal-content"><div class="modal-header"><h5 class="modal-title fw-bold" id="viewReqModalLabel"><i class="bi bi-file-earmark-text txt-neon-cyan me-2"></i> Request Details</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button></div><div class="modal-body" id="requestDetailsBody"><div class="text-center text-white-50 py-5"><div class="spinner-border spinner-border-sm txt-neon-cyan mb-2" role="status"></div><div>Loading request details…</div></div></div><div class="modal-footer request-action-row" id="requestDetailsFooter"><button type="button" class="btn btn-outline-secondary rounded-3 text-white-50 border-secondary border-opacity-20" data-bs-dismiss="modal">Close</button></div></div></div></div>
 
     <?php if ($accountReviewSuccess): ?>
         <div class="modal fade glass-modal request-review-success" id="accountReviewSuccessModal" tabindex="-1" aria-labelledby="accountReviewSuccessLabel" aria-hidden="true"><div class="modal-dialog modal-dialog-centered modal-sm"><div class="modal-content"><div class="modal-body text-center py-4 px-4"><div class="request-review-success-icon"><i class="bi bi-check-lg"></i></div><h5 class="fw-bold text-white mb-2" id="accountReviewSuccessLabel">Action completed</h5><p class="text-white-50 mb-1">The <?= hq_escape((string) $accountReviewSuccess['action']) ?> is executed successfully!</p><p class="small text-white-50 mb-0">Account ACCT-<?= (int) ($accountReviewSuccess['account_id'] ?? 0) ?></p></div><div class="modal-footer justify-content-center"><button type="button" class="btn btn-neon px-4" data-bs-dismiss="modal">Done</button></div></div></div></div>
     <?php endif; ?>
 
-    <div class="modal fade glass-modal" id="rejectReqModal" tabindex="-1" aria-labelledby="rejectReqModalLabel" aria-hidden="true"><div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-header"><h5 class="modal-title fw-bold" id="rejectReqModalLabel"><i class="bi bi-shield-x text-danger me-2"></i> Reject Request</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button></div><form action="request_action.php" method="POST" id="rejectReqForm"><div class="modal-body d-flex flex-column gap-3"><input type="hidden" name="request_id" id="rejectRequestId"><input type="hidden" name="user_id" id="rejectUserId"><input type="hidden" name="action" value="reject"><input type="hidden" name="return_to" value="view_requests.php"><div class="small text-white-50">Target request: <span class="txt-neon-cyan fw-semibold" id="rejectRequestReference">—</span></div><div class="small text-white-50">Sender: <span class="text-white" id="rejectRequestSender">—</span></div><div><label class="form-label text-white-50 small" for="rejectReason">Reason for rejection</label><textarea class="form-control glass-input" name="reason" id="rejectReason" rows="5" maxlength="2000" placeholder="Explain why this request is being rejected..." required style="resize:none;"></textarea></div><div class="small text-white-50"><i class="bi bi-envelope me-1 txt-neon-cyan"></i>The reason is recorded in request history. A status email is attempted; sign in to review request details.</div></div><div class="modal-footer"><button type="button" class="btn btn-outline-secondary rounded-3 text-white-50 border-secondary border-opacity-20" data-bs-dismiss="modal">Cancel</button><button type="submit" class="btn btn-danger">Confirm Rejection</button></div></form></div></div></div>
-
-    <div class="modal fade glass-modal" id="flagReqModal" tabindex="-1" aria-labelledby="flagReqModalLabel" aria-hidden="true"><div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-header"><h5 class="modal-title fw-bold" id="flagReqModalLabel"><i class="bi bi-flag-fill text-warning me-2"></i> Flag Request</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button></div><form action="request_action.php" method="POST" id="flagReqForm"><div class="modal-body d-flex flex-column gap-3"><input type="hidden" name="request_id" id="flagRequestId"><input type="hidden" name="action" value="flag"><input type="hidden" name="return_to" value="view_requests.php"><div class="small text-white-50">Target request: <span class="txt-neon-cyan fw-semibold" id="flagRequestReference">—</span></div><div class="small text-white-50">Sender: <span class="text-white" id="flagRequestSender">—</span></div><div><label class="form-label text-white-50 small" for="flagReason">Reason for flagging</label><textarea class="form-control glass-input" name="reason" id="flagReason" rows="5" maxlength="2000" placeholder="Explain why this request needs follow-up..." required style="resize:none;"></textarea></div><div class="small text-white-50"><i class="bi bi-info-circle me-1 txt-neon-cyan"></i>Flagged requests stay in the queue for later review; they are not approved or rejected.</div></div><div class="modal-footer"><button type="button" class="btn btn-outline-secondary rounded-3 text-white-50 border-secondary border-opacity-20" data-bs-dismiss="modal">Cancel</button><button type="submit" class="btn btn-warning">Confirm Flag</button></div></form></div></div></div>
+    <div class="modal fade glass-modal" id="rejectReqModal" tabindex="-1" aria-labelledby="rejectReqModalLabel" aria-hidden="true"><div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-header"><h5 class="modal-title fw-bold" id="rejectReqModalLabel"><i class="bi bi-shield-x text-danger me-2"></i> Reject Request</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button></div><form action="request_action.php" method="POST" id="rejectReqForm"><div class="modal-body d-flex flex-column gap-3"><input type="hidden" name="request_id" id="rejectRequestId"><input type="hidden" name="user_id" id="rejectUserId"><input type="hidden" name="action" value="reject"><input type="hidden" name="return_to" value="view_requests.php"><div class="small text-white-50">Target request: <span class="txt-neon-cyan fw-semibold" id="rejectRequestReference">—</span></div><div class="small text-white-50">Sender: <span class="text-white" id="rejectRequestSender">—</span></div><div><label class="form-label text-white-50 small" for="rejectReason">Reason for rejection</label><textarea class="form-control glass-input" name="reason" id="rejectReason" rows="5" maxlength="2000" placeholder="Explain why this request is being rejected..." required style="resize:none;"></textarea></div><div class="small text-white-50"><i class="bi bi-envelope me-1 txt-neon-cyan"></i>The reason is recorded in request history. A status email is attempted; sign in to review request details.</div></div><div class="modal-footer"><button type="button" class="btn btn-outline-secondary rounded-3 text-white-50 border-secondary border-opacity-20" data-bs-dismiss="modal">Cancel</button><button type="submit" class="btn btn-danger">Reject</button></div></form></div></div></div>
 
     
 
@@ -433,7 +515,7 @@ $flashType = $flash['type'] ?? '';
             const escapeHtml = (value) => String(value ?? '').replace(/[&<>'"]/g, (character) => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#039;','"':'&quot;'}[character]));
             const formatDate = (value) => value ? new Date(String(value).replace(' ', 'T')).toLocaleString() : 'Not available';
             const statusClass = (status) => ({approved:'request-status-approved', rejected:'request-status-rejected', flagged:'request-status-flagged'}[String(status || '').toLowerCase()] || 'request-status-pending');
-            const statusLabel = (status) => ({pending:'Pending', approved:'Approved', rejected:'Rejected', flagged:'Flagged'}[String(status || '').toLowerCase()] || 'Pending');
+            const statusLabel = (status) => ({pending:'Pending', approved:'Approved', rejected:'Reject', flagged:'Reject'}[String(status || '').toLowerCase()] || 'Pending');
             const defaultFooter = '<button type="button" class="btn btn-outline-secondary rounded-3 text-white-50 border-secondary border-opacity-20 w-100" data-bs-dismiss="modal">Close</button>';
             const setFooter = (html = defaultFooter) => { detailsFooter.innerHTML = html; };
             const fileLink = (path, label) => path ? '<a href="' + escapeHtml(path) + '" target="_blank" rel="noopener" class="txt-neon-blue text-decoration-none"><i class="bi bi-box-arrow-up-right me-1"></i>' + escapeHtml(label || 'Open file') + '</a>' : '<span class="text-white-50">Not uploaded</span>';
@@ -490,19 +572,6 @@ $flashType = $flash['type'] ?? '';
                 rejectReason.value = '';
                 rejectModal.show();
             };
-            const flagModal = bootstrap.Modal.getOrCreateInstance(document.getElementById('flagReqModal'));
-            const flagId = document.getElementById('flagRequestId');
-            const flagReference = document.getElementById('flagRequestReference');
-            const flagSender = document.getElementById('flagRequestSender');
-            const flagReason = document.getElementById('flagReason');
-            const flagTarget = (id, label, sender) => {
-                if (flagId) flagId.value = id || '';
-                if (flagReference) flagReference.textContent = label || 'Selected request';
-                if (flagSender) flagSender.textContent = sender || 'Unknown sender';
-                if (flagReason) flagReason.value = '';
-                flagModal.show();
-            };
-
             document.addEventListener('click', (event) => {
                 const approveBtn = event.target.closest('.js-request-approve');
                 if (approveBtn) {
@@ -530,7 +599,7 @@ $flashType = $flash['type'] ?? '';
                 const detailLabels = {company_address:'Company address', owner_phone:'Owner phone', company_phone:'Company phone', license_id:'License ID', renewal_license_number:'Renewal license number', license_expiry:'License expiry', payment_method:'Payment method', bank_name:'Bank name', requested_station_count:'Stations requested'};
                 const detailRows = Object.entries(detailLabels).filter(([key]) => parsedDetails[key] !== undefined && parsedDetails[key] !== null && String(parsedDetails[key]).trim() !== '').map(([key,label]) => '<div class="mb-2"><div class="request-detail-label">' + label + '</div><div class="request-detail-value">' + escapeHtml(parsedDetails[key]) + '</div></div>').join('');
                 const readableDetails = detailRows || (Object.keys(parsedDetails).length ? Object.entries(parsedDetails).map(([key,value]) => '<div class="mb-2"><div class="request-detail-label">' + escapeHtml(key.replaceAll('_',' ')) + '</div><div class="request-detail-value">' + escapeHtml(value) + '</div></div>').join('') : escapeHtml(request.request_details || 'No additional details provided.'));
-                detailsBody.innerHTML = '<div class="row g-4"><div class="col-12 col-md-6"><h6 class="fw-semibold text-white mb-3" style="letter-spacing:.5px;font-size:.78rem;text-transform:uppercase;">Submitter Info</h6><div class="mb-3"><div class="request-detail-label">Corporate Partner</div><div class="request-detail-value">' + escapeHtml(request.sender_entity || request.hq_company_name || 'Not available') + '</div></div><div class="mb-3"><div class="request-detail-label">Authorized Official</div><div class="request-detail-value">' + escapeHtml(request.sender_name || request.submitter_username || 'Not available') + (request.sender_email ? ' (' + escapeHtml(request.sender_email) + ')' : '') + '</div></div><div class="mb-3"><div class="request-detail-label">Operation Hub Location</div><div class="request-detail-value">' + escapeHtml(request.location || 'Not provided') + '</div></div></div><div class="col-12 col-md-6"><h6 class="fw-semibold text-white mb-3" style="letter-spacing:.5px;font-size:.78rem;text-transform:uppercase;">Request Specifics</h6><div class="mb-3"><div class="request-detail-label">Request Type</div><div class="request-detail-value">' + escapeHtml(request.request_type_label || request.request_type || 'Not available') + '</div></div><div class="mb-3"><div class="request-detail-label">Status</div><div><span class="request-status ' + statusClass(request.status) + '">' + escapeHtml(request.status_label || statusLabel(request.status)) + '</span></div></div><div class="mb-3"><div class="request-detail-label">Submitted</div><div class="request-detail-value">' + escapeHtml(formatDate(request.created_at)) + '</div></div><div class="mb-3"><div class="request-detail-label">Verification Document</div><div class="request-detail-value">' + documentMarkup + '</div></div></div><div class="col-12"><h6 class="fw-semibold text-white mb-2" style="letter-spacing:.5px;font-size:.78rem;text-transform:uppercase;">Request Details</h6><div class="request-detail-value request-detail-scroll p-3 rounded-3" style="background:rgba(0,244,255,.04);border:1px solid var(--glass-border);">' + readableDetails + '</div></div>' + (request.review_reason ? '<div class="col-12"><div class="request-detail-label">Review Message</div><div class="request-detail-value request-detail-scroll">' + escapeHtml(request.review_reason) + '</div></div>' : '') + '</div>';
+                detailsBody.innerHTML = '<div class="row g-4"><div class="col-12 col-md-6"><h6 class="fw-semibold text-white mb-3" style="letter-spacing:.5px;font-size:.78rem;text-transform:uppercase;">Submitter Info</h6><div class="mb-3"><div class="request-detail-label">Corporate Partner</div><div class="request-detail-value">' + escapeHtml(request.sender_entity || request.hq_company_name || 'Not available') + '</div></div><div class="mb-3"><div class="request-detail-label">Authorized Official</div><div class="request-detail-value">' + escapeHtml(request.sender_name || request.submitter_username || 'Not available') + (request.sender_email ? ' (' + escapeHtml(request.sender_email) + ')' : '') + '</div></div><div class="mb-3"><div class="request-detail-label">Operation Hub Location</div><div class="request-detail-value">' + escapeHtml(request.location || 'Not provided') + '</div></div></div><div class="col-12 col-md-6"><h6 class="fw-semibold text-white mb-3" style="letter-spacing:.5px;font-size:.78rem;text-transform:uppercase;">Request Specifics</h6><div class="mb-3"><div class="request-detail-label">Request Type</div><div class="request-detail-value">' + escapeHtml(request.request_type_label || request.request_type || 'Not available') + '</div></div><div class="mb-3"><div class="request-detail-label">Status</div><div><span class="request-status ' + statusClass(request.status) + '">' + escapeHtml(statusLabel(request.status)) + '</span></div></div><div class="mb-3"><div class="request-detail-label">Submitted</div><div class="request-detail-value">' + escapeHtml(formatDate(request.created_at)) + '</div></div><div class="mb-3"><div class="request-detail-label">Verification Document</div><div class="request-detail-value">' + documentMarkup + '</div></div></div><div class="col-12"><h6 class="fw-semibold text-white mb-2" style="letter-spacing:.5px;font-size:.78rem;text-transform:uppercase;">Request Details</h6><div class="request-detail-value request-detail-scroll p-3 rounded-3" style="background:rgba(0,244,255,.04);border:1px solid var(--glass-border);">' + readableDetails + '</div></div>' + (request.review_reason ? '<div class="col-12"><div class="request-detail-label">Review Message</div><div class="request-detail-value request-detail-scroll">' + escapeHtml(request.review_reason) + '</div></div>' : '') + '</div>';
                 detailsBody.insertAdjacentHTML('afterbegin', '<div class="mb-3"><div class="request-detail-label">Business License</div><div class="request-detail-value">' + licenseMarkup + documentMarkup + '</div></div><div class="mb-3"><div class="request-detail-label">Payment Receipt</div><div class="request-detail-value">' + receiptMarkup + '</div></div>');
                 const payment = request.registration_payment;
                 if (payment) {
@@ -541,16 +610,11 @@ $flashType = $flash['type'] ?? '';
                 if (String(request.status || '').toLowerCase() === 'pending') {
                     const needsRegistrationPayment = String(request.request_type || '').toLowerCase() === 'hq_registration' && Number(registrationDetails.requested_station_count || <?= (int) BILLING_HQ_INCLUDED_STATION_SLOTS ?>) > <?= (int) BILLING_HQ_INCLUDED_STATION_SLOTS ?>;
                     const paymentNeedsReview = needsRegistrationPayment && (!payment || payment.status !== 'received');
-                    const paymentActions = payment && payment.status === 'payer_reported_paid' && request.can_review_registration_payment
-                        ? '<form action="/php/Payment/action.php" method="POST" class="m-0 flex-grow-1"><input type="hidden" name="csrf_token" value="' + escapeHtml(request.payment_transfer_csrf) + '"><input type="hidden" name="transfer_id" value="' + escapeHtml(payment.payment_transfer_id) + '"><input type="hidden" name="action" value="confirm_received"><input type="hidden" name="return_to" value="/php/Admin(WebOwner)/view_requests.php"><button type="submit" class="btn btn-success w-100" onclick="return confirm(\'Confirm receipt only after checking your bank or wallet records.\')">Confirm payment received</button></form><form action="/php/Payment/action.php" method="POST" class="m-0 flex-grow-1"><input type="hidden" name="csrf_token" value="' + escapeHtml(request.payment_transfer_csrf) + '"><input type="hidden" name="transfer_id" value="' + escapeHtml(payment.payment_transfer_id) + '"><input type="hidden" name="action" value="mark_not_received"><input type="hidden" name="return_to" value="/php/Admin(WebOwner)/view_requests.php"><input type="hidden" name="decision_note" value="Registration payment not verified by Admin."><button type="submit" class="btn btn-outline-danger w-100" onclick="return confirm(\'Record that the payment was not received or could not be verified?\')">Mark not received</button></form>' : '';
                     setFooter(
-                        paymentActions +
-                        '<form action="request_action.php" method="POST" class="m-0 flex-grow-1"><input type="hidden" name="request_id" value="' + escapeHtml(request.request_id) + '"><input type="hidden" name="action" value="approve"><input type="hidden" name="return_to" value="view_requests.php"><button type="submit" class="btn btn-success w-100" ' + (paymentNeedsReview ? 'disabled title="Payment must be recorded as received first"' : '') + '>' + (String(request.request_type || '').toLowerCase() === 'hq_registration' ? 'Approve and create pending HQ' : 'Approve') + '</button></form>' +
-                        '<button type="button" class="btn btn-warning js-modal-flag flex-grow-1">Flag</button>' +
-                        '<button type="button" class="btn btn-danger js-modal-reject flex-grow-1">Reject</button>'
+                        '<form action="request_action.php" method="POST" class="m-0 flex-grow-1"><input type="hidden" name="request_id" value="' + escapeHtml(request.request_id) + '"><input type="hidden" name="action" value="approve"><input type="hidden" name="return_to" value="view_requests.php"><button type="submit" class="request-action-btn request-action-btn--approve" ' + (paymentNeedsReview ? 'disabled title="Payment must be recorded as received first"' : '') + '>Approve</button></form>' +
+                        '<button type="button" class="request-action-btn request-action-btn--reject js-modal-reject flex-grow-1">Reject</button>'
                     );
                     detailsFooter.querySelector('.js-modal-reject')?.addEventListener('click', () => rejectTarget('request', request.request_id, request.reference_code || request.request_id, request.sender_entity || request.sender_name || 'Unknown sender'));
-                    detailsFooter.querySelector('.js-modal-flag')?.addEventListener('click', () => flagTarget(request.request_id, request.reference_code || request.request_id, request.sender_entity || request.sender_name || 'Unknown sender'));
                 } else {
                     setFooter();
                 }
@@ -647,7 +711,7 @@ $flashType = $flash['type'] ?? '';
                         if (Array.isArray(payload.license_conflicts) && payload.license_conflicts.length) {
                             setFooter('<div class="small text-warning w-100 text-center">Use Compare to approve or block the matching records together.</div>');
                         } else {
-                            setFooter('<form action="account_review_action.php" method="POST" class="m-0"><input type="hidden" name="user_id" value="' + escapeHtml(u.user_id) + '"><input type="hidden" name="action" value="approve"><input type="hidden" name="return_to" value="view_requests.php"><button type="submit" class="acct-btn acct-btn-approve"><i class="bi bi-check-lg"></i>Approve</button></form><button type="button" class="acct-btn acct-btn-reject js-modal-reject"><i class="bi bi-x-lg"></i>Reject</button>');
+                            setFooter('<form action="account_review_action.php" method="POST" class="m-0"><input type="hidden" name="user_id" value="' + escapeHtml(u.user_id) + '"><input type="hidden" name="action" value="approve"><input type="hidden" name="return_to" value="view_requests.php"><button type="submit" class="request-action-btn request-action-btn--approve"><i class="bi bi-check-lg"></i>Approve</button></form><button type="button" class="request-action-btn request-action-btn--reject js-modal-reject"><i class="bi bi-x-lg"></i>Reject</button>');
                             detailsFooter.querySelector('.js-modal-reject').addEventListener('click', () => rejectTarget('account', u.user_id, label, u.user_name || u.email || 'Unknown user'));
                         }
                     } catch (error) {
@@ -695,7 +759,7 @@ $flashType = $flash['type'] ?? '';
                     const carId = escapeHtml(car.car_license_id);
                     setFooter(conflicts.length
                         ? '<button type="button" class="btn btn-outline-secondary w-100" data-bs-dismiss="modal">Close</button>'
-                        : '<form action="car_license_review_action.php" method="POST" class="m-0"><input type="hidden" name="car_license_id" value="' + carId + '"><input type="hidden" name="action" value="approve"><input type="hidden" name="return_to" value="view_requests.php"><button type="submit" class="acct-btn acct-btn-approve">Approve this license</button></form><form action="car_license_review_action.php" method="POST" class="m-0"><input type="hidden" name="car_license_id" value="' + carId + '"><input type="hidden" name="action" value="reject"><input type="hidden" name="return_to" value="view_requests.php"><button type="submit" class="acct-btn acct-btn-reject">Reject this license</button></form>');
+                        : '<form action="car_license_review_action.php" method="POST" class="m-0"><input type="hidden" name="car_license_id" value="' + carId + '"><input type="hidden" name="action" value="approve"><input type="hidden" name="return_to" value="view_requests.php"><button type="submit" class="request-action-btn request-action-btn--approve">Approve</button></form><form action="car_license_review_action.php" method="POST" class="m-0"><input type="hidden" name="car_license_id" value="' + carId + '"><input type="hidden" name="action" value="reject"><input type="hidden" name="return_to" value="view_requests.php"><button type="submit" class="request-action-btn request-action-btn--reject">Reject</button></form>');
                 } catch (error) {
                     detailsBody.innerHTML = '<div class="alert request-flash alert-danger"><i class="bi bi-exclamation-triangle me-2"></i>' + escapeHtml(error.message) + '</div>';
                 }

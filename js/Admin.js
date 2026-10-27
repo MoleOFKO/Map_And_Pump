@@ -163,7 +163,7 @@
                         ? `conic-gradient(#ffc107 0 ${pendingPct}%, #1be494 ${pendingPct}% ${approvedPct}%, #ff4d6a ${approvedPct}% 100%)`
                         : 'conic-gradient(rgba(255,255,255,.12) 0 100%)';
                     requestPie.style.background = background;
-                    requestPie.setAttribute('aria-label', `Request status chart: ${pending} pending, ${approved} approved, ${declined} declined or flagged`);
+                    requestPie.setAttribute('aria-label', `Request status chart: ${pending} pending, ${approved} approved, ${declined} requests marked Reject`);
                     const totalLabel = requestPie.querySelector('[data-live-request-total]');
                     if (totalLabel) totalLabel.textContent = String(total);
                 }
