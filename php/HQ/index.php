@@ -11,7 +11,7 @@ $loggedUserId = isset($_SESSION['user_id']) ? (int) $_SESSION['user_id'] : '';
 $loggedUserEmail = isset($_SESSION['user_email']) ? trim((string) $_SESSION['user_email']) : '';
 $extensionReturnPages = ['dashboard.php', 'brand.php', 'station.php', 'pricing.php', 'report_from_manager.php', 'report_to_admin.php', 'account.php', 'profile.php'];
 $extensionReturnTo = basename((string) ($_GET['return_to'] ?? ''));
-$extensionPaymentSubmitted = ($_GET['extension_payment'] ?? '') === 'submitted'
+$extensionPaymentSubmitted = in_array((string) ($_GET['extension_payment'] ?? ''), ['submitted', 'cancelled'], true)
     && in_array($extensionReturnTo, $extensionReturnPages, true);
 $extensionPaymentFlash = null;
 if ($extensionPaymentSubmitted && isset($_SESSION['hq_extension_flash']) && is_array($_SESSION['hq_extension_flash'])) {
