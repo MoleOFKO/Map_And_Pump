@@ -71,14 +71,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if (($_POST['action'] ?? '') === 'verify_registration_emails') {
         require_once __DIR__ . '/../conn.php';
-        $ownerLookup = $pdo->prepare('SELECT user_id FROM users WHERE LOWER(TRIM(email)) = ? LIMIT 1');
+        $ownerLookup = $pdo->prepare('SELECT user_id, role_id, business_role_id, headquarter_id FROM users WHERE LOWER(TRIM(email)) = ? LIMIT 1');
         $ownerLookup->execute([$ownerEmail]);
-        $ownerUserId = (int) ($ownerLookup->fetchColumn() ?: 0);
+        $ownerAccount = $ownerLookup->fetch(PDO::FETCH_ASSOC) ?: [];
+        $ownerUserId = (int) ($ownerAccount['user_id'] ?? 0);
         if ($ownerUserId <= 0) {
             $respond(false, 'This owner email is not registered yet.', 409, ['code' => 'owner_unregistered']);
         }
+        if ((int) ($ownerAccount['role_id'] ?? 0) !== 6 || (int) ($ownerAccount['business_role_id'] ?? 0) > 0
+            || (int) ($ownerAccount['headquarter_id'] ?? 0) > 0) {
+            $respond(false, 'Use an unlinked Customer account as the HQ owner.', 409);
+        }
         if ($ownerEmail === $companyEmail) {
             $respond(false, 'Use a separate email for the HQ owner and the company.', 422);
+        }
+        $companyLogin = $pdo->prepare('SELECT 1 FROM users WHERE LOWER(TRIM(email)) = ? LIMIT 1');
+        $companyLogin->execute([$companyEmail]);
+        if ($companyLogin->fetchColumn()) {
+            $respond(false, 'This company email is already used by a login account. Use another company email.', 409);
         }
         $existingHq = $pdo->prepare('SELECT 1 FROM headquarter WHERE headquarters_owner_id = ? OR LOWER(TRIM(headquarter_email)) = ? LIMIT 1');
         $existingHq->execute([$ownerUserId, $companyEmail]);
@@ -228,11 +238,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 throw new RuntimeException('The payment screenshot must be a JPG, PNG, or WEBP image.');
             }
         }
-        $ownerLookup = $pdo->prepare('SELECT user_id FROM users WHERE LOWER(TRIM(email)) = ? LIMIT 1');
+        $ownerLookup = $pdo->prepare('SELECT user_id, role_id, business_role_id, headquarter_id FROM users WHERE LOWER(TRIM(email)) = ? LIMIT 1');
         $ownerLookup->execute([$ownerEmail]);
-        $ownerUserId = (int) ($ownerLookup->fetchColumn() ?: 0);
+        $ownerAccount = $ownerLookup->fetch(PDO::FETCH_ASSOC) ?: [];
+        $ownerUserId = (int) ($ownerAccount['user_id'] ?? 0);
         if ($ownerUserId <= 0) {
             $respond(false, 'This owner email is not registered yet.', 409, ['code' => 'owner_unregistered']);
+        }
+        if ((int) ($ownerAccount['role_id'] ?? 0) !== 6 || (int) ($ownerAccount['business_role_id'] ?? 0) > 0
+            || (int) ($ownerAccount['headquarter_id'] ?? 0) > 0) {
+            $respond(false, 'Use an unlinked Customer account as the HQ owner.', 409);
+        }
+        $companyLogin = $pdo->prepare('SELECT 1 FROM users WHERE LOWER(TRIM(email)) = ? LIMIT 1');
+        $companyLogin->execute([$companyEmail]);
+        if ($companyLogin->fetchColumn()) {
+            $respond(false, 'This company email is already used by a login account. Use another company email.', 409);
         }
         $emailConflict = $pdo->prepare(
             'SELECT 1 FROM headquarter

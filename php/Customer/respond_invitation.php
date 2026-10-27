@@ -23,6 +23,7 @@ if (empty($_SESSION['user_id'])) {
 $invitationId = filter_var($_POST['invitation_id'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
 $decision = strtolower(trim((string)($_POST['decision'] ?? '')));
 $userId = (int)$_SESSION['user_id'];
+$redirectLocation = 'dashboard.php';
 $licenseExpiryState = customer_sync_license_expiry($pdo, $userId);
 if (($licenseExpiryState['driver']['status'] ?? '') === 'expired') {
     header('Location: profile_page.php');
@@ -79,10 +80,10 @@ try {
 
         $userUpdate = $pdo->prepare(
             "UPDATE users
-             SET business_role_id = ?, headquarter_id = ?, branch_id = ?, status = 'active', updated_at = NOW()
+                 SET business_role_id = ?, current_role_id = ?, headquarter_id = ?, branch_id = ?, status = 'active', updated_at = NOW()
              WHERE user_id = ?"
         );
-        $userUpdate->execute([$roleId, $hqId, $branchId, $userId]);
+          $userUpdate->execute([$roleId, $roleId, $hqId, $branchId, $userId]);
         $scope = $pdo->prepare(
             "INSERT INTO business_account_scope
                 (user_id, business_role_id, headquarter_id, branch_manager_user_id, station_id, status)
@@ -90,6 +91,20 @@ try {
              ON DUPLICATE KEY UPDATE business_role_id = VALUES(business_role_id), headquarter_id = VALUES(headquarter_id), station_id = VALUES(station_id), status = 'active'"
         );
         $scope->execute([$userId, $roleId, $hqId, $branchId]);
+
+        if ($roleId === 4 && $branchId !== null) {
+            $managerAssignment = $pdo->prepare(
+                'UPDATE station_business_scope
+                 SET branch_manager_user_id = ?
+                 WHERE station_id = ? AND headquarter_id = ?'
+            );
+            $managerAssignment->execute([$userId, $branchId, $hqId]);
+
+            $branchManager = $pdo->prepare(
+                'UPDATE branches SET manager_user_id = ? WHERE branch_id = ?'
+            );
+            $branchManager->execute([$userId, $branchId]);
+        }
 
         if ($roleId === 5) {
             $staffLookup = $pdo->prepare('SELECT staff_id FROM staff WHERE user_id = ? LIMIT 1');
@@ -148,6 +163,18 @@ try {
     $update->execute([$decision === 'accept' ? 'accepted' : 'declined', $invitationId]);
     $pdo->commit();
     $_SESSION['customer_invitation_message'] = $decision === 'accept' ? 'Invitation accepted. Your business account is now active.' : 'Invitation declined.';
+    if ($decision === 'accept' && (int)$invitation['business_role_id'] === 4) {
+        $_SESSION['role_id'] = 4;
+        $_SESSION['role_name'] = 'BranchManager';
+        $_SESSION['business_role_id'] = 4;
+        $_SESSION['business_role_name'] = 'BranchManager';
+        $_SESSION['current_role_id'] = 4;
+        $_SESSION['current_role_name'] = 'BranchManager';
+        $_SESSION['headquarter_id'] = (int)$invitation['headquarter_id'];
+        $_SESSION['branch_id'] = $invitation['station_id'] === null ? 0 : (int)$invitation['station_id'];
+        $_SESSION['active_profile_mode'] = 'business';
+        $redirectLocation = '/php/BranchManager/dashboard.php';
+    }
 } catch (Throwable $error) {
     if ($pdo->inTransaction()) {
         $pdo->rollBack();
@@ -156,5 +183,5 @@ try {
     $_SESSION['customer_invitation_message'] = $error->getMessage();
 }
 
-header('Location: dashboard.php');
+header('Location: ' . $redirectLocation);
 exit;

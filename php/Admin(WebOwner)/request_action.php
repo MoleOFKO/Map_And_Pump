@@ -3,6 +3,7 @@ require_once __DIR__ . '/request_common.php';
 require_once __DIR__ . '/admin_common.php';
 require_once __DIR__ . '/../billing_config.php';
 require_once __DIR__ . '/../payment_transfers.php';
+require_once __DIR__ . '/../Login/account_password_setup.php';
 
 if (session_status() !== PHP_SESSION_ACTIVE) {
     session_start();
@@ -134,6 +135,7 @@ try {
     $createdHeadquarterId = null;
     $createdOwnerUserId = null;
     $createdOwnerEmail = null;
+    $createdOwnerSetupUrl = null;
     $requestType = strtolower((string) $target['request_type']);
     $renewalDetails = [];
     if ($requestType === 'license_modification') {
@@ -313,9 +315,9 @@ try {
         if ($hqRoleId !== 3) {
             throw new RuntimeException('The HQ account role must use role ID 3.');
         }
-        $ownerEmail = strtolower(trim((string) ($target['headquarter_owner_email'] ?: $target['sender_email'])));
+        $ownerEmail = strtolower(trim((string) ($target['headquarter_email'] ?? '')));
         if (!filter_var($ownerEmail, FILTER_VALIDATE_EMAIL)) {
-            throw new RuntimeException('The approved HQ has no valid owner email address.');
+            throw new RuntimeException('The approved HQ has no valid company email address.');
         }
         $ownerName = trim((string) ($target['sender_name'] ?: $target['sender_entity']));
         $ownerName = $ownerName !== '' ? $ownerName : $companyName;
@@ -327,38 +329,26 @@ try {
         $ownerLookup->execute();
         $existingOwner = $ownerLookup->get_result()?->fetch_assoc();
         $ownerLookup->close();
-
         if ($existingOwner) {
-            $createdOwnerUserId = (int) $existingOwner['user_id'];
-            $ownerUpdate = $conn->prepare(
-                'UPDATE users SET headquarter_id = ?, business_role_id = ?, status = \'pending\', updated_at = NOW() WHERE user_id = ?'
-            );
-            if (!$ownerUpdate) {
-                throw new RuntimeException('Could not link the existing HQ owner account.');
-            }
-            $ownerUpdate->bind_param('iii', $createdHeadquarterId, $hqRoleId, $createdOwnerUserId);
-            if (!$ownerUpdate->execute()) {
-                throw new RuntimeException('Could not link the existing HQ owner account.');
-            }
-            $ownerUpdate->close();
-        } else {
-            $ownerUserName = hq_unique_username($ownerName, $ownerEmail);
-            $oneTimeSecret = bin2hex(random_bytes(24));
-            $passwordHash = password_hash($oneTimeSecret, PASSWORD_DEFAULT);
-            $ownerInsert = $conn->prepare(
-                "INSERT INTO users (user_name, email, hashed_password, headquarter_id, role_id, business_role_id, current_role_id, status, created_at, updated_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', NOW(), NOW())"
-            );
-            if (!$ownerInsert) {
-                throw new RuntimeException('Could not prepare the HQ owner account.');
-            }
-            $ownerInsert->bind_param('sssiiii', $ownerUserName, $ownerEmail, $passwordHash, $createdHeadquarterId, $hqRoleId, $hqRoleId, $hqRoleId);
-            if (!$ownerInsert->execute()) {
-                throw new RuntimeException('Could not create the HQ owner account.');
-            }
-            $createdOwnerUserId = (int) $ownerInsert->insert_id;
-            $ownerInsert->close();
+            throw new RuntimeException('The company email is already attached to a login account. Use a different company email before approving this HQ.');
         }
+
+        $ownerUserName = hq_unique_username($ownerName, $ownerEmail);
+        $ownerInsert = $conn->prepare(
+            "INSERT INTO users (user_name, email, hashed_password, headquarter_id, role_id, business_role_id, current_role_id, status, created_at, updated_at)
+             VALUES (?, ?, NULL, ?, ?, ?, ?, 'pending', NOW(), NOW())"
+        );
+        if (!$ownerInsert) {
+            throw new RuntimeException('Could not prepare the HQ owner account.');
+        }
+        $ownerInsert->bind_param('ssiiii', $ownerUserName, $ownerEmail, $createdHeadquarterId, $hqRoleId, $hqRoleId, $hqRoleId);
+        if (!$ownerInsert->execute()) {
+            throw new RuntimeException('Could not create the HQ owner account.');
+        }
+        $createdOwnerUserId = (int) $ownerInsert->insert_id;
+        $ownerInsert->close();
+
+        $createdOwnerSetupUrl = account_password_setup_create_link($conn, $createdOwnerUserId);
         $createdOwnerEmail = $ownerEmail;
 
         $hqOwnerUpdate = $conn->prepare('UPDATE headquarter SET headquarters_owner_id = ? WHERE headquarter_id = ?');
@@ -390,6 +380,65 @@ try {
             throw new RuntimeException('Could not save the HQ owner business-role link.');
         }
         $ownerScope->close();
+
+        $registrantUserId = (int) ($target['existing_user_id'] ?? 0);
+        if ($registrantUserId > 0 && $registrantUserId !== $createdOwnerUserId) {
+            $registrantLookup = $conn->prepare(
+                'SELECT user_id, email, role_id, business_role_id, headquarter_id
+                 FROM users WHERE user_id = ? FOR UPDATE'
+            );
+            if (!$registrantLookup) {
+                throw new RuntimeException('Could not verify the HQ registration customer account.');
+            }
+            $registrantLookup->bind_param('i', $registrantUserId);
+            $registrantLookup->execute();
+            $registrant = $registrantLookup->get_result()?->fetch_assoc();
+            $registrantLookup->close();
+
+            $requestOwnerEmail = strtolower(trim((string) ($target['headquarter_owner_email'] ?: $target['sender_email'])));
+            $registrantEmail = strtolower(trim((string) ($registrant['email'] ?? '')));
+            if (!$registrant || (int) ($registrant['role_id'] ?? 0) !== 6
+                || (int) ($registrant['business_role_id'] ?? 0) > 0
+                || (int) ($registrant['headquarter_id'] ?? 0) > 0
+                || $requestOwnerEmail === '' || !hash_equals($requestOwnerEmail, $registrantEmail)) {
+                throw new RuntimeException('The HQ registration customer account is no longer eligible for business linking.');
+            }
+
+            $registrantUpdate = $conn->prepare(
+                'UPDATE users SET headquarter_id = ?, business_role_id = ?, updated_at = NOW()
+                 WHERE user_id = ? AND role_id = 6
+                   AND (business_role_id IS NULL OR business_role_id = 0)
+                   AND (headquarter_id IS NULL OR headquarter_id = 0)'
+            );
+            if (!$registrantUpdate) {
+                throw new RuntimeException('Could not prepare the Customer-to-HQ account link.');
+            }
+            $registrantUpdate->bind_param('iii', $createdHeadquarterId, $hqRoleId, $registrantUserId);
+            if (!$registrantUpdate->execute() || $registrantUpdate->affected_rows !== 1) {
+                throw new RuntimeException('Could not link the customer account to the approved HQ.');
+            }
+            $registrantUpdate->close();
+
+            $registrantScope = $conn->prepare(
+                "INSERT INTO business_account_scope
+                    (user_id, business_role_id, headquarter_id, branch_manager_user_id, station_id, status)
+                 VALUES (?, ?, ?, NULL, NULL, 'pending')
+                 ON DUPLICATE KEY UPDATE
+                    business_role_id = VALUES(business_role_id),
+                    headquarter_id = VALUES(headquarter_id),
+                    branch_manager_user_id = NULL,
+                    station_id = NULL,
+                    status = 'pending'"
+            );
+            if (!$registrantScope) {
+                throw new RuntimeException('Could not prepare the Customer-to-HQ business scope.');
+            }
+            $registrantScope->bind_param('iii', $registrantUserId, $hqRoleId, $createdHeadquarterId);
+            if (!$registrantScope->execute()) {
+                throw new RuntimeException('Could not save the Customer-to-HQ business scope.');
+            }
+            $registrantScope->close();
+        }
 
         $requestHqUpdate = $conn->prepare('UPDATE system_requests SET headquarter_id = ? WHERE request_id = ?');
         if (!$requestHqUpdate) {
@@ -468,15 +517,24 @@ try {
     $message = $action === 'approve'
         ? sprintf('Your request %s for %s has been approved.', $target['reference_code'], $target['sender_entity'])
         : sprintf("Your request %s for %s was rejected.\n\nReason:\n%s", $target['reference_code'], $target['sender_entity'], $reason);
-    $notification = request_send_notification($recipientEmail, '', '', [
-        'kind' => 'request',
-        'action' => $action === 'approve' ? 'approve' : 'reject',
-        'reason' => $action === 'approve' ? '' : $reason,
-        'effect' => $action === 'approve'
-            ? 'Your request was approved in Map & Pump.'
-            : 'Your request was not approved. Sign in to review the request details.',
-        'reference_code' => (string) $target['reference_code'],
-    ]);
+    $notificationContext = $requestType === 'hq_registration' && $action === 'approve' && $createdOwnerSetupUrl !== null
+        ? [
+            'kind' => 'account_password_setup',
+            'account_label' => 'HQ',
+            'account_name' => (string) $target['sender_entity'],
+            'setup_url' => $createdOwnerSetupUrl,
+            'reference_code' => (string) $target['reference_code'],
+        ]
+        : [
+            'kind' => 'request',
+            'action' => $action === 'approve' ? 'approve' : 'reject',
+            'reason' => $action === 'approve' ? '' : $reason,
+            'effect' => $action === 'approve'
+                ? 'Your request was approved in Map & Pump.'
+                : 'Your request was not approved. Sign in to review the request details.',
+            'reference_code' => (string) $target['reference_code'],
+        ];
+    $notification = request_send_notification($recipientEmail, '', '', $notificationContext);
     $subject = (string) ($notification['subject'] ?? sprintf('Map & Pump request %s: %s', $target['reference_code'], ucfirst($newStatus)));
 
     $notificationInsert = $conn->prepare(
