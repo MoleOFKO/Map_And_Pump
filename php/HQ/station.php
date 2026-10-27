@@ -75,7 +75,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 throw new RuntimeException('INSUFFICIENT_HQ_POINTS');
             }
             $slotStmt = $pdo->prepare(
-                'INSERT INTO company_loyalty_station_slots (headquarter_id, year_month, slots_purchased, points_spent)
+                'INSERT INTO company_loyalty_station_slots (headquarter_id, `year_month`, slots_purchased, points_spent)
                  VALUES (?, ?, 1, ?)
                  ON DUPLICATE KEY UPDATE slots_purchased = slots_purchased + 1, points_spent = points_spent + VALUES(points_spent)'
             );
@@ -132,7 +132,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             $paidCheck = $pdo->prepare(
                 'SELECT 1 FROM company_loyalty_station_fees
-                 WHERE headquarter_id = ? AND station_id = ? AND year_month = ? LIMIT 1'
+                 WHERE headquarter_id = ? AND station_id = ? AND `year_month` = ? LIMIT 1'
             );
             $paidCheck->execute([$hqId, $stationIdToPay, $billingMonth]);
             if ($paidCheck->fetchColumn()) {
@@ -142,7 +142,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 throw new RuntimeException('INSUFFICIENT_HQ_POINTS');
             }
             $feeStmt = $pdo->prepare(
-                'INSERT INTO company_loyalty_station_fees (headquarter_id, station_id, year_month, points_paid)
+                'INSERT INTO company_loyalty_station_fees (headquarter_id, station_id, `year_month`, points_paid)
                  VALUES (?, ?, ?, ?)'
             );
             $feeStmt->execute([$hqId, $stationIdToPay, $billingMonth, $stationMonthlyFee]);
@@ -179,6 +179,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($stationLimitValue === false) {
                     throw new RuntimeException('Could not verify this HQ station limit.');
                 }
+                $duplicateStationStmt = $pdo->prepare(
+                    'SELECT 1
+                     FROM branches b
+                     INNER JOIN station_business_scope sbs ON sbs.station_id = b.branch_id
+                     WHERE sbs.headquarter_id = ?
+                       AND LOWER(TRIM(b.branch_name)) = LOWER(?)
+                     LIMIT 1'
+                );
+                $duplicateStationStmt->execute([$hqId, $station_name]);
+                if ($duplicateStationStmt->fetchColumn()) {
+                    throw new RuntimeException('A station with this name already exists under your HQ.');
+                }
+
                 $stationLimit = (int) $stationLimitValue;
                 if ($stationLimit < 1) {
                     $stationLimit = null;
@@ -223,17 +236,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                 }
 
-                $branchCodeStmt = $pdo->prepare("SELECT CONCAT('BR-', LPAD(COALESCE(MAX(branch_id), 0) + 1, 5, '0')) FROM branches");
-                $branchCodeStmt->execute();
-                $branchCode = (string)$branchCodeStmt->fetchColumn();
+                $temporaryBranchCode = 'TMP-' . bin2hex(random_bytes(8));
                 [$latitude, $longitude] = array_map('trim', explode(',', $location, 2));
                 $branchStmt = $pdo->prepare(
                     "INSERT INTO branches (branch_code, branch_name, city, township, address, latitude, longitude, manager_user_id, opening_time, closing_time, status, hq_region)
                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, '06:00:00', '22:00:00', 'active', ? )"
                 );
-                $branchStmt->execute([$branchCode, $station_name, 'Unknown', null, $station_address, $latitude, $longitude, $manager_id, null]);
+                $branchStmt->execute([$temporaryBranchCode, $station_name, 'Unknown', null, $station_address, $latitude, $longitude, $manager_id, null]);
                 $branchId = (int)$pdo->lastInsertId();
                 $stationId = $branchId;
+
+                $branchCode = 'BR-' . str_pad((string) $branchId, 5, '0', STR_PAD_LEFT);
+                $branchCodeCheck = $pdo->prepare('SELECT 1 FROM branches WHERE branch_code = ? AND branch_id <> ? LIMIT 1');
+                $branchCodeCheck->execute([$branchCode, $branchId]);
+                while ($branchCodeCheck->fetchColumn()) {
+                    $branchCode = 'BR-' . bin2hex(random_bytes(8));
+                    $branchCodeCheck->execute([$branchCode, $branchId]);
+                }
+                $branchCodeUpdate = $pdo->prepare('UPDATE branches SET branch_code = ? WHERE branch_id = ?');
+                $branchCodeUpdate->execute([$branchCode, $branchId]);
 
                 $pdo->prepare("DELETE FROM station_business_scope WHERE branch_manager_user_id = ?")->execute([$manager_id]);
                 $scopeStmt = $pdo->prepare(
@@ -258,20 +279,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $userScopeStmt->execute([$hqId, $branchId, $manager_id]);
                 }
 
-                $fuelStmt = $pdo->query("SELECT oil_type_id FROM oil_types ORDER BY oil_type_id LIMIT 4");
-                $inventoryStmt = $pdo->prepare(
-                    "INSERT INTO station_oil_inventory
-                        (station_id, oil_type_id, price_per_litre, is_active, current_amount_liters, updated_at)
-                     VALUES (?, ?, 0, 1, 0, NOW())"
-                );
-                foreach ($fuelStmt->fetchAll(PDO::FETCH_COLUMN) as $oilTypeId) {
-                    $inventoryStmt->execute([$stationId, (int)$oilTypeId]);
-                }
-
                 $tankSeedStmt = $pdo->prepare(
-                    "INSERT INTO tanks (branch_id, fuel_code, fuel_name, capacity_l, current_l, alert_pct, is_enabled)
-                     VALUES (?, ?, ?, ?, 0, 25, 1)"
+                    "INSERT INTO tanks
+                        (branch_id, fuel_code, fuel_name, oil_type_id, capacity_l, current_l, alert_pct, is_enabled)
+                     VALUES (?, ?, ?, ?, ?, 0, 25, 1)"
                 );
+                $oilTypeStmt = $pdo->prepare('SELECT oil_type_id FROM oil_types WHERE oil_name = ? LIMIT 1');
                 $tankSeeds = [
                     ['p92', 'Petrol 92', 15000],
                     ['p95', 'Petrol 95', 10000],
@@ -279,7 +292,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     ['pdsl', 'Premium Diesel', 12000],
                 ];
                 foreach ($tankSeeds as $tankSeed) {
-                    $tankSeedStmt->execute([$stationId, $tankSeed[0], $tankSeed[1], $tankSeed[2]]);
+                    $oilTypeStmt->execute([$tankSeed[1]]);
+                    $oilTypeId = $oilTypeStmt->fetchColumn();
+                    if ($oilTypeId === false) {
+                        throw new RuntimeException('Required fuel type "' . $tankSeed[1] . '" is missing from oil_types.');
+                    }
+                    $tankSeedStmt->execute([
+                        $stationId,
+                        $tankSeed[0],
+                        $tankSeed[1],
+                        (int) $oilTypeId,
+                        $tankSeed[2],
+                    ]);
                 }
                 $pdo->commit();
                 $message = "Station node created successfully.";
@@ -451,7 +475,7 @@ try {
                 SELECT 1 FROM company_loyalty_station_fees fee
                 WHERE fee.headquarter_id = sbs.headquarter_id
                   AND fee.station_id = b.branch_id
-                  AND fee.year_month = ?
+                  AND fee.`year_month` = ?
             )"
         : '0';
     $stmt = $pdo->prepare(
@@ -629,16 +653,16 @@ try {
         }
         .station-action-menu {
             display: none;
-            position: absolute;
-            right: 0;
-            top: 100%;
-            margin-top: 4px;
+            position: fixed;
+            top: 0;
+            left: 0;
+            margin: 0;
             background: var(--card-bg);
             border: 1px solid var(--border);
             border-radius: 8px;
             padding: 8px;
             min-width: 190px;
-            z-index: 1000;
+            z-index: 1090;
             box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35);
         }
         .station-action-menu button {
@@ -796,8 +820,12 @@ $hqPointBalance = company_loyalty_get_balance($pdo, $hqId);
                                             <?php else: ?>
                                             <span class="small text-success px-3 py-2 d-block">Monthly fee paid</span>
                                             <?php endif; ?>
-                                            <button type="button" data-bs-toggle="modal" data-bs-target="#configureModal"
-                                                onclick="closeStationMenus(); setConfigureData('<?= htmlspecialchars($row['station_id'], ENT_QUOTES) ?>', '<?= htmlspecialchars($row['station_name'], ENT_QUOTES) ?>', '<?= htmlspecialchars($row['station_address'], ENT_QUOTES) ?>', '<?= htmlspecialchars($row['manager_email'], ENT_QUOTES) ?>', '<?= htmlspecialchars($row['location'], ENT_QUOTES) ?>')">
+                                            <button type="button" class="configure-station-btn" data-bs-toggle="modal" data-bs-target="#configureModal"
+                                                data-station-id="<?= htmlspecialchars((string) $row['station_id'], ENT_QUOTES, 'UTF-8') ?>"
+                                                data-station-name="<?= htmlspecialchars((string) $row['station_name'], ENT_QUOTES, 'UTF-8') ?>"
+                                                data-station-address="<?= htmlspecialchars((string) ($row['station_address'] ?? ''), ENT_QUOTES, 'UTF-8') ?>"
+                                                data-manager-email="<?= htmlspecialchars((string) ($row['manager_email'] ?? ''), ENT_QUOTES, 'UTF-8') ?>"
+                                                data-location="<?= htmlspecialchars((string) $row['location'], ENT_QUOTES, 'UTF-8') ?>">
                                                 <i class="bi bi-gear"></i> Configure
                                             </button>
                                             <button type="button" class="danger" data-bs-toggle="modal" data-bs-target="#decommissionModal"
@@ -1217,6 +1245,18 @@ $hqPointBalance = company_loyalty_get_balance($pdo, $hqId);
 
         document.getElementById('registerModal').addEventListener('shown.bs.modal', initializeStationMap);
         document.getElementById('configureModal').addEventListener('shown.bs.modal', initializeConfigMap);
+        document.querySelectorAll('.configure-station-btn').forEach(button => {
+            button.addEventListener('click', function () {
+                closeStationMenus();
+                setConfigureData(
+                    this.dataset.stationId,
+                    this.dataset.stationName,
+                    this.dataset.stationAddress,
+                    this.dataset.managerEmail,
+                    this.dataset.location
+                );
+            });
+        });
         document.getElementById('trackLocBtn').addEventListener('click', () => {
             trackCurrentLocation(stationMap, document.getElementById('stationLocation'), location => {
                 stationMarker = setMapLocation(stationMap, stationMarker, document.getElementById('stationLocation'), location);
@@ -1277,33 +1317,63 @@ $hqPointBalance = company_loyalty_get_balance($pdo, $hqId);
             });
         });
 
+        let openStationMenu = null;
+        let stationMenuOutsideHandler = null;
+
         function toggleStationActions(button, stationId) {
             const menu = document.getElementById('station-menu-' + stationId);
-            const isVisible = menu.style.display === 'block';
-
-            // Hide all other menus
-            document.querySelectorAll('.station-action-menu').forEach(m => {
-                if (m.id !== 'station-menu-' + stationId) {
-                    m.style.display = 'none';
-                }
-            });
-
-            menu.style.display = isVisible ? 'none' : 'block';
-
-            if (!isVisible) {
-                document.addEventListener('click', function closeMenu(e) {
-                    if (!menu.contains(e.target) && e.target !== button) {
-                        menu.style.display = 'none';
-                        document.removeEventListener('click', closeMenu);
-                    }
-                });
+            if (openStationMenu === menu) {
+                closeStationMenus();
+                return;
             }
+
+            closeStationMenus();
+            menu._stationActionsCell = menu.parentElement;
+            menu._stationActionsToggle = button;
+            document.body.appendChild(menu);
+            menu.style.display = 'block';
+
+            const buttonRect = button.getBoundingClientRect();
+            const menuRect = menu.getBoundingClientRect();
+            const left = Math.max(8, Math.min(
+                buttonRect.right - menuRect.width,
+                window.innerWidth - menuRect.width - 8
+            ));
+            const top = buttonRect.bottom + menuRect.height <= window.innerHeight - 8
+                ? buttonRect.bottom + 4
+                : Math.max(8, buttonRect.top - menuRect.height - 4);
+            menu.style.left = `${left}px`;
+            menu.style.top = `${top}px`;
+            openStationMenu = menu;
+
+            stationMenuOutsideHandler = event => {
+                if (!menu.contains(event.target) && event.target !== button) {
+                    closeStationMenus();
+                }
+            };
+            document.addEventListener('click', stationMenuOutsideHandler);
+            document.addEventListener('scroll', closeStationMenus, true);
+            window.addEventListener('resize', closeStationMenus);
         }
 
         function closeStationMenus() {
             document.querySelectorAll('.station-action-menu').forEach(m => {
                 m.style.display = 'none';
+                if (m._stationActionsCell && m._stationActionsToggle) {
+                    m._stationActionsCell.insertBefore(m, m._stationActionsToggle.nextSibling);
+                    delete m._stationActionsCell;
+                    delete m._stationActionsToggle;
+                }
+                m.style.left = '';
+                m.style.top = '';
             });
+            if (stationMenuOutsideHandler) {
+                document.removeEventListener('click', stationMenuOutsideHandler);
+                stationMenuOutsideHandler = null;
+            }
+            document.removeEventListener('scroll', closeStationMenus, true);
+            window.removeEventListener('resize', closeStationMenus);
+            openStationMenu = null;
         }
 
         function toggleStatus(stationId, targetStatus) {

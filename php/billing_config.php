@@ -2,7 +2,8 @@
 /**
  * MAP & PUMP billing rules and payment recipients.
  *
- * MMK and HQ points are separate payment methods with no implied conversion.
+ * MMK and HQ points use separate published rates, with no implied conversion.
+ * HQ service extensions have their own fixed points rate and no points discount.
  * The fixed MMK price for a station beyond the three included registration
  * slots covers both that station's capacity slot and its monthly operation.
  * In the points path, those two charges remain separate.
@@ -17,8 +18,21 @@ if (!defined('BILLING_HQ_INCLUDED_STATION_SLOTS')) {
 if (!defined('BILLING_HQ_EXTRA_STATION_MMK_MONTHLY')) {
     define('BILLING_HQ_EXTRA_STATION_MMK_MONTHLY', 2000);
 }
-if (!defined('BILLING_HQ_EXTENSION_MMK_MONTHLY')) {
-    define('BILLING_HQ_EXTENSION_MMK_MONTHLY', 2000);
+if (!defined('BILLING_HQ_EXTENSION_MMK_PER_STATION_MONTHLY')) {
+    define('BILLING_HQ_EXTENSION_MMK_PER_STATION_MONTHLY', 35000);
+}
+if (!defined('BILLING_HQ_EXTENSION_POINTS_PER_STATION_MONTHLY')) {
+    define('BILLING_HQ_EXTENSION_POINTS_PER_STATION_MONTHLY', 6000);
+}
+if (!defined('BILLING_HQ_EXTENSION_MAX_MONTHS')) {
+    define('BILLING_HQ_EXTENSION_MAX_MONTHS', 120);
+}
+if (!defined('BILLING_HQ_EXTENSION_TERM_DISCOUNTS')) {
+    define('BILLING_HQ_EXTENSION_TERM_DISCOUNTS', [
+        ['min_months' => 60, 'label' => '60+ months', 'percent' => 15],
+        ['min_months' => 12, 'label' => '12+ months', 'percent' => 2],
+        ['min_months' => 1, 'label' => 'Under 12 months', 'percent' => 0],
+    ]);
 }
 if (!defined('BILLING_HQ_STATION_SLOT_POINTS_MONTHLY')) {
     define('BILLING_HQ_STATION_SLOT_POINTS_MONTHLY', 10000);

@@ -12,24 +12,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $role_id = (int) ($_SESSION['role_id'] ?? $_SESSION['current_role_id'] ?? 3);
 
     if (isset($_POST['edit_report_id'])) {
-        $reportId = (int) $_POST['edit_report_id'];
-        if ($reportId > 0 && $topic !== '' && in_array($urgency, ['low', 'normal', 'high'], true) && $description !== '') {
-            try {
-                $stmt = $pdo->prepare(
-                    'UPDATE report
-                     SET importance = ?, short_summery = ?, message = ?
-                     WHERE report_id = ? AND user_id = ?'
-                );
-                $summary = ucfirst($topic) . ' Issue';
-                $stmt->execute([$urgency, $summary, $description, $reportId, $user_id]);
-                $alertMessage = $stmt->rowCount() > 0 ? 'Your report was updated successfully.' : 'The report was not found or is unchanged.';
-            } catch (PDOException $e) {
-                $alertMessage = 'Error updating report: ' . $e->getMessage();
-            }
-        } else {
-            $alertMessage = 'Please provide valid report details.';
-        }
-    } elseif ($topic !== '' && $urgency !== '' && $description !== '') {
+        $alertMessage = 'Submitted reports are read-only and cannot be edited.';
+    } elseif ($topic !== '' && in_array($urgency, ['low', 'normal', 'high'], true) && $description !== '') {
         try {
             $stmt = $pdo->prepare("INSERT INTO report (user_id, role_id, importance, short_summery, message, created_at) VALUES (?, ?, ?, ?, ?, NOW())");
             
@@ -69,7 +53,7 @@ try {
 </head>
 <body>
     <h2 class="title">Report to Admin and Moderator</h2>
-    <p class="subtitle">Submit an issue for review by the admin and moderator team. You can view and edit your submitted reports below.</p>
+    <p class="subtitle">Submit an issue for review by the admin and moderator team. You can view your submitted reports below.</p>
 
     <?php
 if (!empty($alertMessage)): ?>
@@ -128,33 +112,14 @@ endif; ?>
             <?php foreach ($reports as $report): ?>
                 <details style="margin-top: 14px; padding: 12px; border: 1px solid var(--border); border-radius: 6px;">
                     <summary style="cursor: pointer;">
-                        <strong><?= htmlspecialchars($report['short_summery']) ?></strong>
-                        <span style="margin-left: 10px; color: var(--slate-400);"> <?= htmlspecialchars($report['importance']) ?> · <?= htmlspecialchars($report['created_at']) ?></span>
+                        <strong><?= htmlspecialchars((string) $report['short_summery'], ENT_QUOTES, 'UTF-8') ?></strong>
+                        <span style="margin-left: 10px; color: var(--slate-400);"> <?= htmlspecialchars((string) $report['importance'], ENT_QUOTES, 'UTF-8') ?> · <?= htmlspecialchars((string) $report['created_at'], ENT_QUOTES, 'UTF-8') ?></span>
                     </summary>
-                    <form method="POST" action="" style="margin-top: 14px;">
-                        <input type="hidden" name="edit_report_id" value="<?= (int) $report['report_id'] ?>">
-                        <div class="form-group">
-                            <label>Issue Classification / Topic</label>
-                            <select name="topic" required>
-                                <?php foreach (['pricing' => 'Pricing Sync Error', 'access' => 'Access Control & Credentials', 'dispute' => 'Transaction / Settlement Dispute', 'other' => 'Other Technical Request'] as $topicKey => $topicLabel): ?>
-                                    <option value="<?= htmlspecialchars($topicKey) ?>" <?= stripos((string) $report['short_summery'], $topicKey) !== false ? 'selected' : '' ?>><?= htmlspecialchars($topicLabel) ?></option>
-                                <?php endforeach; ?>
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label>Impact Urgency Level</label>
-                            <select name="urgency" required>
-                                <?php foreach (['low', 'normal', 'high'] as $urgency): ?>
-                                    <option value="<?= $urgency ?>" <?= strtolower((string) $report['importance']) === $urgency ? 'selected' : '' ?>><?= ucfirst($urgency) ?></option>
-                                <?php endforeach; ?>
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label>Detailed Description</label>
-                            <textarea name="description" rows="4" required><?= htmlspecialchars((string) $report['message']) ?></textarea>
-                        </div>
-                        <button type="submit" class="btn btn-danger">Update My Report</button>
-                    </form>
+                    <div style="margin-top: 14px;">
+                        <h4>Report details</h4>
+                        <p style="white-space: pre-wrap;"><?= htmlspecialchars((string) $report['message'], ENT_QUOTES, 'UTF-8') ?></p>
+                        <p class="subtitle mb-0">Submitted reports are read-only.</p>
+                    </div>
                 </details>
             <?php endforeach; ?>
         <?php endif; ?>

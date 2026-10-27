@@ -7,49 +7,24 @@ $hqId = map_pump_current_hq_id($pdo);
 $hqBillingReady = loyalty_countermeasures_schema_ready($pdo);
 $hqBillingMonth = loyalty_current_year_month();
 $hqPointBalance = company_loyalty_get_balance($pdo, $hqId);
-// Handle quick price update submission if posted
-$updateMessage = "";
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'update_price') {
-    $stationId = filter_input(INPUT_POST, 'station_id', FILTER_VALIDATE_INT);
-    $oilTypeId = filter_input(INPUT_POST, 'oil_type_id', FILTER_VALIDATE_INT);
-    $newPrice = trim((string)($_POST['fuel_price'] ?? ''));
-
-    if ($stationId && $oilTypeId && $newPrice !== '' && is_numeric($newPrice) && (float) $newPrice >= 0 && map_pump_station_in_hq($pdo, (int)$stationId, $hqId)) {
-        map_pump_append_station_price($pdo, (int)$stationId, (int)$oilTypeId, (int)$newPrice);
-        $updateMessage = "New station fuel price added. Previous price records were kept.";
-    } else {
-        $updateMessage = "Please select one of your HQ stations and enter a valid non-negative numeric price.";
-    }
-}
-
-// Fetch Station fuel prices dynamically from the live station inventory
-$fuelPrices = [];
-$dashboardStations = [];
-$latestInventorySql = map_pump_latest_station_inventory_sql();
-$pricingStmt = $pdo->prepare(
-  "SELECT s.branch_id AS station_id, s.branch_name AS station_name, ot.oil_type_id, ot.oil_name, li.price_per_litre AS price_per_liter
+// Fetch station fuel-tank levels using the schema defined in db.sql.
+$stationTanks = [];
+$tankStmt = $pdo->prepare(
+  "SELECT s.branch_id AS station_id, s.branch_name AS station_name,
+          t.fuel_code, COALESCE(ot.oil_name, t.fuel_name) AS fuel_name,
+          t.current_l, t.capacity_l
     FROM branches s
     INNER JOIN station_business_scope sbs ON sbs.station_id = s.branch_id
-    INNER JOIN ({$latestInventorySql}) li ON li.station_id = s.branch_id
-     INNER JOIN oil_types ot ON ot.oil_type_id = li.oil_type_id
-     WHERE sbs.headquarter_id = ?
-       AND COALESCE(s.status, 'Active') <> 'Decommissioned'
-    ORDER BY s.branch_name, ot.oil_type_id
+    INNER JOIN tanks t ON t.branch_id = s.branch_id
+    LEFT JOIN oil_types ot ON ot.oil_type_id = t.oil_type_id
+    WHERE sbs.headquarter_id = ?
+      AND LOWER(COALESCE(s.status, 'active')) <> 'closed'
+      AND COALESCE(t.is_enabled, 1) = 1
+    ORDER BY s.branch_name, t.fuel_code
      LIMIT 8"
 );
-$pricingStmt->execute([$hqId]);
-$fuelPrices = $pricingStmt->fetchAll(PDO::FETCH_ASSOC);
-
-$dashboardStationStmt = $pdo->prepare(
-    "SELECT s.branch_id AS station_id, s.branch_name AS station_name
-    FROM branches s
-    INNER JOIN station_business_scope sbs ON sbs.station_id = s.branch_id
-     WHERE sbs.headquarter_id = ?
-       AND COALESCE(s.status, 'Active') <> 'Decommissioned'
-    ORDER BY s.branch_name"
-);
-$dashboardStationStmt->execute([$hqId]);
-$dashboardStations = $dashboardStationStmt->fetchAll(PDO::FETCH_ASSOC);
+$tankStmt->execute([$hqId]);
+$stationTanks = $tankStmt->fetchAll(PDO::FETCH_ASSOC);
 
 // Fetch recent manager reports by the user's original business role, since role_id is normalized to the customer profile in the account-switch flow.
 $recentReports = [];
@@ -74,7 +49,7 @@ $stationStatusSql = $hqBillingReady
                 SELECT 1 FROM company_loyalty_station_fees fee
                 WHERE fee.headquarter_id = sbs.headquarter_id
                   AND fee.station_id = s.branch_id
-                  AND fee.year_month = ?
+                  AND fee.`year_month` = ?
             ) THEN 'Paused'
            WHEN LOWER(COALESCE(s.status, 'active')) = 'maintenance' THEN 'Maintenance'
            WHEN LOWER(COALESCE(s.status, 'active')) = 'active' THEN 'Active'
@@ -83,6 +58,7 @@ $stationStatusSql = $hqBillingReady
     : "CASE WHEN LOWER(COALESCE(s.status, 'active')) = 'active' THEN 'Paused' ELSE s.status END";
 $stationsStmt = $pdo->prepare(
   "SELECT s.branch_id AS station_id, s.branch_name AS station_name,
+        s.status AS branch_status,
         CASE WHEN s.latitude IS NOT NULL AND s.longitude IS NOT NULL
           THEN CONCAT(s.latitude, ', ', s.longitude) ELSE s.address END AS location,
         {$stationStatusSql} AS status
@@ -164,11 +140,6 @@ $stations = $stationsStmt->fetchAll(PDO::FETCH_ASSOC);
     margin-top: 16px;
   }
 
-  /* rows with an Edit button are taller */
-  .dash-scroll.dash-scroll-tall {
-    --dash-row-h: 62px;
-  }
-
   .dash-scroll table {
     margin-top: 0;
     border-collapse: separate; /* keeps borders visible under the sticky header */
@@ -239,6 +210,17 @@ $stations = $stationsStmt->fetchAll(PDO::FETCH_ASSOC);
     border-color: var(--border);
   }
 
+  .hq-metrics {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px;
+  }
+
+  .hq-metric {
+    min-width: 0;
+    gap: 12px;
+    padding: 16px;
+  }
+
   @media (max-width: 900px) {
     .dashboard-grid {
       grid-template-columns: 1fr;
@@ -248,63 +230,56 @@ $stations = $stationsStmt->fetchAll(PDO::FETCH_ASSOC);
       grid-column: span 1;
     }
   }
+
+  @media (max-width: 700px) {
+    .hq-metrics {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
 </style>
 </head>
 <body>
   <h2 class="title">Network overview</h2>
-  <p class="subtitle">A clear view of your stations, fuel prices, and latest manager reports.</p>
-
-  <?php
-if (!empty($updateMessage)): ?>
-    <div class="alert alert-info alert-dismissible fade show" role="alert">
-      <?php
-echo $updateMessage; ?>
-      <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-    </div>
-  <?php
-endif; ?>
+  <p class="subtitle">A clear view of your stations, tank levels, and latest manager reports.</p>
 
   <div class="hq-eyebrow">Operations at a glance</div>
   <div class="hq-metrics" aria-label="Station summary">
     <a class="hq-metric" href="station.php" onclick="event.preventDefault(); navigateTo('station.php')"><i class="fa-solid fa-gas-pump" aria-hidden="true"></i><div><strong><?= count($stations) ?></strong><span>Total stations</span></div></a>
-    <a class="hq-metric" href="station.php" onclick="event.preventDefault(); navigateTo('station.php')"><i class="fa-solid fa-circle-check" aria-hidden="true"></i><div><strong><?= count(array_filter($stations, static fn($s) => ($s['status'] ?: 'Active') === 'Active')) ?></strong><span>Active stations</span></div></a>
+    <a class="hq-metric" href="station.php" onclick="event.preventDefault(); navigateTo('station.php')"><i class="fa-solid fa-circle-check" aria-hidden="true"></i><div><strong><?= count(array_filter($stations, static fn($s) => strtolower((string) ($s['branch_status'] ?? '')) === 'active')) ?></strong><span>Active stations</span></div></a>
     <a class="hq-metric" href="station.php" onclick="event.preventDefault(); navigateTo('station.php')"><i class="fa-solid fa-wrench" aria-hidden="true"></i><div><strong><?= count(array_filter($stations, static fn($s) => $s['status'] === 'Maintenance')) ?></strong><span>Under maintenance</span></div></a>
     <div class="hq-metric"><i class="fa-solid fa-star" aria-hidden="true"></i><div><strong><?= number_format($hqPointBalance) ?></strong><span>HQ points</span></div></div>
   </div>
 
   <div class="dashboard-grid">
-    <!-- Station fuel prices Card -->
-    <div class="card card-clickable" onclick="navigateTo('pricing.php')">
+    <!-- Station fuel tanks Card -->
+    <div class="card">
       <div class="d-flex justify-content-between align-items-center mb-2">
-        <h3 class="mb-0">Station fuel prices</h3>
-        <a class="small text-info" href="pricing.php" onclick="event.stopPropagation(); event.preventDefault(); navigateTo('pricing.php')">Manage <i class="fa-solid fa-arrow-right ms-1"></i></a>
+        <h3 class="mb-0">Station fuel tanks</h3>
+        <a class="small text-info" href="pricing.php" onclick="event.stopPropagation(); event.preventDefault(); navigateTo('pricing.php')">Manage fuel prices <i class="fa-solid fa-arrow-right ms-1"></i></a>
       </div>
-      <div class="dash-scroll dash-scroll-tall">
+      <div class="dash-scroll">
       <table>
-        <thead><tr><th>Station</th><th>Type</th><th>Price (MMK)</th><th>Action</th></tr></thead>
+        <thead><tr><th>Station</th><th>Fuel type</th><th>Current (L)</th><th>Capacity (L)</th></tr></thead>
         <tbody>
           <?php
-if (!empty($fuelPrices)): ?>
+if (!empty($stationTanks)): ?>
             <?php
-foreach ($fuelPrices as $fuel): ?>
+foreach ($stationTanks as $tank): ?>
               <tr>
                 <td><?php
-echo htmlspecialchars($fuel['station_name']); ?></td>
+echo htmlspecialchars((string) $tank['station_name'], ENT_QUOTES, 'UTF-8'); ?></td>
                 <td><?php
-echo htmlspecialchars($fuel['oil_name']); ?></td>
+echo htmlspecialchars((string) $tank['fuel_name'], ENT_QUOTES, 'UTF-8'); ?></td>
                 <td><?php
-echo number_format($fuel['price_per_liter']); ?></td>
-                <td><button class="btn" onclick="openEditModal(event, '<?php
-echo (int)$fuel['station_id']; ?>', '<?php
-echo (int)$fuel['oil_type_id']; ?>', '<?php
-echo htmlspecialchars($fuel['station_name'] . ' / ' . $fuel['oil_name'], ENT_QUOTES); ?>', '<?php
-echo htmlspecialchars($fuel['price_per_liter'], ENT_QUOTES); ?>')">Edit</button></td>
+echo number_format((float) $tank['current_l'], 2); ?></td>
+                <td><?php
+echo number_format((float) $tank['capacity_l'], 0); ?></td>
               </tr>
             <?php
 endforeach; ?>
           <?php
 else: ?>
-            <tr><td colspan="4">No pricing records found.</td></tr>
+            <tr><td colspan="4">No active station tanks found.</td></tr>
           <?php
 endif; ?>
         </tbody>
@@ -383,41 +358,7 @@ endif; ?>
     </div>
   </div>
 
-  <!-- Edit Pricing Modal Pop-up -->
-  <div class="modal fade" id="editPricingModal" tabindex="-1" aria-labelledby="editPricingModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered">
-      <div class="modal-content p-3">
-        <div class="modal-header border-0">
-          <h5 class="modal-title" id="editPricingModalLabel">Quick Edit Fuel Price</h5>
-          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
-        </div>
-        <div class="modal-body">
-          <form id="quickEditForm" method="POST" action="">
-            <input type="hidden" name="action" value="update_price">
-            <div class="mb-3">
-              <label for="modalFuelLabel" class="form-label text-muted">Station / Fuel Type</label>
-              <input type="hidden" id="modalStationId" name="station_id">
-              <input type="hidden" id="modalOilTypeId" name="oil_type_id">
-              <input type="text" class="form-control" id="modalFuelLabel" readonly>
-            </div>
-            <div class="mb-3">
-              <label for="modalFuelPrice" class="form-label text-muted">New Price (MMK)</label>
-              <input type="text" class="form-control" id="modalFuelPrice" name="fuel_price" required>
-            </div>
-            <div class="d-flex justify-content-end gap-2 mt-4">
-              <button type="button" class="btn btn-outline-secondary text-white" data-bs-dismiss="modal">Cancel</button>
-              <button type="submit" class="btn btn-primary">Save Changes</button>
-            </div>
-          </form>
-        </div>
-      </div>
-    </div>
-  </div>
-
   <footer class="text-white-50 text-center py-4 mt-5 small">&copy; 2026 Map & Pump | All Rights Reserved</footer>
-
-  <!-- Bootstrap JS Bundle (Required for Modals) -->
-  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 
   <script>
     function navigateTo(page) {
@@ -455,17 +396,6 @@ endif; ?>
       dashResizeTimer = setTimeout(sizeDashScrollers, 150);
     });
 
-    function openEditModal(event, stationId, oilTypeId, label, currentPrice) {
-      event.stopPropagation();
-      
-      document.getElementById('modalStationId').value = stationId;
-      document.getElementById('modalOilTypeId').value = oilTypeId;
-      document.getElementById('modalFuelLabel').value = label;
-      document.getElementById('modalFuelPrice').value = currentPrice;
-
-      const editModal = new bootstrap.Modal(document.getElementById('editPricingModal'));
-      editModal.show();
-    }
   </script>
 </body>
 </html>

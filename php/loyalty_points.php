@@ -688,7 +688,7 @@ function company_loyalty_current_month_slots(PDO $pdo, int $headquarterId): int
         $stmt = $pdo->prepare(
             'SELECT COALESCE(slots_purchased, 0) + COALESCE(mmk_slots_purchased, 0)
              FROM company_loyalty_station_slots
-             WHERE headquarter_id = ? AND year_month = ? LIMIT 1'
+             WHERE headquarter_id = ? AND `year_month` = ? LIMIT 1'
         );
         $stmt->execute([$headquarterId, loyalty_current_year_month()]);
         return max(0, (int) $stmt->fetchColumn());
@@ -740,7 +740,7 @@ function company_loyalty_station_is_paid(PDO $pdo, int $stationId): bool
              INNER JOIN company_loyalty_station_fees f
                 ON f.headquarter_id = sbs.headquarter_id
                AND f.station_id = sbs.station_id
-               AND f.year_month = ?
+                AND f.`year_month` = ?
              WHERE sbs.station_id = ?
              LIMIT 1'
         );

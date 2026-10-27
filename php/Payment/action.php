@@ -105,7 +105,7 @@ try {
         if (!$stationLock->fetchColumn()) {
             throw new RuntimeException('The station changed while the quote was being created.');
         }
-        $feeCheck = $pdo->prepare('SELECT 1 FROM company_loyalty_station_fees WHERE headquarter_id = ? AND station_id = ? AND year_month = ? LIMIT 1');
+        $feeCheck = $pdo->prepare('SELECT 1 FROM company_loyalty_station_fees WHERE headquarter_id = ? AND station_id = ? AND `year_month` = ? LIMIT 1');
         $feeCheck->execute([$headquarterId, $stationId, $serviceMonth]);
         if ($feeCheck->fetchColumn()) {
             throw new RuntimeException('This station already has a fee recorded for the selected month.');
@@ -389,7 +389,7 @@ try {
                     }
                     $headquarterId = (int) ($transfer['payer_headquarter_id'] ?? 0);
                     $months = (int) ($transfer['term_months'] ?? 0);
-                    if ($headquarterId <= 0 || $months < 1 || $months > 24) {
+                    if ($headquarterId <= 0 || $months < 1 || $months > BILLING_HQ_EXTENSION_MAX_MONTHS) {
                         throw new RuntimeException('The service extension details are invalid.');
                     }
                     $expiryStmt = $pdo->prepare('SELECT service_expires_at FROM headquarter WHERE headquarter_id = ? FOR UPDATE');
@@ -606,7 +606,7 @@ function payment_transfer_create_pending_registration_hq(PDO $pdo, array $transf
     $monthStart = new DateTimeImmutable('first day of this month 00:00:00');
     $slotInsert = $pdo->prepare(
         'INSERT INTO company_loyalty_station_slots
-            (headquarter_id, year_month, slots_purchased, mmk_slots_purchased, points_spent)
+            (headquarter_id, `year_month`, slots_purchased, mmk_slots_purchased, points_spent)
          VALUES (?, ?, 0, ?, 0)
          ON DUPLICATE KEY UPDATE mmk_slots_purchased = mmk_slots_purchased + VALUES(mmk_slots_purchased)'
     );
