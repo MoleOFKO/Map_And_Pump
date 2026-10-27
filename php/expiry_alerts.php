@@ -496,7 +496,7 @@ function expiry_render_page_banners(string $portal = 'admin', bool $runSync = tr
         <div class="alert hq-flash alert-danger alert-dismissible fade show mb-3" role="alert">
             <i class="bi bi-exclamation-octagon-fill me-2"></i>
             License deadline passed:
-            <?php if ($eHq > 0): ?><a href="<?= htmlspecialchars($hqExpUrl, ENT_QUOTES, 'UTF-8') ?>" class="alert-link"><?= $eHq ?> compan<?= $eHq === 1 ? 'y' : 'ies' ?></a><?php endif; ?>
+            <?php if ($eHq > 0): ?><a href="<?= htmlspecialchars($hqExpUrl, ENT_QUOTES, 'UTF-8') ?>" class="alert-link"><?= $eHq ?> <?= $isMod ? ($eHq === 1 ? 'company' : 'companies') : 'Headquarter' ?></a><?php endif; ?>
             <?php if ($eHq > 0 && $eUser > 0): ?> and <?php endif; ?>
             <?php if ($eUser > 0): ?><a href="<?= htmlspecialchars($userExpUrl, ENT_QUOTES, 'UTF-8') ?>" class="alert-link"><?= $eUser ?> driver<?= $eUser === 1 ? '' : 's' ?></a><?php endif; ?>
             — review and renew the required documents immediately.
@@ -508,7 +508,7 @@ function expiry_render_page_banners(string $portal = 'admin', bool $runSync = tr
         <div class="alert hq-flash alert-warning alert-dismissible fade show mb-3" role="status">
             <i class="bi bi-exclamation-triangle-fill me-2"></i>
             License deadlines approaching (within <?= (int) MAP_PUMP_EXPIRY_WARNING_DAYS ?> days):
-            <?php if ($wHq > 0): ?><a href="<?= htmlspecialchars($hqWarnUrl, ENT_QUOTES, 'UTF-8') ?>" class="alert-link"><?= $wHq ?> compan<?= $wHq === 1 ? 'y' : 'ies' ?></a><?php endif; ?>
+            <?php if ($wHq > 0): ?><a href="<?= htmlspecialchars($hqWarnUrl, ENT_QUOTES, 'UTF-8') ?>" class="alert-link"><?= $wHq ?> <?= $isMod ? ($wHq === 1 ? 'company' : 'companies') : 'Headquarter' ?></a><?php endif; ?>
             <?php if ($wHq > 0 && $wUser > 0): ?> and <?php endif; ?>
             <?php if ($wUser > 0): ?><a href="<?= htmlspecialchars($userWarnUrl, ENT_QUOTES, 'UTF-8') ?>" class="alert-link"><?= $wUser ?> driver<?= $wUser === 1 ? '' : 's' ?></a><?php endif; ?>.
             <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>

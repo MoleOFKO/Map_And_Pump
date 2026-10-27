@@ -227,7 +227,7 @@ $flashContext = $flash['context'] ?? [];
             <div>
                 <span class="stat-chip mb-2"><i class="bi bi-building-fill txt-neon-cyan"></i> HQ Administration</span>
                 <h1 class="fw-bold m-0 h4 text-white mt-2">View/Manage HQ</h1>
-                <p class="text-white-50 m-0 small mt-1">View HQ records. The status filter reflects the linked owner's account state.</p>
+                <p class="text-white-50 m-0 small mt-1">Pending verification decisions are handled in Requests.</p>
             </div>
         </div>
 

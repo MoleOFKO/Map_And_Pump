@@ -55,7 +55,7 @@ $flashType = (string) ($flash['type'] ?? '');
     <?php if ($flash && $flashType): ?><div class="alert hq-flash alert-<?= hq_escape($flashType) ?> alert-dismissible fade show mb-4" role="alert"><i class="bi <?= $flashType === 'success' ? 'bi-check-circle-fill text-success' : 'bi-exclamation-triangle-fill text-danger' ?> me-2"></i><?= hq_escape((string) ($flash['message'] ?? '')) ?><button type="button" class="btn-close btn-close-white" data-bs-dismiss="alert"></button></div><?php endif; ?>
     <?php if ($dbError): ?><div class="alert hq-flash alert-danger mb-4"><i class="bi bi-database-exclamation me-2"></i><?= hq_escape($dbError) ?></div><?php endif; ?>
     <?php if (function_exists('expiry_render_page_banners')) { expiry_render_page_banners('admin', true); } ?>
-    <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3"><div><span class="stat-chip mb-2"><i class="bi bi-person-vcard-fill txt-neon-cyan"></i> User Administration</span><h1 class="fw-bold m-0 h4 text-white mt-2">View/Manage Users</h1><p class="text-white-50 m-0 small mt-1">View and manage non-HQ accounts. Pending verification decisions are handled in Requests.</p></div></div>
+    <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3"><div><span class="stat-chip mb-2"><i class="bi bi-person-vcard-fill txt-neon-cyan"></i> User Administration</span><h1 class="fw-bold m-0 h4 text-white mt-2">View/Manage Users</h1><p class="text-white-50 m-0 small mt-1">Pending verification decisions are handled in Requests.</p></div></div>
     <div class="dashboard-card py-3 px-4 mb-4">
         <form class="row g-3 align-items-end" method="GET" action="view_users.php">
             <div class="col-12 col-md-4">

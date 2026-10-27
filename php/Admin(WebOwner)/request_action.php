@@ -23,7 +23,15 @@ $requestId = filter_var($_POST['request_id'] ?? null, FILTER_VALIDATE_INT, ['opt
 $action = strtolower(trim((string) ($_POST['action'] ?? '')));
 $reason = trim((string) ($_POST['reason'] ?? ''));
 
-if (!$requestId || !in_array($action, ['approve', 'reject', 'flag'], true)) {
+$allowedActions = ['approve', 'reject'];
+$activeRole = strtolower(trim((string) ($reviewer['active_role_name'] ?? '')));
+if ($activeRole === '') {
+    $activeRole = strtolower(trim((string) ($reviewer['role_name'] ?? '')));
+}
+if ($activeRole === 'moderator') {
+    $allowedActions[] = 'flag';
+}
+if (!$requestId || !in_array($action, $allowedActions, true)) {
     request_flash('danger', 'The request action was invalid.');
     request_redirect();
 }
