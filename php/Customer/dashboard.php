@@ -49,7 +49,7 @@ $reward_tier = loyalty_tier_label($reward_tier_code);
             <p class="customer-reward-tier customer-reward-tier-<?php echo htmlspecialchars(strtolower($reward_tier_code), ENT_QUOTES, 'UTF-8'); ?> mb-0 mt-3">
                 <i class="bi bi-award-fill me-1"></i><?php echo htmlspecialchars($reward_tier, ENT_QUOTES, 'UTF-8'); ?> tier
             </p>
-            <p class="text-secondary mb-0 mt-1" style="font-size:12px;">5 points per qualifying completed fill · rewards from 100 points for up to 5,000 MMK off.</p>
+            <p class="text-secondary mb-0 mt-1" style="font-size:12px;">1 point per completed liter · redeem 500 pts for 1,000 MMK, 999 for 2,000 MMK, or 1,499 for 3,000 MMK off.</p>
         </div>
     </div>
 </div>

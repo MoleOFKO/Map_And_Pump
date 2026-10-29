@@ -8,21 +8,20 @@ require_once __DIR__ . '/billing_config.php';
  */
 
 // ---------------------------------------------------------------------------
-// Core earn / redeem (unchanged product rules)
+// Core earn / redeem
 // ---------------------------------------------------------------------------
 
-// Earn: flat points per successful external fill
+// Earn one point for each whole liter in a successful external fill.
 if (!defined('LOYALTY_POINTS_PER_FILL')) {
-    define('LOYALTY_POINTS_PER_FILL', 5);
+    define('LOYALTY_POINTS_PER_FILL', 1);
 }
 
 // Fixed redemption options: customer points => MMK discount.
 if (!defined('LOYALTY_REDEMPTION_OPTIONS')) {
     define('LOYALTY_REDEMPTION_OPTIONS', [
-        100 => 1000,
-        199 => 2000,
-        299 => 3000,
-        399 => 5000,
+        500 => 1000,
+        999 => 2000,
+        1499 => 3000,
     ]);
 }
 

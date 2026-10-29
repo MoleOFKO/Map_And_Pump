@@ -744,7 +744,7 @@ body.customer-light-mode .customer-map-recenter-btn:hover {
             <div class="mb-3">
                 <label class="form-label text-secondary" for="loyalty-points-select" style="font-size:10px; font-weight:600;">LOYALTY POINTS TO USE (PER FILL)</label>
                 <select id="loyalty-points-select" class="form-select custom-form-field">
-                    <option value="0" selected>0 — no discount</option>
+                    <option value="0" selected>Don't use points — no discount</option>
                     <?php foreach (LOYALTY_REDEMPTION_OPTIONS as $points => $discount): ?>
                         <option value="<?php echo (int) $points; ?>" <?php echo $loyaltyBalance < (int) $points ? 'disabled' : ''; ?>>
                             <?php echo (int) $points; ?> points — <?php echo number_format((int) $discount); ?> MMK off

@@ -1007,7 +1007,7 @@ function loyalty_apply_on_fill(
         }
 
         // Credit earn after a successful external fill.
-        $earnPts = (int) LOYALTY_POINTS_PER_FILL;
+        $earnPts = (int) floor(max(0.0, $filledLiters) * (int) constant('LOYALTY_POINTS_PER_FILL'));
         if ($earnPts > 0) {
             $credit = $pdo->prepare(
                 'UPDATE users SET had_point = had_point + :pts WHERE user_id = :uid'
