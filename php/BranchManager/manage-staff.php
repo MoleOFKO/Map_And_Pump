@@ -27,6 +27,424 @@ $user     = $ctx['user'];
 $branch   = $ctx['branch'];
 $initials = initials($user['full_name']);
 $bid      = (int)$branch['branch_id'];
+$alerts       = notif_recent($pdo, (int)$user['user_id'], 5);
+$unread_count = notif_unread_count($pdo, (int)$user['user_id']);
+$has_unread   = $unread_count > 0;
+
+function staff_has_column(PDO $pdo, string $column): bool {
+    static $cache = [];
+    $key = strtolower($column);
+    if (array_key_exists($key, $cache)) {
+        return $cache[$key];
+    }
+
+    try {
+        $stmt = $pdo->query(
+            "SELECT COUNT(*)
+             FROM INFORMATION_SCHEMA.COLUMNS
+             WHERE TABLE_SCHEMA = DATABASE()
+               AND TABLE_NAME = 'staff'
+               AND LOWER(COLUMN_NAME) = LOWER('$column')"
+        );
+        $cache[$key] = (bool) ((int) $stmt->fetchColumn() > 0);
+    } catch (Throwable $e) {
+        $cache[$key] = false;
+    }
+
+    return $cache[$key];
+}
+
+function staff_has_email_column(PDO $pdo): bool {
+    return staff_has_column($pdo, 'email');
+}
+
+function staff_email_in_use(PDO $pdo, string $email, ?int $excludeUserId = null, ?int $excludeStaffId = null): bool {
+    $email = strtolower(trim($email));
+    if ($email === '') {
+        return false;
+    }
+
+    if (!staff_has_email_column($pdo)) {
+        return false;
+    }
+
+    $staffSql = "SELECT staff_id FROM staff WHERE LOWER(COALESCE(email, '')) = LOWER(:email)";
+    $staffParams = [':email' => $email];
+    if ($excludeStaffId !== null) {
+        $staffSql .= ' AND staff_id != :exclude_staff_id';
+        $staffParams[':exclude_staff_id'] = $excludeStaffId;
+    }
+    $staffSql .= ' LIMIT 1';
+    $staffStmt = $pdo->prepare($staffSql);
+    $staffStmt->execute($staffParams);
+    return (bool) $staffStmt->fetchColumn();
+}
+
+function staff_name_in_use(PDO $pdo, string $fullName, ?int $excludeStaffId = null): bool {
+    $fullName = trim($fullName);
+    if ($fullName === '') {
+        return false;
+    }
+
+    $sql = "SELECT staff_id
+            FROM staff
+            WHERE branch_id = :branch_id
+              AND LOWER(TRIM(full_name)) = LOWER(TRIM(:full_name))";
+    $params = [
+        ':branch_id' => (int) $GLOBALS['bid'],
+        ':full_name' => $fullName,
+    ];
+
+    if ($excludeStaffId !== null) {
+        $sql .= ' AND staff_id != :exclude_staff_id';
+        $params[':exclude_staff_id'] = (int) $excludeStaffId;
+    }
+
+    $sql .= ' LIMIT 1';
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute($params);
+    return (bool) $stmt->fetchColumn();
+}
+
+function staff_contact_in_use(PDO $pdo, string $contact, ?int $excludeStaffId = null): bool {
+    $contact = trim($contact);
+    if ($contact === '') {
+        return false;
+    }
+
+    $sql = "SELECT staff_id
+            FROM staff
+            WHERE branch_id = :branch_id
+              AND LOWER(TRIM(contact)) = LOWER(TRIM(:contact))";
+    $params = [
+        ':branch_id' => (int) $GLOBALS['bid'],
+        ':contact' => $contact,
+    ];
+
+    if ($excludeStaffId !== null) {
+        $sql .= ' AND staff_id != :exclude_staff_id';
+        $params[':exclude_staff_id'] = (int) $excludeStaffId;
+    }
+
+    $sql .= ' LIMIT 1';
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute($params);
+    return (bool) $stmt->fetchColumn();
+}
+
+function staff_name_contact_in_use(PDO $pdo, string $fullName, string $contact, ?int $excludeStaffId = null): bool {
+    return staff_name_in_use($pdo, $fullName, $excludeStaffId) || staff_contact_in_use($pdo, $contact, $excludeStaffId);
+}
+
+function staff_identity_in_use(PDO $pdo, string $fullName, string $contact, ?int $excludeStaffId = null): bool {
+    return staff_name_contact_in_use($pdo, $fullName, $contact, $excludeStaffId);
+}
+
+function resolve_manager_headquarter_id(PDO $pdo, int $managerUserId, int $branchId): int {
+    $managerUserId = (int) $managerUserId;
+    $branchId = (int) $branchId;
+
+    $candidateQueries = [
+        [
+            "SELECT sbs.headquarter_id
+             FROM station_business_scope sbs
+             WHERE sbs.station_id = :branch_id
+               AND sbs.branch_manager_user_id = :manager_user_id
+               AND sbs.headquarter_id IS NOT NULL
+             LIMIT 1",
+            [':branch_id' => $branchId, ':manager_user_id' => $managerUserId],
+        ],
+        [
+            "SELECT sbs.headquarter_id
+             FROM station_business_scope sbs
+             WHERE sbs.branch_manager_user_id = :manager_user_id
+               AND sbs.headquarter_id IS NOT NULL
+             ORDER BY sbs.headquarter_id ASC
+             LIMIT 1",
+            [':manager_user_id' => $managerUserId],
+        ],
+        [
+            "SELECT u.headquarter_id
+             FROM users u
+             WHERE u.user_id = :manager_user_id
+               AND u.headquarter_id IS NOT NULL
+             LIMIT 1",
+            [':manager_user_id' => $managerUserId],
+        ],
+        [
+            "SELECT h.headquarter_id
+             FROM headquarter h
+             ORDER BY h.headquarter_id ASC
+             LIMIT 1",
+            [],
+        ],
+    ];
+
+    foreach ($candidateQueries as [$sql, $params]) {
+        $stmt = $pdo->prepare($sql);
+        if ($params) {
+            $stmt->execute($params);
+        } else {
+            $stmt->execute();
+        }
+        $hqId = (int) $stmt->fetchColumn();
+        if ($hqId > 0) {
+            return $hqId;
+        }
+    }
+
+    return 0;
+}
+
+function next_available_staff_code(PDO $pdo, int $branchId): string {
+    $base = 2090;
+    $baseStmt = $pdo->prepare(
+        "SELECT COALESCE(MAX(CAST(SUBSTRING(staff_code, 4) AS UNSIGNED)), :base)
+         FROM staff
+         WHERE branch_id = :b
+           AND staff_code REGEXP '^ST-[0-9]+$'"
+    );
+    $baseStmt->execute([':base' => $base, ':b' => $branchId]);
+    $next = max((int) $baseStmt->fetchColumn(), $base);
+
+    while (true) {
+        $next++;
+        $code = 'ST-' . $next;
+        $exists = $pdo->prepare("SELECT 1 FROM staff WHERE staff_code = :code LIMIT 1");
+        $exists->execute([':code' => $code]);
+        if (!$exists->fetchColumn()) {
+            return $code;
+        }
+    }
+}
+
+function map_pump_staff_role_id(PDO $pdo): int {
+    $stmt = $pdo->prepare(
+        "SELECT role_id
+         FROM roles
+         WHERE LOWER(TRIM(role_name)) IN ('staff', 'pump attendant', 'pumpattendant')
+         ORDER BY role_id ASC
+         LIMIT 1"
+    );
+    $stmt->execute();
+    $roleId = (int) $stmt->fetchColumn();
+    return $roleId > 0 ? $roleId : 0;
+}
+
+function map_pump_branch_company_name(PDO $pdo, int $branchId): string {
+    $stmt = $pdo->prepare(
+        "SELECT COALESCE(hq.company_name, b.branch_name, 'Map & Pump')
+         FROM branches b
+         LEFT JOIN station_business_scope sbs ON sbs.station_id = b.branch_id
+         LEFT JOIN headquarter hq ON hq.headquarter_id = sbs.headquarter_id
+         WHERE b.branch_id = :bid
+         ORDER BY sbs.headquarter_id IS NOT NULL DESC, sbs.headquarter_id ASC
+         LIMIT 1"
+    );
+    $stmt->execute([':bid' => $branchId]);
+    $name = trim((string) $stmt->fetchColumn());
+    return $name !== '' ? $name : 'Map & Pump';
+}
+
+function map_pump_staff_invitation_link(int $invitationId): string {
+    $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+    $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
+    $path = '/php/Customer/respond_invitation.php?invitation=' . rawurlencode((string) $invitationId) . '&decision=accept';
+    return $host ? $scheme . '://' . $host . $path : $path;
+}
+
+function map_pump_send_staff_invitation_email(string $toEmail, string $subject, string $body): bool {
+    $toEmail = trim($toEmail);
+    if ($toEmail === '') {
+        return false;
+    }
+
+    $smtpHost = getenv('SMTP_HOST');
+    $smtpUser = getenv('SMTP_USERNAME');
+    $smtpPass = getenv('SMTP_PASSWORD');
+    $smtpPort = (int) (getenv('SMTP_PORT') ?: 587);
+    $from = getenv('SMTP_FROM_EMAIL') ?: getenv('MAIL_FROM_EMAIL') ?: 'notifications@example.com';
+    $fromName = getenv('SMTP_FROM_NAME') ?: getenv('MAIL_FROM_NAME') ?: 'Map & Pump';
+
+    if (class_exists('PHPMailer\\PHPMailer\\PHPMailer')) {
+        try {
+            require_once __DIR__ . '/../vendor/autoload.php';
+            $mail = new \PHPMailer\PHPMailer\PHPMailer(true);
+            $mail->isSMTP();
+            $mail->Host = $smtpHost ?: 'localhost';
+            $mail->SMTPAuth = !empty($smtpUser) && !empty($smtpPass);
+            $mail->Username = $smtpUser ?: '';
+            $mail->Password = $smtpPass ?: '';
+            $mail->SMTPSecure = $smtpHost ? 'tls' : '';
+            $mail->Port = $smtpPort > 0 ? $smtpPort : 587;
+            $mail->CharSet = 'UTF-8';
+            $mail->From = $from;
+            $mail->FromName = $fromName;
+            $mail->addAddress($toEmail);
+            $mail->Subject = $subject;
+            $mail->isHTML(true);
+            $mail->Body = $body;
+            if (empty($smtpHost) || empty($smtpUser) || empty($smtpPass)) {
+                return @mail($toEmail, $subject, $body, "From: {$fromName} <{$from}>\r\nContent-Type: text/html; charset=UTF-8\r\n");
+            }
+            return $mail->send();
+        } catch (Throwable $e) {
+            error_log('[Map & Pump invite email] ' . $e->getMessage());
+            return false;
+        }
+    }
+
+    $headers = [
+        "From: {$fromName} <{$from}>",
+        'MIME-Version: 1.0',
+        'Content-Type: text/html; charset=UTF-8',
+    ];
+    return @mail($toEmail, $subject, $body, implode("\r\n", $headers));
+}
+
+function map_pump_branch_manager_hq(PDO $pdo, int $branchId, int $managerUserId): int {
+    $branchId = (int) $branchId;
+    $managerUserId = (int) $managerUserId;
+
+    if ($branchId <= 0) {
+        throw new RuntimeException('The selected branch is invalid.');
+    }
+    if ($managerUserId <= 0) {
+        throw new RuntimeException('Branch manager context is missing. Please sign in again.');
+    }
+
+    $branchExists = $pdo->prepare('SELECT branch_id FROM branches WHERE branch_id = :branch_id LIMIT 1');
+    $branchExists->execute([':branch_id' => $branchId]);
+    if (!$branchExists->fetchColumn()) {
+        throw new RuntimeException('The selected branch could not be found.');
+    }
+
+    $scopeStmt = $pdo->prepare(
+        "SELECT sbs.headquarter_id
+         FROM branches b
+         INNER JOIN station_business_scope sbs ON sbs.station_id = b.branch_id
+         INNER JOIN headquarter hq ON hq.headquarter_id = sbs.headquarter_id
+         WHERE b.branch_id = :branch_id
+           AND sbs.headquarter_id IS NOT NULL
+           AND (b.manager_user_id = :manager_user_id OR sbs.branch_manager_user_id = :manager_user_id)
+         LIMIT 1"
+    );
+    $scopeStmt->execute([':branch_id' => $branchId, ':manager_user_id' => $managerUserId]);
+    $hqId = (int) $scopeStmt->fetchColumn();
+
+    if ($hqId <= 0) {
+        throw new RuntimeException('This branch is not assigned to a valid Headquarter for your branch manager account.');
+    }
+
+    $validScope = $pdo->prepare(
+        "SELECT 1
+         FROM station_business_scope sbs
+         WHERE sbs.station_id = :branch_id
+           AND sbs.headquarter_id = :hq_id
+           AND (sbs.branch_manager_user_id = :manager_user_id OR EXISTS (
+               SELECT 1
+               FROM branches b
+               WHERE b.branch_id = :branch_id
+                 AND b.manager_user_id = :manager_user_id
+           ))
+         LIMIT 1"
+    );
+    $validScope->execute([':branch_id' => $branchId, ':hq_id' => $hqId, ':manager_user_id' => $managerUserId]);
+    if (!$validScope->fetchColumn()) {
+        throw new RuntimeException('The selected branch is not linked to a valid Headquarter for this branch manager.');
+    }
+
+    return $hqId;
+}
+
+function map_pump_existing_customer_invitation(PDO $pdo, int $branchId, string $email, string $hireMessage, int $managerUserId): array {
+    $email = strtolower(trim($email));
+    $hireMessage = trim($hireMessage);
+    if ($email === '') {
+        throw new RuntimeException('Email address is required.');
+    }
+    if ($hireMessage === '') {
+        throw new RuntimeException('Please add a hire message before sending the invite.');
+    }
+
+    $roleId = map_pump_staff_role_id($pdo);
+    if ($roleId <= 0) {
+        throw new RuntimeException('This system does not have a Staff role configured yet.');
+    }
+
+    $customerStmt = $pdo->prepare(
+        "SELECT user_id, user_name, email, business_role_id, current_role_id
+         FROM users
+         WHERE LOWER(TRIM(email)) = LOWER(TRIM(:email))
+         LIMIT 1"
+    );
+    $customerStmt->execute([':email' => $email]);
+    $customer = $customerStmt->fetch(PDO::FETCH_ASSOC);
+    if (!$customer) {
+        throw new RuntimeException('No existing customer account was found for this email.');
+    }
+
+    $customerUserId = (int) ($customer['user_id'] ?? 0);
+    $pendingStmt = $pdo->prepare(
+        "SELECT invitation_id
+         FROM invitations
+         WHERE invited_user_id = :uid
+           AND station_id = :branch_id
+           AND status = 'pending'
+         LIMIT 1"
+    );
+    $pendingStmt->execute([':uid' => $customerUserId, ':branch_id' => $branchId]);
+    if ($pendingStmt->fetchColumn()) {
+        throw new RuntimeException('A pending staff invitation already exists for this customer in your branch.');
+    }
+
+    $staffStmt = $pdo->prepare('SELECT staff_id FROM staff WHERE user_id = :uid LIMIT 1');
+    $staffStmt->execute([':uid' => $customerUserId]);
+    if ($staffStmt->fetchColumn()) {
+        throw new RuntimeException('This customer already has a staff record and cannot be invited again.');
+    }
+
+    if (((int) ($customer['business_role_id'] ?? 0) === $roleId) || ((int) ($customer['current_role_id'] ?? 0) === $roleId)) {
+        throw new RuntimeException('This customer already has the Staff role assigned.');
+    }
+
+    $hqId = map_pump_branch_manager_hq($pdo, $branchId, $managerUserId);
+    $companyName = map_pump_branch_company_name($pdo, $branchId);
+
+    $insert = $pdo->prepare(
+        "INSERT INTO invitations (headquarter_id, invited_user_id, invited_email, business_role_id, station_id, status, created_at)
+         VALUES (:hq, :uid, :email, :role, :branch, 'pending', NOW())"
+    );
+    $insert->execute([
+        ':hq' => $hqId,
+        ':uid' => $customerUserId,
+        ':email' => $email,
+        ':role' => $roleId,
+        ':branch' => $branchId,
+    ]);
+    $invitationId = (int) $pdo->lastInsertId();
+
+    $link = map_pump_staff_invitation_link($invitationId);
+    $body = '<p>Hello,</p><p>You have been invited to join <strong>' . htmlspecialchars($companyName, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') . '</strong> as a staff member.</p><p><strong>Reason:</strong><br>' . nl2br(htmlspecialchars($hireMessage, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8')) . '</p><p>Accept the invitation here:</p><p><a href="' . htmlspecialchars($link, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') . '">Accept invitation</a></p><p>Thank you,<br>' . htmlspecialchars($companyName, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') . '</p>';
+    $subject = 'Staff invitation from ' . $companyName;
+
+    $notifId = notif_create($pdo, null, $email, 'staff_invitation', $subject, $body, $invitationId);
+    $pdo->prepare('UPDATE invitations SET notification_id = ? WHERE invitation_id = ?')->execute([$notifId, $invitationId]);
+    $emailSent = map_pump_send_staff_invitation_email($email, $subject, $body);
+    $pdo->prepare('UPDATE notifications SET delivery_status = ? WHERE notification_id = ?')->execute([$emailSent ? 'sent' : 'failed', $notifId]);
+
+    $pdo->prepare(
+        'INSERT INTO notifications (recipient_user_id, notification_type, subject, message, delivery_status)
+         VALUES (?, ?, ?, ?, "sent")'
+    )->execute([
+        $managerUserId,
+        'staff_invitation_sent',
+        'Staff invite sent',
+        'Invite sent to ' . $email . ' for ' . $companyName . '.'
+    ]);
+
+    return ['invitation_id' => $invitationId, 'role_id' => $roleId, 'customer_user_id' => $customerUserId];
+}
 
 // -------- POST action router --------
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -35,76 +453,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     try {
         if ($action === 'add') {
-            $full_name = trim($_POST['full_name'] ?? '');
-            $email     = trim($_POST['email'] ?? '');
-            $contact   = trim($_POST['contact'] ?? '');
-            // role is always Pump Attendant (only staff role at branch level)
-            // shift kept for schema compatibility, defaults to Morning
-            $role      = 'Pump Attendant';
-            $shift     = 'Morning';
+            $email = trim((string)($_POST['email'] ?? ''));
+            $hireMessage = trim((string)($_POST['hire_message'] ?? ''));
 
-            if ($full_name === '') json_out(['ok' => false, 'error' => 'Name required']);
+            if ($email === '') {
+                json_out(['ok' => false, 'error' => 'Email address is required.']);
+            }
             if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
                 json_out(['ok' => false, 'error' => 'Invalid email address']);
             }
-
-            $roleStmt = $pdo->query("SELECT role_id FROM roles WHERE LOWER(role_name) = 'staff' LIMIT 1");
-            $staffRoleId = (int) $roleStmt->fetchColumn();
-            if ($staffRoleId <= 0) json_out(['ok' => false, 'error' => 'Staff role is not configured']);
-
-            $pdo->beginTransaction();
-            $userStmt = $pdo->prepare(
-              "INSERT INTO users (user_name, email, hashed_password, role_id, business_role_id, current_role_id, headquarter_id, branch_id, status)
-               SELECT :name, :email, :password, :role_id, :role_id, :customer_role, u.headquarter_id, :branch_id, 'active'
-               FROM users u
-               INNER JOIN branches b ON b.manager_user_id = u.user_id AND b.branch_id = :manager_branch_id
-               WHERE u.user_id = :manager_id"
-            );
-            $customerRoleId = (int) $pdo->query("SELECT role_id FROM roles WHERE LOWER(role_name) = 'customer' LIMIT 1")->fetchColumn();
-            $userStmt->execute([
-              ':name' => $full_name, ':email' => $email,
-              ':password' => password_hash(bin2hex(random_bytes(16)), PASSWORD_DEFAULT),
-              ':role_id' => $staffRoleId, ':customer_role' => $customerRoleId,
-              ':branch_id' => $bid,
-              ':manager_branch_id' => $bid,
-              ':manager_id' => $user['user_id'],
-            ]);
-            $staffUserId = (int) $pdo->lastInsertId();
-
-            // generate ST-#### code (starts from 2100 or next after existing)
-            $stmt = $pdo->prepare("
-                SELECT MAX(CAST(SUBSTRING(staff_code, 4) AS UNSIGNED)) FROM staff WHERE branch_id = :b
-            ");
-            $stmt->execute([':b' => $bid]);
-            $next = ((int)$stmt->fetchColumn() ?: 2090) + 1;
-            $code = 'ST-' . $next;
-
-            // Detect whether the `email` column exists on the staff table.
-            // If the migration in migrations.sql has been run, we save it; otherwise skip it silently.
-            $hasEmailColumn = false;
-            try {
-                $chk = $pdo->query("SHOW COLUMNS FROM staff LIKE 'email'");
-                $hasEmailColumn = ($chk && $chk->fetchColumn());
-            } catch (Throwable $e) { $hasEmailColumn = false; }
-
-            if ($hasEmailColumn) {
-                $stmt = $pdo->prepare("
-                    INSERT INTO staff (user_id, staff_code, branch_id, full_name, role, shift, contact, email, is_active, duty_status, hired_at)
-                    VALUES (:u, :c, :b, :n, :r, :s, :p, :e, 1, 'Off Duty', CURDATE())
-                ");
-                  $stmt->execute([':u'=>$staffUserId, ':c'=>$code, ':b'=>$bid, ':n'=>$full_name, ':r'=>$role, ':s'=>$shift, ':p'=>$contact, ':e'=>$email]);
-            } else {
-                $stmt = $pdo->prepare("
-                    INSERT INTO staff (user_id, staff_code, branch_id, full_name, role, shift, contact, is_active, duty_status, hired_at)
-                    VALUES (:u, :c, :b, :n, :r, :s, :p, 1, 'Off Duty', CURDATE())
-                ");
-                  $stmt->execute([':u'=>$staffUserId, ':c'=>$code, ':b'=>$bid, ':n'=>$full_name, ':r'=>$role, ':s'=>$shift, ':p'=>$contact]);
+            if ($hireMessage === '') {
+                json_out(['ok' => false, 'error' => 'Please add a hire message before sending the invite.']);
             }
 
+            try {
+                $pdo->beginTransaction();
+                $result = map_pump_existing_customer_invitation($pdo, $bid, $email, $hireMessage, (int) $user['user_id']);
                 $pdo->commit();
 
-            log_activity($pdo, $bid, 'user', $user['user_id'], $user['full_name'], "Added new staff: {$full_name} ({$code})");
-            json_out(['ok' => true, 'staff_id' => (int)$pdo->lastInsertId(), 'staff_code' => $code]);
+                log_activity($pdo, $bid, 'user', $user['user_id'], $user['full_name'], 'Sent staff invitation to ' . $email);
+                json_out([
+                    'ok' => true,
+                    'message' => 'Staff invite sent successfully.',
+                    'invitation_id' => (int) ($result['invitation_id'] ?? 0),
+                ]);
+            } catch (Throwable $e) {
+                if ($pdo->inTransaction()) {
+                    $pdo->rollBack();
+                }
+                json_out(['ok' => false, 'error' => $e->getMessage()], 400);
+            }
         }
 
         if ($action === 'edit') {
@@ -118,62 +496,55 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 json_out(['ok' => false, 'error' => 'Invalid email address']);
             }
 
-            $hasEmailColumn = false;
-            try {
-                $chk = $pdo->query("SHOW COLUMNS FROM staff LIKE 'email'");
-                $hasEmailColumn = ($chk && $chk->fetchColumn());
-            } catch (Throwable $e) { $hasEmailColumn = false; }
-
-            if ($hasEmailColumn) {
-                $stmt = $pdo->prepare("
-                    UPDATE staff SET full_name = :n, contact = :p, email = :e
-                    WHERE staff_id = :sid AND branch_id = :b
-                ");
-                $stmt->execute([
-                    ':n' => $full_name, ':p' => $contact, ':e' => $email,
-                    ':sid' => $sid, ':b' => $bid,
-                ]);
-            } else {
-                $stmt = $pdo->prepare("
-                    UPDATE staff SET full_name = :n, contact = :p
-                    WHERE staff_id = :sid AND branch_id = :b
-                ");
-                $stmt->execute([
-                    ':n' => $full_name, ':p' => $contact,
-                    ':sid' => $sid, ':b' => $bid,
-                ]);
+            $staffRow = $pdo->prepare("SELECT staff_code FROM staff WHERE staff_id = :sid AND branch_id = :b LIMIT 1");
+            $staffRow->execute([':sid' => $sid, ':b' => $bid]);
+            $staffData = $staffRow->fetch(PDO::FETCH_ASSOC);
+            if (!$staffData) {
+                json_out(['ok' => false, 'error' => 'Staff record not found.']);
             }
+
+            if ($email !== '' && staff_email_in_use($pdo, $email, null, $sid)) {
+                json_out(['ok' => false, 'error' => 'This email is already in use by another staff record.']);
+            }
+            if (!preg_match('/^\d{11}$/', $contact)) {
+                json_out(['ok' => false, 'error' => 'Phone number must be exactly 11 digits and contain only numbers.']);
+            }
+            if (staff_name_in_use($pdo, $full_name, $sid)) {
+                json_out(['ok' => false, 'error' => 'A staff member with the same name already exists in this branch.']);
+            }
+            if (staff_contact_in_use($pdo, $contact, $sid)) {
+                json_out(['ok' => false, 'error' => 'A staff member with the same phone number already exists in this branch.']);
+            }
+
+            $setClauses = ['full_name = :n', 'contact = :p'];
+            $params = [':n' => $full_name, ':p' => $contact, ':sid' => $sid, ':b' => $bid];
+            if (staff_has_column($pdo, 'email')) {
+                $setClauses[] = 'email = :e';
+                $params[':e'] = $email;
+            }
+            if (staff_has_column($pdo, 'updated_at')) {
+                $setClauses[] = 'updated_at = NOW()';
+            }
+
+            $sql = 'UPDATE staff SET ' . implode(', ', $setClauses) . ' WHERE staff_id = :sid AND branch_id = :b';
+            $stmt = $pdo->prepare($sql);
+            $stmt->execute($params);
+
             log_activity($pdo, $bid, 'user', $user['user_id'], $user['full_name'], "Edited staff #{$sid}");
-            json_out(['ok' => true]);
+            json_out(['ok' => true, 'staff_code' => $staffData['staff_code'] ?? '']);
         }
 
         if ($action === 'delete') {
             $sid = (int)($_POST['staff_id'] ?? 0);
 
             $pdo->beginTransaction();
-            $stmt = $pdo->prepare("
-                SELECT s.staff_id, s.user_id, s.full_name, s.staff_code
-                FROM staff s
-                INNER JOIN users u ON u.user_id = s.user_id
-                WHERE s.staff_id = :sid
-                  AND s.branch_id = :branch_id
-                  AND EXISTS (
-                      SELECT 1
-                      FROM roles r
-                      WHERE r.role_id IN (u.role_id, u.business_role_id, u.current_role_id)
-                        AND LOWER(r.role_name) = 'staff'
-                  )
-                FOR UPDATE
-            ");
+            $stmt = $pdo->prepare("SELECT staff_id, full_name, staff_code FROM staff WHERE staff_id = :sid AND branch_id = :branch_id FOR UPDATE");
             $stmt->execute([':sid' => $sid, ':branch_id' => $bid]);
             $target = $stmt->fetch(PDO::FETCH_ASSOC);
             if (!$target) {
                 $pdo->rollBack();
                 json_out(['ok' => false, 'error' => 'That staff account is not available in your branch.'], 404);
             }
-
-            $disable = $pdo->prepare("UPDATE users SET status = 'disabled', updated_at = NOW() WHERE user_id = :user_id");
-            $disable->execute([':user_id' => (int) $target['user_id']]);
 
             $delete = $pdo->prepare("DELETE FROM staff WHERE staff_id = :sid AND branch_id = :branch_id");
             $delete->execute([':sid' => $sid, ':branch_id' => $bid]);
@@ -191,10 +562,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($action === 'activate' || $action === 'disable') {
             $sid = (int)($_POST['staff_id'] ?? 0);
             $flag = $action === 'activate' ? 1 : 0;
-            $stmt = $pdo->prepare("UPDATE staff SET is_active = :f WHERE staff_id = :sid AND branch_id = :b");
-            $stmt->execute([':f' => $flag, ':sid' => $sid, ':b' => $bid]);
-            log_activity($pdo, $bid, 'user', $user['user_id'], $user['full_name'],
-                         ($flag ? 'Activated' : 'Disabled') . " staff #{$sid}");
+            $setClauses = ['is_active = :f'];
+            $params = [':f' => $flag, ':sid' => $sid, ':b' => $bid];
+            if (staff_has_column($pdo, 'updated_at')) {
+                $setClauses[] = 'updated_at = NOW()';
+            }
+
+            $sql = 'UPDATE staff SET ' . implode(', ', $setClauses) . ' WHERE staff_id = :sid AND branch_id = :b';
+            $stmt = $pdo->prepare($sql);
+            $stmt->execute($params);
+
+            log_activity($pdo, $bid, 'user', $user['user_id'], $user['full_name'], ($flag ? 'Activated' : 'Disabled') . " staff #{$sid}");
             json_out(['ok' => true]);
         }
 
@@ -208,30 +586,59 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 // -------- Load data for display --------
+if (isset($_GET['ajax']) && $_GET['ajax'] === 'staff_table') {
+    $stmt = $pdo->prepare("SELECT * FROM staff WHERE branch_id = :b ORDER BY staff_code ASC");
+    $stmt->execute([':b' => $bid]);
+    $staff = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    $payload = [];
+    foreach ($staff as $s) {
+        $payload[] = [
+            'staff_id' => (int) ($s['staff_id'] ?? 0),
+            'staff_code' => (string) ($s['staff_code'] ?? ''),
+            'full_name' => (string) ($s['full_name'] ?? ''),
+            'email' => (string) ($s['email'] ?? ''),
+            'contact' => (string) ($s['contact'] ?? ''),
+            'is_active' => (int) ($s['is_active'] ?? 0),
+        ];
+    }
+
+    header('Content-Type: application/json');
+    echo json_encode(['ok' => true, 'staff' => $payload]);
+    exit;
+}
+
 $stmt = $pdo->prepare("SELECT * FROM staff WHERE branch_id = :b ORDER BY staff_code ASC");
 $stmt->execute([':b' => $bid]);
-$staff = $stmt->fetchAll();
+$staff = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-$total_staff    = count($staff);
-$active_staff   = count(array_filter($staff, fn($s) => (int)$s['is_active'] === 1));
-$disabled_staff = $total_staff - $active_staff;
+$total_staff = count($staff);
+$active_staff = 0;
+$disabled_staff = 0;
+foreach ($staff as $member) {
+    if ((int)($member['is_active'] ?? 0) === 1) {
+        $active_staff++;
+    } else {
+        $disabled_staff++;
+    }
+}
 
-// Activity log — only actions performed by staff accounts affiliated with this manager's branch.
-$stmt = $pdo->prepare("
-    SELECT l.log_id,
-           l.user_id AS staff_user_id,
-           COALESCE(staff_user.user_name, 'Staff member') AS staff_name,
-           l.action,
-           l.created_at
-    FROM log l
-    INNER JOIN users staff_user ON staff_user.user_id = l.user_id
-    LEFT JOIN business_account_scope staff_scope ON staff_scope.user_id = staff_user.user_id
-    WHERE (l.role_id = 5 OR (l.role_id IS NULL AND (staff_user.role_id = 5 OR staff_user.business_role_id = 5 OR staff_user.current_role_id = 5)))
-      AND COALESCE(staff_user.branch_id, staff_scope.station_id) = :branch_id
-    ORDER BY l.created_at DESC LIMIT 30
-");
-$stmt->execute([':branch_id' => $bid]);
-$activities = $stmt->fetchAll();
+$activities = [];
+try {
+    $activityStmt = $pdo->query(
+        "SELECT l.action, u.user_name AS staff_name, l.created_at
+         FROM log l
+         LEFT JOIN users u ON u.user_id = l.user_id
+         WHERE l.role_id = 4
+         ORDER BY l.created_at DESC
+         LIMIT 6"
+    );
+    if ($activityStmt) {
+        $activities = $activityStmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+} catch (Throwable $e) {
+    $activities = [];
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -406,7 +813,7 @@ $activities = $stmt->fetchAll();
     box-shadow:0 12px 28px -8px rgba(251,191,36,0.65);
   }
 
-  .stat-strip{display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:26px;}
+  .stat-strip{display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin-bottom:26px;}
   @media (max-width:1000px){.stat-strip{grid-template-columns:repeat(2,1fr);}}
   
   .stat{
@@ -441,16 +848,94 @@ $activities = $stmt->fetchAll();
   .chip:hover{background: rgba(255,255,255,0.05); color: var(--slate-50);}
   .chip.active{background:rgba(251,191,36,0.16); border-color:rgba(251,191,36,0.4); color:var(--amber-300);}
 
-  .panel{background:linear-gradient(160deg, var(--navy-800), var(--navy-900)); border:1px solid rgba(255,255,255,0.07); border-radius:18px; overflow:hidden;}
+  .panel{background:linear-gradient(160deg, var(--navy-800), var(--navy-900)); border:1px solid rgba(255,255,255,0.07); border-radius: 18px; overflow: hidden;}
   #tab-manage .panel{overflow:visible;}
+  .staff-table-scroll {
+    overflow-x: hidden;
+    overflow-y: hidden;
+    max-height: none;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(148, 163, 184, 0.45) transparent;
+  }
+  .staff-table-scroll.has-scroll {
+    overflow-y: auto;
+  }
+  .staff-table-scroll::-webkit-scrollbar { width: 8px; }
+  .staff-table-scroll::-webkit-scrollbar-track { background: transparent; }
+  .staff-table-scroll::-webkit-scrollbar-thumb {
+    background: rgba(148, 163, 184, 0.38);
+    border-radius: 999px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+  }
+  .staff-table-scroll::-webkit-scrollbar-thumb:hover { background: rgba(148, 163, 184, 0.62); }
   table{width:100%; border-collapse:collapse;}
   thead th{text-align:left; font-size:11.5px; color:var(--slate-400); text-transform:uppercase; letter-spacing:0.4px; padding:14px 18px; border-bottom:1px solid rgba(255,255,255,0.07);}
   
   tbody tr { transition: opacity 0.2s ease, transform 0.2s ease, background-color 0.2s ease; }
+  tbody tr:has(.table-actions-menu-wrap:hover),
+  tbody tr:has(.row-menu-toggle:hover),
+  tbody tr:has(.row-action-menu:hover),
+  tbody tr:has(.row-action-menu.active) {
+    background: transparent !important;
+  }
+  tbody tr:hover:not(:has(.table-actions-menu-wrap:hover, .row-menu-toggle:hover, .row-action-menu:hover, .row-action-menu.active)) {
+    background:rgba(255,255,255,0.02);
+  }
   tbody tr:focus-within{position:relative; z-index:2;}
   tbody td{padding:14px 18px; font-size:13.5px; border-bottom:1px solid rgba(255,255,255,0.05);}
   tbody tr:last-child td{border-bottom:none;}
   tbody tr:hover{background:rgba(255,255,255,0.02);}
+  thead th:last-child,
+  tbody td:last-child {
+    width: 124px;
+    min-width: 124px;
+    max-width: 124px;
+    padding-left: 8px;
+    padding-right: 8px;
+    text-align: center;
+    white-space: nowrap;
+  }
+  .staff-actions-wrap{
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap:10px;
+    white-space:nowrap;
+  }
+  .staff-action-btn{
+    width:22px;
+    height:22px;
+    border:none;
+    background:transparent;
+    color:var(--slate-400);
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    border-radius:6px;
+    cursor:pointer;
+    padding:0;
+    font-size:14px;
+    line-height:1;
+    transition:none;
+  }
+  .staff-action-btn:focus-visible{
+    outline: 1px solid rgba(251,191,36,0.42);
+    outline-offset: 2px;
+  }
+  .staff-action-btn.edit-btn { color: var(--slate-400); }
+  .staff-action-btn.toggle-btn { color: var(--slate-400); }
+  .staff-action-btn.toggle-btn.active { color: var(--mint-400); }
+  .staff-action-btn.delete-btn { color: var(--red-400); }
+  .staff-action-btn:hover,
+  .staff-action-btn:active,
+  .staff-action-btn:focus,
+  .staff-action-btn:focus-visible {
+    background: transparent;
+    box-shadow: none;
+    transform: none;
+    opacity: 1;
+  }
   
   td.actions a{margin-right:12px; font-weight:600; text-decoration:none; cursor: pointer; transition: opacity 0.2s;}
   td.actions a:hover{opacity: 0.8;}
@@ -545,6 +1030,32 @@ $activities = $stmt->fetchAll();
     transition: border-color 0.2s;
   }
   .form-control-custom:focus { border-color: var(--amber-400); }
+  .textarea-custom {
+    resize: vertical;
+    min-height: 110px;
+    line-height: 1.5;
+  }
+  .staff-detail-fields.hidden {
+    display: none;
+  }
+  .staff-form-feedback {
+    display: none;
+    margin-top: 12px;
+    font-size: 13px;
+    line-height: 1.5;
+    min-height: 18px;
+  }
+  .staff-form-feedback.show {
+    display: block;
+  }
+  .staff-form-feedback.show.error {
+    color: var(--red-400);
+    font-weight: 600;
+  }
+  .staff-form-feedback.show.success {
+    color: var(--mint-400);
+    font-weight: 600;
+  }
   
   .modal-actions { display: flex; gap: 12px; justify-content: flex-end; margin-top: 24px; }
   .btn-secondary-custom {
@@ -554,24 +1065,81 @@ $activities = $stmt->fetchAll();
   }
   .btn-secondary-custom:hover { background: rgba(255,255,255,0.05); color: var(--slate-50); }
 
-  .table-actions-menu-wrap{position:relative; display:flex; justify-content:flex-end;}
+  .table-actions-menu-wrap{position:relative; display:flex; justify-content:flex-end; isolation:isolate; z-index:3;}
+  .table-actions-menu-wrap:hover,
+  .table-actions-menu-wrap:focus-within,
+  .row-menu-toggle:hover,
+  .row-menu-toggle:focus,
+  .row-action-menu:hover,
+  .row-action-menu:focus-within {
+    background: transparent;
+    box-shadow: none;
+    filter: none;
+  }
   .row-menu-toggle{
-    width:32px; height:32px; border-radius:8px; border:1px solid rgba(255,255,255,0.08); background:rgba(255,255,255,0.02);
+    width:32px; height:32px; border-radius:8px; border:1px solid rgba(255,255,255,0.08); background:rgba(15,23,42,0.9);
     color:var(--slate-300); cursor:pointer; display:inline-flex; align-items:center; justify-content:center; transition:all 0.2s ease;
+    position: relative; z-index: 4; box-shadow: inset 0 0 0 1px rgba(148,163,184,0.06);
   }
-  .row-menu-toggle:hover{background:rgba(255,255,255,0.06); color:var(--slate-50); border-color:rgba(255,255,255,0.14);}
+  .row-menu-toggle:hover,
+  .row-menu-toggle:focus-visible {
+    background: rgba(15,23,42,0.96);
+    color: var(--slate-50) !important;
+    border-color: rgba(148,163,184,0.18);
+    transform: none;
+    box-shadow: inset 0 0 0 1px rgba(148,163,184,0.12);
+  }
   .row-action-menu{
-    position:absolute; right:0; top:calc(100% + 8px); min-width:180px; background:linear-gradient(180deg, rgba(15,23,42,0.98), rgba(15,23,42,0.9));
-    border:1px solid rgba(255,255,255,0.08); border-radius:12px; box-shadow:0 18px 40px rgba(2,6,23,0.45); padding:8px; display:none; z-index:50;
+    position: fixed;
+    left: 0;
+    top: 0;
+    min-width: 172px;
+    background: rgba(15, 23, 42, 0.97);
+    border: 1px solid rgba(148, 163, 184, 0.16);
+    border-radius: 10px;
+    box-shadow: 0 12px 28px rgba(2, 6, 23, 0.42);
+    padding: 8px;
+    display: none;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(-2px);
+    transition: opacity 0.16s ease, transform 0.16s ease;
+    z-index: 5000;
   }
-  .row-action-menu.active{display:block;}
+  .row-action-menu.active {
+    display: block;
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateY(0);
+  }
   .row-action{
     width:100%; border:none; background:transparent; color:var(--slate-200); text-align:left; padding:9px 10px; border-radius:8px; cursor:pointer;
-    font-size:13px; font-weight:600; display:flex; align-items:center; gap:8px; transition:background 0.2s ease, color 0.2s ease;
+    font-size:13px; font-weight:600; display:flex; align-items:center; gap:8px; transition:background 0.15s ease, color 0.15s ease;
   }
-  .row-action:hover{background:rgba(255,255,255,0.05); color:var(--slate-50);}
-  .row-action.danger{color:var(--red-400);}
-  .row-action.danger:hover{background:rgba(239,68,68,0.08); color:#fca5a5;}
+  .row-action:hover,
+  .row-action:focus-visible {
+    background: rgba(255,255,255,0.04) !important;
+    color: var(--slate-50) !important;
+    transform: none;
+  }
+  .row-action.status-toggle[data-action="activate"]{
+    color: var(--mint-400) !important;
+  }
+  .row-action.status-toggle[data-action="activate"]:hover,
+  .row-action.status-toggle[data-action="activate"]:focus-visible {
+    color: #6ee7b7 !important;
+  }
+  .row-action.delete-action,
+  .row-action.danger {
+    color: var(--red-400) !important;
+  }
+  .row-action.delete-action:hover,
+  .row-action.delete-action:focus-visible,
+  .row-action.danger:hover,
+  .row-action.danger:focus-visible {
+    background: rgba(239,68,68,0.08) !important;
+    color: #fca5a5 !important;
+  }
   .row-action.status-toggle{color:var(--slate-200);}
   .row-action.status-toggle[style*="color:var(--mint-400)"]{color:var(--mint-400) !important;}
 </style>
@@ -621,39 +1189,32 @@ $activities = $stmt->fetchAll();
       </div>
       <div class="topbar-right">
         <!-- Bell Trigger Button -->
-        <div class="bell" id="notif-bell"><i class="fa-regular fa-bell"></i><span class="ping" id="notif-ping"></span></div>
+        <div class="bell" id="notif-bell"><i class="fa-regular fa-bell"></i><?php if ($has_unread): ?><span class="ping" id="notif-ping"></span><?php endif; ?></div>
         
         <!-- Notification Dropdown Popup (manage-oil style) -->
         <div class="notif-popup" id="notif-popup">
           <div class="notif-header">
             <h4>Notifications</h4>
-            <button id="clear-notifs-btn">Mark all read</button>
+            <button id="clear-notifs-btn" type="button">Mark all read</button>
           </div>
           <div class="notif-list" id="notif-list">
-            <div class="notif-item warning">
-              <div class="icon"><i class="fa-solid fa-triangle-exclamation"></i></div>
-              <div class="text">
-                <b>Low Stock Alert</b>
-                <span>Diesel level is at 22% (below limit).</span>
-                <div class="time">10 mins ago</div>
+            <?php if (!$alerts): ?>
+              <div class="notif-empty" style="text-align:center; padding:12px 0; color:var(--slate-400); font-size:12px;">No new notifications</div>
+            <?php else:
+              $icon_map = ['warn'=>'fa-triangle-exclamation','err'=>'fa-circle-exclamation','ok'=>'fa-truck-ramp-box','info'=>'fa-circle-info'];
+              foreach ($alerts as $a):
+                $ic = $icon_map[$a['kind']] ?? $icon_map['info'];
+                $item_class = (empty($a['is_read']) || (int)$a['is_read'] === 0) ? ' unread' : '';
+            ?>
+              <div class="notif-item<?= h($item_class) ?>" data-notif-id="<?= (int)$a['notif_id'] ?>" data-link="<?= h($a['link'] ?? 'dashboard.php') ?>">
+                <div class="icon"><i class="fa-solid <?= h($ic) ?>"></i></div>
+                <div class="text">
+                  <b><?= h($a['title']) ?></b>
+                  <span><?= h($a['body']) ?></span>
+                  <div class="time"><?= h($a['time_ago']) ?></div>
+                </div>
               </div>
-            </div>
-            <div class="notif-item success">
-              <div class="icon"><i class="fa-solid fa-truck-field"></i></div>
-              <div class="text">
-                <b>Delivery Received</b>
-                <span>8,000 L of Petrol 92 added to Tank 1.</span>
-                <div class="time">2 hours ago</div>
-              </div>
-            </div>
-            <div class="notif-item info">
-              <div class="icon"><i class="fa-solid fa-info-circle"></i></div>
-              <div class="text">
-                <b>Price Sync</b>
-                <span>HQ updated fuel prices for today.</span>
-                <div class="time">Yesterday</div>
-              </div>
-            </div>
+            <?php endforeach; endif; ?>
           </div>
         </div>
 
@@ -677,7 +1238,6 @@ $activities = $stmt->fetchAll();
         <div class="stat"><div class="n" id="stat-total"><?= $total_staff ?></div><div class="l">Total Staff</div></div>
         <div class="stat"><div class="n" id="stat-active" style="color:var(--mint-400)"><?= $active_staff ?></div><div class="l">Active Account</div></div>
         <div class="stat"><div class="n" id="stat-disabled" style="color:var(--slate-400)"><?= $disabled_staff ?></div><div class="l">Disabled Account</div></div>
-        <div class="stat"><div class="n">3</div><div class="l">Shift Groups</div></div>
       </div>
 
       <div class="tabs">
@@ -694,61 +1254,57 @@ $activities = $stmt->fetchAll();
           </div>
         </div>
         <div class="panel">
-          <table id="staff-directory-table">
-            <thead><tr><th>Staff</th><th>Email</th><th>Contact</th><th>Account Status</th><th></th></tr></thead>
-            <tbody>
-              <?php
-              $duty_class  = ['On Duty' => 'on', 'Off Duty' => 'off', 'Leave' => 'leave'];
-              foreach ($staff as $s):
-                $staff_email = $s['email'] ?? '';
-                $on = (int)$s['is_active'] === 1;
-              ?>
-              <tr data-id="<?= (int)$s['staff_id'] ?>">
-                <td>
-                  <div class="staff-name">
-                    <div class="mini-avatar"><?= h(initials($s['full_name'])) ?></div>
-                    <div><b><?= h($s['full_name']) ?></b><span>ID: <?= h($s['staff_code']) ?></span></div>
-                  </div>
-                </td>
-                <td><?= $staff_email !== '' ? h($staff_email) : '<span style="color:var(--slate-400);">—</span>' ?></td>
-                <td><?= h($s['contact']) ?></td>
-                <td>
-                  <span class="status-pill <?= $on ? 'on' : 'off' ?>">
-                    <span class="d"></span>
-                    <?= $on ? 'Active' : 'Disabled' ?>
-                  </span>
-                </td>
-                <td class="actions">
-                  <div class="table-actions-menu-wrap">
-                    <button type="button" class="row-menu-toggle" aria-label="Open row actions" data-id="<?= (int)$s['staff_id'] ?>">
-                      <i class="fa-solid fa-ellipsis-vertical"></i>
-                    </button>
-                    <div class="row-action-menu" id="row-menu-<?= (int)$s['staff_id'] ?>">
-                      <button type="button" class="row-action edit-action" data-id="<?= (int)$s['staff_id'] ?>" data-email="<?= h($staff_email) ?>" data-name="<?= h($s['full_name']) ?>" data-contact="<?= h($s['contact']) ?>">
-                        <i class="fa-solid fa-pen"></i> Edit
+          <div class="staff-table-scroll">
+            <table id="staff-directory-table">
+              <thead><tr><th>Staff</th><th>Email</th><th>Contact</th><th>Account Status</th><th>Action</th></tr></thead>
+              <tbody>
+                <?php
+                $duty_class  = ['On Duty' => 'on', 'Off Duty' => 'off', 'Leave' => 'leave'];
+                foreach ($staff as $s):
+                  $staff_email = $s['email'] ?? '';
+                  $on = (int)$s['is_active'] === 1;
+                ?>
+                <tr data-id="<?= (int)$s['staff_id'] ?>">
+                  <td>
+                    <div class="staff-name">
+                      <div class="mini-avatar"><?= h(initials($s['full_name'])) ?></div>
+                      <div><b><?= h($s['full_name']) ?></b><span>ID: <?= h($s['staff_code']) ?></span></div>
+                    </div>
+                  </td>
+                  <td><?= $staff_email !== '' ? h($staff_email) : '<span style="color:var(--slate-400);">—</span>' ?></td>
+                  <td><?= h($s['contact']) ?></td>
+                  <td>
+                    <span class="status-pill <?= $on ? 'on' : 'off' ?>">
+                      <span class="d"></span>
+                      <?= $on ? 'Active' : 'Disabled' ?>
+                    </span>
+                  </td>
+                  <td class="staff-action-cell">
+                    <div class="staff-actions-wrap">
+                      <button type="button" class="staff-action-btn edit-btn edit-action" data-id="<?= (int)$s['staff_id'] ?>" data-email="<?= h($staff_email) ?>" data-name="<?= h($s['full_name']) ?>" data-contact="<?= h($s['contact']) ?>" title="Edit staff member" aria-label="Edit staff member">
+                        <i class="fa-solid fa-pen-to-square"></i>
                       </button>
                       <?php if ($on): ?>
-                        <button type="button" class="row-action status-toggle danger" data-action="disable" data-id="<?= (int)$s['staff_id'] ?>">
-                          <i class="fa-solid fa-user-slash"></i> Disable
+                        <button type="button" class="staff-action-btn toggle-btn active" data-action="disable" data-id="<?= (int)$s['staff_id'] ?>" title="Disable staff account" aria-label="Disable staff account">
+                          <i class="fa-solid fa-toggle-on"></i>
                         </button>
                       <?php else: ?>
-                        <button type="button" class="row-action status-toggle" style="color:var(--mint-400)" data-action="activate" data-id="<?= (int)$s['staff_id'] ?>">
-                          <i class="fa-solid fa-user-check"></i> Activate
+                        <button type="button" class="staff-action-btn toggle-btn" data-action="activate" data-id="<?= (int)$s['staff_id'] ?>" title="Activate staff account" aria-label="Activate staff account">
+                          <i class="fa-solid fa-toggle-off"></i>
                         </button>
                       <?php endif; ?>
-                      <button type="button" class="row-action danger delete-action" data-id="<?= (int)$s['staff_id'] ?>" data-name="<?= h($s['full_name']) ?>" data-code="<?= h($s['staff_code']) ?>">
-                        <i class="fa-solid fa-trash"></i> Delete
-                      </button>
+                      <button type="button" class="staff-action-btn delete-btn delete-action" data-id="<?= (int)$s['staff_id'] ?>" data-name="<?= h($s['full_name']) ?>" data-code="<?= h($s['staff_code']) ?>" title="Delete staff member" aria-label="Delete staff member">
+                        <i class="fa-solid fa-trash"></i                      </button>
                     </div>
-                  </div>
-                </td>
-              </tr>
-              <?php endforeach; ?>
-              <?php if (!$staff): ?>
-                <tr><td colspan="5" style="text-align:center; color:var(--slate-400); padding:22px;">No staff registered yet.</td></tr>
-              <?php endif; ?>
-            </tbody>
-          </table>
+                  </td>
+                </tr>
+                <?php endforeach; ?>
+                <?php if (!$staff): ?>
+                  <tr><td colspan="5" style="text-align:center; color:var(--slate-400); padding:22px;">No staff registered yet.</td></tr>
+                <?php endif; ?>
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
 
@@ -756,7 +1312,7 @@ $activities = $stmt->fetchAll();
       <div class="tab-panel" id="tab-activity">
         <div class="panel">
           <?php if (!$activities): ?>
-            <div style="text-align:center; padding:22px; color:var(--slate-400); font-size:12.5px;">No staff activity yet.</div>
+            <div style="text-align:center; padding:22px; color:var(--slate-400); font-size: 12.5px;">No staff activity yet.</div>
           <?php else: ?>
             <?php foreach ($activities as $a): ?>
               <div class="activity-row">
@@ -788,21 +1344,30 @@ $activities = $stmt->fetchAll();
       <input type="hidden" name="csrf"     value="<?= h(csrf_token()) ?>">
       <input type="hidden" name="action"   id="staff-form-action" value="add">
       <input type="hidden" name="staff_id" id="staff-form-id"     value="">
-      <div class="form-group">
-        <label for="staff-name-input">Full Name</label>
-        <input type="text" id="staff-name-input" name="full_name" class="form-control-custom" required placeholder="e.g. Aung Ko Latt">
-      </div>
+      <input type="hidden" name="full_name" id="staff-name-input" value="">
+      <input type="hidden" name="contact" id="staff-contact-input" value="">
       <div class="form-group">
         <label for="staff-email-input">Email Address</label>
         <input type="email" id="staff-email-input" name="email" class="form-control-custom" placeholder="e.g. aungkolatt@mappump.mm">
       </div>
-      <div class="form-group">
-        <label for="staff-contact-input">Contact Phone</label>
-        <input type="text" id="staff-contact-input" name="contact" class="form-control-custom" required placeholder="e.g. 09-751-XXXXXX">
+      <div id="staff-detail-fields" class="staff-detail-fields hidden">
+        <div class="form-group">
+          <label for="staff-name-visible">Full Name</label>
+          <input type="text" id="staff-name-visible" class="form-control-custom" placeholder="e.g. Aung Ko Latt">
+        </div>
+        <div class="form-group">
+          <label for="staff-contact-visible">Contact Phone</label>
+          <input type="text" id="staff-contact-visible" class="form-control-custom" placeholder="e.g. 09-751-XXXXXX">
+        </div>
       </div>
+      <div class="form-group">
+        <label for="staff-invite-message">Hire Message</label>
+        <textarea id="staff-invite-message" name="hire_message" class="form-control-custom textarea-custom" rows="5" placeholder="Explain why they're being invited"></textarea>
+      </div>
+      <div id="staff-form-feedback" class="staff-form-feedback" aria-live="polite"></div>
       <div class="modal-actions">
         <button type="button" class="btn-secondary-custom" id="modal-cancel-btn">Cancel</button>
-        <button type="submit" class="btn-primary" style="box-shadow: none; padding: 10px 18px;">Save Staff</button>
+        <button type="submit" class="btn-primary" id="staff-submit-btn" style="box-shadow: none; padding: 10px 18px;">Send Invite</button>
       </div>
     </form>
   </div>
@@ -851,74 +1416,232 @@ $activities = $stmt->fetchAll();
     setInterval(updateClock, 1000);
     updateClock();
 
-    // 2. Notification Popup Controller (manage-oil.php matching)
+    // 2. Notification Popup Controller (shared dashboard API)
     const bellBtn = document.getElementById('notif-bell');
     const notifPopup = document.getElementById('notif-popup');
     const notifPing = document.getElementById('notif-ping');
     const clearNotifsBtn = document.getElementById('clear-notifs-btn');
+    const notifList = document.getElementById('notif-list');
+
+    function postDismiss(payload) {
+      return fetch('api_dismiss_notification.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      }).then(r => r.json()).catch(() => ({ ok: false }));
+    }
+
+    function renderNotifEmpty() {
+      if (!notifList) return;
+      notifList.innerHTML = '<div class="notif-empty" style="text-align:center; padding:12px 0; color:var(--slate-400); font-size:12px;">No new notifications</div>';
+      if (notifPing) notifPing.remove();
+    }
 
     bellBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       notifPopup.classList.toggle('active');
-      if (notifPing) {
-        notifPing.style.opacity = '0';
-      }
+      if (notifPing) notifPing.style.opacity = '0';
     });
 
-    // Close popup on outside click
     document.addEventListener('click', (e) => {
       if (!notifPopup.contains(e.target) && !bellBtn.contains(e.target)) {
         notifPopup.classList.remove('active');
       }
     });
 
-    // Clear notifications
-    clearNotifsBtn.addEventListener('click', () => {
-      const notifList = document.getElementById('notif-list');
-      notifList.innerHTML = `
-        <div style="padding: 20px; text-align: center; color: var(--slate-400); font-size: 12px;">
-          No unread notifications
-        </div>`;
-      if (notifPing) notifPing.remove();
-    });
-
-    // 3. Client Side Dynamic Search Filtering (name, email, staff ID)
-    const searchInput = document.getElementById('directory-search');
-    const directoryRows = document.querySelectorAll('#staff-directory-table tbody tr');
-    searchInput.addEventListener('input', filterDirectory);
-
-    function filterDirectory() {
-      const query = searchInput.value.toLowerCase().trim();
-      directoryRows.forEach(row => {
-        // search across whole row text so email column is included
-        const rowText = row.textContent.toLowerCase();
-        const matchesSearch = query === '' || rowText.includes(query);
-        if (matchesSearch) {
-          row.style.display = '';
-          setTimeout(() => { row.style.opacity = '1'; row.style.transform = 'translateY(0)'; }, 20);
-        } else {
-          row.style.opacity = '0';
-          row.style.transform = 'translateY(4px)';
-          setTimeout(() => { row.style.display = 'none'; }, 200);
+    if (notifList) {
+      notifList.addEventListener('click', (e) => {
+        const item = e.target.closest('.notif-item');
+        if (!item) return;
+        const id = Number(item.dataset.notifId || 0);
+        const link = item.dataset.link || '';
+        if (id > 0) {
+          postDismiss({ notif_id: id }).then((res) => {
+            if (res.ok && notifPing && Number(res.unread || 0) <= 0) {
+              notifPing.remove();
+            }
+          });
         }
+        if (link) window.location.href = link;
       });
     }
 
-    // 5. Server-side Delete Action (uses the custom danger modal instead of window.confirm)
+    if (clearNotifsBtn) {
+      clearNotifsBtn.addEventListener('click', () => {
+        postDismiss({ all: true }).then((res) => {
+          if (res.ok) renderNotifEmpty();
+        });
+      });
+    }
+
+    // 3. Client Side Dynamic Search Filtering (name, email, staff ID)
+    const searchInput = document.getElementById('directory-search');
+    const directoryRows = () => document.querySelectorAll('#staff-directory-table tbody tr');
+
+    function updateTableScrollState() {
+      const scrollWrap = document.querySelector('.staff-table-scroll');
+      const table = document.getElementById('staff-directory-table');
+      if (!scrollWrap || !table) return;
+
+      const rows = table.querySelectorAll('tbody tr');
+      const visibleRows = Array.from(rows).filter(row => row.style.display !== 'none').length;
+      const shouldScroll = visibleRows > 5;
+
+      scrollWrap.classList.toggle('has-scroll', shouldScroll);
+      scrollWrap.style.maxHeight = shouldScroll ? 'calc(5 * 66px + 8px)' : 'none';
+      scrollWrap.style.overflowY = shouldScroll ? 'auto' : 'hidden';
+    }
+
+    searchInput.addEventListener('input', () => {
+      const query = searchInput.value.toLowerCase().trim();
+      directoryRows().forEach(row => {
+        const rowText = row.textContent.toLowerCase();
+        const matchesSearch = query === '' || rowText.includes(query);
+        row.style.display = matchesSearch ? '' : 'none';
+      });
+      updateTableScrollState();
+    });
+
+    updateTableScrollState();
+
+    const tbodyObserver = new MutationObserver(() => {
+      updateTableScrollState();
+    });
+
+    const staffTableBody = document.getElementById('staff-directory-table')?.querySelector('tbody');
+    if (staffTableBody) {
+      tbodyObserver.observe(staffTableBody, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ['style']
+      });
+    }
+
     const csrfToken = '<?= h(csrf_token()) ?>';
     const directoryTable = document.getElementById('staff-directory-table');
-    const deleteModal   = document.getElementById('delete-modal');
-    const deleteMsg     = document.getElementById('delete-modal-msg');
-    const deleteCancel  = document.getElementById('delete-cancel-btn');
+    const deleteModal = document.getElementById('delete-modal');
+    const deleteMsg = document.getElementById('delete-modal-msg');
+    const deleteCancel = document.getElementById('delete-cancel-btn');
     const deleteConfirm = document.getElementById('delete-confirm-btn');
     let pendingDeleteRow = null;
     let deleteCooldownTimer = null;
+    let pendingStatusRequest = new Set();
+
+    function updateTotalMetrics() {
+      const totalStaff = document.querySelectorAll('#staff-directory-table tbody tr').length;
+      const totalActive = document.querySelectorAll('#staff-directory-table tbody .status-pill.on').length;
+      const totalDisabled = document.querySelectorAll('#staff-directory-table tbody .status-pill.off').length;
+      document.getElementById('stat-total').textContent = totalStaff;
+
+      document.getElementById('stat-active').textContent = totalActive;
+      document.getElementById('stat-disabled').textContent = totalDisabled;
+    }
+
+    function escapeHtml(str) {
+      return String(str ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function getInitials(name) {
+      if (!name) return '';
+      const parts = name.trim().split(/\s+/).filter(Boolean);
+      if (!parts.length) return '';
+      if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+      return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+    }
+
+    function clearStaffFormFeedback() {
+      const el = document.getElementById('staff-form-feedback');
+      if (!el) return;
+      el.className = 'staff-form-feedback';
+      el.textContent = '';
+    }
+
+    function showStaffFormFeedback(message, type = 'error') {
+      const el = document.getElementById('staff-form-feedback');
+      if (!el) return;
+      el.className = 'staff-form-feedback show ' + (type === 'success' ? 'success' : 'error');
+      el.textContent = message || '';
+    }
+
+    function refreshStaffDirectory() {
+      fetch('manage-staff.php?ajax=staff_table')
+        .then(res => res.json())
+        .then(payload => {
+          if (!payload.ok || !Array.isArray(payload.staff)) return;
+
+          const tbody = document.querySelector('#staff-directory-table tbody');
+          if (!tbody) return;
+
+          if (!payload.staff.length) {
+            tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--slate-400); padding:22px;">No staff registered yet.</td></tr>';
+            updateTotalMetrics();
+            return;
+          }
+
+          tbody.innerHTML = payload.staff.map((s) => {
+            const isActive = Number(s.is_active) === 1;
+            const email = (s.email || '').trim();
+            const safeName = escapeHtml(s.full_name || '');
+            const safeCode = escapeHtml(s.staff_code || '');
+            const safeEmail = escapeHtml(email || '');
+            const safeContact = escapeHtml(s.contact || '');
+            return `
+              <tr data-id="${s.staff_id}">
+                <td>
+                  <div class="staff-name">
+                    <div class="mini-avatar">${escapeHtml(getInitials(s.full_name || ''))}</div>
+                    <div><b>${safeName}</b><span>ID: ${safeCode}</span></div>
+                  </div>
+                </td>
+                <td>${email ? safeEmail : '<span style="color:var(--slate-400);">—</span>'}</td>
+                <td>${safeContact}</td>
+                <td>
+                  <span class="status-pill ${isActive ? 'on' : 'off'}">
+                    <span class="d"></span>
+                    ${isActive ? 'Active' : 'Disabled'}
+                  </span>
+                </td>
+                <td class="staff-action-cell">
+                  <div class="staff-actions-wrap">
+                    <button type="button" class="staff-action-btn edit-btn edit-action" data-id="${s.staff_id}" data-email="${safeEmail}" data-name="${safeName}" data-contact="${safeContact}" title="Edit staff member" aria-label="Edit staff member">
+                      <i class="fa-solid fa-pen-to-square"></i>
+                    </button>
+                    ${isActive ? `
+                      <button type="button" class="staff-action-btn toggle-btn active" data-action="disable" data-id="${s.staff_id}" title="Disable staff account" aria-label="Disable staff account">
+                        <i class="fa-solid fa-toggle-on"></i>
+                      </button>
+                    ` : `
+                      <button type="button" class="staff-action-btn toggle-btn" data-action="activate" data-id="${s.staff_id}" title="Activate staff account" aria-label="Activate staff account">
+                        <i class="fa-solid fa-toggle-off"></i>
+                      </button>
+                    `}
+                    <button type="button" class="staff-action-btn delete-btn delete-action" data-id="${s.staff_id}" data-name="${safeName}" data-code="${safeCode}" title="Delete staff member" aria-label="Delete staff member">
+                      <i class="fa-solid fa-trash"></i>
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            `;
+          }).join('');
+
+          updateTotalMetrics();
+        })
+        .catch(() => {
+          // Ignore refresh failures so the page stays quiet and stays consistent with live DB state.
+        });
+    }
 
     function openDeleteModal(row) {
       pendingDeleteRow = row;
       const deleteAction = row.querySelector('.delete-action');
-      const name = deleteAction?.dataset.name || 'this staff member';
-      const code = deleteAction?.dataset.code || '';
+      const name = deleteAction?.dataset.name || row.dataset.name || row.querySelector('.staff-name b')?.textContent.trim() || 'this staff member';
+      const code = deleteAction?.dataset.code || row.querySelector('.delete-action')?.dataset.code || '';
       const intro = document.createElement('p');
       intro.textContent = 'You are about to permanently remove this staff member and disable their login account. Please verify the account details:';
       const highlightedName = document.createElement('strong');
@@ -927,14 +1650,10 @@ $activities = $stmt->fetchAll();
       const details = document.createElement('p');
       details.className = 'delete-account-details';
       details.textContent = `${code ? `Staff ID: ${code}. ` : ''}This action cannot be undone.`;
-      deleteMsg.replaceChildren(
-        intro,
-        highlightedName,
-        details
-      );
+      deleteMsg.replaceChildren(intro, highlightedName, details);
 
       if (deleteCooldownTimer !== null) clearInterval(deleteCooldownTimer);
-      let secondsRemaining = 10;
+      let secondsRemaining = 5;
       deleteConfirm.disabled = true;
       deleteConfirm.textContent = `Please wait (${secondsRemaining}s)`;
       deleteCooldownTimer = setInterval(() => {
@@ -947,7 +1666,7 @@ $activities = $stmt->fetchAll();
           return;
         }
         deleteConfirm.textContent = `Please wait (${secondsRemaining}s)`;
-      }, 1000);
+      },  1000);
       deleteModal.classList.add('active');
     }
 
@@ -960,136 +1679,100 @@ $activities = $stmt->fetchAll();
       }
     }
 
-    function updateTotalMetrics() {
-      const totalStaff = document.querySelectorAll('#staff-directory-table tbody tr').length;
-      const totalActive = document.querySelectorAll('#staff-directory-table tbody .status-pill.on').length;
-      const totalDisabled = document.querySelectorAll('#staff-directory-table tbody .status-pill.off').length;
+    document.addEventListener('click', (e) => {
+      const editButton = e.target.closest('.edit-action');
+      if (editButton) {
+        e.stopPropagation();
+        openEditForStaff(editButton.dataset.id);
+        return;
+      }
 
-      document.getElementById('stat-total').textContent = totalStaff;
-      document.getElementById('stat-active').textContent = totalActive;
-      document.getElementById('stat-disabled').textContent = totalDisabled;
+      const deleteButton = e.target.closest('.delete-action');
+      if (deleteButton) {
+        e.stopPropagation();
+        openDeleteForStaff(deleteButton.dataset.id);
+        return;
+      }
+
+      const toggleButton = e.target.closest('.toggle-btn');
+      if (toggleButton) {
+        e.stopPropagation();
+        const staffId = toggleButton.dataset.id;
+        const action = toggleButton.dataset.action;
+        const isBusy = toggleButton.dataset.busy === '1' || pendingStatusRequest.has(staffId + ':' + action);
+        if (isBusy) return;
+
+        pendingStatusRequest.add(staffId + ':' + action);
+        toggleButton.dataset.busy = '1';
+        toggleButton.style.opacity = '0.6';
+
+        triggerStaffStatus(staffId, action)
+          .then(() => {
+            refreshStaffDirectory();
+          })
+          .catch((err) => {
+            console.error('Status failed:', err);
+          })
+          .finally(() => {
+            pendingStatusRequest.delete(staffId + ':' + action);
+            toggleButton.dataset.busy = '0';
+            toggleButton.style.opacity = '1';
+          });
+        return;
+      }
+    });
+
+    function openDeleteForStaff(staffId) {
+      const row = getStaffRowById(staffId);
+      if (!row) return;
+      openDeleteModal(row);
     }
 
-    function syncRowMenu(row, sid) {
-      const menu = document.getElementById('row-menu-' + sid);
-      if (!menu) return;
+    function openEditForStaff(staffId) {
+      const row = getStaffRowById(staffId);
+      if (!row) return;
 
       const name = row.querySelector('.staff-name b')?.textContent.trim() || '';
-      const email = (row.cells[1]?.textContent || '').trim();
-      const contact = (row.cells[2]?.textContent || '').trim();
-      const code = row.querySelector('.delete-action')?.dataset.code || '';
-      const isActive = row.querySelector('.status-pill')?.classList.contains('on');
-      
-      // Helper to safely escape attribute values
-      const esc = (str) => String(str || '').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+      const email = row.cells[1]?.textContent.trim() || '';
+      const contact = row.cells[2]?.textContent.trim() || '';
 
-      menu.innerHTML = `
-        <button type="button" class="row-action edit-action" data-id="${sid}" data-email="${esc(email)}" data-name="${esc(name)}" data-contact="${esc(contact)}">
-          <i class="fa-solid fa-pen"></i> Edit
-        </button>
-        ${isActive ? `
-          <button type="button" class="row-action status-toggle danger" data-action="disable" data-id="${sid}">
-            <i class="fa-solid fa-user-slash"></i> Disable
-          </button>
-        ` : `
-          <button type="button" class="row-action status-toggle" style="color:var(--mint-400)" data-action="activate" data-id="${sid}">
-            <i class="fa-solid fa-user-check"></i> Activate
-          </button>
-        `}
-        <button type="button" class="row-action danger delete-action" data-id="${sid}" data-name="${esc(name)}" data-code="${esc(code)}">
-          <i class="fa-solid fa-trash"></i> Delete
-        </button>
-      `;
+      editTargetRow = row;
+      document.getElementById('staff-form-action').value = 'edit';
+      document.getElementById('staff-form-id').value = staffId;
+      openModal(true, name, email, contact);
+    }
+
+    function triggerStaffStatus(staffId, action) {
+      const fd = new FormData();
+      fd.append('csrf', csrfToken);
+      fd.append('action', action);
+      fd.append('staff_id', String(staffId));
+
+      return fetch('manage-staff.php', { method: 'POST', body: fd }).then(async (res) => {
+        const data = await res.json();
+        if (!data.ok) {
+          throw new Error(data.error || 'Unable to update status.');
+        }
+        return data;
+      });
+    }
+
+    function getStaffRowById(staffId) {
+      if (!staffId) return null;
+      return document.querySelector(`#staff-directory-table tbody tr[data-id="${staffId}"]`);
     }
 
     deleteCancel.addEventListener('click', closeDeleteModal);
-    deleteModal.addEventListener('click', (e) => { if (e.target === deleteModal) closeDeleteModal(); });
 
-    document.querySelectorAll('.row-menu-toggle').forEach(button => {
-      button.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const menu = document.getElementById('row-menu-' + button.dataset.id);
-        if (!menu) return;
-
-        const isOpen = menu.classList.contains('active');
-        document.querySelectorAll('.row-action-menu').forEach(m => m.classList.remove('active'));
-        if (!isOpen) {
-          menu.classList.add('active');
-        }
-      });
-    });
-
-    document.addEventListener('click', (e) => {
-      if (!e.target.closest('.row-menu-toggle') && !e.target.closest('.row-action-menu')) {
-        document.querySelectorAll('.row-action-menu').forEach(m => m.classList.remove('active'));
-      }
-    });
-
-    directoryTable.addEventListener('click', async (e) => {
-      const deleteBtn = e.target.closest('.delete-action');
-      if (deleteBtn) {
-        e.preventDefault();
-        openDeleteModal(deleteBtn.closest('tr'));
-        document.querySelectorAll('.row-action-menu').forEach(m => m.classList.remove('active'));
-        return;
-      }
-
-      const editBtn = e.target.closest('.edit-action');
-      if (editBtn) {
-        e.preventDefault();
-        const row = editBtn.closest('tr');
-        const sid = row.dataset.id || editBtn.dataset.id;
-        const name = editBtn.dataset.name || row.querySelector('.staff-name b').textContent.trim();
-        const email = editBtn.dataset.email || '';
-        const contact = editBtn.dataset.contact || row.cells[2].textContent.trim();
-
-        editTargetRow = row;
-        document.getElementById('staff-form-action').value = 'edit';
-        document.getElementById('staff-form-id').value = sid;
-        openModal(true, name, email, contact);
-        document.querySelectorAll('.row-action-menu').forEach(m => m.classList.remove('active'));
-        return;
-      }
-
-      const toggleBtn = e.target.closest('.status-toggle');
-      if (toggleBtn) {
-        e.preventDefault();
-        const row = toggleBtn.closest('tr');
-        const sid = row.dataset.id;
-        const action = toggleBtn.dataset.action;
-
-        const fd = new FormData();
-        fd.append('csrf', csrfToken);
-        fd.append('action', action);
-        fd.append('staff_id', sid);
-
-        try {
-          const res = await fetch('manage-staff.php', { method: 'POST', body: fd });
-          const data = await res.json();
-          if (!data.ok) { alert('Update failed: ' + (data.error || 'unknown')); return; }
-
-          const pill = row.querySelector('.status-pill');
-          if (action === 'disable') {
-            pill.className = 'status-pill off';
-            pill.innerHTML = '<span class="d"></span> Disabled';
-          } else {
-            pill.className = 'status-pill on';
-            pill.innerHTML = '<span class="d"></span> Active';
-          }
-
-          syncRowMenu(row, sid);
-          document.querySelectorAll('.row-action-menu').forEach(m => m.classList.remove('active'));
-          updateTotalMetrics();
-        } catch (err) {
-          alert('Network error: ' + err.message);
-        }
+    deleteModal.addEventListener('click', (e) => {
+      if (e.target === deleteModal) {
+        closeDeleteModal();
       }
     });
 
     deleteConfirm.addEventListener('click', async () => {
       if (!pendingDeleteRow || deleteConfirm.disabled) return;
-      const row = pendingDeleteRow;
-      const sid = row.dataset.id;
+      const sid = pendingDeleteRow.dataset.id;
       deleteConfirm.disabled = true;
       deleteConfirm.textContent = 'Deleting...';
 
@@ -1100,23 +1783,20 @@ $activities = $stmt->fetchAll();
       try {
         const res = await fetch('manage-staff.php', { method: 'POST', body: fd });
         const data = await res.json();
-        if (!data.ok) { alert('Delete failed: ' + (data.error || 'unknown')); return; }
+        if (!data.ok) {
+          console.error('Delete failed:', data.error || 'unknown');
+          return;
+        }
         closeDeleteModal();
-        row.style.opacity = '0';
-        row.style.transform = 'translateX(-20px)';
-        setTimeout(() => {
-          row.remove();
-          updateTotalMetrics();
-        }, 300);
+        refreshStaffDirectory();
       } catch (err) {
-        alert('Network error: ' + err.message);
+        console.error('Delete network error:', err);
       } finally {
         deleteConfirm.disabled = false;
         deleteConfirm.textContent = 'Delete Permanently';
       }
     });
 
-    // 7. Interactive Form Dialog Logic
     const modal = document.getElementById('staff-modal');
     const form = document.getElementById('staff-form');
     const openAddBtn = document.getElementById('open-add-btn');
@@ -1127,23 +1807,47 @@ $activities = $stmt->fetchAll();
     const nameInput = document.getElementById('staff-name-input');
     const emailInput = document.getElementById('staff-email-input');
     const contactInput = document.getElementById('staff-contact-input');
+    const nameVisibleInput = document.getElementById('staff-name-visible');
+    const contactVisibleInput = document.getElementById('staff-contact-visible');
+    const detailFields = document.getElementById('staff-detail-fields');
 
-    function openModal(isEdit = false, name = "", email = "", contact = "") {
+    function syncVisibleStaffFields() {
+      if (!nameVisibleInput || !contactVisibleInput) return;
+      nameInput.value = nameVisibleInput.value.trim();
+      contactInput.value = contactVisibleInput.value.trim();
+    }
+
+    function openModal(isEdit = false, name = '', email = '', contact = '') {
+      const submitBtn = document.getElementById('staff-submit-btn');
+      if (detailFields) detailFields.classList.toggle('hidden', !isEdit);
       if (isEdit) {
-        document.getElementById('modal-title').textContent = "Edit Staff Member Details";
-        nameInput.value = name;
+        document.getElementById('modal-title').textContent = 'Edit Staff Member Details';
+        nameVisibleInput.value = name;
+        contactVisibleInput.value = contact;
         emailInput.value = email;
+        nameInput.value = name;
         contactInput.value = contact;
+        if (submitBtn) submitBtn.textContent = 'Save Staff';
       } else {
-        document.getElementById('modal-title').textContent = "Add New Staff Member";
+        document.getElementById('modal-title').textContent = 'Add New Staff Member';
         form.reset();
+        nameVisibleInput.value = '';
+        contactVisibleInput.value = '';
+        emailInput.value = '';
+        nameInput.value = '';
+        contactInput.value = '';
+        document.getElementById('staff-invite-message').value = '';
+        if (submitBtn) submitBtn.textContent = 'Send Invite';
       }
+      clearStaffFormFeedback();
       modal.classList.add('active');
     }
 
     function closeModal() {
       modal.classList.remove('active');
       editTargetRow = null;
+      clearStaffFormFeedback();
+      form.reset();
     }
 
     openAddBtn.addEventListener('click', () => {
@@ -1155,56 +1859,45 @@ $activities = $stmt->fetchAll();
     closeBtn.addEventListener('click', closeModal);
     modal.addEventListener('click', (e) => { if (e.target === modal) closeModal(); });
 
-    // Server-side Form Submit
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       const action = document.getElementById('staff-form-action').value;
       const staffId = document.getElementById('staff-form-id').value;
-      const fullName = document.getElementById('staff-name-input').value.trim();
       const email = document.getElementById('staff-email-input').value.trim();
-      const contact = document.getElementById('staff-contact-input').value.trim();
-      
-      if (!fullName) { alert('Full name is required'); return; }
-      if (!contact) { alert('Contact is required'); return; }
-      
+      const inviteMessage = document.getElementById('staff-invite-message').value.trim();
+      const fullName = (nameInput.value || nameVisibleInput?.value || '').trim();
+      const contact = (contactInput.value || contactVisibleInput?.value || '').trim();
+
+      clearStaffFormFeedback();
+      if (action !== 'edit' && !email) { showStaffFormFeedback('Email address is required.', 'error'); return; }
+      if (action !== 'edit' && !inviteMessage) { showStaffFormFeedback('Please add a hire message before sending the invite.', 'error'); return; }
+      if (action === 'edit' && !fullName) { showStaffFormFeedback('Full name is required.', 'error'); return; }
+      if (action === 'edit' && !contact) { showStaffFormFeedback('Contact number is required.', 'error'); return; }
+
       const fd = new FormData();
       fd.append('csrf', csrfToken);
       fd.append('action', action);
-      fd.append('full_name', fullName);
+      fd.append('full_name', action === 'edit' ? fullName : (fullName || email.split('@')[0].replace(/[._-]+/g, ' ').trim() || 'New Staff Member'));
       fd.append('email', email);
-      fd.append('contact', contact);
-      if (action === 'edit') { fd.append('staff_id', staffId); }
-      
+      fd.append('contact', action === 'edit' ? contact : (contact || '00000000000'));
+      fd.append('hire_message', inviteMessage);
+      if (action === 'edit') fd.append('staff_id', staffId);
+
       try {
         const res = await fetch('manage-staff.php', { method: 'POST', body: fd });
         const data = await res.json();
-        if (!data.ok) { alert('Save failed: ' + (data.error || 'unknown')); return; }
-        
-        if (action === 'edit' && editTargetRow) {
-          // Update the table row with new values
-          const nameCell = editTargetRow.querySelector('.staff-name b');
-          const emailCell = editTargetRow.cells[1];
-          const contactCell = editTargetRow.cells[2];
-          
-          if (nameCell) nameCell.textContent = fullName;
-          if (emailCell) emailCell.innerHTML = email ? email : '<span style="color:var(--slate-400);">—</span>';
-          if (contactCell) contactCell.textContent = contact;
-          
-          // Update the row menu data attributes
-          const menuId = 'row-menu-' + editTargetRow.dataset.id;
-          const editBtn = document.querySelector('.edit-action[data-id="' + editTargetRow.dataset.id + '"]');
-          if (editBtn) {
-            editBtn.dataset.name = fullName;
-            editBtn.dataset.email = email;
-            editBtn.dataset.contact = contact;
-          }
-          
-          syncRowMenu(editTargetRow, editTargetRow.dataset.id);
+        if (!data.ok) {
+          showStaffFormFeedback(data.error || 'Unable to save staff at this time.', 'error');
+          return;
         }
-        
-        closeModal();
-        updateTotalMetrics();
-      } catch (err) { alert('Network error: ' + err.message); }
+
+        refreshStaffDirectory();
+        showStaffFormFeedback(action === 'add' ? 'Staff invite sent successfully.' : 'Staff member updated successfully.', 'success');
+        setTimeout(() => closeModal(), 250);
+      } catch (err) {
+        console.error('Staff save failed:', err);
+        showStaffFormFeedback('The save was interrupted. Please try again.', 'error');
+      }
     });
   });
 </script>

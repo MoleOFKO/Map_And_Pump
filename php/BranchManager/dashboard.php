@@ -70,19 +70,26 @@ $avg_stock_pct = (int)$stmt->fetchColumn();
 
 // low stock tank name (if any)
 $stmt = $pdo->prepare("
-    SELECT fuel_name FROM tanks
-    WHERE branch_id = :b AND (current_l / capacity_l * 100) < alert_pct
-    ORDER BY (current_l / capacity_l) ASC LIMIT 1
+    SELECT COALESCE(ot.oil_name, CONCAT('Fuel ', t.tank_id)) AS fuel_name
+    FROM tanks t
+    LEFT JOIN oil_types ot ON ot.oil_type_id = t.oil_type_id
+    WHERE t.branch_id = :b AND (t.current_l / t.capacity_l * 100) < t.alert_pct
+    ORDER BY (t.current_l / t.capacity_l) ASC LIMIT 1
 ");
 $stmt->execute([':b' => $bid]);
 $low_stock_fuel = $stmt->fetchColumn() ?: null;
 
 // fetch tanks for visualizer (current liters, capacity, alert threshold)
 $stmt = $pdo->prepare("
-  SELECT tank_id, fuel_name, current_l, capacity_l, alert_pct
-  FROM tanks
-  WHERE branch_id = :b AND capacity_l > 0
-  ORDER BY fuel_name ASC
+  SELECT t.tank_id,
+         COALESCE(ot.oil_name, CONCAT('Fuel ', t.tank_id)) AS fuel_name,
+         t.current_l,
+         t.capacity_l,
+         t.alert_pct
+  FROM tanks t
+  LEFT JOIN oil_types ot ON ot.oil_type_id = t.oil_type_id
+  WHERE t.branch_id = :b AND t.capacity_l > 0
+  ORDER BY COALESCE(ot.oil_name, CONCAT('Fuel ', t.tank_id)) ASC
 ");
 $stmt->execute([':b' => $bid]);
 $tanks = $stmt->fetchAll();

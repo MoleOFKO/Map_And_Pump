@@ -155,9 +155,43 @@ if (!function_exists('map_pump_ensure_station_scope_manager_nullable')) {
     }
 }
 
-if (!function_exists('map_pump_latest_station_inventory_sql')) {
-    function map_pump_latest_station_inventory_sql(): string
+if (!function_exists('map_pump_station_inventory_schema_ready')) {
+    function map_pump_station_inventory_schema_ready(PDO $pdo): bool
     {
+        try {
+            $stmt = $pdo->prepare(
+                "SELECT COUNT(*)
+                 FROM INFORMATION_SCHEMA.TABLES
+                 WHERE TABLE_SCHEMA = DATABASE()
+                   AND TABLE_NAME = 'station_oil_inventory'"
+            );
+            $stmt->execute();
+            return (int)$stmt->fetchColumn() > 0;
+        } catch (Throwable $e) {
+            return false;
+        }
+    }
+}
+
+if (!function_exists('map_pump_latest_station_inventory_sql')) {
+    function map_pump_latest_station_inventory_sql(PDO $pdo = null): string
+    {
+        $db = $pdo;
+        if (!$db && isset($GLOBALS['pdo'])) {
+            $db = $GLOBALS['pdo'];
+        }
+        if (!$db || !map_pump_station_inventory_schema_ready($db)) {
+            return "SELECT CAST(t.tank_id AS SIGNED) AS inventory_id,
+                           t.branch_id AS station_id,
+                           COALESCE(ot.oil_type_id, 0) AS oil_type_id,
+                           0 AS price_per_litre,
+                           t.is_enabled AS is_active,
+                           CAST(t.current_l AS DECIMAL(12,2)) AS current_amount_liters,
+                           t.updated_at
+                    FROM tanks t
+                    LEFT JOIN oil_types ot ON LOWER(TRIM(ot.oil_name)) = LOWER(TRIM(t.fuel_name))";
+        }
+
         return "SELECT soi.*
                 FROM station_oil_inventory soi
                 INNER JOIN (
@@ -171,6 +205,10 @@ if (!function_exists('map_pump_latest_station_inventory_sql')) {
 if (!function_exists('map_pump_append_station_price')) {
     function map_pump_append_station_price(PDO $pdo, int $stationId, int $oilTypeId, int $pricePerLitre, ?int $active = null): void
     {
+        if (!map_pump_station_inventory_schema_ready($pdo)) {
+            return;
+        }
+
         $ownsTransaction = !$pdo->inTransaction();
         if ($ownsTransaction) {
             $pdo->beginTransaction();
@@ -233,6 +271,10 @@ if (!function_exists('map_pump_append_station_inventory_snapshot')) {
      */
     function map_pump_append_station_inventory_snapshot(PDO $pdo, int $stationId, int $oilTypeId, float $amountLiters, ?int $active = null): void
     {
+        if (!map_pump_station_inventory_schema_ready($pdo)) {
+            return;
+        }
+
         $stmt = $pdo->prepare(
             "SELECT price_per_litre, is_active
              FROM station_oil_inventory
