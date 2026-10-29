@@ -342,7 +342,7 @@ try {
         exit;
     }
 
-    // Loyalty redeem intent (0 / 10 / 20). Debit happens only on successful fill.
+    // Loyalty points are held for the booking and debited only after a successful fill.
     $pointsToRedeem = 0;
     try {
         $pointsToRedeem = loyalty_validate_redeem_intent($pdo, $userId, $requestedPointsToRedeem);
