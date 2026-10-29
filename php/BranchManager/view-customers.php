@@ -122,6 +122,10 @@ $stmt = $pdo->prepare("
 $stmt->execute([':manager_id' => $user['user_id']]);
 $gold_count = (int)$stmt->fetchColumn();
 
+$alerts       = notif_recent($pdo, (int)$user['user_id'], 5);
+$unread_count = notif_unread_count($pdo, (int)$user['user_id']);
+$has_unread   = $unread_count > 0;
+
 // -------- Feedback (latest 12) --------
 $stmt = $pdo->prepare("
     SELECT f.*, u.user_name AS full_name
@@ -235,68 +239,39 @@ $feedbacks = $stmt->fetchAll();
     top: 48px;
     right: 60px;
     width: 320px;
+    max-height: 420px;
+    overflow-y: auto;
     background: var(--navy-800);
     border: 1px solid rgba(255, 255, 255, 0.12);
     border-radius: 14px;
     box-shadow: 0 16px 32px rgba(0, 0, 0, 0.4);
-    padding: 16px;
+    padding: 14px 12px;
     z-index: 100;
     display: none;
     animation: fadeInDown 0.25s cubic-bezier(0.16, 1, 0.3, 1);
   }
-  .notif-popup.show {
-    display: block;
-  }
-  .notif-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-    padding-bottom: 10px;
-    margin-bottom: 10px;
-  }
-  .notif-header h4 {
-    font-size: 14px;
-    font-weight: 700;
-    margin: 0;
-  }
-  .notif-header span {
-    font-size: 11px;
-    color: var(--sky-400);
-    cursor: pointer;
-  }
+  .notif-popup.show { display: block; }
+  .notif-header { display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom:10px; margin-bottom:10px; }
+  .notif-header h4 { font-size: 14px; font-weight:700; margin:0; }
+  .notif-header button { background: transparent; border: none; color: var(--sky-400); font-size: 11px; cursor: pointer; }
   .notif-item {
-    padding: 10px;
-    border-radius: 8px;
-    font-size: 12.5px;
-    transition: background-color 0.2s;
-    display: flex;
-    gap: 10px;
+    padding: 9px 8px; border-radius: 10px; display: flex; gap: 10px; align-items: flex-start; transition: background-color 0.2s; border: 1px solid transparent;
   }
-  .notif-item:hover {
-    background-color: rgba(255, 255, 255, 0.04);
+  .notif-item:hover { background-color: rgba(255,255,255,0.04); }
+  .notif-item .icon {
+    width: 32px; height: 32px; border-radius: 10px; display:flex; align-items:center; justify-content:center; font-size:12px; flex-shrink:0;
+    background: rgba(148,163,184,0.12); color: var(--slate-200);
   }
-  .notif-item .ic {
-    font-size: 14px;
-    margin-top: 2px;
-  }
-  .notif-item-body b {
-    display: block;
-    font-size: 13px;
-  }
-  .notif-item-body span {
-    color: var(--slate-400);
-    font-size: 11.5px;
-  }
-  .notif-time {
-    font-size: 10px;
-    color: var(--slate-400);
-    margin-top: 4px;
-  }
-  @keyframes fadeInDown {
-    from { opacity: 0; transform: translateY(-8px); }
-    to { opacity: 1; transform: translateY(0); }
-  }
+  .notif-item.unread { border-color: rgba(56,189,248,0.2); }
+  .notif-item .icon { background: rgba(148,163,184,0.12); color: var(--slate-200); }
+  .notif-item.warning .icon { background: rgba(251,191,36,0.16); color: var(--amber-300); }
+  .notif-item.error .icon { background: rgba(248,113,113,0.16); color: var(--red-400); }
+  .notif-item.success .icon { background: rgba(52,211,153,0.14); color: var(--mint-400); }
+  .notif-item.info .icon { background: rgba(56,189,248,0.14); color: var(--sky-400); }
+  .notif-item .text b { display:block; font-size:12.5px; color:var(--slate-50); margin-bottom:2px; }
+  .notif-item .text span { color:var(--slate-400); font-size:11.5px; display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .notif-item .time { font-size:10px; color:var(--slate-400); margin-top:4px; }
+  @keyframes fadeInDown { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
 
   .avatar-chip{display:flex; align-items:center; gap:10px; font-size:13px; cursor: pointer; padding: 4px 8px; border-radius: 99px; transition: background 0.2s;}
   .avatar-chip:hover{background: rgba(255,255,255,0.05);}
@@ -423,39 +398,31 @@ $feedbacks = $stmt->fetchAll();
         <div class="date" id="live-clock">Wednesday · July 9, 2026</div>
       </div>
       <div class="topbar-right">
-        <div class="bell" id="notif-bell"><i class="fa-regular fa-bell"></i><span class="ping"></span></div>
+        <div class="bell" id="notif-bell"><i class="fa-regular fa-bell"></i><?php if ($has_unread): ?><span class="ping" id="notif-ping"></span><?php endif; ?></div>
         
-        <!-- Notification Dropdown Menu -->
         <div class="notif-popup" id="notif-popup">
           <div class="notif-header">
             <h4>Notifications</h4>
-            <span id="mark-all-read">Clear All</span>
+            <button id="clear-notifs-btn" type="button">Mark all read</button>
           </div>
-          <div id="notif-list">
-            <div class="notif-item">
-              <i class="fa-solid fa-triangle-exclamation text-warning ic"></i>
-              <div class="notif-item-body">
-                <b>Diesel Stock Warning</b>
-                <span>Diesel running low (22%).</span>
-                <div class="notif-time">10 mins ago</div>
+          <div class="notif-list" id="notif-list">
+            <?php if (!$alerts): ?>
+              <div class="notif-empty" style="text-align:center; padding:12px 0; color:var(--slate-400); font-size:12px;">No new notifications</div>
+            <?php else:
+              foreach ($alerts as $a):
+                $meta = notif_ui_meta($a['type'], $a['title']);
+                $icon = $meta['icon'];
+                $tone = $meta['tone'];
+            ?>
+              <div class="notif-item <?= h($tone) ?>" data-notif-id="<?= (int)$a['notif_id'] ?>" data-link="<?= h($a['link'] ?? 'dashboard.php') ?>">
+                <div class="icon"><i class="fa-solid <?= h($icon) ?>"></i></div>
+                <div class="text">
+                  <b><?= h($a['title']) ?></b>
+                  <span><?= h($a['body']) ?></span>
+                  <div class="time"><?= h($a['time_ago']) ?></div>
+                </div>
               </div>
-            </div>
-            <div class="notif-item">
-              <i class="fa-solid fa-wrench text-danger ic"></i>
-              <div class="notif-item-body">
-                <b>Pump #4 Down</b>
-                <span>Pump requires immediate inspection.</span>
-                <div class="notif-time">1 hour ago</div>
-              </div>
-            </div>
-            <div class="notif-item">
-              <i class="fa-solid fa-truck-ramp-box text-success ic"></i>
-              <div class="notif-item-body">
-                <b>Petrol 92 Received</b>
-                <span>8,000 liters added to storage.</span>
-                <div class="notif-time">3 hours ago</div>
-              </div>
-            </div>
+            <?php endforeach; endif; ?>
           </div>
         </div>
 
@@ -578,18 +545,31 @@ $feedbacks = $stmt->fetchAll();
     // Notifications Popup Toggle, Clear Badge, & Clear All Handler
     const bellBtn = document.getElementById('notif-bell');
     const notifPopup = document.getElementById('notif-popup');
-    const markAllBtn = document.getElementById('mark-all-read');
+    const notifPing = document.getElementById('notif-ping');
+    const clearNotifsBtn = document.getElementById('clear-notifs-btn');
     const notifList = document.getElementById('notif-list');
+
+    function postDismiss(payload) {
+      return fetch('api_dismiss_notification.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      }).then(r => r.json()).catch(() => ({ ok: false }));
+    }
+
+    function renderNotifEmpty() {
+      if (!notifList) return;
+      notifList.innerHTML = '<div class="notif-empty" style="text-align:center; padding:12px 0; color:var(--slate-400); font-size:12px;">No new notifications</div>';
+      if (notifPing) notifPing.remove();
+    }
 
     bellBtn.addEventListener('click', (e) => {
       e.stopPropagation();
-      
       const ping = bellBtn.querySelector('.ping');
       if (ping) {
         ping.style.transform = 'scale(0)';
         setTimeout(() => ping.remove(), 200);
       }
-
       notifPopup.classList.toggle('show');
     });
 
@@ -599,9 +579,28 @@ $feedbacks = $stmt->fetchAll();
       }
     });
 
-    if (markAllBtn) {
-      markAllBtn.addEventListener('click', () => {
-        notifList.innerHTML = `<div style="text-align: center; padding: 12px 0; color: var(--slate-400); font-size: 12px;">No new notifications</div>`;
+    if (notifList) {
+      notifList.addEventListener('click', (e) => {
+        const item = e.target.closest('.notif-item');
+        if (!item) return;
+        const id = Number(item.dataset.notifId || 0);
+        const link = item.dataset.link || '';
+        if (id > 0) {
+          postDismiss({ notif_id: id }).then((res) => {
+            if (res.ok && notifPing && Number(res.unread || 0) <= 0) {
+              notifPing.remove();
+            }
+          });
+        }
+        if (link) window.location.href = link;
+      });
+    }
+
+    if (clearNotifsBtn) {
+      clearNotifsBtn.addEventListener('click', () => {
+        postDismiss({ all: true }).then((res) => {
+          if (res.ok) renderNotifEmpty();
+        });
       });
     }
   });

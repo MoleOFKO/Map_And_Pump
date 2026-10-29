@@ -266,6 +266,16 @@ function notif_kind(string $type): string {
     return 'info';
 }
 
+/** Resolve the most relevant management page for a notification type. */
+function notif_route_for(string $type): string {
+    $t = strtolower($type);
+    if (preg_match('/(stock|tank|fuel|inventory|low)/', $t)) return 'manage-oil.php';
+    if (preg_match('/(report|hq|headquarter|branch report)/', $t)) return 'report-hq.php';
+    if (preg_match('/(staff|employee|account|attendance)/', $t)) return 'manage-staff.php';
+    if (preg_match('/(booking|queue|pump|slot|token)/', $t)) return 'booking-slot.php';
+    return 'dashboard.php';
+}
+
 /** Count unread notifications for a manager. */
 function notif_unread_count(PDO $db, int $user_id): int {
     $sql = "SELECT COUNT(*) FROM notifications WHERE recipient_user_id = :u";
@@ -277,7 +287,7 @@ function notif_unread_count(PDO $db, int $user_id): int {
 
 /**
  * Recent notifications for a manager, normalised for the bell + alerts UI.
- * Each row: notif_id, kind, type, title, body, created_at, time_ago, is_read
+ * Each row: notif_id, kind, type, title, body, created_at, time_ago, is_read, link
  */
 function notif_recent(PDO $db, int $user_id, int $limit = 5): array {
     $hasRead    = notif_has_read_column($db);
@@ -304,6 +314,7 @@ function notif_recent(PDO $db, int $user_id, int $limit = 5): array {
             'created_at' => $r['created_at'],
             'time_ago'   => time_ago($r['created_at']),
             'is_read'    => $hasRead ? !empty($r['read_at']) : false,
+            'link'       => notif_route_for((string)$r['notification_type']),
         ];
     }
     return $out;
@@ -442,4 +453,33 @@ function notif_low_stock_scan(PDO $db, int $branch_id, int $recipient_user_id): 
         $created++;
     }
     return $created;
+}
+
+/** Map notification metadata to compact UI icon + color family. */
+function notif_ui_meta(string $type, string $title = ''): array {
+    $src = strtolower(trim($type . ' ' . $title));
+
+    if (preg_match('/(staff|employee|user|manager|attendance|activation|deactivation)/', $src)) {
+        return ['icon' => 'fa-users', 'tone' => 'success'];
+    }
+    if (preg_match('/(stock|fuel|oil|tank|inventory|delivery|low stock|restock)/', $src)) {
+        return ['icon' => 'fa-droplet', 'tone' => 'warning'];
+    }
+    if (preg_match('/(booking|queue|token|slot|pump|service)/', $src)) {
+        return ['icon' => 'fa-ticket', 'tone' => 'info'];
+    }
+    if (preg_match('/(report|hq|headquarter|incident|complaint|review)/', $src)) {
+        return ['icon' => 'fa-file-lines', 'tone' => 'info'];
+    }
+    if (preg_match('/(branch|profile|update|system|account|maintenance)/', $src)) {
+        return ['icon' => 'fa-building', 'tone' => 'error'];
+    }
+    if (preg_match('/(success|approved|complete|delivered|received|created)/', $src)) {
+        return ['icon' => 'fa-circle-check', 'tone' => 'success'];
+    }
+    if (preg_match('/(warn|warning|low|alert|expir|fail|issue|problem)/', $src)) {
+        return ['icon' => 'fa-triangle-exclamation', 'tone' => 'warning'];
+    }
+
+    return ['icon' => 'fa-circle-info', 'tone' => 'info'];
 }
