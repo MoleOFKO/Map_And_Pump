@@ -43,7 +43,12 @@ try {
     $stmt = $pdo->prepare(
         "SELECT u.user_id, u.user_public_id, u.user_name, u.email, u.hashed_password, u.status,
             u.oauth_avatar_url,
-                u.role_id, u.business_role_id, u.license_id, u.headquarter_id, u.branch_id,
+                u.role_id, u.business_role_id, u.license_id, u.headquarter_id,
+                COALESCE(
+                    (SELECT st.branch_id FROM staff st WHERE st.user_id = u.user_id LIMIT 1),
+                    (SELECT MIN(b.branch_id) FROM branches b WHERE b.manager_user_id = u.user_id),
+                    (SELECT MIN(sbs.station_id) FROM station_business_scope sbs WHERE sbs.branch_manager_user_id = u.user_id)
+                ) AS branch_id,
                 {$currentRoleSelect}
                 r.role_name, br.role_name AS business_role_name
          FROM users u
