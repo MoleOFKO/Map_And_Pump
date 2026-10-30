@@ -26,8 +26,9 @@ $staffStationId = 0;
 try {
     if (isset($pdo)) {
         $stmtUser = $pdo->prepare(
-            'SELECT u.user_name, COALESCE(u.branch_id, bas.station_id) AS station_id
+            'SELECT u.user_name, COALESCE(st.branch_id, bas.station_id) AS station_id
              FROM users u
+             LEFT JOIN staff st ON st.user_id = u.user_id
              LEFT JOIN business_account_scope bas ON bas.user_id = u.user_id
              WHERE u.user_id = ?
              LIMIT 1'

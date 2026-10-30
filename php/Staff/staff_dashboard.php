@@ -27,7 +27,8 @@ try {
         $stmt = $pdo->prepare('SELECT u.user_name, h.company_name AS headquarter_name, h.company_logo AS headquarter_logo, b.branch_name, b.branch_code
             FROM users u
             LEFT JOIN headquarter h ON h.headquarter_id = u.headquarter_id
-            LEFT JOIN branches b ON b.branch_id = u.branch_id
+            LEFT JOIN staff st ON st.user_id = u.user_id
+            LEFT JOIN branches b ON b.branch_id = st.branch_id
             WHERE u.user_id = ? LIMIT 1');
         $stmt->execute([(int)$_SESSION['user_id']]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);

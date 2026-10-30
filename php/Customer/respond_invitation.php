@@ -81,11 +81,11 @@ try {
             throw new RuntimeException('The invited user account no longer exists.');
         }
 
-        $userUpdateSql = "UPDATE users SET business_role_id = ?, headquarter_id = ?, branch_id = ?, status = 'active', updated_at = NOW()";
-        $userParams = [$roleId, $hqId, $branchId, $userId];
+        $userUpdateSql = "UPDATE users SET business_role_id = ?, headquarter_id = ?, status = 'active', updated_at = NOW()";
+        $userParams = [$roleId, $hqId, $userId];
         if (column_exists($pdo, 'users', 'current_role_id')) {
             $userUpdateSql .= ', current_role_id = ?';
-            $userParams = [$roleId, $hqId, $branchId, $roleId, $userId];
+            $userParams = [$roleId, $hqId, $roleId, $userId];
         }
         $userUpdateSql .= " WHERE user_id = ?";
         $userUpdate = $pdo->prepare($userUpdateSql);
