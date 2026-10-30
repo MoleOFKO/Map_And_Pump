@@ -182,6 +182,10 @@ $flashType = (string) ($flash['type'] ?? '');
         .moderator-status-removed::before { background:#ff4d6a; box-shadow:0 0 8px #ff4d6a; }
         .moderator-mode-tabs { display:flex; gap:.5rem; flex-wrap:wrap; }
         .moderator-mode-tabs .btn { border-radius:999px; font-size:.8rem; font-weight:600; }
+        #addAdminModal .modal-dialog { height:calc(100dvh - 1rem); max-height:calc(100dvh - 1rem); margin:.5rem auto; }
+        #addAdminModal .modal-content { height:100%; max-height:100%; min-height:0; }
+        #addAdminModal .modal-body { min-height:0; overflow-y:auto; }
+        #addAdminModal form { flex:0 0 auto; overflow:visible; }
         .moderator-search-results { max-height:34vh; overflow:auto; border-radius:12px; }
         .moderator-search-results table { --bs-table-bg:transparent; --bs-table-color:#fff; --bs-table-border-color:rgba(255,255,255,.08); }
         .moderator-search-results th { color:rgba(255,255,255,.55); font-size:.72rem; text-transform:uppercase; letter-spacing:.05em; white-space:nowrap; }
@@ -208,6 +212,9 @@ $flashType = (string) ($flash['type'] ?? '');
         }
         body.background_color.light-mode .moderator-flash {
             background:rgba(255,255,255,.92);
+        }
+        @media (max-width:575.98px) {
+            #addAdminModal .modal-dialog { height:calc(100dvh - .75rem); max-height:calc(100dvh - .75rem); margin:.375rem auto; }
         }
     </style>
 </head>

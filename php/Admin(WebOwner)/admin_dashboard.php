@@ -141,8 +141,6 @@ $updatedLabel = $updatedAt ? admin_date($updatedAt) : 'Not available';
         a.metric-card-link:hover .metric-card,
         a.metric-card-link:focus .metric-card { transform:translateY(-2px); border-color:rgba(0,244,255,.35); box-shadow:0 10px 28px rgba(0,180,255,.12); }
         a.metric-card-link:focus-visible { outline:2px solid var(--neon-cyan); outline-offset:3px; border-radius:16px; }
-        a.metric-card-link .metric-card-hint { opacity:.65; font-size:.72rem; }
-        a.metric-card-link:hover .metric-card-hint { opacity:1; color:var(--neon-cyan); }
     </style>
 </head>
 <body class="background_color" id="background_color">
@@ -154,7 +152,6 @@ $updatedLabel = $updatedAt ? admin_date($updatedAt) : 'Not available';
         <div>
             <span class="stat-chip mb-2"><i class="bi bi-speedometer2 txt-neon-cyan"></i> Admin Dashboard</span>
             <h1 class="fw-bold m-0 h4 text-white mt-2">Control Center Overview</h1>
-            <p class="text-white-50 m-0 small mt-1">Live counts</p>
         </div>
         <span class="stat-chip"><i class="bi bi-clock-history me-1"></i> Updated <?= hq_escape($updatedLabel) ?></span>
     </div>
@@ -207,7 +204,6 @@ $updatedLabel = $updatedAt ? admin_date($updatedAt) : 'Not available';
                         <span class="txt-neon-cyan fs-2"><i class="bi bi-building"></i></span>
                     </div>
                     <p class="text-white-50 small mb-0 mt-2"><span class="txt-neon-cyan fw-semibold"><?= (int) $metrics['stations'] ?></span> stations in total</p>
-                    <p class="metric-card-hint text-white-50 mb-0 mt-2"><i class="bi bi-box-arrow-up-right me-1"></i>View / Manage Headquarter</p>
                 </div>
             </a>
         </div>
@@ -222,7 +218,6 @@ $updatedLabel = $updatedAt ? admin_date($updatedAt) : 'Not available';
                         <span class="txt-neon-blue fs-2"><i class="bi bi-file-earmark-check"></i></span>
                     </div>
                     <p class="text-warning small mb-0 mt-2"><?= (int) $metrics['pending_requests'] ?> pending verification</p>
-                    <p class="metric-card-hint text-white-50 mb-0 mt-2"><i class="bi bi-box-arrow-up-right me-1"></i>View Requests</p>
                 </div>
             </a>
         </div>
@@ -237,7 +232,6 @@ $updatedLabel = $updatedAt ? admin_date($updatedAt) : 'Not available';
                         <span class="txt-neon-cyan fs-2"><i class="bi bi-file-earmark-bar-graph"></i></span>
                     </div>
                     <p class="text-white-50 small mb-0 mt-2"><?= (int) $metrics['reports_today'] ?> generated today</p>
-                    <p class="metric-card-hint text-white-50 mb-0 mt-2"><i class="bi bi-box-arrow-up-right me-1"></i>View Report</p>
                 </div>
             </a>
         </div>
@@ -251,8 +245,6 @@ $updatedLabel = $updatedAt ? admin_date($updatedAt) : 'Not available';
                         </div>
                         <span class="<?= $dbOnline ? 'text-success' : 'text-danger' ?> fs-2"><i class="bi bi-database-check"></i></span>
                     </div>
-                    <p class="<?= $dbOnline ? 'text-success' : 'text-danger' ?> small mb-0 mt-2"><?= $dbOnline ? 'map_and_pump connected' : 'Connection unavailable' ?></p>
-                    <p class="metric-card-hint text-white-50 mb-0 mt-2"><i class="bi bi-box-arrow-up-right me-1"></i>View Logs</p>
                 </div>
             </a>
         </div>
@@ -263,7 +255,6 @@ $updatedLabel = $updatedAt ? admin_date($updatedAt) : 'Not available';
             <div class="dashboard-card operational-snapshot-card h-100">
                 <div class="mb-4">
                     <h2 class="fw-bold h5 text-white mb-1">Operational Snapshot</h2>
-                    <p class="text-white-50 mb-0 small">Pending counts include account verification and operational requests.</p>
                 </div>
                 <div class="row g-4 operational-snapshot-panels">
                     <div class="col-12 col-lg-6">
@@ -304,7 +295,6 @@ $updatedLabel = $updatedAt ? admin_date($updatedAt) : 'Not available';
                                 <div>
                                     <span class="stat-chip mb-3"><i class="bi bi-file-earmark-check"></i> View Requests</span>
                                     <h3 class="h5 fw-bold text-white mb-2 mt-2">Request Review Summary</h3>
-                                    <p class="text-white-50 small mb-3">Pending partner approvals and station changes.</p>
                                 </div>
                                 <span class="summary-arrow"><i class="bi bi-arrow-right"></i></span>
                             </div>
@@ -323,7 +313,6 @@ $updatedLabel = $updatedAt ? admin_date($updatedAt) : 'Not available';
                                 <div>
                                     <span class="stat-chip mb-3"><i class="bi bi-graph-up-arrow"></i> View Report</span>
                                     <h3 class="h5 fw-bold text-white mb-2 mt-2">Report Center Summary</h3>
-                                    <p class="text-white-50 small mb-3">Review generated reports and export data summaries.</p>
                                 </div>
                                 <span class="summary-arrow"><i class="bi bi-arrow-right"></i></span>
                             </div>
@@ -345,7 +334,6 @@ $updatedLabel = $updatedAt ? admin_date($updatedAt) : 'Not available';
                 <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-3 mb-4">
                     <div>
                         <h3 class="h5 fw-semibold mb-1 text-white">Priority Work Queue</h3>
-                        <p class="text-white-50 mb-0 small">Open the corresponding live database page for the next action.</p>
                     </div>
                     <span class="stat-chip"><i class="bi bi-lightning-charge-fill txt-neon-cyan me-1"></i> Live</span>
                 </div>
@@ -355,7 +343,7 @@ $updatedLabel = $updatedAt ? admin_date($updatedAt) : 'Not available';
                             <tr>
                                 <th>Area</th>
                                 <th>Status</th>
-                                <th>Next Action</th>
+
                                 <th class="text-end">Open</th>
                             </tr>
                         </thead>
@@ -363,25 +351,25 @@ $updatedLabel = $updatedAt ? admin_date($updatedAt) : 'Not available';
                             <tr>
                                 <td class="fw-medium text-white">Inbound Requests</td>
                                 <td><span class="badge rounded-pill bg-warning bg-opacity-10 text-warning border border-warning border-opacity-25"><?= (int) $metrics['open_requests'] ?> Open</span></td>
-                                <td class="text-white-50">Review pending submissions and reject as needed.</td>
+
                                 <td class="text-end"><a href="view_requests.php" class="btn-action" title="Open View Requests"><i class="bi bi-arrow-right"></i></a></td>
                             </tr>
                             <tr>
                                 <td class="fw-medium text-white">System Reports</td>
                                 <td><span class="badge rounded-pill bg-info bg-opacity-10 text-info border border-info border-opacity-25"><?= (int) $metrics['reports'] ?> Stored</span></td>
-                                <td class="text-white-50">Generate, download, or delete report records.</td>
+
                                 <td class="text-end"><a href="view_report.php" class="btn-action" title="Open View Report"><i class="bi bi-arrow-right"></i></a></td>
                             </tr>
                             <tr>
                                 <td class="fw-medium text-white">View/Manage Headquarter</td>
                                 <td><span class="badge rounded-pill bg-success bg-opacity-10 text-success border border-success border-opacity-25"><?= (int) $metrics['hqs'] ?> Headquarter · <?= (int) $metrics['stations'] ?> Stations</span></td>
-                                <td class="text-white-50">View, edit, suspend, or remove Headquarter accounts.</td>
+
                                 <td class="text-end"><a href="view_hq_and_user_account.php" class="btn-action" title="Open View/Manage Headquarter"><i class="bi bi-arrow-right"></i></a></td>
                             </tr>
                             <tr>
                                 <td class="fw-medium text-white">View/Manage Drivers</td>
                                 <td><span class="badge rounded-pill bg-success bg-opacity-10 text-success border border-success border-opacity-25">Driver accounts</span></td>
-                                <td class="text-white-50">View, edit, suspend, or remove driver accounts.</td>
+
                                 <td class="text-end"><a href="view_users.php" class="btn-action" title="Open View/Manage Drivers"><i class="bi bi-arrow-right"></i></a></td>
                             </tr>
                         </tbody>

@@ -52,7 +52,7 @@ $adminMenuClass = static fn (string $key): string => $adminSection === $key ? 'm
     <div class="offcanvas-header pb-2 border-bottom border-white border-opacity-10">
         <div>
             <h5 class="offcanvas-title text-white fw-bold mb-0">Main Menu</h5>
-            <p class="text-white-50 small mb-0" style="font-size:0.78rem;">Admin Portal</p>
+
         </div>
         <label class="cosmic-toggle float-end" title="Toggle light mode">
             <input class="toggle js-theme-toggle" type="checkbox" aria-label="Toggle light mode" />

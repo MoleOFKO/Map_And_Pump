@@ -89,7 +89,6 @@ $statusClass = static function (?string $status): string {
         <div class="mb-4">
             <span class="stat-chip mb-2"><i class="bi bi-person-badge-fill txt-neon-cyan"></i> Account Settings</span>
             <h1 class="fw-bold m-0 h4 text-white mt-2">Edit Profile Details</h1>
-            <p class="text-white-50 m-0 small mt-1">Update your account information and secure your moderator access.</p>
         </div>
 
         <?php if ($flashMessage !== ''): ?>
@@ -137,7 +136,6 @@ $statusClass = static function (?string $status): string {
                 <div class="dashboard-card p-4 flex-grow-1 d-flex flex-column justify-content-between" style="border-color:rgba(0,244,255,.18);background:rgba(0,244,255,.025)!important;">
                     <div>
                         <h6 class="fw-bold text-white mb-2"><i class="bi bi-fuel-pump txt-neon-cyan me-2"></i>Customer Gas Profile</h6>
-                        <p class="text-white-50 small mb-0">Switch to the customer side of this same account to manage your driver license and fill your car.</p>
                     </div>
                     <form action="../account_switch.php" method="POST" class="m-0 pt-3">
                         <input type="hidden" name="mode" value="customer">

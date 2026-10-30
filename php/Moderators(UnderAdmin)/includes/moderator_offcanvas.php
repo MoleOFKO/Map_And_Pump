@@ -14,7 +14,7 @@ $modMenuClass = static function (string $key) use ($moderatorActiveNav): string 
     <div class="offcanvas-header pb-2 border-bottom border-white border-opacity-10">
         <div>
             <h5 class="offcanvas-title text-white fw-bold mb-0" id="moderatorMainMenuLabel">Main Menu</h5>
-            <p class="text-white-50 small mb-0" style="font-size:0.78rem;">Moderator Portal</p>
+
         </div>
         <div class="d-flex align-items-center gap-2">
             <label class="cosmic-toggle" title="Toggle light mode">
