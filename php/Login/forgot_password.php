@@ -1,3 +1,13 @@
+<?php
+require_once __DIR__ . '/session_helper.php';
+map_pump_configure_session();
+session_start();
+
+if (empty($_SESSION['password_reset_csrf'])) {
+  $_SESSION['password_reset_csrf'] = bin2hex(random_bytes(32));
+}
+$passwordResetCsrf = (string) $_SESSION['password_reset_csrf'];
+?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -23,6 +33,7 @@
     
     <!-- Left Side: Forgot Password Multi-Step Flow -->
     <div class="form-container">
+      <div id="reset-status" role="status" aria-live="polite" style="display:none;margin-bottom:1rem;padding:0.85rem 1rem;border-radius:12px;"></div>
       
       <!-- STEP 1: Enter Email -->
       <div class="auth-step active" id="step-1">
@@ -192,6 +203,7 @@
   </div>
 
   <script>
+    const resetCsrfToken = <?= json_encode($passwordResetCsrf) ?>;
     const step1 = document.getElementById('step-1');
     const step2 = document.getElementById('step-2');
     const step3 = document.getElementById('step-3');
@@ -203,16 +215,58 @@
     const backToStep1 = document.getElementById('back-to-step-1');
     const resetEmail = document.getElementById('reset-email');
     const displayEmail = document.getElementById('display-email');
+    const resetStatus = document.getElementById('reset-status');
+    const otpDigits = document.querySelectorAll('.otp-digit');
 
-    toStep2.addEventListener('click', function() {
-      if(resetEmail.value.trim() !== '') {
-        displayEmail.textContent = resetEmail.value;
+    function showResetStatus(message, success = false) {
+      resetStatus.textContent = message;
+      resetStatus.style.display = message ? 'block' : 'none';
+      resetStatus.style.background = success ? 'rgba(34, 197, 94, 0.12)' : 'rgba(248, 113, 113, 0.12)';
+      resetStatus.style.border = success ? '1px solid rgba(34, 197, 94, 0.35)' : '1px solid rgba(248, 113, 113, 0.35)';
+      resetStatus.style.color = success ? '#d1fae5' : '#fdd';
+    }
+
+    async function postResetAction(action, values = {}) {
+      const formData = new FormData();
+      formData.append('action', action);
+      formData.append('csrf_token', resetCsrfToken);
+      Object.entries(values).forEach(([key, value]) => formData.append(key, value));
+      const response = await fetch('forgot_password_action.php', {
+        method: 'POST',
+        body: formData,
+        credentials: 'same-origin'
+      });
+      const data = await response.json();
+      if (!response.ok || !data.ok) {
+        throw new Error(data.message || 'Password recovery could not be completed.');
+      }
+      return data;
+    }
+
+    function currentOtp() {
+      return Array.from(otpDigits, digit => digit.value).join('');
+    }
+
+    async function sendResetCode() {
+      const email = resetEmail.value.trim();
+      if (!resetEmail.reportValidity()) return;
+      const button = document.getElementById('to-step-2');
+      button.disabled = true;
+      showResetStatus('Sending your code...');
+      try {
+        const result = await postResetAction('send_code', { email });
+        displayEmail.textContent = email;
         step1.classList.remove('active');
         step2.classList.add('active');
-      } else {
-        resetEmail.reportValidity();
+        showResetStatus(result.message, true);
+      } catch (error) {
+        showResetStatus(error.message);
+      } finally {
+        button.disabled = false;
       }
-    });
+    }
+
+    toStep2.addEventListener('click', sendResetCode);
 
     backToStep1.addEventListener('click', function(e) {
       e.preventDefault();
@@ -220,9 +274,40 @@
       step1.classList.add('active');
     });
 
-    toStep3.addEventListener('click', function() {
-      step2.classList.remove('active');
-      step3.classList.add('active');
+    toStep3.addEventListener('click', async function() {
+      const code = currentOtp();
+      if (!/^\d{4}$/.test(code)) {
+        showResetStatus('Enter the 4-digit code from your email.');
+        return;
+      }
+      toStep3.disabled = true;
+      showResetStatus('Checking your code...');
+      try {
+        await postResetAction('verify_code', { email: resetEmail.value.trim(), code });
+        step2.classList.remove('active');
+        step3.classList.add('active');
+        showResetStatus('Code verified. Choose a new password.', true);
+      } catch (error) {
+        showResetStatus(error.message);
+      } finally {
+        toStep3.disabled = false;
+      }
+    });
+
+    document.getElementById('click-resend').addEventListener('click', async function(event) {
+      event.preventDefault();
+      const resendLink = event.currentTarget;
+      resendLink.style.pointerEvents = 'none';
+      try {
+        const result = await postResetAction('send_code', { email: resetEmail.value.trim() });
+        otpDigits.forEach(digit => { digit.value = ''; });
+        otpDigits[0].focus();
+        showResetStatus(result.message, true);
+      } catch (error) {
+        showResetStatus(error.message);
+      } finally {
+        resendLink.style.pointerEvents = '';
+      }
     });
 
     const newPassword = document.getElementById('new-password');
@@ -311,7 +396,7 @@
     newPassword.addEventListener('input', evaluatePassword);
     confirmPassword.addEventListener('input', evaluatePassword);
 
-    toStep4.addEventListener('click', function() {
+    toStep4.addEventListener('click', async function() {
       const val1 = newPassword.value;
       const val2 = confirmPassword.value;
 
@@ -332,14 +417,29 @@
       }
 
       passwordError.textContent = '';
-      pwPopover.classList.remove('visible');
-      step3.classList.remove('active');
-      step4.classList.add('active');
+      toStep4.disabled = true;
+      showResetStatus('Saving your new password...');
+      try {
+        await postResetAction('reset_password', {
+          email: resetEmail.value.trim(),
+          code: currentOtp(),
+          password: val1,
+          confirm_password: val2
+        });
+        pwPopover.classList.remove('visible');
+        step3.classList.remove('active');
+        step4.classList.add('active');
+        showResetStatus('Your password has been reset.', true);
+      } catch (error) {
+        showResetStatus(error.message);
+      } finally {
+        toStep4.disabled = false;
+      }
     });
 
-    const otpDigits = document.querySelectorAll('.otp-digit');
     otpDigits.forEach((digit, index) => {
       digit.addEventListener('input', (e) => {
+        e.target.value = e.target.value.replace(/\D/g, '').slice(-1);
         if(e.target.value.length === 1 && index < otpDigits.length - 1) {
           otpDigits[index + 1].focus();
         }
@@ -347,6 +447,14 @@
       digit.addEventListener('keydown', (e) => {
         if(e.key === 'Backspace' && e.target.value === '' && index > 0) {
           otpDigits[index - 1].focus();
+        }
+      });
+      digit.addEventListener('paste', (event) => {
+        const pastedCode = (event.clipboardData?.getData('text') || '').replace(/\D/g, '').slice(0, 4);
+        if (pastedCode.length === 4) {
+          event.preventDefault();
+          otpDigits.forEach((input, digitIndex) => { input.value = pastedCode[digitIndex] || ''; });
+          otpDigits[3].focus();
         }
       });
     });
