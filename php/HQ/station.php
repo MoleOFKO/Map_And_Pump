@@ -232,8 +232,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     );
                     $accountScopeStmt->execute([$manager_id, $hqId, $stationId]);
 
-                    $userScopeStmt = $pdo->prepare("UPDATE users SET headquarter_id = ?, branch_id = ?, business_role_id = 4 WHERE user_id = ?");
-                    $userScopeStmt->execute([$hqId, $branchId, $manager_id]);
+                    $userScopeStmt = $pdo->prepare("UPDATE users SET headquarter_id = ?, business_role_id = 4 WHERE user_id = ?");
+                    $userScopeStmt->execute([$hqId, $manager_id]);
                 }
 
                 $tankSeedStmt = $pdo->prepare(
@@ -359,8 +359,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                  ON DUPLICATE KEY UPDATE headquarter_id = VALUES(headquarter_id), station_id = VALUES(station_id), status = 'active'"
             );
             $accountScopeStmt->execute([$manager_id, $hqId, $station_id]);
-            $userScopeStmt = $pdo->prepare("UPDATE users SET headquarter_id = ?, branch_id = ?, business_role_id = 4 WHERE user_id = ?");
-            $userScopeStmt->execute([$hqId, $station_id, $manager_id]);
+            $userScopeStmt = $pdo->prepare("UPDATE users SET headquarter_id = ?, business_role_id = 4 WHERE user_id = ?");
+            $userScopeStmt->execute([$hqId, $manager_id]);
             $pdo->commit();
             $message = "Configuration saved successfully!";
         } catch (PDOException $e) {

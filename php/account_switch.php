@@ -95,7 +95,13 @@ $targetMode = strtolower(trim((string) ($_POST['mode'] ?? '')));
 try {
     $stmt = $pdo->prepare(
         'SELECT u.user_id, u.user_name, u.email, u.oauth_avatar_url, u.status, u.role_id, u.business_role_id,
-                u.headquarter_id, u.branch_id, u.license_id,
+                u.headquarter_id,
+                COALESCE(
+                    (SELECT st.branch_id FROM staff st WHERE st.user_id = u.user_id LIMIT 1),
+                    (SELECT MIN(b.branch_id) FROM branches b WHERE b.manager_user_id = u.user_id),
+                    (SELECT MIN(sbs.station_id) FROM station_business_scope sbs WHERE sbs.branch_manager_user_id = u.user_id)
+                ) AS branch_id,
+                u.license_id,
                 primary_role.role_name AS primary_role_name,
                 business_role.role_name AS business_role_name
          FROM users u

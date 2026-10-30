@@ -51,7 +51,7 @@ function current_context($db = null) {
     global $pdo, $conn;
     $dbHandle = $db ?? $pdo ?? $conn;
 
-    $branchExpression = 'COALESCE(u.branch_id, managed.station_id)';
+    $branchExpression = 'managed.station_id';
 
     $stmt = $dbHandle->prepare("
         SELECT u.user_id,

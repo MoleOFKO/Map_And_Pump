@@ -102,8 +102,10 @@ try {
     $knownStaffUsers = array_fill_keys(array_map('intval', $staffUserIds), true);
 
     $users = $pdo->query(
-        "SELECT u.user_id, u.user_name, u.email, u.branch_id
+        "SELECT u.user_id, u.user_name, u.email, COALESCE(st.branch_id, bas.station_id) AS branch_id
          FROM users u
+         LEFT JOIN staff st ON st.user_id = u.user_id
+         LEFT JOIN business_account_scope bas ON bas.user_id = u.user_id
          WHERE u.role_id = 5 OR u.business_role_id = 5
          ORDER BY u.user_id"
     )->fetchAll(PDO::FETCH_ASSOC);
@@ -163,13 +165,17 @@ try {
 
      $pdo->exec(
           "UPDATE staff st
-            INNER JOIN users u ON u.branch_id = st.branch_id
-                AND LOWER(TRIM(u.user_name)) = LOWER(TRIM(st.full_name))
+            INNER JOIN users u ON LOWER(TRIM(u.user_name)) = LOWER(TRIM(st.full_name))
                 AND (u.role_id = 5 OR u.business_role_id = 5)
-            LEFT JOIN users duplicate_user ON duplicate_user.branch_id = st.branch_id
-                AND LOWER(TRIM(duplicate_user.user_name)) = LOWER(TRIM(st.full_name))
+            INNER JOIN business_account_scope bas ON bas.user_id = u.user_id AND bas.station_id = st.branch_id
+            LEFT JOIN users duplicate_user ON LOWER(TRIM(duplicate_user.user_name)) = LOWER(TRIM(st.full_name))
                 AND (duplicate_user.role_id = 5 OR duplicate_user.business_role_id = 5)
                 AND duplicate_user.user_id <> u.user_id
+                AND EXISTS (
+                    SELECT 1 FROM business_account_scope duplicate_scope
+                    WHERE duplicate_scope.user_id = duplicate_user.user_id
+                      AND duplicate_scope.station_id = st.branch_id
+                )
             SET st.user_id = u.user_id
             WHERE st.user_id IS NULL
               AND duplicate_user.user_id IS NULL"
