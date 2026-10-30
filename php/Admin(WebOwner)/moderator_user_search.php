@@ -10,6 +10,7 @@
  * - Schema readiness is cached for the request lifetime inside
  *   moderator_schema_ready().
  */
+require_once __DIR__ . '/admin_common.php';
 require_once __DIR__ . '/moderator_common.php';
 require_once __DIR__ . '/../moderator_hire_helpers.php';
 
@@ -76,7 +77,7 @@ if (!moderator_schema_ready()) {
 }
 
 $query = trim((string) ($_GET['q'] ?? ''));
-if (strlen($query) < 2) {
+if ($query !== '' && strlen($query) < 2) {
     moderator_search_json(true, '', ['results' => []]);
 }
 
@@ -87,13 +88,15 @@ $emailPrefix = $exact . '%';
 // Prefer a query that accounts for business_role_id when the column exists.
 // Fall back without that join if prepare fails (partial deploys / older schema).
 $sqlWithBusiness = "
-    SELECT u.user_id, u.user_name, u.email, u.status, r.role_name
+    SELECT u.user_id, u.user_name, u.email, u.status, r.role_name, h.company_name AS hq_name
     FROM users u
     LEFT JOIN roles r ON r.role_id = u.role_id
     LEFT JOIN roles br ON br.role_id = u.business_role_id
     LEFT JOIN roles cr ON cr.role_id = u.current_role_id
+    LEFT JOIN headquarter h ON h.headquarter_id = u.headquarter_id
     WHERE (
-           LOWER(u.user_name) LIKE ?
+           ? = ''
+        OR LOWER(u.user_name) LIKE ?
         OR LOWER(u.email) LIKE ?
     )
       AND LOWER(TRIM(COALESCE(r.role_name, ''))) NOT IN ('admin', 'moderator')
@@ -104,15 +107,16 @@ $sqlWithBusiness = "
             WHEN LOWER(u.user_name) = ? THEN 1
             WHEN LOWER(u.email) LIKE ? THEN 2
             ELSE 3 END,
-       u.user_name ASC
-    LIMIT 12";
+       u.user_name ASC";
 
 $sqlWithoutBusiness = "
-    SELECT u.user_id, u.user_name, u.email, u.status, r.role_name
+    SELECT u.user_id, u.user_name, u.email, u.status, r.role_name, h.company_name AS hq_name
     FROM users u
     LEFT JOIN roles r ON r.role_id = u.role_id
+    LEFT JOIN headquarter h ON h.headquarter_id = u.headquarter_id
     WHERE (
-           LOWER(u.user_name) LIKE ?
+           ? = ''
+        OR LOWER(u.user_name) LIKE ?
         OR LOWER(u.email) LIKE ?
     )
       AND LOWER(TRIM(COALESCE(r.role_name, ''))) NOT IN ('admin', 'moderator')
@@ -121,13 +125,12 @@ $sqlWithoutBusiness = "
             WHEN LOWER(u.user_name) = ? THEN 1
             WHEN LOWER(u.email) LIKE ? THEN 2
             ELSE 3 END,
-       u.user_name ASC
-    LIMIT 12";
+       u.user_name ASC";
 
-$params = [$like, $like, $exact, $exact, $emailPrefix];
-$statement = hq_prepare($sqlWithBusiness, 'sssss', $params);
+$params = [$query, $like, $like, $exact, $exact, $emailPrefix];
+$statement = hq_prepare($sqlWithBusiness, 'ssssss', $params);
 if (!$statement) {
-    $statement = hq_prepare($sqlWithoutBusiness, 'sssss', $params);
+    $statement = hq_prepare($sqlWithoutBusiness, 'ssssss', $params);
 }
 
 if (!$statement) {
@@ -151,6 +154,8 @@ while ($result && ($row = $result->fetch_assoc())) {
         'email' => (string) $row['email'],
         'status' => (string) ($row['status'] ?? ''),
         'role_name' => (string) ($row['role_name'] ?? 'Unassigned'),
+        'hq_name' => (string) ($row['hq_name'] ?? ''),
+        'initials' => strtoupper(substr(trim((string) $row['user_name']), 0, 2)),
         'label' => trim((string) $row['user_name']) . ' · ' . trim((string) $row['email']),
     ];
 }

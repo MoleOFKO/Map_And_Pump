@@ -159,7 +159,6 @@ $exportQuery = http_build_query([
         <div>
             <span class="stat-chip mb-2"><i class="bi bi-terminal-split txt-neon-cyan"></i> System Audit Trail</span>
             <h1 class="fw-bold m-0 h4 text-white mt-2">View Log Files</h1>
-            <p class="text-white-50 m-0 small mt-1">Review Admin and Moderator actions recorded in the live <code>log</code> table.</p>
         </div>
         <div class="d-flex gap-2 flex-wrap">
             <form id="clearLogsForm" action="log_action.php" method="POST" class="m-0" onsubmit="return confirm(this.dataset.confirmMessage || 'Clear audit entries matching the current filters? This cannot be undone.');">
@@ -195,28 +194,24 @@ $exportQuery = http_build_query([
             <div class="dashboard-card metric-card">
                 <p class="mb-1 metric-label">Entries in scope</p>
                 <h4 class="fw-bold text-white mb-0"><?= (int) $metrics['total'] ?></h4>
-                <small class="text-white-50">Actor filter: <?= hq_escape($actor === 'all' ? 'Admin & Moderator' : ucfirst($actor)) ?></small>
             </div>
         </div>
         <div class="col-12 col-sm-6 col-md-3">
             <div class="dashboard-card metric-card">
                 <p class="mb-1 metric-label">Security</p>
                 <h4 class="fw-bold text-white mb-0"><?= (int) ($metrics['security'] ?? 0) ?></h4>
-                <small class="text-white-50">Auth / account actions in result set</small>
             </div>
         </div>
         <div class="col-12 col-sm-6 col-md-3">
             <div class="dashboard-card metric-card">
                 <p class="mb-1 metric-label">Warn / Error</p>
                 <h4 class="fw-bold text-white mb-0"><?= (int) (($metrics['warn'] ?? 0) + ($metrics['error'] ?? 0)) ?></h4>
-                <small class="text-white-50">In current result window</small>
             </div>
         </div>
         <div class="col-12 col-sm-6 col-md-3">
             <div class="dashboard-card metric-card">
                 <p class="mb-1 metric-label">Last event</p>
                 <h4 class="fw-bold text-white mb-0" style="font-size:1.05rem;"><?= hq_escape($metrics['last'] ? admin_date((string) $metrics['last']) : 'No entries') ?></h4>
-                <small class="text-white-50">Latest timestamp in scope</small>
             </div>
         </div>
     </div>
