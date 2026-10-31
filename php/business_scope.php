@@ -174,7 +174,7 @@ if (!function_exists('map_pump_station_inventory_schema_ready')) {
 }
 
 if (!function_exists('map_pump_latest_station_inventory_sql')) {
-    function map_pump_latest_station_inventory_sql(PDO $pdo = null): string
+    function map_pump_latest_station_inventory_sql(?PDO $pdo = null): string
     {
         $db = $pdo;
         if (!$db && isset($GLOBALS['pdo'])) {

@@ -91,10 +91,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if ($action === 'update_price') {
         $stationId = filter_input(INPUT_POST, 'station_id', FILTER_VALIDATE_INT);
-        $fuelCode = trim((string) ($_POST['fuel_code'] ?? ''));
+        $fuelTypeId = filter_var($_POST['fuel_type_id'] ?? null, FILTER_VALIDATE_INT);
         $newPrice = trim($_POST['fuel_price'] ?? '');
 
-        if (!$stationId || $fuelCode === '' || $newPrice === '') {
+        if (!$stationId || !$fuelTypeId || $newPrice === '') {
             $errorMessage = 'Please select a station, fuel grade, and enter a price.';
         } elseif (!is_numeric($newPrice) || (int) $newPrice < 0) {
             $errorMessage = 'Please enter a valid non-negative price.';
@@ -106,10 +106,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $pdo->beginTransaction();
                 $tankStmt = $pdo->prepare(
                     'SELECT tank_id FROM tanks
-                     WHERE branch_id = ? AND fuel_code = ?
+                     WHERE branch_id = ? AND oil_type_id = ?
                      LIMIT 1 FOR UPDATE'
                 );
-                $tankStmt->execute([(int) $stationId, $fuelCode]);
+                $tankStmt->execute([(int) $stationId, $fuelTypeId]);
                 $tankId = $tankStmt->fetchColumn();
                 if ($tankId === false) {
                     throw new RuntimeException('This fuel grade is not configured for the selected station.');
@@ -134,11 +134,12 @@ $stations = [];
 $priceRows = [];
 try {
     $gradeStmt = $pdo->prepare(
-        "SELECT DISTINCT t.fuel_code, t.fuel_name
+        "SELECT DISTINCT t.oil_type_id, ot.oil_name AS fuel_name
          FROM tanks t
          INNER JOIN station_business_scope sbs ON sbs.station_id = t.branch_id
+         INNER JOIN oil_types ot ON ot.oil_type_id = t.oil_type_id
          WHERE sbs.headquarter_id = ?
-         ORDER BY FIELD(t.fuel_code, 'p92', 'p95', 'dsl', 'pdsl'), t.fuel_name"
+         ORDER BY FIELD(LOWER(ot.oil_name), 'octane 92', 'octane 95', 'diesel', 'premium diesel'), ot.oil_name"
     );
     $gradeStmt->execute([$hqId]);
     $grades = $gradeStmt->fetchAll(PDO::FETCH_ASSOC);
@@ -156,14 +157,19 @@ try {
 
     $priceStmt = $pdo->prepare(
         "SELECT s.branch_id AS station_id, s.branch_name AS station_name,
-                t.fuel_code, t.fuel_name AS oil_name, NULLIF(t.fuel_price, '') AS price_per_liter,
+                t.oil_type_id,
+                COALESCE(ot.oil_name, 'Fuel type not assigned') AS oil_name,
+                NULLIF(t.fuel_price, '') AS price_per_liter,
                 COALESCE(t.is_enabled, 1) AS is_active, t.updated_at
          FROM branches s
          INNER JOIN station_business_scope sbs ON sbs.station_id = s.branch_id
          INNER JOIN tanks t ON t.branch_id = s.branch_id
+         LEFT JOIN oil_types ot ON ot.oil_type_id = t.oil_type_id
          WHERE sbs.headquarter_id = ?
            AND COALESCE(s.status, 'Active') <> 'Decommissioned'
-         ORDER BY s.branch_name, FIELD(t.fuel_code, 'p92', 'p95', 'dsl', 'pdsl'), t.fuel_name"
+         ORDER BY s.branch_name,
+                  FIELD(LOWER(ot.oil_name), 'octane 92', 'octane 95', 'diesel', 'premium diesel'),
+                  ot.oil_name, t.tank_id"
     );
     $priceStmt->execute([$hqId]);
     $priceRows = $priceStmt->fetchAll(PDO::FETCH_ASSOC);
@@ -550,13 +556,13 @@ endforeach; ?>
 
                     <div class="pricing-form-field">
                         <label class="form-label">Select Product Grade</label>
-                        <select name="fuel_code" class="form-select" required>
+                        <select name="fuel_type_id" class="form-select" required>
                             <option value="">Select grade</option>
                             <?php
 foreach ($grades as $grade): ?>
                                 <option value="<?php
-echo htmlspecialchars($grade['fuel_code'], ENT_QUOTES); ?>"><?php
-echo htmlspecialchars(pricing_fuel_label((string) $grade['fuel_code'], (string) $grade['fuel_name'])); ?></option>
+echo (int) $grade['oil_type_id']; ?>"><?php
+echo htmlspecialchars(pricing_fuel_label((string) $grade['oil_type_id'], (string) $grade['fuel_name'])); ?></option>
                             <?php
 endforeach; ?>
                         </select>
@@ -603,7 +609,7 @@ endforeach; ?>
 if (count($priceRows) > 0): ?>
                             <?php
 foreach ($priceRows as $grade): ?>
-                                <?php $gradeLabel = pricing_fuel_label((string) $grade['fuel_code'], (string) $grade['oil_name']); ?>
+                                <?php $gradeLabel = pricing_fuel_label((string) $grade['oil_type_id'], (string) $grade['oil_name']); ?>
                                 <tr data-search="<?= htmlspecialchars(strtolower(trim(
                                     ($grade['station_name'] ?? '') . ' ' .
                                     $gradeLabel . ' ' .

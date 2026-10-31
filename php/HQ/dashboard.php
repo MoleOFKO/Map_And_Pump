@@ -7,11 +7,11 @@ $hqId = map_pump_current_hq_id($pdo);
 $hqBillingReady = loyalty_countermeasures_schema_ready($pdo);
 $hqBillingMonth = loyalty_current_year_month();
 $hqPointBalance = company_loyalty_get_balance($pdo, $hqId);
-// Fetch station fuel-tank levels using the schema defined in db.sql.
+// Fetch station fuel-tank levels using the linked fuel type.
 $stationTanks = [];
 $tankStmt = $pdo->prepare(
   "SELECT s.branch_id AS station_id, s.branch_name AS station_name,
-          t.fuel_code, COALESCE(ot.oil_name, t.fuel_name) AS fuel_name,
+          COALESCE(ot.oil_name, 'Unknown fuel') AS fuel_name,
           t.fuel_price
     FROM branches s
     INNER JOIN station_business_scope sbs ON sbs.station_id = s.branch_id
@@ -20,7 +20,7 @@ $tankStmt = $pdo->prepare(
     WHERE sbs.headquarter_id = ?
       AND LOWER(COALESCE(s.status, 'active')) <> 'closed'
       AND COALESCE(t.is_enabled, 1) = 1
-    ORDER BY s.branch_name, t.fuel_code
+    ORDER BY s.branch_name, ot.oil_name
      LIMIT 8"
 );
 $tankStmt->execute([$hqId]);
