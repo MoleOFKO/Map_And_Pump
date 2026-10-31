@@ -982,14 +982,38 @@ function loyalty_apply_on_fill(
             throw new RuntimeException('Customer points changed during redemption; retry the fill.');
         }
 
-        $accountCredit = $pdo->prepare(
-            'UPDATE loyalty_discount_account
-             SET balance_mmk = balance_mmk + ?
-             WHERE account_id = 1'
-        );
-        $accountCredit->execute([$discountMmk]);
-        if ($accountCredit->rowCount() !== 1) {
-            throw new RuntimeException('Could not credit the Total Discounted Amount balance.');
+        $headquarterId = null;
+        if ($stationId !== null && $stationId > 0) {
+            $headquarterStmt = $pdo->prepare(
+                'SELECT headquarter_id
+                 FROM station_business_scope
+                 WHERE station_id = ?
+                 LIMIT 1'
+            );
+            $headquarterStmt->execute([$stationId]);
+            $mappedHeadquarterId = $headquarterStmt->fetchColumn();
+            if ($mappedHeadquarterId !== false) {
+                $headquarterId = (int) $mappedHeadquarterId;
+            }
+        }
+
+        if ($headquarterId !== null && $headquarterId > 0) {
+            $accountCredit = $pdo->prepare(
+                'INSERT INTO loyalty_company_discount_accounts (headquarter_id, balance_mmk)
+                 VALUES (?, ?)
+                 ON DUPLICATE KEY UPDATE balance_mmk = balance_mmk + VALUES(balance_mmk)'
+            );
+            $accountCredit->execute([$headquarterId, $discountMmk]);
+        } else {
+            $accountCredit = $pdo->prepare(
+                'UPDATE loyalty_discount_account
+                 SET balance_mmk = balance_mmk + ?
+                 WHERE account_id = 1'
+            );
+            $accountCredit->execute([$discountMmk]);
+            if ($accountCredit->rowCount() !== 1) {
+                throw new RuntimeException('Could not credit the unallocated Total Discounted Amount balance.');
+            }
         }
 
         $result['points_redeemed'] = $pointsToRedeem;
@@ -1006,7 +1030,11 @@ function loyalty_apply_on_fill(
             'station_id' => $stationId,
             'staff_user_id' => $staffUserId,
             'is_internal' => 0,
-            'meta' => ['total_discounted_amount_credited' => true],
+            'meta' => [
+                'total_discounted_amount_credited' => true,
+                'headquarter_id' => $headquarterId,
+                'unallocated' => $headquarterId === null || $headquarterId <= 0,
+            ],
         ]);
     }
 

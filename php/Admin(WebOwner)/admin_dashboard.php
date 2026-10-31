@@ -95,7 +95,13 @@ if ($dbOnline) {
     if ($pdo instanceof PDO) {
         try {
             $discountedBalance = (float) $pdo->query(
-                'SELECT balance_mmk FROM loyalty_discount_account WHERE account_id = 1'
+                'SELECT
+                    COALESCE((SELECT SUM(balance_mmk) FROM loyalty_company_discount_accounts), 0)
+                    + COALESCE((
+                        SELECT balance_mmk
+                        FROM loyalty_discount_account
+                        WHERE account_id = 1
+                    ), 0)'
             )->fetchColumn();
         } catch (Throwable $e) {
             error_log('admin_dashboard loyalty balance: ' . $e->getMessage());
@@ -271,7 +277,7 @@ if ($reportTotal > 0) {
                         </div>
                         <span class="txt-neon-cyan fs-2"><i class="bi bi-wallet2"></i></span>
                     </div>
-                    <p class="text-white-50 small mb-0 mt-2">Review tier pools, reward rules, and monthly payouts</p>
+                    <p class="text-white-50 small mb-0 mt-2">Company balances, tier pools, reward rules, and monthly payouts</p>
                 </div>
             </a>
         </div>
