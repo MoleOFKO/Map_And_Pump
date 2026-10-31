@@ -7,17 +7,56 @@
 
 require_once __DIR__ . '/data/fuel_prices.php';
 require_once __DIR__ . '/billing_config.php';
+require_once __DIR__ . '/loyalty_points.php';
 
 $homepageRegistrationFee = BILLING_HQ_REGISTRATION_FEE_MMK;
 $homepagePackageRate = BILLING_HQ_PACKAGE_MMK_PER_STATION_MONTHLY;
+$homepageTierRules = [];
+$homepageTierPoolBalances = [];
+$homepageTierPoolsAvailable = false;
+$homepagePointsPerLiter = LOYALTY_POINTS_PER_FILL;
+$homepageMonth = (new DateTimeImmutable('now', new DateTimeZone('Asia/Yangon')))->format('Y-m');
+foreach (loyalty_tier_labels() as $tierCode => $tierLabel) {
+    $homepageTierRules[$tierCode] = [
+        'points_threshold' => loyalty_tier_thresholds()[$tierCode],
+        'exp_threshold' => loyalty_tier_exp_thresholds()[$tierCode],
+        'monthly_budget_mmk' => loyalty_tier_pool_budgets()[$tierCode],
+    ];
+}
 try {
     $billingPdo = function_exists('map_pump_public_pdo') ? map_pump_public_pdo() : null;
     if ($billingPdo instanceof PDO) {
         $homepageRegistrationFee = billing_admin_setting($billingPdo, 'hq_registration_fee_mmk', BILLING_HQ_REGISTRATION_FEE_MMK);
         $homepagePackageRate = billing_admin_setting($billingPdo, 'hq_package_mmk_per_station_month', BILLING_HQ_PACKAGE_MMK_PER_STATION_MONTHLY);
+        $homepageTierRules = loyalty_get_tier_rules($billingPdo);
+        $pointsRateStmt = $billingPdo->prepare(
+            'SELECT setting_value FROM platform_settings WHERE setting_key = ? LIMIT 1'
+        );
+        $pointsRateStmt->execute(['loyalty_points_per_liter']);
+        $pointsRate = $pointsRateStmt->fetchColumn();
+        if ($pointsRate !== false && is_numeric($pointsRate) && (float) $pointsRate >= 0) {
+            $homepagePointsPerLiter = (float) $pointsRate;
+        }
+
+        $poolStmt = $billingPdo->prepare(
+            'SELECT tier_code, spent_mmk
+             FROM loyalty_tier_pool
+             WHERE `year_month` = ?'
+        );
+        $poolStmt->execute([$homepageMonth]);
+        foreach ($poolStmt->fetchAll(PDO::FETCH_ASSOC) as $pool) {
+            $tierCode = strtolower((string) $pool['tier_code']);
+            if (isset($homepageTierRules[$tierCode])) {
+                $homepageTierPoolBalances[$tierCode] = max(
+                    0.0,
+                    $homepageTierRules[$tierCode]['monthly_budget_mmk'] - (float) $pool['spent_mmk']
+                );
+            }
+        }
+        $homepageTierPoolsAvailable = true;
     }
 } catch (Throwable $e) {
-    error_log('Homepage billing settings could not be loaded: ' . $e->getMessage());
+    error_log('Homepage billing and loyalty settings could not be loaded: ' . $e->getMessage());
 }
 
 $page_title       = 'MAP & PUMP | Put Your Stations on the Map Drivers Actually Check';
@@ -528,6 +567,71 @@ require __DIR__ . '/partials/nav.php';
                 </div>
             </div>
         </div>
+    </div>
+</section>
+
+<!-- ==========================================================================
+     CUSTOMER LOYALTY TIERS
+     ========================================================================== -->
+<section id="loyalty" class="section-pad pt-0">
+    <div class="container">
+        <div class="text-center mb-4" data-reveal>
+            <span class="eyebrow">Driver rewards</span>
+            <h2 class="section-title">Earn points. Build your tier.</h2>
+            <p class="section-lead mx-auto">
+                Earn floor(litres filled × <?= rtrim(rtrim(number_format($homepagePointsPerLiter, 2, '.', ''), '0'), '.') ?>) points on eligible external fills.
+                Rank up by completing at least <?= number_format(MAP_PUMP_FUEL_QUOTA_LITERS, 1) ?> L in successful external fills each week.
+                Each qualifying week earns 1 EXP; a missed week removes 1 EXP.
+            </p>
+        </div>
+
+        <div class="row g-3">
+            <?php foreach (loyalty_tier_labels() as $tierCode => $tierLabel):
+                $tier = $homepageTierRules[$tierCode];
+                $poolRemaining = $homepageTierPoolBalances[$tierCode] ?? $tier['monthly_budget_mmk'];
+            ?>
+                <div class="col-md-6 col-xl-4" data-reveal>
+                    <article class="plan-card h-100">
+                        <div class="plan-tag"><?= htmlspecialchars($tierLabel, ENT_QUOTES, 'UTF-8') ?> tier</div>
+                        <h3 class="plan-name"><?= htmlspecialchars($tierLabel, ENT_QUOTES, 'UTF-8') ?></h3>
+                        <?php if ($tierCode === 'bronze'): ?>
+                            <p class="plan-note">Starting tier: <?= number_format($tier['points_threshold']) ?> points and <?= (int) $tier['exp_threshold'] ?> EXP.</p>
+                        <?php else: ?>
+                            <p class="plan-note">
+                                Qualify with <?= number_format($tier['points_threshold']) ?> points and <?= (int) $tier['exp_threshold'] ?> EXP.
+                            </p>
+                        <?php endif; ?>
+                        <div class="discount-grid">
+                            <div class="discount-cell">
+                                <div class="discount-head"><?= $homepageTierPoolsAvailable ? 'Shared pool remaining' : 'Configured monthly pool budget' ?></div>
+                                <div class="discount-row">
+                                    <span>This month</span>
+                                    <strong><?= number_format($poolRemaining, 2) ?> MMK</strong>
+                                </div>
+                                <?php if (!$homepageTierPoolsAvailable): ?>
+                                    <p class="small text-dim mb-0 mt-2">Live remaining balance unavailable</p>
+                                <?php endif; ?>
+                            </div>
+                        </div>
+                        <p class="small text-dim mt-3 mb-0">
+                            <?php if ($tierCode === 'bronze'): ?>
+                                Maintain the weekly fill quota to build EXP and advance.
+                            <?php else: ?>
+                                Keep the required points and build <?= (int) $tier['exp_threshold'] ?> EXP through qualifying weeks.
+                            <?php endif; ?>
+                        </p>
+                    </article>
+                </div>
+            <?php endforeach; ?>
+        </div>
+        <?php if (!$homepageTierPoolsAvailable): ?>
+            <p class="small text-dim mt-3 mb-0 text-center" role="status">
+                Configured monthly pool budgets are shown; live remaining balances are unavailable until the loyalty database migration is applied and connected.
+            </p>
+        <?php endif; ?>
+        <p class="small text-dim mt-3 mb-0 text-center">
+            Sign in to your driver dashboard to see the points still needed for your next tier.
+        </p>
     </div>
 </section>
 
