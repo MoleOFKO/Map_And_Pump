@@ -6,8 +6,17 @@ $page_title = 'Register your company | MAP & PUMP';
 $page_description = 'Submit your company details to join MAP & PUMP.';
 $page_styles = ['/css/CompanyRegistration.css'];
 require_once __DIR__ . '/../billing_config.php';
+require_once __DIR__ . '/../conn.php';
 require_once __DIR__ . '/../payment_transfers.php';
 require_once __DIR__ . '/../imgbb_image_host.php';
+try {
+    $registrationFee = billing_admin_setting($pdo, 'hq_registration_fee_mmk', BILLING_HQ_REGISTRATION_FEE_MMK);
+    $packageRate = billing_admin_setting($pdo, 'hq_package_mmk_per_station_month', BILLING_HQ_PACKAGE_MMK_PER_STATION_MONTHLY);
+} catch (Throwable $e) {
+    error_log('Company registration billing settings are unavailable: ' . $e->getMessage());
+    http_response_code(503);
+    exit('Registration pricing is temporarily unavailable. Please try again later.');
+}
 
 if (empty($_SESSION['company_registration_csrf'])) {
     $_SESSION['company_registration_csrf'] = bin2hex(random_bytes(32));
@@ -62,7 +71,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $bankName = trim((string) ($_POST['bank_name'] ?? ''));
     $requestedStations = filter_var($_POST['station_count'] ?? null, FILTER_VALIDATE_INT);
     $serviceMonths = filter_var($_POST['service_months'] ?? 1, FILTER_VALIDATE_INT);
-    $noPaymentRequired = $requestedStations === BILLING_HQ_INCLUDED_STATION_SLOTS;
+    $noPaymentRequired = false;
     $csrfToken = (string) ($_POST['csrf_token'] ?? '');
 
     if (!hash_equals((string) $_SESSION['company_registration_csrf'], $csrfToken)) {
@@ -124,14 +133,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($ownerEmail !== '' && $ownerEmail === $companyEmail) $validationErrors[] = 'different owner and company emails';
     if ($ownerPhone === '') $validationErrors[] = 'owner phone';
     if ($companyPhone === '') $validationErrors[] = 'company phone';
-    if (!$noPaymentRequired && !in_array($paymentMethod, $allowedMethods, true)) $validationErrors[] = 'payment method';
-    if ($paymentMethod === 'Bank transfer' && !in_array($bankName, $allowedBanks, true)) $validationErrors[] = 'bank';
     if ($requestedStations === false || $requestedStations < BILLING_HQ_INCLUDED_STATION_SLOTS || $requestedStations > 60) $validationErrors[] = 'station count (3 to 60)';
     if ($serviceMonths === false || $serviceMonths < 1 || $serviceMonths > 24) $validationErrors[] = 'service period (1 to 24 months)';
     if ($validationErrors) {
         $respond(false, 'Please check: ' . implode(', ', $validationErrors) . '.', 422);
     }
-    $noPaymentRequired = $requestedStations === BILLING_HQ_INCLUDED_STATION_SLOTS;
+
+    $volumeDiscount = 0;
+    foreach (BILLING_HQ_VOLUME_DISCOUNTS as $tier) {
+        if ($requestedStations >= (int) $tier['min']) {
+            $volumeDiscount = (int) $tier['percent'];
+        }
+    }
+    $termDiscount = 0;
+    foreach (BILLING_HQ_TERM_DISCOUNTS as $term) {
+        if ((int) $term['months'] === $serviceMonths) {
+            $termDiscount = (int) $term['percent'];
+            break;
+        }
+    }
+    $packageAmount = round(
+        $packageRate * $requestedStations * $serviceMonths
+        * (1 - $volumeDiscount / 100) * (1 - $termDiscount / 100),
+        2
+    );
+    $registrationAmount = round($registrationFee + $packageAmount, 2);
+    $noPaymentRequired = $registrationAmount <= 0;
+    if (!$noPaymentRequired && !in_array($paymentMethod, $allowedMethods, true)) $validationErrors[] = 'payment method';
+    if ($paymentMethod === 'Bank transfer' && !in_array($bankName, $allowedBanks, true)) $validationErrors[] = 'bank';
+    if ($validationErrors) {
+        $respond(false, 'Please check: ' . implode(', ', $validationErrors) . '.', 422);
+    }
 
     if (strlen($companyName) > 255 || strlen($companyAddress) > 255 || strlen($licenseId) > 255
         || strlen($ownerEmail) > 255 || strlen($companyEmail) > 255 || strlen($ownerPhone) > 50 || strlen($companyPhone) > 50) {
@@ -286,6 +318,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'bank_name' => $bankName,
             'requested_station_count' => $requestedStations,
             'requested_service_months' => $serviceMonths,
+            'registration_amount_mmk' => $registrationAmount,
+            'registration_fee_mmk' => $registrationFee,
+            'package_amount_mmk' => $packageAmount,
         ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
         $reference = 'HQ-REG-' . date('YmdHis') . '-' . strtoupper(bin2hex(random_bytes(3)));
         $pdo->beginTransaction();
@@ -306,32 +341,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (!$noPaymentRequired) {
             $accessToken = rtrim(strtr(base64_encode(random_bytes(32)), '+/', '-_'), '=');
             $payerUserId = $ownerUserId;
-            $extraStationCount = max(0, (int) $requestedStations - BILLING_HQ_INCLUDED_STATION_SLOTS);
-            $volumeDiscount = 0;
-            foreach (BILLING_HQ_VOLUME_DISCOUNTS as $tier) {
-                if ($extraStationCount >= (int) $tier['min']) {
-                    $volumeDiscount = (int) $tier['percent'];
-                }
-            }
-            $termDiscount = 0;
-            foreach (BILLING_HQ_TERM_DISCOUNTS as $term) {
-                if ((int) $term['months'] === $serviceMonths) {
-                    $termDiscount = (int) $term['percent'];
-                    break;
-                }
-            }
-            $extraStationAmount = round(
-                BILLING_HQ_EXTRA_STATION_MMK_MONTHLY * $extraStationCount * $serviceMonths
-                * (1 - $volumeDiscount / 100) * (1 - $termDiscount / 100),
-                2
-            );
-            $registrationAmount = $extraStationAmount;
             $transferId = payment_transfer_create($pdo, [
                 'payment_type' => 'hq_registration',
                 'amount_mmk' => $registrationAmount,
-                'description' => sprintf('HQ registration; first %d stations included for life; %d additional station(s) for %d month(s)', BILLING_HQ_INCLUDED_STATION_SLOTS, $extraStationCount, $serviceMonths),
-                'quantity' => $extraStationCount,
+                'description' => sprintf('HQ registration fee and all-in-one package for %d station(s) for %d month(s)', $requestedStations, $serviceMonths),
+                'quantity' => $requestedStations,
                 'term_months' => $serviceMonths,
+                'service_start_month' => date('Y-m'),
                 'payer_user_id' => $payerUserId,
                 'payer_email' => $ownerEmail,
                 'recipient_role' => BILLING_PLATFORM_RECEIVER_ROLE,
@@ -362,7 +378,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         $pdo->commit();
         if ($noPaymentRequired) {
-            $respond(true, 'Registration application submitted. The first three stations are included for life; operation fees are billed separately in HQ points.', 201, ['reference' => $reference]);
+            $respond(true, 'Registration application submitted. The registration fee and service package are currently set to zero.', 201, ['reference' => $reference]);
         }
         payment_transfer_send_notices($pdo, $transferId, 'recipient', 'payer_reported_paid');
         $paymentUrl = payment_transfer_absolute_url('/php/payment_center.php?access=' . rawurlencode($accessToken));
@@ -477,7 +493,7 @@ require __DIR__ . '/../partials/nav.php';
         <!-- ============================ STEP 1 ============================ -->
         <div class="payment-step is-active" data-step="method">
             <h2 id="payment-modal-title">Complete your registration</h2>
-            <p class="payment-description">Your first <?= (int) BILLING_HQ_INCLUDED_STATION_SLOTS ?> stations are included for life. Additional stations are billed monthly; station operation fees are separate.</p>
+            <p class="payment-description">The one-time registration fee and MMK service package cover the requested stations, monthly operation, capacity, and service period.</p>
 
             <div class="payment-field">
                 <label class="payment-field-label" for="station-count">Stations requested</label>
@@ -489,7 +505,7 @@ require __DIR__ . '/../partials/nav.php';
             </div>
 
             <div class="payment-field" id="registration-term-field" hidden>
-                <label class="payment-field-label" for="registration-term-months">Additional station service period</label>
+                <label class="payment-field-label" for="registration-term-months">Service-package period</label>
                 <select class="form-select" id="registration-term-months" name="service_months" form="company-registration-form" required>
                     <?php for ($serviceMonthOption = 1; $serviceMonthOption <= 24; $serviceMonthOption++): ?>
                         <option value="<?= $serviceMonthOption ?>"><?= $serviceMonthOption ?> month<?= $serviceMonthOption === 1 ? '' : 's' ?></option>
@@ -498,8 +514,8 @@ require __DIR__ . '/../partials/nav.php';
             </div>
 
             <div class="payment-total">
-                <span>Additional stations, selected term</span>
-                <strong id="registration-total" data-base="0" data-monthly="<?= (int) BILLING_HQ_EXTRA_STATION_MMK_MONTHLY ?>" data-included="<?= (int) BILLING_HQ_INCLUDED_STATION_SLOTS ?>" data-discounts="<?= htmlspecialchars(json_encode(BILLING_HQ_VOLUME_DISCOUNTS), ENT_QUOTES, 'UTF-8') ?>" data-term-discounts="<?= htmlspecialchars(json_encode(BILLING_HQ_TERM_DISCOUNTS), ENT_QUOTES, 'UTF-8') ?>">0 <small>MMK</small></strong>
+                <span>Registration + all-in-one service package</span>
+                <strong id="registration-total" data-base="<?= (int) $registrationFee ?>" data-monthly="<?= (int) $packageRate ?>" data-included="<?= (int) BILLING_HQ_INCLUDED_STATION_SLOTS ?>" data-discounts="<?= htmlspecialchars(json_encode(BILLING_HQ_VOLUME_DISCOUNTS), ENT_QUOTES, 'UTF-8') ?>" data-term-discounts="<?= htmlspecialchars(json_encode(BILLING_HQ_TERM_DISCOUNTS), ENT_QUOTES, 'UTF-8') ?>">0 <small>MMK</small></strong>
             </div>
 
             <div class="payment-field" id="payment-method-field">
@@ -593,7 +609,7 @@ require __DIR__ . '/../partials/nav.php';
             <p class="payment-error" id="payment-error" aria-live="polite" hidden></p>
 
             <button type="button" class="btn btn-primary payment-confirm" id="payment-confirm">Continue to payment <i class="fa-solid fa-arrow-right ms-2"></i></button>
-            <p class="payment-note" id="payment-note">The first three stations are included for life. Active station operation fees are billed separately in HQ points.</p>
+            <p class="payment-note" id="payment-note">The package price includes station capacity, operation, and service extension. Driver loyalty points are not used for HQ billing.</p>
         </div>
 
         <!-- ============================ STEP 2 ============================ -->

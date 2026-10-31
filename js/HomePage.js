@@ -183,12 +183,12 @@
 
     /* ======================================================================
        PRICING CALCULATOR
-       Included registration slots, the extra-station MMK rate, and discounts
-       are supplied by billing_config.php through #calc data attributes.
+       Registration fee, per-station package rate, and discounts
+       are supplied by billing settings through #calc data attributes.
        ====================================================================== */
     var calc = document.getElementById('calc');
     if (calc) {
-        var INCLUDED_SLOTS = parseInt(calc.dataset.free, 10);
+        var REGISTRATION_FEE = parseInt(calc.dataset.registrationFee, 10);
         var RATE      = parseInt(calc.dataset.rate, 10);
 
         var rangeEl   = document.getElementById('calc-range');
@@ -196,6 +196,7 @@
         var paidEl    = document.getElementById('calc-paid');
         var monthsWrap= document.getElementById('calc-months');
         var baseEl    = document.getElementById('calc-base');
+        var registrationEl = document.getElementById('calc-registration');
         var volEl     = document.getElementById('calc-vol');
         var durEl     = document.getElementById('calc-dur');
         var totalEl   = document.getElementById('calc-total');
@@ -222,31 +223,31 @@
 
         function update() {
             var stations = parseInt(rangeEl.value, 10);
-            var paid     = Math.max(0, stations - INCLUDED_SLOTS);
+            var paid     = stations;
 
             var vOff = volumeOff(paid);
             var dOff = DURATION[months] || 0;
 
             var base  = paid * RATE * months;
             var afterV = base * (1 - vOff);
-            var total  = afterV * (1 - dOff);
+            var packageTotal = afterV * (1 - dOff);
+            var total = REGISTRATION_FEE + packageTotal;
 
             countEl.textContent = stations;
             paidEl.textContent  = paid;
             baseEl.textContent  = fmt(base) + ' MMK';
+            registrationEl.textContent = fmt(REGISTRATION_FEE) + ' MMK';
             volEl.textContent   = vOff ? '−' + fmt(base - afterV) + ' MMK (' + Math.round(vOff * 100) + '%)' : '—';
-            durEl.textContent   = dOff ? '−' + fmt(afterV - total) + ' MMK (' + Math.round(dOff * 100) + '%)' : '—';
+            durEl.textContent   = dOff ? '−' + fmt(afterV - packageTotal) + ' MMK (' + Math.round(dOff * 100) + '%)' : '—';
             totalEl.textContent = fmt(total) + ' MMK';
 
             perEl.textContent = paid > 0
-                ? fmt(total / paid / months) + ' MMK / extra station / month'
-                : 'No extra-station MMK fee';
+                ? fmt(packageTotal / paid / months) + ' MMK / station / month'
+                : 'No station package charge';
 
-            noteEl.textContent = paid === 0
-                ? 'Within your ' + INCLUDED_SLOTS + ' included capacity slots — monthly station operating fees may still apply.'
-                : months > 1
-                    ? 'Total for ' + months + ' months, billed upfront.'
-                    : 'Billed monthly.';
+            noteEl.textContent = months > 1
+                ? 'Includes registration and the all-in-one package for ' + months + ' months, billed upfront.'
+                : 'Includes registration and one month of all-in-one station service.';
 
             // fill the slider track up to the thumb
             var pct = ((stations - rangeEl.min) / (rangeEl.max - rangeEl.min)) * 100;

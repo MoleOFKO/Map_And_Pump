@@ -5,10 +5,10 @@
  * - Customer balance: users.had_point
  * - Internal fills: no customer earn/redeem, no company earn
  * - Fixed-value customer redemption
- * - HQ points funded by customer redemptions
+ * - Shared monthly tier pools
+ * - Admin-controlled MMK discount balance and payout history
  * - Monthly HQ station capacity and operating fees
- * - Append-only ledger (optional via flag)
- * - Soft-fail: never throw to break fill transaction
+ * - Atomic point and discount-ledger updates inside the fill transaction
  *
  * See: POINTS_COUNTERMEASURES_IMPLEMENTATION_PLAN.md
  * Safety: POINTS_COUNTERMEASURES_SIMULATION_AND_RISKS.md
@@ -16,6 +16,7 @@
 
 require_once __DIR__ . '/loyalty_config.php';
 require_once __DIR__ . '/billing_config.php';
+require_once __DIR__ . '/booking_rules.php';
 
 /** A failed redemption transfer must roll back the enclosing fuel fill. */
 class LoyaltyTransferException extends RuntimeException
@@ -42,6 +43,17 @@ function loyalty_get_balance(PDO $pdo, int $userId): int
         error_log('loyalty_get_balance: ' . $e->getMessage());
         return 0;
     }
+}
+
+function loyalty_points_per_liter(PDO $pdo): float
+{
+    $stmt = $pdo->prepare('SELECT setting_value FROM platform_settings WHERE setting_key = ? LIMIT 1');
+    $stmt->execute(['loyalty_points_per_liter']);
+    $value = $stmt->fetchColumn();
+    if ($value === false || !is_numeric($value) || (float) $value < 0) {
+        throw new RuntimeException('The customer earning rate is unavailable or invalid.');
+    }
+    return (float) $value;
 }
 
 /** Balance after subtracting points held by active, unexpired bookings. */
@@ -80,13 +92,31 @@ function loyalty_normalize_points_intent(int $points): int
     return array_key_exists($points, LOYALTY_REDEMPTION_OPTIONS) ? $points : 0;
 }
 
+/** @return array<int, float> points required => MMK discount */
+function loyalty_redemption_options(PDO $pdo): array
+{
+    $stmt = $pdo->query(
+        'SELECT points_required, discount_mmk
+         FROM loyalty_redemption_rules
+         ORDER BY points_required ASC'
+    );
+    $options = [];
+    foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+        $options[(int) $row['points_required']] = (float) $row['discount_mmk'];
+    }
+    if ($options === []) {
+        throw new RuntimeException('Loyalty redemption rules are unavailable. Apply the loyalty redesign migration.');
+    }
+    return $options;
+}
+
 /**
  * Compute a fixed-value discount. The bill total caps the discount so the
  * amount due cannot become negative.
  *
  * @return array{points:int, units:int, discount_pct:float, discount_mmk:float}
  */
-function loyalty_compute_discount(float $filledLiters, ?float $totalCost, int $pointsToUse): array
+function loyalty_compute_discount(float $filledLiters, ?float $totalCost, int $pointsToUse, array $options = LOYALTY_REDEMPTION_OPTIONS): array
 {
     if ($pointsToUse <= 0 || $filledLiters <= 0 || $totalCost === null || $totalCost <= 0) {
         return [
@@ -99,7 +129,6 @@ function loyalty_compute_discount(float $filledLiters, ?float $totalCost, int $p
 
     $points = 0;
     $discountMmk = 0.0;
-    $options = LOYALTY_REDEMPTION_OPTIONS;
     krsort($options, SORT_NUMERIC);
     foreach ($options as $optionPoints => $optionDiscount) {
         if ((int) $optionPoints <= $pointsToUse && (float) $optionDiscount <= round($totalCost, 2)) {
@@ -132,17 +161,213 @@ function loyalty_compute_discount(float $filledLiters, ?float $totalCost, int $p
 // ---------------------------------------------------------------------------
 
 /**
- * Resolve tier code from point balance.
+ * Resolve a tier only when both the point and EXP thresholds are met.
  */
-function loyalty_resolve_tier(int $balance): string
+function loyalty_resolve_tier(int $balance, int $exp = 0, ?PDO $pdo = null): string
 {
     $balance = max(0, $balance);
-    foreach (loyalty_tier_thresholds() as $code => $minPts) {
-        if ($balance >= (int) $minPts) {
+    $rules = $pdo ? loyalty_get_tier_rules($pdo) : [];
+    $pointThresholds = loyalty_tier_thresholds();
+    $expThresholds = loyalty_tier_exp_thresholds();
+    foreach (['diamond', 'platinum', 'gold', 'silver', 'bronze'] as $code) {
+        $minPts = (int) ($rules[$code]['points_threshold'] ?? $pointThresholds[$code] ?? 0);
+        $minExp = (int) ($rules[$code]['exp_threshold'] ?? $expThresholds[$code] ?? 0);
+        if ($balance >= $minPts && $exp >= $minExp) {
             return (string) $code;
         }
     }
     return 'bronze';
+}
+
+/** @return array<string, array{points_threshold:int,exp_threshold:int,monthly_budget_mmk:float}> */
+function loyalty_get_tier_rules(PDO $pdo): array
+{
+    $rules = [];
+    $stmt = $pdo->query(
+        'SELECT tier_code, points_threshold, exp_threshold, monthly_budget_mmk
+         FROM loyalty_tier_rules'
+    );
+    foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+        $code = strtolower((string) $row['tier_code']);
+        $rules[$code] = [
+            'points_threshold' => max(0, (int) $row['points_threshold']),
+            'exp_threshold' => max(0, (int) $row['exp_threshold']),
+            'monthly_budget_mmk' => max(0.0, (float) $row['monthly_budget_mmk']),
+        ];
+    }
+
+    foreach (loyalty_tier_labels() as $code => $_label) {
+        if (!isset($rules[$code])) {
+            throw new RuntimeException('Loyalty tier rules are incomplete. Apply the loyalty redesign migration.');
+        }
+    }
+
+    return $rules;
+}
+
+/**
+ * Apply completed Sunday-to-Saturday weeks to the customer's EXP balance.
+ * The caller may include this in a larger transaction.
+ *
+ * @return array{exp:int,tier_code:string,next_tier:?string,next_points:int,next_exp:int,weekly_quota_liters:float}
+ */
+function loyalty_update_tier_progress(PDO $pdo, int $userId, int $pointBalance): array
+{
+    if ($userId <= 0) {
+        throw new InvalidArgumentException('A valid customer is required to evaluate tier progress.');
+    }
+
+    $ownsTransaction = !$pdo->inTransaction();
+    if ($ownsTransaction) {
+        $pdo->beginTransaction();
+    }
+
+    try {
+        $pdo->prepare(
+            "INSERT IGNORE INTO loyalty_user_tier_progress (user_id, exp, tier_code, last_evaluated_week)
+             VALUES (?, 0, 'bronze', NULL)"
+        )->execute([$userId]);
+
+        $progressStmt = $pdo->prepare(
+            'SELECT exp, last_evaluated_week
+             FROM loyalty_user_tier_progress
+             WHERE user_id = ? LIMIT 1 FOR UPDATE'
+        );
+        $progressStmt->execute([$userId]);
+        $progress = $progressStmt->fetch(PDO::FETCH_ASSOC);
+        if (!$progress) {
+            throw new RuntimeException('Could not load customer tier progress.');
+        }
+
+        $zone = new DateTimeZone('Asia/Yangon');
+        $currentWeekStart = (new DateTimeImmutable('now', $zone))
+            ->setTime(0, 0)
+            ->modify('-' . (int) (new DateTimeImmutable('now', $zone))->format('w') . ' days');
+        $lastClosedWeek = $currentWeekStart->modify('-7 days');
+        $lastEvaluated = $progress['last_evaluated_week'] !== null
+            ? new DateTimeImmutable((string) $progress['last_evaluated_week'], $zone)
+            : null;
+
+        if ($lastEvaluated === null) {
+            $firstFillStmt = $pdo->prepare(
+                "SELECT MIN(filled_at)
+                 FROM usage_history
+                 WHERE user_id = ? AND LOWER(status) = 'filled'
+                   AND COALESCE(is_internal, 0) = 0
+                   AND filled_at < ?"
+            );
+            $firstFillStmt->execute([$userId, $currentWeekStart->format('Y-m-d H:i:s')]);
+            $firstFill = $firstFillStmt->fetchColumn();
+            if ($firstFill !== false && $firstFill !== null) {
+                $firstDate = new DateTimeImmutable((string) $firstFill, $zone);
+                $lastEvaluated = $firstDate->setTime(0, 0)->modify('-' . (int) $firstDate->format('w') . ' days')->modify('-7 days');
+            } else {
+                $lastEvaluated = $lastClosedWeek->modify('-7 days');
+            }
+        }
+
+        $rules = loyalty_get_tier_rules($pdo);
+        $maxExp = max(array_column($rules, 'exp_threshold'));
+        $exp = max(0, (int) $progress['exp']);
+        $weekStart = $lastEvaluated->modify('+7 days');
+        if ($weekStart <= $lastClosedWeek) {
+            $weeklyStmt = $pdo->prepare(
+                "SELECT DATE_SUB(DATE(filled_at), INTERVAL WEEKDAY(filled_at) DAY) AS week_start,
+                        COALESCE(SUM(filled_liters), 0) AS liters
+                 FROM usage_history
+                 WHERE user_id = ? AND LOWER(status) = 'filled'
+                   AND COALESCE(is_internal, 0) = 0
+                   AND filled_at >= ? AND filled_at < ?
+                 GROUP BY week_start"
+            );
+            $weeklyStmt->execute([
+                $userId,
+                $weekStart->format('Y-m-d H:i:s'),
+                $currentWeekStart->format('Y-m-d H:i:s'),
+            ]);
+            $weeklyLiters = [];
+            foreach ($weeklyStmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+                $weekDate = new DateTimeImmutable((string) $row['week_start'], $zone);
+                $sundayStart = $weekDate->modify('-' . (int) $weekDate->format('w') . ' days')->format('Y-m-d');
+                $weeklyLiters[$sundayStart] = (float) $row['liters'];
+            }
+
+            while ($weekStart <= $lastClosedWeek) {
+                $weekKey = $weekStart->format('Y-m-d');
+                if (($weeklyLiters[$weekKey] ?? 0.0) >= MAP_PUMP_FUEL_QUOTA_LITERS) {
+                    $exp = min($maxExp, $exp + 1);
+                } else {
+                    $exp = max(0, $exp - 1);
+                }
+                $lastEvaluated = $weekStart;
+                $weekStart = $weekStart->modify('+7 days');
+            }
+        }
+
+        $tierCode = loyalty_resolve_tier($pointBalance, $exp, $pdo);
+        $tierOrder = array_keys(loyalty_tier_labels());
+        $tierIndex = array_search($tierCode, $tierOrder, true);
+        $nextTier = $tierIndex !== false ? ($tierOrder[$tierIndex + 1] ?? null) : null;
+        $result = [
+            'exp' => $exp,
+            'tier_code' => $tierCode,
+            'next_tier' => $nextTier,
+            'next_points' => $nextTier !== null ? $rules[$nextTier]['points_threshold'] : 0,
+            'next_exp' => $nextTier !== null ? $rules[$nextTier]['exp_threshold'] : 0,
+            'weekly_quota_liters' => (float) MAP_PUMP_FUEL_QUOTA_LITERS,
+        ];
+        $save = $pdo->prepare(
+            'UPDATE loyalty_user_tier_progress
+             SET exp = ?, tier_code = ?, last_evaluated_week = ?
+             WHERE user_id = ?'
+        );
+        $save->execute([$exp, $tierCode, $lastEvaluated->format('Y-m-d'), $userId]);
+
+        if ($ownsTransaction) {
+            $pdo->commit();
+        }
+        return $result;
+    } catch (Throwable $e) {
+        if ($ownsTransaction && $pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        throw $e;
+    }
+}
+
+/**
+ * @return array{tier_code:string,exp:int,next_tier:?string,next_points:int,next_exp:int,tiers:array<string,array{label:string,points_threshold:int,points_remaining:int,exp_threshold:int,exp_remaining:int,pool_remaining_mmk:float,monthly_budget_mmk:float}>}
+ */
+function loyalty_customer_tier_status(PDO $pdo, int $userId, int $pointBalance): array
+{
+    $progress = loyalty_update_tier_progress($pdo, $userId, $pointBalance);
+    $rules = loyalty_get_tier_rules($pdo);
+    $tiers = [];
+    foreach (loyalty_tier_labels() as $code => $label) {
+        $poolRemaining = loyalty_ensure_tier_pool($pdo, $code);
+        $tiers[$code] = [
+            'label' => $label,
+            'points_threshold' => $rules[$code]['points_threshold'],
+            'points_remaining' => max(0, $rules[$code]['points_threshold'] - $pointBalance),
+            'exp_threshold' => $rules[$code]['exp_threshold'],
+            'exp_remaining' => max(0, $rules[$code]['exp_threshold'] - $progress['exp']),
+            'pool_remaining_mmk' => $poolRemaining,
+            'monthly_budget_mmk' => $rules[$code]['monthly_budget_mmk'],
+        ];
+    }
+
+    return $progress + ['tiers' => $tiers];
+}
+
+function loyalty_pool_enforcement_enabled(PDO $pdo): bool
+{
+    $stmt = $pdo->prepare('SELECT setting_value FROM platform_settings WHERE setting_key = ? LIMIT 1');
+    $stmt->execute(['loyalty_pool_enforced']);
+    $value = $stmt->fetchColumn();
+    if ($value === false) {
+        throw new RuntimeException('Loyalty pool settings are unavailable. Apply the loyalty redesign migration.');
+    }
+    return (string) $value === '1';
 }
 
 /**
@@ -199,7 +424,6 @@ function loyalty_schema_ready(PDO $pdo): bool
                 'is_internal' => 'TINYINT(1) NOT NULL DEFAULT 0',
                 'admin_share_mmk' => 'DECIMAL(12,2) NULL DEFAULT NULL',
                 'company_share_mmk' => 'DECIMAL(12,2) NULL DEFAULT NULL',
-                'company_points_earned' => 'INT NOT NULL DEFAULT 0',
             ] as $name => $def
         ) {
             $c = $pdo->prepare(
@@ -272,25 +496,6 @@ function loyalty_countermeasures_schema_ready(PDO $pdo): bool
                 spent_mmk DECIMAL(14,2) NOT NULL DEFAULT 0,
                 PRIMARY KEY (pool_id),
                 UNIQUE KEY uq_loyalty_tier_pool (tier_code, `year_month`)
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
-        );
-
-        $pdo->exec(
-            "CREATE TABLE IF NOT EXISTS company_loyalty (
-                headquarter_id INT NOT NULL,
-                balance INT NOT NULL DEFAULT 0,
-                lifetime_earned INT NOT NULL DEFAULT 0,
-                updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-                PRIMARY KEY (headquarter_id)
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
-        );
-
-        $pdo->exec(
-            "CREATE TABLE IF NOT EXISTS company_loyalty_monthly (
-                headquarter_id INT NOT NULL,
-                `year_month` CHAR(7) NOT NULL,
-                earned INT NOT NULL DEFAULT 0,
-                PRIMARY KEY (headquarter_id, `year_month`)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
         );
 
@@ -451,9 +656,7 @@ function loyalty_is_internal_fill(PDO $pdo, int $bookerUserId, int $stationId): 
         $hqCheck->execute([$stationId, $hqId]);
         return (bool) $hqCheck->fetchColumn();
     } catch (Throwable $e) {
-        error_log('loyalty_is_internal_fill: ' . $e->getMessage());
-        // Fail open on detection errors so a DB glitch does not mass-deny points
-        return false;
+        throw new RuntimeException('Could not verify whether this fill is internal.', 0, $e);
     }
 }
 
@@ -496,38 +699,29 @@ function loyalty_ensure_tier_pool(PDO $pdo, string $tierCode, ?string $yearMonth
         $tierCode = 'bronze';
     }
     $ym = $yearMonth ?: loyalty_current_year_month();
-    $budgets = loyalty_tier_pool_budgets();
-    $budget = (float) ($budgets[$tierCode] ?? $budgets['bronze'] ?? 0);
+    $rules = loyalty_get_tier_rules($pdo);
+    $budget = (float) ($rules[$tierCode]['monthly_budget_mmk'] ?? $rules['bronze']['monthly_budget_mmk']);
+    $ins = $pdo->prepare(
+        'INSERT INTO loyalty_tier_pool (tier_code, `year_month`, budget_mmk, spent_mmk)
+         VALUES (?, ?, ?, 0)
+         ON DUPLICATE KEY UPDATE budget_mmk = VALUES(budget_mmk)'
+    );
+    $ins->execute([$tierCode, $ym, $budget]);
 
-    try {
-        loyalty_countermeasures_schema_ready($pdo);
-        $ins = $pdo->prepare(
-            'INSERT IGNORE INTO loyalty_tier_pool (tier_code, year_month, budget_mmk, spent_mmk)
-             VALUES (?, ?, ?, 0)'
-        );
-        $ins->execute([$tierCode, $ym, $budget]);
-
-        $sel = $pdo->prepare(
-            'SELECT budget_mmk, spent_mmk FROM loyalty_tier_pool
-             WHERE tier_code = ? AND year_month = ? LIMIT 1'
-        );
-        $sel->execute([$tierCode, $ym]);
-        $row = $sel->fetch(PDO::FETCH_ASSOC);
-        if (!$row) {
-            return 0.0;
-        }
-        return max(0.0, (float) $row['budget_mmk'] - (float) $row['spent_mmk']);
-    } catch (Throwable $e) {
-        error_log('loyalty_ensure_tier_pool: ' . $e->getMessage());
-        return 0.0;
+    $sel = $pdo->prepare(
+        'SELECT budget_mmk, spent_mmk FROM loyalty_tier_pool
+         WHERE tier_code = ? AND `year_month` = ? LIMIT 1'
+    );
+    $sel->execute([$tierCode, $ym]);
+    $row = $sel->fetch(PDO::FETCH_ASSOC);
+    if (!$row) {
+        throw new RuntimeException('Could not load the shared loyalty pool.');
     }
+    return max(0.0, (float) $row['budget_mmk'] - (float) $row['spent_mmk']);
 }
 
 function loyalty_get_pool_remaining(PDO $pdo, string $tierCode, ?string $yearMonth = null): float
 {
-    if (!LOYALTY_CM_TIER_POOL) {
-        return PHP_FLOAT_MAX; // effectively unlimited when flag off
-    }
     return loyalty_ensure_tier_pool($pdo, $tierCode, $yearMonth);
 }
 
@@ -536,10 +730,9 @@ function loyalty_get_pool_remaining(PDO $pdo, string $tierCode, ?string $yearMon
  */
 function loyalty_try_consume_pool(PDO $pdo, string $tierCode, float $amountMmk, ?string $yearMonth = null): float
 {
-    if (!LOYALTY_CM_TIER_POOL || $amountMmk <= 0) {
-        return $amountMmk > 0 && !LOYALTY_CM_TIER_POOL ? $amountMmk : 0.0;
+    if ($amountMmk <= 0) {
+        return 0.0;
     }
-
     $tierCode = strtolower(trim($tierCode));
     if ($tierCode === '') {
         $tierCode = 'bronze';
@@ -547,65 +740,28 @@ function loyalty_try_consume_pool(PDO $pdo, string $tierCode, float $amountMmk, 
     $ym = $yearMonth ?: loyalty_current_year_month();
     $amountMmk = round($amountMmk, 2);
 
-    try {
-        loyalty_ensure_tier_pool($pdo, $tierCode, $ym);
-
-        // Try full amount first
-        $upd = $pdo->prepare(
+    loyalty_ensure_tier_pool($pdo, $tierCode, $ym);
+    if (!loyalty_pool_enforcement_enabled($pdo)) {
+        $track = $pdo->prepare(
             'UPDATE loyalty_tier_pool
-             SET spent_mmk = spent_mmk + :amt
-             WHERE tier_code = :tier AND year_month = :ym
-               AND spent_mmk + :amt2 <= budget_mmk'
+             SET spent_mmk = spent_mmk + ?
+             WHERE tier_code = ? AND `year_month` = ?'
         );
-        $upd->execute([
-            ':amt' => $amountMmk,
-            ':amt2' => $amountMmk,
-            ':tier' => $tierCode,
-            ':ym' => $ym,
-        ]);
-        if ($upd->rowCount() === 1) {
-            return $amountMmk;
+        $track->execute([$amountMmk, $tierCode, $ym]);
+        if ($track->rowCount() !== 1) {
+            throw new RuntimeException('Could not track loyalty pool spending.');
         }
-
-        // Partial: consume remaining
-        try {
-            $sel = $pdo->prepare(
-                'SELECT GREATEST(0, budget_mmk - spent_mmk) AS remaining
-                 FROM loyalty_tier_pool
-                 WHERE tier_code = ? AND year_month = ? LIMIT 1 FOR UPDATE'
-            );
-            $sel->execute([$tierCode, $ym]);
-        } catch (Throwable $e) {
-            $sel = $pdo->prepare(
-                'SELECT GREATEST(0, budget_mmk - spent_mmk) AS remaining
-                 FROM loyalty_tier_pool
-                 WHERE tier_code = ? AND year_month = ? LIMIT 1'
-            );
-            $sel->execute([$tierCode, $ym]);
-        }
-        $remaining = round((float) ($sel->fetchColumn() ?: 0), 2);
-        if ($remaining <= 0) {
-            return 0.0;
-        }
-
-        $partial = min($amountMmk, $remaining);
-        $upd2 = $pdo->prepare(
-            'UPDATE loyalty_tier_pool
-             SET spent_mmk = spent_mmk + :amt
-             WHERE tier_code = :tier AND year_month = :ym
-               AND spent_mmk + :amt2 <= budget_mmk'
-        );
-        $upd2->execute([
-            ':amt' => $partial,
-            ':amt2' => $partial,
-            ':tier' => $tierCode,
-            ':ym' => $ym,
-        ]);
-        return $upd2->rowCount() === 1 ? $partial : 0.0;
-    } catch (Throwable $e) {
-        error_log('loyalty_try_consume_pool: ' . $e->getMessage());
-        return 0.0;
+        return $amountMmk;
     }
+
+    $upd = $pdo->prepare(
+        'UPDATE loyalty_tier_pool
+         SET spent_mmk = spent_mmk + ?
+         WHERE tier_code = ? AND `year_month` = ?
+           AND spent_mmk + ? <= budget_mmk'
+    );
+    $upd->execute([$amountMmk, $tierCode, $ym, $amountMmk]);
+    return $upd->rowCount() === 1 ? $amountMmk : 0.0;
 }
 
 // ---------------------------------------------------------------------------
@@ -618,88 +774,59 @@ function loyalty_try_consume_pool(PDO $pdo, string $tierCode, float $amountMmk, 
 function loyalty_ledger_write(PDO $pdo, array $row): void
 {
     if (!LOYALTY_CM_LEDGER) {
-        return;
+        throw new RuntimeException('The loyalty ledger is disabled; financial loyalty changes cannot be recorded.');
     }
-    try {
-        if (!loyalty_countermeasures_schema_ready($pdo)) {
-            return;
-        }
-        $stmt = $pdo->prepare(
-            'INSERT INTO loyalty_ledger
-                (party_type, party_id, direction, points, discount_mmk, admin_share_mmk, company_share_mmk,
-                 booking_id, usage_id, station_id, staff_user_id, is_internal, meta, created_at)
-             VALUES
-                (:party_type, :party_id, :direction, :points, :discount_mmk, :admin_share_mmk, :company_share_mmk,
-                 :booking_id, :usage_id, :station_id, :staff_user_id, :is_internal, :meta, NOW())'
-        );
-        $meta = $row['meta'] ?? null;
-        if (is_array($meta)) {
-            $meta = json_encode($meta);
-        }
-        $stmt->execute([
-            ':party_type' => (string) ($row['party_type'] ?? 'customer'),
-            ':party_id' => (int) ($row['party_id'] ?? 0),
-            ':direction' => (string) ($row['direction'] ?? 'earn'),
-            ':points' => (int) ($row['points'] ?? 0),
-            ':discount_mmk' => isset($row['discount_mmk']) ? (float) $row['discount_mmk'] : null,
-            ':admin_share_mmk' => isset($row['admin_share_mmk']) ? (float) $row['admin_share_mmk'] : null,
-            ':company_share_mmk' => isset($row['company_share_mmk']) ? (float) $row['company_share_mmk'] : null,
-            ':booking_id' => isset($row['booking_id']) ? (int) $row['booking_id'] : null,
-            ':usage_id' => isset($row['usage_id']) ? (int) $row['usage_id'] : null,
-            ':station_id' => isset($row['station_id']) ? (int) $row['station_id'] : null,
-            ':staff_user_id' => isset($row['staff_user_id']) ? (int) $row['staff_user_id'] : null,
-            ':is_internal' => !empty($row['is_internal']) ? 1 : 0,
-            ':meta' => $meta,
-        ]);
-    } catch (Throwable $e) {
-        error_log('loyalty_ledger_write: ' . $e->getMessage());
+    $stmt = $pdo->prepare(
+        'INSERT INTO loyalty_ledger
+            (party_type, party_id, direction, points, discount_mmk, admin_share_mmk, company_share_mmk,
+             booking_id, usage_id, station_id, staff_user_id, is_internal, meta, created_at)
+         VALUES
+            (:party_type, :party_id, :direction, :points, :discount_mmk, :admin_share_mmk, :company_share_mmk,
+             :booking_id, :usage_id, :station_id, :staff_user_id, :is_internal, :meta, NOW())'
+    );
+    $meta = $row['meta'] ?? null;
+    if (is_array($meta)) {
+        $meta = json_encode($meta, JSON_THROW_ON_ERROR);
     }
-}
-
-// ---------------------------------------------------------------------------
-// Company points
-// ---------------------------------------------------------------------------
-
-function company_loyalty_get_balance(PDO $pdo, int $headquarterId): int
-{
-    if ($headquarterId <= 0) {
-        return 0;
-    }
-    try {
-        loyalty_countermeasures_schema_ready($pdo);
-        $stmt = $pdo->prepare(
-            'SELECT COALESCE(balance, 0) FROM company_loyalty WHERE headquarter_id = ? LIMIT 1'
-        );
-        $stmt->execute([$headquarterId]);
-        return max(0, (int) $stmt->fetchColumn());
-    } catch (Throwable $e) {
-        error_log('company_loyalty_get_balance: ' . $e->getMessage());
-        return 0;
-    }
+    $stmt->execute([
+        ':party_type' => (string) ($row['party_type'] ?? 'customer'),
+        ':party_id' => (int) ($row['party_id'] ?? 0),
+        ':direction' => (string) ($row['direction'] ?? 'earn'),
+        ':points' => (int) ($row['points'] ?? 0),
+        ':discount_mmk' => isset($row['discount_mmk']) ? (float) $row['discount_mmk'] : null,
+        ':admin_share_mmk' => isset($row['admin_share_mmk']) ? (float) $row['admin_share_mmk'] : null,
+        ':company_share_mmk' => isset($row['company_share_mmk']) ? (float) $row['company_share_mmk'] : null,
+        ':booking_id' => isset($row['booking_id']) ? (int) $row['booking_id'] : null,
+        ':usage_id' => isset($row['usage_id']) ? (int) $row['usage_id'] : null,
+        ':station_id' => isset($row['station_id']) ? (int) $row['station_id'] : null,
+        ':staff_user_id' => isset($row['staff_user_id']) ? (int) $row['staff_user_id'] : null,
+        ':is_internal' => !empty($row['is_internal']) ? 1 : 0,
+        ':meta' => $meta,
+    ]);
 }
 
 /** Number of additional station slots purchased for the current month. */
-function company_loyalty_current_month_slots(PDO $pdo, int $headquarterId): int
+function hq_billing_current_month_slots(PDO $pdo, int $headquarterId): int
 {
     if ($headquarterId <= 0 || !loyalty_countermeasures_schema_ready($pdo)) {
         return 0;
     }
     try {
         $stmt = $pdo->prepare(
-            'SELECT COALESCE(slots_purchased, 0) + COALESCE(mmk_slots_purchased, 0)
+            'SELECT COALESCE(mmk_slots_purchased, 0)
              FROM company_loyalty_station_slots
              WHERE headquarter_id = ? AND `year_month` = ? LIMIT 1'
         );
         $stmt->execute([$headquarterId, loyalty_current_year_month()]);
         return max(0, (int) $stmt->fetchColumn());
     } catch (Throwable $e) {
-        error_log('company_loyalty_current_month_slots: ' . $e->getMessage());
+        error_log('hq_billing_current_month_slots: ' . $e->getMessage());
         return 0;
     }
 }
 
 /** True only when the station's owning HQ has paid this month's station fee. */
-function company_loyalty_station_is_paid(PDO $pdo, int $stationId): bool
+function hq_billing_station_is_paid(PDO $pdo, int $stationId): bool
 {
     if ($stationId <= 0 || !loyalty_countermeasures_schema_ready($pdo)) {
         return false;
@@ -727,7 +854,7 @@ function company_loyalty_station_is_paid(PDO $pdo, int $stationId): bool
 
         $baseSlots = (int) $station['base_slots'];
         $extraSlotRequired = $baseSlots < 1 ? 0 : max(0, (int) $station['station_order'] - $baseSlots);
-        if ($extraSlotRequired > company_loyalty_current_month_slots($pdo, (int) $station['headquarter_id'])) {
+        if ($extraSlotRequired > hq_billing_current_month_slots($pdo, (int) $station['headquarter_id'])) {
             return false;
         }
         if ((int) $station['station_order'] <= BILLING_HQ_INCLUDED_STATION_SLOTS) {
@@ -747,110 +874,7 @@ function company_loyalty_station_is_paid(PDO $pdo, int $stationId): bool
         $stmt->execute([loyalty_current_year_month(), $stationId]);
         return (bool) $stmt->fetchColumn();
     } catch (Throwable $e) {
-        error_log('company_loyalty_station_is_paid: ' . $e->getMessage());
-        return false;
-    }
-}
-
-/**
- * Credit the owning HQ with the customer's redeemed points. The surrounding
- * fill transaction owns atomicity; failures propagate so the fill can roll
- * back instead of consuming customer points without crediting the HQ.
- */
-function company_loyalty_transfer_customer_redemption(
-    PDO $pdo,
-    int $headquarterId,
-    int $points,
-    ?int $bookingId = null,
-    ?int $usageId = null,
-    ?int $stationId = null,
-    ?int $staffUserId = null
-): void {
-    if ($points <= 0) {
-        return;
-    }
-    if (!LOYALTY_CM_COMPANY_POINTS || $headquarterId <= 0) {
-        throw new LoyaltyTransferException('Could not identify the station HQ for this points transfer.');
-    }
-    if (!loyalty_countermeasures_schema_ready($pdo)) {
-        throw new LoyaltyTransferException('The HQ points wallet is unavailable.');
-    }
-
-    try {
-        $pdo->prepare(
-            'INSERT IGNORE INTO company_loyalty (headquarter_id, balance, lifetime_earned)
-             VALUES (?, 0, 0)'
-        )->execute([$headquarterId]);
-
-        $credit = $pdo->prepare(
-            'UPDATE company_loyalty
-             SET balance = balance + ?, lifetime_earned = lifetime_earned + ?
-             WHERE headquarter_id = ?'
-        );
-        $credit->execute([$points, $points, $headquarterId]);
-        if ($credit->rowCount() !== 1) {
-            throw new LoyaltyTransferException('Could not credit the station HQ points wallet.');
-        }
-
-        $headquarterCredit = $pdo->prepare(
-            'UPDATE headquarter
-             SET has_points = COALESCE(has_points, 0) + ?
-             WHERE headquarter_id = ?'
-        );
-        $headquarterCredit->execute([$points, $headquarterId]);
-        if ($headquarterCredit->rowCount() !== 1) {
-            throw new LoyaltyTransferException('Could not save the redeemed points to the station HQ account.');
-        }
-
-        loyalty_ledger_write($pdo, [
-            'party_type' => 'company',
-            'party_id' => $headquarterId,
-            'direction' => 'transfer_in',
-            'points' => $points,
-            'booking_id' => $bookingId,
-            'usage_id' => $usageId,
-            'station_id' => $stationId,
-            'staff_user_id' => $staffUserId,
-            'is_internal' => 0,
-            'meta' => ['source' => 'customer_redemption'],
-        ]);
-    } catch (LoyaltyTransferException $e) {
-        throw $e;
-    } catch (Throwable $e) {
-        error_log('company_loyalty_transfer_customer_redemption: ' . $e->getMessage());
-        throw new LoyaltyTransferException('Could not transfer redeemed points to the station HQ.', 0, $e);
-    }
-}
-
-/**
- * Redeem company points as platform/station credit only (no cash). Returns success.
- */
-function company_loyalty_redeem_credit(PDO $pdo, int $headquarterId, int $points, string $reason = ''): bool
-{
-    if (!LOYALTY_CM_COMPANY_POINTS || $headquarterId <= 0 || $points <= 0) {
-        return false;
-    }
-    try {
-        loyalty_countermeasures_schema_ready($pdo);
-        $debit = $pdo->prepare(
-            'UPDATE company_loyalty
-             SET balance = balance - ?
-             WHERE headquarter_id = ? AND balance >= ?'
-        );
-        $debit->execute([$points, $headquarterId, $points]);
-        if ($debit->rowCount() !== 1) {
-            return false;
-        }
-        loyalty_ledger_write($pdo, [
-            'party_type' => 'company',
-            'party_id' => $headquarterId,
-            'direction' => 'redeem',
-            'points' => $points,
-            'meta' => ['reason' => $reason, 'credit_only' => true],
-        ]);
-        return true;
-    } catch (Throwable $e) {
-        error_log('company_loyalty_redeem_credit: ' . $e->getMessage());
+        error_log('hq_billing_station_is_paid: ' . $e->getMessage());
         return false;
     }
 }
@@ -872,7 +896,6 @@ function company_loyalty_redeem_credit(PDO $pdo, int $headquarterId, int $points
  *   discount_mmk:float,
  *   admin_share_mmk:float,
  *   company_share_mmk:float,
- *   company_points_earned:int,
  *   is_internal:bool,
  *   tier:string,
  *   pool_limited:bool,
@@ -899,7 +922,6 @@ function loyalty_apply_on_fill(
         'discount_mmk' => 0.0,
         'admin_share_mmk' => 0.0,
         'company_share_mmk' => 0.0,
-        'company_points_earned' => 0,
         'is_internal' => $isInternal,
         'tier' => 'bronze',
         'pool_limited' => false,
@@ -907,177 +929,134 @@ function loyalty_apply_on_fill(
         'loyalty_error' => null,
     ];
 
-    try {
-        $result['balance_after'] = loyalty_get_balance($pdo, $userId);
-        $result['tier'] = loyalty_resolve_tier((int) $result['balance_after']);
+    if (!$pdo->inTransaction()) {
+        throw new LogicException('Loyalty balance changes must run inside the successful-fill transaction.');
+    }
+    if ($userId <= 0 || $filledLiters <= 0) {
+        return $result;
+    }
+    if (!loyalty_schema_ready($pdo) || !loyalty_countermeasures_schema_ready($pdo)) {
+        throw new RuntimeException('Loyalty storage is unavailable; the fill cannot be settled safely.');
+    }
 
-        if ($userId <= 0 || $filledLiters <= 0) {
-            return $result;
+    $balanceStmt = $pdo->prepare('SELECT COALESCE(had_point, 0) FROM users WHERE user_id = ? LIMIT 1 FOR UPDATE');
+    $balanceStmt->execute([$userId]);
+    $balanceValue = $balanceStmt->fetchColumn();
+    if ($balanceValue === false) {
+        throw new RuntimeException('Customer account is unavailable for loyalty settlement.');
+    }
+    $balance = max(0, (int) $balanceValue);
+    $progress = loyalty_update_tier_progress($pdo, $userId, $balance);
+    $result['balance_after'] = $balance;
+    $result['tier'] = $progress['tier_code'];
+
+    if ($isInternal) {
+        $result['is_internal'] = true;
+        return $result;
+    }
+
+    $discount = loyalty_compute_discount(
+        $filledLiters,
+        $totalCost,
+        min(max(0, $pointsIntent), $balance),
+        loyalty_redemption_options($pdo)
+    );
+    $pointsToRedeem = (int) $discount['points'];
+    $discountMmk = (float) $discount['discount_mmk'];
+    if ($pointsToRedeem > 0) {
+        $allocated = loyalty_try_consume_pool($pdo, $progress['tier_code'], $discountMmk);
+        if ($allocated + 0.0001 < $discountMmk) {
+            $pointsToRedeem = 0;
+            $discountMmk = 0.0;
+            $result['pool_limited'] = true;
+        }
+    }
+
+    if ($pointsToRedeem > 0) {
+        $debit = $pdo->prepare(
+            'UPDATE users SET had_point = had_point - ?
+             WHERE user_id = ? AND had_point >= ?'
+        );
+        $debit->execute([$pointsToRedeem, $userId, $pointsToRedeem]);
+        if ($debit->rowCount() !== 1) {
+            throw new RuntimeException('Customer points changed during redemption; retry the fill.');
         }
 
-        // Best-effort schema (never fatal)
-        try {
-            loyalty_schema_ready($pdo);
-            loyalty_countermeasures_schema_ready($pdo);
-        } catch (Throwable $e) {
-            // ignore
+        $accountCredit = $pdo->prepare(
+            'UPDATE loyalty_discount_account
+             SET balance_mmk = balance_mmk + ?
+             WHERE account_id = 1'
+        );
+        $accountCredit->execute([$discountMmk]);
+        if ($accountCredit->rowCount() !== 1) {
+            throw new RuntimeException('Could not credit the Total Discounted Amount balance.');
         }
 
-        // Internal: no earn, no redeem, no company, no pool
-        if ($isInternal) {
-            $result['is_internal'] = true;
-            if (function_exists('map_pump_log_action') && $staffUserId !== null && $staffUserId > 0) {
-                try {
-                    $msg = 'Loyalty user #' . $userId . ': internal fill — 0 pts (own station/network)';
-                    if ($bookingId !== null && $bookingId > 0) {
-                        $msg .= ' (booking #' . $bookingId . ')';
-                    }
-                    map_pump_log_action($pdo, $staffUserId, $msg, 5);
-                } catch (Throwable $e) {
-                    // non-fatal
-                }
-            }
-            return $result;
+        $result['points_redeemed'] = $pointsToRedeem;
+        $result['discount_mmk'] = $discountMmk;
+        $result['discount_pct'] = $totalCost > 0 ? round($discountMmk / $totalCost * 100, 2) : 0.0;
+        loyalty_ledger_write($pdo, [
+            'party_type' => 'customer',
+            'party_id' => $userId,
+            'direction' => 'redeem',
+            'points' => $pointsToRedeem,
+            'discount_mmk' => $discountMmk,
+            'booking_id' => $bookingId,
+            'usage_id' => $usageId,
+            'station_id' => $stationId,
+            'staff_user_id' => $staffUserId,
+            'is_internal' => 0,
+            'meta' => ['total_discounted_amount_credited' => true],
+        ]);
+    }
+
+    $earnPoints = (int) floor(max(0.0, $filledLiters) * loyalty_points_per_liter($pdo));
+    if ($earnPoints > 0) {
+        $credit = $pdo->prepare('UPDATE users SET had_point = had_point + ? WHERE user_id = ?');
+        $credit->execute([$earnPoints, $userId]);
+        if ($credit->rowCount() !== 1) {
+            throw new RuntimeException('Could not credit points for the completed fill.');
         }
+        $result['points_earned'] = $earnPoints;
+        loyalty_ledger_write($pdo, [
+            'party_type' => 'customer',
+            'party_id' => $userId,
+            'direction' => 'earn',
+            'points' => $earnPoints,
+            'booking_id' => $bookingId,
+            'usage_id' => $usageId,
+            'station_id' => $stationId,
+            'staff_user_id' => $staffUserId,
+            'is_internal' => 0,
+        ]);
+    }
 
-        $balance = loyalty_get_balance($pdo, $userId);
-        $result['tier'] = loyalty_resolve_tier($balance);
-        $intent = min(max(0, $pointsIntent), $balance);
+    $balanceStmt->execute([$userId]);
+    $result['balance_after'] = max(0, (int) $balanceStmt->fetchColumn());
+    $progress = loyalty_update_tier_progress($pdo, $userId, (int) $result['balance_after']);
+    $result['tier'] = $progress['tier_code'];
 
-        $discount = loyalty_compute_discount($filledLiters, $totalCost, $intent);
-        $pointsToRedeem = (int) $discount['points'];
-        $discountMmk = (float) $discount['discount_mmk'];
-        $discountPct = (float) $discount['discount_pct'];
-
-        // Debit redeem first (conditional — never go negative)
-        if ($pointsToRedeem > 0) {
-            $debit = $pdo->prepare(
-                'UPDATE users
-                 SET had_point = had_point - :pts
-                 WHERE user_id = :uid AND had_point >= :pts'
-            );
-            $debit->execute([
-                ':pts' => $pointsToRedeem,
-                ':uid' => $userId,
-            ]);
-            if ($debit->rowCount() === 1) {
-                $result['points_redeemed'] = $pointsToRedeem;
-                $result['discount_pct'] = $discountPct;
-                $result['discount_mmk'] = $discountMmk;
-
-                if (LOYALTY_CM_COST_SHARE && $discountMmk > 0) {
-                    $adminPct = (float) LOYALTY_ADMIN_DISCOUNT_SHARE_PCT;
-                    $result['admin_share_mmk'] = round($discountMmk * $adminPct / 100.0, 2);
-                    $result['company_share_mmk'] = round($discountMmk - $result['admin_share_mmk'], 2);
-                }
-
-                loyalty_ledger_write($pdo, [
-                    'party_type' => 'customer',
-                    'party_id' => $userId,
-                    'direction' => 'redeem',
-                    'points' => $pointsToRedeem,
-                    'discount_mmk' => $result['discount_mmk'],
-                    'admin_share_mmk' => $result['admin_share_mmk'],
-                    'company_share_mmk' => $result['company_share_mmk'],
-                    'booking_id' => $bookingId,
-                    'usage_id' => $usageId,
-                    'station_id' => $stationId,
-                    'staff_user_id' => $staffUserId,
-                    'is_internal' => 0,
-                    'meta' => $result['pool_limited'] ? ['pool_limited' => true] : null,
-                ]);
-
-                // Move redeemed points to the HQ that owns this station.
-                // The caller's fill transaction makes the debit and credit atomic.
-                if ($stationId === null || $stationId <= 0) {
-                    throw new LoyaltyTransferException('Could not identify the station for this points transfer.');
-                }
-                $hqId = loyalty_station_hq_id($pdo, $stationId);
-                company_loyalty_transfer_customer_redemption(
-                    $pdo,
-                    $hqId,
-                    $pointsToRedeem,
-                    $bookingId,
-                    $usageId,
-                    $stationId,
-                    $staffUserId
-                );
-                $result['company_points_earned'] = $pointsToRedeem;
-            }
+    if (function_exists('map_pump_log_action') && $staffUserId !== null && $staffUserId > 0) {
+        $parts = [];
+        if ($result['points_earned'] > 0) {
+            $parts[] = '+' . $result['points_earned'] . ' points';
         }
-
-        // Credit earn after a successful external fill.
-        $earnPts = (int) floor(max(0.0, $filledLiters) * (int) constant('LOYALTY_POINTS_PER_FILL'));
-        if ($earnPts > 0) {
-            $credit = $pdo->prepare(
-                'UPDATE users SET had_point = had_point + :pts WHERE user_id = :uid'
-            );
-            $credit->execute([
-                ':pts' => $earnPts,
-                ':uid' => $userId,
-            ]);
-            if ($credit->rowCount() === 1) {
-                $result['points_earned'] = $earnPts;
-                loyalty_ledger_write($pdo, [
-                    'party_type' => 'customer',
-                    'party_id' => $userId,
-                    'direction' => 'earn',
-                    'points' => $earnPts,
-                    'booking_id' => $bookingId,
-                    'usage_id' => $usageId,
-                    'station_id' => $stationId,
-                    'staff_user_id' => $staffUserId,
-                    'is_internal' => 0,
-                ]);
-            }
+        if ($result['points_redeemed'] > 0) {
+            $parts[] = '-' . $result['points_redeemed'] . ' points';
+            $parts[] = number_format($result['discount_mmk'], 2) . ' MMK discount';
+        } elseif ($result['pool_limited']) {
+            $parts[] = 'redemption skipped (tier pool exhausted)';
         }
-
-        $result['balance_after'] = loyalty_get_balance($pdo, $userId);
-        $result['tier'] = loyalty_resolve_tier((int) $result['balance_after']);
-
-        // Soft audit via existing activity log
-        if (function_exists('map_pump_log_action') && $staffUserId !== null && $staffUserId > 0) {
-            $parts = [];
-            if ($result['points_earned'] > 0) {
-                $parts[] = '+' . $result['points_earned'] . ' earn';
+        if ($parts !== []) {
+            $message = 'Loyalty user #' . $userId . ': ' . implode(', ', $parts);
+            if ($bookingId !== null && $bookingId > 0) {
+                $message .= ' (booking #' . $bookingId . ')';
             }
-            if ($result['points_redeemed'] > 0) {
-                $parts[] = '-' . $result['points_redeemed'] . ' redeem';
-                if ($result['discount_mmk'] > 0) {
-                    $parts[] = 'discount ' . number_format($result['discount_mmk'], 2) . ' MMK';
-                }
-                if ($result['pool_limited']) {
-                    $parts[] = 'pool-limited';
-                }
-            } elseif ($result['pool_limited']) {
-                $parts[] = 'redeem skipped (pool empty)';
+            try {
+                map_pump_log_action($pdo, $staffUserId, $message, 5);
+            } catch (Throwable $e) {
+                error_log('loyalty_apply_on_fill activity log: ' . $e->getMessage());
             }
-            if ($result['company_points_earned'] > 0) {
-                $parts[] = 'company +' . $result['company_points_earned'];
-            }
-            if ($parts !== []) {
-                $msg = 'Loyalty user #' . $userId . ': ' . implode(', ', $parts);
-                if ($bookingId !== null && $bookingId > 0) {
-                    $msg .= ' (booking #' . $bookingId . ')';
-                }
-                try {
-                    map_pump_log_action($pdo, $staffUserId, $msg, 5);
-                } catch (Throwable $e) {
-                    // Non-fatal
-                }
-            }
-        }
-    } catch (Throwable $e) {
-        if ($e instanceof LoyaltyTransferException) {
-            throw $e;
-        }
-        // Never break the fill
-        error_log('loyalty_apply_on_fill soft-fail: ' . $e->getMessage());
-        $result['loyalty_error'] = $e->getMessage();
-        try {
-            $result['balance_after'] = loyalty_get_balance($pdo, $userId);
-        } catch (Throwable $e2) {
-            // ignore
         }
     }
 
@@ -1094,7 +1073,8 @@ function loyalty_validate_redeem_intent(PDO $pdo, int $userId, int $requestedPoi
     if ($requestedPoints < 0) {
         throw new InvalidArgumentException('Loyalty points to redeem cannot be negative.');
     }
-    if ($requestedPoints > 0 && !array_key_exists($requestedPoints, LOYALTY_REDEMPTION_OPTIONS)) {
+    $options = loyalty_redemption_options($pdo);
+    if ($requestedPoints > 0 && !array_key_exists($requestedPoints, $options)) {
         throw new InvalidArgumentException(
             'Choose one of the available fixed loyalty reward options.'
         );

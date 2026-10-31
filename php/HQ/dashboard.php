@@ -6,7 +6,6 @@ require_once __DIR__ . '/../loyalty_points.php';
 $hqId = map_pump_current_hq_id($pdo);
 $hqBillingReady = loyalty_countermeasures_schema_ready($pdo);
 $hqBillingMonth = loyalty_current_year_month();
-$hqPointBalance = company_loyalty_get_balance($pdo, $hqId);
 // Fetch station fuel-tank levels using the linked fuel type.
 $stationTanks = [];
 $tankStmt = $pdo->prepare(
@@ -227,7 +226,7 @@ $maintenanceStationCount = count(array_filter($stations, static fn (array $stati
   }
 
   .hq-metrics {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 12px;
   }
 
@@ -263,7 +262,6 @@ $maintenanceStationCount = count(array_filter($stations, static fn (array $stati
     <a class="hq-metric" href="station.php" onclick="event.preventDefault(); navigateTo('station.php')"><i class="fa-solid fa-gas-pump" aria-hidden="true"></i><div><strong><?= count($stations) ?></strong><span>Total stations</span></div></a>
     <a class="hq-metric" href="station.php" onclick="event.preventDefault(); navigateTo('station.php')"><i class="fa-solid fa-circle-check" aria-hidden="true"></i><div><strong><?= $activeStationCount ?></strong><span>Active stations</span></div></a>
     <a class="hq-metric" href="station.php" onclick="event.preventDefault(); navigateTo('station.php')"><i class="fa-solid fa-wrench" aria-hidden="true"></i><div><strong><?= $maintenanceStationCount ?></strong><span>Under maintenance</span></div></a>
-    <div class="hq-metric"><i class="fa-solid fa-star" aria-hidden="true"></i><div><strong><?= number_format($hqPointBalance) ?></strong><span>HQ points</span></div></div>
   </div>
 
   <div class="dashboard-grid">

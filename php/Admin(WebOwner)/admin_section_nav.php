@@ -2,7 +2,7 @@
 /**
  * Shared Admin portal shell: page-load bar, sticky top nav, and main-menu offcanvas.
  * Set $adminSection before include so the active menu item is highlighted.
- * Valid keys: home | view_hq | view_users | requests | report | profile | manage_moderators | logs
+ * Valid keys: home | view_hq | view_users | requests | report | loyalty | profile | manage_moderators | logs
  */
 $adminSection = (string) ($adminSection ?? '');
 $adminMenuClass = static fn (string $key): string => $adminSection === $key ? 'menu-btn-nav active-nav' : 'menu-btn-nav';
@@ -83,6 +83,7 @@ $adminMenuClass = static fn (string $key): string => $adminSection === $key ? 'm
             <li><a href="view_users.php" class="<?= $adminMenuClass('view_users') ?>"><i class="bi bi-people me-3 txt-neon-cyan"></i> View/Manage Users</a></li>
             <li><a href="view_requests.php" class="<?= $adminMenuClass('requests') ?>"><i class="bi bi-file-earmark-check me-3 txt-neon-cyan"></i> View Requests</a></li>
             <li><a href="view_report.php" class="<?= $adminMenuClass('report') ?>"><i class="bi bi-graph-up-arrow me-3 txt-neon-cyan"></i> View Report</a></li>
+            <li><a href="loyalty_management.php" class="<?= $adminMenuClass('loyalty') ?>"><i class="bi bi-stars me-3 txt-neon-cyan"></i> Loyalty &amp; Billing</a></li>
             <li><a href="edit_profile.php" class="<?= $adminMenuClass('profile') ?>"><i class="bi bi-person-bounding-box me-3 txt-neon-blue"></i> Edit Profile</a></li>
             <li><a href="manage_moderators.php" class="<?= $adminMenuClass('manage_moderators') ?>"><i class="bi bi-people-fill me-3 txt-neon-blue"></i> Manage Moderators</a></li>
             <li><a href="view_logs.php" class="<?= $adminMenuClass('logs') ?>"><i class="bi bi-terminal-split me-3 text-danger"></i> View Log Files</a></li>

@@ -28,6 +28,8 @@ $reportTypes = [
 ];
 $updatedAt = null;
 $requestSummaryError = null;
+$discountedBalance = null;
+$loyaltyBalanceError = false;
 
 if ($dbOnline) {
     // Station totals must come from `branches` (canonical table), never the dummy `stations` view.
@@ -89,6 +91,17 @@ if ($dbOnline) {
     if ($updatedQuery && ($row = $updatedQuery->fetch_assoc()) && !empty($row['updated_at'])) {
         $updatedAt = (string) $row['updated_at'];
     }
+
+    if ($pdo instanceof PDO) {
+        try {
+            $discountedBalance = (float) $pdo->query(
+                'SELECT balance_mmk FROM loyalty_discount_account WHERE account_id = 1'
+            )->fetchColumn();
+        } catch (Throwable $e) {
+            error_log('admin_dashboard loyalty balance: ' . $e->getMessage());
+            $loyaltyBalanceError = true;
+        }
+    }
 }
 
 $requestTotal = array_sum($requestCounts);
@@ -118,7 +131,6 @@ if ($reportTotal > 0) {
     $reportPieStyle = 'background:conic-gradient(rgba(255,255,255,.12) 0 100%);';
 }
 
-$updatedLabel = $updatedAt ? admin_date($updatedAt) : 'Not available';
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -153,7 +165,6 @@ $updatedLabel = $updatedAt ? admin_date($updatedAt) : 'Not available';
             <span class="stat-chip mb-2"><i class="bi bi-speedometer2 txt-neon-cyan"></i> Admin Dashboard</span>
             <h1 class="fw-bold m-0 h4 text-white mt-2">Control Center Overview</h1>
         </div>
-        <span class="stat-chip"><i class="bi bi-clock-history me-1"></i> Updated <?= hq_escape($updatedLabel) ?></span>
     </div>
 
     <?php
@@ -245,6 +256,22 @@ $updatedLabel = $updatedAt ? admin_date($updatedAt) : 'Not available';
                         </div>
                         <span class="<?= $dbOnline ? 'text-success' : 'text-danger' ?> fs-2"><i class="bi bi-database-check"></i></span>
                     </div>
+                </div>
+            </a>
+        </div>
+        <div class="col-12 col-sm-6 col-xl-3">
+            <a href="loyalty_management.php" class="metric-card-link" title="Open Loyalty &amp; Billing Management" aria-label="Open Loyalty &amp; Billing Management">
+                <div class="analytics-card metric-card">
+                    <div class="d-flex align-items-center justify-content-between gap-3">
+                        <div>
+                            <p class="mb-0 metric-label">Total Discounted Amount</p>
+                            <h3 class="metric-value text-white mb-0" style="font-size:1.45rem;">
+                                <?= $discountedBalance !== null ? number_format($discountedBalance, 2) . ' MMK' : ($loyaltyBalanceError ? 'Unavailable' : '0.00 MMK') ?>
+                            </h3>
+                        </div>
+                        <span class="txt-neon-cyan fs-2"><i class="bi bi-wallet2"></i></span>
+                    </div>
+                    <p class="text-white-50 small mb-0 mt-2">Review tier pools, reward rules, and monthly payouts</p>
                 </div>
             </a>
         </div>

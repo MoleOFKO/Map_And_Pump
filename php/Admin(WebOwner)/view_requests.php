@@ -454,7 +454,7 @@ $flashType = $flash['type'] ?? '';
                     $paymentId = (int) $paymentRow['payment_transfer_id'];
                     $paymentState = (string) $paymentRow['status'];
                     $paymentStatus = $paymentState === 'payer_reported_paid' ? 'pending' : ($paymentState === 'received' ? 'approved' : 'rejected');
-                    $paymentTypeLabel = match ((string) $paymentRow['payment_type']) { 'hq_registration' => 'HQ Registration Payment', 'hq_period_extension' => 'HQ Service Extension', 'hq_extra_station' => 'Extra Stations', 'hq_station_operating_quote' => 'Station Operating Fee', default => 'Payment' };
+                    $paymentTypeLabel = match ((string) $paymentRow['payment_type']) { 'hq_registration' => 'HQ Registration Payment', 'hq_period_extension' => 'HQ Service Extension', 'hq_station_package' => 'HQ Station Package', 'hq_extra_station' => 'Extra Stations (legacy)', 'hq_station_operating_quote' => 'Station Operating Fee (legacy)', default => 'Payment' };
                     $isPayer = ((int) ($paymentRow['payer_user_id'] ?? 0) === (int) ($_SESSION['user_id'] ?? 0)) || (strtolower((string) ($_SESSION['user_email'] ?? '')) !== '' && strtolower((string) ($_SESSION['user_email'] ?? '')) === strtolower((string) ($paymentRow['payer_email'] ?? '')));
                     ?>
                     <tr>

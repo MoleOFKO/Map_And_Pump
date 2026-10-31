@@ -2,16 +2,14 @@
 require_once __DIR__ . '/billing_config.php';
 
 /**
- * Loyalty Reward Points — configuration (v2 countermeasures)
- * See: POINTS_COUNTERMEASURES_IMPLEMENTATION_PLAN.md
- * Safety: POINTS_COUNTERMEASURES_SIMULATION_AND_RISKS.md
+ * Loyalty rewards and customer tier defaults.
  */
 
 // ---------------------------------------------------------------------------
 // Core earn / redeem
 // ---------------------------------------------------------------------------
 
-// Earn one point for each whole liter in a successful external fill.
+// Database settings override this default when the admin changes the rate.
 if (!defined('LOYALTY_POINTS_PER_FILL')) {
     define('LOYALTY_POINTS_PER_FILL', 1);
 }
@@ -25,11 +23,6 @@ if (!defined('LOYALTY_REDEMPTION_OPTIONS')) {
     ]);
 }
 
-// Retained for compatibility with older integrations; redemption uses fixed tiers above.
-if (!defined('LOYALTY_MMK_PER_POINT')) {
-    define('LOYALTY_MMK_PER_POINT', 10);
-}
-
 // ---------------------------------------------------------------------------
 // Feature flags (F12) — allow partial disable without code revert
 // ---------------------------------------------------------------------------
@@ -38,11 +31,7 @@ if (!defined('LOYALTY_CM_INTERNAL_DETECT')) {
     define('LOYALTY_CM_INTERNAL_DETECT', true);
 }
 if (!defined('LOYALTY_CM_TIER_POOL')) {
-    // Fixed-value redemption is independent of a shared monthly discount pool.
-    define('LOYALTY_CM_TIER_POOL', false);
-}
-if (!defined('LOYALTY_CM_COMPANY_POINTS')) {
-    define('LOYALTY_CM_COMPANY_POINTS', true);
+    define('LOYALTY_CM_TIER_POOL', true);
 }
 if (!defined('LOYALTY_CM_COST_SHARE')) {
     define('LOYALTY_CM_COST_SHARE', true);
@@ -67,23 +56,6 @@ if (!defined('LOYALTY_COMPANY_DISCOUNT_SHARE_PCT')) {
 }
 
 // ---------------------------------------------------------------------------
-// Company points
-// ---------------------------------------------------------------------------
-
-if (!defined('LOYALTY_COMPANY_POINT_EXPIRY_DAYS')) {
-    define('LOYALTY_COMPANY_POINT_EXPIRY_DAYS', 90);
-}
-
-// HQ monthly fees are sourced from billing_config.php; MMK is a separate
-// option, not a points conversion.
-if (!defined('LOYALTY_HQ_STATION_SLOT_MONTHLY_COST')) {
-    define('LOYALTY_HQ_STATION_SLOT_MONTHLY_COST', BILLING_HQ_STATION_SLOT_POINTS_MONTHLY);
-}
-if (!defined('LOYALTY_HQ_STATION_MONTHLY_FEE')) {
-    define('LOYALTY_HQ_STATION_MONTHLY_FEE', BILLING_HQ_STATION_OPERATION_POINTS_MONTHLY);
-}
-
-// ---------------------------------------------------------------------------
 // Inventory trust thresholds (enforce gated by LOYALTY_CM_INVENTORY_PROOF_ENFORCE)
 // ---------------------------------------------------------------------------
 
@@ -95,8 +67,7 @@ if (!defined('LOYALTY_INVENTORY_PROOF_ROLLING_7D_L')) {
 }
 
 // ---------------------------------------------------------------------------
-// Customer tiers (shared monthly pool budgets in MMK — placeholders)
-// Thresholds: balance → tier (aligned with previous dashboard display)
+// Defaults are seeded into loyalty_tier_rules by the loyalty redesign migration.
 // ---------------------------------------------------------------------------
 
 if (!function_exists('loyalty_tier_thresholds')) {
@@ -106,10 +77,10 @@ if (!function_exists('loyalty_tier_thresholds')) {
     function loyalty_tier_thresholds(): array
     {
         return [
-            'diamond' => 100,
-            'platinum' => 80,
-            'gold' => 60,
-            'silver' => 40,
+            'diamond' => 2000,
+            'platinum' => 1499,
+            'gold' => 999,
+            'silver' => 500,
             'bronze' => 0,
         ];
     }
@@ -128,6 +99,20 @@ if (!function_exists('loyalty_tier_pool_budgets')) {
             'gold' => 500000.0,
             'platinum' => 1000000.0,
             'diamond' => 2000000.0,
+        ];
+    }
+}
+
+if (!function_exists('loyalty_tier_exp_thresholds')) {
+    /** @return array<string, int> */
+    function loyalty_tier_exp_thresholds(): array
+    {
+        return [
+            'diamond' => 8,
+            'platinum' => 6,
+            'gold' => 4,
+            'silver' => 2,
+            'bronze' => 0,
         ];
     }
 }
