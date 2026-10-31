@@ -29,16 +29,15 @@ function require_branch_manager(bool $allowUnassigned = false): void {
 
     if (!$allowUnassigned) {
         global $pdo;
-        $assignment = $pdo->prepare(
+        $stmt = $pdo->prepare(
             'SELECT 1
-             FROM station_business_scope sbs
-             INNER JOIN branches b ON b.branch_id = sbs.station_id
-             WHERE sbs.branch_manager_user_id = ? AND b.manager_user_id = ?
+             FROM branches
+             WHERE manager_user_id = :user_id
              LIMIT 1'
         );
         $userId = (int) $_SESSION['user_id'];
-        $assignment->execute([$userId, $userId]);
-        if (!$assignment->fetchColumn()) {
+        $stmt->execute([':user_id' => $userId]);
+        if (!$stmt->fetchColumn()) {
             header('Location: /php/BranchManager/unassigned.php');
             exit;
         }
@@ -51,55 +50,52 @@ function current_context($db = null) {
     global $pdo, $conn;
     $dbHandle = $db ?? $pdo ?? $conn;
 
-    $branchExpression = 'managed.station_id';
-
-    $stmt = $dbHandle->prepare("
-        SELECT u.user_id,
-               {$branchExpression} AS branch_id,
-               u.user_name AS full_name,
-               u.email,
-               u.oauth_avatar_url AS avatar_url,
-               NULL AS phone,
-               NULL AS nrc,
-               COALESCE(r.role_name, 'BranchManager') AS role,
-               b.branch_code AS branch_code,
-               b.branch_name AS branch_name,
-               b.city, b.township,
-               b.address AS address,
-               b.phone AS branch_phone, b.email AS branch_email,
-               b.opening_time, b.closing_time, b.is_24hr,
-               b.pump_count, b.tank_count, b.hq_region, b.established_at,
-               COALESCE(b.status, 'active') AS branch_status,
-               hq.company_name AS hq_name,
-               hq.company_logo AS hq_logo
-        FROM users u
-        LEFT JOIN roles r ON r.role_id = COALESCE(u.current_role_id, u.business_role_id, u.role_id)
-        LEFT JOIN (
-            SELECT branch_manager_user_id, MIN(station_id) AS station_id, MIN(headquarter_id) AS headquarter_id
-            FROM station_business_scope
-            GROUP BY branch_manager_user_id
-        ) managed ON managed.branch_manager_user_id = u.user_id
-        LEFT JOIN branches b ON b.branch_id = {$branchExpression}
-                LEFT JOIN headquarter hq ON hq.headquarter_id = COALESCE(u.headquarter_id, managed.headquarter_id)
-                WHERE u.user_id = :uid
-                    AND b.manager_user_id = u.user_id
-        LIMIT 1
-    ");
+    $stmt = $dbHandle->prepare(
+        "SELECT u.user_id,
+                b.branch_id AS branch_id,
+                u.user_name AS full_name,
+                u.email,
+                u.oauth_avatar_url AS avatar_url,
+                NULL AS phone,
+                NULL AS nrc,
+                COALESCE(r.role_name, 'BranchManager') AS role,
+                b.branch_code AS branch_code,
+                b.branch_name AS branch_name,
+                b.city, b.township,
+                b.address AS address,
+                b.phone AS branch_phone, b.email AS branch_email,
+                b.opening_time, b.closing_time, b.is_24hr,
+                b.pump_count, b.tank_count, b.hq_region, b.established_at,
+                COALESCE(b.status, 'active') AS branch_status,
+                hq.company_name AS hq_name,
+                hq.company_logo AS hq_logo
+         FROM users u
+         LEFT JOIN roles r ON r.role_id = COALESCE(u.current_role_id, u.business_role_id, u.role_id)
+         LEFT JOIN branches b ON b.manager_user_id = u.user_id
+         LEFT JOIN station_business_scope sbs
+           ON sbs.station_id = b.branch_id
+          AND sbs.branch_manager_user_id = u.user_id
+          AND sbs.headquarter_id IS NOT NULL
+         LEFT JOIN headquarter hq ON hq.headquarter_id = sbs.headquarter_id
+         WHERE u.user_id = :uid
+           AND b.manager_user_id = u.user_id
+         LIMIT 1"
+    );
     $stmt->execute([':uid' => $_SESSION['user_id']]);
     $row = $stmt->fetch();
     if (!$row) return ['user' => null, 'branch' => null];
 
     $user = [
-        'user_id'   => $row['user_id'],
-        'branch_id' => $row['branch_id'],
-        'full_name' => $row['full_name'],
-        'email'     => $row['email'],
-        'avatar_url'=> $row['avatar_url'],
-        'phone'     => $row['phone'],
-        'nrc'       => $row['nrc'],
-        'role'      => $row['role'],
-        'branch_name' => $row['branch_name'],
-        'branch_code' => $row['branch_code'],
+        'user_id'    => $row['user_id'],
+        'branch_id'  => $row['branch_id'],
+        'full_name'  => $row['full_name'],
+        'email'      => $row['email'],
+        'avatar_url' => $row['avatar_url'],
+        'phone'      => $row['phone'],
+        'nrc'        => $row['nrc'],
+        'role'       => $row['role'],
+        'branch_name'=> $row['branch_name'],
+        'branch_code'=> $row['branch_code'],
     ];
     $branch = [
         'branch_id'      => $row['branch_id'],

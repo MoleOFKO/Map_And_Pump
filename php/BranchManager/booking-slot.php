@@ -1,7 +1,7 @@
 <?php
 /**
  * booking-slot.php — Live queue + pump status
- * POST actions (all JSON-out):
+ * POST actions
  *   action=call_next  -> token_id, pump_id  (move waiting → serving)
  *   action=complete   -> token_id           (serving → completed, free pump)
  *   action=cancel     -> token_id           (any → cancelled)
@@ -17,6 +17,20 @@ require_once __DIR__ . '/../Customer/car_access.php';
 require_once __DIR__ . '/../Customer/license_access.php';
 require_once __DIR__ . '/../business_scope.php';
 require_once __DIR__ . '/../loyalty_points.php';
+
+function map_pump_table_exists(PDO $pdo, string $tableName): bool {
+    try {
+        $stmt = $pdo->prepare(
+            "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?"
+        );
+        $stmt->execute([$tableName]);
+        return (bool) $stmt->fetchColumn();
+    } catch (Throwable $e) {
+        return false;
+    }
+}
+
+$pumpsTableExists = map_pump_table_exists($pdo, 'pumps');
 
 $ctx      = current_context($pdo);
 $user     = $ctx['user'];
@@ -34,9 +48,16 @@ loyalty_countermeasures_schema_ready($pdo);
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!csrf_check($_POST['csrf'] ?? null)) json_out(['ok' => false, 'error' => 'CSRF failed'], 403);
     $action = $_POST['action'] ?? '';
+    $pumpSpecificActions = ['call_next', 'unable_to_fulfill', 'complete', 'cancel', 'pump_state'];
+
+    if (!$pumpsTableExists && in_array($action, $pumpSpecificActions, true)) {
+        json_out(['ok' => false, 'error' => 'Pump tracking is unavailable for this station right now.'], 503);
+    }
+
     if (in_array($action, ['call_next', 'complete'], true) && !company_loyalty_station_is_paid($pdo, $bid)) {
         json_out(['ok' => false, 'error' => 'This station is paused until its HQ pays the monthly operating fee.'], 403);
     }
+
     try {
         if ($action === 'call_next') {
             $token_id = (int)($_POST['token_id'] ?? 0);
@@ -171,7 +192,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $quota = customer_fuel_quota_for_car($pdo, (int)$tok['user_id'], (int)$tok['car_license_id']);
             if ($filled_liters > (float)$quota['remaining']) { $pdo->rollBack(); json_out(['ok' => false, 'error' => 'This fill exceeds the customer weekly quota.'], 422); }
 
-            // Current unit price for this station + fuel (if configured).
             $priceStmt = $pdo->prepare("
                 SELECT price_per_litre
                 FROM station_oil_inventory
@@ -183,18 +203,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $price  = (float)$tok['booking_price'];
             $total  = ($price !== null) ? round($price * $filled_liters, 2) : null;
 
-            // Mark booking completed (store litres in filled_gas when provided).
             $fg = $filled_liters;
             $stmt = $pdo->prepare("UPDATE booking SET status = 'completed', filled_gas = :fg, time_of_filled = NOW() WHERE booking_id = :t AND status = 'serving'");
             $stmt->execute([':fg' => $fg, ':t' => $token_id]);
 
-            // Free the pump.
             if ($tok['pump_id']) {
                 $stmt = $pdo->prepare("UPDATE pumps SET status = 'idle', current_token = NULL WHERE pump_id = :p");
                 $stmt->execute([':p' => $tok['pump_id']]);
             }
 
-            // Record the fill in usage_history (feeds dashboard KPIs + customer history).
             $stmt = $pdo->prepare("
                 INSERT INTO usage_history
                     (booking_id, user_id, car_license_id, station_id, oil_type_id,
@@ -353,9 +370,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 // -------- Load data --------
-$stmt = $pdo->prepare("SELECT * FROM pumps WHERE branch_id = :b ORDER BY pump_no ASC");
-$stmt->execute([':b' => $bid]);
-$pumps = $stmt->fetchAll();
+if ($pumpsTableExists) {
+    $stmt = $pdo->prepare("SELECT * FROM pumps WHERE branch_id = :b ORDER BY pump_no ASC");
+    $stmt->execute([':b' => $bid]);
+    $pumps = $stmt->fetchAll();
+} else {
+    $pumps = [];
+}
 
 // KPI stats
 $stmt = $pdo->prepare("
@@ -388,9 +409,13 @@ $stmt = $pdo->prepare("
 $stmt->execute([':manager_id' => $user['user_id']]);
 $issued_today = (int)$stmt->fetchColumn();
 
-$stmt = $pdo->prepare("SELECT COUNT(*) FROM pumps WHERE branch_id = :b AND status = 'maintenance'");
-$stmt->execute([':b' => $bid]);
-$pump_maint = (int)$stmt->fetchColumn();
+if ($pumpsTableExists) {
+    $stmt = $pdo->prepare("SELECT COUNT(*) FROM pumps WHERE branch_id = :b AND status = 'maintenance'");
+    $stmt->execute([':b' => $bid]);
+    $pump_maint = (int)$stmt->fetchColumn();
+} else {
+    $pump_maint = 0;
+}
 $pump_total = count($pumps);
 
 // live queue (all non-completed, plus a few recently completed for context)
@@ -417,6 +442,32 @@ $stmt = $pdo->prepare("
 ");
 $stmt->execute([':manager_id' => $user['user_id']]);
 $queue = $stmt->fetchAll();
+
+// booking history (everything that is no longer in the live queue: completed, cancelled, unable to fulfill, etc.)
+$history = [];
+try {
+    $stmt = $pdo->prepare("
+        SELECT bk.booking_id,
+               bk.qr_refrence_code AS token_code,
+               bk.status,
+               bk.filled_gas,
+               COALESCE(bk.time_of_filled, bk.created_at) AS logged_at,
+               u.user_name AS customer_name,
+               ot.oil_name AS fuel_name
+        FROM booking bk
+        INNER JOIN station_business_scope sbs ON sbs.station_id = bk.station_id
+        LEFT JOIN users u ON u.user_id = bk.user_id
+        LEFT JOIN oil_types ot ON ot.oil_type_id = bk.oil_type_id
+        WHERE sbs.branch_manager_user_id = :manager_id
+          AND bk.status NOT IN ('notfilled','waiting','serving')
+        ORDER BY COALESCE(bk.time_of_filled, bk.created_at) DESC, bk.booking_id DESC
+        LIMIT 100
+    ");
+    $stmt->execute([':manager_id' => $user['user_id']]);
+    $history = $stmt->fetchAll();
+} catch (Throwable $e) {
+    $history = [];
+}
 
 $alerts       = notif_recent($pdo, (int)$user['user_id'], 5);
 $unread_count = notif_unread_count($pdo, (int)$user['user_id']);
@@ -684,6 +735,8 @@ $has_unread   = $unread_count > 0;
   /* Table Styling */
   .table-custom {
     margin-bottom: 0;
+    border-collapse: separate;
+    border-spacing: 0 8px;
   }
   .table-custom thead th {
     background: transparent;
@@ -691,9 +744,11 @@ $has_unread   = $unread_count > 0;
     font-size: 11.5px;
     text-transform: uppercase;
     letter-spacing: 0.4px;
-    padding: 14px 18px;
+    padding: 16px 18px;
     border-bottom: 1px solid rgba(255,255,255,0.07);
     font-weight: 600;
+    text-align: center;
+    vertical-align: middle;
   }
   .table-custom tbody tr {
     transition: opacity 0.3s ease, transform 0.3s ease;
@@ -701,11 +756,12 @@ $has_unread   = $unread_count > 0;
   .table-custom tbody td {
     background: transparent;
     color: var(--slate-50);
-    padding: 14px 18px;
+    padding: 16px 18px;
     font-size: 13.5px;
     border-bottom: 1px solid rgba(255,255,255,0.05);
     vertical-align: middle;
     transition: all 0.2s;
+    text-align: center;
   }
   .table-custom tbody tr:last-child td {
     border-bottom: none;
@@ -713,19 +769,60 @@ $has_unread   = $unread_count > 0;
   .table-custom tbody tr:hover td {
     background: rgba(255,255,255,0.015);
   }
+  .table-custom th:nth-child(4),
+  .table-custom td:nth-child(4) {
+    width: 42%;
+    min-width: 360px;
+  }
+  .queue-actions {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 12px 16px;
+    width: 100%;
+    min-height: 32px;
+    padding: 2px 0;
+  }
+  /* ---------- Tabs (same pattern as manage-staff.php) ---------- */
+  .tabs{display:flex; gap:8px; margin-bottom:20px; border-bottom:1px solid rgba(255,255,255,0.08); flex-wrap:wrap;}
+  .tab-btn{
+    background:none; border:none; color:var(--slate-400); font-family:inherit; font-size:13.5px; font-weight:600;
+    padding:11px 4px; cursor:pointer; position:relative; margin-right:22px; transition: color 0.25s ease;
+  }
+  .tab-btn:hover{color: var(--slate-50);}
+  .tab-btn.active{color:var(--slate-50);}
+  .tab-btn.active::after{
+    content:""; position:absolute; left:0; right:0; bottom:-1px; height:2px; background:var(--amber-400); border-radius:2px;
+    animation: slideLine 0.25s ease-out;
+  }
+  @keyframes slideLine { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+  .tab-panel{display:none;}
+  .tab-panel.active{ display:block; animation: panelFadeIn 0.3s ease forwards; }
+  @keyframes panelFadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
 
-  .tok-cell{font-family:'Space Grotesk'; font-weight:700; color:var(--amber-300);}
-  
-  .status-pill{font-size:11px; font-weight:700; padding:4px 10px; border-radius:999px; display:inline-flex; align-items:center; gap:6px; transition: all 0.3s;}
-  .status-pill.waiting{background:rgba(56,189,248,0.14); color:var(--sky-400);}
-  .status-pill.serving{background:rgba(52,211,153,0.14); color:var(--mint-400);}
-  .status-pill.done{background:rgba(139,150,173,0.14); color:var(--slate-400);}
-  .status-pill .d{width:6px; height:6px; border-radius:50%; background:currentColor;}
-  
-  .act-link{font-size:12px; color:var(--sky-400); font-weight:600; margin-right:14px; transition: color 0.15s ease, opacity 0.2s; cursor: pointer; text-decoration: none;}
-  .act-link:hover{color:var(--blue-500);}
-  .act-link.danger{color:var(--red-400);}
-  .act-link.danger:hover{color:#fca5a5;}
+  /* ---------- Booking history log ---------- */
+  .activity-row{
+    display:flex; gap: 14px; padding:13px 18px; border-bottom:1px solid rgba(255,255,255,0.05); font-size:13px;
+    transition: background 0.2s;
+  }
+  .activity-row:hover{background: rgba(255,255,255,0.01);}
+  .activity-row:last-child{border-bottom:none;}
+  .activity-scroll {
+    overflow-x: hidden; overflow-y: hidden; max-height: none;
+    scrollbar-width: thin; scrollbar-color: rgba(148, 163, 184, 0.45) transparent;
+  }
+  .activity-scroll.has-scroll { overflow-y: auto; }
+  .activity-scroll::-webkit-scrollbar { width: 8px; }
+  .activity-scroll::-webkit-scrollbar-track { background: transparent; }
+  .activity-scroll::-webkit-scrollbar-thumb {
+    background: rgba(148, 163, 184, 0.38); border-radius: 999px; border: 2px solid transparent; background-clip: content-box;
+  }
+  .activity-scroll::-webkit-scrollbar-thumb:hover { background: rgba(148, 163, 184, 0.62); }
+  .activity-row .t{font-size:11.5px; color:var(--slate-400); min-width:90px;}
+  .activity-row b{color:var(--slate-50);}
+
+  .act-link{font-size:12px; color:var(--sky-400); font-weight:600; margin-right:0; transition: color 0.15s ease, opacity 0.2s; cursor: pointer; text-decoration: none; white-space: nowrap; display:inline-flex; align-items:center; justify-content:center;}
 </style>
 </head>
 <body>
@@ -804,7 +901,7 @@ $has_unread   = $unread_count > 0;
         </div>
         
         <div class="avatar-chip">
-          <div class="avatar-circle"><a href="edit-profile.php"><?= h($initials) ?></a></div>
+          <div class="avatar-circle"><a href="edit-profile.php"><?= h(mb_substr($initials,0,1)) ?></a></div>
           <div><b><a href="edit-profile.php"><?= h(explode(' ', $user['full_name'])[0]) ?></a></b></div>
         </div>
       </div>
@@ -813,7 +910,6 @@ $has_unread   = $unread_count > 0;
     <!-- Content Workspace -->
     <div class="content">
       <div class="page-head">
-        <p>Track each pump's live status and the token queue in real time.</p>
       </div>
 
       <!-- Stats Grid -->
@@ -821,62 +917,45 @@ $has_unread   = $unread_count > 0;
         <div class="col-6 col-lg-3">
           <div class="stat-card">
             <div class="n" id="stat-waiting"><?= $waiting_count ?></div>
-            <div class="l">Tokens Waiting</div>
+            <div class="l">Token Issue</div>
           </div>
         </div>
         <div class="col-6 col-lg-3">
           <div class="stat-card">
             <div class="n"><?= $avg_wait ?: '—' ?> min</div>
-            <div class="l">Avg Wait Time</div>
+            <div class="l">Token completed</div>
           </div>
         </div>
         <div class="col-6 col-lg-3">
           <div class="stat-card">
             <div class="n" id="stat-issued"><?= $issued_today ?></div>
-            <div class="l">Tokens Issued Today</div>
+            <div class="l">Cancel by Customer</div>
           </div>
         </div>
         <div class="col-6 col-lg-3">
           <div class="stat-card">
             <div class="n" style="color:var(--red-400)"><?= $pump_maint ?> / <?= $pump_total ?></div>
-            <div class="l">Pumps Under Maintenance</div>
+            <div class="l">Cancel by Branch Manager</div>
           </div>
         </div>
       </div>
 
-      <!-- Pump Status Section -->
-      <div class="section-title">Pump Status</div>
-      <div class="row g-3 mb-4">
-        <?php
-        $status_cls = ['active' => '', 'idle' => 'idle', 'maintenance' => 'maint', 'offline' => 'maint'];
-        $status_label = ['active' => 'Active', 'idle' => 'Idle', 'maintenance' => 'Maintenance', 'offline' => 'Offline'];
-        foreach ($pumps as $p):
-          $cls = $status_cls[$p['status']] ?? 'idle';
-          $lbl = $status_label[$p['status']] ?? ucfirst($p['status']);
-        ?>
-        <div class="col-6 col-lg-3">
-          <div class="pump-card <?= h($cls) ?>" id="pump-card-<?= (int)$p['pump_no'] ?>" data-pump-id="<?= (int)$p['pump_id'] ?>">
-            <div class="pnum">PUMP #<?= (int)$p['pump_no'] ?></div>
-            <div class="tok"><?= h($p['current_token'] ?: ($p['status'] === 'idle' ? 'Ready' : $lbl)) ?></div>
-            <span class="pstat <?= h($cls === '' ? 'active' : $cls) ?>"><span class="d"></span> <?= h($lbl) ?></span>
-          </div>
-        </div>
-        <?php endforeach; ?>
+      <div class="tabs">
+        <button class="tab-btn active" id="tabbtn-queue" onclick="showTab('queue')">Live Booking Queue</button>
+        <button class="tab-btn" id="tabbtn-history" onclick="showTab('history')">Booking History</button>
       </div>
 
-      <!-- Live Queue Section -->
-      <div class="section-title">Live Queue</div>
+      <!-- TAB 1: LIVE BOOKING QUEUE -->
+      <div class="tab-panel active" id="tab-queue">
       <div class="panel">
         <div class="table-responsive">
           <table class="table table-custom" id="queue-table">
             <thead>
               <tr>
-                <th>Token</th>
-                <th>Requested Time</th>
-                <th>Est. Time</th>
-                <th>Pump</th>
-                <th>Status</th>
-                <th>Actions</th>
+                <th style="width:20%">Token</th>
+                <th style="width:20%">Requested Time</th>
+                <th style="width:20%">Expire Time</th>
+                <th style="width:40%">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -887,14 +966,12 @@ $has_unread   = $unread_count > 0;
               $default_pump = null;
               foreach ($pumps as $p) { if ($p['status'] === 'idle') { $default_pump = $p; break; } }
               if (!$queue): ?>
-                <tr><td colspan="6" style="text-align:center; color:var(--slate-400); padding:22px;">Queue is empty.</td></tr>
+                <tr><td colspan="4" style="text-align:center; color:var(--slate-400); padding:22px;">Queue is empty.</td></tr>
               <?php else: foreach ($queue as $q): ?>
                 <tr id="row-<?= h($q['token_code']) ?>" data-token-id="<?= (int)$q['token_id'] ?>">
                   <td class="tok-cell"><?= h($q['token_code']) ?></td>
                   <td><?= h(date('h:i A', strtotime($q['requested_at']))) ?></td>
                   <td><?= $q['estimated_at'] ? h(date('h:i A', strtotime($q['estimated_at']))) : '—' ?></td>
-                  <td class="pump-cell"><?= $q['pump_no'] ? '#' . (int)$q['pump_no'] : '—' ?></td>
-                  <td><span class="status-pill <?= h($stat_map[$q['status']] ?? 'waiting') ?>"><span class="d"></span> <?= h($stat_label[$q['status']] ?? ucfirst($q['status'])) ?></span></td>
                   <td>
                     <?php if ($q['status'] === 'serving'): ?>
                       <a class="act-link btn-complete" data-token-id="<?= (int)$q['token_id'] ?>">Complete</a>
@@ -918,6 +995,45 @@ $has_unread   = $unread_count > 0;
           </table>
         </div>
       </div>
+      </div>
+
+      <!-- TAB 2: BOOKING HISTORY LOG -->
+      <div class="tab-panel" id="tab-history">
+        <div class="panel">
+          <div class="activity-scroll" id="history-scroll">
+          <?php if (!$history): ?>
+            <div style="text-align:center; padding:22px; color:var(--slate-400); font-size: 12.5px;">No Booking History yet.</div>
+          <?php else: ?>
+            <?php
+            $hist_meta = [
+                'completed' => ['fa-circle-check',        'var(--mint-400)',  'completed'],
+                'cancelled' => ['fa-circle-xmark',        'var(--red-400)',   'was cancelled'],
+                'station_unable_to_fulfill' => ['fa-triangle-exclamation', 'var(--amber-400)', 'could not be fulfilled by the station'],
+            ];
+            foreach ($history as $hrow):
+                $st   = (string)$hrow['status'];
+                $meta = $hist_meta[$st] ?? ['fa-clock-rotate-left', 'var(--sky-400)', 'closed (' . str_replace('_', ' ', $st) . ')'];
+                $extra = '';
+                if ($st === 'completed' && $hrow['filled_gas'] !== null) {
+                    $extra = ' · ' . rtrim(rtrim(number_format((float)$hrow['filled_gas'], 2, '.', ''), '0'), '.') . ' L';
+                }
+                if (!empty($hrow['fuel_name'])) {
+                    $extra = ' · ' . $hrow['fuel_name'] . $extra;
+                }
+            ?>
+              <div class="activity-row">
+                <span class="t"><?= h(date('M j · h:i A', strtotime($hrow['logged_at']))) ?></span>
+                <span>
+                  <i class="fa-solid <?= h($meta[0]) ?>" style="color:<?= $meta[1] ?>; margin-right:6px;"></i>
+                  <b><?= h($hrow['customer_name'] ?: 'Customer') ?></b>
+                  <span style="color:var(--slate-300);"> — Token <?= h($hrow['token_code']) ?> <?= h($meta[2]) ?><?= h($extra) ?></span>
+                </span>
+              </div>
+            <?php endforeach; ?>
+          <?php endif; ?>
+          </div>
+        </div>
+      </div>
 
       <div class="page-foot">© 2026 MAP & PUMP | All Right Reserved</div>
     </div>
@@ -928,8 +1044,40 @@ $has_unread   = $unread_count > 0;
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 
 <script>
+  // Tab Switching Controller
+  function showTab(name){
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById('tab-' + name).classList.add('active');
+    document.getElementById('tabbtn-' + name).classList.add('active');
+  }
+
   document.addEventListener('DOMContentLoaded', () => {
-    
+
+    // Booking History: show 5 rows by default, scroll when there are more
+    const historyScroll = document.getElementById('history-scroll');
+    function updateHistoryScrollState() {
+      if (!historyScroll) return;
+      const rows = historyScroll.querySelectorAll('.activity-row');
+      if (rows.length <= 5) {
+        historyScroll.classList.remove('has-scroll');
+        historyScroll.style.maxHeight = 'none';
+        historyScroll.style.overflowY = 'hidden';
+        return;
+      }
+      let height = 0;
+      for (let i = 0; i < 5; i++) height += rows[i].offsetHeight;
+      if (!height) return; // tab hidden
+      historyScroll.classList.add('has-scroll');
+      historyScroll.style.maxHeight = height + 'px';
+      historyScroll.style.overflowY = 'auto';
+    }
+    updateHistoryScrollState();
+    window.addEventListener('resize', updateHistoryScrollState);
+    if (historyScroll && window.ResizeObserver) {
+      new ResizeObserver(updateHistoryScrollState).observe(historyScroll);
+    }
+
     // 1. Live Dynamic Clock
     function updateClock() {
       const now = new Date();

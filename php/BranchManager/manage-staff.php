@@ -625,17 +625,34 @@ foreach ($staff as $member) {
 
 $activities = [];
 try {
-    $activityStmt = $pdo->query(
-        "SELECT l.action, u.user_name AS staff_name, l.created_at
-         FROM log l
-         LEFT JOIN users u ON u.user_id = l.user_id
-         WHERE l.role_id = 4
-         ORDER BY l.created_at DESC
-         LIMIT 6"
+    $activityStmt = $pdo->prepare(
+        "SELECT uh.filled_at AS created_at,
+                COALESCE(staff.user_name, 'Staff member') AS staff_name,
+                CONCAT(
+                    COALESCE(customer.user_name, 'Customer'),
+                    ' visited ',
+                    COALESCE(branch.branch_name, 'this branch'),
+                    ' and was served by ',
+                    COALESCE(staff.user_name, 'staff')
+                ) AS action
+         FROM usage_history uh
+         INNER JOIN users customer ON customer.user_id = uh.user_id
+         INNER JOIN branches branch ON branch.branch_id = uh.station_id
+         INNER JOIN users staff ON staff.user_id = uh.staff_user_id
+         WHERE uh.station_id = :branch_id
+           AND uh.staff_user_id IS NOT NULL
+           AND EXISTS (
+               SELECT 1
+               FROM staff s
+               WHERE s.user_id = uh.staff_user_id
+                 AND s.branch_id = :branch_id
+           )
+           AND LOWER(COALESCE(uh.status, '')) = 'filled'
+         ORDER BY uh.filled_at DESC, uh.usage_id DESC
+         LIMIT 12"
     );
-    if ($activityStmt) {
-        $activities = $activityStmt->fetchAll(PDO::FETCH_ASSOC);
-    }
+    $activityStmt->execute([':branch_id' => $bid]);
+    $activities = $activityStmt->fetchAll(PDO::FETCH_ASSOC);
 } catch (Throwable $e) {
     $activities = [];
 }
@@ -988,6 +1005,23 @@ try {
   }
   .activity-row:hover{background: rgba(255,255,255,0.01);}
   .activity-row:last-child{border-bottom:none;}
+  .activity-scroll {
+    overflow-x: hidden;
+    overflow-y: hidden;
+    max-height: none;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(148, 163, 184, 0.45) transparent;
+  }
+  .activity-scroll.has-scroll { overflow-y: auto; }
+  .activity-scroll::-webkit-scrollbar { width: 8px; }
+  .activity-scroll::-webkit-scrollbar-track { background: transparent; }
+  .activity-scroll::-webkit-scrollbar-thumb {
+    background: rgba(148, 163, 184, 0.38);
+    border-radius: 999px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+  }
+  .activity-scroll::-webkit-scrollbar-thumb:hover { background: rgba(148, 163, 184, 0.62); }
   .activity-row .t{font-size:11.5px; color:var(--slate-400); min-width:70px;}
   .activity-row b{color:var(--slate-50);}
 
@@ -1294,7 +1328,8 @@ try {
                         </button>
                       <?php endif; ?>
                       <button type="button" class="staff-action-btn delete-btn delete-action" data-id="<?= (int)$s['staff_id'] ?>" data-name="<?= h($s['full_name']) ?>" data-code="<?= h($s['staff_code']) ?>" title="Delete staff member" aria-label="Delete staff member">
-                        <i class="fa-solid fa-trash"></i                      </button>
+                        <i class="fa-solid fa-trash"></i>
+                      </button>
                     </div>
                   </td>
                 </tr>
@@ -1311,6 +1346,7 @@ try {
       <!-- TAB 2: STAFF ACTIVITY LOG -->
       <div class="tab-panel" id="tab-activity">
         <div class="panel">
+          <div class="activity-scroll" id="activity-scroll">
           <?php if (!$activities): ?>
             <div style="text-align:center; padding:22px; color:var(--slate-400); font-size: 12.5px;">No staff activity yet.</div>
           <?php else: ?>
@@ -1325,6 +1361,7 @@ try {
               </div>
             <?php endforeach; ?>
           <?php endif; ?>
+          </div>
         </div>
       </div>
 
@@ -1516,6 +1553,32 @@ try {
         attributes: true,
         attributeFilter: ['style']
       });
+    }
+
+    // Staff Activity: show 5 rows by default, scroll when there are more
+    const activityScroll = document.getElementById('activity-scroll');
+    function updateActivityScrollState() {
+      if (!activityScroll) return;
+      const rows = activityScroll.querySelectorAll('.activity-row');
+      if (rows.length <= 5) {
+        activityScroll.classList.remove('has-scroll');
+        activityScroll.style.maxHeight = 'none';
+        activityScroll.style.overflowY = 'hidden';
+        return;
+      }
+      // Height of the first 5 rows (measured, so wrapped text is handled). Returns 0 while the tab is hidden.
+      let height = 0;
+      for (let i = 0; i < 5; i++) height += rows[i].offsetHeight;
+      if (!height) return;
+      activityScroll.classList.add('has-scroll');
+      activityScroll.style.maxHeight = height + 'px';
+      activityScroll.style.overflowY = 'auto';
+    }
+    updateActivityScrollState();
+    window.addEventListener('resize', updateActivityScrollState);
+    // The tab starts hidden, so re-measure once it becomes visible
+    if (activityScroll && window.ResizeObserver) {
+      new ResizeObserver(updateActivityScrollState).observe(activityScroll);
     }
 
     const csrfToken = '<?= h(csrf_token()) ?>';
