@@ -411,12 +411,6 @@ $profileFallbackUrl = map_pump_profile_initial_svg($profileName, 'H');
 
             <!-- Right Column: Stacked Cards for Password & Switcher -->
             <div class="col-lg-4 d-flex flex-column gap-4">
-                <div class="card p-4 text-center">
-                    <h3 class="mb-3">HQ service period</h3>
-                    <p class="subtitle mb-2">Current expiry: <strong><?= htmlspecialchars((string) ($user['service_expires_at'] ?? 'Not set'), ENT_QUOTES, 'UTF-8') ?></strong></p>
-                    <p class="subtitle mb-4">Submit a payment and screenshot to extend your company service period.</p>
-                    <a class="btn btn-outline-primary w-100" href="extend_period.php">Extend service period</a>
-                </div>
                 <!-- Change Password Card -->
                 <div class="card p-4 text-center">
                     <h3 class="mb-3">Change Password</h3>
