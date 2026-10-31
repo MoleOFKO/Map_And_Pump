@@ -28,7 +28,7 @@ $isPayer = ($userId > 0 && (int) ($transfer['payer_user_id'] ?? 0) === $userId)
     || ($email !== '' && $email === strtolower((string) ($transfer['payer_email'] ?? '')))
     || $accessValid;
 $isRecipient = $userId > 0 && ($transfer['recipient_role'] === 'admin'
-    ? ($transfer['payment_type'] === 'hq_period_extension'
+    ? (in_array($transfer['payment_type'], ['hq_period_extension', 'hq_station_package'], true)
         ? payment_transfer_user_is_admin_or_moderator($pdo, $userId)
         : payment_transfer_user_is_admin($pdo, $userId))
     : ($transfer['recipient_role'] === 'station_hq' && payment_transfer_user_owns_hq($pdo, $userId, (int) $transfer['recipient_headquarter_id'])));

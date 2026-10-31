@@ -8,9 +8,12 @@ $oilPercent = max(0.0, min(100.0, ($oilRemaining / $oilLimit) * 100));
 
 $monthly_visits = 3;
 require_once __DIR__ . '/../loyalty_points.php';
-$reward_points = loyalty_get_available_balance($pdo, (int) $_SESSION['user_id']);
-$reward_tier_code = loyalty_resolve_tier($reward_points);
+$customerId = (int) $_SESSION['user_id'];
+$reward_points = loyalty_get_available_balance($pdo, $customerId);
+$tierStatus = loyalty_customer_tier_status($pdo, $customerId, $reward_points);
+$reward_tier_code = $tierStatus['tier_code'];
 $reward_tier = loyalty_tier_label($reward_tier_code);
+$redemptionOptions = loyalty_redemption_options($pdo);
 ?>
 
 <div class="customer-dashboard">
@@ -49,10 +52,47 @@ $reward_tier = loyalty_tier_label($reward_tier_code);
             <p class="customer-reward-tier customer-reward-tier-<?php echo htmlspecialchars(strtolower($reward_tier_code), ENT_QUOTES, 'UTF-8'); ?> mb-0 mt-3">
                 <i class="bi bi-award-fill me-1"></i><?php echo htmlspecialchars($reward_tier, ENT_QUOTES, 'UTF-8'); ?> tier
             </p>
-            <p class="text-secondary mb-0 mt-1" style="font-size:12px;">1 point per completed liter · redeem 500 pts for 1,000 MMK, 999 for 2,000 MMK, or 1,499 for 3,000 MMK off.</p>
+            <p class="text-secondary mb-0 mt-1" style="font-size:12px;">Earn points only on external fills. Select one fixed reward when booking:</p>
+            <ul class="text-secondary small mb-0 mt-1 ps-3">
+                <?php foreach ($redemptionOptions as $points => $discount): ?>
+                    <li><?= number_format($points) ?> pts → <?= number_format($discount) ?> MMK</li>
+                <?php endforeach; ?>
+            </ul>
+            <?php if ($tierStatus['next_tier'] !== null): ?>
+                <p class="text-secondary small mb-0 mt-2">
+                    Rank up to <?= htmlspecialchars(loyalty_tier_label($tierStatus['next_tier']), ENT_QUOTES, 'UTF-8') ?>:
+                    <?= number_format($tierStatus['next_points']) ?> points threshold
+                    (<?= number_format(max(0, $tierStatus['next_points'] - $reward_points)) ?> more) and
+                    <?= (int) $tierStatus['next_exp'] ?> EXP
+                    (<?= (int) $tierStatus['exp_remaining'] ?> more).
+                    Reach <?= number_format($tierStatus['weekly_quota_liters'], 1) ?> L in successful external fills each week; each missed week removes 1 EXP.
+                </p>
+            <?php else: ?>
+                <p class="text-secondary small mb-0 mt-2">Diamond tier reached. Maintain your weekly quota to preserve EXP.</p>
+            <?php endif; ?>
         </div>
     </div>
 </div>
+
+<section class="dashboard-panel-card mb-4">
+    <h2 class="h5 text-white">Tier points and shared monthly pool</h2>
+    <p class="text-secondary small">The tier task is to reach the weekly fuel quota using successful external fills. Each tier below shows your remaining point threshold and the MMK still available to the shared tier pool this month.</p>
+    <div class="table-responsive">
+        <table class="table table-dark table-sm align-middle mb-0">
+            <thead><tr><th>Tier</th><th>Points threshold</th><th>Your points remaining</th><th>Pool remaining this month</th></tr></thead>
+            <tbody>
+            <?php foreach ($tierStatus['tiers'] as $tier): ?>
+                <tr>
+                    <th><?= htmlspecialchars($tier['label'], ENT_QUOTES, 'UTF-8') ?></th>
+                    <td><?= number_format($tier['points_threshold']) ?></td>
+                    <td><?= number_format($tier['points_remaining']) ?></td>
+                    <td><?= number_format($tier['pool_remaining_mmk'], 2) ?> MMK</td>
+                </tr>
+            <?php endforeach; ?>
+            </tbody>
+        </table>
+    </div>
+</section>
 
 <!-- Updated "Track Stations & Book Tokens" Card -->
 <div class="customer-live-queue-card p-4 p-md-4 rounded-4 position-relative overflow-hidden mb-4">

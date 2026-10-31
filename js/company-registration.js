@@ -197,31 +197,31 @@ const fillPaymentStep = () => {
 
 const getRegistrationAmount = () => {
     if (!stationCountInput || !registrationTotal) return 0;
-    const extraCount = Math.max(0, Number(stationCountInput.value) - Number(registrationTotal.dataset.included));
+    const stationCount = Number(stationCountInput.value);
     const discounts = JSON.parse(registrationTotal.dataset.discounts || '[]');
-    const discount = discounts.reduce((current, tier) => extraCount >= Number(tier.min) ? Number(tier.percent) : current, 0);
+    const discount = discounts.reduce((current, tier) => stationCount >= Number(tier.min) ? Number(tier.percent) : current, 0);
     const months = Number(registrationTermInput?.value || 1);
     const termDiscounts = JSON.parse(registrationTotal.dataset.termDiscounts || '[]');
     const termDiscount = Number(termDiscounts.find((term) => Number(term.months) === months)?.percent || 0);
-    return Number(registrationTotal.dataset.monthly) * extraCount * months * (1 - discount / 100) * (1 - termDiscount / 100);
+    const packageAmount = Number(registrationTotal.dataset.monthly) * stationCount * months * (1 - discount / 100) * (1 - termDiscount / 100);
+    return Math.round((Number(registrationTotal.dataset.base) + packageAmount) * 100) / 100;
 };
 
 const updateRegistrationAmount = () => {
     if (!registrationTotal) return;
     const amount = getRegistrationAmount();
-    const extraCount = Math.max(0, Number(stationCountInput?.value || 0) - Number(registrationTotal.dataset.included));
     const formatted = `${new Intl.NumberFormat().format(amount)} <small>MMK</small>`;
     registrationTotal.innerHTML = formatted;
     if (paymentSummaryAmount) paymentSummaryAmount.innerHTML = formatted;
     const isFree = amount <= 0;
-    if (registrationTermField) registrationTermField.hidden = extraCount === 0;
+    if (registrationTermField) registrationTermField.hidden = false;
     if (paymentMethodField) paymentMethodField.hidden = isFree;
     if (paymentSteps) paymentSteps.hidden = isFree;
     if (banksBox) banksBox.hidden = isFree || methodInput?.value !== 'Bank transfer';
     if (paymentConfirmButton) paymentConfirmButton.innerHTML = isFree
         ? 'Submit registration <i class="fa-solid fa-check ms-2"></i>'
         : 'Continue to payment <i class="fa-solid fa-arrow-right ms-2"></i>';
-    if (paymentNote) paymentNote.textContent = 'The first three stations are included for life. Active station operation fees are billed separately in HQ points.';
+    if (paymentNote) paymentNote.textContent = 'The MMK package includes station capacity, operation, and service extension. Driver loyalty points are not used for HQ billing.';
 };
 
 stationCountInput?.addEventListener('change', updateRegistrationAmount);

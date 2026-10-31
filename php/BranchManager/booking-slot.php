@@ -34,8 +34,8 @@ loyalty_countermeasures_schema_ready($pdo);
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!csrf_check($_POST['csrf'] ?? null)) json_out(['ok' => false, 'error' => 'CSRF failed'], 403);
     $action = $_POST['action'] ?? '';
-    if (in_array($action, ['call_next', 'complete'], true) && !company_loyalty_station_is_paid($pdo, $bid)) {
-        json_out(['ok' => false, 'error' => 'This station is paused until its HQ pays the monthly operating fee.'], 403);
+    if (in_array($action, ['call_next', 'complete'], true) && !hq_billing_station_is_paid($pdo, $bid)) {
+        json_out(['ok' => false, 'error' => 'This station is paused until its HQ pays the MMK service package.'], 403);
     }
     try {
         if ($action === 'call_next') {
@@ -253,8 +253,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                      discount_mmk = :discount,
                      is_internal = :is_internal,
                      admin_share_mmk = :admin_share,
-                     company_share_mmk = :company_share,
-                     company_points_earned = :company_points
+                     company_share_mmk = :company_share
                  WHERE usage_id = :usage_id'
             );
             $loyaltyUpdate->execute([
@@ -265,7 +264,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ':is_internal' => !empty($loyaltyResult['is_internal']) ? 1 : 0,
                 ':admin_share' => (float) ($loyaltyResult['admin_share_mmk'] ?? 0),
                 ':company_share' => (float) ($loyaltyResult['company_share_mmk'] ?? 0),
-                ':company_points' => (int) ($loyaltyResult['company_points_earned'] ?? 0),
                 ':usage_id' => $usageId,
             ]);
 
@@ -298,7 +296,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'station_coupon_discount_mmk' => (float)($couponRedemption['discount_mmk'] ?? 0),
                 'points_earned' => (int) ($loyaltyResult['points_earned'] ?? 0),
                 'points_redeemed' => (int) ($loyaltyResult['points_redeemed'] ?? 0),
-                'company_points_earned' => (int) ($loyaltyResult['company_points_earned'] ?? 0),
             ]);
         }
 
@@ -345,9 +342,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         json_out(['ok' => false, 'error' => 'Unknown action'], 400);
     } catch (Throwable $e) {
         if ($pdo->inTransaction()) $pdo->rollBack();
-        $message = $e instanceof LoyaltyTransferException
-            ? 'The HQ points transfer failed. The fill was not recorded; please try again.'
-            : 'Could not complete this action. Please try again.';
+        $message = 'Could not complete this action. Please try again.';
         json_out(['ok' => false, 'error' => $message], 500);
     }
 }

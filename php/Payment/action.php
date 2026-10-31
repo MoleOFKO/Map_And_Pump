@@ -60,82 +60,7 @@ if ($action === 'create_fuel_payment') {
 
 try {
     if ($action === 'create_operating_fee_quote') {
-        if (!payment_transfer_user_is_admin($pdo, $userId)) {
-            throw new RuntimeException('Only an Admin can create a negotiated station operating-fee quote.');
-        }
-        $stationId = (int) ($_POST['station_id'] ?? 0);
-        $amountInput = trim((string) ($_POST['amount_mmk'] ?? ''));
-        $serviceMonth = trim((string) ($_POST['service_month'] ?? ''));
-        if ($stationId <= 0 || !preg_match('/^\d{1,12}(?:\.\d{1,2})?$/', $amountInput) || (float) $amountInput <= 0) {
-            throw new RuntimeException('Choose a station and enter a positive MMK quote with up to two decimal places.');
-        }
-        $monthObject = DateTimeImmutable::createFromFormat('!Y-m', $serviceMonth);
-        $dateErrors = DateTimeImmutable::getLastErrors();
-        if (!$monthObject || ($dateErrors !== false && ($dateErrors['warning_count'] > 0 || $dateErrors['error_count'] > 0))
-            || $monthObject->format('Y-m') !== $serviceMonth
-            || $serviceMonth < date('Y-m')
-            || $monthObject > (new DateTimeImmutable('first day of this month'))->modify('+12 months')) {
-            throw new RuntimeException('Choose the current month or a month within the next 12 months.');
-        }
-        $amount = number_format((float) $amountInput, 2, '.', '');
-
-        $pdo->beginTransaction();
-        $stationInfoStmt = $pdo->prepare(
-            "SELECT b.branch_name, b.status, sbs.headquarter_id, h.company_name, h.headquarters_owner_id, u.email AS owner_email
-             FROM branches b
-             INNER JOIN station_business_scope sbs ON sbs.station_id = b.branch_id
-             INNER JOIN headquarter h ON h.headquarter_id = sbs.headquarter_id
-             INNER JOIN users u ON u.user_id = h.headquarters_owner_id
-             WHERE b.branch_id = ? AND LOWER(COALESCE(u.status, 'active')) IN ('active', 'approved')
-             LIMIT 1"
-        );
-        $stationInfoStmt->execute([$stationId]);
-        $station = $stationInfoStmt->fetch(PDO::FETCH_ASSOC);
-        if (!$station || strtolower((string) $station['status']) === 'closed') {
-            throw new RuntimeException('Choose a station that is still linked to an active HQ.');
-        }
-        $headquarterId = (int) $station['headquarter_id'];
-        $hqLock = $pdo->prepare('SELECT headquarter_id FROM headquarter WHERE headquarter_id = ? FOR UPDATE');
-        $hqLock->execute([$headquarterId]);
-        if (!$hqLock->fetchColumn()) {
-            throw new RuntimeException('Could not verify the station HQ.');
-        }
-        $stationLock = $pdo->prepare("SELECT b.branch_id FROM branches b INNER JOIN station_business_scope sbs ON sbs.station_id = b.branch_id WHERE b.branch_id = ? AND sbs.headquarter_id = ? AND b.status <> 'closed' FOR UPDATE");
-        $stationLock->execute([$stationId, $headquarterId]);
-        if (!$stationLock->fetchColumn()) {
-            throw new RuntimeException('The station changed while the quote was being created.');
-        }
-        $feeCheck = $pdo->prepare('SELECT 1 FROM company_loyalty_station_fees WHERE headquarter_id = ? AND station_id = ? AND `year_month` = ? LIMIT 1');
-        $feeCheck->execute([$headquarterId, $stationId, $serviceMonth]);
-        if ($feeCheck->fetchColumn()) {
-            throw new RuntimeException('This station already has a fee recorded for the selected month.');
-        }
-        $quoteCheck = $pdo->prepare("SELECT 1 FROM payment_transfers WHERE payment_type = 'hq_station_operating_quote' AND station_id = ? AND service_start_month = ? AND status IN ('pending_payment', 'payer_reported_paid', 'received') LIMIT 1");
-        $quoteCheck->execute([$stationId, $serviceMonth]);
-        if ($quoteCheck->fetchColumn()) {
-            throw new RuntimeException('An active or received quote already exists for this station and month.');
-        }
-        $transferId = payment_transfer_create($pdo, [
-            'payment_type' => 'hq_station_operating_quote',
-            'amount_mmk' => $amount,
-            'description' => 'Negotiated monthly operating fee for ' . trim((string) $station['branch_name']) . ' (' . $serviceMonth . ')',
-            'payer_user_id' => (int) $station['headquarters_owner_id'],
-            'payer_email' => (string) $station['owner_email'],
-            'payer_headquarter_id' => $headquarterId,
-            'recipient_role' => BILLING_PLATFORM_RECEIVER_ROLE,
-            'station_id' => $stationId,
-            'service_start_month' => $serviceMonth,
-            'payment_method' => 'negotiated quote',
-            'event_actor_user_id' => $userId,
-            'event_actor_email' => $currentUserEmail,
-            'event_note' => 'Admin created a negotiated monthly operating-fee quote for the designated HQ payer.',
-        ]);
-        $pdo->commit();
-        payment_transfer_send_notices($pdo, $transferId, 'recipient', 'pending_payment');
-        payment_transfer_send_notices($pdo, $transferId, 'payer', 'pending_payment');
-        $_SESSION['payment_transfer_flash'] = ['type' => 'success', 'message' => 'The negotiated monthly fee quote was sent to the HQ owner. It will not apply until the Admin records receipt.'];
-        header('Location: ' . $redirect);
-        exit;
+        throw new RuntimeException('Standalone station-fee quotes are retired. Use the all-in-one MMK station package.');
     } elseif ($action === 'recreate_registration_request') {
         $pdo->beginTransaction();
         $oldStmt = $pdo->prepare("SELECT * FROM payment_transfers WHERE payment_transfer_id = ? AND payment_type = 'hq_registration' FOR UPDATE");
@@ -239,18 +164,35 @@ try {
         if ($headquarterId <= 0 || !payment_transfer_user_owns_hq($pdo, $userId, $headquarterId)) {
             throw new RuntimeException('Only the owning HQ account can request extra-station payment.');
         }
-        $quantity = (int) ($_POST['quantity'] ?? 1);
+        $extraQuantity = (int) ($_POST['quantity'] ?? 1);
         $termMonths = (int) ($_POST['term_months'] ?? 1);
         $paymentMethod = trim((string) ($_POST['payment_method'] ?? ''));
         $allowedMethods = ['KPay', 'Wave Pay', 'AYA Pay', 'CB Pay', 'AYA Bank', 'CB Bank', 'KBZ Bank', 'YOMA Bank'];
         $allowedTerms = array_map(static fn (array $term): int => (int) $term['months'], BILLING_HQ_TERM_DISCOUNTS);
-        if ($quantity < 1 || $quantity > 60 || !in_array($termMonths, $allowedTerms, true) || !in_array($paymentMethod, $allowedMethods, true)) {
+        if ($extraQuantity < 1 || $extraQuantity > 60 || !in_array($termMonths, $allowedTerms, true) || !in_array($paymentMethod, $allowedMethods, true)) {
             throw new RuntimeException('Choose 1–60 extra stations, a valid billing term, and a payment method.');
         }
 
+        $pdo->beginTransaction();
+        $lock = $pdo->prepare('SELECT headquarter_id FROM headquarter WHERE headquarter_id = ? FOR UPDATE');
+        $lock->execute([$headquarterId]);
+        if (!$lock->fetchColumn()) {
+            throw new RuntimeException('Could not verify this HQ account.');
+        }
+        $stationCountStmt = $pdo->prepare(
+            "SELECT COUNT(*)
+             FROM branches b
+             INNER JOIN station_business_scope sbs ON sbs.station_id = b.branch_id
+             WHERE sbs.headquarter_id = ? AND LOWER(COALESCE(b.status, 'active')) <> 'closed'"
+        );
+        $stationCountStmt->execute([$headquarterId]);
+        $currentStations = (int) $stationCountStmt->fetchColumn();
+        $packageStationCount = $currentStations + $extraQuantity;
+        $packageRate = billing_admin_setting($pdo, 'hq_package_mmk_per_station_month', BILLING_HQ_PACKAGE_MMK_PER_STATION_MONTHLY);
+
         $volumePercent = 0;
         foreach (BILLING_HQ_VOLUME_DISCOUNTS as $tier) {
-            if ($quantity >= (int) $tier['min']) {
+            if ($packageStationCount >= (int) $tier['min']) {
                 $volumePercent = (int) $tier['percent'];
             }
         }
@@ -261,21 +203,15 @@ try {
                 break;
             }
         }
-        $baseAmount = (float) BILLING_HQ_EXTRA_STATION_MMK_MONTHLY * $quantity * $termMonths;
+        $baseAmount = (float) $packageRate * $packageStationCount * $termMonths;
         $amount = round($baseAmount * (1 - $volumePercent / 100) * (1 - $termPercent / 100), 2);
         if ($amount <= 0) {
             throw new RuntimeException('The calculated payment amount is invalid.');
         }
 
-        $pdo->beginTransaction();
-        $lock = $pdo->prepare('SELECT headquarter_id FROM headquarter WHERE headquarter_id = ? FOR UPDATE');
-        $lock->execute([$headquarterId]);
-        if (!$lock->fetchColumn()) {
-            throw new RuntimeException('Could not verify this HQ account.');
-        }
         $duplicate = $pdo->prepare(
             "SELECT 1 FROM payment_transfers
-             WHERE payer_headquarter_id = ? AND payment_type = 'hq_extra_station'
+             WHERE payer_headquarter_id = ? AND payment_type IN ('hq_station_package', 'hq_period_extension', 'hq_extra_station')
                AND status IN ('pending_payment', 'payer_reported_paid') LIMIT 1"
         );
         $duplicate->execute([$headquarterId]);
@@ -283,10 +219,10 @@ try {
             throw new RuntimeException('This HQ already has an extra-station payment awaiting confirmation.');
         }
         $transferId = payment_transfer_create($pdo, [
-            'payment_type' => 'hq_extra_station',
+            'payment_type' => 'hq_station_package',
             'amount_mmk' => $amount,
-            'description' => sprintf('%d extra station(s) for %d month(s), including capacity and operation', $quantity, $termMonths),
-            'quantity' => $quantity,
+            'description' => sprintf('All-in-one package for %d station(s) (%d additional capacity slot(s)) for %d month(s)', $packageStationCount, $extraQuantity, $termMonths),
+            'quantity' => $packageStationCount,
             'term_months' => $termMonths,
             'service_start_month' => date('Y-m'),
             'payer_user_id' => $userId,
@@ -361,7 +297,7 @@ try {
             $noticeAction = 'cancelled';
             $noticeSide = 'recipient';
         } else {
-            $canReceive = in_array($transfer['payment_type'], ['hq_period_extension', 'hq_registration'], true)
+            $canReceive = in_array($transfer['payment_type'], ['hq_period_extension', 'hq_station_package', 'hq_registration'], true)
                 ? payment_transfer_user_is_admin_or_moderator($pdo, $userId)
                 : ($transfer['recipient_role'] === 'station_hq'
                     ? payment_transfer_user_owns_hq($pdo, $userId, (int) $transfer['recipient_headquarter_id'])
@@ -383,7 +319,7 @@ try {
                 if ($transfer['payment_type'] === 'hq_registration') {
                     $eventNote = 'Admin or Moderator confirmed the registration payment. The HQ will be created when the registration request is approved.';
                 }
-                if ($transfer['payment_type'] === 'hq_period_extension') {
+                if (in_array($transfer['payment_type'], ['hq_period_extension', 'hq_station_package'], true)) {
                     if (!payment_transfer_ensure_hq_service_expiry_schema($pdo)) {
                         throw new RuntimeException('HQ service-period storage is unavailable.');
                     }
@@ -397,6 +333,9 @@ try {
                     $currentExpiry = $expiryStmt->fetchColumn();
                     if ($currentExpiry === false) {
                         throw new RuntimeException('The company account for this extension no longer exists.');
+                    }
+                    if ($transfer['payment_type'] === 'hq_station_package') {
+                        payment_transfer_apply_hq_station_package($pdo, $transfer);
                     }
                     $now = new DateTimeImmutable();
                     $start = $currentExpiry && new DateTimeImmutable((string) $currentExpiry) > $now
@@ -413,7 +352,9 @@ try {
                                                      AND (h.business_license_expire_date IS NULL OR h.business_license_expire_date = '' OR h.business_license_expire_date >= CURDATE())"
                                         );
                                         $ownerStatus->execute([$headquarterId]);
-                    $eventNote = 'Admin or Moderator recorded receipt and extended HQ service through ' . $newExpiry . '.';
+                    $eventNote = $transfer['payment_type'] === 'hq_station_package'
+                        ? 'Admin or Moderator confirmed the all-in-one station package and extended HQ service through ' . $newExpiry . '.'
+                        : 'Admin or Moderator recorded receipt and extended HQ service through ' . $newExpiry . '.';
                 }
                 if ($transfer['payment_type'] === 'hq_station_operating_quote') {
                     $applied = payment_transfer_apply_operating_fee($pdo, $transfer);
@@ -517,12 +458,12 @@ function payment_transfer_create_pending_registration_hq(PDO $pdo, array $transf
     $stationCount = (int) ($details['requested_station_count'] ?? 0);
     $months = (int) ($details['requested_service_months'] ?? 1);
     $extraStationCount = $stationCount - BILLING_HQ_INCLUDED_STATION_SLOTS;
-    if ($extraStationCount < 1 || $stationCount > 60 || $months < 1 || $months > 24) {
+    if ($extraStationCount < 0 || $stationCount > 60 || $months < 1 || $months > 24) {
         throw new RuntimeException('The paid station count or service period is invalid.');
     }
 
     $paymentCheck = $pdo->prepare(
-        "SELECT status, amount_mmk, quantity, term_months
+        "SELECT status, amount_mmk, quantity, term_months, service_start_month
          FROM payment_transfers
          WHERE payment_transfer_id = ? AND request_id = ? AND payment_type = 'hq_registration'
          FOR UPDATE"
@@ -530,7 +471,7 @@ function payment_transfer_create_pending_registration_hq(PDO $pdo, array $transf
     $paymentCheck->execute([$transferId, $requestId]);
     $payment = $paymentCheck->fetch(PDO::FETCH_ASSOC);
     if (!$payment || (string) $payment['status'] !== 'received' || (float) $payment['amount_mmk'] <= 0
-        || (int) $payment['quantity'] < $extraStationCount || (int) $payment['term_months'] !== $months) {
+        || (int) $payment['quantity'] !== $stationCount || (int) $payment['term_months'] !== $months) {
         throw new RuntimeException('The received payment does not match the requested HQ service term.');
     }
     $receiptCheck = $pdo->prepare('SELECT 1 FROM payment_transfer_receipts WHERE payment_transfer_id = ? LIMIT 1');
@@ -579,7 +520,7 @@ function payment_transfer_create_pending_registration_hq(PDO $pdo, array $transf
         (string) $request['document_path'],
         $licenseExpiryDate,
         $licenseExpiryDate . ' 23:59:59',
-        $stationCount,
+        BILLING_HQ_INCLUDED_STATION_SLOTS,
         $serviceExpiry,
     ]);
     $headquarterId = (int) $pdo->lastInsertId();
@@ -603,27 +544,16 @@ function payment_transfer_create_pending_registration_hq(PDO $pdo, array $transf
     );
     $scope->execute([(int) $owner['user_id'], $hqRoleId, $headquarterId]);
 
-    $monthStart = new DateTimeImmutable('first day of this month 00:00:00');
-    $slotInsert = $pdo->prepare(
-        'INSERT INTO company_loyalty_station_slots
-            (headquarter_id, `year_month`, slots_purchased, mmk_slots_purchased, points_spent)
-         VALUES (?, ?, 0, ?, 0)
-         ON DUPLICATE KEY UPDATE mmk_slots_purchased = mmk_slots_purchased + VALUES(mmk_slots_purchased)'
-    );
-    $entitlementInsert = $pdo->prepare(
-        'INSERT INTO hq_station_mmk_entitlements (payment_transfer_id, headquarter_id, `year_month`, slot_number)
-         VALUES (?, ?, ?, ?)'
-    );
-    for ($monthIndex = 0; $monthIndex < $months; $monthIndex++) {
-        $yearMonth = $monthStart->modify('+' . $monthIndex . ' months')->format('Y-m');
-        $slotInsert->execute([$headquarterId, $yearMonth, $extraStationCount]);
-        for ($slotNumber = 1; $slotNumber <= $extraStationCount; $slotNumber++) {
-            $entitlementInsert->execute([$transferId, $headquarterId, $yearMonth, $slotNumber]);
-        }
-    }
-
     $paymentLink = $pdo->prepare('UPDATE payment_transfers SET payer_headquarter_id = ? WHERE payment_transfer_id = ?');
     $paymentLink->execute([$headquarterId, $transferId]);
+    $packageTransfer = [
+        'payment_transfer_id' => $transferId,
+        'payer_headquarter_id' => $headquarterId,
+        'quantity' => (int) $payment['quantity'],
+        'term_months' => $months,
+        'service_start_month' => (string) $payment['service_start_month'],
+    ];
+    payment_transfer_apply_hq_station_package($pdo, $packageTransfer);
     $requestUpdate = $pdo->prepare(
         "UPDATE system_requests
          SET headquarter_id = ?, status = 'approved', review_reason = 'Payment receipt confirmed; HQ pending activation.',

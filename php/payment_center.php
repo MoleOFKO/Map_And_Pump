@@ -63,7 +63,7 @@ if ($paymentReady) {
     if ($isAdmin) {
         $conditions[] = "pt.recipient_role = 'admin'";
     } elseif ($isModeratorReviewer) {
-        $conditions[] = "(pt.recipient_role = 'admin' AND pt.payment_type = 'hq_period_extension')";
+        $conditions[] = "(pt.recipient_role = 'admin' AND pt.payment_type IN ('hq_period_extension', 'hq_station_package'))";
     }
     if ($isHqRecipient) {
         $conditions[] = "(pt.recipient_role = 'station_hq' AND pt.recipient_headquarter_id = ?)";
@@ -105,20 +105,6 @@ if ($transferRows) {
         $eventsByTransfer[(int) $eventRow['payment_transfer_id']][] = $eventRow;
     }
 }
-$operatingFeeStations = [];
-if ($isAdmin && $paymentReady) {
-    $quoteStationsStmt = $pdo->query(
-        "SELECT DISTINCT b.branch_id, b.branch_name, h.company_name, sbs.headquarter_id
-         FROM branches b
-         INNER JOIN station_business_scope sbs ON sbs.station_id = b.branch_id
-         INNER JOIN headquarter h ON h.headquarter_id = sbs.headquarter_id
-         INNER JOIN users u ON u.user_id = h.headquarters_owner_id
-         WHERE b.status <> 'closed' AND LOWER(COALESCE(u.status, 'active')) IN ('active', 'approved')
-         ORDER BY h.company_name, b.branch_name"
-    );
-    $operatingFeeStations = $quoteStationsStmt->fetchAll(PDO::FETCH_ASSOC);
-}
-
 $page_title = 'Payment status | MAP & PUMP';
 $page_description = 'Review external payment status notices.';
 require __DIR__ . '/partials/head.php';
@@ -150,34 +136,8 @@ $statusLabels = [
         <?php endif; ?>
         <?php if ($isAdmin && $paymentReady): ?>
             <section class="rounded-4 border border-info p-4 mb-4" style="background:rgba(13,20,34,.82);">
-                <h2 class="h5 text-white">Create a negotiated monthly station-fee quote</h2>
-                <p class="small text-secondary">After agreeing on an IRL MMK amount with the HQ, create a fixed quote here. The HQ payer cannot edit the amount or recipient. The station fee is applied only after an Admin records receipt.</p>
-                <?php if ($operatingFeeStations): ?>
-                    <form method="post" action="/php/Payment/action.php" class="row g-3 align-items-end">
-                        <input type="hidden" name="csrf_token" value="<?= htmlspecialchars((string) $_SESSION['payment_transfer_csrf'], ENT_QUOTES, 'UTF-8') ?>">
-                        <input type="hidden" name="action" value="create_operating_fee_quote">
-                        <div class="col-md-5">
-                            <label class="form-label text-white" for="quote-station">Station</label>
-                            <select class="form-select" id="quote-station" name="station_id" required>
-                                <option value="">Choose a station</option>
-                                <?php foreach ($operatingFeeStations as $stationOption): ?>
-                                    <option value="<?= (int) $stationOption['branch_id'] ?>"><?= htmlspecialchars((string) $stationOption['company_name'] . ' · ' . (string) $stationOption['branch_name'], ENT_QUOTES, 'UTF-8') ?></option>
-                                <?php endforeach; ?>
-                            </select>
-                        </div>
-                        <div class="col-md-3">
-                            <label class="form-label text-white" for="quote-amount">Agreed amount (MMK)</label>
-                            <input class="form-control" id="quote-amount" name="amount_mmk" type="number" min="0.01" max="999999999999.99" step="0.01" required>
-                        </div>
-                        <div class="col-md-2">
-                            <label class="form-label text-white" for="quote-month">Service month</label>
-                            <input class="form-control" id="quote-month" name="service_month" type="month" value="<?= htmlspecialchars(date('Y-m'), ENT_QUOTES, 'UTF-8') ?>" required>
-                        </div>
-                        <div class="col-md-2"><button class="btn btn-info w-100" type="submit" onclick="return confirm('Create this negotiated fee request and notify the HQ owner?')">Send quote</button></div>
-                    </form>
-                <?php else: ?>
-                    <p class="small text-secondary mb-0">No eligible stations are available for an operating-fee quote.</p>
-                <?php endif; ?>
+                <h2 class="h5 text-white">HQ station billing</h2>
+                <p class="small text-secondary mb-0">Standalone station-fee quotes are retired. Set package prices in Loyalty &amp; Billing Management; HQ owners submit one all-in-one MMK package for extension, station operation, and capacity.</p>
             </section>
         <?php endif; ?>
         <?php if (!$paymentReady): ?>
@@ -194,7 +154,7 @@ $statusLabels = [
                     $isRecipient = $isAdmin
                         ? $transfer['recipient_role'] === 'admin'
                         : ($isModeratorReviewer
-                            ? $transfer['recipient_role'] === 'admin' && $transfer['payment_type'] === 'hq_period_extension'
+                            ? $transfer['recipient_role'] === 'admin' && in_array($transfer['payment_type'], ['hq_period_extension', 'hq_station_package'], true)
                             : ($isHqRecipient && $transfer['recipient_role'] === 'station_hq'
                                 && (int) $transfer['recipient_headquarter_id'] === $hqId));
                     $canDecide = $isRecipient && !$isPayer && $transfer['status'] === 'payer_reported_paid';
@@ -207,6 +167,7 @@ $statusLabels = [
                         'hq_extra_station' => 'Monthly extra-station capacity and operation',
                         'hq_station_operating_quote' => 'Negotiated monthly station operating fee',
                         'hq_period_extension' => 'HQ service-period extension',
+                        'hq_station_package' => 'All-in-one HQ station package',
                         'fuel_purchase' => 'Customer fuel payment',
                         default => 'External payment',
                     };
@@ -233,11 +194,11 @@ $statusLabels = [
                             <div class="col-md-3"><span class="text-secondary">Selected method</span><div class="fw-semibold"><?= htmlspecialchars((string) ($transfer['payment_method'] ?: 'Not specified'), ENT_QUOTES, 'UTF-8') ?></div></div>
                              <div class="col-md-3"><span class="text-secondary">Requested</span><div class="fw-semibold"><?= htmlspecialchars((string) $transfer['created_at'], ENT_QUOTES, 'UTF-8') ?></div></div>
                             <div class="col-12"><span class="text-secondary">Details</span><div><?= htmlspecialchars((string) $transfer['description'], ENT_QUOTES, 'UTF-8') ?><?php if (!empty($transfer['station_name'])): ?> · <?= htmlspecialchars((string) $transfer['station_name'], ENT_QUOTES, 'UTF-8') ?><?php endif; ?></div></div>
-                            <?php if (in_array($transfer['payment_type'], ['hq_registration', 'hq_period_extension'], true)): ?><div class="col-md-6"><span class="text-secondary">Company</span><div><?= htmlspecialchars((string) ($transfer['payer_hq_name'] ?? 'Unknown company'), ENT_QUOTES, 'UTF-8') ?></div></div><div class="col-md-6"><span class="text-secondary">Company email</span><div><?= htmlspecialchars((string) ($transfer['payer_hq_email'] ?? $transfer['payer_email'] ?? ''), ENT_QUOTES, 'UTF-8') ?></div></div><?php endif; ?>
+                            <?php if (in_array($transfer['payment_type'], ['hq_registration', 'hq_period_extension', 'hq_station_package'], true)): ?><div class="col-md-6"><span class="text-secondary">Company</span><div><?= htmlspecialchars((string) ($transfer['payer_hq_name'] ?? 'Unknown company'), ENT_QUOTES, 'UTF-8') ?></div></div><div class="col-md-6"><span class="text-secondary">Company email</span><div><?= htmlspecialchars((string) ($transfer['payer_hq_email'] ?? $transfer['payer_email'] ?? ''), ENT_QUOTES, 'UTF-8') ?></div></div><?php endif; ?>
                             <?php if (!empty($transfer['request_id'])): ?><div class="col-12"><span class="text-secondary">Registration request</span><div>#<?= (int) $transfer['request_id'] ?></div></div><?php endif; ?>
                             <?php if (!empty($transfer['decision_note'])): ?><div class="col-12"><span class="text-secondary">Recipient note</span><div><?= htmlspecialchars((string) $transfer['decision_note'], ENT_QUOTES, 'UTF-8') ?></div></div><?php endif; ?>
                             <?php $receiptName = $receiptByTransfer[(int) $transfer['payment_transfer_id']] ?? null; $transferEvents = $eventsByTransfer[(int) $transfer['payment_transfer_id']] ?? []; ?>
-                            <?php if ($receiptName): ?><div class="col-12"><span class="text-secondary"><?= in_array($transfer['payment_type'], ['hq_registration', 'hq_period_extension'], true) ? 'Payment screenshot' : 'Optional receipt evidence' ?></span> · <a href="/php/Payment/receipt.php?id=<?= (int) $transfer['payment_transfer_id'] ?>" class="link-info"><?= htmlspecialchars((string) $receiptName['file_name'], ENT_QUOTES, 'UTF-8') ?></a><?php if (in_array($transfer['payment_type'], ['hq_registration', 'hq_period_extension'], true) && str_starts_with($receiptName['mime_type'], 'image/')): ?><div class="mt-2"><a href="/php/Payment/receipt.php?id=<?= (int) $transfer['payment_transfer_id'] ?>&amp;view=1" target="_blank" rel="noopener"><img src="/php/Payment/receipt.php?id=<?= (int) $transfer['payment_transfer_id'] ?>&amp;view=1" alt="Payment screenshot" style="display:block;max-width:320px;max-height:220px;object-fit:contain;border:1px solid rgba(255,255,255,.18);border-radius:6px"></a></div><?php endif; ?><div class="small text-secondary">The attachment is evidence for review; it does not independently confirm payment.</div></div><?php endif; ?>
+                            <?php if ($receiptName): ?><div class="col-12"><span class="text-secondary"><?= in_array($transfer['payment_type'], ['hq_registration', 'hq_period_extension', 'hq_station_package'], true) ? 'Payment screenshot' : 'Optional receipt evidence' ?></span> · <a href="/php/Payment/receipt.php?id=<?= (int) $transfer['payment_transfer_id'] ?>" class="link-info"><?= htmlspecialchars((string) $receiptName['file_name'], ENT_QUOTES, 'UTF-8') ?></a><?php if (in_array($transfer['payment_type'], ['hq_registration', 'hq_period_extension', 'hq_station_package'], true) && str_starts_with($receiptName['mime_type'], 'image/')): ?><div class="mt-2"><a href="/php/Payment/receipt.php?id=<?= (int) $transfer['payment_transfer_id'] ?>&amp;view=1" target="_blank" rel="noopener"><img src="/php/Payment/receipt.php?id=<?= (int) $transfer['payment_transfer_id'] ?>&amp;view=1" alt="Payment screenshot" style="display:block;max-width:320px;max-height:220px;object-fit:contain;border:1px solid rgba(255,255,255,.18);border-radius:6px"></a></div><?php endif; ?><div class="small text-secondary">The attachment is evidence for review; it does not independently confirm payment.</div></div><?php endif; ?>
                             <?php if ($transferEvents): ?><div class="col-12"><span class="text-secondary">Status history</span><ol class="mb-0 mt-1 ps-3"><?php foreach ($transferEvents as $event): ?><li><?= htmlspecialchars((string) $event['created_at'], ENT_QUOTES, 'UTF-8') ?> · <?= htmlspecialchars($statusLabels[(string) $event['new_status']] ?? ucfirst((string) $event['new_status']), ENT_QUOTES, 'UTF-8') ?><?php if (!empty($event['actor_email'])): ?> by <?= htmlspecialchars((string) $event['actor_email'], ENT_QUOTES, 'UTF-8') ?><?php endif; ?><?php if (!empty($event['note'])): ?> — <?= htmlspecialchars((string) $event['note'], ENT_QUOTES, 'UTF-8') ?><?php endif; ?></li><?php endforeach; ?></ol></div><?php endif; ?>
                         </div>
                         <?php if ($canReportPaid || $canDecide || $canCancel || $canRecreateRegistration): ?>

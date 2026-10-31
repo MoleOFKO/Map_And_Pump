@@ -136,8 +136,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             respond(['success' => false, 'message' => 'This booking belongs to another station.'], $ajax, 403, 'verify_qr.php');
         }
 
-        if (!company_loyalty_station_is_paid($pdo, (int) $row['station_id'])) {
-            respond(['success' => false, 'message' => 'This station is paused until its HQ pays the monthly operating fee.'], $ajax, 403, 'verify_qr.php');
+        if (!hq_billing_station_is_paid($pdo, (int) $row['station_id'])) {
+            respond(['success' => false, 'message' => 'This station is paused until its HQ pays the MMK service package.'], $ajax, 403, 'verify_qr.php');
         }
 
         $closedStatuses = ['filled', 'completed', 'cancelled', 'expired', 'station_unable_to_fulfill'];
@@ -312,15 +312,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             // Countermeasures: detect internal (own station / business-role same HQ)
             $isInternalFill = false;
-            try {
-                $isInternalFill = loyalty_is_internal_fill(
-                    $pdo,
-                    (int) $row['user_id'],
-                    (int) $row['station_id']
-                );
-            } catch (Throwable $internalEx) {
-                $isInternalFill = false;
-            }
+            $isInternalFill = loyalty_is_internal_fill(
+                $pdo,
+                (int) $row['user_id'],
+                (int) $row['station_id']
+            );
 
             $loyaltyResult = loyalty_apply_on_fill(
                 $pdo,
@@ -353,8 +349,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                              discount_mmk = :discount,
                              is_internal = :is_internal,
                              admin_share_mmk = :admin_share,
-                             company_share_mmk = :company_share,
-                             company_points_earned = :company_pts
+                             company_share_mmk = :company_share
                          WHERE usage_id = :usage_id'
                     );
                     $loyaltyHist->execute([
@@ -369,7 +364,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         ':company_share' => isset($loyaltyResult['company_share_mmk'])
                             ? (float) $loyaltyResult['company_share_mmk']
                             : null,
-                        ':company_pts' => (int) ($loyaltyResult['company_points_earned'] ?? 0),
                         ':usage_id' => $usageId,
                     ]);
                 } catch (Throwable $histEx) {
@@ -420,9 +414,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ? 'The station no longer has enough live stock for this fill. Ask the branch manager to update stock before confirming.'
                 : (in_array($e->getMessage(), ['BOOKING_NOT_ACTIVE','CAR_NOT_OWNED','CAR_EXPIRED','QUOTA_EXCEEDED','DRIVER_LICENSE_INVALID'], true)
                     ? 'The booking, vehicle, or quota is no longer valid. Refresh the booking before continuing.'
-                : ($e instanceof LoyaltyTransferException
-                    ? 'The HQ points transfer could not be completed, so this fill was not saved. Please try again.'
-                    : 'Failed to save fill amount. Please try again.'));
+                : 'Failed to save fill amount. Please try again.');
             $status = $e->getMessage() === 'INSUFFICIENT_LIVE_STOCK' ? 422
                 : ($e->getMessage() === 'DRIVER_LICENSE_INVALID' ? 403
                 : (in_array($e->getMessage(), ['BOOKING_NOT_ACTIVE','CAR_NOT_OWNED','CAR_EXPIRED','QUOTA_EXCEEDED'], true) ? 409 : 500));

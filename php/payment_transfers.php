@@ -77,6 +77,18 @@ function payment_transfer_schema_ready(PDO $pdo): bool
                 KEY idx_hq_mmk_entitlement_station (station_id, `year_month`)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
         );
+        $pdo->exec(
+            "CREATE TABLE IF NOT EXISTS hq_station_package_coverage (
+                payment_transfer_id BIGINT UNSIGNED NOT NULL,
+                headquarter_id INT NOT NULL,
+                `year_month` CHAR(7) NOT NULL,
+                first_station_number INT NOT NULL DEFAULT 1,
+                station_count INT NOT NULL,
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (payment_transfer_id, `year_month`),
+                KEY idx_hq_package_coverage_month (headquarter_id, `year_month`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+        );
 
         // Upgrade older installations without dropping their payment records.
         $columns = [
@@ -381,13 +393,6 @@ function payment_transfer_assign_mmk_entitlements(PDO $pdo, int $headquarterId, 
     if ($baseLimit < 1) {
         return; // Legacy HQs with station_count = 0 have unlimited capacity.
     }
-    $pointSlotsStmt = $pdo->prepare(
-        'SELECT COALESCE(slots_purchased, 0)
-         FROM company_loyalty_station_slots
-         WHERE headquarter_id = ? AND `year_month` = ? LIMIT 1'
-    );
-    $pointSlotsStmt->execute([$headquarterId, $yearMonth]);
-    $pointSlots = max(0, (int) $pointSlotsStmt->fetchColumn());
     $stationsStmt = $pdo->prepare(
         "SELECT b.branch_id
          FROM branches b
@@ -396,14 +401,17 @@ function payment_transfer_assign_mmk_entitlements(PDO $pdo, int $headquarterId, 
          ORDER BY b.branch_id"
     );
     $stationsStmt->execute([$headquarterId]);
-    // Points capacity covers the first extra station ranks. MMK entitlements
-    // must start after those ranks so a paid MMK slot maps to a distinct station.
-    $stationIds = array_slice(
-        array_map('intval', $stationsStmt->fetchAll(PDO::FETCH_COLUMN)),
-        $baseLimit + $pointSlots
-    );
+    $stationIds = array_slice(array_map('intval', $stationsStmt->fetchAll(PDO::FETCH_COLUMN)), max(0, $baseLimit));
 
     foreach ($stationIds as $stationId) {
+        $assignedCheck = $pdo->prepare(
+            'SELECT 1 FROM hq_station_mmk_entitlements
+             WHERE headquarter_id = ? AND station_id = ? AND `year_month` = ? LIMIT 1'
+        );
+        $assignedCheck->execute([$headquarterId, $stationId, $yearMonth]);
+        if ($assignedCheck->fetchColumn()) {
+            continue;
+        }
         $entitlement = $pdo->prepare(
             "SELECT e.entitlement_id, e.payment_transfer_id
              FROM hq_station_mmk_entitlements e
@@ -424,18 +432,10 @@ function payment_transfer_assign_mmk_entitlements(PDO $pdo, int $headquarterId, 
         if ($assign->rowCount() !== 1) {
             continue;
         }
-        $feeCheck = $pdo->prepare(
-            'SELECT 1 FROM company_loyalty_station_fees
-             WHERE headquarter_id = ? AND station_id = ? AND `year_month` = ? LIMIT 1'
-        );
-        $feeCheck->execute([$headquarterId, $stationId, $yearMonth]);
-        if ($feeCheck->fetchColumn()) {
-            continue; // Capacity is consumed; preserve any points-paid fee record.
-        }
         $fee = $pdo->prepare(
-            "INSERT INTO company_loyalty_station_fees
-                (headquarter_id, station_id, `year_month`, points_paid, payment_method, payment_transfer_id)
-             VALUES (?, ?, ?, 0, 'mmk', ?)"
+            "INSERT IGNORE INTO company_loyalty_station_fees
+                (headquarter_id, station_id, `year_month`, payment_method, payment_transfer_id)
+             VALUES (?, ?, ?, 'mmk', ?)"
         );
         $fee->execute([$headquarterId, $stationId, $yearMonth, (int) $credit['payment_transfer_id']]);
     }
@@ -451,6 +451,43 @@ function payment_transfer_assign_available_entitlements(PDO $pdo, int $headquart
     $stmt->execute([$headquarterId]);
     foreach ($stmt->fetchAll(PDO::FETCH_COLUMN) as $yearMonth) {
         payment_transfer_assign_mmk_entitlements($pdo, $headquarterId, (string) $yearMonth);
+    }
+}
+
+/** Apply already-paid package fees to a newly registered station when covered. */
+function payment_transfer_assign_package_fees(PDO $pdo, int $headquarterId, int $stationId): void
+{
+    $countStmt = $pdo->prepare(
+        "SELECT COUNT(*)
+         FROM branches b
+         INNER JOIN station_business_scope sbs ON sbs.station_id = b.branch_id
+         WHERE sbs.headquarter_id = ? AND LOWER(COALESCE(b.status, 'active')) <> 'closed'"
+    );
+    $countStmt->execute([$headquarterId]);
+    $stationCount = (int) $countStmt->fetchColumn();
+
+    $coverageStmt = $pdo->prepare(
+        "SELECT c.payment_transfer_id, c.`year_month`
+         FROM hq_station_package_coverage c
+         INNER JOIN payment_transfers pt ON pt.payment_transfer_id = c.payment_transfer_id
+         WHERE c.headquarter_id = ? AND c.station_count >= ?
+           AND c.first_station_number <= ?
+           AND c.`year_month` >= ? AND pt.status = 'received'
+         ORDER BY c.`year_month`, c.payment_transfer_id"
+    );
+    $coverageStmt->execute([$headquarterId, $stationCount, $stationCount, date('Y-m')]);
+    $insertFee = $pdo->prepare(
+        "INSERT IGNORE INTO company_loyalty_station_fees
+            (headquarter_id, station_id, `year_month`, payment_method, payment_transfer_id)
+         VALUES (?, ?, ?, 'mmk_package', ?)"
+    );
+    foreach ($coverageStmt->fetchAll(PDO::FETCH_ASSOC) as $coverage) {
+        $insertFee->execute([
+            $headquarterId,
+            $stationId,
+            (string) $coverage['year_month'],
+            (int) $coverage['payment_transfer_id'],
+        ]);
     }
 }
 
@@ -477,9 +514,89 @@ function payment_transfer_apply_operating_fee(PDO $pdo, array $transfer): bool
     if ($feeStmt->fetchColumn()) {
         throw new RuntimeException('This station already has a fee record for the quoted month. Reject this quote and resolve the duplicate before confirming payment.');
     }
-    $insert = $pdo->prepare("INSERT INTO company_loyalty_station_fees (headquarter_id, station_id, `year_month`, points_paid, payment_method, payment_transfer_id) VALUES (?, ?, ?, 0, 'mmk_quote', ?)");
+    $insert = $pdo->prepare("INSERT INTO company_loyalty_station_fees (headquarter_id, station_id, `year_month`, payment_method, payment_transfer_id) VALUES (?, ?, ?, 'mmk_quote', ?)");
     $insert->execute([$headquarterId, $stationId, $yearMonth, (int) $transfer['payment_transfer_id']]);
     return true;
+}
+
+/** Apply monthly capacity and operation entitlements for an all-in-one package. */
+function payment_transfer_apply_hq_station_package(PDO $pdo, array $transfer): void
+{
+    $headquarterId = (int) ($transfer['payer_headquarter_id'] ?? 0);
+    $stationCount = (int) ($transfer['quantity'] ?? 0);
+    $months = (int) ($transfer['term_months'] ?? 0);
+    $transferId = (int) ($transfer['payment_transfer_id'] ?? 0);
+    $month = DateTimeImmutable::createFromFormat('!Y-m', (string) ($transfer['service_start_month'] ?? ''));
+    if ($headquarterId <= 0 || $stationCount < 1 || $months < 1
+        || $months > BILLING_HQ_EXTENSION_MAX_MONTHS || $transferId <= 0 || !$month) {
+        throw new RuntimeException('The all-in-one station package details are invalid.');
+    }
+
+    $hqStmt = $pdo->prepare('SELECT station_count FROM headquarter WHERE headquarter_id = ? LIMIT 1 FOR UPDATE');
+    $hqStmt->execute([$headquarterId]);
+    $baseLimitValue = $hqStmt->fetchColumn();
+    if ($baseLimitValue === false) {
+        throw new RuntimeException('The HQ account for this station package no longer exists.');
+    }
+    $baseLimit = max(0, (int) $baseLimitValue);
+    $activeStationsStmt = $pdo->prepare(
+        "SELECT b.branch_id
+         FROM branches b
+         INNER JOIN station_business_scope sbs ON sbs.station_id = b.branch_id
+         WHERE sbs.headquarter_id = ? AND LOWER(COALESCE(b.status, 'active')) <> 'closed'
+         ORDER BY b.branch_id"
+    );
+    $activeStationsStmt->execute([$headquarterId]);
+    $activeStationIds = array_map('intval', $activeStationsStmt->fetchAll(PDO::FETCH_COLUMN));
+    if (count($activeStationIds) > $stationCount) {
+        throw new RuntimeException('The package quantity no longer covers every active station. Submit a new package quote.');
+    }
+
+    $extraSlotsRequired = $baseLimit > 0 ? max(0, $stationCount - $baseLimit) : 0;
+    for ($monthOffset = 0; $monthOffset < $months; $monthOffset++) {
+        $yearMonth = $month->modify('+' . $monthOffset . ' months')->format('Y-m');
+        $coverageInsert = $pdo->prepare(
+            'INSERT INTO hq_station_package_coverage
+                (payment_transfer_id, headquarter_id, `year_month`, first_station_number, station_count)
+             VALUES (?, ?, ?, 1, ?)'
+        );
+        $coverageInsert->execute([$transferId, $headquarterId, $yearMonth, $stationCount]);
+        $slotsStmt = $pdo->prepare(
+            'SELECT COALESCE(mmk_slots_purchased, 0)
+             FROM company_loyalty_station_slots
+             WHERE headquarter_id = ? AND `year_month` = ? LIMIT 1 FOR UPDATE'
+        );
+        $slotsStmt->execute([$headquarterId, $yearMonth]);
+        $existingSlots = max(0, (int) ($slotsStmt->fetchColumn() ?: 0));
+        $slotsToAdd = max(0, $extraSlotsRequired - $existingSlots);
+
+        $slotUpsert = $pdo->prepare(
+            'INSERT INTO company_loyalty_station_slots
+                (headquarter_id, `year_month`, mmk_slots_purchased)
+             VALUES (?, ?, ?)
+             ON DUPLICATE KEY UPDATE mmk_slots_purchased = GREATEST(mmk_slots_purchased, VALUES(mmk_slots_purchased))'
+        );
+        $slotUpsert->execute([$headquarterId, $yearMonth, $extraSlotsRequired]);
+
+        $entitlementInsert = $pdo->prepare(
+            'INSERT INTO hq_station_mmk_entitlements
+                (payment_transfer_id, headquarter_id, `year_month`, slot_number)
+             VALUES (?, ?, ?, ?)'
+        );
+        for ($slotNumber = 1; $slotNumber <= $slotsToAdd; $slotNumber++) {
+            $entitlementInsert->execute([$transferId, $headquarterId, $yearMonth, $slotNumber]);
+        }
+
+        $feeInsert = $pdo->prepare(
+            "INSERT IGNORE INTO company_loyalty_station_fees
+                (headquarter_id, station_id, `year_month`, payment_method, payment_transfer_id)
+             VALUES (?, ?, ?, 'mmk_package', ?)"
+        );
+        foreach ($activeStationIds as $stationId) {
+            $feeInsert->execute([$headquarterId, $stationId, $yearMonth, $transferId]);
+        }
+        payment_transfer_assign_mmk_entitlements($pdo, $headquarterId, $yearMonth);
+    }
 }
 
 /** Notify payers and recipients after status transactions commit. */
@@ -496,7 +613,7 @@ function payment_transfer_send_notices(PDO $pdo, int $transferId, string $recipi
         if ($recipientSide === 'recipient') {
             $recipients = $transfer['recipient_role'] === 'station_hq'
                 ? array_filter([payment_transfer_hq_recipient($pdo, (int) $transfer['recipient_headquarter_id'])])
-                : (($transfer['payment_type'] === 'hq_period_extension' && $action === 'payer_reported_paid')
+                : (in_array($transfer['payment_type'], ['hq_period_extension', 'hq_station_package'], true) && $action === 'payer_reported_paid'
                     ? payment_transfer_review_recipients($pdo)
                     : payment_transfer_admin_recipients($pdo));
         } else {
