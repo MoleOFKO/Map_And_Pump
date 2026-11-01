@@ -28,8 +28,12 @@ $reportTypes = [
 ];
 $updatedAt = null;
 $requestSummaryError = null;
+$requestSummary = ['pending' => 0, 'approved' => 0, 'approved_today' => 0, 'declined_flagged' => 0, 'error' => null];
 $discountedBalance = null;
 $loyaltyBalanceError = false;
+$pendingAccounts = 0;
+$pendingCarLicenseReviewCount = 0;
+$pendingPaymentReviewCount = 0;
 
 if ($dbOnline) {
     // Station totals must come from `branches` (canonical table), never the dummy `stations` view.
@@ -58,6 +62,8 @@ if ($dbOnline) {
     $metrics['open_requests'] += $pendingAccounts;
     $metrics['pending_requests'] += $pendingAccounts;
     $requestCounts['pending'] += $pendingAccounts;
+    $pendingCarLicenseReviewCount = pending_car_license_count();
+    $pendingPaymentReviewCount = count(request_payment_verification_rows('admin', '', 'pending', true));
 
     $reportQuery = $conn->query(
         'SELECT r.message, r.short_summery, r.role_id, roles.role_name
@@ -175,35 +181,94 @@ if ($reportTotal > 0) {
 
     <?php
     $expiryPayload = function_exists('expiry_alert_payload') ? expiry_alert_payload(false, true) : [];
-    $expiringSoon = (int) ($expiryPayload['warning_hq'] ?? 0) + (int) ($expiryPayload['warning_users'] ?? 0);
-    $expiredCount = (int) ($expiryPayload['expired_hq'] ?? 0) + (int) ($expiryPayload['expired_users'] ?? 0);
+    $priorityTasks = [];
+    $addPriorityTask = static function (string $title, int $count, string $status, string $url, string $icon) use (&$priorityTasks): void {
+        if ($count <= 0) {
+            return;
+        }
+        $priorityTasks[] = [
+            'title' => $title,
+            'count' => $count,
+            'status' => $status,
+            'url' => $url,
+            'icon' => $icon,
+        ];
+    };
+    $addPriorityTask('Inbound requests awaiting review', (int) $requestSummary['pending'], 'Awaiting review', 'view_requests.php?status=pending', 'bi-inbox');
+    $addPriorityTask(
+        'Driver account verifications',
+        $pendingAccounts,
+        'Awaiting verification',
+        'view_requests.php?type=account&status=pending',
+        'bi-person-vcard'
+    );
+    $addPriorityTask(
+        'Vehicle license reviews',
+        $pendingCarLicenseReviewCount,
+        'Awaiting review',
+        'view_requests.php?type=account&status=pending',
+        'bi-car-front'
+    );
+    $addPriorityTask('Payment confirmations to verify', $pendingPaymentReviewCount, 'Awaiting verification', 'view_requests.php?type=payment&status=pending', 'bi-cash-coin');
+    $addPriorityTask('HQ licenses expiring soon', (int) ($expiryPayload['warning_hq'] ?? 0), 'Due within 10 days', 'view_hq_and_user_account.php?expiry=warning', 'bi-building');
+    $addPriorityTask('Driver licenses expiring soon', (int) ($expiryPayload['warning_users'] ?? 0), 'Due within 10 days', 'view_users.php?expiry=warning', 'bi-person-vcard');
+    $addPriorityTask('Expired HQ licenses', (int) ($expiryPayload['expired_hq'] ?? 0), 'Renewal follow-up', 'view_hq_and_user_account.php?expiry=expired', 'bi-building-exclamation');
+    $addPriorityTask('Expired driver licenses', (int) ($expiryPayload['expired_users'] ?? 0), 'Renewal follow-up', 'view_users.php?expiry=expired', 'bi-person-x');
     ?>
     <div class="row g-3 mb-3">
-        <div class="col-12 col-sm-6">
-            <a href="view_hq_and_user_account.php?expiry=warning" class="metric-card-link" title="Headquarter and drivers expiring within 10 days">
+        <div class="col-12 col-sm-6 col-xl-3">
+            <a href="view_hq_and_user_account.php?expiry=warning" class="metric-card-link" title="View HQ licenses expiring soon">
                 <div class="analytics-card metric-card py-3">
                     <div class="d-flex align-items-center justify-content-between gap-3">
                         <div>
-                            <p class="mb-0 metric-label text-warning">Licenses expiring soon</p>
-                            <h3 class="metric-value text-white mb-0"><?= $expiringSoon ?></h3>
+                            <p class="mb-0 metric-label text-warning">HQ Licenses Expiring Soon</p>
+                            <h3 class="metric-value text-white mb-0"><?= (int) ($expiryPayload['warning_hq'] ?? 0) ?></h3>
                         </div>
-                        <span class="text-warning fs-3"><i class="bi bi-clock-history"></i></span>
+                        <span class="text-warning fs-3"><i class="bi bi-building"></i></span>
                     </div>
-                    <p class="text-white-50 small mb-0 mt-2"><?= (int) ($expiryPayload['warning_hq'] ?? 0) ?> Headquarter · <?= (int) ($expiryPayload['warning_users'] ?? 0) ?> drivers (In 10 days)</p>
+                    <p class="text-white-50 small mb-0 mt-2">Business licenses expiring within 10 days</p>
                 </div>
             </a>
         </div>
-        <div class="col-12 col-sm-6">
-            <a href="view_users.php?expiry=expired" class="metric-card-link" title="Accounts with expired licenses">
+        <div class="col-12 col-sm-6 col-xl-3">
+            <a href="view_users.php?expiry=warning" class="metric-card-link" title="View driver licenses expiring soon">
                 <div class="analytics-card metric-card py-3">
                     <div class="d-flex align-items-center justify-content-between gap-3">
                         <div>
-                            <p class="mb-0 metric-label text-danger">Expired licenses</p>
-                            <h3 class="metric-value text-white mb-0"><?= $expiredCount ?></h3>
+                            <p class="mb-0 metric-label text-warning">Driver Licenses Expiring Soon</p>
+                            <h3 class="metric-value text-white mb-0"><?= (int) ($expiryPayload['warning_users'] ?? 0) ?></h3>
                         </div>
-                        <span class="text-danger fs-3"><i class="bi bi-x-octagon"></i></span>
+                        <span class="text-warning fs-3"><i class="bi bi-person-vcard"></i></span>
                     </div>
-                    <p class="text-white-50 small mb-0 mt-2"><?= (int) ($expiryPayload['expired_hq'] ?? 0) ?> Headquarter · <?= (int) ($expiryPayload['expired_users'] ?? 0) ?> drivers (auto-suspended)</p>
+                    <p class="text-white-50 small mb-0 mt-2">Driver licenses expiring within 10 days</p>
+                </div>
+            </a>
+        </div>
+        <div class="col-12 col-sm-6 col-xl-3">
+            <a href="view_hq_and_user_account.php?expiry=expired" class="metric-card-link" title="View HQ accounts with expired licenses">
+                <div class="analytics-card metric-card py-3">
+                    <div class="d-flex align-items-center justify-content-between gap-3">
+                        <div>
+                            <p class="mb-0 metric-label text-danger">Expired HQ Licenses</p>
+                            <h3 class="metric-value text-white mb-0"><?= (int) ($expiryPayload['expired_hq'] ?? 0) ?></h3>
+                        </div>
+                        <span class="text-danger fs-3"><i class="bi bi-building-exclamation"></i></span>
+                    </div>
+                    <p class="text-white-50 small mb-0 mt-2">HQ business licenses past their expiry date</p>
+                </div>
+            </a>
+        </div>
+        <div class="col-12 col-sm-6 col-xl-3">
+            <a href="view_users.php?expiry=expired" class="metric-card-link" title="View drivers with expired licenses">
+                <div class="analytics-card metric-card py-3">
+                    <div class="d-flex align-items-center justify-content-between gap-3">
+                        <div>
+                            <p class="mb-0 metric-label text-danger">Expired Driver Licenses</p>
+                            <h3 class="metric-value text-white mb-0"><?= (int) ($expiryPayload['expired_users'] ?? 0) ?></h3>
+                        </div>
+                        <span class="text-danger fs-3"><i class="bi bi-person-x"></i></span>
+                    </div>
+                    <p class="text-white-50 small mb-0 mt-2">Drivers with licenses past their expiry date</p>
                 </div>
             </a>
         </div>
@@ -249,19 +314,6 @@ if ($reportTotal > 0) {
                         <span class="txt-neon-cyan fs-2"><i class="bi bi-file-earmark-bar-graph"></i></span>
                     </div>
                     <p class="text-white-50 small mb-0 mt-2"><?= (int) $metrics['reports_today'] ?> generated today</p>
-                </div>
-            </a>
-        </div>
-        <div class="col-12 col-sm-6 col-xl-3">
-            <a href="view_logs.php" class="metric-card-link" title="Open View Logs" aria-label="Open View Logs">
-                <div class="analytics-card metric-card">
-                    <div class="d-flex align-items-center justify-content-between gap-3">
-                        <div>
-                            <p class="mb-0 metric-label">Database Status</p>
-                            <h3 class="metric-value text-white mb-0" style="font-size:1.45rem;"><?= $dbOnline ? 'Online' : 'Offline' ?></h3>
-                        </div>
-                        <span class="<?= $dbOnline ? 'text-success' : 'text-danger' ?> fs-2"><i class="bi bi-database-check"></i></span>
-                    </div>
                 </div>
             </a>
         </div>
@@ -374,37 +426,38 @@ if ($reportTotal > 0) {
                     <table class="table table-dark-custom align-middle m-0">
                         <thead>
                             <tr>
-                                <th>Area</th>
+                                <th>Task</th>
                                 <th>Status</th>
-
-                                <th class="text-end">Open</th>
+                                <th class="text-end">Count</th>
                             </tr>
                         </thead>
                         <tbody>
-                            <tr>
-                                <td class="fw-medium text-white">Inbound Requests</td>
-                                <td><span class="badge rounded-pill bg-warning bg-opacity-10 text-warning border border-warning border-opacity-25"><?= (int) $metrics['open_requests'] ?> Open</span></td>
-
-                                <td class="text-end"><a href="view_requests.php" class="btn-action" title="Open View Requests"><i class="bi bi-arrow-right"></i></a></td>
-                            </tr>
-                            <tr>
-                                <td class="fw-medium text-white">System Reports</td>
-                                <td><span class="badge rounded-pill bg-info bg-opacity-10 text-info border border-info border-opacity-25"><?= (int) $metrics['reports'] ?> Stored</span></td>
-
-                                <td class="text-end"><a href="view_report.php" class="btn-action" title="Open View Report"><i class="bi bi-arrow-right"></i></a></td>
-                            </tr>
-                            <tr>
-                                <td class="fw-medium text-white">View/Manage Headquarter</td>
-                                <td><span class="badge rounded-pill bg-success bg-opacity-10 text-success border border-success border-opacity-25"><?= (int) $metrics['hqs'] ?> Headquarter · <?= (int) $metrics['stations'] ?> Stations</span></td>
-
-                                <td class="text-end"><a href="view_hq_and_user_account.php" class="btn-action" title="Open View/Manage Headquarter"><i class="bi bi-arrow-right"></i></a></td>
-                            </tr>
-                            <tr>
-                                <td class="fw-medium text-white">View/Manage Drivers</td>
-                                <td><span class="badge rounded-pill bg-success bg-opacity-10 text-success border border-success border-opacity-25">Driver accounts</span></td>
-
-                                <td class="text-end"><a href="view_users.php" class="btn-action" title="Open View/Manage Drivers"><i class="bi bi-arrow-right"></i></a></td>
-                            </tr>
+                            <?php if (!$priorityTasks): ?>
+                                <tr>
+                                    <td colspan="3" class="text-center text-white-50 py-4">
+                                        <?php if ($dbOnline): ?>
+                                            <i class="bi bi-check-circle text-success me-2"></i>No priority tasks need attention.
+                                        <?php else: ?>
+                                            <i class="bi bi-database-exclamation text-warning me-2"></i>Priority tasks are unavailable while the database is offline.
+                                        <?php endif; ?>
+                                    </td>
+                                </tr>
+                            <?php endif; ?>
+                            <?php foreach ($priorityTasks as $task): ?>
+                                <tr>
+                                    <td class="fw-medium">
+                                        <a href="<?= hq_escape($task['url']) ?>" class="text-white text-decoration-none" title="Open <?= hq_escape($task['title']) ?>">
+                                            <i class="bi <?= hq_escape($task['icon']) ?> txt-neon-cyan me-2"></i><?= hq_escape($task['title']) ?>
+                                        </a>
+                                    </td>
+                                    <td><span class="badge rounded-pill bg-warning bg-opacity-10 text-warning border border-warning border-opacity-25"><?= hq_escape($task['status']) ?></span></td>
+                                    <td class="text-end">
+                                        <a href="<?= hq_escape($task['url']) ?>" class="btn-action" title="Open <?= hq_escape($task['title']) ?>">
+                                            <?= (int) $task['count'] ?><i class="bi bi-arrow-right ms-2"></i>
+                                        </a>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
                         </tbody>
                     </table>
                 </div>

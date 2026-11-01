@@ -320,7 +320,6 @@ $flashType = (string) ($flash['type'] ?? '');
                     <?php
                     $status = (string) ($row['status'] ?? '');
                     $roleName = (string) ($row['role_name'] ?? '');
-                    $displayRoleId = (int) ($row['display_role_id'] ?? $row['role_id'] ?? 0);
                     ?>
                     <tr>
                         <td><div class="d-flex align-items-center gap-3"><div class="rounded-circle d-flex align-items-center justify-content-center text-white" style="width:42px;height:42px;background:rgba(0,244,255,.1);border:1px solid rgba(0,244,255,.3);flex-shrink:0;"><i class="bi bi-person-badge txt-neon-cyan"></i></div><div><div class="fw-semibold text-white"><?= hq_escape((string) $row['user_name']) ?></div><div class="text-white-50 small">User ID <?= (int) $row['user_id'] ?></div></div></div></td>
@@ -329,7 +328,6 @@ $flashType = (string) ($flash['type'] ?? '');
                         <td class="text-white-50"><?= hq_escape(hq_date((string) ($row['updated_at'] ?? ''))) ?></td>
                         <td><span class="moderator-status <?= hq_escape(moderator_status_class($status)) ?>"><?= hq_escape(moderator_status_label($status)) ?></span></td>
                         <td class="text-end"><div class="d-flex gap-2 justify-content-end">
-                            <button type="button" class="btn-action js-edit-moderator" title="Modify Moderator" aria-label="Modify <?= hq_escape((string) $row['user_name']) ?>" data-bs-toggle="modal" data-bs-target="#editAdminModal" data-user-id="<?= (int) $row['user_id'] ?>" data-user-name="<?= hq_escape((string) $row['user_name']) ?>" data-email="<?= hq_escape((string) $row['email']) ?>" data-role-id="<?= $displayRoleId ?>"><i class="bi bi-pencil-fill"></i></button>
                             <button type="button" class="btn-action btn-action-danger js-status-moderator" title="Change Account Status" aria-label="Change status for <?= hq_escape((string) $row['user_name']) ?>" data-bs-toggle="modal" data-bs-target="#statusAdminModal" data-user-id="<?= (int) $row['user_id'] ?>" data-user-name="<?= hq_escape((string) $row['user_name']) ?>" data-status="<?= hq_escape($status) ?>"><i class="bi bi-person-x-fill"></i></button>
                         </div></td>
                     </tr>
@@ -424,8 +422,6 @@ $flashType = (string) ($flash['type'] ?? '');
         </div>
     </div>
 
-    <div class="modal fade glass-modal" id="editAdminModal" tabindex="-1" aria-labelledby="editAdminModalLabel" aria-hidden="true"><div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-lg"><div class="modal-content"><div class="modal-header"><h5 class="modal-title fw-bold" id="editAdminModalLabel"><i class="bi bi-pencil-square txt-neon-cyan me-2"></i> Edit Moderator</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button></div><form action="moderator_action.php" method="POST"><input type="hidden" name="action" value="update_profile"><input type="hidden" name="user_id" id="editModeratorId"><div class="modal-body d-flex flex-column gap-3"><div><label class="form-label text-white-50 small" for="editModeratorName">Username / Display Name <span class="text-danger">*</span></label><input id="editModeratorName" type="text" name="user_name" class="form-control glass-input" maxlength="225" required></div><div><label class="form-label text-white-50 small" for="editModeratorEmail">Email Address <span class="text-danger">*</span></label><input id="editModeratorEmail" type="email" name="email" class="form-control glass-input" maxlength="255" required></div><div><label class="form-label text-white-50 small" for="editModeratorRole">Database Role <span class="text-danger">*</span></label><select id="editModeratorRole" class="form-select glass-select" name="role_id" required><?php foreach ($roles as $role): ?><option value="<?= (int) $role['role_id'] ?>"><?= hq_escape(moderator_role_label($role['role_name'])) ?></option><?php endforeach; ?></select></div></div><div class="modal-footer"><button type="button" class="btn btn-outline-secondary rounded-3 text-white-50 border-secondary border-opacity-20" data-bs-dismiss="modal">Cancel</button><button type="submit" class="btn btn-neon">Save Changes</button></div></form></div></div></div>
-
     <div class="modal fade glass-modal" id="statusAdminModal" tabindex="-1" aria-labelledby="statusAdminModalLabel" aria-hidden="true"><div class="modal-dialog modal-dialog-centered modal-dialog-scrollable"><div class="modal-content"><div class="modal-header"><h5 class="modal-title fw-bold" id="statusAdminModalLabel"><i class="bi bi-person-x txt-neon-cyan me-2"></i> Change Moderator Status</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button></div><form action="moderator_action.php" method="POST"><input type="hidden" name="action" value="update_status"><input type="hidden" name="user_id" id="statusModeratorId"><div class="modal-body"><label class="form-label text-white-50 small" for="statusModeratorValue">Account Status</label><select id="statusModeratorValue" class="form-select glass-select" name="status" required><option value="approved">Approved</option><option value="suspended">Suspended</option><option value="removed">Revoked / Removed</option></select></div><div class="modal-footer"><button type="button" class="btn btn-outline-secondary rounded-3 text-white-50 border-secondary border-opacity-20" data-bs-dismiss="modal">Cancel</button><button type="submit" class="btn btn-neon">Update Status</button></div></form></div></div></div>
 
     
@@ -437,16 +433,6 @@ $flashType = (string) ($flash['type'] ?? '');
         document.addEventListener('pointermove', (event) => {
             document.body.style.setProperty('--bg-x', `${(event.clientX / window.innerWidth) * 100}%`);
             document.body.style.setProperty('--bg-y', `${(event.clientY / window.innerHeight) * 100}%`);
-        });
-
-        const editModal = document.getElementById('editAdminModal');
-        editModal?.addEventListener('show.bs.modal', (event) => {
-            const button = event.relatedTarget;
-            if (!button) return;
-            document.getElementById('editModeratorId').value = button.dataset.userId || '';
-            document.getElementById('editModeratorName').value = button.dataset.userName || '';
-            document.getElementById('editModeratorEmail').value = button.dataset.email || '';
-            document.getElementById('editModeratorRole').value = button.dataset.roleId || '';
         });
 
         const statusModal = document.getElementById('statusAdminModal');

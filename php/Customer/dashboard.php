@@ -60,15 +60,15 @@ $redemptionOptions = loyalty_redemption_options($pdo);
             </ul>
             <?php if ($tierStatus['next_tier'] !== null): ?>
                 <p class="text-secondary small mb-0 mt-2">
-                    Rank up to <?= htmlspecialchars(loyalty_tier_label($tierStatus['next_tier']), ENT_QUOTES, 'UTF-8') ?>:
-                    <?= number_format($tierStatus['next_points']) ?> points threshold
-                    (<?= number_format(max(0, $tierStatus['next_points'] - $reward_points)) ?> more) and
-                    <?= (int) $tierStatus['next_exp'] ?> EXP
-                    (<?= (int) $tierStatus['exp_remaining'] ?> more).
-                    Reach <?= number_format($tierStatus['weekly_quota_liters'], 1) ?> L in successful external fills each week; each missed week removes 1 EXP.
+                    Your <?= htmlspecialchars($reward_tier, ENT_QUOTES, 'UTF-8') ?> point cap is
+                    <?= number_format($tierStatus['points_cap']) ?> (<?= number_format($tierStatus['points_remaining_to_cap']) ?> points remaining).
+                    Once capped, successful external fills award 1 EXP instead of points.
+                    Reach <?= (int) $tierStatus['next_exp'] ?> total EXP to advance to
+                    <?= htmlspecialchars(loyalty_tier_label($tierStatus['next_tier']), ENT_QUOTES, 'UTF-8') ?>
+                    (you have <?= (int) $tierStatus['exp'] ?>; <?= (int) $tierStatus['exp_remaining'] ?> more).
                 </p>
             <?php else: ?>
-                <p class="text-secondary small mb-0 mt-2">Diamond tier reached. Maintain your weekly quota to preserve EXP.</p>
+                <p class="text-secondary small mb-0 mt-2">Diamond tier reached. At your point cap, successful external fills award EXP instead of points.</p>
             <?php endif; ?>
         </div>
     </div>
@@ -76,15 +76,15 @@ $redemptionOptions = loyalty_redemption_options($pdo);
 
 <section class="dashboard-panel-card mb-4">
     <h2 class="h5 text-white">Tier points and shared monthly pool</h2>
-    <p class="text-secondary small">The tier task is to reach the weekly fuel quota using successful external fills. Each tier below shows your remaining point threshold and the MMK still available to the shared tier pool this month.</p>
+    <p class="text-secondary small">Each tier has its own point-balance cap. Once you reach your current cap, successful external fills award EXP instead of points. EXP advances your tier and raises your point cap.</p>
     <div class="table-responsive">
         <table class="table table-dark table-sm align-middle mb-0">
-            <thead><tr><th>Tier</th><th>Points threshold</th><th>Your points remaining</th><th>Pool remaining this month</th></tr></thead>
+            <thead><tr><th>Tier</th><th>Point cap</th><th>Points until cap</th><th>Pool remaining this month</th></tr></thead>
             <tbody>
             <?php foreach ($tierStatus['tiers'] as $tier): ?>
                 <tr>
                     <th><?= htmlspecialchars($tier['label'], ENT_QUOTES, 'UTF-8') ?></th>
-                    <td><?= number_format($tier['points_threshold']) ?></td>
+                    <td><?= number_format($tier['points_cap']) ?></td>
                     <td><?= number_format($tier['points_remaining']) ?></td>
                     <td><?= number_format($tier['pool_remaining_mmk'], 2) ?> MMK</td>
                 </tr>

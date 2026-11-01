@@ -424,26 +424,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $loyaltyMsg = '';
         if (!empty($row['loyalty']) && is_array($row['loyalty'])) {
             $le = (int) ($row['loyalty']['points_earned'] ?? 0);
+            $ee = (int) ($row['loyalty']['exp_earned'] ?? 0);
             $lr = (int) ($row['loyalty']['points_redeemed'] ?? 0);
             $ld = (float) ($row['loyalty']['discount_mmk'] ?? 0);
             $isInternalMsg = !empty($row['loyalty']['is_internal']);
             $poolLimited = !empty($row['loyalty']['pool_limited']);
             if ($isInternalMsg) {
                 $loyaltyMsg = ' Loyalty: 0 pts (internal fill — own station/network; points not awarded).';
-            } elseif ($le > 0 || $lr > 0 || $poolLimited) {
-                $loyaltyMsg = ' Loyalty: +' . $le . ' pt' . ($le === 1 ? '' : 's');
+            } elseif ($le > 0 || $ee > 0 || $lr > 0 || $poolLimited) {
+                $loyaltyParts = [];
+                if ($le > 0) {
+                    $loyaltyParts[] = '+' . $le . ' pt' . ($le === 1 ? '' : 's');
+                }
+                if ($ee > 0) {
+                    $loyaltyParts[] = '+' . $ee . ' EXP';
+                }
                 if ($lr > 0) {
-                    $loyaltyMsg .= ', −' . $lr . ' redeemed';
+                    $loyaltyParts[] = '−' . $lr . ' redeemed';
                     if ($ld > 0) {
-                        $loyaltyMsg .= ' (' . number_format($ld, 0) . ' MMK off)';
+                        $loyaltyParts[] = '(' . number_format($ld, 0) . ' MMK off)';
                     }
                     if ($poolLimited) {
-                        $loyaltyMsg .= ' (tier pool limited)';
+                        $loyaltyParts[] = '(tier pool limited)';
                     }
                 } elseif ($poolLimited) {
-                    $loyaltyMsg .= ', redeem skipped (tier pool empty)';
+                    $loyaltyParts[] = 'redeem skipped (tier pool empty)';
                 }
-                $loyaltyMsg .= '.';
+                $loyaltyMsg = ' Loyalty: ' . implode(', ', $loyaltyParts) . '.';
             }
         }
         if (!empty($row['coupon']['face_value_mmk'])) {

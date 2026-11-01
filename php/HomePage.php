@@ -18,7 +18,7 @@ $homepagePointsPerLiter = LOYALTY_POINTS_PER_FILL;
 $homepageMonth = (new DateTimeImmutable('now', new DateTimeZone('Asia/Yangon')))->format('Y-m');
 foreach (loyalty_tier_labels() as $tierCode => $tierLabel) {
     $homepageTierRules[$tierCode] = [
-        'points_threshold' => loyalty_tier_thresholds()[$tierCode],
+        'points_cap' => loyalty_tier_point_caps()[$tierCode],
         'exp_threshold' => loyalty_tier_exp_thresholds()[$tierCode],
         'monthly_budget_mmk' => loyalty_tier_pool_budgets()[$tierCode],
     ];
@@ -571,8 +571,7 @@ require __DIR__ . '/partials/nav.php';
             <h2 class="section-title">Earn points. Build your tier.</h2>
             <p class="section-lead mx-auto">
                 Earn floor(litres filled × <?= rtrim(rtrim(number_format($homepagePointsPerLiter, 2, '.', ''), '0'), '.') ?>) points on eligible external fills.
-                Rank up by completing at least <?= number_format(MAP_PUMP_FUEL_QUOTA_LITERS, 1) ?> L in successful external fills each week.
-                Each qualifying week earns 1 EXP; a missed week removes 1 EXP.
+                Points stop at your current tier's cap. Successful external fills earn 1 EXP instead when that cap is reached; EXP alone determines tier advancement.
             </p>
         </div>
 
@@ -586,10 +585,10 @@ require __DIR__ . '/partials/nav.php';
                         <div class="plan-tag"><?= htmlspecialchars($tierLabel, ENT_QUOTES, 'UTF-8') ?> tier</div>
                         <h3 class="plan-name"><?= htmlspecialchars($tierLabel, ENT_QUOTES, 'UTF-8') ?></h3>
                         <?php if ($tierCode === 'bronze'): ?>
-                            <p class="plan-note">Starting tier: <?= number_format($tier['points_threshold']) ?> points and <?= (int) $tier['exp_threshold'] ?> EXP.</p>
+                            <p class="plan-note">Starting tier: <?= number_format($tier['points_cap']) ?> point cap. Advance at <?= (int) $homepageTierRules['silver']['exp_threshold'] ?> EXP.</p>
                         <?php else: ?>
                             <p class="plan-note">
-                                Qualify with <?= number_format($tier['points_threshold']) ?> points and <?= (int) $tier['exp_threshold'] ?> EXP.
+                                Point cap: <?= number_format($tier['points_cap']) ?>. Advance at <?= (int) $tier['exp_threshold'] ?> total EXP.
                             </p>
                         <?php endif; ?>
                         <div class="discount-grid">
@@ -605,11 +604,7 @@ require __DIR__ . '/partials/nav.php';
                             </div>
                         </div>
                         <p class="small text-dim mt-3 mb-0">
-                            <?php if ($tierCode === 'bronze'): ?>
-                                Maintain the weekly fill quota to build EXP and advance.
-                            <?php else: ?>
-                                Keep the required points and build <?= (int) $tier['exp_threshold'] ?> EXP through qualifying weeks.
-                            <?php endif; ?>
+                            At the point cap, each successful external fill awards EXP instead of points.
                         </p>
                     </article>
                 </div>

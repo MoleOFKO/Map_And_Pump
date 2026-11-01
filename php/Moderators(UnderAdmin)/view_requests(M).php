@@ -284,7 +284,6 @@ $flashType = (string) ($flash['type'] ?? '');
                     <button type="button" class="btn-action js-view-request" title="View Request Details" aria-label="View request <?= moderator_escape((string) $row['reference_code']) ?> details" data-request-id="<?= (int) $row['request_id'] ?>"><i class="bi bi-eye-fill"></i></button>
                     <?php if ($rowStatus === 'pending'): ?>
                         <?php if ($canApproveRequest): ?><a href="#" class="btn-action btn-action-success js-request-approve" title="<?= $requiresRegistrationPayment ? 'Approve and create pending HQ' : 'Approve request' ?>" aria-label="Approve request <?= moderator_escape((string) $row['reference_code']) ?>" data-request-id="<?= (int) $row['request_id'] ?>" data-reference="<?= moderator_escape((string) $row['reference_code']) ?>"><i class="bi bi-check-lg"></i></a><?php else: ?><button type="button" class="btn-action btn-action-success" disabled title="Confirm the registration payment before approving"><i class="bi bi-check-lg"></i></button><?php endif; ?>
-                        <a href="#" class="btn-action js-request-flag" title="Flag" aria-label="Flag request <?= moderator_escape((string) $row['reference_code']) ?>" data-request-id="<?= (int) $row['request_id'] ?>" data-reference="<?= moderator_escape((string) $row['reference_code']) ?>"><i class="bi bi-flag-fill text-warning"></i></a>
                         <a href="#" class="btn-action btn-action-danger js-request-reject" title="Reject" aria-label="Reject request <?= moderator_escape((string) $row['reference_code']) ?>" data-request-id="<?= (int) $row['request_id'] ?>" data-reference="<?= moderator_escape((string) $row['reference_code']) ?>" data-sender="<?= moderator_escape($sender) ?>"><i class="bi bi-x-lg"></i></a>
                     <?php endif; ?>
                 </div></td>
@@ -325,8 +324,6 @@ $flashType = (string) ($flash['type'] ?? '');
 
 <div class="modal fade glass-modal" id="rejectReqModal" tabindex="-1" aria-labelledby="rejectReqModalLabel" aria-hidden="true"><div class="modal-dialog modal-dialog-centered modal-dialog-scrollable"><div class="modal-content"><div class="modal-header"><h5 class="modal-title fw-bold" id="rejectReqModalLabel"><i class="bi bi-shield-x text-danger me-2"></i> Reject Request</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button></div><form action="request_action(M).php" method="POST" id="rejectReqForm"><div class="modal-body d-flex flex-column gap-3"><input type="hidden" name="request_id" id="rejectRequestId"><input type="hidden" name="user_id" id="rejectUserId"><input type="hidden" name="action" value="reject"><input type="hidden" name="return_to" value="view_requests(M).php"><div class="small text-white-50">Target request: <span class="txt-neon-cyan fw-semibold" id="rejectRequestReference">—</span></div><div class="small text-white-50">Sender: <span class="text-white" id="rejectRequestSender">—</span></div><div><label class="form-label text-white-50 small" for="rejectReason">Reason for rejection</label><textarea class="form-control glass-input" name="reason" id="rejectReason" rows="5" maxlength="2000" placeholder="Explain why this request is being rejected..." required style="resize:none;"></textarea></div></div><div class="modal-footer"><button type="button" class="btn btn-outline-secondary rounded-3 text-white-50 border-secondary border-opacity-20" data-bs-dismiss="modal">Cancel</button><button type="submit" class="btn btn-danger">Confirm Rejection</button></div></form></div></div></div>
 
-<div class="modal fade glass-modal" id="flagReqModal" tabindex="-1" aria-labelledby="flagReqModalLabel" aria-hidden="true"><div class="modal-dialog modal-dialog-centered modal-dialog-scrollable"><div class="modal-content"><div class="modal-header"><h5 class="modal-title fw-bold" id="flagReqModalLabel"><i class="bi bi-flag-fill text-warning me-2"></i> Flag Request</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button></div><form action="request_action(M).php" method="POST" id="flagReqForm"><div class="modal-body d-flex flex-column gap-3"><input type="hidden" name="request_id" id="flagRequestId"><input type="hidden" name="action" value="flag"><input type="hidden" name="return_to" value="view_requests(M).php"><div class="small text-white-50">Target request: <span class="txt-neon-cyan fw-semibold" id="flagRequestReference">—</span></div><div><label class="form-label text-white-50 small" for="flagReason">Reason for flagging</label><textarea class="form-control glass-input" name="reason" id="flagReason" rows="4" maxlength="2000" placeholder="Why should this request be flagged for follow-up?" required style="resize:none;"></textarea></div></div><div class="modal-footer"><button type="button" class="btn btn-outline-secondary rounded-3 text-white-50 border-secondary border-opacity-20" data-bs-dismiss="modal">Cancel</button><button type="submit" class="btn btn-warning">Flag Request</button></div></form></div></div></div>
-
 <?php $moderatorActiveNav = 'requests'; include __DIR__ . '/includes/moderator_offcanvas.php'; ?>
 <footer class="text-white-50 text-center py-4 mt-5 small">&copy; 2026 Map &amp; Pump | All Rights Reserved</footer>
 <?php include __DIR__ . '/includes/moderator_footer_scripts.php'; ?>
@@ -335,11 +332,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const details = new bootstrap.Modal(document.getElementById('viewReqModal'));
     const detailsTitle = document.getElementById('viewReqTitle');
     const reject = new bootstrap.Modal(document.getElementById('rejectReqModal'));
-    const flagModalEl = document.getElementById('flagReqModal');
-    const flagModal = flagModalEl ? new bootstrap.Modal(flagModalEl) : null;
-    const flagId = document.getElementById('flagRequestId');
-    const flagReference = document.getElementById('flagRequestReference');
-    const flagReason = document.getElementById('flagReason');
     const body = document.getElementById('requestDetailsBody');
     const footer = document.getElementById('requestDetailsFooter');
     const rejectForm = document.getElementById('rejectReqForm');
@@ -396,21 +388,6 @@ document.addEventListener('DOMContentLoaded', () => {
         rejectReason.value = '';
         reject.show();
     };
-    const flagTarget = (id, label) => {
-        if (!flagModal || !flagId) return;
-        flagId.value = id;
-        if (flagReference) flagReference.textContent = label || ('Request #' + id);
-        if (flagReason) flagReason.value = '';
-        flagModal.show();
-    };
-    document.addEventListener('click', event => {
-        const btn = event.target.closest('.js-request-flag');
-        if (!btn) return;
-        event.preventDefault();
-        flagTarget(btn.dataset.requestId, btn.dataset.reference);
-    });
-
-
     document.addEventListener('click', async event => {
         const button = event.target.closest('.js-view-request');
         if (!button) return;
@@ -442,8 +419,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     ? '<form action="/php/Payment/action.php" method="POST" class="m-0 flex-fill"><input type="hidden" name="csrf_token" value="' + esc(r.payment_transfer_csrf) + '"><input type="hidden" name="transfer_id" value="' + esc(payment.payment_transfer_id) + '"><input type="hidden" name="action" value="confirm_received"><input type="hidden" name="return_to" value="/php/Moderators(UnderAdmin)/view_requests(M).php"><button type="submit" class="btn btn-success w-100" onclick="return confirm(\'Confirm receipt only after checking your bank or wallet records.\')">Confirm payment received</button></form><form action="/php/Payment/action.php" method="POST" class="m-0 flex-fill"><input type="hidden" name="csrf_token" value="' + esc(r.payment_transfer_csrf) + '"><input type="hidden" name="transfer_id" value="' + esc(payment.payment_transfer_id) + '"><input type="hidden" name="action" value="mark_not_received"><input type="hidden" name="return_to" value="/php/Moderators(UnderAdmin)/view_requests(M).php"><input type="hidden" name="decision_note" value="Registration payment not verified by Moderator."><button type="submit" class="btn btn-outline-danger w-100">Mark not received</button></form>' : '';
                 const paymentNeedsReview = requiresRegistrationPayment && (!payment || payment.status !== 'received');
                 const approveLabel = String(r.request_type || '').toLowerCase() === 'hq_registration' ? 'Approve and create pending HQ' : 'Approve';
-                setFooter(paymentActions + '<form action="request_action(M).php" method="POST" class="m-0 flex-fill"><input type="hidden" name="request_id" value="' + esc(r.request_id) + '"><input type="hidden" name="action" value="approve"><input type="hidden" name="return_to" value="view_requests(M).php"><button type="submit" class="btn btn-success w-100" ' + (paymentNeedsReview ? 'disabled title="Confirm registration payment first"' : '') + '><i class="bi bi-check-lg me-1"></i>' + approveLabel + '</button></form><button type="button" class="btn btn-warning flex-fill js-modal-flag"><i class="bi bi-flag me-1"></i>Flag</button><button type="button" class="btn btn-danger flex-fill js-modal-reject"><i class="bi bi-x-lg me-1"></i>Reject</button>');
-                footer.querySelector('.js-modal-flag')?.addEventListener('click', () => flagTarget(r.request_id, r.reference_code));
+                setFooter(paymentActions + '<form action="request_action(M).php" method="POST" class="m-0 flex-fill"><input type="hidden" name="request_id" value="' + esc(r.request_id) + '"><input type="hidden" name="action" value="approve"><input type="hidden" name="return_to" value="view_requests(M).php"><button type="submit" class="btn btn-success w-100" ' + (paymentNeedsReview ? 'disabled title="Confirm registration payment first"' : '') + '><i class="bi bi-check-lg me-1"></i>' + approveLabel + '</button></form><button type="button" class="btn btn-danger flex-fill js-modal-reject"><i class="bi bi-x-lg me-1"></i>Reject</button>');
                 footer.querySelector('.js-modal-reject').addEventListener('click', () => rejectTarget('request', r.request_id, '#' + (r.reference_code || r.request_id), esc(r.sender_name || 'Unknown')));
             }
         } catch (err) {
