@@ -65,6 +65,15 @@ if ($dbOnline) {
     $pendingCarLicenseReviewCount = pending_car_license_count();
     $pendingPaymentReviewCount = count(request_payment_verification_rows('admin', '', 'pending', true));
 
+    $pendingPaymentRows = request_payment_verification_rows('admin', '', 'pending', true);
+    $pendingPaymentVerifications = count(array_filter(
+        $pendingPaymentRows,
+        static fn (array $row): bool => ($row['status'] ?? '') === 'payer_reported_paid'
+    ));
+    $metrics['open_requests'] += $pendingPaymentVerifications;
+    $metrics['pending_requests'] += $pendingPaymentVerifications;
+    $requestCounts['pending'] += $pendingPaymentVerifications;
+
     $reportQuery = $conn->query(
         'SELECT r.message, r.short_summery, r.role_id, roles.role_name
          FROM report r

@@ -5,6 +5,7 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
     session_start();
 }
 require_once __DIR__ . '/../conn.php';
+require_once __DIR__ . '/../business_scope.php';
 require_once __DIR__ . '/../payment_transfers.php';
 
 $userId = (int) ($_SESSION['user_id'] ?? 0);
@@ -51,7 +52,7 @@ if (in_array($returnTo, $allowedReturnTargets, true)) {
 if ($action === 'create_fuel_payment') {
     $redirect = '/php/Customer/usage_history.php';
 } elseif ($action === 'create_extra_station') {
-    $redirect = '/php/HQ/station.php';
+    $redirect = '../HQ/station.php?payment=station_limit_pending';
 } elseif ($action === 'recreate_registration_request') {
     $redirect = '/php/payment_center.php';
 } elseif ($action === 'create_operating_fee_quote') {
@@ -160,7 +161,7 @@ try {
         $hqStmt = $pdo->prepare('SELECT headquarter_id, email FROM users WHERE user_id = ? LIMIT 1');
         $hqStmt->execute([$userId]);
         $payer = $hqStmt->fetch(PDO::FETCH_ASSOC);
-        $headquarterId = (int) ($payer['headquarter_id'] ?? 0);
+        $headquarterId = map_pump_current_hq_id($pdo, $userId);
         if ($headquarterId <= 0 || !payment_transfer_user_owns_hq($pdo, $userId, $headquarterId)) {
             throw new RuntimeException('Only the owning HQ account can request extra-station payment.');
         }
@@ -168,16 +169,37 @@ try {
         $termMonths = (int) ($_POST['term_months'] ?? 1);
         $paymentMethod = trim((string) ($_POST['payment_method'] ?? ''));
         $allowedMethods = ['KPay', 'Wave Pay', 'AYA Pay', 'CB Pay', 'AYA Bank', 'CB Bank', 'KBZ Bank', 'YOMA Bank'];
-        $allowedTerms = array_map(static fn (array $term): int => (int) $term['months'], BILLING_HQ_TERM_DISCOUNTS);
-        if ($extraQuantity < 1 || $extraQuantity > 60 || !in_array($termMonths, $allowedTerms, true) || !in_array($paymentMethod, $allowedMethods, true)) {
+        if ($extraQuantity < 1 || $extraQuantity > 60 || !in_array($termMonths, BILLING_HQ_STATION_LIMIT_TERMS, true) || !in_array($paymentMethod, $allowedMethods, true)) {
             throw new RuntimeException('Choose 1–60 extra stations, a valid billing term, and a payment method.');
         }
 
+        $receiptFile = $_FILES['receipt'] ?? null;
+        if (!is_array($receiptFile)
+            || (int) ($receiptFile['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK
+            || (int) ($receiptFile['size'] ?? 0) <= 0
+            || (int) ($receiptFile['size'] ?? 0) > 5 * 1024 * 1024
+            || !is_uploaded_file((string) ($receiptFile['tmp_name'] ?? ''))) {
+            throw new RuntimeException('Upload a payment screenshot no larger than 5 MB.');
+        }
+        $imageInfo = @getimagesize((string) $receiptFile['tmp_name']);
+        $receiptMime = is_array($imageInfo) ? (string) ($imageInfo['mime'] ?? '') : '';
+        if (!in_array($receiptMime, ['image/jpeg', 'image/png', 'image/webp'], true)) {
+            throw new RuntimeException('The payment screenshot must be a JPG, PNG, or WEBP image.');
+        }
+        $receiptData = file_get_contents((string) $receiptFile['tmp_name']);
+        if ($receiptData === false) {
+            throw new RuntimeException('The payment screenshot could not be read. Please try again.');
+        }
+
         $pdo->beginTransaction();
-        $lock = $pdo->prepare('SELECT headquarter_id FROM headquarter WHERE headquarter_id = ? FOR UPDATE');
+        $lock = $pdo->prepare('SELECT station_count FROM headquarter WHERE headquarter_id = ? FOR UPDATE');
         $lock->execute([$headquarterId]);
-        if (!$lock->fetchColumn()) {
+        $baseStationLimit = $lock->fetchColumn();
+        if ($baseStationLimit === false) {
             throw new RuntimeException('Could not verify this HQ account.');
+        }
+        if ((int) $baseStationLimit < 1) {
+            throw new RuntimeException('This HQ has no finite station limit to extend.');
         }
         $stationCountStmt = $pdo->prepare(
             "SELECT COUNT(*)
@@ -187,36 +209,38 @@ try {
         );
         $stationCountStmt->execute([$headquarterId]);
         $currentStations = (int) $stationCountStmt->fetchColumn();
-        $packageStationCount = $currentStations + $extraQuantity;
+        $currentMonthSlots = hq_billing_current_month_slots($pdo, $headquarterId);
+        $currentCapacity = max($currentStations, (int) $baseStationLimit + $currentMonthSlots);
+        $packageStationCount = $currentCapacity + $extraQuantity;
         $packageRate = billing_admin_setting($pdo, 'hq_package_mmk_per_station_month', BILLING_HQ_PACKAGE_MMK_PER_STATION_MONTHLY);
 
-        $volumePercent = 0;
-        foreach (BILLING_HQ_VOLUME_DISCOUNTS as $tier) {
-            if ($packageStationCount >= (int) $tier['min']) {
-                $volumePercent = (int) $tier['percent'];
-            }
-        }
         $termPercent = 0;
-        foreach (BILLING_HQ_TERM_DISCOUNTS as $term) {
-            if ((int) $term['months'] === $termMonths) {
-                $termPercent = (int) $term['percent'];
+        foreach (BILLING_HQ_STATION_LIMIT_TERM_DISCOUNTS as $discount) {
+            if ($termMonths >= (int) $discount['min_months']) {
+                $termPercent = (int) $discount['percent'];
                 break;
             }
         }
         $baseAmount = (float) $packageRate * $packageStationCount * $termMonths;
-        $amount = round($baseAmount * (1 - $volumePercent / 100) * (1 - $termPercent / 100), 2);
+        $amount = round($baseAmount * (1 - $termPercent / 100), 2);
         if ($amount <= 0) {
             throw new RuntimeException('The calculated payment amount is invalid.');
         }
 
         $duplicate = $pdo->prepare(
-            "SELECT 1 FROM payment_transfers
+            "SELECT payment_transfer_id, reference_code, payment_type, status
+             FROM payment_transfers
              WHERE payer_headquarter_id = ? AND payment_type IN ('hq_station_package', 'hq_period_extension', 'hq_extra_station')
                AND status IN ('pending_payment', 'payer_reported_paid') LIMIT 1"
         );
         $duplicate->execute([$headquarterId]);
-        if ($duplicate->fetchColumn()) {
-            throw new RuntimeException('This HQ already has an extra-station payment awaiting confirmation.');
+        $existingPayment = $duplicate->fetch(PDO::FETCH_ASSOC);
+        if ($existingPayment) {
+            throw new RuntimeException(sprintf(
+                'Payment %s (%s) is already awaiting confirmation. Admin can find it under View Requests → Payment Verification.',
+                (string) $existingPayment['reference_code'],
+                (string) $existingPayment['status']
+            ));
         }
         $transferId = payment_transfer_create($pdo, [
             'payment_type' => 'hq_station_package',
@@ -231,10 +255,32 @@ try {
             'recipient_role' => BILLING_PLATFORM_RECEIVER_ROLE,
             'payment_method' => $paymentMethod,
         ]);
+        $receipt = $pdo->prepare('INSERT INTO payment_transfer_receipts (payment_transfer_id, file_name, mime_type, file_size, file_data, uploaded_by_user_id, uploaded_by_email) VALUES (?, ?, ?, ?, ?, ?, ?)');
+        $receipt->bindValue(1, $transferId, PDO::PARAM_INT);
+        $receipt->bindValue(2, substr(basename((string) ($receiptFile['name'] ?? 'payment-screenshot')), 0, 255));
+        $receipt->bindValue(3, $receiptMime);
+        $receipt->bindValue(4, (int) $receiptFile['size'], PDO::PARAM_INT);
+        $receipt->bindValue(5, $receiptData, PDO::PARAM_LOB);
+        $receipt->bindValue(6, $userId, PDO::PARAM_INT);
+        $receipt->bindValue(7, strtolower(trim((string) ($payer['email'] ?? ''))));
+        $receipt->execute();
+        $reportedPaid = $pdo->prepare("UPDATE payment_transfers SET status = 'payer_reported_paid', reported_paid_at = NOW(), paid_declared_at = NOW() WHERE payment_transfer_id = ? AND status = 'pending_payment'");
+        $reportedPaid->execute([$transferId]);
+        if ($reportedPaid->rowCount() !== 1) {
+            throw new RuntimeException('This payment request could not be submitted for review.');
+        }
+        payment_transfer_record_event(
+            $pdo,
+            $transferId,
+            'pending_payment',
+            'payer_reported_paid',
+            $userId,
+            strtolower(trim((string) ($payer['email'] ?? ''))),
+            'HQ owner submitted the station package payment screenshot for Admin or Moderator review.'
+        );
         $pdo->commit();
-        payment_transfer_send_notices($pdo, $transferId, 'recipient', 'pending_payment');
-        payment_transfer_send_notices($pdo, $transferId, 'payer', 'pending_payment');
-        $redirect = '/php/HQ/station.php?payment=pending';
+        payment_transfer_send_notices($pdo, $transferId, 'recipient', 'payer_reported_paid');
+        $redirect = '../HQ/station.php?payment=station_limit_pending';
     } elseif (in_array($action, ['report_paid', 'confirm_received', 'mark_not_received', 'cancel_transfer'], true)) {
         $pdo->beginTransaction();
         $transferStmt = $pdo->prepare('SELECT * FROM payment_transfers WHERE payment_transfer_id = ? FOR UPDATE');
@@ -269,7 +315,7 @@ try {
                     throw new RuntimeException('The receipt must be a JPG, PNG, WEBP, or PDF file.');
                 }
                 $receiptData = file_get_contents((string) $file['tmp_name']);
-                $receipt = $pdo->prepare('INSERT INTO payment_transfer_receipts (payment_transfer_id, file_name, mime_type, file_size, file_data, uploaded_by_user_id, uploaded_by_email) VALUES (?, ?, ?, ?, ?, ?, ?)');
+                $receipt = $pdo->prepare('INSERT INTO payment_transfer_receipts (payment_transfer_id, file_name, mime_type, file_size, file_data, uploaded_by_user_id, uploaded_by_email) VALUES (?, ?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE file_name = VALUES(file_name), mime_type = VALUES(mime_type), file_size = VALUES(file_size), file_data = VALUES(file_data), uploaded_by_user_id = VALUES(uploaded_by_user_id), uploaded_by_email = VALUES(uploaded_by_email)');
                 $receipt->bindValue(1, $transferId, PDO::PARAM_INT);
                 $receipt->bindValue(2, substr(basename((string) ($file['name'] ?? 'receipt')), 0, 255));
                 $receipt->bindValue(3, (string) $mime);

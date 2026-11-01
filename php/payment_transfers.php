@@ -369,18 +369,28 @@ function payment_transfer_user_owns_hq(PDO $pdo, int $userId, int $headquarterId
     $stmt = $pdo->prepare(
         "SELECT 1
          FROM users u
-         INNER JOIN headquarter h ON h.headquarter_id = u.headquarter_id
-         WHERE u.user_id = ? AND h.headquarter_id = ?
-           AND LOWER(COALESCE(u.status, 'active')) IN ('active', 'approved')
+         INNER JOIN headquarter h ON h.headquarter_id = ?
+         LEFT JOIN business_account_scope bas ON bas.user_id = u.user_id
+         WHERE u.user_id = ?
+           AND LOWER(TRIM(COALESCE(u.status, 'active'))) IN ('active', 'approved', 'enabled', 'ready')
            AND (
              u.user_id = h.headquarters_owner_id
-             OR EXISTS (SELECT 1 FROM roles r WHERE r.role_id = u.role_id AND LOWER(TRIM(r.role_name)) IN ('hq', 'headquarter', 'headquarters'))
-             OR EXISTS (SELECT 1 FROM roles r WHERE r.role_id = u.business_role_id AND LOWER(TRIM(r.role_name)) IN ('hq', 'headquarter', 'headquarters'))
-             OR EXISTS (SELECT 1 FROM roles r WHERE r.role_id = u.current_role_id AND LOWER(TRIM(r.role_name)) IN ('hq', 'headquarter', 'headquarters'))
+             OR (
+               (
+                 u.headquarter_id = h.headquarter_id
+                 OR bas.headquarter_id = h.headquarter_id
+                 OR LOWER(TRIM(u.email)) = LOWER(TRIM(h.headquarter_email))
+               )
+               AND (
+                 EXISTS (SELECT 1 FROM roles r WHERE r.role_id = u.role_id AND LOWER(TRIM(r.role_name)) IN ('hq', 'headquarter', 'headquarters'))
+                 OR EXISTS (SELECT 1 FROM roles r WHERE r.role_id = u.business_role_id AND LOWER(TRIM(r.role_name)) IN ('hq', 'headquarter', 'headquarters'))
+                 OR EXISTS (SELECT 1 FROM roles r WHERE r.role_id = u.current_role_id AND LOWER(TRIM(r.role_name)) IN ('hq', 'headquarter', 'headquarters'))
+               )
+             )
            )
          LIMIT 1"
     );
-    $stmt->execute([$userId, $headquarterId]);
+    $stmt->execute([$headquarterId, $userId]);
     return (bool) $stmt->fetchColumn();
 }
 
