@@ -104,8 +104,8 @@ function request_payment_verification_rows(string $reviewerRole, string $search,
     }
     $reviewerRole = strtolower(trim($reviewerRole));
     $types = $reviewerRole === 'moderator'
-        ? ['hq_period_extension']
-        : ['hq_period_extension', 'hq_extra_station', 'hq_station_operating_quote'];
+        ? ['hq_period_extension', 'hq_station_package']
+        : ['hq_period_extension', 'hq_station_package', 'hq_extra_station', 'hq_station_operating_quote'];
     if ($reviewerRole !== 'moderator' && $includeRegistration) {
         $types[] = 'hq_registration';
     }

@@ -10,8 +10,10 @@ $billingReady = loyalty_countermeasures_schema_ready($pdo);
 $billingMonth = loyalty_current_year_month();
 $availableOilQuota = max(0.0, (float) ($_SESSION['oil_remaining'] ?? (((float) ($_SESSION['oil_limit'] ?? 35.0)) - ((float) ($_SESSION['oil_used'] ?? 0.0)))));
 $loyaltyBalance = loyalty_get_available_balance($pdo, (int) ($_SESSION['user_id'] ?? 0));
-$loyaltyTierCode = loyalty_resolve_tier($loyaltyBalance);
+$loyaltyTierStatus = loyalty_customer_tier_status($pdo, (int) ($_SESSION['user_id'] ?? 0), $loyaltyBalance);
+$loyaltyTierCode = $loyaltyTierStatus['tier_code'];
 $loyaltyTierLabel = loyalty_tier_label($loyaltyTierCode);
+$loyaltyRedemptionOptions = loyalty_redemption_options($pdo);
 
 function map_pump_station_coordinates(string $location): ?array
 {
@@ -89,7 +91,7 @@ try {
                 $stationStatus = 'Active';
             }
             $feePaid = $billingReady
-                ? company_loyalty_station_is_paid($pdo, $stationId)
+                ? hq_billing_station_is_paid($pdo, $stationId)
                 : ((int) ($stationRow['monthly_fee_paid'] ?? 0) === 1);
             $isStationActive = strcasecmp($stationStatus, 'Active') === 0 && $feePaid;
             if (!$feePaid && strcasecmp($stationStatus, 'Active') === 0) {
@@ -745,7 +747,7 @@ body.customer-light-mode .customer-map-recenter-btn:hover {
                 <label class="form-label text-secondary" for="loyalty-points-select" style="font-size:10px; font-weight:600;">LOYALTY POINTS TO USE (PER FILL)</label>
                 <select id="loyalty-points-select" class="form-select custom-form-field">
                     <option value="0" selected>Don't use points — no discount</option>
-                    <?php foreach (LOYALTY_REDEMPTION_OPTIONS as $points => $discount): ?>
+                    <?php foreach ($loyaltyRedemptionOptions as $points => $discount): ?>
                         <option value="<?php echo (int) $points; ?>" <?php echo $loyaltyBalance < (int) $points ? 'disabled' : ''; ?>>
                             <?php echo (int) $points; ?> points — <?php echo number_format((int) $discount); ?> MMK off
                         </option>
@@ -754,7 +756,7 @@ body.customer-light-mode .customer-map-recenter-btn:hover {
                 <small class="text-secondary d-block mt-2">
                     Balance: <strong class="text-warning"><?php echo (int) $loyaltyBalance; ?></strong> pts
                     · <?php echo htmlspecialchars($loyaltyTierLabel, ENT_QUOTES, 'UTF-8'); ?> tier.
-                    Points are held while this booking is active and released if it is cancelled or expires. Applied points go to the station's HQ after a completed fill.
+                    Points are held while this booking is active and released if it is cancelled or expires. A completed redemption credits the Admin-managed Total Discounted Amount.
                 </small>
                 <small id="loyalty-discount-estimate" class="text-sky-400 d-block mt-1"></small>
             </div>
@@ -1490,7 +1492,7 @@ body.customer-light-mode .customer-map-recenter-btn:hover {
     }
 
     const loyaltyBalanceClient = <?php echo (int) $loyaltyBalance; ?>;
-    const loyaltyRedemptionOptions = <?php echo json_encode(LOYALTY_REDEMPTION_OPTIONS); ?>;
+    const loyaltyRedemptionOptions = <?php echo json_encode($loyaltyRedemptionOptions, JSON_THROW_ON_ERROR); ?>;
 
     function updateLoyaltyEstimate() {
         const estimateEl = document.getElementById('loyalty-discount-estimate');
@@ -1580,4 +1582,3 @@ body.customer-light-mode .customer-map-recenter-btn:hover {
 </script>
 
 <?php include 'share_footer.php'; ?>
-

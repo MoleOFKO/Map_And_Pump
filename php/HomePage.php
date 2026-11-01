@@ -7,9 +7,60 @@
 
 require_once __DIR__ . '/data/fuel_prices.php';
 require_once __DIR__ . '/billing_config.php';
+require_once __DIR__ . '/loyalty_points.php';
+
+$homepageRegistrationFee = BILLING_HQ_REGISTRATION_FEE_MMK;
+$homepagePackageRate = BILLING_HQ_PACKAGE_MMK_PER_STATION_MONTHLY;
+$homepageTierRules = [];
+$homepageTierPoolBalances = [];
+$homepageTierPoolsAvailable = false;
+$homepagePointsPerLiter = LOYALTY_POINTS_PER_FILL;
+$homepageMonth = (new DateTimeImmutable('now', new DateTimeZone('Asia/Yangon')))->format('Y-m');
+foreach (loyalty_tier_labels() as $tierCode => $tierLabel) {
+    $homepageTierRules[$tierCode] = [
+        'points_threshold' => loyalty_tier_thresholds()[$tierCode],
+        'exp_threshold' => loyalty_tier_exp_thresholds()[$tierCode],
+        'monthly_budget_mmk' => loyalty_tier_pool_budgets()[$tierCode],
+    ];
+}
+try {
+    $billingPdo = function_exists('map_pump_public_pdo') ? map_pump_public_pdo() : null;
+    if ($billingPdo instanceof PDO) {
+        $homepageRegistrationFee = billing_admin_setting($billingPdo, 'hq_registration_fee_mmk', BILLING_HQ_REGISTRATION_FEE_MMK);
+        $homepagePackageRate = billing_admin_setting($billingPdo, 'hq_package_mmk_per_station_month', BILLING_HQ_PACKAGE_MMK_PER_STATION_MONTHLY);
+        $homepageTierRules = loyalty_get_tier_rules($billingPdo);
+        $pointsRateStmt = $billingPdo->prepare(
+            'SELECT setting_value FROM platform_settings WHERE setting_key = ? LIMIT 1'
+        );
+        $pointsRateStmt->execute(['loyalty_points_per_liter']);
+        $pointsRate = $pointsRateStmt->fetchColumn();
+        if ($pointsRate !== false && is_numeric($pointsRate) && (float) $pointsRate >= 0) {
+            $homepagePointsPerLiter = (float) $pointsRate;
+        }
+
+        $poolStmt = $billingPdo->prepare(
+            'SELECT tier_code, spent_mmk
+             FROM loyalty_tier_pool
+             WHERE `year_month` = ?'
+        );
+        $poolStmt->execute([$homepageMonth]);
+        foreach ($poolStmt->fetchAll(PDO::FETCH_ASSOC) as $pool) {
+            $tierCode = strtolower((string) $pool['tier_code']);
+            if (isset($homepageTierRules[$tierCode])) {
+                $homepageTierPoolBalances[$tierCode] = max(
+                    0.0,
+                    $homepageTierRules[$tierCode]['monthly_budget_mmk'] - (float) $pool['spent_mmk']
+                );
+            }
+        }
+        $homepageTierPoolsAvailable = true;
+    }
+} catch (Throwable $e) {
+    error_log('Homepage billing and loyalty settings could not be loaded: ' . $e->getMessage());
+}
 
 $page_title       = 'MAP & PUMP | Put Your Stations on the Map Drivers Actually Check';
-$page_description = 'MAP & PUMP is the availability layer for fuel retail. HQ registration includes three station slots. Extra stations have a published monthly MMK price or can use HQ points.';
+$page_description = 'MAP & PUMP is the availability layer for fuel retail. HQ registration and all-in-one monthly station packages are billed in MMK.';
 $active_nav       = 'home';
 
 require __DIR__ . '/partials/head.php';
@@ -252,10 +303,9 @@ require __DIR__ . '/partials/nav.php';
             <span class="eyebrow">Pricing</span>
             <h2 class="section-title">Three registration slots included. Scale when you're ready.</h2>
             <p class="section-lead mx-auto">
-                The one-time HQ registration fee is <?= number_format(BILLING_HQ_REGISTRATION_FEE_MMK) ?> MMK and includes
-                capacity for <?= (int) BILLING_HQ_INCLUDED_STATION_SLOTS ?> stations. Each additional station costs
-                <?= number_format(BILLING_HQ_EXTRA_STATION_MMK_MONTHLY) ?> MMK per month, including both its capacity slot
-                and operating fee. Volume and multi-month discounts apply.
+                The one-time HQ registration fee is <?= number_format($homepageRegistrationFee) ?> MMK. The all-in-one MMK package is
+                <?= number_format($homepagePackageRate) ?> per station per month and covers service extension, operation, and capacity.
+                Volume and multi-month discounts apply.
             </p>
         </div>
 
@@ -265,10 +315,10 @@ require __DIR__ . '/partials/nav.php';
                     <div class="plan-tag">Included with registration</div>
                     <h3 class="plan-name">Starter</h3>
                     <div class="plan-price"><?= (int) BILLING_HQ_INCLUDED_STATION_SLOTS ?> station slots <span>included</span></div>
-                    <p class="plan-note">One-time registration fee: <?= number_format(BILLING_HQ_REGISTRATION_FEE_MMK) ?> MMK. Included slots have no monthly capacity charge. Active station operating fees are separate.</p>
+                    <p class="plan-note">One-time registration fee: <?= number_format($homepageRegistrationFee) ?> MMK. Monthly service packages include operation, service extension, and capacity for each covered station.</p>
                     <ul class="plan-list">
                         <li><i class="fa-solid fa-check"></i> <?= (int) BILLING_HQ_INCLUDED_STATION_SLOTS ?> station registrations included</li>
-                        <li><i class="fa-solid fa-check"></i> Active station operation: <?= number_format(BILLING_HQ_STATION_OPERATION_POINTS_MONTHLY) ?> HQ points per station per month</li>
+                        <li><i class="fa-solid fa-check"></i> Monthly service package billed in MMK</li>
                         <li><i class="fa-solid fa-check"></i> Enable / disable per station</li>
                         <li><i class="fa-solid fa-check"></i> Per-grade stock status</li>
                         <li><i class="fa-solid fa-check"></i> Driver token bookings</li>
@@ -281,8 +331,8 @@ require __DIR__ . '/partials/nav.php';
                 <div class="plan-card plan-card-featured h-100">
                     <div class="plan-tag plan-tag-accent">Most companies land here</div>
                     <h3 class="plan-name">Growth</h3>
-                    <div class="plan-price"><?= number_format(BILLING_HQ_EXTRA_STATION_MMK_MONTHLY) ?> <span>MMK / extra station / month</span></div>
-                    <p class="plan-note">For each station beyond the included capacity. This MMK price covers both the monthly capacity slot and station operation. The points option is <?= number_format(BILLING_HQ_STATION_SLOT_POINTS_MONTHLY) ?> points for the slot plus <?= number_format(BILLING_HQ_STATION_OPERATION_POINTS_MONTHLY) ?> points for operation, each month.</p>
+                    <div class="plan-price"><?= number_format($homepagePackageRate) ?> <span>MMK / station / month</span></div>
+                    <p class="plan-note">The all-in-one package covers service extension, monthly station operation, and extra capacity slots.</p>
 
                     <div class="discount-grid">
                         <div class="discount-cell">
@@ -299,22 +349,22 @@ require __DIR__ . '/partials/nav.php';
                         </div>
                     </div>
 
-                    <p class="small text-dim mb-0">External MMK transfers are made separately to <?= htmlspecialchars(BILLING_PLATFORM_RECIPIENT_NAME, ENT_QUOTES, 'UTF-8') ?>. The website records their reported status but does not move funds. HQ points and MMK are separate payment methods with no fixed conversion rate.</p>
+                    <p class="small text-dim mb-0">MMK transfers are made separately to <?= htmlspecialchars(BILLING_PLATFORM_RECIPIENT_NAME, ENT_QUOTES, 'UTF-8') ?>. The website records reported status but does not move funds.</p>
                 </div>
             </div>
         </div>
 
         <!-- Calculator -->
         <div class="calc-wrap" id="calc"
-             data-free="<?= (int) BILLING_HQ_INCLUDED_STATION_SLOTS ?>"
-             data-rate="<?= (int) BILLING_HQ_EXTRA_STATION_MMK_MONTHLY ?>"
+             data-registration-fee="<?= (int) $homepageRegistrationFee ?>"
+             data-rate="<?= (int) $homepagePackageRate ?>"
              data-volume-discounts="<?= htmlspecialchars(json_encode(BILLING_HQ_VOLUME_DISCOUNTS), ENT_QUOTES, 'UTF-8') ?>"
              data-term-discounts="<?= htmlspecialchars(json_encode(BILLING_HQ_TERM_DISCOUNTS), ENT_QUOTES, 'UTF-8') ?>"
              data-reveal>
             <div class="row g-4 align-items-center">
                 <div class="col-lg-7">
                     <span class="eyebrow">Estimate</span>
-                    <h3 class="calc-title">Estimate your extra-station MMK fees</h3>
+                    <h3 class="calc-title">Estimate your all-in-one MMK package</h3>
 
                     <label class="calc-label" for="calc-range">
                         Stations you want visible: <strong id="calc-count">6</strong>
@@ -332,23 +382,23 @@ require __DIR__ . '/partials/nav.php';
 
                 <div class="col-lg-5">
                     <div class="calc-result">
-                        <div class="calc-line"><span>Included slots</span><strong><?= (int) BILLING_HQ_INCLUDED_STATION_SLOTS ?></strong></div>
-                        <div class="calc-line"><span>Extra stations</span><strong id="calc-paid"><?= max(0, 6 - (int) BILLING_HQ_INCLUDED_STATION_SLOTS) ?></strong></div>
-                        <div class="calc-line"><span>Base cost</span><strong id="calc-base"><?= number_format(max(0, 6 - (int) BILLING_HQ_INCLUDED_STATION_SLOTS) * (int) BILLING_HQ_EXTRA_STATION_MMK_MONTHLY) ?> MMK</strong></div>
+                        <div class="calc-line"><span>Stations</span><strong id="calc-paid">6</strong></div>
+                        <div class="calc-line"><span>Service package</span><strong id="calc-base"><?= number_format(6 * $homepagePackageRate) ?> MMK</strong></div>
+                        <div class="calc-line"><span>Registration fee</span><strong id="calc-registration"><?= number_format($homepageRegistrationFee) ?> MMK</strong></div>
                         <div class="calc-line"><span>Volume discount</span><strong id="calc-vol">—</strong></div>
                         <div class="calc-line"><span>Term discount</span><strong id="calc-dur">—</strong></div>
                         <div class="calc-total">
                             <span>MMK estimate</span>
-                            <strong id="calc-total"><?= number_format(max(0, 6 - (int) BILLING_HQ_INCLUDED_STATION_SLOTS) * (int) BILLING_HQ_EXTRA_STATION_MMK_MONTHLY) ?> MMK</strong>
+                            <strong id="calc-total"><?= number_format($homepageRegistrationFee + 6 * $homepagePackageRate) ?> MMK</strong>
                         </div>
-                        <div class="calc-per" id="calc-per"><?= number_format(BILLING_HQ_EXTRA_STATION_MMK_MONTHLY) ?> MMK / extra station / month</div>
+                        <div class="calc-per" id="calc-per"><?= number_format($homepagePackageRate) ?> MMK / station / month</div>
                         <p class="calc-foot" id="calc-note">Billed monthly.</p>
                         <a href="/php/Company/register.php" class="btn btn-primary w-100 py-3">Start HQ registration</a>
                     </div>
                 </div>
             </div>
             <p class="small text-dim mt-4 mb-0">
-                <i class="fa-solid fa-circle-info me-2"></i>This estimate covers extra-station MMK fees and published discounts; it excludes the one-time registration fee and any monthly HQ point fees. The points option has no fixed conversion to MMK.
+                <i class="fa-solid fa-circle-info me-2"></i>This estimate includes the one-time registration fee and the selected MMK service package.
             </p>
         </div>
     </div>
@@ -521,6 +571,71 @@ require __DIR__ . '/partials/nav.php';
 </section>
 
 <!-- ==========================================================================
+     CUSTOMER LOYALTY TIERS
+     ========================================================================== -->
+<section id="loyalty" class="section-pad pt-0">
+    <div class="container">
+        <div class="text-center mb-4" data-reveal>
+            <span class="eyebrow">Driver rewards</span>
+            <h2 class="section-title">Earn points. Build your tier.</h2>
+            <p class="section-lead mx-auto">
+                Earn floor(litres filled × <?= rtrim(rtrim(number_format($homepagePointsPerLiter, 2, '.', ''), '0'), '.') ?>) points on eligible external fills.
+                Rank up by completing at least <?= number_format(MAP_PUMP_FUEL_QUOTA_LITERS, 1) ?> L in successful external fills each week.
+                Each qualifying week earns 1 EXP; a missed week removes 1 EXP.
+            </p>
+        </div>
+
+        <div class="row g-3">
+            <?php foreach (loyalty_tier_labels() as $tierCode => $tierLabel):
+                $tier = $homepageTierRules[$tierCode];
+                $poolRemaining = $homepageTierPoolBalances[$tierCode] ?? $tier['monthly_budget_mmk'];
+            ?>
+                <div class="col-md-6 col-xl-4" data-reveal>
+                    <article class="plan-card h-100">
+                        <div class="plan-tag"><?= htmlspecialchars($tierLabel, ENT_QUOTES, 'UTF-8') ?> tier</div>
+                        <h3 class="plan-name"><?= htmlspecialchars($tierLabel, ENT_QUOTES, 'UTF-8') ?></h3>
+                        <?php if ($tierCode === 'bronze'): ?>
+                            <p class="plan-note">Starting tier: <?= number_format($tier['points_threshold']) ?> points and <?= (int) $tier['exp_threshold'] ?> EXP.</p>
+                        <?php else: ?>
+                            <p class="plan-note">
+                                Qualify with <?= number_format($tier['points_threshold']) ?> points and <?= (int) $tier['exp_threshold'] ?> EXP.
+                            </p>
+                        <?php endif; ?>
+                        <div class="discount-grid">
+                            <div class="discount-cell">
+                                <div class="discount-head"><?= $homepageTierPoolsAvailable ? 'Shared pool remaining' : 'Configured monthly pool budget' ?></div>
+                                <div class="discount-row">
+                                    <span>This month</span>
+                                    <strong><?= number_format($poolRemaining, 2) ?> MMK</strong>
+                                </div>
+                                <?php if (!$homepageTierPoolsAvailable): ?>
+                                    <p class="small text-dim mb-0 mt-2">Live remaining balance unavailable</p>
+                                <?php endif; ?>
+                            </div>
+                        </div>
+                        <p class="small text-dim mt-3 mb-0">
+                            <?php if ($tierCode === 'bronze'): ?>
+                                Maintain the weekly fill quota to build EXP and advance.
+                            <?php else: ?>
+                                Keep the required points and build <?= (int) $tier['exp_threshold'] ?> EXP through qualifying weeks.
+                            <?php endif; ?>
+                        </p>
+                    </article>
+                </div>
+            <?php endforeach; ?>
+        </div>
+        <?php if (!$homepageTierPoolsAvailable): ?>
+            <p class="small text-dim mt-3 mb-0 text-center" role="status">
+                Configured monthly pool budgets are shown; live remaining balances are unavailable until the loyalty database migration is applied and connected.
+            </p>
+        <?php endif; ?>
+        <p class="small text-dim mt-3 mb-0 text-center">
+            Sign in to your driver dashboard to see the points still needed for your next tier.
+        </p>
+    </div>
+</section>
+
+<!-- ==========================================================================
      FAQ — operator leaning
      ========================================================================== -->
 <section id="faq" class="section-pad pt-0">
@@ -543,7 +658,7 @@ require __DIR__ . '/partials/nav.php';
                         </h2>
                         <div id="faq1" class="accordion-collapse collapse show" data-bs-parent="#faqAccordion">
                             <div class="accordion-body">
-                                Your one-time <?= number_format(BILLING_HQ_REGISTRATION_FEE_MMK) ?> MMK registration fee includes capacity for <?= (int) BILLING_HQ_INCLUDED_STATION_SLOTS ?> stations. Active stations still have a <?= number_format(BILLING_HQ_STATION_OPERATION_POINTS_MONTHLY) ?>-point monthly operating fee. Each station beyond the included capacity costs <?= number_format(BILLING_HQ_EXTRA_STATION_MMK_MONTHLY) ?> MMK per month, covering both its slot and operation, with volume and multi-month discounts. In the points option, the monthly slot and operating charges are <?= number_format(BILLING_HQ_STATION_SLOT_POINTS_MONTHLY) ?> points each. It's always free for drivers.
+                                HQ registration costs <?= number_format($homepageRegistrationFee) ?> MMK. Monthly all-in-one packages cost <?= number_format($homepagePackageRate) ?> MMK per station and cover service extension, station operation, and capacity. Drivers can earn and redeem loyalty points at eligible stations.
                             </div>
                         </div>
                     </div>
@@ -603,7 +718,7 @@ require __DIR__ . '/partials/nav.php';
                 <span class="eyebrow justify-content-center d-inline-flex">Get started</span>
                 <h2 class="section-title">Start with <?= (int) BILLING_HQ_INCLUDED_STATION_SLOTS ?> included station slots</h2>
                 <p class="text-light opacity-75 mb-4 px-md-4">
-                    Pay the one-time HQ registration fee, then use HQ points for monthly active-station fees or the published MMK rate for extra stations. Set up takes an afternoon.
+                    Pay the one-time HQ registration fee and use the all-in-one MMK package for monthly station service, operation, and capacity.
                 </p>
 
                 <div class="b2b-perks">

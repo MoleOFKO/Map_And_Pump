@@ -86,16 +86,25 @@ try {
             : 1;
         $extraStationCount = max(0, $requestedStations - BILLING_HQ_INCLUDED_STATION_SLOTS);
         $paymentRow = null;
+        $paymentRequired = $extraStationCount > 0;
+        $expectedRegistrationAmount = null;
+        if (is_array($registrationDetails) && array_key_exists('registration_amount_mmk', $registrationDetails)) {
+            $expectedRegistrationAmount = filter_var($registrationDetails['registration_amount_mmk'], FILTER_VALIDATE_FLOAT);
+            if ($expectedRegistrationAmount === false || $expectedRegistrationAmount < 0) {
+                throw new RuntimeException('The recorded HQ registration amount is invalid.');
+            }
+            $paymentRequired = $expectedRegistrationAmount > 0;
+        }
 
         if ($requestedStations < BILLING_HQ_INCLUDED_STATION_SLOTS || $requestedStations > 60
             || $requestedMonths < 1 || $requestedMonths > 24) {
             throw new RuntimeException('The requested station count or service period is invalid.');
         }
-        if ($extraStationCount > 0) {
+        if ($paymentRequired) {
             $paymentCheck = $conn->prepare(
-                "SELECT status, amount_mmk, quantity, term_months, payment_transfer_id FROM payment_transfers
+                "SELECT status, amount_mmk, quantity, term_months, service_start_month, payment_transfer_id FROM payment_transfers
                  WHERE request_id = ? AND payment_type = 'hq_registration'
-                 ORDER BY payment_transfer_id DESC LIMIT 1"
+                 ORDER BY payment_transfer_id DESC LIMIT 1 FOR UPDATE"
             );
             if (!$paymentCheck) {
                 throw new RuntimeException('Payment status is unavailable. The HQ registration cannot be approved yet.');
@@ -107,11 +116,27 @@ try {
             }
             $paymentRow = $paymentCheck->get_result()?->fetch_assoc();
             $paymentCheck->close();
+            $quantityValid = !empty($paymentRow['service_start_month'])
+                ? (int) ($paymentRow['quantity'] ?? 0) === $requestedStations
+                : (int) ($paymentRow['quantity'] ?? 0) >= $extraStationCount;
             if (($paymentRow['status'] ?? '') !== 'received' || (float) ($paymentRow['amount_mmk'] ?? 0) <= 0
-                || (int) ($paymentRow['quantity'] ?? 0) < $extraStationCount
-                || (int) ($paymentRow['term_months'] ?? 0) !== $requestedMonths) {
+                || !$quantityValid
+                || (int) ($paymentRow['term_months'] ?? 0) !== $requestedMonths
+                || ($expectedRegistrationAmount !== null
+                    && abs((float) $paymentRow['amount_mmk'] - $expectedRegistrationAmount) > 0.01)) {
                 throw new RuntimeException('The selected HQ station term must be recorded as received before approval.');
             }
+            $receiptCheck = $conn->prepare('SELECT 1 FROM payment_transfer_receipts WHERE payment_transfer_id = ? LIMIT 1');
+            if (!$receiptCheck) {
+                throw new RuntimeException('The registration payment evidence could not be verified.');
+            }
+            $paymentTransferId = (int) $paymentRow['payment_transfer_id'];
+            $receiptCheck->bind_param('i', $paymentTransferId);
+            if (!$receiptCheck->execute() || !$receiptCheck->get_result()?->fetch_row()) {
+                $receiptCheck->close();
+                throw new RuntimeException('The registration payment screenshot is missing.');
+            }
+            $receiptCheck->close();
         }
     }
 
@@ -210,6 +235,9 @@ try {
         );
         $requestedServiceMonths = max(1, min(24, (int) ($details['requested_service_months'] ?? 1)));
         $extraStationCount = $requestedStationCount - BILLING_HQ_INCLUDED_STATION_SLOTS;
+        $packageAmount = isset($details['package_amount_mmk'])
+            ? max(0.0, (float) $details['package_amount_mmk'])
+            : ($extraStationCount > 0 ? (float) ($paymentRow['amount_mmk'] ?? 0) : 0.0);
 
         $headquarterInsert = $conn->prepare(
             'INSERT INTO headquarter
@@ -228,6 +256,7 @@ try {
         $companyLocation = (string) $target['location'];
         $businessLicense = (string) $target['document_name'];
         $licenseImage = (string) $target['document_path'];
+        $includedStationCount = BILLING_HQ_INCLUDED_STATION_SLOTS;
         $headquarterInsert->bind_param(
             'sssssssssi',
             $companyName,
@@ -239,7 +268,7 @@ try {
             $licenseImage,
             $licenseExpiryDate,
             $licenseExpiryTs,
-            $requestedStationCount
+            $includedStationCount
         );
         if (!$headquarterInsert->execute()) {
             throw new RuntimeException('Could not create the approved company account.');
@@ -249,7 +278,7 @@ try {
 
         // Set service period without clobbering license expire_at / created_at.
         // Re-assert expire_at here in case the column still has ON UPDATE CURRENT_TIMESTAMP.
-        $serviceExpiry = $extraStationCount > 0
+        $serviceExpiry = $packageAmount > 0
             ? payment_transfer_add_months_clamped(new DateTimeImmutable(), $requestedServiceMonths)->format('Y-m-d H:i:s')
             : null;
         $serviceExpiryUpdate = $conn->prepare(
@@ -281,13 +310,18 @@ try {
             }
             $linkPayment->close();
         }
-        if ($extraStationCount > 0) {
-            $monthStart = new DateTimeImmutable('first day of this month 00:00:00');
+        if ($registrationTransferId > 0 && $packageAmount > 0) {
+            $packageStartMonth = (string) ($paymentRow['service_start_month'] ?? '');
+            $monthStart = DateTimeImmutable::createFromFormat('!Y-m', $packageStartMonth)
+                ?: new DateTimeImmutable('first day of this month 00:00:00');
+            $firstCoveredStation = array_key_exists('package_amount_mmk', $details)
+                ? 1
+                : BILLING_HQ_INCLUDED_STATION_SLOTS + 1;
             $slots = $conn->prepare(
                 'INSERT INTO company_loyalty_station_slots
                     (headquarter_id, `year_month`, slots_purchased, mmk_slots_purchased, points_spent)
                  VALUES (?, ?, 0, ?, 0)
-                 ON DUPLICATE KEY UPDATE mmk_slots_purchased = mmk_slots_purchased + VALUES(mmk_slots_purchased)'
+                 ON DUPLICATE KEY UPDATE mmk_slots_purchased = GREATEST(mmk_slots_purchased, VALUES(mmk_slots_purchased))'
             );
             if (!$slots) {
                 throw new RuntimeException('Could not apply paid extra-station capacity.');
@@ -300,11 +334,23 @@ try {
             if (!$entitlements) {
                 throw new RuntimeException('Could not create paid extra-station entitlements.');
             }
+            $coverage = $conn->prepare(
+                'INSERT INTO hq_station_package_coverage
+                    (payment_transfer_id, headquarter_id, `year_month`, first_station_number, station_count)
+                 VALUES (?, ?, ?, ?, ?)'
+            );
+            if (!$coverage) {
+                throw new RuntimeException('Could not create the paid package coverage record.');
+            }
             for ($monthIndex = 0; $monthIndex < $requestedServiceMonths; $monthIndex++) {
                 $yearMonth = $monthStart->modify('+' . $monthIndex . ' months')->format('Y-m');
                 $slots->bind_param('isi', $createdHeadquarterId, $yearMonth, $extraStationCount);
                 if (!$slots->execute()) {
                     throw new RuntimeException('Could not apply paid extra-station capacity.');
+                }
+                $coverage->bind_param('iisii', $registrationTransferId, $createdHeadquarterId, $yearMonth, $firstCoveredStation, $requestedStationCount);
+                if (!$coverage->execute()) {
+                    throw new RuntimeException('Could not create the paid package coverage record.');
                 }
                 for ($slotNumber = 1; $slotNumber <= $extraStationCount; $slotNumber++) {
                     $entitlements->bind_param('iisi', $registrationTransferId, $createdHeadquarterId, $yearMonth, $slotNumber);
@@ -315,6 +361,7 @@ try {
             }
             $slots->close();
             $entitlements->close();
+            $coverage->close();
         }
 
         // A public registration has no submitter account.  Ensure every

@@ -14,15 +14,8 @@ $error = '';
 $hqId = map_pump_current_hq_id($pdo);
 $billingSchemaReady = loyalty_countermeasures_schema_ready($pdo);
 $paymentTransferSchemaReady = payment_transfer_schema_ready($pdo);
-$hqPointBalance = company_loyalty_get_balance($pdo, $hqId);
 $billingMonth = loyalty_current_year_month();
-$stationMonthlyFee = (int) LOYALTY_HQ_STATION_MONTHLY_FEE;
-$extraStationMmkMonthly = (int) BILLING_HQ_EXTRA_STATION_MMK_MONTHLY;
-$stationBillingCsrf = $_SESSION['hq_station_billing_csrf'] ?? '';
-if (!is_string($stationBillingCsrf) || strlen($stationBillingCsrf) < 32) {
-    $stationBillingCsrf = bin2hex(random_bytes(32));
-    $_SESSION['hq_station_billing_csrf'] = $stationBillingCsrf;
-}
+$packageRate = billing_admin_setting($pdo, 'hq_package_mmk_per_station_month', BILLING_HQ_PACKAGE_MMK_PER_STATION_MONTHLY);
 $stationLimit = null;
 $baseStationLimit = null;
 $monthlySlots = 0;
@@ -49,70 +42,8 @@ function map_pump_normalize_station_location(string $location): ?string
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
 
-    // Pay one station's operating fee for the current month.
     if ($action === 'pay_station_fee') {
-        $stationIdToPay = (int) ($_POST['station_id'] ?? 0);
-        try {
-            if (!$billingSchemaReady) {
-                throw new RuntimeException('HQ point billing is temporarily unavailable. Please try again later.');
-            }
-            if (!hash_equals($stationBillingCsrf, (string) ($_POST['billing_csrf'] ?? ''))) {
-                throw new RuntimeException('Your session expired. Refresh the page and try again.');
-            }
-            if ($stationIdToPay <= 0) {
-                throw new RuntimeException('Select a valid station.');
-            }
-
-            $pdo->beginTransaction();
-            $hqLockStmt = $pdo->prepare('SELECT headquarter_id FROM headquarter WHERE headquarter_id = ? FOR UPDATE');
-            $hqLockStmt->execute([$hqId]);
-            if ($hqLockStmt->fetchColumn() === false) {
-                throw new RuntimeException('Could not verify this HQ account.');
-            }
-            $stationLockStmt = $pdo->prepare(
-                'SELECT b.branch_id
-                 FROM branches b
-                 INNER JOIN station_business_scope sbs ON sbs.station_id = b.branch_id
-                 WHERE b.branch_id = ? AND sbs.headquarter_id = ? AND b.status <> \'closed\'
-                 FOR UPDATE'
-            );
-            $stationLockStmt->execute([$stationIdToPay, $hqId]);
-            if ($stationLockStmt->fetchColumn() === false) {
-                throw new RuntimeException('You can only pay fees for stations under your HQ.');
-            }
-            if ($paymentTransferSchemaReady) {
-                $quoteStmt = $pdo->prepare("SELECT 1 FROM payment_transfers WHERE payment_type = 'hq_station_operating_quote' AND payer_headquarter_id = ? AND station_id = ? AND service_start_month = ? AND status IN ('pending_payment', 'payer_reported_paid') LIMIT 1");
-                $quoteStmt->execute([$hqId, $stationIdToPay, $billingMonth]);
-                if ($quoteStmt->fetchColumn()) {
-                    throw new RuntimeException('An Admin-created MMK quote is pending for this station and month. Cancel the quote before paying this month with points.');
-                }
-            }
-            $paidCheck = $pdo->prepare(
-                'SELECT 1 FROM company_loyalty_station_fees
-                 WHERE headquarter_id = ? AND station_id = ? AND `year_month` = ? LIMIT 1'
-            );
-            $paidCheck->execute([$hqId, $stationIdToPay, $billingMonth]);
-            if ($paidCheck->fetchColumn()) {
-                throw new RuntimeException('This station is already paid for the current month.');
-            }
-            if (!company_loyalty_redeem_credit($pdo, $hqId, $stationMonthlyFee, 'station monthly operating fee')) {
-                throw new RuntimeException('INSUFFICIENT_HQ_POINTS');
-            }
-            $feeStmt = $pdo->prepare(
-                'INSERT INTO company_loyalty_station_fees (headquarter_id, station_id, `year_month`, points_paid)
-                 VALUES (?, ?, ?, ?)'
-            );
-            $feeStmt->execute([$hqId, $stationIdToPay, $billingMonth, $stationMonthlyFee]);
-            $pdo->commit();
-            $message = 'Station monthly fee paid. The station is eligible to operate for this month.';
-        } catch (Throwable $e) {
-            if ($pdo->inTransaction()) {
-                $pdo->rollBack();
-            }
-            $error = $e->getMessage() === 'INSUFFICIENT_HQ_POINTS'
-                ? 'Insufficient HQ points. Pay by MMK is available for extra stations; ask an Admin about arrangements for included-station point fees.'
-                : $e->getMessage();
-        }
+        $error = 'Station fees, capacity, and service extensions are paid together through the MMK service package.';
     }
 
     // Register Station
@@ -127,7 +58,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (!empty($station_name) && $location !== null) {
             try {
                 if (!$billingSchemaReady) {
-                    throw new RuntimeException('HQ point billing is temporarily unavailable. Please try again later.');
+                    throw new RuntimeException('Station billing is temporarily unavailable. Please try again later.');
                 }
                 $pdo->beginTransaction();
                 $hqLockStmt = $pdo->prepare("SELECT station_count FROM headquarter WHERE headquarter_id = ? FOR UPDATE");
@@ -153,7 +84,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($stationLimit < 1) {
                     $stationLimit = null;
                 } else {
-                    $monthlySlots = company_loyalty_current_month_slots($pdo, $hqId);
+                    $monthlySlots = hq_billing_current_month_slots($pdo, $hqId);
                     $baseStationLimit = $stationLimit;
                     $stationLimit += $monthlySlots;
                 }
@@ -220,6 +151,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 );
                 $scopeStmt->execute([$stationId, $hqId, $manager_id ?: null]);
                 if ($paymentTransferSchemaReady) {
+                    payment_transfer_assign_package_fees($pdo, $hqId, $stationId);
                     payment_transfer_assign_available_entitlements($pdo, $hqId);
                 }
 
@@ -288,7 +220,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         exit;
                     }
                 } elseif ($e->getMessage() === 'INSUFFICIENT_HQ_POINTS') {
-                    $error = 'Insufficient HQ points. Use Pay by MMK for monthly extra-station capacity and operation; included-station operating fees remain points-based.';
+                    $error = 'Station fees, capacity, and service extensions are paid together through the MMK service package.';
                 } else {
                     $error = $e->getMessage();
                 }
@@ -380,10 +312,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if (!empty($station_id) && in_array($new_status, ['Active', 'Maintenance'])) {
             try {
-                if ($new_status === 'Active' && !company_loyalty_station_is_paid($pdo, (int) $station_id)) {
+                if ($new_status === 'Active' && !hq_billing_station_is_paid($pdo, (int) $station_id)) {
                     echo json_encode([
                         'success' => false,
-                        'message' => 'This station is paused until its ' . number_format($stationMonthlyFee) . '-point monthly fee is paid.'
+                        'message' => 'This station is paused until the MMK service package is paid for the current month.'
                     ]);
                     exit;
                 }
@@ -453,7 +385,7 @@ try {
     $stations = $stmt->fetchAll();
     if ($billingSchemaReady) {
         foreach ($stations as &$stationRow) {
-            $stationRow['monthly_fee_paid'] = company_loyalty_station_is_paid($pdo, (int) $stationRow['station_id']) ? 1 : 0;
+            $stationRow['monthly_fee_paid'] = hq_billing_station_is_paid($pdo, (int) $stationRow['station_id']) ? 1 : 0;
         }
         unset($stationRow);
     }
@@ -465,7 +397,7 @@ try {
     if ($baseStationLimit !== null && $baseStationLimit < 1) {
         $baseStationLimit = null;
     }
-    $monthlySlots = company_loyalty_current_month_slots($pdo, $hqId);
+    $monthlySlots = hq_billing_current_month_slots($pdo, $hqId);
     $stationLimit = $baseStationLimit === null ? null : $baseStationLimit + $monthlySlots;
     $stationLimitReached = $stationLimit !== null && $stationCount >= $stationLimit;
 
@@ -668,17 +600,12 @@ try {
             </div>
         <?php endif; ?>
 
-<?php
-$hqPointBalance = company_loyalty_get_balance($pdo, $hqId);
-?>
-
         <div class="card p-4 bg-dark text-light border-secondary">
             <div class="d-flex justify-content-between align-items-center mb-3">
                 <div>
                     <h3>Manage Deployed Stations</h3>
-                    <p class="subtitle mb-0">Monitor stations, pay monthly operating fees, or manage registration capacity.</p>
-                    <p class="text-info small mb-0 mt-2"><i class="fa-solid fa-star me-1" aria-hidden="true"></i>HQ points: <strong><?= number_format($hqPointBalance) ?></strong></p>
-                    <p class="text-secondary small mb-0">Points option: <?= number_format($stationMonthlyFee) ?> points/month for station operation. MMK option: <?= number_format($extraStationMmkMonthly) ?> MMK/month per station beyond the included <?= (int) BILLING_HQ_INCLUDED_STATION_SLOTS ?>; this covers both slot and operation. <a href="/php/payment_center.php" class="link-info">View payment status</a></p>
+                    <p class="subtitle mb-0">Monitor stations and manage the combined monthly MMK service package.</p>
+                    <p class="text-secondary small mb-0"><?= number_format($packageRate) ?> MMK per station/month for the service extension, station operation, and capacity package. <a href="/php/payment_center.php" class="link-info">View payment status</a></p>
                     <?php if (isset($_GET['payment']) && $_GET['payment'] === 'pending'): ?>
                     <div class="alert alert-info mt-3 mb-0">Your payment request was created. Its fixed amount and recipient status are available in <a href="/php/payment_center.php">Payment status</a>.</div>
                     <?php endif; ?>
@@ -758,18 +685,9 @@ $hqPointBalance = company_loyalty_get_balance($pdo, $hqId);
                                             <button type="button" id="toggle-btn-<?= $row['station_id'] ?>" onclick="closeStationMenus(); toggleStatus(<?= $row['station_id'] ?>, '<?= $targetStatus ?>')">
                                                 <i class="bi <?= $isMaintenance ? 'bi-toggle2-on' : 'bi-tools' ?>"></i> <?= $btnText ?>
                                             </button>
-                                            <?php if (!$feePaid): ?>
-                                            <form method="POST" class="station-billing-form" onsubmit="return confirm('Pay <?= $stationMonthlyFee ?> HQ points for this station this month?')">
-                                                <input type="hidden" name="action" value="pay_station_fee">
-                                                <input type="hidden" name="station_id" value="<?= (int) $row['station_id'] ?>">
-                                                <input type="hidden" name="billing_csrf" value="<?= htmlspecialchars($stationBillingCsrf, ENT_QUOTES, 'UTF-8') ?>">
-                                                <button type="submit" title="Pay the monthly station fee">
-                                                    <i class="bi bi-credit-card"></i> Pay monthly fee · <?= number_format($stationMonthlyFee) ?> pts
-                                                </button>
-                                            </form>
-                                            <?php else: ?>
-                                            <span class="small text-success px-3 py-2 d-block">Monthly fee paid</span>
-                                            <?php endif; ?>
+                                            <span class="small <?= $feePaid ? 'text-success' : 'text-warning' ?> px-3 py-2 d-block">
+                                                <?= $feePaid ? 'Monthly package paid' : 'MMK service package required' ?>
+                                            </span>
                                             <button type="button" class="configure-station-btn" data-bs-toggle="modal" data-bs-target="#configureModal"
                                                 data-station-id="<?= htmlspecialchars((string) $row['station_id'], ENT_QUOTES, 'UTF-8') ?>"
                                                 data-station-name="<?= htmlspecialchars((string) $row['station_name'], ENT_QUOTES, 'UTF-8') ?>"
@@ -891,7 +809,7 @@ $hqPointBalance = company_loyalty_get_balance($pdo, $hqId);
                 </div>
                 <div class="modal-body">
                     <p class="mb-2">Your HQ has reached its configured limit of <?= (int) $stationLimit ?> stations.</p>
-                    <p class="text-secondary">Extra station capacity is available through the MMK option at <?= number_format($extraStationMmkMonthly) ?> per extra station per month, covering both capacity and station operation.</p>
+                    <p class="text-secondary">The combined MMK service package is <?= number_format($packageRate) ?> per station per month and includes service extension, operation, and capacity.</p>
                     <p class="text-secondary small mt-3 mb-0">A recipient-recorded MMK receipt adds monthly capacity and covers monthly operation for the same number of extra stations.</p>
                 </div>
                 <div class="modal-footer border-secondary">
