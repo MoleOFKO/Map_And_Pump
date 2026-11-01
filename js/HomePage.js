@@ -183,89 +183,83 @@
 
     /* ======================================================================
        PRICING CALCULATOR
-       Registration fee, per-station package rate, and discounts
-       are supplied by billing settings through #calc data attributes.
+       Homepage estimate: the first three stations are included; paid
+       stations use the configured rate and 12/60-month upfront terms.
        ====================================================================== */
     var calc = document.getElementById('calc');
     if (calc) {
-        var REGISTRATION_FEE = parseInt(calc.dataset.registrationFee, 10);
-        var RATE      = parseInt(calc.dataset.rate, 10);
+        var RATE = Number(calc.dataset.rate) || 37000;
+        var INCLUDED = Number(calc.dataset.included) || 3;
+        var rangeEl = document.getElementById('calc-range');
+        var numberEl = document.getElementById('calc-number');
+        var countEl = document.getElementById('calc-count');
+        var totalStationsEl = document.getElementById('calc-total-stations');
+        var freeEl = document.getElementById('calc-free');
+        var paidEl = document.getElementById('calc-paid');
+        var monthsWrap = document.getElementById('calc-months');
+        var baseEl = document.getElementById('calc-base');
+        var savingsEl = document.getElementById('calc-savings');
+        var termLabelEl = document.getElementById('calc-term-label');
+        var totalEl = document.getElementById('calc-total');
+        var perEl = document.getElementById('calc-per');
+        var freeNoteEl = document.getElementById('calc-free-note');
+        var months = 12;
+        var discount = 2;
 
-        var rangeEl   = document.getElementById('calc-range');
-        var countEl   = document.getElementById('calc-count');
-        var paidEl    = document.getElementById('calc-paid');
-        var monthsWrap= document.getElementById('calc-months');
-        var baseEl    = document.getElementById('calc-base');
-        var registrationEl = document.getElementById('calc-registration');
-        var volEl     = document.getElementById('calc-vol');
-        var durEl     = document.getElementById('calc-dur');
-        var totalEl   = document.getElementById('calc-total');
-        var perEl     = document.getElementById('calc-per');
-        var noteEl    = document.getElementById('calc-note');
-
-        var VOLUME = JSON.parse(calc.dataset.volumeDiscounts || '[]')
-            .sort(function (a, b) { return b.min - a.min; });
-        var DURATION = {};
-        JSON.parse(calc.dataset.termDiscounts || '[]').forEach(function (term) {
-            DURATION[term.months] = term.percent / 100;
-        });
-
-        var months = 1;
-
-        function fmt(n) { return Math.round(n).toLocaleString('en-US'); }
-
-        function volumeOff(paid) {
-            for (var i = 0; i < VOLUME.length; i++) {
-                if (paid >= VOLUME[i].min) return VOLUME[i].percent / 100;
-            }
-            return 0;
+        function fmt(value) { return Math.round(value).toLocaleString('en-US'); }
+        function clampStations(value) {
+            var parsed = Number.parseInt(value, 10);
+            if (!Number.isFinite(parsed)) parsed = Number(rangeEl.value) || 1;
+            return Math.min(Number(rangeEl.max), Math.max(Number(rangeEl.min), parsed));
         }
 
-        function update() {
-            var stations = parseInt(rangeEl.value, 10);
-            var paid     = stations;
+        function update(stationValue) {
+            var stations = clampStations(stationValue);
+            var free = Math.min(stations, INCLUDED);
+            var paid = Math.max(stations - INCLUDED, 0);
+            var base = paid * RATE * months;
+            var savings = base * discount / 100;
+            var upfront = Math.round(base - savings);
 
-            var vOff = volumeOff(paid);
-            var dOff = DURATION[months] || 0;
+            rangeEl.value = String(stations);
+            numberEl.value = String(stations);
+            countEl.textContent = String(stations);
+            totalStationsEl.textContent = String(stations);
+            freeEl.textContent = String(free);
+            paidEl.textContent = String(paid);
+            termLabelEl.textContent = months === 12 ? '1 year' : '5 years';
+            baseEl.textContent = fmt(base) + ' MMK';
+            savingsEl.textContent = fmt(savings) + ' MMK (' + discount + '%)';
+            totalEl.textContent = fmt(upfront) + ' MMK';
+            perEl.textContent = paid
+                ? 'Equivalent to ' + fmt(upfront / paid / months) + ' MMK / paid station / month'
+                : 'No paid stations in this estimate';
+            freeNoteEl.hidden = paid > 0;
 
-            var base  = paid * RATE * months;
-            var afterV = base * (1 - vOff);
-            var packageTotal = afterV * (1 - dOff);
-            var total = REGISTRATION_FEE + packageTotal;
-
-            countEl.textContent = stations;
-            paidEl.textContent  = paid;
-            baseEl.textContent  = fmt(base) + ' MMK';
-            registrationEl.textContent = fmt(REGISTRATION_FEE) + ' MMK';
-            volEl.textContent   = vOff ? '−' + fmt(base - afterV) + ' MMK (' + Math.round(vOff * 100) + '%)' : '—';
-            durEl.textContent   = dOff ? '−' + fmt(afterV - packageTotal) + ' MMK (' + Math.round(dOff * 100) + '%)' : '—';
-            totalEl.textContent = fmt(total) + ' MMK';
-
-            perEl.textContent = paid > 0
-                ? fmt(packageTotal / paid / months) + ' MMK / station / month'
-                : 'No station package charge';
-
-            noteEl.textContent = months > 1
-                ? 'Includes registration and the all-in-one package for ' + months + ' months, billed upfront.'
-                : 'Includes registration and one month of all-in-one station service.';
-
-            // fill the slider track up to the thumb
-            var pct = ((stations - rangeEl.min) / (rangeEl.max - rangeEl.min)) * 100;
+            var pct = ((stations - Number(rangeEl.min)) / (Number(rangeEl.max) - Number(rangeEl.min))) * 100;
             rangeEl.style.setProperty('--fill', pct + '%');
         }
 
-        rangeEl.addEventListener('input', update);
+        rangeEl.addEventListener('input', function () { update(rangeEl.value); });
+        numberEl.addEventListener('input', function () {
+            if (numberEl.value !== '') update(numberEl.value);
+        });
+        numberEl.addEventListener('change', function () { update(numberEl.value); });
 
-        monthsWrap.querySelectorAll('button').forEach(function (btn) {
-            btn.addEventListener('click', function () {
-                monthsWrap.querySelectorAll('button').forEach(function (b) { b.classList.remove('is-active'); });
-                btn.classList.add('is-active');
-                months = parseInt(btn.dataset.months, 10);
-                update();
+        monthsWrap.querySelectorAll('button').forEach(function (button) {
+            button.addEventListener('click', function () {
+                monthsWrap.querySelectorAll('button').forEach(function (item) {
+                    var selected = item === button;
+                    item.classList.toggle('is-active', selected);
+                    item.setAttribute('aria-pressed', String(selected));
+                });
+                months = Number(button.dataset.months);
+                discount = Number(button.dataset.discount);
+                update(numberEl.value);
             });
         });
 
-        update();
+        update(numberEl.value);
     }
 
     /* ======================================================================

@@ -60,7 +60,7 @@ try {
 }
 
 $page_title       = 'MAP & PUMP | Put Your Stations on the Map Drivers Actually Check';
-$page_description = 'MAP & PUMP is the availability layer for fuel retail. HQ registration and all-in-one monthly station packages are billed in MMK.';
+$page_description = 'MAP & PUMP helps fuel companies manage station availability. HQ registration includes three stations; additional station packages are priced in MMK.';
 $active_nav       = 'home';
 
 require __DIR__ . '/partials/head.php';
@@ -116,7 +116,7 @@ require __DIR__ . '/partials/nav.php';
                 <p class="hero-sub mb-4" data-reveal style="--reveal-delay:160ms">
                     When a station runs dry, switch it off in one tap — drivers see it instantly
                     and stop queuing at the wrong forecourt. When you restock, switch it back on
-                    and they come to you. HQ registration includes capacity for <?= (int) BILLING_HQ_INCLUDED_STATION_SLOTS ?> stations; monthly operating fees still apply.
+                    and they come to you. HQ registration includes <?= (int) BILLING_HQ_INCLUDED_STATION_SLOTS ?> stations, with clear upfront pricing for additional capacity.
                 </p>
 
                 <div class="hero-actions d-sm-flex gap-3 justify-content-center justify-content-lg-start" data-reveal style="--reveal-delay:240ms">
@@ -265,7 +265,7 @@ require __DIR__ . '/partials/nav.php';
                 <div class="step-card">
                     <div class="step-num">01</div>
                     <h3>Register the company</h3>
-                    <p>One account for your whole business. The one-time registration fee includes capacity for <?= (int) BILLING_HQ_INCLUDED_STATION_SLOTS ?> stations.</p>
+                    <p>One account for your whole business. Registration includes the first <?= (int) BILLING_HQ_INCLUDED_STATION_SLOTS ?> stations.</p>
                 </div>
             </div>
             <div class="col-md-6 col-lg-3" data-reveal style="--reveal-delay:90ms">
@@ -303,9 +303,9 @@ require __DIR__ . '/partials/nav.php';
             <span class="eyebrow">Pricing</span>
             <h2 class="section-title">Three registration slots included. Scale when you're ready.</h2>
             <p class="section-lead mx-auto">
-                The one-time HQ registration fee is <?= number_format($homepageRegistrationFee) ?> MMK. The all-in-one MMK package is
-                <?= number_format($homepagePackageRate) ?> per station per month and covers service extension, operation, and capacity.
-                Volume and multi-month discounts apply.
+                The one-time HQ registration fee is <?= number_format($homepageRegistrationFee) ?> MMK and is shown separately. The first
+                <?= (int) BILLING_HQ_INCLUDED_STATION_SLOTS ?> stations are included; each additional station costs <?= number_format($homepagePackageRate) ?> MMK per month.
+                Pay upfront for 12 months and save 2%, or 60 months and save 15%.
             </p>
         </div>
 
@@ -315,10 +315,10 @@ require __DIR__ . '/partials/nav.php';
                     <div class="plan-tag">Included with registration</div>
                     <h3 class="plan-name">Starter</h3>
                     <div class="plan-price"><?= (int) BILLING_HQ_INCLUDED_STATION_SLOTS ?> station slots <span>included</span></div>
-                    <p class="plan-note">Monthly service packages include operation, service extension, and capacity for each covered station. Initial company registration fees are shown during registration.</p>
+                    <p class="plan-note">One-time HQ registration fee: <?= number_format($homepageRegistrationFee) ?> MMK. Includes the first <?= (int) BILLING_HQ_INCLUDED_STATION_SLOTS ?> stations at no additional station-package cost.</p>
                     <ul class="plan-list">
                         <li><i class="fa-solid fa-check"></i> <?= (int) BILLING_HQ_INCLUDED_STATION_SLOTS ?> station registrations included</li>
-                        <li><i class="fa-solid fa-check"></i> Monthly service package billed in MMK</li>
+                        <li><i class="fa-solid fa-check"></i> First <?= (int) BILLING_HQ_INCLUDED_STATION_SLOTS ?> stations included</li>
                         <li><i class="fa-solid fa-check"></i> Enable / disable per station</li>
                         <li><i class="fa-solid fa-check"></i> Per-grade stock status</li>
                         <li><i class="fa-solid fa-check"></i> Driver token bookings</li>
@@ -332,21 +332,10 @@ require __DIR__ . '/partials/nav.php';
                     <div class="plan-tag plan-tag-accent">Most companies land here</div>
                     <h3 class="plan-name">Growth</h3>
                     <div class="plan-price"><?= number_format($homepagePackageRate) ?> <span>MMK / station / month</span></div>
-                    <p class="plan-note">The all-in-one package covers service extension, monthly station operation, and extra capacity slots.</p>
-
-                    <div class="discount-grid">
-                        <div class="discount-cell">
-                            <div class="discount-head">Volume</div>
-                            <?php foreach (BILLING_HQ_VOLUME_DISCOUNTS as $tier): ?>
-                                <div class="discount-row"><span><?= htmlspecialchars($tier['label'], ENT_QUOTES, 'UTF-8') ?></span><strong><?= (int) $tier['percent'] > 0 ? (int) $tier['percent'] . '% off' : 'Standard' ?></strong></div>
-                            <?php endforeach; ?>
-                        </div>
-                        <div class="discount-cell">
-                            <div class="discount-head">Commitment</div>
-                            <?php foreach (BILLING_HQ_TERM_DISCOUNTS as $term): ?>
-                                <div class="discount-row"><span><?= htmlspecialchars($term['label'], ENT_QUOTES, 'UTF-8') ?></span><strong><?= (int) $term['percent'] > 0 ? (int) $term['percent'] . '% off' : 'Standard' ?></strong></div>
-                            <?php endforeach; ?>
-                        </div>
+                    <p class="plan-note">Only stations above the included three are charged. The package covers capacity and service for the full selected term, paid upfront.</p>
+                    <div class="discount-grid discount-grid-terms">
+                        <div class="discount-cell"><div class="discount-head">1 year</div><div class="discount-row"><span>12 months upfront</span><strong>Save 2%</strong></div></div>
+                        <div class="discount-cell"><div class="discount-head">5 years</div><div class="discount-row"><span>60 months upfront</span><strong>Save 15%</strong></div></div>
                     </div>
 
                     <p class="small text-dim mb-0">MMK transfers are made separately to <?= htmlspecialchars(BILLING_PLATFORM_RECIPIENT_NAME, ENT_QUOTES, 'UTF-8') ?>. The website records reported status but does not move funds.</p>
@@ -357,46 +346,50 @@ require __DIR__ . '/partials/nav.php';
         <!-- Calculator -->
         <div class="calc-wrap" id="calc"
              data-rate="<?= (int) $homepagePackageRate ?>"
-             data-volume-discounts="<?= htmlspecialchars(json_encode(BILLING_HQ_VOLUME_DISCOUNTS), ENT_QUOTES, 'UTF-8') ?>"
-             data-term-discounts="<?= htmlspecialchars(json_encode(BILLING_HQ_TERM_DISCOUNTS), ENT_QUOTES, 'UTF-8') ?>"
+             data-included="<?= (int) BILLING_HQ_INCLUDED_STATION_SLOTS ?>"
+             data-registration-fee="<?= (int) $homepageRegistrationFee ?>"
              data-reveal>
             <div class="row g-4 align-items-center">
                 <div class="col-lg-7">
                     <span class="eyebrow">Estimate</span>
-                    <h3 class="calc-title">Estimate your all-in-one MMK station package</h3>
+                    <h3 class="calc-title">Estimate your station package</h3>
 
                     <label class="calc-label" for="calc-range">
-                        Stations in the package: <strong id="calc-count">6</strong>
+                        Total stations: <strong id="calc-count">6</strong>
                     </label>
                     <input type="range" id="calc-range" class="calc-range" min="1" max="60" value="6" step="1">
                     <div class="calc-scale"><span>1</span><span>30</span><span>60</span></div>
+                    <label class="calc-label calc-number-label" for="calc-number">Or enter a station count</label>
+                    <input type="number" id="calc-number" class="calc-number" min="1" max="60" value="6" step="1" inputmode="numeric">
 
-                    <div class="calc-label mt-4 mb-2">Commitment</div>
-                    <div class="calc-months" id="calc-months">
-                        <?php foreach (BILLING_HQ_TERM_DISCOUNTS as $term): ?>
-                            <button type="button" data-months="<?= (int) $term['months'] ?>" class="<?= (int) $term['months'] === 1 ? 'is-active' : '' ?>"><?= htmlspecialchars($term['label'], ENT_QUOTES, 'UTF-8') ?></button>
-                        <?php endforeach; ?>
+                    <div class="calc-label mt-4 mb-2">Choose an upfront term</div>
+                    <div class="calc-months calc-term-cards" id="calc-months" role="group" aria-label="Choose package term">
+                        <button type="button" data-months="12" data-discount="2" class="is-active" aria-pressed="true"><strong>1 year</strong><span>12 months · Save 2%</span></button>
+                        <button type="button" data-months="60" data-discount="15" aria-pressed="false"><strong>5 years</strong><span>60 months · Save 15%</span></button>
                     </div>
                 </div>
 
                 <div class="col-lg-5">
                     <div class="calc-result">
-                        <div class="calc-line"><span>Stations</span><strong id="calc-paid">6</strong></div>
-                        <div class="calc-line"><span>Service package</span><strong id="calc-base"><?= number_format(6 * $homepagePackageRate) ?> MMK</strong></div>
-                        <div class="calc-line"><span>Volume discount</span><strong id="calc-vol">—</strong></div>
-                        <div class="calc-line"><span>Term discount</span><strong id="calc-dur">—</strong></div>
+                        <div class="calc-line"><span>Total stations</span><strong id="calc-total-stations">6</strong></div>
+                        <div class="calc-line"><span>Free stations</span><strong id="calc-free">3</strong></div>
+                        <div class="calc-line"><span>Paid stations</span><strong id="calc-paid">3</strong></div>
+                        <div class="calc-line"><span>Purchase term</span><strong id="calc-term-label">1 year</strong></div>
+                        <div class="calc-line"><span>Base cost</span><strong id="calc-base"><?= number_format(3 * $homepagePackageRate * 12) ?> MMK</strong></div>
+                        <div class="calc-line"><span>Savings</span><strong id="calc-savings">—</strong></div>
                         <div class="calc-total">
-                            <span>MMK estimate</span>
-                            <strong id="calc-total"><?= number_format(6 * $homepagePackageRate) ?> MMK</strong>
+                            <span>Upfront station total</span>
+                            <strong id="calc-total" aria-live="polite"><?= number_format((int) round(3 * $homepagePackageRate * 12 * .98)) ?> MMK</strong>
                         </div>
-                        <div class="calc-per" id="calc-per"><?= number_format($homepagePackageRate) ?> MMK / station / month</div>
-                        <p class="calc-foot" id="calc-note">Billed monthly.</p>
+                        <div class="calc-per" id="calc-per">Equivalent to <?= number_format((int) round($homepagePackageRate * .98)) ?> MMK / paid station / month</div>
+                        <p class="calc-foot" id="calc-note">Full selected term is paid upfront. Monthly equivalent is informational only.</p>
                         <a href="/php/Company/register.php" class="btn btn-primary w-100 py-3">Start HQ registration</a>
+                        <p class="calc-free-note" id="calc-free-note" hidden>All selected stations are included. No station package payment is due.</p>
                     </div>
                 </div>
             </div>
             <p class="small text-dim mt-4 mb-0">
-                <i class="fa-solid fa-circle-info me-2"></i>This estimate includes the one-time registration fee and the selected MMK service package.
+                <i class="fa-solid fa-circle-info me-2"></i>The one-time HQ registration fee of <?= number_format($homepageRegistrationFee) ?> MMK is separate and is not included in this station estimate.
             </p>
         </div>
     </div>
@@ -656,7 +649,7 @@ require __DIR__ . '/partials/nav.php';
                         </h2>
                         <div id="faq1" class="accordion-collapse collapse show" data-bs-parent="#faqAccordion">
                             <div class="accordion-body">
-                                HQ registration costs <?= number_format($homepageRegistrationFee) ?> MMK. Monthly all-in-one packages cost <?= number_format($homepagePackageRate) ?> MMK per station and cover service extension, station operation, and capacity. Drivers can earn and redeem loyalty points at eligible stations.
+                                HQ registration costs <?= number_format($homepageRegistrationFee) ?> MMK once and is separate from station packages. The first <?= (int) BILLING_HQ_INCLUDED_STATION_SLOTS ?> stations are included; each additional station costs <?= number_format($homepagePackageRate) ?> MMK per month. Station packages are paid upfront: 12 months saves 2%, and 60 months saves 15%.
                             </div>
                         </div>
                     </div>
@@ -695,7 +688,7 @@ require __DIR__ . '/partials/nav.php';
                         </h2>
                         <div id="faq4" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
                             <div class="accordion-body">
-                                Yes. Add a station any time and it's prorated for the rest of the period. Remove one and the slot frees up at the end of the current cycle — useful for seasonal or temporarily closed branches.
+                                You can add stations by selecting the total station count in your HQ package. The first <?= (int) BILLING_HQ_INCLUDED_STATION_SLOTS ?> stations are included; additional capacity is priced for the selected upfront term.
                             </div>
                         </div>
                     </div>
@@ -716,7 +709,7 @@ require __DIR__ . '/partials/nav.php';
                 <span class="eyebrow justify-content-center d-inline-flex">Get started</span>
                 <h2 class="section-title">Start with <?= (int) BILLING_HQ_INCLUDED_STATION_SLOTS ?> included station slots</h2>
                 <p class="text-light opacity-75 mb-4 px-md-4">
-                    Pay the one-time HQ registration fee and use the all-in-one MMK package for monthly station service, operation, and capacity.
+                    Pay the one-time HQ registration fee separately. Your first <?= (int) BILLING_HQ_INCLUDED_STATION_SLOTS ?> stations are included, and additional stations can be purchased for 12 or 60 months upfront.
                 </p>
 
                 <div class="b2b-perks">
