@@ -2497,3 +2497,97 @@ body.background_color.light-mode .txt-neon-purple {
 .hq-status-suspended::before { background: #ff9f43; box-shadow: 0 0 8px #ff9f43; }
 .hq-status-removed::before { background: #ff4d6a; box-shadow: 0 0 8px #ff4d6a; }
 body.background_color.light-mode .hq-status { color: var(--text-muted); }
+
+/* Loyalty and billing page surfaces follow the active admin theme. */
+.loyalty-billing-page {
+    --loyalty-surface: #0b1424;
+    --loyalty-input: #08111f;
+    --loyalty-border: #52647b;
+    --loyalty-text: #e8f3ff;
+    --loyalty-muted: #bdcbe0;
+    --loyalty-row-hover: rgba(55, 137, 255, 0.12);
+    color: var(--loyalty-text);
+}
+
+.loyalty-billing-page h1,
+.loyalty-billing-page h2,
+.loyalty-billing-page h3,
+.loyalty-billing-page label,
+.loyalty-billing-page strong,
+.loyalty-billing-page .loyalty-table {
+    color: var(--loyalty-text);
+}
+
+.loyalty-billing-page .loyalty-muted,
+.loyalty-billing-page .loyalty-table thead th {
+    color: var(--loyalty-muted);
+}
+
+.loyalty-billing-page .form-control,
+.loyalty-billing-page .form-select {
+    color: var(--loyalty-text);
+    background-color: var(--loyalty-input);
+    border-color: var(--loyalty-border);
+    color-scheme: dark;
+}
+
+.loyalty-billing-page .form-control:focus,
+.loyalty-billing-page .form-select:focus {
+    border-color: var(--neon-cyan);
+    box-shadow: 0 0 0 .25rem rgba(13, 110, 253, .22);
+}
+
+.loyalty-billing-page .form-control::placeholder {
+    color: var(--loyalty-muted);
+    opacity: 1;
+}
+
+.loyalty-billing-page .form-select option {
+    color: var(--loyalty-text);
+    background-color: var(--loyalty-surface);
+}
+
+.loyalty-billing-page .loyalty-table {
+    --bs-table-color: var(--loyalty-text);
+    --bs-table-bg: transparent;
+    --bs-table-border-color: var(--loyalty-border);
+    --bs-table-hover-bg: var(--loyalty-row-hover);
+    --bs-table-hover-color: var(--loyalty-text);
+    font-size: .9rem;
+}
+
+.loyalty-billing-page .loyalty-table th,
+.loyalty-billing-page .loyalty-table td {
+    padding: 12px 14px;
+    vertical-align: middle;
+}
+
+.loyalty-billing-page .loyalty-table thead th {
+    font-size: .75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    border-bottom-width: 2px;
+}
+
+.loyalty-billing-page .loyalty-table tbody tr:hover > * {
+    color: var(--loyalty-text);
+    background-color: var(--loyalty-row-hover);
+}
+
+body.background_color.light-mode .loyalty-billing-page,
+body.background_color[data-theme="light"] .loyalty-billing-page {
+    --loyalty-surface: #ffffff;
+    --loyalty-input: #ffffff;
+    --loyalty-border: #9aaabd;
+    --loyalty-text: #172536;
+    --loyalty-muted: #46576b;
+    --loyalty-row-hover: rgba(11, 94, 215, 0.08);
+}
+
+body.background_color.light-mode .loyalty-billing-page .form-control,
+body.background_color.light-mode .loyalty-billing-page .form-select,
+body.background_color[data-theme="light"] .loyalty-billing-page .form-control,
+body.background_color[data-theme="light"] .loyalty-billing-page .form-select {
+    color-scheme: light;
+}

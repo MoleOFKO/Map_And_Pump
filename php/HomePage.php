@@ -315,7 +315,7 @@ require __DIR__ . '/partials/nav.php';
                     <div class="plan-tag">Included with registration</div>
                     <h3 class="plan-name">Starter</h3>
                     <div class="plan-price"><?= (int) BILLING_HQ_INCLUDED_STATION_SLOTS ?> station slots <span>included</span></div>
-                    <p class="plan-note">One-time registration fee: <?= number_format($homepageRegistrationFee) ?> MMK. Monthly service packages include operation, service extension, and capacity for each covered station.</p>
+                    <p class="plan-note">Monthly service packages include operation, service extension, and capacity for each covered station. Initial company registration fees are shown during registration.</p>
                     <ul class="plan-list">
                         <li><i class="fa-solid fa-check"></i> <?= (int) BILLING_HQ_INCLUDED_STATION_SLOTS ?> station registrations included</li>
                         <li><i class="fa-solid fa-check"></i> Monthly service package billed in MMK</li>
@@ -356,7 +356,6 @@ require __DIR__ . '/partials/nav.php';
 
         <!-- Calculator -->
         <div class="calc-wrap" id="calc"
-             data-registration-fee="<?= (int) $homepageRegistrationFee ?>"
              data-rate="<?= (int) $homepagePackageRate ?>"
              data-volume-discounts="<?= htmlspecialchars(json_encode(BILLING_HQ_VOLUME_DISCOUNTS), ENT_QUOTES, 'UTF-8') ?>"
              data-term-discounts="<?= htmlspecialchars(json_encode(BILLING_HQ_TERM_DISCOUNTS), ENT_QUOTES, 'UTF-8') ?>"
@@ -364,10 +363,10 @@ require __DIR__ . '/partials/nav.php';
             <div class="row g-4 align-items-center">
                 <div class="col-lg-7">
                     <span class="eyebrow">Estimate</span>
-                    <h3 class="calc-title">Estimate your all-in-one MMK package</h3>
+                    <h3 class="calc-title">Estimate your all-in-one MMK station package</h3>
 
                     <label class="calc-label" for="calc-range">
-                        Stations you want visible: <strong id="calc-count">6</strong>
+                        Stations in the package: <strong id="calc-count">6</strong>
                     </label>
                     <input type="range" id="calc-range" class="calc-range" min="1" max="60" value="6" step="1">
                     <div class="calc-scale"><span>1</span><span>30</span><span>60</span></div>
@@ -384,12 +383,11 @@ require __DIR__ . '/partials/nav.php';
                     <div class="calc-result">
                         <div class="calc-line"><span>Stations</span><strong id="calc-paid">6</strong></div>
                         <div class="calc-line"><span>Service package</span><strong id="calc-base"><?= number_format(6 * $homepagePackageRate) ?> MMK</strong></div>
-                        <div class="calc-line"><span>Registration fee</span><strong id="calc-registration"><?= number_format($homepageRegistrationFee) ?> MMK</strong></div>
                         <div class="calc-line"><span>Volume discount</span><strong id="calc-vol">—</strong></div>
                         <div class="calc-line"><span>Term discount</span><strong id="calc-dur">—</strong></div>
                         <div class="calc-total">
                             <span>MMK estimate</span>
-                            <strong id="calc-total"><?= number_format($homepageRegistrationFee + 6 * $homepagePackageRate) ?> MMK</strong>
+                            <strong id="calc-total"><?= number_format(6 * $homepagePackageRate) ?> MMK</strong>
                         </div>
                         <div class="calc-per" id="calc-per"><?= number_format($homepagePackageRate) ?> MMK / station / month</div>
                         <p class="calc-foot" id="calc-note">Billed monthly.</p>

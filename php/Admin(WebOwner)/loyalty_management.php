@@ -255,41 +255,41 @@ $redemptionValues = array_values($redemptions ?? []);
 </head>
 <body class="background_color" id="background_color">
 <?php $adminSection = 'loyalty'; include __DIR__ . '/admin_section_nav.php'; ?>
-<main class="container my-5">
-    <h1 class="h3 text-white mb-4">Loyalty &amp; Billing Management</h1>
+<main class="container my-5 loyalty-billing-page">
+    <h1 class="h3 mb-4">Loyalty &amp; Billing Management</h1>
     <?php if ($message !== ''): ?><div class="alert alert-success"><?= hq_escape($message) ?></div><?php endif; ?>
     <?php if ($error !== ''): ?><div class="alert alert-danger" role="alert"><?= hq_escape($error) ?></div><?php endif; ?>
 
     <?php if (isset($tierRules, $redemptions, $pointsRate)): ?>
     <section class="analytics-card mb-4">
-        <h2 class="h5 text-white">Customer rewards, tiers, and billing</h2>
+        <h2 class="h5">Customer rewards, tiers, and billing</h2>
         <form method="post">
             <input type="hidden" name="csrf_token" value="<?= hq_escape((string) $_SESSION['admin_loyalty_csrf']) ?>">
             <input type="hidden" name="action" value="save_settings">
             <div class="row g-3">
                 <div class="col-md-4">
-                    <label class="form-label text-white" for="points-per-liter">Points earned per external-fill liter</label>
+                    <label class="form-label" for="points-per-liter">Points earned per external-fill liter</label>
                     <input class="form-control" id="points-per-liter" name="points_per_liter" type="number" min="0" max="1000" step="0.01" value="<?= hq_escape($pointsRate) ?>" required>
                 </div>
                 <div class="col-md-4">
-                    <label class="form-label text-white" for="registration-fee">HQ registration fee (MMK)</label>
+                    <label class="form-label" for="registration-fee">HQ registration fee (MMK)</label>
                     <input class="form-control" id="registration-fee" name="registration_fee_mmk" type="number" min="0" step="1" value="<?= (int) $registrationFee ?>" required>
                 </div>
                 <div class="col-md-4">
-                    <label class="form-label text-white" for="package-rate">All-in-one station package (MMK / station / month)</label>
+                    <label class="form-label" for="package-rate">All-in-one station package (MMK / station / month)</label>
                     <input class="form-control" id="package-rate" name="package_mmk_per_station_month" type="number" min="0" step="1" value="<?= (int) $packageRate ?>" required>
                 </div>
                 <div class="col-12">
                     <div class="form-check">
                         <input class="form-check-input" id="pool-enforced" name="pool_enforced" type="checkbox" value="1" <?= $poolEnforced ? 'checked' : '' ?>>
-                        <label class="form-check-label text-white" for="pool-enforced">Enforce monthly shared tier-pool budgets</label>
+                        <label class="form-check-label" for="pool-enforced">Enforce monthly shared tier-pool budgets</label>
                     </div>
                 </div>
             </div>
 
-            <h3 class="h6 text-white mt-4">Fixed redemption options</h3>
+            <h3 class="h6 mt-4">Fixed redemption options</h3>
             <div class="table-responsive">
-                <table class="table table-dark align-middle">
+                <table class="table loyalty-table align-middle">
                     <thead><tr><th>Option</th><th>Points</th><th>Discount (MMK)</th></tr></thead>
                     <tbody>
                     <?php for ($index = 0; $index < 3; $index++): $rewardId = $index + 1; ?>
@@ -303,10 +303,10 @@ $redemptionValues = array_values($redemptions ?? []);
                 </table>
             </div>
 
-            <h3 class="h6 text-white mt-4">Tier thresholds and shared monthly MMK pools</h3>
-            <p class="text-white-50 small">A driver must meet both the point threshold and the EXP threshold. Meeting the 35 L weekly quota adds 1 EXP; a missed week removes 1 EXP. Pool usage is shared by all drivers in the same tier each calendar month.</p>
+            <h3 class="h6 mt-4">Tier thresholds and shared monthly MMK pools</h3>
+            <p class="loyalty-muted small">A driver must meet both the point threshold and the EXP threshold. Meeting the 35 L weekly quota adds 1 EXP; a missed week removes 1 EXP. Pool usage is shared by all drivers in the same tier each calendar month.</p>
             <div class="table-responsive">
-                <table class="table table-dark align-middle">
+                <table class="table loyalty-table align-middle">
                     <thead><tr><th>Tier</th><th>Points</th><th>EXP weeks</th><th>Pool budget (MMK / month)</th></tr></thead>
                     <tbody>
                     <?php foreach ($tierLabels as $code => $label): ?>
@@ -325,11 +325,11 @@ $redemptionValues = array_values($redemptions ?? []);
     </section>
 
     <section class="analytics-card mb-4">
-        <h2 class="h5 text-white">Company Total Discounted Amount and payouts</h2>
-        <p class="text-white-50">Available across companies: <strong class="text-white"><?= number_format($companyTotalBalance, 2) ?> MMK</strong></p>
-        <p class="text-white-50">Unallocated legacy balance: <strong class="text-white"><?= number_format($unallocatedBalance, 2) ?> MMK</strong>. Unmatched historical discounts remain here until attributed to a company.</p>
+        <h2 class="h5">Company Total Discounted Amount and payouts</h2>
+        <p class="loyalty-muted">Available across companies: <strong><?= number_format($companyTotalBalance, 2) ?> MMK</strong></p>
+        <p class="loyalty-muted">Unallocated legacy balance: <strong><?= number_format($unallocatedBalance, 2) ?> MMK</strong>. Unmatched historical discounts remain here until attributed to a company.</p>
         <div class="table-responsive mb-4">
-            <table class="table table-dark align-middle">
+            <table class="table loyalty-table align-middle">
                 <thead><tr><th>Company</th><th>HQ ID</th><th class="text-end">Available balance</th></tr></thead>
                 <tbody>
                 <?php foreach ($companyAccounts as $account): ?>
@@ -339,7 +339,7 @@ $redemptionValues = array_values($redemptions ?? []);
                         <td class="text-end"><?= number_format((float) $account['balance_mmk'], 2) ?> MMK</td>
                     </tr>
                 <?php endforeach; ?>
-                <?php if ($companyAccounts === []): ?><tr><td colspan="3" class="text-white-50">No companies are available for payout.</td></tr><?php endif; ?>
+                <?php if ($companyAccounts === []): ?><tr><td colspan="3" class="loyalty-muted">No companies are available for payout.</td></tr><?php endif; ?>
                 </tbody>
             </table>
         </div>
@@ -347,7 +347,7 @@ $redemptionValues = array_values($redemptions ?? []);
             <input type="hidden" name="csrf_token" value="<?= hq_escape((string) $_SESSION['admin_loyalty_csrf']) ?>">
             <input type="hidden" name="action" value="process_payout">
             <div class="col-md-3">
-                <label class="form-label text-white" for="payout-company">Company</label>
+                <label class="form-label" for="payout-company">Company</label>
                 <select class="form-select" id="payout-company" name="headquarter_id" required>
                     <?php foreach ($companyAccounts as $account): ?>
                         <option value="<?= (int) $account['headquarter_id'] ?>" <?= (int) $account['headquarter_id'] === $selectedHeadquarterId ? 'selected' : '' ?>>
@@ -356,13 +356,13 @@ $redemptionValues = array_values($redemptions ?? []);
                     <?php endforeach; ?>
                 </select>
             </div>
-            <div class="col-md-3"><label class="form-label text-white" for="payout-month">Payout month</label><input class="form-control" id="payout-month" name="payout_month" type="month" value="<?= date('Y-m') ?>" required></div>
-            <div class="col-md-3"><label class="form-label text-white" for="payout-amount">Amount (MMK)</label><input class="form-control" id="payout-amount" name="payout_amount" type="number" min="0.01" step="0.01" max="<?= number_format($selectedHeadquarterBalance, 2, '.', '') ?>" required></div>
-            <div class="col-md-3"><label class="form-label text-white" for="payout-note">Note</label><input class="form-control" id="payout-note" name="payout_note" maxlength="500"></div>
+            <div class="col-md-3"><label class="form-label" for="payout-month">Payout month</label><input class="form-control" id="payout-month" name="payout_month" type="month" value="<?= date('Y-m') ?>" required></div>
+            <div class="col-md-3"><label class="form-label" for="payout-amount">Amount (MMK)</label><input class="form-control" id="payout-amount" name="payout_amount" type="number" min="0.01" step="0.01" max="<?= number_format($selectedHeadquarterBalance, 2, '.', '') ?>" required></div>
+            <div class="col-md-3"><label class="form-label" for="payout-note">Note</label><input class="form-control" id="payout-note" name="payout_note" maxlength="500"></div>
             <div class="col-md-12"><button class="btn btn-success" type="submit" <?= $companyTotalBalance <= 0 ? 'disabled' : '' ?>>Record company payout</button></div>
         </form>
         <div class="table-responsive mt-4">
-            <table class="table table-dark align-middle">
+            <table class="table loyalty-table align-middle">
                 <thead><tr><th>Company</th><th>Month</th><th>Amount</th><th>Processed by</th><th>Processed at</th><th>Note</th></tr></thead>
                 <tbody>
                 <?php foreach ($payouts as $payout): ?>
@@ -375,7 +375,7 @@ $redemptionValues = array_values($redemptions ?? []);
                         <td><?= hq_escape((string) ($payout['note'] ?? '')) ?></td>
                     </tr>
                 <?php endforeach; ?>
-                <?php if ($payouts === []): ?><tr><td colspan="6" class="text-white-50">No payouts recorded yet.</td></tr><?php endif; ?>
+                <?php if ($payouts === []): ?><tr><td colspan="6" class="loyalty-muted">No payouts recorded yet.</td></tr><?php endif; ?>
                 </tbody>
             </table>
         </div>
@@ -383,5 +383,6 @@ $redemptionValues = array_values($redemptions ?? []);
     <?php endif; ?>
 </main>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/js/Admin.js"></script>
 </body>
 </html>
