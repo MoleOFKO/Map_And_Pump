@@ -1,936 +1,296 @@
-<?php
-/**
- * manage-oil.php  —  Fuel tanks
- * POST actions (all JSON-out):
- *   action=save_limits    -> alert_p92, alert_p95, alert_dsl
- *   action=toggle_fuel    -> tank_id, enabled (0|1)
- */
+﻿<?php
 require_once __DIR__ . '/_helpers.php';
 require_once __DIR__ . '/../conn.php';
-require_once __DIR__ . '/../business_scope.php';
-require_once __DIR__ . '/../loyalty_config.php';
 require_branch_manager();
 
-function map_pump_validate_alert_pct(mixed $raw): int {
-    $value = trim((string)($raw ?? ''));
-    if ($value === '' || !preg_match('/^\d+$/', $value)) {
-        throw new InvalidArgumentException('Low stock threshold must be a whole number between 5 and 80 percent.');
-    }
-
-    $pct = (int)$value;
-    if ($pct < 5 || $pct > 80) {
-        throw new InvalidArgumentException('Low stock threshold must be between 5 and 80 percent.');
-    }
-
-    return $pct;
-}
-
-$ctx      = current_context($pdo);
-$user     = $ctx['user'];
-$branch   = $ctx['branch'];
-$initials = initials($user['full_name']);
-$bid      = (int)$branch['branch_id'];
-$alerts       = notif_recent($pdo, (int)$user['user_id'], 5);
-$unread_count = notif_unread_count($pdo, (int)$user['user_id']);
-$has_unread   = $unread_count > 0;
-
-function map_pump_normalize_fuel_code(?string $raw): string {
-    $code = strtolower(trim((string)($raw ?? '')));
-    $code = preg_replace('/[^a-z0-9_-]+/', '', $code);
-    return $code;
-}
-
-function map_pump_oil_type_id_from_aliases(PDO $pdo, array $aliases): ?int {
-    $clean = [];
-    foreach ($aliases as $alias) {
-        $name = trim((string)$alias);
-        if ($name !== '') {
-            $clean[] = $name;
-        }
-    }
-    if (!$clean) {
-        return null;
-    }
-
-    $placeholders = implode(',', array_fill(0, count($clean), '?'));
-    $stmt = $pdo->prepare("SELECT oil_type_id FROM oil_types WHERE LOWER(oil_name) IN ({$placeholders}) ORDER BY oil_type_id LIMIT 1");
-    $stmt->execute(array_map('strtolower', $clean));
-    $oilTypeId = $stmt->fetchColumn();
-    return $oilTypeId === false ? null : (int)$oilTypeId;
-}
-
-function map_pump_table_has_column(PDO $pdo, string $tableName, string $columnName): bool {
-    try {
-        $stmt = $pdo->prepare(
-            "SELECT COUNT(*)
-             FROM INFORMATION_SCHEMA.COLUMNS
-             WHERE TABLE_SCHEMA = DATABASE()
-               AND TABLE_NAME = :table_name
-               AND COLUMN_NAME = :column_name"
-        );
-        $stmt->execute([':table_name' => $tableName, ':column_name' => $columnName]);
-        return (int)$stmt->fetchColumn() > 0;
-    } catch (Throwable $e) {
-        return false;
-    }
-}
-
-function map_pump_get_or_create_oil_type(PDO $pdo, string $fuelName): int {
-    $name = trim((string)$fuelName);
-    if ($name === '') {
-        throw new InvalidArgumentException('Fuel name is required.');
-    }
-
-    $select = $pdo->prepare("SELECT oil_type_id FROM oil_types WHERE LOWER(oil_name) = LOWER(:oil_name) LIMIT 1");
-    $select->execute([':oil_name' => $name]);
-    $existing = (int)($select->fetchColumn() ?: 0);
-    if ($existing > 0) {
-        return $existing;
-    }
-
-    $insert = $pdo->prepare("INSERT INTO oil_types (oil_name) VALUES (:oil_name)");
-    $insert->execute([':oil_name' => $name]);
-    return (int)$pdo->lastInsertId();
-}
-
-function map_pump_delete_unused_oil_type(PDO $pdo, int $branchId, string $fuelName): void {
-    $name = trim((string)$fuelName);
-    if ($name === '') {
-        return;
-    }
-
-    $usedByOtherTanks = $pdo->prepare(
-        "SELECT t.tank_id
-         FROM tanks t
-         LEFT JOIN oil_types ot ON ot.oil_type_id = t.oil_type_id
-         WHERE t.branch_id = :branch_id AND LOWER(ot.oil_name) = LOWER(:fuel_name)
-         LIMIT 1"
-    );
-    $usedByOtherTanks->execute([':branch_id' => $branchId, ':fuel_name' => $name]);
-    if ($usedByOtherTanks->fetchColumn()) {
-        return;
-    }
-
-    $oilLookup = $pdo->prepare("SELECT oil_type_id FROM oil_types WHERE LOWER(oil_name) = LOWER(:oil_name) LIMIT 1");
-    $oilLookup->execute([':oil_name' => $name]);
-    $oilTypeId = (int)($oilLookup->fetchColumn() ?: 0);
-    if ($oilTypeId > 0) {
-        $pdo->prepare("DELETE FROM oil_types WHERE oil_type_id = :oil_type_id LIMIT 1")->execute([':oil_type_id' => $oilTypeId]);
-    }
-}
-
-function map_pump_build_tank_update_sql(PDO $pdo, int $tankId, int $branchId, string $fuelName, int $capacity, ?float $price = null, ?int $oilTypeId = null): array {
-    $setParts = [
-        'capacity_l = :capacity_l',
-        'updated_at = NOW()',
-    ];
-    $params = [
-        ':capacity_l' => $capacity,
-        ':tank_id' => $tankId,
-        ':branch_id' => $branchId,
-    ];
-
-    if ($oilTypeId !== null && map_pump_table_has_column($pdo, 'tanks', 'oil_type_id')) {
-        $setParts[] = 'oil_type_id = :oil_type_id';
-        $params[':oil_type_id'] = $oilTypeId;
-    }
-
-    $sql = "UPDATE tanks SET " . implode(', ', $setParts) . " WHERE tank_id = :tank_id AND branch_id = :branch_id";
-    return [$sql, $params];
-}
-
-$defaultFuelAliases = [
-    'p92' => ['Petrol 92', 'Octane 92'],
-    'p95' => ['Petrol 95', 'Octane 95'],
-    'dsl' => ['Diesel', 'Disel'],
-    'pdsl' => ['Premium Diesel', 'Premium Disel'],
-];
-
-function map_pump_load_branch_tank_rows(PDO $pdo, int $branchId): array {
-    if (map_pump_table_has_column($pdo, 'tanks', 'fuel_code')) {
-        $stmt = $pdo->prepare("SELECT fuel_code, fuel_name FROM tanks WHERE branch_id = :bid GROUP BY fuel_code, fuel_name ORDER BY fuel_name");
-        $stmt->execute([':bid' => $branchId]);
-        return $stmt->fetchAll(PDO::FETCH_ASSOC);
-    }
-
-    $stmt = $pdo->prepare(
-        "SELECT t.tank_id, t.branch_id, t.oil_type_id, t.capacity_l, t.current_l, t.alert_pct, t.is_enabled, t.updated_at,
-                ot.oil_name AS fuel_name
-         FROM tanks t
-         LEFT JOIN oil_types ot ON ot.oil_type_id = t.oil_type_id
-         WHERE t.branch_id = :bid
-         ORDER BY ot.oil_name, t.tank_id"
-    );
-    $stmt->execute([':bid' => $branchId]);
-    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-    foreach ($rows as &$row) {
-        $fuelName = trim((string)($row['fuel_name'] ?? ''));
-        $code = map_pump_normalize_fuel_code($fuelName !== '' ? $fuelName : 'fuel_' . ($row['tank_id'] ?? 0));
-        $row['fuel_code'] = $code;
-        $row['fuel_name'] = $fuelName !== '' ? $fuelName : 'Fuel ' . ($row['tank_id'] ?? 0);
-    }
-    unset($row);
-
-    return $rows;
-}
-
-function map_pump_fetch_branch_tanks(PDO $pdo, int $branchId): array {
-    $stmt = $pdo->prepare(
-        "SELECT t.*, ot.oil_name AS fuel_name
-         FROM tanks t
-         LEFT JOIN oil_types ot ON ot.oil_type_id = t.oil_type_id
-         WHERE t.branch_id = :b
-         ORDER BY t.tank_id ASC"
-    );
-    $stmt->execute([':b' => $branchId]);
-    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-    $tanks = [];
-    foreach ($rows as $tank) {
-        $code = map_pump_table_has_column($pdo, 'tanks', 'fuel_code')
-            ? (string)($tank['fuel_code'] ?? '')
-            : map_pump_normalize_fuel_code((string)($tank['fuel_name'] ?? ''));
-        if ($code === '') {
-            $code = 'fuel_' . (int)($tank['tank_id'] ?? 0);
-        }
-        $tank['fuel_code'] = $code;
-        $tank['fuel_name'] = trim((string)($tank['fuel_name'] ?? '')) !== '' ? trim((string)($tank['fuel_name'] ?? '')) : 'Fuel ' . (int)($tank['tank_id'] ?? 0);
-        $tanks[$code] = $tank;
-    }
-
-    return $tanks;
-}
-
-$fuelCodeToOilName = [];
-$fuelCodeToOilAliases = [];
-
-$branchFuelRows = map_pump_load_branch_tank_rows($pdo, $bid);
-
-foreach ($branchFuelRows as $row) {
-    $code = map_pump_normalize_fuel_code((string)($row['fuel_code'] ?? ''));
-    if ($code === '') continue;
-    $name = trim((string)($row['fuel_name'] ?? ''));
-    $fuelCodeToOilName[$code] = $name !== '' ? $name : ucfirst($code);
-    $fuelCodeToOilAliases[$code] = [$name !== '' ? $name : ucfirst($code)];
-}
-
-foreach ($defaultFuelAliases as $code => $aliases) {
-    $normCode = map_pump_normalize_fuel_code($code);
-    if (!isset($fuelCodeToOilName[$normCode])) {
-        $fuelCodeToOilName[$normCode] = $aliases[0];
-    }
-    if (!isset($fuelCodeToOilAliases[$normCode])) {
-        $fuelCodeToOilAliases[$normCode] = $aliases;
-    }
-}
-
-foreach ($fuelCodeToOilName as $code => $name) {
-    if (!isset($fuelCodeToOilAliases[$code])) {
-        $fuelCodeToOilAliases[$code] = [$name];
-    }
-}
-
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    if (!csrf_check($_POST['csrf'] ?? null)) json_out(['ok' => false, 'error' => 'CSRF failed'], 403);
-    $action = $_POST['action'] ?? '';
+    $ctx = current_context($pdo);
+    $branch = $ctx['branch'] ?? null;
+    $branchId = (int)($branch['branch_id'] ?? 0);
+    $action = trim((string)($_POST['action'] ?? ''));
 
     try {
-        if ($action === 'add_fuel_type') {
-            $rawName = trim((string)($_POST['fuel_name'] ?? ''));
-            $capacity = (int)($_POST['capacity_l'] ?? 0);
-            $alertPct = map_pump_validate_alert_pct($_POST['alert_pct'] ?? null);
-
-            $fuelCode = map_pump_normalize_fuel_code($rawName);
-            if ($fuelCode === '') {
-                json_out(['ok' => false, 'error' => 'Fuel display name is required.'], 422);
-            }
-            if ($rawName === '') {
-                json_out(['ok' => false, 'error' => 'Fuel display name is required.'], 422);
-            }
-            if ($capacity <= 0 || $capacity > 200000) {
-                json_out(['ok' => false, 'error' => 'Tank capacity must be between 1 and 200000 liters.'], 422);
-            }
-
-            $pdo->beginTransaction();
-            try {
-                $oilTypeId = map_pump_get_or_create_oil_type($pdo, $rawName);
-
-                if (map_pump_table_has_column($pdo, 'tanks', 'fuel_code')) {
-                    $dupCode = $pdo->prepare("SELECT tank_id FROM tanks WHERE branch_id = :bid AND LOWER(fuel_code) = LOWER(:fuel_code) LIMIT 1");
-                    $dupCode->execute([':bid' => $bid, ':fuel_code' => $fuelCode]);
-                    if ($dupCode->fetchColumn()) {
-                        throw new RuntimeException('This fuel code already exists for this branch.');
+        switch ($action) {
+            case 'save_limits':
+                foreach ($_POST as $key => $value) {
+                    if (strpos($key, 'alert_fuel_') !== 0 && strpos($key, 'alert_tank_') !== 0) continue;
+                    $tankId = (int) str_replace(['alert_fuel_', 'alert_tank_'], '', $key);
+                    $pct = max(5, min(80, (int)$value));
+                    if ($tankId > 0) {
+                        $stmt = $pdo->prepare('UPDATE tanks SET alert_pct = :pct WHERE tank_id = :tank_id AND branch_id = :branch_id');
+                        $stmt->execute([':pct' => $pct, ':tank_id' => $tankId, ':branch_id' => $branchId]);
                     }
                 }
-
-                $dupName = $pdo->prepare(
-                    "SELECT t.tank_id
-                     FROM tanks t
-                     LEFT JOIN oil_types ot ON ot.oil_type_id = t.oil_type_id
-                     WHERE t.branch_id = :bid AND LOWER(ot.oil_name) = LOWER(:fuel_name)
-                     LIMIT 1"
-                );
-                $dupName->execute([':bid' => $bid, ':fuel_name' => $rawName]);
-                if ($dupName->fetchColumn()) {
-                    json_out(['ok' => false, 'error' => 'This fuel name already exists for this branch.'], 422);
-                }
-
-                if (map_pump_table_has_column($pdo, 'tanks', 'fuel_code')) {
-                    $insertTank = $pdo->prepare(
-                        "INSERT INTO tanks (branch_id, fuel_code, fuel_name, capacity_l, current_l, alert_pct, is_enabled, updated_at)
-                         VALUES (:branch_id, :fuel_code, :fuel_name, :capacity_l, 0, :alert_pct, 1, NOW())"
-                    );
-                    $insertTank->execute([
-                        ':branch_id' => $bid,
-                        ':fuel_code' => $fuelCode,
-                        ':fuel_name' => $rawName,
-                        ':capacity_l' => $capacity,
-                        ':alert_pct' => $alertPct,
-                    ]);
-                } else {
-                    $insertTank = $pdo->prepare(
-                        "INSERT INTO tanks (branch_id, oil_type_id, capacity_l, current_l, alert_pct, is_enabled, updated_at)
-                         VALUES (:branch_id, :oil_type_id, :capacity_l, 0, :alert_pct, 1, NOW())"
-                    );
-                    $insertTank->execute([
-                        ':branch_id' => $bid,
-                        ':oil_type_id' => $oilTypeId,
-                        ':capacity_l' => $capacity,
-                        ':alert_pct' => $alertPct,
-                    ]);
-                }
-
-                $newTankId = (int)$pdo->lastInsertId();
-                $pdo->commit();
-                log_activity($pdo, $bid, 'user', $user['user_id'], $user['full_name'], "Added new fuel type {$rawName} ({$fuelCode})");
-                json_out(['ok' => true, 'fuel_code' => $fuelCode, 'fuel_name' => $rawName, 'tank_id' => $newTankId]);
-            } catch (Throwable $e) {
-                $pdo->rollBack();
-                throw $e;
-            }
-        }
-
-        // refill add/delete handlers
-        if ($action === 'add_refill') {
-            $tankId = (int)($_POST['tank_id'] ?? 0);
-            $quantity = (float)($_POST['quantity_l'] ?? 0);
-            $refillDate = map_pump_normalize_refill_date($_POST['refill_date'] ?? null) ?: date('Y-m-d H:i:s');
-
-            if ($tankId <= 0) {
-                json_out(['ok' => false, 'error' => 'Tank is required.'], 422);
-            }
-            if (!is_numeric($_POST['quantity_l'] ?? null) || $quantity <= 0) {
-                json_out(['ok' => false, 'error' => 'Refill quantity must be greater than 0 liters.'], 422);
-            }
-
-            $tankStmt = $pdo->prepare(
-                "SELECT t.tank_id, t.branch_id, t.oil_type_id, ot.oil_name AS fuel_name, t.current_l, t.capacity_l, t.is_enabled
-                 FROM tanks t
-                 LEFT JOIN oil_types ot ON ot.oil_type_id = t.oil_type_id
-                 WHERE t.tank_id = :tank_id AND t.branch_id = :branch_id LIMIT 1"
-            );
-            $tankStmt->execute([':tank_id' => $tankId, ':branch_id' => $bid]);
-            $tankRow = $tankStmt->fetch(PDO::FETCH_ASSOC);
-            if (!$tankRow) {
-                json_out(['ok' => false, 'error' => 'Fuel tank not found for this branch.'], 404);
-            }
-
-            $current = (float)($tankRow['current_l'] ?? 0);
-            $capacity = (float)($tankRow['capacity_l'] ?? 0);
-            $nextStock = $current + $quantity;
-            if ($nextStock > $capacity) {
-                json_out(['ok' => false, 'error' => 'Refill would exceed this tank capacity.'], 422);
-            }
-
-            $pdo->beginTransaction();
-            try {
-                $updateStmt = $pdo->prepare("UPDATE tanks SET current_l = :current_l, updated_at = NOW() WHERE tank_id = :tank_id AND branch_id = :branch_id");
-                $updateStmt->execute([
-                    ':current_l' => $nextStock,
-                    ':tank_id' => $tankId,
-                    ':branch_id' => $bid,
-                ]);
-
-                $support = map_pump_refill_support($pdo);
-                if ($support['table_exists']) {
-                    $insertCols = [];
-                    $insertValues = [];
-                    $params = [];
-
-                    if ($support['tank_id']) {
-                        $insertCols[] = $support['tank_id'];
-                        $insertValues[] = ':tank_id';
-                        $params[':tank_id'] = $tankId;
-                    }
-                    if ($support['branch_id']) {
-                        $insertCols[] = $support['branch_id'];
-                        $insertValues[] = ':branch_id';
-                        $params[':branch_id'] = $bid;
-                    }
-                    if ($support['fuel_code']) {
-                        $insertCols[] = $support['fuel_code'];
-                        $insertValues[] = ':fuel_code';
-                        $params[':fuel_code'] = map_pump_normalize_fuel_code((string)($tankRow['fuel_name'] ?? '')) ?: 'fuel_' . (int)($tankId ?: 0);
-                    }
-                    if ($support['qty_l']) {
-                        $insertCols[] = $support['qty_l'];
-                        $insertValues[] = ':quantity_l';
-                        $params[':quantity_l'] = $quantity;
-                    }
-                    if ($support['date_col']) {
-                        $insertCols[] = $support['date_col'];
-                        $insertValues[] = ':update_at';
-                        $params[':update_at'] = $refillDate;
-                    }
-
-                    if ($insertCols && $insertValues) {
-                        $sql = 'INSERT INTO tank_refill (' . implode(', ', $insertCols) . ') VALUES (' . implode(', ', $insertValues) . ')';
-                        $stmt = $pdo->prepare($sql);
-                        $stmt->execute($params);
-                      }
-                }
-
-                $pdo->commit();
-                log_activity($pdo, $bid, 'user', $user['user_id'], $user['full_name'], 'Refilled fuel tank ' . ($tankRow['fuel_name'] ?? 'Unknown') . ' by ' . number_format($quantity, 2) . ' L');
-                json_out(['ok' => true, 'tank_id' => $tankId, 'quantity_l' => $quantity, 'current_l' => $nextStock]);
-            } catch (Throwable $e) {
-                $pdo->rollBack();
-                throw $e;
-            }
-        }
-
-        if ($action === 'delete_refill') {
-            $refillId = (int)($_POST['refill_id'] ?? 0);
-            $tankId = (int)($_POST['tank_id'] ?? 0);
-            $support = map_pump_refill_support($pdo);
-
-            if (!$support['table_exists']) {
                 json_out(['ok' => true]);
-            }
+                break;
 
-            $pdo->beginTransaction();
-            try {
-                $row = null;
-                if ($refillId > 0) {
-                    $fields = implode(', ', array_unique(array_filter([
-                        'refill_id', 'id', 'tank_refill_id', 'record_id', 'transaction_id'
-                    ], fn($value) => in_array(strtolower($value), map_pump_get_table_columns($pdo, 'tank_refill'), true))));
-                    $lookup = 'SELECT * FROM tank_refill WHERE ' . ($fields !== '' ? $fields . ' = :refill_id' : '1 = 0') . ' LIMIT 1';
-                    $stmt = $pdo->prepare($lookup);
-                    $stmt->execute([':refill_id' => $refillId]);
-                    $row = $stmt->fetch(PDO::FETCH_ASSOC);
-                } elseif ($tankId > 0 && $support['tank_id']) {
-                    $sql = 'SELECT * FROM tank_refill WHERE ' . $support['tank_id'] . ' = :tank_id ORDER BY ' . ($support['date_col'] ?: 'created_at') . ' DESC LIMIT 1';
-                    $stmt = $pdo->prepare($sql);
-                    $stmt->execute([':tank_id' => $tankId]);
-                    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+            case 'add_fuel_type':
+                $fuelName = trim((string)($_POST['fuel_name'] ?? ''));
+                $capacityL = max(1, (int)($_POST['capacity_l'] ?? 0));
+                $alertPct = max(5, min(80, (int)($_POST['alert_pct'] ?? 25)));
+                if ($fuelName === '') {
+                    json_out(['ok' => false, 'error' => 'Fuel name is required.'], 400);
                 }
 
-                if ($row) {
-                    $qtyCol = $support['qty_l'] ?: null;
-                    $qty = 0.0;
-                    if ($qtyCol && isset($row[$qtyCol])) {
-                        $qty = (float)$row[$qtyCol];
-                    }
-                    $deleteSql = 'DELETE FROM tank_refill WHERE ' . ($refillId > 0 ? (map_pump_first_matching_column(map_pump_get_table_columns($pdo, 'tank_refill'), ['refill_id', 'id', 'tank_refill_id', 'record_id', 'transaction_id']) ?: 'id') . ' = :refill_id' : $support['tank_id'] . ' = :tank_id') . ' ORDER BY ' . ($support['date_col'] ?: 'created_at') . ' DESC LIMIT 1';
-                    $deleteStmt = $pdo->prepare($deleteSql);
-                    $deleteStmt->execute($refillId > 0 ? [':refill_id' => $refillId] : [':tank_id' => $tankId]);
+                // Duplicate name check (case-insensitive).
+                // JOIN with tanks so orphaned oil_types rows (no tank references) never block re-adding a deleted fuel type.
+                $dupCheck = $pdo->prepare('SELECT COUNT(*) FROM oil_types ot INNER JOIN tanks t ON t.oil_type_id = ot.oil_type_id WHERE LOWER(ot.oil_name) = LOWER(:name)');
+                $dupCheck->execute([':name' => $fuelName]);
+                if ((int)$dupCheck->fetchColumn() > 0) {
+                    json_out(['ok' => false, 'error' => 'A fuel type with this name already exists.'], 409);
+                }
 
-                    if ($tankId > 0 && $qty > 0) {
-                        $tankS = $pdo->prepare("SELECT current_l FROM tanks WHERE tank_id = :tank_id AND branch_id = :branch_id LIMIT 1");
-                        $tankS->execute([':tank_id' => $tankId, ':branch_id' => $bid]);
-                        $current = (float)($tankS->fetchColumn() ?: 0);
-                        $newCurrent = max(0.0, $current - $qty);
-                        $pdo->prepare("UPDATE tanks SET current_l = :current_l, updated_at = NOW() WHERE tank_id = :tank_id AND branch_id = :branch_id")->execute([
-                            ':current_l' => $newCurrent,
+                $pdo->beginTransaction();
+                try {
+                    $ins = $pdo->prepare('INSERT INTO oil_types (oil_name) VALUES (:name)');
+                    $ins->execute([':name' => $fuelName]);
+                    $oilTypeId = (int)$pdo->lastInsertId();
+
+                    $stmt = $pdo->prepare('INSERT INTO tanks (branch_id, oil_type_id, fuel_price, capacity_l, current_l, alert_pct, is_enabled) VALUES (:branch_id, :oil_type_id, :price, :capacity_l, 0, :alert_pct, 1)');
+                    $stmt->execute([
+                        ':branch_id' => $branchId,
+                        ':oil_type_id' => $oilTypeId,
+                        ':price' => '0',
+                        ':capacity_l' => $capacityL,
+                        ':alert_pct' => $alertPct,
+                    ]);
+                    $pdo->commit();
+                    json_out(['ok' => true]);
+                } catch (Throwable $e) {
+                    $pdo->rollBack();
+                    throw $e;
+                }
+                break;
+
+            case 'edit_fuel_type':
+                $tankId = (int)($_POST['tank_id'] ?? 0);
+                $fuelName = trim((string)($_POST['fuel_name'] ?? ''));
+                $capacityL = max(1, (int)($_POST['capacity_l'] ?? 0));
+                $price = (string)($_POST['price_per_litre'] ?? '0');
+                if ($tankId <= 0 || $fuelName === '') {
+                    json_out(['ok' => false, 'error' => 'Invalid fuel record.'], 400);
+                }
+
+                $tankStmt = $pdo->prepare('SELECT oil_type_id FROM tanks WHERE tank_id = :tank_id AND branch_id = :branch_id LIMIT 1');
+                $tankStmt->execute([':tank_id' => $tankId, ':branch_id' => $branchId]);
+                $oldOilTypeId = (int)$tankStmt->fetchColumn();
+                if (!$oldOilTypeId) {
+                    json_out(['ok' => false, 'error' => 'Fuel record not found in this branch.'], 404);
+                }
+
+                // Fetch current oil_name to detect name change
+                $curNameStmt = $pdo->prepare('SELECT oil_name FROM oil_types WHERE oil_type_id = :oid LIMIT 1');
+                $curNameStmt->execute([':oid' => $oldOilTypeId]);
+                $currentOilName = (string)$curNameStmt->fetchColumn();
+                $nameChanged = (strtolower(trim($fuelName)) !== strtolower(trim($currentOilName)));
+
+                $pdo->beginTransaction();
+                try {
+                    if ($nameChanged) {
+                        // Name changed — insert a new oil_types row and point tank to it
+                        $ins = $pdo->prepare('INSERT INTO oil_types (oil_name) VALUES (:name)');
+                        $ins->execute([':name' => $fuelName]);
+                        $newOilTypeId = (int)$pdo->lastInsertId();
+
+                        $updTank = $pdo->prepare('UPDATE tanks SET oil_type_id = :new_oil_type_id, capacity_l = :capacity_l, fuel_price = :price WHERE tank_id = :tank_id AND branch_id = :branch_id');
+                        $updTank->execute([
+                            ':new_oil_type_id' => $newOilTypeId,
+                            ':capacity_l' => $capacityL,
+                            ':price' => $price,
                             ':tank_id' => $tankId,
-                            ':branch_id' => $bid,
+                            ':branch_id' => $branchId,
+                        ]);
+                    } else {
+                        // Name unchanged — update capacity and price only, keep existing oil_type_id
+                        $updTank = $pdo->prepare('UPDATE tanks SET capacity_l = :capacity_l, fuel_price = :price WHERE tank_id = :tank_id AND branch_id = :branch_id');
+                        $updTank->execute([
+                            ':capacity_l' => $capacityL,
+                            ':price' => $price,
+                            ':tank_id' => $tankId,
+                            ':branch_id' => $branchId,
                         ]);
                     }
+
+                    $pdo->commit();
+                    json_out(['ok' => true]);
+                } catch (Throwable $e) {
+                    $pdo->rollBack();
+                    throw $e;
+                }
+                break;
+
+            case 'toggle_fuel':
+                $tankId = (int)($_POST['tank_id'] ?? 0);
+                $enabled = (int)($_POST['enabled'] ?? 1) ? 1 : 0;
+                if ($tankId <= 0) {
+                    json_out(['ok' => false, 'error' => 'Invalid tank id.'], 400);
                 }
 
-                $pdo->commit();
-                json_out(['ok' => true]);
-            } catch (Throwable $e) {
-                $pdo->rollBack();
-                throw $e;
-            }
-        }
+                $stmt = $pdo->prepare('UPDATE tanks SET is_enabled = :enabled WHERE tank_id = :tank_id AND branch_id = :branch_id');
+                $stmt->execute([':enabled' => $enabled, ':tank_id' => $tankId, ':branch_id' => $branchId]);
+                json_out(['ok' => true, 'enabled' => $enabled]);
+                break;
 
-        if ($action === 'save_limits') {
-            $available = $pdo->prepare(
-                "SELECT t.tank_id, t.alert_pct, ot.oil_name AS fuel_name
-                 FROM tanks t
-                 LEFT JOIN oil_types ot ON ot.oil_type_id = t.oil_type_id
-                 WHERE t.branch_id = :b
-                 ORDER BY ot.oil_name, t.tank_id"
-            );
-            $available->execute([':b' => $bid]);
-            $fuelRows = $available->fetchAll(PDO::FETCH_ASSOC);
+            case 'delete_fuel_type':
+                $tankId = (int)($_POST['tank_id'] ?? 0);
+                if ($tankId <= 0) {
+                    json_out(['ok' => false, 'error' => 'Invalid tank id.'], 400);
+                }
 
-            if (!$fuelRows) {
-                json_out(['ok' => false, 'error' => 'No fuel tanks are configured for this branch yet.'], 422);
-            }
+                $tankStmt = $pdo->prepare('SELECT oil_type_id FROM tanks WHERE tank_id = :tank_id AND branch_id = :branch_id LIMIT 1');
+                $tankStmt->execute([':tank_id' => $tankId, ':branch_id' => $branchId]);
+                $oilTypeId = (int)$tankStmt->fetchColumn();
+                if (!$oilTypeId) {
+                    json_out(['ok' => false, 'error' => 'Fuel record not found in this branch.'], 404);
+                }
 
-            $nextLimits = [];
-            foreach ($fuelRows as $row) {
-                $fc = map_pump_normalize_fuel_code((string)($row['fuel_name'] ?? ''));
-                if ($fc === '') continue;
-                $rawLimit = $_POST['alert_' . $fc] ?? null;
+                // Fetch the oil_name so orphaned rows with the same name can be purged
+                $oilNameFetch = $pdo->prepare('SELECT oil_name FROM oil_types WHERE oil_type_id = :oid LIMIT 1');
+                $oilNameFetch->execute([':oid' => $oilTypeId]);
+                $deletedOilName = (string)$oilNameFetch->fetchColumn();
+
+                $pdo->beginTransaction();
                 try {
-                    $nextLimits[$fc] = map_pump_validate_alert_pct($rawLimit);
-                } catch (InvalidArgumentException $e) {
-                    json_out(['ok' => false, 'error' => $e->getMessage()], 422);
-                }
-            }
+                    $deleteRefill = $pdo->prepare('DELETE FROM tank_refill WHERE tank_id = :tank_id AND branch_id = :branch_id');
+                    $deleteRefill->execute([':tank_id' => $tankId, ':branch_id' => $branchId]);
 
-            $pdo->beginTransaction();
-            try {
-                $stmt = $pdo->prepare("UPDATE tanks SET alert_pct = :p WHERE tank_id = :tank_id AND branch_id = :b");
-                foreach ($fuelRows as $row) {
-                    $fc = map_pump_normalize_fuel_code((string)($row['fuel_name'] ?? ''));
-                    if ($fc === '' || !isset($nextLimits[$fc])) continue;
-                    $stmt->execute([':p' => $nextLimits[$fc], ':tank_id' => (int)($row['tank_id'] ?? 0), ':b' => $bid]);
-                }
-                $pdo->commit();
-                log_activity($pdo, $bid, 'user', $user['user_id'], $user['full_name'], 'Updated fuel alert thresholds');
-                json_out(['ok' => true, 'limits' => $nextLimits]);
-            } catch (Throwable $e) {
-                $pdo->rollBack();
-                throw $e;
-            }
-        }
+                    $stmt = $pdo->prepare('DELETE FROM tanks WHERE tank_id = :tank_id AND branch_id = :branch_id');
+                    $stmt->execute([':tank_id' => $tankId, ':branch_id' => $branchId]);
 
-        if ($action === 'toggle_fuel') {
-            $tank_id = (int)($_POST['tank_id'] ?? 0);
-            $enabled = (int)($_POST['enabled'] ?? 0) === 1 ? 1 : 0;
-            $stmt = $pdo->prepare("SELECT tank_id FROM tanks WHERE tank_id = :t AND branch_id = :b LIMIT 1");
-            $stmt->execute([':t' => $tank_id, ':b' => $bid]);
-            if (!$stmt->fetchColumn()) {
-                json_out(['ok' => false, 'error' => 'Tank not found for this station'], 404);
-            }
-
-            $pdo->beginTransaction();
-            try {
-                $stmt = $pdo->prepare("UPDATE tanks SET is_enabled = :e, updated_at = NOW() WHERE tank_id = :t AND branch_id = :b");
-                $stmt->execute([':e' => $enabled, ':t' => $tank_id, ':b' => $bid]);
-                $pdo->commit();
-                log_activity($pdo, $bid, 'user', $user['user_id'], $user['full_name'], ($enabled ? 'Enabled' : 'Disabled') . " fuel type (tank #{$tank_id})");
-                json_out(['ok' => true]);
-            } catch (Throwable $e) {
-                $pdo->rollBack();
-                throw $e;
-            }
-        }
-
-        if ($action === 'delete_fuel_type') {
-            $tankId = (int)($_POST['tank_id'] ?? 0);
-            if ($tankId <= 0) {
-                json_out(['ok' => false, 'error' => 'Tank id is required.'], 422);
-            }
-
-            $tankStmt = $pdo->prepare(
-                "SELECT t.tank_id, t.branch_id, t.oil_type_id, ot.oil_name AS fuel_name
-                 FROM tanks t
-                 LEFT JOIN oil_types ot ON ot.oil_type_id = t.oil_type_id
-                 WHERE t.tank_id = :tank_id AND t.branch_id = :branch_id LIMIT 1"
-            );
-            $tankStmt->execute([':tank_id' => $tankId, ':branch_id' => $bid]);
-            $tankRow = $tankStmt->fetch(PDO::FETCH_ASSOC);
-            if (!$tankRow) {
-                json_out(['ok' => false, 'error' => 'Fuel tank not found for this branch.'], 404);
-            }
-
-            $fuelCode = map_pump_normalize_fuel_code((string)($tankRow['fuel_name'] ?? ''));
-            $fuelName = trim((string)($tankRow['fuel_name'] ?? ''));
-
-            $pdo->beginTransaction();
-            try {
-                $deleteTank = $pdo->prepare("DELETE FROM tanks WHERE tank_id = :tank_id AND branch_id = :branch_id");
-                $deleteTank->execute([':tank_id' => $tankId, ':branch_id' => $bid]);
-
-                if ($fuelName !== '') {
-                    $unusedFuelCheck = $pdo->prepare(
-                        "SELECT t.tank_id
-                         FROM tanks t
-                         LEFT JOIN oil_types ot ON ot.oil_type_id = t.oil_type_id
-                         WHERE t.branch_id = :branch_id AND LOWER(ot.oil_name) = LOWER(:fuel_name)
-                         LIMIT 1"
-                    );
-                    $unusedFuelCheck->execute([':branch_id' => $bid, ':fuel_name' => $fuelName]);
-                    if (!$unusedFuelCheck->fetchColumn()) {
-                        $oilLookup = $pdo->prepare("SELECT oil_type_id FROM oil_types WHERE LOWER(oil_name) = LOWER(:oil_name) LIMIT 1");
-                        $oilLookup->execute([':oil_name' => $fuelName]);
-                        $oilTypeId = (int)($oilLookup->fetchColumn() ?: 0);
-                        if ($oilTypeId > 0) {
-                            $deleteOil = $pdo->prepare("DELETE FROM oil_types WHERE oil_type_id = :oil_type_id LIMIT 1");
-                            $deleteOil->execute([':oil_type_id' => $oilTypeId]);
-                        }
+                    $check = $pdo->prepare('SELECT COUNT(*) FROM tanks WHERE oil_type_id = :oil_type_id');
+                    $check->execute([':oil_type_id' => $oilTypeId]);
+                    if ((int)$check->fetchColumn() === 0) {
+                        $deleteOilType = $pdo->prepare('DELETE FROM oil_types WHERE oil_type_id = :oil_type_id');
+                        $deleteOilType->execute([':oil_type_id' => $oilTypeId]);
                     }
-                }
 
-                $pdo->commit();
-                log_activity($pdo, $bid, 'user', $user['user_id'], $user['full_name'], "Deleted fuel type {$fuelName} ({$fuelCode})");
-                json_out(['ok' => true]);
-            } catch (Throwable $e) {
-                $pdo->rollBack();
-                throw $e;
-            }
-        }
-
-        if ($action === 'edit_fuel_type') {
-            $tankId = (int)($_POST['tank_id'] ?? 0);
-            $fuelName = trim((string)($_POST['fuel_name'] ?? ''));
-            $capacity = (int)($_POST['capacity_l'] ?? 0);
-            $price = trim((string)($_POST['price_per_litre'] ?? ''));
-            $fuelCode = map_pump_normalize_fuel_code((string)($_POST['fuel_code'] ?? ''));
-
-            if ($tankId <= 0) json_out(['ok' => false, 'error' => 'Tank id is required.'], 422);
-            if ($fuelName === '') json_out(['ok' => false, 'error' => 'Fuel name is required.'], 422);
-            if ($capacity <= 0) json_out(['ok' => false, 'error' => 'Tank capacity must be greater than 0 liters.'], 422);
-            if ($price === '' || !is_numeric($price) || (float)$price < 0) json_out(['ok' => false, 'error' => 'Enter a valid non-negative price.'], 422);
-
-            $tankStmt = $pdo->prepare(
-                "SELECT t.tank_id, t.branch_id, t.fuel_code, t.fuel_name, t.capacity_l, t.current_l, t.is_enabled, t.oil_type_id,
-                        ot.oil_name AS fuel_name
-                 FROM tanks t
-                 LEFT JOIN oil_types ot ON ot.oil_type_id = t.oil_type_id
-                 WHERE t.tank_id = :tank_id AND t.branch_id = :branch_id
-                 LIMIT 1"
-            );
-            $tankStmt->execute([':tank_id' => $tankId, ':branch_id' => $bid]);
-            $existing = $tankStmt->fetch(PDO::FETCH_ASSOC);
-            if (!$existing) json_out(['ok' => false, 'error' => 'Fuel tank not found for this branch.'], 404);
-
-            if ($capacity < (float)($existing['current_l'] ?? 0)) {
-                json_out(['ok' => false, 'error' => 'Capacity cannot be lower than the current stock level.'], 422);
-            }
-
-            $existingCode = map_pump_normalize_fuel_code((string)($existing['fuel_name'] ?? ''));
-            if ($fuelCode !== '' && $fuelCode !== $existingCode) {
-                json_out(['ok' => false, 'error' => 'Fuel code is fixed and cannot be changed.'], 422);
-            }
-
-            $duplicateStmt = $pdo->prepare(
-                "SELECT t.tank_id
-                 FROM tanks t
-                 LEFT JOIN oil_types ot ON ot.oil_type_id = t.oil_type_id
-                 WHERE t.branch_id = :branch_id AND LOWER(ot.oil_name) = LOWER(:fuel_name) AND t.tank_id != :tank_id
-                 LIMIT 1"
-            );
-            $duplicateStmt->execute([':branch_id' => $bid, ':fuel_name' => $fuelName, ':tank_id' => $tankId]);
-            if ($duplicateStmt->fetchColumn()) {
-                json_out(['ok' => false, 'error' => 'This fuel name already exists for this branch.'], 422);
-            }
-
-            $previousFuelName = trim((string)($existing['fuel_name'] ?? ''));
-            $nameChanged = strtolower($previousFuelName) !== strtolower($fuelName);
-            $existingOilTypeId = (int)($existing['oil_type_id'] ?? 0);
-            $newOilTypeId = $existingOilTypeId > 0 ? $existingOilTypeId : map_pump_get_or_create_oil_type($pdo, $previousFuelName);
-
-            $pdo->beginTransaction();
-            try {
-                if ($nameChanged) {
-                    $newOilTypeId = map_pump_get_or_create_oil_type($pdo, $fuelName);
-                }
-
-                $setParts = ['capacity_l = :capacity_l', 'updated_at = NOW()'];
-                $params = [
-                    ':capacity_l' => $capacity,
-                    ':tank_id' => $tankId,
-                    ':branch_id' => $bid,
-                ];
-
-                if (map_pump_table_has_column($pdo, 'tanks', 'oil_type_id')) {
-                    $setParts[] = 'oil_type_id = :oil_type_id';
-                    $params[':oil_type_id'] = $newOilTypeId;
-                }
-
-                $sql = 'UPDATE tanks SET ' . implode(', ', $setParts) . ' WHERE tank_id = :tank_id AND branch_id = :branch_id';
-                $update = $pdo->prepare($sql);
-                $update->execute($params);
-
-                if ($nameChanged) {
-                    $renameStmt = $pdo->prepare("UPDATE oil_types SET oil_name = :oil_name WHERE oil_type_id = :oil_type_id LIMIT 1");
-                    $renameStmt->execute([':oil_name' => $fuelName, ':oil_type_id' => $newOilTypeId]);
-                }
-
-                if ($nameChanged && $existingOilTypeId > 0) {
-                    $usedByOtherTank = $pdo->prepare(
-                        "SELECT t.tank_id
-                         FROM tanks t
-                         LEFT JOIN oil_types ot ON ot.oil_type_id = t.oil_type_id
-                         WHERE t.branch_id = :branch_id AND LOWER(ot.oil_name) = LOWER(:fuel_name) AND t.tank_id != :tank_id
-                         LIMIT 1"
-                    );
-                    $usedByOtherTank->execute([
-                        ':branch_id' => $bid,
-                        ':fuel_name' => $previousFuelName,
-                        ':tank_id' => $tankId,
-                    ]);
-                    if (!$usedByOtherTank->fetchColumn()) {
-                        $pdo->prepare("DELETE FROM oil_types WHERE oil_type_id = :oil_type_id LIMIT 1")->execute([':oil_type_id' => $existingOilTypeId]);
+                    // Purge any remaining orphaned oil_types rows with the same name that have no tanks
+                    if ($deletedOilName !== '') {
+                        $purgeOrphans = $pdo->prepare('DELETE FROM oil_types WHERE LOWER(oil_name) = LOWER(:name) AND oil_type_id NOT IN (SELECT oil_type_id FROM tanks)');
+                        $purgeOrphans->execute([':name' => $deletedOilName]);
                     }
+
+                    $pdo->commit();
+                    json_out(['ok' => true]);
+                } catch (Throwable $e) {
+                    $pdo->rollBack();
+                    throw $e;
+                }
+                break;
+
+            case 'add_refill':
+                $tankId = (int)($_POST['tank_id'] ?? 0);
+                $quantity = (float)($_POST['quantity_l'] ?? 0);
+                if ($tankId <= 0 || $quantity <= 0) {
+                    json_out(['ok' => false, 'error' => 'Quantity is required.'], 400);
                 }
 
-                $pdo->commit();
-                log_activity($pdo, $bid, 'user', $user['user_id'], $user['full_name'], "Edited fuel type {$fuelName} ({$existingCode})");
-                json_out(['ok' => true, 'fuel_name' => $fuelName, 'capacity_l' => $capacity, 'price_per_litre' => (int)round((float)$price)]);
-            } catch (Throwable $e) {
-                $pdo->rollBack();
-                throw $e;
-            }
-        }
+                $tankCheck = $pdo->prepare('SELECT tank_id, current_l, capacity_l FROM tanks WHERE tank_id = :tank_id AND branch_id = :branch_id LIMIT 1');
+                $tankCheck->execute([':tank_id' => $tankId, ':branch_id' => $branchId]);
+                $tank = $tankCheck->fetch(PDO::FETCH_ASSOC);
+                if (!$tank) {
+                    json_out(['ok' => false, 'error' => 'Fuel tank not found in this branch.'], 404);
+                }
 
-        json_out(['ok' => false, 'error' => 'Unknown action'], 400);
-    } catch (PDOException $e) {
-        if ($pdo->inTransaction()) $pdo->rollBack();
-        json_out(['ok' => false, 'error' => $e->getMessage()], 500);
+                // Capacity overflow check
+                if (((float)$tank['current_l'] + $quantity) > (float)$tank['capacity_l']) {
+                    json_out(['ok' => false, 'error' => 'The refill amount cannot exceed the available tank capacity.'], 400);
+                }
+
+                $pdo->beginTransaction();
+                try {
+                    $refill = $pdo->prepare('INSERT INTO tank_refill (branch_id, tank_id, quantity_l) VALUES (:branch_id, :tank_id, :quantity_l)');
+                    $refill->execute([':branch_id' => $branchId, ':tank_id' => $tankId, ':quantity_l' => $quantity]);
+                    $update = $pdo->prepare('UPDATE tanks SET current_l = current_l + :quantity_l WHERE tank_id = :tank_id AND branch_id = :branch_id');
+                    $update->execute([':quantity_l' => $quantity, ':tank_id' => $tankId, ':branch_id' => $branchId]);
+                    $pdo->commit();
+                    json_out(['ok' => true]);
+                } catch (Throwable $e) {
+                    $pdo->rollBack();
+                    throw $e;
+                }
+                break;
+
+            case 'delete_refill':
+                $refillId = (int)($_POST['refill_id'] ?? $_POST['tank_id'] ?? 0);
+                if ($refillId <= 0) {
+                    json_out(['ok' => false, 'error' => 'Invalid refill record.'], 400);
+                }
+                $stmt = $pdo->prepare('DELETE FROM tank_refill WHERE tank_refill_id = :refill_id AND branch_id = :branch_id');
+                $stmt->execute([':refill_id' => $refillId, ':branch_id' => $branchId]);
+                json_out(['ok' => true]);
+                break;
+
+            default:
+                json_out(['ok' => false, 'error' => 'Unsupported action.'], 400);
+        }
     } catch (Throwable $e) {
-        if ($pdo->inTransaction()) $pdo->rollBack();
         json_out(['ok' => false, 'error' => $e->getMessage()], 500);
     }
 }
 
-// -------- Load data --------
+$ctx = current_context($pdo);
+$user = $ctx['user'];
+$branch = $ctx['branch'];
+$branchId = (int)($branch['branch_id'] ?? 0);
+
 $stmt = $pdo->prepare(
-    "SELECT t.*, ot.oil_name AS fuel_name
+    'SELECT t.tank_id, t.branch_id, t.oil_type_id, t.capacity_l, t.current_l, t.alert_pct, t.is_enabled, t.fuel_price,
+            COALESCE(ot.oil_name, CONCAT("Fuel ", t.tank_id)) AS fuel_name
      FROM tanks t
      LEFT JOIN oil_types ot ON ot.oil_type_id = t.oil_type_id
-     WHERE t.branch_id = :b
-     ORDER BY t.tank_id ASC"
+     WHERE t.branch_id = :branch_id
+     ORDER BY t.tank_id ASC'
 );
-$stmt->execute([':b' => $bid]);
-$tanks_rows = $stmt->fetchAll();
-$tanks = [];
-foreach ($tanks_rows as $t) {
-    $code = map_pump_table_has_column($pdo, 'tanks', 'fuel_code')
-        ? (string)($t['fuel_code'] ?? '')
-        : map_pump_normalize_fuel_code((string)($t['fuel_name'] ?? ''));
-    if ($code === '') {
-        $code = 'fuel_' . (int)($t['tank_id'] ?? 0);
+$stmt->execute([':branch_id' => $branchId]);
+$tanks = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+$tankCounts = ['ok' => 0, 'mid' => 0, 'low' => 0];
+foreach ($tanks as &$tank) {
+    $tank['pct'] = $tank['capacity_l'] > 0 ? ((float)$tank['current_l'] / (float)$tank['capacity_l']) * 100 : 0;
+    if ($tank['pct'] <= (float)$tank['alert_pct']) {
+        $tank['status_class'] = 'low';
+    } elseif ($tank['pct'] < 60) {
+        $tank['status_class'] = 'mid';
+    } else {
+        $tank['status_class'] = 'ok';
     }
-    $t['fuel_code'] = $code;
-    if (trim((string)($t['fuel_name'] ?? '')) === '') {
-        $t['fuel_name'] = 'Fuel ' . (int)($t['tank_id'] ?? 0);
-    }
-    $tanks[$code] = $t;
-}
-
-$tank_defs = [];
-foreach ($tanks as $fc => $tank) {
-    $tank_defs[$fc] = [
-        'name' => $tank['fuel_name'] ?? ucfirst($fc),
-        'id' => $fc,
-        'cap' => (int)($tank['capacity_l'] ?? 0),
-        'rem' => (float)($tank['current_l'] ?? 0),
-    ];
-}
-
-$dynamicTankKeys = array_keys($tank_defs);
-$dynamicPriceMap = [];
-foreach ($tank_defs as $fc => $def) {
-    $dynamicPriceMap[$fc] = ['capacity' => $def['cap'], 'remaining' => $def['rem'], 'alert' => (int)($tanks[$fc]['alert_pct'] ?? 25)];
-}
-
-$latestInventorySql = map_pump_latest_station_inventory_sql();
-$priceByOilName = [];
-if (map_pump_station_inventory_schema_ready($pdo)) {
-    $priceStmt = $pdo->prepare(
-        "SELECT ot.oil_name, li.price_per_litre
-         FROM ({$latestInventorySql}) li
-         INNER JOIN oil_types ot ON ot.oil_type_id = li.oil_type_id
-         WHERE li.station_id = :b"
-    );
-    $priceStmt->execute([':b' => $bid]);
-    foreach ($priceStmt->fetchAll(PDO::FETCH_ASSOC) as $priceRow) {
-        $priceByOilName[strtolower((string)$priceRow['oil_name'])] = (int)$priceRow['price_per_litre'];
+    if (isset($tankCounts[$tank['status_class']])) {
+        $tankCounts[$tank['status_class']]++;
     }
 }
+unset($tank);
 
-$refillSupport = map_pump_refill_support($pdo);
-$refillHistoryRows = map_pump_refill_history_rows($pdo, $bid);
-$refillOptions = [];
-foreach ($tanks as $fc => $tank) {
-    if (!is_array($tank)) continue;
-    $fuelName = trim((string)($tank['fuel_name'] ?? $fc));
-    if ($fuelName === '') continue;
-    $refillOptions[] = [
-        'tank_id' => (int)($tank['tank_id'] ?? 0),
-        'fuel_code' => (string)($tank['fuel_code'] ?? $fc),
-        'fuel_name' => $fuelName,
-        'current_l' => (float)($tank['current_l'] ?? 0),
-        'capacity_l' => (float)($tank['capacity_l'] ?? 0),
-        'is_enabled' => (int)($tank['is_enabled'] ?? 1),
-    ];
-}
+$refillStmt = $pdo->prepare(
+    'SELECT tr.tank_refill_id, tr.quantity_l, tr.update_at, t.tank_id,
+            COALESCE(ot.oil_name, CONCAT("Fuel ", t.tank_id)) AS fuel_name
+     FROM tank_refill tr
+     LEFT JOIN tanks t ON t.tank_id = tr.tank_id
+     LEFT JOIN oil_types ot ON ot.oil_type_id = t.oil_type_id
+     WHERE tr.branch_id = :branch_id
+     ORDER BY tr.update_at DESC, tr.tank_refill_id DESC'
+);
+$refillStmt->execute([':branch_id' => $branchId]);
+$refills = $refillStmt->fetchAll(PDO::FETCH_ASSOC);
 
-// helper to compute % and color class
-function tank_pct(?array $t): int {
-    if (!$t || !isset($t['capacity_l']) || (float)$t['capacity_l'] <= 0) return 0;
-    return (int)round(((float)($t['current_l'] ?? 0) / (float)$t['capacity_l']) * 100);
-}
-
-function tank_color(?array $t): string {
-    if (!$t) return 'var(--slate-400)';
-    $p = tank_pct($t);
-    if ($p <= (int)($t['alert_pct'] ?? 25)) return 'var(--red-400)';
-    if ($p < 60) return 'var(--amber-400)';
-    return 'var(--mint-400)';
-}
-
-function tank_flag(?array $t): string {
-    if (!$t) return '';
-    $p = tank_pct($t);
-    if ($p <= (int)($t['alert_pct'] ?? 25)) return '<span class="tank-flag low" id="flag-'.h($t['fuel_code']).'"><i class="fa-solid fa-triangle-exclamation"></i> Stock low — delivery needed</span>';
-    if ($p < 60) return '<span class="tank-flag mid" id="flag-'.h($t['fuel_code']).'"><i class="fa-solid fa-circle-half-stroke"></i> Watch level</span>';
-    return '<span class="tank-flag ok" id="flag-'.h($t['fuel_code']).'"><i class="fa-solid fa-check"></i> Stock sufficient</span>';
-}
-
-function map_pump_fuel_status_label(array $tank): string {
-    $pct = tank_pct($tank);
-    $alert = max(5, (int)($tank['alert_pct'] ?? 25));
-    if ($pct <= $alert) return 'low';
-    if ($pct < 60) return 'watch';
-    return 'sufficient';
-}
-
-function map_pump_fuel_status_text(array $tank): string {
-    $status = map_pump_fuel_status_label($tank);
-    return $status === 'sufficient' ? 'Sufficient' : ($status === 'watch' ? 'Watch' : 'Low');
-}
-
-function map_pump_table_exists(PDO $pdo, string $tableName): bool {
-    try {
-        $stmt = $pdo->prepare(
-            "SELECT COUNT(*)
-             FROM INFORMATION_SCHEMA.TABLES
-             WHERE TABLE_SCHEMA = DATABASE()
-               AND TABLE_NAME = :table_name"
-        );
-        $stmt->execute([':table_name' => $tableName]);
-        return (int)$stmt->fetchColumn() > 0;
-    } catch (Throwable $e) {
-        return false;
-    }
-}
-
-function map_pump_get_table_columns(PDO $pdo, string $tableName): array {
-    try {
-        $stmt = $pdo->prepare(
-            "SELECT COLUMN_NAME
-             FROM INFORMATION_SCHEMA.COLUMNS
-             WHERE TABLE_SCHEMA = DATABASE()
-               AND TABLE_NAME = :table_name
-             ORDER BY ORDINAL_POSITION"
-        );
-        $stmt->execute([':table_name' => $tableName]);
-        $cols = $stmt->fetchAll(PDO::FETCH_COLUMN, 0);
-        return array_map('strtolower', array_values($cols));
-    } catch (Throwable $e) {
-        return [];
-    }
-}
-
-function map_pump_first_matching_column(array $columns, array $candidates): ?string {
-    foreach ($candidates as $candidate) {
-        $lookup = strtolower((string)$candidate);
-        if (in_array($lookup, $columns, true)) {
-            return $lookup;
-        }
-    }
-    return null;
-}
-
-function map_pump_refill_support(PDO $pdo): array {
-    $tableExists = map_pump_table_exists($pdo, 'tank_refill');
-    $columns = $tableExists ? map_pump_get_table_columns($pdo, 'tank_refill') : [];
-    return [
-        'table_exists' => $tableExists,
-        'columns' => $columns,
-        'tank_id' => map_pump_first_matching_column($columns, ['tank_id', 'tankid']),
-        'branch_id' => map_pump_first_matching_column($columns, ['branch_id', 'branchid', 'station_id', 'stationid']),
-        'fuel_code' => map_pump_first_matching_column($columns, ['fuel_code', 'fuelcode', 'oil_code']),
-        'fuel_name' => map_pump_first_matching_column($columns, ['fuel_name', 'fuelname', 'oil_name', 'oil_name_display']),
-        'qty_l' => map_pump_first_matching_column($columns, ['quantity_l', 'qty_l', 'refill_liters', 'refill_quantity', 'quantity', 'amount_l', 'liters_added', 'added_litres', 'added_l', 'refill_amount', 'volume_l']),
-        'date_col' => map_pump_first_matching_column($columns, ['refilled_at', 'refill_date', 'created_at', 'updated_at', 'update_at', 'transaction_at', 'recorded_at', 'date_added', 'logged_at']),
-    ];
-}
-
-function map_pump_normalize_refill_date(?string $raw): ?string {
-    $value = trim((string)($raw ?? ''));
-    if ($value === '') {
-        return null;
-    }
-    $dt = new DateTimeImmutable($value);
-    return $dt->format('Y-m-d H:i:s');
-}
-
-function map_pump_refill_history_rows(PDO $pdo, int $branchId): array {
-    $support = map_pump_refill_support($pdo);
-    if (!$support['table_exists']) {
-        return [];
-    }
-
-    $joinSql = 'FROM tank_refill tr';
-    $where = [];
-    $params = [];
-    $select = 'SELECT tr.*';
-    $orderBy = null;
-
-    $allowedDateColumns = ['refilled_at', 'refill_date', 'transaction_at', 'created_at', 'updated_at', 'update_at', 'recorded_at', 'date_added', 'logged_at'];
-    foreach ($allowedDateColumns as $candidate) {
-        if (in_array($candidate, $support['columns'], true)) {
-            $orderBy = $candidate;
-            break;
-        }
-    }
-    if ($orderBy === null) {
-        $orderBy = map_pump_first_matching_column($support['columns'], ['refill_id', 'id', 'tank_refill_id', 'record_id', 'transaction_id']);
-    }
-
-    if ($support['branch_id']) {
-        $where[] = 'tr.' . $support['branch_id'] . ' = :branch_id';
-        $params[':branch_id'] = $branchId;
-    }
-
-    if ($support['tank_id']) {
-        $select = 'SELECT tr.*, ot.oil_name AS tank_fuel_name, t.current_l AS tank_current_l';
-        $joinSql = 'FROM tank_refill tr LEFT JOIN tanks t ON t.tank_id = tr.' . $support['tank_id'] . ' LEFT JOIN oil_types ot ON ot.oil_type_id = t.oil_type_id';
-        if ($support['branch_id']) {
-            $where[] = 't.branch_id = :branch_id';
-        }
-    }
-
-    $sql = $select . ' ' . $joinSql;
-    if ($where) {
-        $sql .= ' WHERE ' . implode(' AND ', $where);
-    }
-    if ($orderBy) {
-        $sql .= ' ORDER BY tr.' . $orderBy . ' DESC';
-    }
-    $sql .= ' LIMIT 25';
-
-    $stmt = $pdo->prepare($sql);
-    $stmt->execute($params);
-    return $stmt->fetchAll(PDO::FETCH_ASSOC);
-}
+$initials = initials((string)($user['full_name'] ?? 'Manager'));
+$branchLabel = $branch['branch_name'] ?? 'Branch';
+$branchCode = $branch['branch_code'] ?? ('Branch ' . $branchId);
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
+<html lang="en"><head><style>body {transition: opacity ease-in 0.2s; } 
+body[unresolved] {opacity: 0; display: block; overflow: hidden; position: relative; } 
+</style>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>MAP & PUMP — Manage Fuel Stock</title>
+<title>MAP &amp; PUMP — Manage Fuel Stock</title>
 
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
 <link rel="icon" type="image/png" href="/images/Logo.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Noto+Sans+Myanmar:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&amp;family=Noto+Sans+Myanmar:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
 
 <style>
   :root{
@@ -1316,29 +676,74 @@ function map_pump_refill_history_rows(PDO $pdo, int $branchId): array {
   }
   .modal-overlay.active .modal-card-custom { transform: scale(1); }
   
-  .modal-header-custom { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+  .modal-header-custom { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
   .modal-header-custom h3 { font-size: 18px; font-weight: 700; margin: 0; }
   .modal-close { background: none; border: none; color: var(--slate-400); font-size: 20px; cursor: pointer; transition: color 0.2s; }
   .modal-close:hover { color: var(--slate-50); }
 
-  .limit-modal-head { display:flex; align-items:center; gap:12px; margin-bottom:18px; }
+  .limit-modal-head { display:flex; align-items:center; gap:12px; margin-bottom:0; }
+  .limit-modal-head h3 {
+    font-size: 18px; font-weight: 700; margin: 0;
+  }
   .limit-modal-head .limit-modal-icon {
-    width:42px; height:42px; border-radius:12px; display:flex; align-items:center; justify-content:center;
-    background:linear-gradient(135deg, rgba(251,191,36,0.18), rgba(59,141,255,0.18));
-   
-   
+    display: none;
+  }
+  .limit-modal-sub {
+    font-size: 12.5px;
+    color: var(--slate-400);
+    margin: 0 0 18px;
+    line-height: 1.6;
+  }
+  .limit-form-list {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px 18px;
+    margin-top: 6px;
+  }
+  .limit-form-item {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: flex-start;
+    gap: 10px;
+    padding: 14px 14px 12px;
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 12px;
+    background: rgba(255,255,255,0.015);
+    min-height: 80px;
+  }
+  .limit-name-wrap {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    width: 100%;
+  }
+  .limit-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #f7d66a;
+    box-shadow: 0 0 0 4px rgba(247, 214, 106, 0.18);
+    flex-shrink: 0;
   }
   .limit-form-item label {
-    display:block; margin:0; font-size:12.5px; font-weight:600; color:var(--slate-200); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+    display:block; margin:0; font-size:13px; font-weight:700; color:var(--slate-50); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
   }
-  .limit-input-wrap { position:relative; width:110px; flex-shrink:0; }
+  .limit-input-wrap { position:relative; width:100%; }
   .limit-input-wrap input {
-    width:100%; padding:10px 28px 10px 12px; border-radius:10px; border:1px solid rgba(255,255,255,0.1);
+    width:100%; padding:10px 24px 10px 10px; border-radius:10px; border:1px solid rgba(255,255,255,0.1);
     background:rgba(7,11,20,0.8); color:var(--slate-50); font-weight:600; font-size:13px; outline:none;
   }
   .limit-input-wrap input:focus { border-color: rgba(251,191,36,0.45); box-shadow:0 0 0 1px rgba(251,191,36,0.25); }
   .limit-input-wrap .pct-suffix {
-    position:absolute; right:10px; top:50%; transform:translateY(-50%); color:var(--slate-400); font-size:11px; font-weight:700;
+    position:absolute; right:9px; top:50%; transform:translateY(-50%); color:var(--slate-400); font-size:11px; font-weight:700;
+  }
+
+  @media (max-width: 560px) {
+    .limit-form-list {
+      grid-template-columns: 1fr;
+    }
   }
 
   .form-group { margin-bottom: 16px; }
@@ -1402,6 +807,57 @@ function map_pump_refill_history_rows(PDO $pdo, int $branchId): array {
   .delete-modal-card #delete-confirm-btn:hover {
     background: linear-gradient(135deg, #dc2626, #991b1b);
   }
+
+  /* ---------- Success Toast (mini-popup style) ---------- */
+  .oil-toast {
+    position: fixed;
+    top: 22px;
+    left: 50%;
+    transform: translateX(-50%) translateY(-8px);
+    background: rgba(7, 11, 20, 0.97);
+    border: 1px solid rgba(52, 211, 153, 0.35);
+    color: #6ee7b7;
+    padding: 10px 14px;
+    border-radius: 10px;
+    z-index: 9999;
+    min-width: 260px;
+    max-width: 92%;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+    opacity: 0;
+    pointer-events: none;
+    visibility: hidden;
+    transition: opacity 0.25s ease, transform 0.25s ease, visibility 0.25s;
+  }
+  .oil-toast.show {
+    opacity: 1;
+    pointer-events: auto;
+    visibility: visible;
+    transform: translateX(-50%) translateY(0);
+  }
+  .oil-toast .toast-msg { flex: 1; font-size: 13px; line-height: 1.2; }
+  .oil-toast .toast-close { background: none; border: none; color: inherit; font-weight: 700; cursor: pointer; padding: 4px 6px; font-size: 14px; }
+  .oil-toast.error { border-color: rgba(248, 113, 113, 0.4); color: #fca5a5; }
+  /* ---------- Pagination Controls ---------- */
+  .pg-controls {
+    display: flex; align-items: center; justify-content: center;
+    gap: 6px; margin-top: 18px; flex-wrap: wrap;
+  }
+  .pg-btn {
+    background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.10);
+    color: var(--slate-300); border-radius: 8px; padding: 6px 13px;
+    font-size: 12.5px; font-weight: 600; cursor: pointer;
+    transition: background 0.18s, color 0.18s, border-color 0.18s;
+    min-width: 34px; text-align: center;
+  }
+  .pg-btn:hover:not(:disabled) { background: rgba(255,255,255,0.10); color: var(--slate-50); }
+  .pg-btn.active { background: var(--amber-400); border-color: var(--amber-400); color: #1d1306; }
+  .pg-btn:disabled { opacity: 0.35; cursor: default; }
+  /* All Fuel Types pagination: blue like the Add Fuel Type button */
+  #tank-grid-pg-controls .pg-btn.active,
+  #tank-grid-pg-controls .pg-btn.active:hover:not(:disabled) { background:linear-gradient(135deg, #3b8dff, #1d4ed8); border-color:#2f6feb; color:#fff; box-shadow:0 8px 18px -10px rgba(59,141,255,0.75); }
 </style>
 </head>
 <body>
@@ -1410,22 +866,17 @@ function map_pump_refill_history_rows(PDO $pdo, int $branchId): array {
   <aside class="sidebar">
     <a href="dashboard.php" class="text-decoration-none d-flex align-items-center gap-2 text-white fw-bold" style="padding: 6px 8px 0;">
       <img src="/images/Logo.png" alt="Logo" class="nav-logo">
-      <span class="disp" style="font-size: 17px; letter-spacing: 0.5px; color: #ffffff; font-weight: 700;">Map & Pump</span>
+      <span class="disp" style="font-size: 17px; letter-spacing: 0.5px; color: #ffffff; font-weight: 700;">Map &amp; Pump</span>
     </a>
     <div class="side-role">Branch Manager Console</div>
 
-    <?php $hqLogoSrc = function_exists('hq_logo_src') ? hq_logo_src($branch['hq_logo'] ?? null) : null; ?>
-    <div class="side-branch">
-      <?php if ($hqLogoSrc): ?>
-        <img src="<?= h($hqLogoSrc) ?>" alt="HQ Logo" class="hq-logo" onerror="this.style.display='none'">
-      <?php else: ?>
-        <div class="hq-logo" style="display:flex; align-items:center; justify-content:center; color:var(--slate-400);"><i class="fa-solid fa-building"></i></div>
-      <?php endif; ?>
-      <div class="txt">
-        <b><?= h($branch['branch_name'] ?? 'Denko - Sanchaung') ?></b>
-        <span>Branch ID: <?= h($branch['branch_code'] ?? 'YGN-014') ?></span>
-      </div>
-    </div>
+        <div class="side-branch">
+          <img src="<?= htmlspecialchars((string)($branch['hq_logo'] ?? 'https://i.ibb.co/BV5zwXMt/19ce33ae0be7782f7e8c7ab034e00812.png')) ?>" alt="HQ Logo" class="hq-logo" onerror="this.style.display='none'">
+          <div class="txt">
+            <b><?= htmlspecialchars((string)($branch['branch_name'] ?? 'Branch')) ?></b>
+            <span>Branch ID: <?= htmlspecialchars((string)($branch['branch_code'] ?? $branchId)) ?></span>
+          </div>
+        </div>
 
     <nav class="side-nav">
       <a href="dashboard.php" class="side-link"><span class="ic"><i class="fa-solid fa-house"></i></span> Dashboard</a>
@@ -1445,11 +896,11 @@ function map_pump_refill_history_rows(PDO $pdo, int $branchId): array {
     <div class="topbar">
       <div>
         <h1>Manage Fuel Stock</h1>
-        <div class="date" id="live-clock">Wednesday · July 9, 2026</div>
+        <div class="date" id="live-clock">Friday, Oct 30, 2026 · 07:43:02 PM</div>
       </div>
       <div class="topbar-right">
         <!-- Bell Trigger Button -->
-        <div class="bell" id="notif-bell"><i class="fa-regular fa-bell"></i><?php if ($has_unread): ?><span class="ping" id="notif-ping"></span><?php endif; ?></div>
+        <div class="bell" id="notif-bell"><i class="fa-regular fa-bell"></i><span class="ping" id="notif-ping"></span></div>
         
         <!-- Notification Dropdown Popup (Dashboard Style) -->
         <div class="notif-popup" id="notif-popup">
@@ -1458,38 +909,59 @@ function map_pump_refill_history_rows(PDO $pdo, int $branchId): array {
             <button id="clear-notifs-btn" type="button">Mark all read</button>
           </div>
           <div id="notif-list">
-            <?php if (!$alerts): ?>
-              <div class="notif-empty" style="text-align:center; padding:12px 0; color:var(--slate-400); font-size:12px;">No new notifications</div>
-            <?php else:
-              foreach ($alerts as $a):
-                $meta = notif_ui_meta($a['type'], $a['title']);
-                $tone = $meta['tone'];
-                $icon = $meta['icon'];
-            ?>
-              <div class="notif-item <?= h($tone) ?>" data-notif-id="<?= (int)$a['notif_id'] ?>" data-link="<?= h($a['link'] ?? 'dashboard.php') ?>" data-kind="<?= h($tone) ?>">
-                <div class="ic"><i class="fa-solid <?= h($icon) ?>"></i></div>
+                          <div class="notif-item warning" data-notif-id="5451601" data-link="manage-oil.php" data-kind="warning">
+                <div class="ic"><i class="fa-solid fa-droplet"></i></div>
                 <div class="notif-item-body">
-                  <b><?= h($a['title']) ?></b>
-                  <span><?= h($a['body']) ?></span>
-                  <div class="notif-time"><?= h($a['time_ago']) ?></div>
+                  <b>Low stock: Test_Fuel_1</b>
+                  <span>Test_Fuel_1 is at 0% (0.00 / 10,000 L), below the 20% alert level.</span>
+                  <div class="notif-time">2 days ago</div>
                 </div>
                            </div>
-            <?php endforeach; endif; ?>
-          </div>
+                          <div class="notif-item warning" data-notif-id="5260007" data-link="manage-oil.php" data-kind="warning">
+                <div class="ic"><i class="fa-solid fa-droplet"></i></div>
+                <div class="notif-item-body">
+                  <b>Low stock: Premium Diesel</b>
+                  <span>Premium Diesel is at 0% (0.00 / 12,000 L), below the 25% alert level.</span>
+                  <div class="notif-time">2 days ago</div>
+                </div>
+                           </div>
+                          <div class="notif-item warning" data-notif-id="5260005" data-link="manage-oil.php" data-kind="warning">
+                <div class="ic"><i class="fa-solid fa-droplet"></i></div>
+                <div class="notif-item-body">
+                  <b>Low stock: Octane 95</b>
+                  <span>Octane 95 is at 0% (0.00 / 15,000 L), below the 25% alert level.</span>
+                  <div class="notif-time">2 days ago</div>
+                </div>
+                           </div>
+                          <div class="notif-item warning" data-notif-id="5260006" data-link="manage-oil.php" data-kind="warning">
+                <div class="ic"><i class="fa-solid fa-droplet"></i></div>
+                <div class="notif-item-body">
+                  <b>Low stock: Diesel</b>
+                  <span>Diesel is at 0% (0.00 / 12,000 L), below the 25% alert level.</span>
+                  <div class="notif-time">2 days ago</div>
+                </div>
+                           </div>
+                          <div class="notif-item warning" data-notif-id="5260004" data-link="manage-oil.php" data-kind="warning">
+                <div class="ic"><i class="fa-solid fa-droplet"></i></div>
+                <div class="notif-item-body">
+                  <b>Low stock: Octane 92</b>
+                  <span>Octane 92 is at 0% (0.00 / 15,000 L), below the 25% alert level.</span>
+                  <div class="notif-time">2 days ago</div>
+                </div>
+                           </div>
+                      </div>
         </div>
 
         <div class="avatar-chip">
-          <div class="avatar-circle"><a href="edit-profile.php"><?= h($initials) ?></a></div>
-          <div><b><a href="edit-profile.php"><?= h(explode(' ', $user['full_name'])[0]) ?></a></b></div>
+          <div class="avatar-circle"><a href="edit-profile.php"><?= htmlspecialchars(substr((string)($user['full_name'] ?? 'Manager'), 0, 1)) ?></a></div>
+          <div><b><a href="edit-profile.php"><?= htmlspecialchars(explode(' ', (string)($user['full_name'] ?? 'Manager'))[0]) ?></a></b></div>
         </div>
       </div>
     </div>
 
     <div class="content">
       <div class="page-head">
-        <div>
-          <h2>Fuel Stock</h2>
-        </div>
+        <div></div>
         <div class="page-head-actions">
           <button class="btn-primary action-btn-blue" id="open-add-oil-modal">
             <i class="fa-solid fa-plus-circle"></i> Add Fuel Type
@@ -1498,7 +970,7 @@ function map_pump_refill_history_rows(PDO $pdo, int $branchId): array {
             <i class="fa-solid fa-gas-pump"></i> Refill Fuel
           </button>
           <button class="btn-primary action-btn-amber" id="open-limit-modal">
-            <i class="fa-solid fa-sliders"></i> Manage Fuel Stock
+            <i class="fa-solid fa-gauge-high"></i> Threshold Settings
           </button>
         </div>
       </div>
@@ -1512,63 +984,48 @@ function map_pump_refill_history_rows(PDO $pdo, int $branchId): array {
       <div class="tab-panel active" id="tab-amount">
         <div class="stock-overview">
           <div>
-            <h2><span>All Fuel Types</span></h2>
+            <h2><span>All Fuel Types</span> <span style="font-size:14px; font-weight:600; color:var(--amber-400); margin-left:6px;">~ <?= count($tanks) ?> total</span></h2>
           </div>
           <div class="stock-pills">
-            <?php
-              $sufficientCount = 0;
-              $watchCount = 0;
-              $lowCount = 0;
-              foreach ($tanks as $tank) {
-                $p = tank_pct($tank);
-                $alert = (int)($tank['alert_pct'] ?? 25);
-                if ($p <= $alert) $lowCount++;
-                elseif ($p < 60) $watchCount++;
-                else $sufficientCount++;
-              }
-            ?>
-            <span class="stock-pill sufficient"><?= $sufficientCount ?> Sufficient</span>
-            <span class="stock-pill watch"><?= $watchCount ?> Watch</span>
-            <span class="stock-pill low"><?= $lowCount ?> Low</span>
+            <span class="stock-pill sufficient"><?= (int)($tankCounts['ok'] ?? 0) ?> Sufficient</span>
+            <span class="stock-pill watch"><?= (int)($tankCounts['mid'] ?? 0) ?> Watch</span>
+            <span class="stock-pill low"><?= (int)($tankCounts['low'] ?? 0) ?> Low</span>
           </div>
         </div>
-        <div class="tank-grid">
-          <?php foreach ($tank_defs as $fc => $def): ?>
-            <?php
-              $t = $tanks[$fc] ?? null;
-              $cap = $t ? (int)$t['capacity_l'] : $def['cap'];
-              $cur = $t ? (float)$t['current_l'] : $def['rem'];
-              $pct = $t ? tank_pct($t) : (int)round(($cur / $cap) * 100);
-              $status = $t ? map_pump_fuel_status_label($t) : ($pct > 60 ? 'sufficient' : ($pct > 25 ? 'watch' : 'low'));
-              $col = $status === 'sufficient' ? 'var(--mint-400)' : ($status === 'watch' ? 'var(--amber-300)' : 'var(--red-400)');
-              $tank_id_attr = $t ? (int)$t['tank_id'] : '';
-              $disabled_class = ($t && (int)$t['is_enabled'] === 0) ? 'disabled-tank' : '';
-            ?>
-            <div class="tank <?= $disabled_class ?>" id="tank-<?= h($fc) ?>" data-capacity="<?= $cap ?>" data-tankid="<?= $tank_id_attr ?>">
+        <div id="tank-grid-pg-wrap"><div class="tank-grid" id="tank-grid">
+          <?php foreach ($tanks as $tank):
+            $pct = (float)($tank['pct'] ?? 0);
+            $status = $tank['status_class'] ?? 'ok';
+            $statusMeta = [
+              'ok' => ['color' => 'var(--mint-400)', 'label' => 'Stock sufficient', 'icon' => 'fa-check', 'class' => 'ok'],
+              'mid' => ['color' => 'var(--amber-300)', 'label' => 'Watch level', 'icon' => 'fa-circle-half-stroke', 'class' => 'mid'],
+              'low' => ['color' => 'var(--red-400)', 'label' => 'Stock low — delivery needed', 'icon' => 'fa-triangle-exclamation', 'class' => 'low'],
+            ][$status] ?? ['color' => 'var(--mint-400)', 'label' => 'Stock sufficient', 'icon' => 'fa-check', 'class' => 'ok'];
+            $remainingText = number_format((float)$tank['current_l'], 2, '.', ',') . ' / ' . number_format((int)$tank['capacity_l'], 0, '.', ',') . ' L remaining';
+            $isDisabled = empty($tank['is_enabled']) ? 'disabled-tank' : '';
+          ?>
+            <div class="tank <?= $isDisabled ?>" id="tank-<?= (int)$tank['tank_id'] ?>" data-capacity="<?= (int)$tank['capacity_l'] ?>" data-tankid="<?= (int)$tank['tank_id'] ?>">
               <div class="top">
                 <div>
-                  <div class="fuel-name"><?= h($t['fuel_name'] ?? $def['name']) ?></div>
+                  <div class="fuel-name"><?= htmlspecialchars($tank['fuel_name']) ?></div>
                 </div>
-                <div class="pct" id="pct-<?= h($fc) ?>" style="color:<?= $col ?>"><?= $pct ?>%</div>
+                <div class="pct" id="pct-<?= (int)$tank['tank_id'] ?>" style="color:<?= $statusMeta['color'] ?>"><?= round($pct) ?>%</div>
               </div>
-              <div class="gauge-track"><i id="gauge-<?= h($fc) ?>" style="width:<?= $pct ?>%; background:<?= $col ?>;"></i></div>
+              <div class="gauge-track"><i id="gauge-<?= (int)$tank['tank_id'] ?>" style="width:<?= min(100, max(0, $pct)) ?>%; background:<?= $statusMeta['color'] ?>;"></i></div>
               <div class="liters">
-                <span id="rem-<?= h($fc) ?>"><?= number_format($cur) ?> / <?= number_format($cap) ?> L remaining</span>
+                <span id="rem-<?= (int)$tank['tank_id'] ?>"><?= $remainingText ?></span>
               </div>
-              <?php if ($t): ?>
-                <?= tank_flag($t) ?>
-              <?php else: ?>
-                <span class="tank-flag <?= $status === 'sufficient' ? 'ok' : ($status === 'watch' ? 'mid' : 'low') ?>" id="flag-<?= h($fc) ?>"><i class="fa-solid <?= $status === 'sufficient' ? 'fa-check' : ($status === 'watch' ? 'fa-circle-half-stroke' : 'fa-triangle-exclamation') ?>"></i> <?= $status === 'sufficient' ? 'Stock sufficient' : ($status === 'watch' ? 'Watch level' : 'Stock low') ?></span>
-              <?php endif; ?>
+              <span class="tank-flag <?= $statusMeta['class'] ?>" id="flag-<?= (int)$tank['tank_id'] ?>"><i class="fa-solid <?= $statusMeta['icon'] ?>"></i> <?= $statusMeta['label'] ?></span>
             </div>
           <?php endforeach; ?>
-        </div>
+        </div></div><!-- /#tank-grid-pg-wrap -->
+        <div class="pg-controls" id="tank-grid-pg-controls"></div>
 
       </div>
 
       <!-- TAB 2: MANAGE FUEL TYPES -->
       <div class="tab-panel" id="tab-types">
-        <div class="panel fuel-table-scroll">
+        <div class="panel fuel-table-scroll" style="max-height: none; overflow-y: hidden;">
           <table class="fuel-action-table">
             <thead>
               <tr>
@@ -1577,33 +1034,25 @@ function map_pump_refill_history_rows(PDO $pdo, int $branchId): array {
                 <th style="width:20%; text-align:right;">Action</th>
               </tr>
             </thead>
-                       <tbody>
-              <?php foreach ($tank_defs as $fc => $def): ?>
-                <?php
-                  $t = $tanks[$fc] ?? null;
-                  $cur = $t ? (float)$t['current_l'] : $def['rem'];
-                  $cap = $t ? (int)$t['capacity_l'] : $def['cap'];
-                  $on = $t ? ((int)$t['is_enabled'] === 1) : true;
-                  $tank_id_attr = $t ? (int)$t['tank_id'] : '';
-                  $current_price = 0;
-                  foreach (($fuelCodeToOilAliases[$fc] ?? [$def['name']]) as $oilAlias) {
-                    $current_price = $priceByOilName[strtolower($oilAlias)] ?? $current_price;
-                  }
-                  $stockText = number_format($cur) . ' / ' . number_format($cap) . ' L remaining';
-                ?>
-                <tr data-tank-id="<?= $tank_id_attr ?>" data-fuel-code="<?= h($fc) ?>">
-                  <td class="fuel-name-cell"><?= h($t['fuel_name'] ?? $def['name']) ?></td>
-                  <td class="fuel-stock-meta"><?= h($stockText) ?></td>
+            <tbody id="fuel-table-tbody">
+              <?php foreach ($tanks as $tank):
+                $statusColor = ['ok' => 'var(--mint-400)', 'mid' => 'var(--amber-300)', 'low' => 'var(--red-400)'][$tank['status_class'] ?? 'ok'] ?? 'var(--mint-400)';
+                $remainingText = number_format((float)$tank['current_l'], 2, '.', ',') . ' / ' . number_format((int)$tank['capacity_l'], 0, '.', ',') . ' L remaining';
+                $enabled = !empty($tank['is_enabled']);
+              ?>
+                <tr data-tank-id="<?= (int)$tank['tank_id'] ?>" data-fuel-code="fuel_<?= (int)$tank['tank_id'] ?>">
+                  <td class="fuel-name-cell"><?= htmlspecialchars($tank['fuel_name']) ?></td>
+                  <td class="fuel-stock-meta"><span style="color:<?= $statusColor ?>; font-weight:700; margin-right:6px;"> </span><?= $remainingText ?></td>
                   <td class="fuel-action-cell">
                     <div class="fuel-actions">
-                      <button type="button" class="fuel-row-btn edit-btn edit-action" data-action="edit" data-id="<?= $tank_id_attr ?>" data-fuel="<?= h($fc) ?>" data-name="<?= h($t['fuel_name'] ?? $def['name']) ?>" data-capacity="<?= (int)($t['capacity_l'] ?? $def['cap']) ?>" data-price="<?= (int)$current_price ?>" title="Edit fuel" aria-label="Edit fuel">
+                      <button type="button" class="fuel-row-btn edit-btn edit-action" data-action="edit" data-id="<?= (int)$tank['tank_id'] ?>" data-fuel="fuel_<?= (int)$tank['tank_id'] ?>" data-name="<?= htmlspecialchars($tank['fuel_name'], ENT_QUOTES, 'UTF-8') ?>" data-capacity="<?= (int)$tank['capacity_l'] ?>" data-price="<?= htmlspecialchars((string)($tank['fuel_price'] ?? '0'), ENT_QUOTES, 'UTF-8') ?>" title="Edit fuel" aria-label="Edit fuel">
                         <i class="fa-solid fa-pen-to-square"></i>
                       </button>
-                      <button type="button" class="fuel-row-btn toggle-btn <?= $on ? 'on' : 'off' ?>" data-action="toggle" data-id="<?= $tank_id_attr ?>" data-fuel="<?= h($fc) ?>" data-enabled="<?= $on ? '1' : '0' ?>" title="<?= $on ? 'Disable fuel' : 'Enable fuel' ?>" aria-label="<?= $on ? 'Disable fuel' : 'Enable fuel' ?>">
-                        <i class="fa-solid <?= $on ? 'fa-toggle-on' : 'fa-toggle-off' ?>"></i>
+                      <button type="button" class="fuel-row-btn toggle-btn <?= $enabled ? 'on' : 'off' ?>" data-action="toggle" data-id="<?= (int)$tank['tank_id'] ?>" data-fuel="fuel_<?= (int)$tank['tank_id'] ?>" data-enabled="<?= (int)$enabled ?>" title="<?= $enabled ? 'Disable fuel' : 'Enable fuel' ?>" aria-label="<?= $enabled ? 'Disable fuel' : 'Enable fuel' ?>">
+                        <i class="fa-solid fa-toggle-<?= $enabled ? 'on' : 'off' ?>"></i>
                       </button>
-                      <button type="button" class="fuel-row-btn delete-btn" data-action="delete" data-id="<?= $tank_id_attr ?>" data-fuel="<?= h($fc) ?>" title="Delete fuel type" aria-label="Delete fuel type">
-                                                                                                                                                                                                                                                                                             <i class="fa-solid fa-trash"></i>
+                      <button type="button" class="fuel-row-btn delete-btn" data-action="delete" data-id="<?= (int)$tank['tank_id'] ?>" data-fuel="fuel_<?= (int)$tank['tank_id'] ?>" title="Delete fuel type" aria-label="Delete fuel type">
+                        <i class="fa-solid fa-trash"></i>
                       </button>
                     </div>
                   </td>
@@ -1626,25 +1075,25 @@ function map_pump_refill_history_rows(PDO $pdo, int $branchId): array {
               </tr>
             </thead>
             <tbody>
-              <?php foreach ($refillHistoryRows as $row): ?>
-                <?php
-                  $fuelName = $row['tank_fuel_name'] ?? 'Unknown';
-                  $quantity = (float)($row['quantity_l'] ?? 0);
-                  $refillDate = $row['update_at'] ?? $row['updated_at'] ?? $row['transaction_at'] ?? $row['created_at'] ?? null;
-                  $refillDate = $refillDate ? date('d-m-Y', strtotime($refillDate)) : 'N/A';
-                ?>
+              <?php if (empty($refills)): ?>
                 <tr>
-                  <td class="fuel-name-cell"><?= h($fuelName) ?></td>
-                  <td class="fuel-stock-meta refill-history-quantity" style="text-align:center;"><?= $quantity > 0 ? number_format($quantity) . ' L' : 'N/A' ?></td>
-                  <td class="fuel-stock-meta refill-history-date" style="text-align:right;"><?= h($refillDate) ?></td>
+                  <td colspan="3" class="fuel-stock-meta" style="text-align:center; padding:18px;">No refill history for this branch yet.</td>
                 </tr>
-              <?php endforeach; ?>
+              <?php else: ?>
+                <?php foreach ($refills as $refill): ?>
+                  <tr>
+                    <td class="fuel-name-cell"><?= htmlspecialchars($refill['fuel_name']) ?></td>
+                    <td class="fuel-stock-meta refill-history-quantity" style="text-align:center;"><?= number_format((float)$refill['quantity_l'], 2, '.', ',') ?> L</td>
+                    <td class="fuel-stock-meta refill-history-date" style="text-align:right;"><?= date('d-m-Y', strtotime($refill['update_at'])) ?></td>
+                  </tr>
+                <?php endforeach; ?>
+              <?php endif; ?>
             </tbody>
           </table>
         </div>
       </div>
 
-      <div class="page-foot">© 2026 MAP & PUMP | All Rights Reserved</div>
+      <div class="page-foot">© 2026 MAP &amp; PUMP | All Rights Reserved</div>
     </div>
   </div>
 </div>
@@ -1654,34 +1103,31 @@ function map_pump_refill_history_rows(PDO $pdo, int $branchId): array {
   <div class="modal-card-custom">
     <div class="modal-header-custom">
       <div class="limit-modal-head">
-        <div class="limit-modal-icon"><i class="fa-solid fa-sliders"></i></div>
-        <h3>Manage Oil Limit</h3>
+        <h3>Threshold Settings</h3>
       </div>
-      <button class="modal-close" id="limit-modal-close-btn">&times;</button>
+      <button class="modal-close" id="limit-modal-close-btn">×</button>
     </div>
     <p class="limit-modal-sub">
       Set the low-stock alert threshold for each fuel type. A tank flags "Low Stock" once its level falls below this percentage.
     </p>
     <form id="limit-form" method="POST" action="manage-oil.php">
-      <?php if (function_exists('csrf_token')): ?>
-        <input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>">
-      <?php endif; ?>
+      <input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>">
       <input type="hidden" name="action" value="save_limits">
-      <div class="limit-form-list">
-        <?php foreach ($tank_defs as $fc => $def): ?>
-          <?php $tank = $tanks[$fc] ?? null; $limit = (int)($tank['alert_pct'] ?? 25); ?>
+      <div class="limit-form-list" id="limit-form-list">
+        <?php foreach ($tanks as $tank): ?>
           <div class="limit-form-item">
             <div class="limit-name-wrap">
               <span class="limit-dot"></span>
-              <label for="limit-<?= h($fc) ?>"><?= h($tank['fuel_name'] ?? $def['name']) ?></label>
+              <label for="limit-<?= (int)$tank['tank_id'] ?>"><?= htmlspecialchars($tank['fuel_name']) ?></label>
             </div>
             <div class="limit-input-wrap">
-              <input id="limit-<?= h($fc) ?>" name="alert_<?= h($fc) ?>" type="number" min="5" max="80" value="<?= $limit ?>" required>
+              <input id="limit-<?= (int)$tank['tank_id'] ?>" name="alert_tank_<?= (int)$tank['tank_id'] ?>" type="number" min="5" max="80" value="<?= (int)($tank['alert_pct'] ?? 25) ?>" required="">
               <span class="pct-suffix">%</span>
             </div>
           </div>
         <?php endforeach; ?>
       </div>
+      <div class="pg-controls" id="limit-pg-controls" style="margin-bottom:8px;"></div>
       <div class="modal-actions">
         <button type="button" class="btn-secondary-custom" id="limit-modal-cancel-btn">Cancel</button>
         <button type="submit" class="btn-primary" style="box-shadow: none; padding: 10px 18px; background:linear-gradient(135deg, #f7d66a, #d89f06); color:#1d1306;">Save Limits</button>
@@ -1695,27 +1141,25 @@ function map_pump_refill_history_rows(PDO $pdo, int $branchId): array {
   <div class="modal-card-custom">
     <div class="modal-header-custom">
       <h3>Add New Fuel Type</h3>
-      <button class="modal-close" id="add-oil-modal-close-btn">&times;</button>
+      <button class="modal-close" id="add-oil-modal-close-btn">×</button>
     </div>
     <form id="add-oil-form" method="POST" action="manage-oil.php">
-      <?php if (function_exists('csrf_token')): ?>
-        <input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>">
-      <?php endif; ?>
+      <input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>">
       <input type="hidden" name="action" value="add_fuel_type">
 
       <div class="form-group">
         <label for="new-fuel-name">Fuel Display Name</label>
-        <input type="text" id="new-fuel-name" name="fuel_name" class="form-control-custom" required placeholder="e.g. Octane 98">
+        <input type="text" id="new-fuel-name" name="fuel_name" class="form-control-custom" required="" placeholder="e.g. Octane 98">
       </div>
 
       <div class="form-group">
         <label for="new-tank-capacity">Tank Capacity (Liters)</label>
-        <input type="number" id="new-tank-capacity" name="capacity_l" class="form-control-custom" min="1000" value="10000" required>
+        <input type="number" id="new-tank-capacity" name="capacity_l" class="form-control-custom" min="1000" value="10000" required="">
       </div>
 
       <div class="form-group">
         <label for="new-alert-pct">Low Stock Alert (%)</label>
-        <input type="number" id="new-alert-pct" name="alert_pct" class="form-control-custom" min="5" max="80" value="20" required>
+        <input type="number" id="new-alert-pct" name="alert_pct" class="form-control-custom" min="5" max="80" value="20" required="">
       </div>
 
       <div class="modal-actions">
@@ -1731,29 +1175,27 @@ function map_pump_refill_history_rows(PDO $pdo, int $branchId): array {
   <div class="modal-card-custom">
     <div class="modal-header-custom">
       <h3>Edit Fuel Type</h3>
-      <button class="modal-close" id="edit-fuel-close-btn">&times;</button>
+      <button class="modal-close" id="edit-fuel-close-btn">×</button>
     </div>
     <form id="edit-fuel-form" method="POST" action="manage-oil.php">
-      <?php if (function_exists('csrf_token')): ?>
-        <input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>">
-      <?php endif; ?>
+      <input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>">
       <input type="hidden" name="action" value="edit_fuel_type">
       <input type="hidden" name="tank_id" id="edit-fuel-tank-id">
       <input type="hidden" name="fuel_code" id="edit-fuel-code">
 
       <div class="form-group">
         <label for="edit-fuel-name">Fuel Name</label>
-        <input type="text" id="edit-fuel-name" name="fuel_name" class="form-control-custom" required>
+        <input type="text" id="edit-fuel-name" name="fuel_name" class="form-control-custom" required="">
       </div>
 
       <div class="form-group">
         <label for="edit-fuel-capacity">Tank Capacity (Liters)</label>
-        <input type="number" id="edit-fuel-capacity" name="capacity_l" class="form-control-custom" min="1" max="200000" required>
+        <input type="number" id="edit-fuel-capacity" name="capacity_l" class="form-control-custom" min="1" max="200000" required="">
       </div>
 
       <div class="form-group">
         <label for="edit-fuel-price">Fuel Price (MMK/L)</label>
-        <input type="number" id="edit-fuel-price" name="price_per_litre" class="form-control-custom" min="0" step="1" required>
+        <input type="number" id="edit-fuel-price" name="price_per_litre" class="form-control-custom" min="0" step="1" required="">
       </div>
 
       <div class="modal-actions">
@@ -1768,14 +1210,12 @@ function map_pump_refill_history_rows(PDO $pdo, int $branchId): array {
 <div class="modal-overlay" id="refill-modal">
   <div class="modal-card-custom refill-modal-card">
     <div class="modal-header-custom" style="margin-bottom: 10px;">
-      <h3 class="refill-modal-title">Refill Oil</h3>
-      <button class="modal-close" id="refill-modal-close-btn">&times;</button>
+      <h3 class="refill-modal-title">Refill Fuel</h3>
+      <button class="modal-close" id="refill-modal-close-btn">×</button>
     </div>
 
     <form id="refill-form" method="POST" action="manage-oil.php">
-      <?php if (function_exists('csrf_token')): ?>
-        <input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>">
-      <?php endif; ?>
+      <input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>">
       <input type="hidden" name="action" value="add_refill">
 
       <p class="refill-modal-sub">Add fuel directly to an existing tank.</p>
@@ -1783,16 +1223,15 @@ function map_pump_refill_history_rows(PDO $pdo, int $branchId): array {
       <div class="refill-field">
         <label for="refill-fuel-type">Fuel Type</label>
         <select id="refill-fuel-type" name="tank_id" class="form-control-custom">
-          <?php foreach ($refillOptions as $option): ?>
-            <?php if ((int)($option['is_enabled'] ?? 1) === 0) continue; ?>
-            <option value="<?= (int)$option['tank_id'] ?>"><?= h($option['fuel_name']) ?></option>
+          <?php foreach ($tanks as $tank): ?>
+            <option value="<?= (int)$tank['tank_id'] ?>"><?= htmlspecialchars($tank['fuel_name']) ?></option>
           <?php endforeach; ?>
         </select>
       </div>
 
       <div class="refill-field">
         <label for="refill-quantity">Quantity (Liters)</label>
-        <input type="number" id="refill-quantity" name="quantity_l" class="form-control-custom" min="1" step="0.01" value="5000" required>
+        <input type="number" id="refill-quantity" name="quantity_l" class="form-control-custom" min="1" step="0.01" value="5000" required="">
       </div>
 
       <div class="refill-actions">
@@ -1811,19 +1250,23 @@ function map_pump_refill_history_rows(PDO $pdo, int $branchId): array {
     </div>
     <h3 class="delete-modal-title">Delete Fuel Record?</h3>
     <div id="delete-modal-msg" class="delete-modal-message">
-      <p>Confirm this is the correct record before continuing.</p>
+           <p>Confirm this is the correct record before continuing.</p>
     </div>
     <div class="modal-actions">
       <button type="button" class="btn-secondary-custom" id="delete-cancel-btn">Cancel</button>
-      <button type="button" id="delete-confirm-btn" style="background:linear-gradient(135deg,#f87171,#b91c1c); color:#fff; font-weight: 700; font-size:13px; padding:10px 18px; border-radius:10px; border:none; cursor:pointer;">Delete Permanently</button>
+      <button type="button" id="delete-confirm-btn" style="background:linear-gradient(135deg,#f87171,#b91c1b); color:#fff; font-weight: 700; font-size:13px; padding:10px 18px; border-radius:10px; border:none; cursor:pointer;">Delete Permanently</button>
     </div>
   </div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script>
-  // Tab Switching Controller
+   // Tab Switching Controller
+
   function showTab(name){
+
+
+
     document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
     document.getElementById('tab-' + name).classList.add('active');
@@ -1838,6 +1281,33 @@ function map_pump_refill_history_rows(PDO $pdo, int $branchId): array {
 
   document.addEventListener('DOMContentLoaded', () => {
 
+    // ---- Toast Notification Helper ----
+    const oilToast = document.getElementById('oil-toast');
+    function showToast(msg, type) {
+      if (!oilToast) return;
+      const msgEl = oilToast.querySelector('.toast-msg');
+      if (msgEl) msgEl.textContent = msg;
+      oilToast.classList.toggle('error', type === 'error');
+      oilToast.classList.add('show');
+      oilToast.setAttribute('aria-hidden', 'false');
+      setTimeout(() => {
+        oilToast.classList.remove('show');
+        oilToast.setAttribute('aria-hidden', 'true');
+      }, 4000);
+    }
+    const toastCloseBtn = oilToast ? oilToast.querySelector('.toast-close') : null;
+    if (toastCloseBtn) {
+      toastCloseBtn.addEventListener('click', () => {
+        oilToast.classList.remove('show');
+        oilToast.setAttribute('aria-hidden', 'true');
+      });
+    }
+    const pendingToast = sessionStorage.getItem('oil_toast_msg');
+    if (pendingToast) {
+      sessionStorage.removeItem('oil_toast_msg');
+      setTimeout(() => showToast(pendingToast), 150);
+    }
+
     // 1. Digital Clock Component
     function updateClock() {
       const now = new Date();
@@ -1849,33 +1319,32 @@ function map_pump_refill_history_rows(PDO $pdo, int $branchId): array {
     setInterval(updateClock, 1000);
     updateClock();
 
-    // 2. Notification Popup Controller (shared dashboard API)
+    // 2. Notification Popup Controller
     const bellBtn = document.getElementById('notif-bell');
     const notifPopup = document.getElementById('notif-popup');
-    const notifPing = document.getElementById('notif-ping');
     const clearNotifsBtn = document.getElementById('clear-notifs-btn');
     const notifList = document.getElementById('notif-list');
+    const notifPing = document.getElementById('notif-ping');
+
+    function renderNotifEmpty() {
+      if (!notifList) return;
+      notifList.innerHTML = '<div class="notif-empty" style="text-align:center; padding:12px 0; color:var(--slate-400); font-size:12px;">No new notifications</div>';
+      if (notifPing) notifPing.style.display = 'none';
+    }
 
     function postDismiss(payload) {
       return fetch('api_dismiss_notification.php', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
-      }).then(r => r.json()).catch(() => ({ ok: false }));
-    }
-
-    function renderNotifEmpty() {
-      if (!notifList) return;
-      notifList.innerHTML = '<div class="notif-empty" style="text-align:center; padding:12px 0; color:var(--slate-400); font-size:12px;">No new notifications</div>';
-      if (notifPing) notifPing.remove();
+      }).then((r) => r.json()).catch(() => ({ ok: false }));
     }
 
     if (bellBtn && notifPopup) {
       bellBtn.addEventListener('click', (e) => {
         e.stopPropagation();
-        const ping = bellBtn.querySelector('.ping');
-        if (ping) { ping.style.transform = 'scale(0)'; setTimeout(() => ping.remove(), 200); }
         notifPopup.classList.toggle('active');
+        if (notifPing) notifPing.style.display = 'none';
       });
 
       document.addEventListener('click', (e) => {
@@ -1886,19 +1355,20 @@ function map_pump_refill_history_rows(PDO $pdo, int $branchId): array {
     }
 
     if (notifList) {
-      notifList.addEventListener('click', (e) => {
-        const item = e.target.closest('.notif-item');
-        if (!item) return;
-        const id = Number(item.dataset.notifId || 0);
-        const link = item.dataset.link || '';
-        if (id > 0) {
-          postDismiss({ notif_id: id }).then((res) => {
-            if (res.ok && notifPing && Number(res.unread || 0) <= 0) {
-              notifPing.remove();
+      notifList.querySelectorAll('.notif-item').forEach((item) => {
+        item.addEventListener('click', async () => {
+          const id = Number(item.dataset.notifId || 0);
+          item.style.opacity = '0.5';
+          const res = await postDismiss(id > 0 ? { notif_id: id } : { all: true });
+          if (res.ok) {
+            item.remove();
+            if (!notifList.querySelector('.notif-item')) {
+              renderNotifEmpty();
             }
-          });
-        }
-        if (link) window.location.href = link;
+          } else {
+            item.style.opacity = '1';
+          }
+        });
       });
     }
 
@@ -2018,13 +1488,14 @@ function map_pump_refill_history_rows(PDO $pdo, int $branchId): array {
           const res = await fetch('manage-oil.php', { method: 'POST', body: formData });
           const data = await res.json();
           if (!data.ok) {
-            alert('Add fuel type failed: ' + (data.error || 'unknown'));
+            showToast('Add fuel type failed: ' + (data.error || 'unknown'), 'error');
             return;
           }
           closeAddFuelModal();
+          sessionStorage.setItem('oil_toast_msg', 'Successfully Added.');
           window.location.reload();
         } catch (err) {
-          alert('Network error: ' + err.message);
+          showToast('Network error: ' + err.message, 'error');
         }
       });
     }
@@ -2065,13 +1536,14 @@ function map_pump_refill_history_rows(PDO $pdo, int $branchId): array {
           const res = await fetch('manage-oil.php', { method: 'POST', body: formData });
           const data = await res.json();
           if (!data.ok) {
-            alert('Edit fuel type failed: ' + (data.error || 'unknown'));
+            showToast('Edit fuel type failed: ' + (data.error || 'unknown'), 'error');
             return;
           }
           closeEditFuelModal();
+          sessionStorage.setItem('oil_toast_msg', 'Successfully Edited.');
           window.location.reload();
         } catch (err) {
-          alert('Network error: ' + err.message);
+          showToast('Network error: ' + err.message, 'error');
         }
       });
     }
@@ -2093,12 +1565,12 @@ function map_pump_refill_history_rows(PDO $pdo, int $branchId): array {
           const res = await fetch('manage-oil.php', { method: 'POST', body: formData });
           const data = await res.json();
           if (!data.ok) {
-            alert('Failed to update fuel status: ' + (data.error || 'unknown'));
+            showToast('Failed to update fuel status: ' + (data.error || 'unknown'), 'error');
             return;
           }
           window.location.reload();
         } catch (err) {
-          alert('Network error: ' + err.message);
+          showToast('Network error: ' + err.message, 'error');
         }
       });
     });
@@ -2126,12 +1598,13 @@ function map_pump_refill_history_rows(PDO $pdo, int $branchId): array {
               const res = await fetch('manage-oil.php', { method: 'POST', body: formData });
               const data = await res.json();
               if (!data.ok) {
-                alert((isFuelType ? 'Delete fuel type failed: ' : 'Delete refill record failed: ') + (data.error || 'unknown'));
+                showToast((isFuelType ? 'Delete fuel type failed: ' : 'Delete refill record failed: ') + (data.error || 'unknown'), 'error');
                 return;
               }
+              sessionStorage.setItem('oil_toast_msg', 'Successfully Deleted.');
               window.location.reload();
             } catch (err) {
-              alert('Network error: ' + err.message);
+              showToast('Network error: ' + err.message, 'error');
             }
           });
         };
@@ -2164,13 +1637,14 @@ function map_pump_refill_history_rows(PDO $pdo, int $branchId): array {
           const res = await fetch('manage-oil.php', { method: 'POST', body: formData });
           const data = await res.json();
           if (!data.ok) {
-            alert('Save limits failed: ' + (data.error || 'unknown'));
+            showToast('Save limits failed: ' + (data.error || 'unknown'), 'error');
             return;
           }
           closeLimitModal();
+          sessionStorage.setItem('oil_toast_msg', 'Successfully Edited.');
           window.location.reload();
         } catch (err) {
-          alert('Network error: ' + err.message);
+          showToast('Network error: ' + err.message, 'error');
         }
       });
     }
@@ -2184,7 +1658,7 @@ function map_pump_refill_history_rows(PDO $pdo, int $branchId): array {
 
     if (openRefillBtn && refillModal) {
       openRefillBtn.addEventListener('click', () => {
-        refillForm.reset();
+        if (refillForm) refillForm.reset();
         refillModal.classList.add('active');
       });
     }
@@ -2202,13 +1676,17 @@ function map_pump_refill_history_rows(PDO $pdo, int $branchId): array {
           const res = await fetch('manage-oil.php', { method: 'POST', body: formData });
           const data = await res.json();
           if (!data.ok) {
-            alert('Refill fuel failed: ' + (data.error || 'unknown'));
+            const errMsg = (data.error && data.error.toLowerCase().includes('capac'))
+              ? 'The refill amount cannot exceed the available tank capacity.'
+              : ('Refill fuel failed: ' + (data.error || 'unknown'));
+            showToast(errMsg, 'error');
             return;
           }
           closeRefillModal();
+          sessionStorage.setItem('oil_toast_msg', 'Successfully Refilled.');
           window.location.reload();
         } catch (err) {
-          alert('Network error: ' + err.message);
+          showToast('Network error: ' + err.message, 'error');
         }
       });
     }
@@ -2223,7 +1701,94 @@ function map_pump_refill_history_rows(PDO $pdo, int $branchId): array {
       }
       return { status: 'sufficient', label: 'Sufficient', className: 'ok', icon: 'fa-check', text: 'Stock sufficient' };
     }
+
+    // ===== PAGINATION HELPER =====
+    function makePaginator(items, perPage, controlsEl, onPageChange, storageKey, hideNav) {
+      let currentPage = 1;
+      // Keep the current page after add/edit/delete/toggle (they reload the page); render() clamps it if it no longer exists.
+      if (storageKey) {
+        try {
+          const nav = performance.getEntriesByType('navigation')[0];
+          const saved = parseInt(sessionStorage.getItem(storageKey), 10);
+          if (nav && nav.type === 'reload' && saved > 0) currentPage = saved;
+        } catch (e) {}
+      }
+      function totalPages() { return Math.max(1, Math.ceil(items.length / perPage)); }
+      function render() {
+        const tp = totalPages();
+        // clamp currentPage
+        if (currentPage > tp) currentPage = tp;
+        if (currentPage < 1) currentPage = 1;
+        if (storageKey) { try { sessionStorage.setItem(storageKey, String(currentPage)); } catch (e) {} }
+        // call callback with slice
+        const start = (currentPage - 1) * perPage;
+        onPageChange(items, start, start + perPage, currentPage);
+        // build controls
+        controlsEl.innerHTML = '';
+        if (tp <= 1) return;
+        function btn(label, disabled, active, click) {
+          const b = document.createElement('button');
+          b.className = 'pg-btn' + (active ? ' active' : '');
+          b.textContent = label;
+          b.disabled = disabled;
+          if (!disabled) b.addEventListener('click', click);
+          controlsEl.appendChild(b);
+        }
+        if (!hideNav) btn('Previous', currentPage === 1, false, () => { currentPage--; render(); });
+        for (let p = 1; p <= tp; p++) {
+          (function(pg) {
+            btn(String(pg), false, pg === currentPage, () => { currentPage = pg; render(); });
+          })(p);
+        }
+        if (!hideNav) btn('Next', currentPage === tp, false, () => { currentPage++; render(); });
+      }
+      return { render, goToPage: (p) => { currentPage = p; render(); }, getPage: () => currentPage, getTotal: totalPages };
+    }
+
+    // ===== TAB 1: Tank Grid Pagination (6 per page, 2-col grid) =====
+    (function() {
+      const grid = document.getElementById('tank-grid');
+      const controls = document.getElementById('tank-grid-pg-controls');
+      if (!grid || !controls) return;
+      const tanks = Array.from(grid.children);
+      if (tanks.length === 0) return;
+      const pg = makePaginator(tanks, 6, controls, (items, start, end, page) => {
+        items.forEach((el, idx) => {
+          el.style.display = (idx >= start && idx < end) ? '' : 'none';
+        });
+      }, 'oil_pg_fuel_types', true);
+      pg.render();
+    })();
+
+    // ===== LIMIT MODAL: Threshold Pagination (4 per page, 2x2 grid) =====
+    (function() {
+      const list = document.getElementById('limit-form-list');
+      const controls = document.getElementById('limit-pg-controls');
+      if (!list || !controls) return;
+      const items = Array.from(list.querySelectorAll('.limit-form-item'));
+      if (items.length === 0) return;
+      const pg = makePaginator(items, 4, controls, (allItems, start, end, page) => {
+        allItems.forEach((el, idx) => {
+          el.style.display = (idx >= start && idx < end) ? '' : 'none';
+        });
+      }, 'oil_pg_threshold', true);
+      pg.render();
+      // If a hidden (other-page) input fails validation, jump to its page so the browser can show the error.
+      list.addEventListener('invalid', (e) => {
+        const idx = items.indexOf(e.target.closest('.limit-form-item'));
+        if (idx >= 0) {
+          const target = Math.floor(idx / 4) + 1;
+          if (target !== pg.getPage()) pg.goToPage(target);
+        }
+      }, true);
+    })();
   });
 </script>
-</body>
-</html>
+
+<!-- Success Toast -->
+<div id="oil-toast" class="oil-toast" aria-hidden="true">
+  <div class="toast-msg"></div>
+  <button type="button" class="toast-close" aria-label="Close">×</button>
+</div>
+
+</body></html>

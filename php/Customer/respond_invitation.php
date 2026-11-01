@@ -74,7 +74,7 @@ try {
             throw new RuntimeException('A staff invitation needs a station assignment before it can be accepted.');
         }
 
-        $userDetails = $pdo->prepare('SELECT user_name, email, phone FROM users WHERE user_id = ? LIMIT 1');
+        $userDetails = $pdo->prepare('SELECT user_name, email FROM users WHERE user_id = ? LIMIT 1');
         $userDetails->execute([$userId]);
         $acceptedUser = $userDetails->fetch(PDO::FETCH_ASSOC);
         if (!$acceptedUser) {
@@ -120,16 +120,19 @@ try {
 
             if ($staffId) {
                 $staffUpdateSql = "UPDATE staff SET branch_id = ?, full_name = ?, is_active = 1";
-                $staffUpdateParams = [$branchId, $acceptedUser['user_name'], $staffId];
+                $staffUpdateParams = [$branchId, $acceptedUser['user_name']];
+
                 if (column_exists($pdo, 'staff', 'email')) {
                     $staffUpdateSql .= ', email = ?';
-                    $staffUpdateParams = [$branchId, $acceptedUser['user_name'], $acceptedUser['email'], $staffId];
+                    $staffUpdateParams[] = $acceptedUser['email'] ?? '';
                 }
                 if (column_exists($pdo, 'staff', 'contact')) {
                     $staffUpdateSql .= ', contact = ?';
-                    $staffUpdateParams = [$branchId, $acceptedUser['user_name'], $acceptedUser['email'], ($acceptedUser['phone'] ?? ''), $staffId];
+                    $staffUpdateParams[] = '';
                 }
                 $staffUpdateSql .= ' WHERE staff_id = ?';
+                $staffUpdateParams[] = $staffId;
+
                 $staffUpdate = $pdo->prepare($staffUpdateSql);
                 $staffUpdate->execute($staffUpdateParams);
             } else {
@@ -170,31 +173,29 @@ try {
                             $exists->execute([$staffCode]);
                         } while ($exists->fetchColumn());
 
-                        $columns = ['user_id', 'branch_id', 'staff_code', 'full_name', 'is_active', 'duty_status', 'hired_at'];
-                        $values = ['?', '?', '?', '?', '1', "'Off Duty'", 'CURDATE()'];
+                        $columns = ['user_id', 'branch_id', 'staff_code', 'full_name', 'is_active'];
+                        $values = ['?', '?', '?', '?', '1'];
                         $params = [$userId, $branchId, $staffCode, $acceptedUser['user_name']];
+
                         if (column_exists($pdo, 'staff', 'email')) {
                             $columns[] = 'email';
                             $values[] = '?';
-                            $params[] = $acceptedUser['email'];
+                            $params[] = $acceptedUser['email'] ?? '';
                         }
                         if (column_exists($pdo, 'staff', 'contact')) {
                             $columns[] = 'contact';
                             $values[] = '?';
-                            $params[] = $acceptedUser['phone'] ?? '';
+                            $params[] = '';
                         }
-                        if (column_exists($pdo, 'staff', 'role')) {
-                            $columns[] = 'role';
-                            $values[] = "'Pump Attendant'";
-                        }
-                        if (column_exists($pdo, 'staff', 'shift')) {
-                            $columns[] = 'shift';
-                            $values[] = "'Morning'";
+                        if (column_exists($pdo, 'staff', 'hired_at')) {
+                            $columns[] = 'hired_at';
+                            $values[] = 'CURDATE()';
                         }
                         if (column_exists($pdo, 'staff', 'created_at')) {
                             $columns[] = 'created_at';
                             $values[] = 'NOW()';
                         }
+
                         $sql = 'INSERT INTO staff (' . implode(', ', $columns) . ') VALUES (' . implode(', ', $values) . ')';
                         $stmtInsert = $pdo->prepare($sql);
                         $stmtInsert->execute($params);

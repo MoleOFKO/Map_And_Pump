@@ -447,6 +447,15 @@ $has_unread   = $unread_count > 0;
   .tank .tank-status { margin-top:auto; padding:6px 10px; border-radius:999px; font-weight:700; font-size:11px; }
   .tank-status.ok { background: rgba(52,211,153,0.12); color: var(--mint-400); border:1px solid rgba(52,211,153,0.06); }
   .tank-status.low { background: rgba(248,113,113,0.07); color: var(--red-400); border:1px solid rgba(248,113,113,0.04); }
+  /* Tank Levels pagination: 4 tanks per page, always on one row */
+  .tank-visualizer { flex-wrap:nowrap; }
+  .tank-visualizer .tank { flex:0 1 110px; min-width:0; }
+  .pg-controls { display:flex; align-items:center; justify-content:center; gap:6px; margin-top:18px; flex-wrap:wrap; }
+  .pg-btn { background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.10); color:var(--slate-300); border-radius:8px; padding:6px 13px; font-size:12.5px; font-weight:600; cursor:pointer; transition:background 0.18s, color 0.18s, border-color 0.18s; min-width:34px; text-align:center; }
+  .pg-btn:hover:not(:disabled) { background:rgba(255,255,255,0.10); color:var(--slate-50); }
+  .pg-btn.active { background:linear-gradient(135deg, #3b8dff, #1d4ed8); border-color:#2f6feb; color:#fff; box-shadow:0 8px 18px -10px rgba(59,141,255,0.75); }
+  .pg-btn.active:hover:not(:disabled) { background:linear-gradient(135deg, #3b8dff, #1d4ed8); border-color:#2f6feb; color:#fff; box-shadow:0 8px 18px -10px rgba(59,141,255,0.75); }
+  .pg-btn:disabled { opacity:0.35; cursor:default; }
 
   /* Color Editor Modal Styles */
   .tank-panel-header{display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:14px;}
@@ -552,7 +561,7 @@ $has_unread   = $unread_count > 0;
         </div>
 
         <div class="avatar-chip">
-          <div class="avatar-circle"><a href="edit-profile.php"><?= h($initials) ?></a></div>
+          <div class="avatar-circle"><a href="edit-profile.php"><?= h(mb_substr($initials,0,1)) ?></a></div>
           <div><b><a href="edit-profile.php"><?= h(explode(' ', $user['full_name'])[0]) ?></a></b></div>
         </div>
       </div>
@@ -584,7 +593,7 @@ $has_unread   = $unread_count > 0;
               <h3 style="margin-bottom:0;">Tank Levels</h3>
               <button type="button" class="edit-color-btn" id="editColorBtn"><i class="fa-solid fa-palette"></i> Edit Color</button>
             </div>
-            <div class="tank-visualizer">
+            <div class="tank-visualizer" id="tank-visualizer">
               <?php if (empty($tanks)): ?>
                 <div style="color:var(--slate-400);">No tank data configured.</div>
               <?php else: foreach ($tanks as $t): 
@@ -606,6 +615,7 @@ $has_unread   = $unread_count > 0;
                 </div>
               <?php endforeach; endif; ?>
             </div>
+            <div class="pg-controls" id="tank-visualizer-pg-controls"></div>
           </div>
         </div>
 
@@ -758,6 +768,42 @@ $has_unread   = $unread_count > 0;
 
     applyTankColors();
     buildFuelColorRows();
+
+    // Tank Levels pagination (4 tanks per page, one row)
+    (function() {
+      const wrap = document.getElementById('tank-visualizer');
+      const controls = document.getElementById('tank-visualizer-pg-controls');
+      if (!wrap || !controls) return;
+      const tankEls = Array.from(wrap.querySelectorAll(':scope > .tank'));
+      const perPage = 4;
+      let currentPage = 1;
+      function render() {
+        const tp = Math.max(1, Math.ceil(tankEls.length / perPage));
+        if (currentPage > tp) currentPage = tp;
+        if (currentPage < 1) currentPage = 1;
+        const start = (currentPage - 1) * perPage;
+        tankEls.forEach((el, idx) => {
+          el.style.display = (idx >= start && idx < start + perPage) ? '' : 'none';
+        });
+        controls.innerHTML = '';
+        if (tp <= 1) return;
+        function btn(label, disabled, active, click) {
+          const b = document.createElement('button');
+          b.type = 'button';
+          b.className = 'pg-btn' + (active ? ' active' : '');
+          b.textContent = label;
+          b.disabled = disabled;
+          if (!disabled) b.addEventListener('click', click);
+          controls.appendChild(b);
+        }
+        for (let p = 1; p <= tp; p++) {
+          (function(pg) {
+            btn(String(pg), false, pg === currentPage, () => { currentPage = pg; render(); });
+          })(p);
+        }
+      }
+      render();
+    })();
 
     document.getElementById('editColorBtn')?.addEventListener('click', () => {
       buildFuelColorRows();
