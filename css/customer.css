@@ -1119,6 +1119,18 @@ body.customer-light-mode .btn-info {
     color: #fff !important;
 }
 
+body.customer-light-mode .main-frame .car-license-fact strong {
+    color: var(--customer-text);
+}
+
+body.customer-light-mode .main-frame .car-license-image-link {
+    color: var(--customer-neon-blue);
+}
+
+body.customer-light-mode .main-frame .car-license-image-link:hover {
+    color: var(--customer-neon-cyan);
+}
+
 /* Keep customer page content aligned with the profile surface and controls. */
 .main-frame .dashboard-panel-card h3,
 .main-frame .dashboard-panel-card h4,
