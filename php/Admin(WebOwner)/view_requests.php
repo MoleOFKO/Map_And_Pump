@@ -453,7 +453,16 @@ $flashType = $flash['type'] ?? '';
                     <?php
                     $paymentId = (int) $paymentRow['payment_transfer_id'];
                     $paymentState = (string) $paymentRow['status'];
-                    $paymentStatus = $paymentState === 'payer_reported_paid' ? 'pending' : ($paymentState === 'received' ? 'approved' : 'rejected');
+                    $paymentStatus = in_array($paymentState, ['pending_payment', 'payer_reported_paid'], true)
+                        ? 'pending'
+                        : ($paymentState === 'received' ? 'approved' : 'rejected');
+                    $paymentStatusLabel = match ($paymentState) {
+                        'pending_payment' => 'Awaiting payer payment',
+                        'payer_reported_paid' => 'Payer reported paid',
+                        'received' => 'Payment received',
+                        'rejected' => 'Payment not received',
+                        default => ucfirst($paymentStatus),
+                    };
                     $paymentTypeLabel = match ((string) $paymentRow['payment_type']) { 'hq_registration' => 'HQ Registration Payment', 'hq_period_extension' => 'HQ Service Extension', 'hq_station_package' => 'HQ Station Package', 'hq_extra_station' => 'Extra Stations (legacy)', 'hq_station_operating_quote' => 'Station Operating Fee (legacy)', default => 'Payment' };
                     $isPayer = ((int) ($paymentRow['payer_user_id'] ?? 0) === (int) ($_SESSION['user_id'] ?? 0)) || (strtolower((string) ($_SESSION['user_email'] ?? '')) !== '' && strtolower((string) ($_SESSION['user_email'] ?? '')) === strtolower((string) ($paymentRow['payer_email'] ?? '')));
                     ?>
@@ -462,7 +471,7 @@ $flashType = $flash['type'] ?? '';
                         <td><div class="fw-semibold text-white"><?= hq_escape((string) ($paymentRow['payer_hq_name'] ?: $paymentRow['payer_name'] ?: 'HQ payer')) ?></div><div class="text-white-50 small"><?= hq_escape((string) ($paymentRow['description'] ?? '')) ?></div><div class="text-white-50 small"><?= number_format((float) $paymentRow['amount_mmk'], 2) ?> MMK · <?= hq_escape((string) ($paymentRow['payer_email'] ?? '')) ?></div></td>
                         <td><span class="badge rounded-pill bg-info bg-opacity-10 text-info border border-info border-opacity-25 px-2 py-1">Payment Verification</span><div class="text-white-50 small mt-1"><?= hq_escape($paymentTypeLabel) ?></div></td>
                         <td class="text-white-50"><?= hq_escape(request_date((string) $paymentRow['created_at'])) ?></td>
-                        <td><span class="request-status <?= request_status_class($paymentStatus) ?>"><?= hq_escape($paymentStatus === 'pending' ? 'Payer reported paid' : $requestStatusLabel($paymentStatus)) ?></span></td>
+                        <td><span class="request-status <?= request_status_class($paymentStatus) ?>"><?= hq_escape($paymentStatusLabel) ?></span></td>
                         <td class="text-end"><div class="d-flex gap-2 justify-content-end align-items-center">
                             <button type="button" class="btn-action js-view-payment" title="View payment verification details" aria-label="View payment verification #PAY-<?= $paymentId ?> details"
                                 data-payment-id="<?= $paymentId ?>" data-payment-type="<?= hq_escape($paymentTypeLabel) ?>"
@@ -796,7 +805,11 @@ $flashType = $flash['type'] ?? '';
                 } else if (data.receiptName) {
                     evidence = '<div class="text-white-50">Preview is unavailable for this file type. <a href="' + receiptUrl + '" target="_blank" rel="noopener">Open ' + escape(data.receiptName) + '</a></div>';
                 }
-                const statusLabel = data.paymentStatus === 'payer_reported_paid' ? 'Payer reported paid · Awaiting independent verification' : (data.paymentStatus === 'received' ? 'Payment received' : 'Payment not received');
+                const statusLabel = data.paymentStatus === 'pending_payment'
+                    ? 'Awaiting payer payment · not yet reported'
+                    : (data.paymentStatus === 'payer_reported_paid'
+                        ? 'Payer reported paid · Awaiting independent verification'
+                        : (data.paymentStatus === 'received' ? 'Payment received' : 'Payment not received'));
                 body.innerHTML = '<div class="row g-4"><div class="col-12 col-lg-5"><h6 class="fw-semibold text-white mb-3" style="letter-spacing:.5px;font-size:.78rem;text-transform:uppercase">Payment Information</h6><div class="mb-3"><div class="request-detail-label">Payer / HQ</div><div class="request-detail-value">' + escape(data.paymentName) + '</div></div><div class="mb-3"><div class="request-detail-label">Email</div><div class="request-detail-value">' + escape(data.paymentEmail || 'Not provided') + '</div></div><div class="mb-3"><div class="request-detail-label">Payment Type</div><div class="request-detail-value">' + escape(data.paymentType) + '</div></div><div class="mb-3"><div class="request-detail-label">Amount</div><div class="request-detail-value">' + escape(data.paymentAmount) + ' MMK</div></div><div class="mb-3"><div class="request-detail-label">Payment Method</div><div class="request-detail-value">' + escape(data.paymentMethod || 'Not provided') + '</div></div><div class="mb-3"><div class="request-detail-label">Submitted</div><div class="request-detail-value">' + escape(data.paymentDate) + '</div></div><div class="mb-3"><div class="request-detail-label">Status</div><div class="request-detail-value">' + escape(statusLabel) + '</div></div><div class="mb-3"><div class="request-detail-label">Description</div><div class="request-detail-value">' + escape(data.paymentDescription || 'No additional details provided.') + '</div></div></div><div class="col-12 col-lg-7"><h6 class="fw-semibold text-white mb-3" style="letter-spacing:.5px;font-size:.78rem;text-transform:uppercase">Payment Evidence</h6><div class="request-detail-value p-3 rounded-3" style="background:rgba(0,244,255,.04);border:1px solid var(--glass-border);min-height:220px">' + evidence + '</div><div class="small text-white-50 mt-2">A payer declaration or screenshot is evidence for review, not proof of received money.</div></div></div>';
                 const actions = document.getElementById('paymentActions' + data.paymentId);
                 footer.innerHTML = (actions ? actions.innerHTML : (data.paymentStatus === 'payer_reported_paid' && data.isPayer === 'yes' ? '<div class="small text-warning me-auto">You submitted this payment. Another Admin must review it.</div>' : '')) + '<button type="button" class="btn btn-outline-secondary rounded-3 text-white-50 border-secondary border-opacity-20" data-bs-dismiss="modal">Close</button>';

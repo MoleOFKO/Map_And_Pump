@@ -109,8 +109,13 @@ function request_payment_verification_rows(string $reviewerRole, string $search,
     if ($reviewerRole !== 'moderator' && $includeRegistration) {
         $types[] = 'hq_registration';
     }
-    $statusMap = ['pending' => 'payer_reported_paid', 'approved' => 'received', 'rejected' => 'rejected'];
-    $paymentStatuses = $status === '' ? array_values($statusMap) : (isset($statusMap[$status]) ? [$statusMap[$status]] : []);
+    $statusMap = [
+        'pending' => ['pending_payment', 'payer_reported_paid'],
+        'approved' => ['received'],
+        'rejected' => ['rejected'],
+        'reject' => ['rejected'],
+    ];
+    $paymentStatuses = $status === '' ? ['pending_payment', 'payer_reported_paid', 'received', 'rejected'] : ($statusMap[$status] ?? []);
     if (!$paymentStatuses) {
         return [];
     }
@@ -125,15 +130,16 @@ function request_payment_verification_rows(string $reviewerRole, string $search,
             LEFT JOIN headquarter h ON h.headquarter_id = pt.payer_headquarter_id
             LEFT JOIN users payer_user ON payer_user.user_id = h.headquarters_owner_id
             LEFT JOIN payment_transfer_receipts receipt ON receipt.payment_transfer_id = pt.payment_transfer_id
-            WHERE pt.recipient_role = 'admin' AND pt.payment_type IN ({$typeMarks})
+            WHERE pt.payment_type IN ({$typeMarks})
               AND pt.status IN ({$statusMarks})";
     $params = array_merge($types, $paymentStatuses);
     if ($search !== '') {
-        $sql .= " AND (CAST(pt.payment_transfer_id AS CHAR) LIKE ? OR LOWER(COALESCE(h.company_name, '')) LIKE ?
+        $sql .= " AND (CAST(pt.payment_transfer_id AS CHAR) LIKE ? OR LOWER(pt.reference_code) LIKE ?
+                  OR LOWER(COALESCE(h.company_name, '')) LIKE ?
                   OR LOWER(COALESCE(payer_user.user_name, '')) LIKE ? OR LOWER(COALESCE(pt.payer_email, '')) LIKE ?
                   OR LOWER(COALESCE(pt.description, '')) LIKE ?)";
         $like = '%' . strtolower($search) . '%';
-        array_push($params, '%' . $search . '%', $like, $like, $like, $like);
+        array_push($params, '%' . $search . '%', $like, $like, $like, $like, $like);
     }
     $sql .= ' ORDER BY pt.created_at DESC, pt.payment_transfer_id DESC';
     try {

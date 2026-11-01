@@ -11,7 +11,19 @@ require_once __DIR__ . '/../payment_transfers.php';
 map_pump_ensure_station_scope_manager_nullable($pdo);
 $message = '';
 $error = '';
+if (isset($_SESSION['payment_transfer_flash']) && is_array($_SESSION['payment_transfer_flash'])) {
+    $paymentFlash = $_SESSION['payment_transfer_flash'];
+    unset($_SESSION['payment_transfer_flash']);
+    if (($paymentFlash['type'] ?? '') !== 'success') {
+        $error = (string) ($paymentFlash['message'] ?? '');
+    } elseif (!in_array($_GET['payment'] ?? '', ['pending', 'station_limit_pending'], true)) {
+        $message = (string) ($paymentFlash['message'] ?? '');
+    }
+}
 $hqId = map_pump_current_hq_id($pdo);
+$hqDetailsStmt = $pdo->prepare('SELECT company_name, headquarter_email FROM headquarter WHERE headquarter_id = ? LIMIT 1');
+$hqDetailsStmt->execute([$hqId]);
+$hqDetails = $hqDetailsStmt->fetch(PDO::FETCH_ASSOC) ?: [];
 $billingSchemaReady = loyalty_countermeasures_schema_ready($pdo);
 $paymentTransferSchemaReady = payment_transfer_schema_ready($pdo);
 $billingMonth = loyalty_current_year_month();
@@ -22,6 +34,16 @@ $monthlySlots = 0;
 $stationCount = 0;
 $stationLimitReached = false;
 $showStationLimitModal = false;
+$stationLimitPaymentAccounts = billing_payment_receiving_accounts();
+$stationLimitTermOptions = [];
+foreach (BILLING_HQ_STATION_LIMIT_TERMS as $termMonths) {
+    $stationLimitTermOptions[$termMonths] = $termMonths < 12
+        ? $termMonths . ' month' . ($termMonths === 1 ? '' : 's')
+        : (int) ($termMonths / 12) . ' year' . ($termMonths === 12 ? '' : 's');
+}
+if (empty($_SESSION['payment_transfer_csrf'])) {
+    $_SESSION['payment_transfer_csrf'] = bin2hex(random_bytes(32));
+}
 
 function map_pump_normalize_station_location(string $location): ?string
 {
@@ -100,28 +122,43 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
 
                 $manager_id = null;
-                if (!empty($manager_email)) {
-                    $managerStmt = $pdo->prepare(
-                        "SELECT u.user_id
-                         FROM users u
-                         LEFT JOIN business_account_scope bas ON bas.user_id = u.user_id
-                         WHERE u.email = ?
-                           AND COALESCE(u.business_role_id, u.role_id) = 4
-                           AND (
-                               COALESCE(bas.headquarter_id, u.headquarter_id) = ?
-                               OR EXISTS (
-                                   SELECT 1 FROM station_business_scope sbs
-                                   WHERE sbs.branch_manager_user_id = u.user_id
-                                     AND sbs.headquarter_id = ?
-                               )
+                if ($manager_email === '') {
+                    throw new RuntimeException('A branch manager is required to create a station.');
+                }
+
+                $managerStmt = $pdo->prepare(
+                    "SELECT u.user_id
+                     FROM users u
+                     LEFT JOIN business_account_scope bas ON bas.user_id = u.user_id
+                     WHERE u.email = ?
+                       AND COALESCE(u.business_role_id, u.role_id) = 4
+                       AND (
+                           COALESCE(bas.headquarter_id, u.headquarter_id) = ?
+                           OR EXISTS (
+                               SELECT 1 FROM station_business_scope sbs
+                               WHERE sbs.branch_manager_user_id = u.user_id
+                                 AND sbs.headquarter_id = ?
                            )
-                         LIMIT 1"
-                    );
-                    $managerStmt->execute([$manager_email, $hqId, $hqId]);
-                    $manager_id = $managerStmt->fetchColumn();
-                    if (!$manager_id) {
-                        throw new RuntimeException('Please select a valid branch manager or leave the assignment empty.');
-                    }
+                       )
+                     LIMIT 1"
+                );
+                $managerStmt->execute([$manager_email, $hqId, $hqId]);
+                $manager_id = $managerStmt->fetchColumn();
+                if (!$manager_id) {
+                    throw new RuntimeException('Please select a valid branch manager.');
+                }
+
+                $assignedManagerStmt = $pdo->prepare(
+                    "SELECT 1
+                     FROM branches b
+                     LEFT JOIN station_business_scope sbs ON sbs.station_id = b.branch_id
+                     WHERE b.status <> 'closed'
+                       AND (b.manager_user_id = ? OR sbs.branch_manager_user_id = ?)
+                     LIMIT 1"
+                );
+                $assignedManagerStmt->execute([$manager_id, $manager_id]);
+                if ($assignedManagerStmt->fetchColumn()) {
+                    throw new RuntimeException('This branch manager is already assigned to another station.');
                 }
 
                 $temporaryBranchCode = 'TMP-' . bin2hex(random_bytes(8));
@@ -144,7 +181,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $branchCodeUpdate = $pdo->prepare('UPDATE branches SET branch_code = ? WHERE branch_id = ?');
                 $branchCodeUpdate->execute([$branchCode, $branchId]);
 
-                $pdo->prepare("DELETE FROM station_business_scope WHERE branch_manager_user_id = ?")->execute([$manager_id]);
                 $scopeStmt = $pdo->prepare(
                     "INSERT INTO station_business_scope (station_id, headquarter_id, branch_manager_user_id)
                      VALUES (?, ?, ?)"
@@ -175,8 +211,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 );
                 $oilTypeStmt = $pdo->prepare('SELECT oil_type_id FROM oil_types WHERE oil_name = ? LIMIT 1');
                 $tankSeeds = [
-                    ['p92', 'Petrol 92', 15000],
-                    ['p95', 'Petrol 95', 10000],
+                    ['p92', 'Octane 92', 15000],
+                    ['p95', 'Octane 95', 10000],
                     ['dsl', 'Diesel', 12000],
                     ['pdsl', 'Premium Diesel', 12000],
                 ];
@@ -358,6 +394,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 // Fetch Stations from database with Manager Info
 $stations = [];
 $branchManagers = [];
+$availableBranchManagers = [];
 try {
     $monthlyFeePaidSql = $billingSchemaReady
         ? "EXISTS (
@@ -399,6 +436,9 @@ try {
     }
     $monthlySlots = hq_billing_current_month_slots($pdo, $hqId);
     $stationLimit = $baseStationLimit === null ? null : $baseStationLimit + $monthlySlots;
+    $paidExtraSlots = $stationLimit === null
+        ? $monthlySlots
+        : max(0, $stationLimit - BILLING_HQ_INCLUDED_STATION_SLOTS);
     $stationLimitReached = $stationLimit !== null && $stationCount >= $stationLimit;
 
     $managerStmt = $pdo->prepare(
@@ -419,8 +459,69 @@ try {
     );
     $managerStmt->execute([$hqId, $hqId]);
     $branchManagers = $managerStmt->fetchAll();
+
+    $availableManagerStmt = $pdo->prepare(
+        "SELECT u.user_id, u.email
+         FROM users u
+         LEFT JOIN business_account_scope bas ON bas.user_id = u.user_id
+         WHERE COALESCE(u.business_role_id, u.role_id) = 4
+           AND (
+               COALESCE(bas.headquarter_id, u.headquarter_id) = ?
+               OR EXISTS (
+                   SELECT 1 FROM station_business_scope sbs
+                   WHERE sbs.branch_manager_user_id = u.user_id
+                     AND sbs.headquarter_id = ?
+               )
+           )
+           AND LOWER(COALESCE(u.status, 'active')) NOT IN ('suspended', 'removed')
+           AND NOT EXISTS (
+               SELECT 1
+               FROM branches b
+               LEFT JOIN station_business_scope sbs ON sbs.station_id = b.branch_id
+               WHERE b.status <> 'closed'
+                 AND (b.manager_user_id = u.user_id OR sbs.branch_manager_user_id = u.user_id)
+           )
+         ORDER BY u.email"
+    );
+    $availableManagerStmt->execute([$hqId, $hqId]);
+    $availableBranchManagers = $availableManagerStmt->fetchAll();
 } catch (PDOException $e) {
     $error = "Could not retrieve stations: " . $e->getMessage();
+}
+$latestPaymentRejection = null;
+$latestPaymentSuccess = false;
+$latestPaymentPending = false;
+if ($paymentTransferSchemaReady) {
+    $latestPaymentStmt = $pdo->prepare(
+        "SELECT payment_transfer_id, reference_code, status, decision_note
+         FROM payment_transfers
+         WHERE payer_headquarter_id = ?
+          AND (
+              payment_type = 'hq_extra_station'
+              OR (
+                  payment_type = 'hq_station_package'
+                  AND description LIKE '%additional capacity slot(s)%'
+              )
+          )
+        ORDER BY payment_transfer_id DESC
+        LIMIT 1"
+    );
+    $latestPaymentStmt->execute([$hqId]);
+    $latestPayment = $latestPaymentStmt->fetch(PDO::FETCH_ASSOC);
+    $latestPaymentId = (int) ($latestPayment['payment_transfer_id'] ?? 0);
+    if (($latestPayment['status'] ?? '') === 'payer_reported_paid') {
+        $latestPaymentPending = true;
+    }
+    if ($latestPaymentId > 0
+        && (int) ($_SESSION['hq_station_limit_final_payment_notice_seen'] ?? 0) !== $latestPaymentId) {
+        if (($latestPayment['status'] ?? '') === 'rejected') {
+            $latestPaymentRejection = $latestPayment;
+            $_SESSION['hq_station_limit_final_payment_notice_seen'] = $latestPaymentId;
+        } elseif (($latestPayment['status'] ?? '') === 'received') {
+            $latestPaymentSuccess = true;
+            $_SESSION['hq_station_limit_final_payment_notice_seen'] = $latestPaymentId;
+        }
+    }
 }
 ?>
 <!DOCTYPE html>
@@ -579,6 +680,28 @@ try {
         }
         .station-billing-form { margin: 0; }
         #stationMap, #configMap { height: 220px; border-radius: 8px; border: 1px solid #373b3e; }
+        .station-limit-receipt-dialog { width: min(720px, calc(100% - 32px)); max-width: none; max-height: calc(100% - 32px); padding: 0; border: 1px solid var(--border); border-radius: 14px; color: var(--slate-50); background: var(--card-bg); box-shadow: 0 24px 80px rgba(0,0,0,.45); }
+        .station-limit-receipt-dialog::backdrop { background: rgba(5,10,20,.72); backdrop-filter: blur(3px); }
+        .station-limit-receipt-header, .station-limit-receipt-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 18px 22px; }
+        .station-limit-receipt-header { border-bottom: 1px solid var(--border); }
+        .station-limit-receipt-header h2 { margin: 0; font-size: 1.15rem; }
+        .station-limit-receipt-close { padding: 0 4px; border: 0; color: var(--slate-300); background: transparent; font-size: 1.6rem; line-height: 1; }
+        .station-limit-receipt-body { display: grid; gap: 14px; overflow: auto; padding: 20px 22px; }
+        .station-limit-receipt-card { padding: 22px; border: 1px solid var(--border); border-radius: 12px; background: rgba(255,255,255,.03); }
+        .station-limit-receipt-card h3 { margin: 0 0 16px; font-size: 1rem; }
+        .station-limit-receipt-company { margin: 0 0 18px; color: var(--slate-300); font-size: .85rem; line-height: 1.6; }
+        .station-limit-receipt-company strong { color: var(--slate-50); font-size: .95rem; }
+        .station-limit-receipt-method, .station-limit-receipt-note, .station-limit-receipt-disclaimer { color: var(--slate-300); font-size: .82rem; }
+        .station-limit-receipt-method { margin: 0 0 6px; }
+        .station-limit-receipt-account { margin: 8px 0; font-size: 1.05rem; overflow-wrap: anywhere; }
+        .station-limit-receipt-note { margin: 0 0 14px; }
+        .station-limit-receipt-total { display: flex; justify-content: space-between; gap: 16px; padding: 10px 0; border-top: 1px solid var(--border); font-variant-numeric: tabular-nums; }
+        .station-limit-receipt-total span { color: var(--slate-300); }
+        .station-limit-receipt-total strong { text-align: right; overflow-wrap: anywhere; }
+        .station-limit-receipt-disclaimer { margin: 0; }
+        .station-limit-receipt-footer { justify-content: flex-end; flex-wrap: nowrap; border-top: 1px solid var(--border); }
+        .station-limit-receipt-footer .btn { flex: 1 1 0; min-width: 0; padding: .55rem .3rem; font-size: clamp(.62rem, 1.5vw, .82rem); white-space: nowrap; }
+        @media(max-width:480px) { .station-limit-receipt-header, .station-limit-receipt-body, .station-limit-receipt-footer { padding-left: 16px; padding-right: 16px; } .station-limit-receipt-footer { gap: 6px; } }
     </style>
 </head>
 <body>
@@ -600,19 +723,49 @@ try {
             </div>
         <?php endif; ?>
 
+        <?php if ($latestPaymentRejection !== null): ?>
+            <div id="final-payment-status-alert" class="alert alert-danger" role="alert">
+                Your HQ payment request was rejected.
+                Reason: <?= htmlspecialchars((string) ($latestPaymentRejection['decision_note'] ?: 'No reason was provided by the reviewer.'), ENT_QUOTES, 'UTF-8') ?>
+                <a href="../payment_center.php" target="_top" class="alert-link">View payment status</a>.
+            </div>
+        <?php elseif ($latestPaymentSuccess): ?>
+            <div id="final-payment-status-alert" class="alert alert-success" role="status">
+                Your HQ payment was approved and the service package has been applied.
+                <a href="../payment_center.php" target="_top" class="alert-link">View payment status</a>.
+            </div>
+        <?php elseif ($latestPaymentPending): ?>
+            <div class="alert alert-warning" role="status">
+                Your payment has been submitted and is waiting for Admin or Moderator approval.
+                <a href="../payment_center.php" target="_top" class="alert-link">View payment status</a>.
+            </div>
+        <?php endif; ?>
+        <?php if ($latestPaymentRejection !== null || $latestPaymentSuccess): ?>
+            <script>
+                window.setTimeout(() => {
+                    document.getElementById('final-payment-status-alert')?.remove();
+                }, 10000);
+            </script>
+        <?php endif; ?>
+
         <div class="card p-4 bg-dark text-light border-secondary">
             <div class="d-flex justify-content-between align-items-center mb-3">
                 <div>
                     <h3>Manage Deployed Stations</h3>
                     <p class="subtitle mb-0">Monitor stations and manage the combined monthly MMK service package.</p>
-                    <p class="text-secondary small mb-0"><?= number_format($packageRate) ?> MMK per station/month for the service extension, station operation, and capacity package. <a href="/php/payment_center.php" class="link-info">View payment status</a></p>
+                    <p class="text-secondary small mb-0"><?= number_format($packageRate) ?> MMK per station/month for the service extension, station operation, and capacity package. <a href="../payment_center.php" target="_top" class="link-info">View payment status</a></p>
                     <?php if (isset($_GET['payment']) && $_GET['payment'] === 'pending'): ?>
-                    <div class="alert alert-info mt-3 mb-0">Your payment request was created. Its fixed amount and recipient status are available in <a href="/php/payment_center.php">Payment status</a>.</div>
+                    <div class="alert alert-info mt-3 mb-0">Your payment details and screenshot were submitted for Admin or Moderator review. <a href="../payment_center.php" target="_top" class="alert-link">View payment status</a>.</div>
                     <?php endif; ?>
                     <?php if ($stationLimit !== null): ?>
-                    <p class="text-secondary small mb-0">Capacity this month: <?= (int) $stationCount ?> / <?= (int) $stationLimit ?> stations (<?= (int) $monthlySlots ?> paid extra slots).</p>
+                    <p class="text-secondary small mb-0">
+                        Station capacity: <?= BILLING_HQ_INCLUDED_STATION_SLOTS ?> included + <?= (int) $paidExtraSlots ?> paid extra = <?= (int) $stationLimit ?> stations
+                        (<?= (int) $stationCount ?> active this month).
+                    </p>
                     <?php else: ?>
-                    <p class="text-secondary small mb-0">Station registration capacity is unlimited for this HQ.</p>
+                    <p class="text-secondary small mb-0">
+                        <?= BILLING_HQ_INCLUDED_STATION_SLOTS ?> stations included + <?= (int) $paidExtraSlots ?> paid extra slots this month; registration capacity is unlimited for this HQ.
+                    </p>
                     <?php endif; ?>
                 </div>
                 <div class="d-flex align-items-center gap-2 station-toolbar">
@@ -628,8 +781,11 @@ try {
                     <button type="button" class="btn btn-outline-success" onclick="window.top.routeTo('extend_period.php')">
                         <i class="fa-solid fa-money-bill-transfer me-1" aria-hidden="true"></i>Extend Service
                     </button>
+                    <button type="button" class="btn btn-outline-info" data-bs-toggle="modal" data-bs-target="#extendStationLimitModal">
+                        <i class="fa-solid fa-up-right-and-down-left-from-center me-1" aria-hidden="true"></i>Extend Station Limit
+                    </button>
                     <?php endif; ?>
-                    <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#inviteManagerModal">+Add Manager</button>
+                    <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#inviteManagerModal">+Add Manager</button>
                     <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="<?= $stationLimitReached ? '#stationLimitModal' : '#registerModal' ?>">+Add Station</button>
                 </div>
             </div>
@@ -736,14 +892,14 @@ try {
                             </div>
                             <div class="col-12 mb-3">
                                 <div class="d-flex justify-content-between align-items-center mb-1">
-                                    <label class="form-label text-light mb-0">Branch Manager Email (Optional)</label>
+                                    <label class="form-label text-light mb-0">Branch Manager Email <span class="text-danger">*</span></label>
                                     <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#inviteManagerModal" data-reopen-source="registerModal">
                                         <i class="bi bi-person-plus"></i> Add Manager
                                     </button>
                                 </div>
-                                <select name="manager_email" class="form-select bg-dark text-light border-secondary">
-                                    <option value="">No manager assigned</option>
-                                    <?php foreach ($branchManagers as $manager): ?>
+                                <select name="manager_email" class="form-select bg-dark text-light border-secondary" required>
+                                    <option value="" selected disabled>Select a branch manager</option>
+                                    <?php foreach ($availableBranchManagers as $manager): ?>
                                         <option value="<?= htmlspecialchars($manager['email'], ENT_QUOTES, 'UTF-8') ?>"><?= htmlspecialchars($manager['email']) ?></option>
                                     <?php endforeach; ?>
                                 </select>
@@ -813,8 +969,134 @@ try {
                     <p class="text-secondary small mt-3 mb-0">A recipient-recorded MMK receipt adds monthly capacity and covers monthly operation for the same number of extra stations.</p>
                 </div>
                 <div class="modal-footer border-secondary">
+                    <?php if ($baseStationLimit !== null): ?>
+                    <button type="button" class="btn btn-info" id="openStationLimitExtension">Extend Station Limit</button>
+                    <?php endif; ?>
                     <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Close</button>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="extendStationLimitModal" tabindex="-1" aria-labelledby="extendStationLimitTitle" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content modal-content-custom text-light">
+                <form method="POST" action="../Payment/action.php" enctype="multipart/form-data"
+                    id="extendStationLimitForm"
+                    data-base-capacity="<?= (int) ($baseStationLimit ?? 0) + (int) $monthlySlots ?>"
+                    data-current-stations="<?= (int) $stationCount ?>"
+                    data-package-rate="<?= (int) $packageRate ?>"
+                    data-term-discounts="<?= htmlspecialchars(json_encode(BILLING_HQ_STATION_LIMIT_TERM_DISCOUNTS), ENT_QUOTES, 'UTF-8') ?>"
+                    data-accounts="<?= htmlspecialchars(json_encode($stationLimitPaymentAccounts), ENT_QUOTES, 'UTF-8') ?>">
+                    <input type="hidden" name="action" value="create_extra_station">
+                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars((string) $_SESSION['payment_transfer_csrf'], ENT_QUOTES, 'UTF-8') ?>">
+                    <div class="modal-header border-secondary">
+                        <div>
+                            <h5 class="modal-title" id="extendStationLimitTitle">Extend Station Limit</h5>
+                            <p class="text-secondary small mb-0">Add station capacity for a selected service term.</p>
+                        </div>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="row g-3">
+                            <div class="col-lg-7">
+                                <div class="border border-secondary rounded p-3 h-100">
+                                    <h6 class="mb-3">Station capacity details</h6>
+                                    <p class="text-secondary small">This all-in-one package extends HQ service and covers operating fees for all package stations during the selected term.</p>
+                                    <div class="mb-3">
+                                        <label for="extraStationQuantity" class="form-label">Additional station slots</label>
+                                        <input type="number" class="form-control bg-dark text-light border-secondary"
+                                            id="extraStationQuantity" name="quantity" min="1" max="60" step="1" value="1" required>
+                                        <small class="text-secondary">Current capacity: <?= (int) $baseStationLimit + (int) $monthlySlots ?> stations. Up to 60 additional slots per request.</small>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label for="stationLimitTerm" class="form-label">Service term</label>
+                                        <select class="form-select bg-dark text-light border-secondary" id="stationLimitTerm" name="term_months" required>
+                                            <?php foreach ($stationLimitTermOptions as $termMonths => $termLabel): ?>
+                                            <option value="<?= (int) $termMonths ?>"><?= htmlspecialchars($termLabel, ENT_QUOTES, 'UTF-8') ?></option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label for="stationLimitPaymentMethod" class="form-label">Payment method</label>
+                                        <select class="form-select bg-dark text-light border-secondary" id="stationLimitPaymentMethod" name="payment_method" required>
+                                            <option value="">Choose a method</option>
+                                            <?php foreach ($stationLimitPaymentAccounts as $method => $account): ?>
+                                            <option value="<?= htmlspecialchars($method, ENT_QUOTES, 'UTF-8') ?>"><?= htmlspecialchars($method, ENT_QUOTES, 'UTF-8') ?></option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                    </div>
+                                    <div class="mt-3">
+                                        <label for="stationLimitReceipt" class="form-label">Payment screenshot (JPG, PNG, or WEBP; max 5 MB)</label>
+                                        <input class="form-control bg-dark text-light border-secondary" type="file" id="stationLimitReceipt" name="receipt" accept="image/jpeg,image/png,image/webp" required>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-lg-5">
+                                <div class="border border-secondary rounded p-3 h-100">
+                                    <h6 class="mb-3">Transfer and package total</h6>
+                                    <p class="text-secondary small mb-1">Transfer account</p>
+                                    <div class="d-flex align-items-center gap-2 mb-3">
+                                        <strong id="stationLimitTransferAccount">Choose a payment method</strong>
+                                        <span id="stationLimitTransferLabel" class="text-secondary small"></span>
+                                        <button type="button" class="btn btn-sm btn-outline-secondary" id="copyStationLimitAccount" disabled aria-label="Copy transfer account number" title="Copy account number">
+                                            <i class="bi bi-clipboard" aria-hidden="true"></i>
+                                        </button>
+                                    </div>
+                                    <div id="stationLimitCopyStatus" class="small mb-2" role="status" aria-live="polite"></div>
+                                    <p class="text-secondary small mb-1">Account name</p>
+                                    <p class="mb-3"><?= htmlspecialchars(BILLING_PLATFORM_RECIPIENT_NAME, ENT_QUOTES, 'UTF-8') ?></p>
+                                    <div class="d-flex justify-content-between border-top border-secondary pt-2">
+                                        <span>Package stations</span><strong id="stationLimitPackageCount"><?= max((int) $stationCount, (int) $baseStationLimit + (int) $monthlySlots) + 1 ?></strong>
+                                    </div>
+                                    <div class="d-flex justify-content-between mt-2">
+                                        <span>Actual value</span><strong id="stationLimitActual"><?= number_format($packageRate * (max((int) $stationCount, (int) $baseStationLimit + (int) $monthlySlots) + 1)) ?> MMK</strong>
+                                    </div>
+                                    <div class="d-flex justify-content-between mt-2">
+                                        <span>Discount <span id="stationLimitDiscountRate">(0%)</span></span><strong id="stationLimitDiscount">0 MMK</strong>
+                                    </div>
+                                    <div class="d-flex justify-content-between border-top border-secondary pt-2 mt-2">
+                                        <span>Total due</span><strong id="stationLimitTotal"><?= number_format($packageRate * (max((int) $stationCount, (int) $baseStationLimit + (int) $monthlySlots) + 1)) ?> MMK</strong>
+                                    </div>
+                                    <p class="text-secondary small mt-3 mb-0">Transfer the displayed amount before submitting your screenshot for Admin or Moderator review. Capacity updates after the payment is confirmed.</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer border-secondary">
+                        <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-info">Review Payment Details</button>
+                    </div>
+                </form>
+                <dialog class="station-limit-receipt-dialog" id="stationLimitPaymentConfirmation" aria-labelledby="stationLimitReceiptTitle">
+                    <div class="station-limit-receipt-header">
+                        <h2 id="stationLimitReceiptTitle">Review payment details</h2>
+                        <button type="button" class="station-limit-receipt-close" id="closeStationLimitReceipt" aria-label="Close">×</button>
+                    </div>
+                    <div class="station-limit-receipt-body">
+                        <section class="station-limit-receipt-card">
+                            <h3>Transfer and package total</h3>
+                            <p class="station-limit-receipt-company">
+                                <strong><?= htmlspecialchars((string) ($hqDetails['company_name'] ?? ''), ENT_QUOTES, 'UTF-8') ?></strong><br>
+                                <?= htmlspecialchars((string) ($hqDetails['headquarter_email'] ?? ''), ENT_QUOTES, 'UTF-8') ?><br>
+                                <span id="stationLimitReceiptPackageCount"></span> stations · <span id="stationLimitReceiptTerm"></span>
+                            </p>
+                            <p class="station-limit-receipt-method">Payment method: <strong id="stationLimitReceiptMethod"></strong></p>
+                            <div class="station-limit-receipt-account"><strong id="stationLimitReceiptAccount"></strong></div>
+                            <p class="station-limit-receipt-note">Account name: <?= htmlspecialchars(BILLING_PLATFORM_RECIPIENT_NAME, ENT_QUOTES, 'UTF-8') ?></p>
+                            <div class="station-limit-receipt-total"><span>Actual value</span><strong id="stationLimitReceiptActual"></strong></div>
+                            <div class="station-limit-receipt-total"><span>Discount <span id="stationLimitReceiptDiscountRate"></span></span><strong id="stationLimitReceiptDiscount"></strong></div>
+                            <div class="station-limit-receipt-total"><span>Total due</span><strong id="stationLimitReceiptTotal"></strong></div>
+                        </section>
+                        <p class="station-limit-receipt-disclaimer">Download or print this receipt for your records. Confirm to submit the payment screenshot and package details for review; this summary is not proof of payment confirmation.</p>
+                    </div>
+                    <div class="station-limit-receipt-footer">
+                        <button type="button" class="btn btn-outline-secondary" id="downloadStationLimitReceipt">Download</button>
+                        <button type="button" class="btn btn-outline-secondary" id="printStationLimitReceipt">Print PDF</button>
+                        <button type="button" class="btn btn-outline-secondary" id="cancelStationLimitReceipt">Back</button>
+                        <button type="button" class="btn btn-success" id="confirmStationLimitPayment">Submit</button>
+                    </div>
+                </dialog>
             </div>
         </div>
     </div>
@@ -910,6 +1192,205 @@ try {
         let configMap;
         let configMarker;
         const defaultMapCenter = [21.9588, 96.0891];
+
+        const extendStationLimitForm = document.getElementById('extendStationLimitForm');
+        if (extendStationLimitForm) {
+            const quantityInput = document.getElementById('extraStationQuantity');
+            const termSelect = document.getElementById('stationLimitTerm');
+            const methodSelect = document.getElementById('stationLimitPaymentMethod');
+            const transferAccount = document.getElementById('stationLimitTransferAccount');
+            const transferLabel = document.getElementById('stationLimitTransferLabel');
+            const copyAccountButton = document.getElementById('copyStationLimitAccount');
+            const copyStatus = document.getElementById('stationLimitCopyStatus');
+            const baseCapacity = Number(extendStationLimitForm.dataset.baseCapacity);
+            const currentStations = Number(extendStationLimitForm.dataset.currentStations);
+            const packageRate = Number(extendStationLimitForm.dataset.packageRate);
+            const termDiscounts = JSON.parse(extendStationLimitForm.dataset.termDiscounts);
+            const paymentAccounts = JSON.parse(extendStationLimitForm.dataset.accounts);
+            const submitPaymentButton = extendStationLimitForm.querySelector('button[type="submit"]');
+            const paymentConfirmation = document.getElementById('stationLimitPaymentConfirmation');
+            let confirmedPaymentSubmission = false;
+            const formatMmk = amount => `${new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(amount)} MMK`;
+
+            function updateStationLimitQuote() {
+                const extraSlots = Number(quantityInput.value) || 0;
+                const termMonths = Number(termSelect.value) || 1;
+                const packageStations = Math.max(currentStations, baseCapacity) + extraSlots;
+                const selectedDiscount = termDiscounts.find(tier => termMonths >= Number(tier.min_months));
+                const termPercent = selectedDiscount ? Number(selectedDiscount.percent) : 0;
+                const actual = packageRate * packageStations * termMonths;
+                const total = Math.round(actual * (1 - termPercent / 100) * 100) / 100;
+                const discount = actual - total;
+
+                document.getElementById('stationLimitPackageCount').textContent = packageStations;
+                document.getElementById('stationLimitActual').textContent = formatMmk(actual);
+                document.getElementById('stationLimitDiscountRate').textContent = `(${termPercent}% off)`;
+                document.getElementById('stationLimitDiscount').textContent = formatMmk(discount);
+                document.getElementById('stationLimitTotal').textContent = formatMmk(total);
+
+                const selectedAccount = paymentAccounts[methodSelect.value];
+                transferAccount.textContent = selectedAccount?.number || 'Choose a payment method';
+                transferLabel.textContent = selectedAccount ? `(${selectedAccount.label})` : '';
+                copyAccountButton.disabled = !selectedAccount?.number;
+                copyStatus.textContent = '';
+            }
+
+            quantityInput.addEventListener('input', updateStationLimitQuote);
+            termSelect.addEventListener('change', updateStationLimitQuote);
+            methodSelect.addEventListener('change', updateStationLimitQuote);
+            copyAccountButton.addEventListener('click', async () => {
+                const accountNumber = transferAccount.textContent.trim();
+                if (!accountNumber || copyAccountButton.disabled) {
+                    return;
+                }
+
+                try {
+                    await navigator.clipboard.writeText(accountNumber);
+                    copyStatus.className = 'small mb-2 text-success';
+                    copyStatus.textContent = 'Account number copied.';
+                } catch {
+                    const fallbackInput = document.createElement('textarea');
+                    fallbackInput.value = accountNumber;
+                    fallbackInput.setAttribute('readonly', '');
+                    fallbackInput.style.position = 'fixed';
+                    fallbackInput.style.opacity = '0';
+                    document.body.appendChild(fallbackInput);
+                    fallbackInput.select();
+                    const copied = document.execCommand('copy');
+                    fallbackInput.remove();
+                    copyStatus.className = copied ? 'small mb-2 text-success' : 'small mb-2 text-danger';
+                    copyStatus.textContent = copied
+                        ? 'Account number copied.'
+                        : 'Could not copy the account number. Please copy it manually.';
+                }
+            });
+            updateStationLimitQuote();
+
+            const paymentReceiptData = () => {
+                const account = paymentAccounts[methodSelect.value] || {};
+                return {
+                    company: <?= json_encode((string) ($hqDetails['company_name'] ?? ''), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>,
+                    email: <?= json_encode((string) ($hqDetails['headquarter_email'] ?? ''), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>,
+                    stations: document.getElementById('stationLimitPackageCount').textContent,
+                    term: termSelect.options[termSelect.selectedIndex]?.text || '',
+                    method: methodSelect.options[methodSelect.selectedIndex]?.text || '',
+                    accountNumber: account.number || '',
+                    actual: document.getElementById('stationLimitActual').textContent,
+                    discountRate: document.getElementById('stationLimitDiscountRate').textContent,
+                    discount: document.getElementById('stationLimitDiscount').textContent,
+                    total: document.getElementById('stationLimitTotal').textContent,
+                    createdAt: new Date().toLocaleString()
+                };
+            };
+            const escapeReceiptHtml = value => String(value).replace(/[&<>"']/g, character => ({
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#39;'
+            })[character]);
+            const receiptDocument = data => `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Station package payment summary</title><style>
+*{box-sizing:border-box}
+@page{size:A4;margin:18mm}
+body{margin:0;padding:24px;background:#0c1422;color:#edf3fb;font:14px/1.5 Arial,sans-serif;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.receipt{width:100%;max-width:620px;margin:24px auto}
+.header{padding:16px 22px;border:1px solid #29394e;border-radius:14px 14px 0 0;background:#142033}
+.header h1{margin:0;font-size:18px;font-weight:600}
+.card{padding:22px;border:1px solid #29394e;border-top:0;border-radius:0 0 14px 14px;background:#142033;break-inside:avoid}
+.card h2{margin:0 0 16px;font-size:16px;font-weight:600}
+.company{margin:0 0 18px;color:#a1b1c6;font-size:12px;line-height:1.6}
+.company strong{color:#edf3fb;font-size:14px}
+.method{margin:0 0 6px;color:#a1b1c6;font-size:12px}
+.account{margin:8px 0;font-size:17px;overflow-wrap:anywhere}
+.note{margin:0 0 14px;color:#a1b1c6;font-size:12px}
+.total{display:flex;justify-content:space-between;gap:16px;padding:10px 0;border-top:1px solid #29394e;font-variant-numeric:tabular-nums}
+.total span{color:#a1b1c6}.total strong{text-align:right;overflow-wrap:anywhere}
+.disclaimer{margin:18px 0 0;color:#a1b1c6;font-size:11px}
+@media print{body{padding:0;background:#0c1422}.receipt{max-width:none;margin:0}.header,.card{background:#142033!important;color:#edf3fb!important;box-shadow:none}}
+</style></head><body><main class="receipt">
+<header class="header"><h1>Review payment details</h1></header>
+<section class="card"><h2>Transfer and package total</h2>
+<p class="company"><strong>${escapeReceiptHtml(data.company)}</strong><br>${escapeReceiptHtml(data.email)}<br>${escapeReceiptHtml(data.stations)} stations · ${escapeReceiptHtml(data.term)}</p>
+<p class="method">Payment method: <strong>${escapeReceiptHtml(data.method)}</strong></p>
+<div class="account"><strong>${escapeReceiptHtml(data.accountNumber)}</strong></div>
+<p class="note">Account name: <?= htmlspecialchars(BILLING_PLATFORM_RECIPIENT_NAME, ENT_QUOTES, 'UTF-8') ?></p>
+<div class="total"><span>Actual value</span><strong>${escapeReceiptHtml(data.actual)}</strong></div>
+<div class="total"><span>Discount ${escapeReceiptHtml(data.discountRate)}</span><strong>${escapeReceiptHtml(data.discount)}</strong></div>
+<div class="total"><span>Total due</span><strong>${escapeReceiptHtml(data.total)}</strong></div>
+<p class="disclaimer">Prepared ${escapeReceiptHtml(data.createdAt)}. This summary records the package details and is not proof of payment confirmation.</p>
+</section></main></body></html>`;
+            const updatePaymentReceipt = () => {
+                const data = paymentReceiptData();
+                document.getElementById('stationLimitReceiptPackageCount').textContent = data.stations;
+                document.getElementById('stationLimitReceiptTerm').textContent = data.term;
+                document.getElementById('stationLimitReceiptMethod').textContent = data.method;
+                document.getElementById('stationLimitReceiptAccount').textContent = data.accountNumber;
+                document.getElementById('stationLimitReceiptActual').textContent = data.actual;
+                document.getElementById('stationLimitReceiptDiscountRate').textContent = data.discountRate;
+                document.getElementById('stationLimitReceiptDiscount').textContent = data.discount;
+                document.getElementById('stationLimitReceiptTotal').textContent = data.total;
+            };
+            extendStationLimitForm.addEventListener('submit', event => {
+                if (confirmedPaymentSubmission) {
+                    confirmedPaymentSubmission = false;
+                    return;
+                }
+                if (!extendStationLimitForm.checkValidity()) {
+                    event.preventDefault();
+                    extendStationLimitForm.reportValidity();
+                    return;
+                }
+                event.preventDefault();
+                updatePaymentReceipt();
+                paymentConfirmation.showModal();
+            });
+            document.getElementById('closeStationLimitReceipt').addEventListener('click', () => paymentConfirmation.close());
+            document.getElementById('cancelStationLimitReceipt').addEventListener('click', () => paymentConfirmation.close());
+            document.getElementById('confirmStationLimitPayment').addEventListener('click', () => {
+                if (!extendStationLimitForm.reportValidity()) return;
+                confirmedPaymentSubmission = true;
+                paymentConfirmation.close();
+                extendStationLimitForm.requestSubmit(submitPaymentButton);
+            });
+            document.getElementById('downloadStationLimitReceipt').addEventListener('click', () => {
+                const blob = new Blob([receiptDocument(paymentReceiptData())], { type: 'text/html;charset=utf-8' });
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                const company = <?= json_encode((string) ($hqDetails['company_name'] ?? ''), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
+                const filename = company.trim().replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '') || 'hq';
+                link.href = url;
+                link.download = `${filename}-station-package-payment-receipt.html`;
+                document.body.appendChild(link);
+                link.click();
+                link.remove();
+                window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+            });
+            document.getElementById('printStationLimitReceipt').addEventListener('click', () => {
+                const printWindow = window.open('', '_blank');
+                if (!printWindow) {
+                    window.alert('Allow pop-ups to print or save this receipt as a PDF.');
+                    return;
+                }
+                printWindow.document.open();
+                printWindow.document.write(receiptDocument(paymentReceiptData()));
+                printWindow.document.close();
+                printWindow.focus();
+                printWindow.print();
+            });
+        }
+
+        const openStationLimitExtension = document.getElementById('openStationLimitExtension');
+        if (openStationLimitExtension) {
+            openStationLimitExtension.addEventListener('click', () => {
+                const warningModal = document.getElementById('stationLimitModal');
+                warningModal.addEventListener('hidden.bs.modal', () => {
+                    bootstrap.Modal.getOrCreateInstance(document.getElementById('extendStationLimitModal')).show();
+                }, { once: true });
+                bootstrap.Modal.getOrCreateInstance(warningModal).hide();
+            });
+        }
 
         function parseMapCoordinates(value) {
             const parts = (value || '').split(',');

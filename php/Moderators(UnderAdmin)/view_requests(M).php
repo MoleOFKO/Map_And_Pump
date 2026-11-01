@@ -294,7 +294,7 @@ $flashType = (string) ($flash['type'] ?? '');
             <tr>
                 <td class="fw-bold txt-neon-cyan">#PAY-<?= $paymentId ?></td>
                 <td><div class="fw-semibold text-white"><?= moderator_escape((string) ($paymentRow['payer_hq_name'] ?: $paymentRow['payer_name'] ?: 'HQ payer')) ?></div><div class="text-white-50 small"><?= moderator_escape((string) ($paymentRow['description'] ?? '')) ?></div><div class="text-white-50 small"><?= number_format((float) $paymentRow['amount_mmk'], 2) ?> MMK · <?= moderator_escape((string) ($paymentRow['payer_email'] ?? '')) ?></div></td>
-                <td><span class="badge rounded-pill bg-info bg-opacity-10 text-info border border-info border-opacity-25 px-2 py-1">Payment Verification</span><div class="text-white-50 small mt-1">HQ Service Extension</div></td>
+                <td><span class="badge rounded-pill bg-info bg-opacity-10 text-info border border-info border-opacity-25 px-2 py-1">Payment Verification</span><div class="text-white-50 small mt-1"><?= moderator_escape(match ((string) $paymentRow['payment_type']) { 'hq_station_package' => 'HQ Station Package', default => 'HQ Service Extension' }) ?></div></td>
                 <td class="text-white-50"><?= moderator_escape(moderator_format_date((string) $paymentRow['created_at'])) ?></td>
                 <td><span class="request-status <?= moderator_escape(request_status_class($paymentStatus)) ?>"><?= moderator_escape($paymentStatus === 'pending' ? 'Payer reported paid' : request_status_label($paymentStatus)) ?></span></td>
                 <td class="text-end"><div class="d-flex gap-2 justify-content-end align-items-center">

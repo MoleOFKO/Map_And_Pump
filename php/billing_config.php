@@ -57,6 +57,16 @@ if (!defined('BILLING_HQ_TERM_DISCOUNTS')) {
         ['months' => 12, 'label' => '12 months', 'percent' => 20],
     ]);
 }
+if (!defined('BILLING_HQ_STATION_LIMIT_TERMS')) {
+    define('BILLING_HQ_STATION_LIMIT_TERMS', [1, 3, 6, 12, 24, 36, 48, 60, 72, 84, 96, 108, 120]);
+}
+if (!defined('BILLING_HQ_STATION_LIMIT_TERM_DISCOUNTS')) {
+    define('BILLING_HQ_STATION_LIMIT_TERM_DISCOUNTS', [
+        ['min_months' => 60, 'percent' => 5],
+        ['min_months' => 12, 'percent' => 2],
+        ['min_months' => 1, 'percent' => 0],
+    ]);
+}
 
 if (!defined('BILLING_PLATFORM_RECIPIENT_NAME')) {
     define('BILLING_PLATFORM_RECIPIENT_NAME', 'MAP & PUMP Co., Ltd');

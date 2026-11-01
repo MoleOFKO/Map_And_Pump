@@ -269,12 +269,48 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $pendingStmt = $pdo->prepare(
     "SELECT payment_transfer_id, amount_mmk, term_months, payment_method, status, created_at
      FROM payment_transfers
-     WHERE payer_headquarter_id = ? AND payment_type IN ('hq_station_package', 'hq_period_extension')
+     WHERE payer_headquarter_id = ?
+       AND (
+           payment_type = 'hq_period_extension'
+           OR (
+               payment_type = 'hq_station_package'
+               AND description NOT LIKE '%additional capacity slot(s)%'
+           )
+       )
        AND status IN ('pending_payment', 'payer_reported_paid')
      ORDER BY payment_transfer_id DESC LIMIT 1"
 );
 $pendingStmt->execute([$hqId]);
 $pendingExtension = $pendingStmt->fetch(PDO::FETCH_ASSOC) ?: null;
+$latestPaymentStmt = $pdo->prepare(
+    "SELECT payment_transfer_id, reference_code, status, decision_note
+     FROM payment_transfers
+     WHERE payer_headquarter_id = ?
+      AND (
+          payment_type = 'hq_period_extension'
+          OR (
+              payment_type = 'hq_station_package'
+              AND description NOT LIKE '%additional capacity slot(s)%'
+          )
+      )
+    ORDER BY payment_transfer_id DESC
+    LIMIT 1"
+);
+$latestPaymentStmt->execute([$hqId]);
+$latestPayment = $latestPaymentStmt->fetch(PDO::FETCH_ASSOC) ?: null;
+$latestPaymentId = (int) ($latestPayment['payment_transfer_id'] ?? 0);
+$latestPaymentRejection = null;
+$latestPaymentSuccess = false;
+if ($latestPaymentId > 0
+    && (int) ($_SESSION['hq_service_extension_final_payment_notice_seen'] ?? 0) !== $latestPaymentId) {
+    if (($latestPayment['status'] ?? '') === 'rejected') {
+        $latestPaymentRejection = $latestPayment;
+        $_SESSION['hq_service_extension_final_payment_notice_seen'] = $latestPaymentId;
+    } elseif (($latestPayment['status'] ?? '') === 'received') {
+        $latestPaymentSuccess = true;
+        $_SESSION['hq_service_extension_final_payment_notice_seen'] = $latestPaymentId;
+    }
+}
 $showPaymentForm = ($_GET['show_payment_form'] ?? '') === '1';
 ?>
 <!DOCTYPE html>
@@ -349,6 +385,25 @@ $showPaymentForm = ($_GET['show_payment_form'] ?? '') === '1';
 
     <?php if ($message !== ''): ?><div class="alert alert-success extend-status" role="status"><?= htmlspecialchars($message, ENT_QUOTES, 'UTF-8') ?></div><?php endif; ?>
     <?php if ($error !== ''): ?><div class="alert alert-danger extend-status" role="alert"><?= htmlspecialchars($error, ENT_QUOTES, 'UTF-8') ?></div><?php endif; ?>
+    <?php if ($latestPaymentRejection !== null): ?>
+        <div id="final-payment-status-alert" class="alert alert-danger extend-status" role="alert">
+            Your HQ payment request was rejected.
+            Reason: <?= htmlspecialchars((string) ($latestPaymentRejection['decision_note'] ?: 'No reason was provided by the reviewer.'), ENT_QUOTES, 'UTF-8') ?>
+            <a href="/php/payment_center.php" target="_top">View payment status</a>.
+        </div>
+    <?php elseif ($latestPaymentSuccess): ?>
+        <div id="final-payment-status-alert" class="alert alert-success extend-status" role="status">
+            Your HQ payment was approved and the service package has been applied.
+            <a href="/php/payment_center.php" target="_top">View payment status</a>.
+        </div>
+    <?php endif; ?>
+    <?php if ($latestPaymentRejection !== null || $latestPaymentSuccess): ?>
+        <script>
+            window.setTimeout(() => {
+                document.getElementById('final-payment-status-alert')?.remove();
+            }, 10000);
+        </script>
+    <?php endif; ?>
     <?php if ($pendingExtension && !$showPaymentForm): ?>
         <div class="alert extend-status" role="status">
             A service-package payment for <?= (int) $pendingExtension['term_months'] ?> month(s) is <?= $pendingExtension['status'] === 'pending_payment' ? 'awaiting payment' : 'awaiting review' ?>: <?= number_format((float) $pendingExtension['amount_mmk'], 2) ?> MMK via <?= htmlspecialchars((string) $pendingExtension['payment_method'], ENT_QUOTES, 'UTF-8') ?>.
@@ -408,7 +463,7 @@ $showPaymentForm = ($_GET['show_payment_form'] ?? '') === '1';
                                 <input id="extension-months" type="number" name="months" min="0" max="11" step="1" value="<?= $extensionMonthsInput ?>" placeholder="0–11" required>
                             </div>
                         </div>
-                        <small class="extension-period-legend">This package includes service extension, station operation, and extra capacity. Enter years and months (for example, 1 year and 6 months). The total period must be 1–<?= BILLING_HQ_EXTENSION_MAX_MONTHS ?> months. 12+ months: 2% off; 60+ months: 15% off.</small>
+                        <small class="extension-period-legend">This package includes service extension, station operation, and extra capacity. Enter years and months (for example, 1 year and 6 months). The total period must be 1–<?= BILLING_HQ_EXTENSION_MAX_MONTHS ?> months. 1+ years: 2% off; 5+ years: 15% off.</small>
                     </fieldset>
                     <div class="payment-method-field">
                         <label for="payment-method">Payment method</label>
