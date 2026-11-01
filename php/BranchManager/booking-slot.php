@@ -312,6 +312,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'discount_mmk' => $discount,
                 'station_coupon_discount_mmk' => (float)($couponRedemption['discount_mmk'] ?? 0),
                 'points_earned' => (int) ($loyaltyResult['points_earned'] ?? 0),
+                'exp_earned' => (int) ($loyaltyResult['exp_earned'] ?? 0),
                 'points_redeemed' => (int) ($loyaltyResult['points_redeemed'] ?? 0),
             ]);
         }

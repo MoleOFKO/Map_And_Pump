@@ -253,9 +253,9 @@ if (!empty($booking['user_id'])) {
                                         <?php else: ?>
                                             <?php echo (int) $pointsToRedeemIntent; ?> pts
                                             <?php if ((int) $pointsToRedeemIntent > 0): ?>
-                                                <span class="text-white-50 small"> · will apply on confirm (earn <?php echo (int) constant('LOYALTY_POINTS_PER_FILL'); ?> pt per liter filled)</span>
+                                                <span class="text-white-50 small"> · will apply on confirm (earn points up to your tier cap, then EXP)</span>
                                             <?php else: ?>
-                                                <span class="text-white-50 small"> · earn <?php echo (int) constant('LOYALTY_POINTS_PER_FILL'); ?> pt per liter filled</span>
+                                                <span class="text-white-50 small"> · earn points up to your tier cap, then EXP</span>
                                             <?php endif; ?>
                                         <?php endif; ?>
                                     </div>
@@ -339,4 +339,3 @@ if (!empty($booking['user_id'])) {
     <script src="/js/Admin.js"></script>
 </body>
 </html>
-

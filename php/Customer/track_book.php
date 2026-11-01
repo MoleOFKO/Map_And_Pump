@@ -755,7 +755,10 @@ body.customer-light-mode .customer-map-recenter-btn:hover {
                 </select>
                 <small class="text-secondary d-block mt-2">
                     Balance: <strong class="text-warning"><?php echo (int) $loyaltyBalance; ?></strong> pts
-                    · <?php echo htmlspecialchars($loyaltyTierLabel, ENT_QUOTES, 'UTF-8'); ?> tier.
+                    · <?php echo htmlspecialchars($loyaltyTierLabel, ENT_QUOTES, 'UTF-8'); ?> tier
+                    · cap: <strong><?php echo number_format($loyaltyTierStatus['points_cap']); ?></strong> pts
+                    · <?php echo (int) $loyaltyTierStatus['exp']; ?> EXP.
+                    At your cap, successful external fills earn EXP instead of points.
                     Points are held while this booking is active and released if it is cancelled or expires. A completed redemption credits the Admin-managed Total Discounted Amount.
                 </small>
                 <small id="loyalty-discount-estimate" class="text-sky-400 d-block mt-1"></small>

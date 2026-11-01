@@ -171,11 +171,11 @@ INSERT INTO platform_settings (setting_key, setting_value) VALUES
 ON DUPLICATE KEY UPDATE setting_key = VALUES(setting_key);
 
 INSERT INTO loyalty_tier_rules (tier_code, points_threshold, exp_threshold, monthly_budget_mmk) VALUES
-    ('bronze', 0, 0, 100000),
-    ('silver', 500, 2, 250000),
-    ('gold', 999, 4, 500000),
-    ('platinum', 1499, 6, 1000000),
-    ('diamond', 2000, 8, 2000000)
+    ('bronze', 500, 0, 100000),
+    ('silver', 999, 2, 250000),
+    ('gold', 1499, 4, 500000),
+    ('platinum', 2000, 6, 1000000),
+    ('diamond', 2500, 8, 2000000)
 ON DUPLICATE KEY UPDATE tier_code = VALUES(tier_code);
 
 INSERT INTO loyalty_redemption_rules (reward_id, points_required, discount_mmk) VALUES

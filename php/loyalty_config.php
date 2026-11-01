@@ -70,18 +70,18 @@ if (!defined('LOYALTY_INVENTORY_PROOF_ROLLING_7D_L')) {
 // Defaults are seeded into loyalty_tier_rules by the loyalty redesign migration.
 // ---------------------------------------------------------------------------
 
-if (!function_exists('loyalty_tier_thresholds')) {
+if (!function_exists('loyalty_tier_point_caps')) {
     /**
-     * @return array<string, int> tier_code => min points (descending check order)
+     * @return array<string, int> tier_code => maximum point balance
      */
-    function loyalty_tier_thresholds(): array
+    function loyalty_tier_point_caps(): array
     {
         return [
-            'diamond' => 2000,
-            'platinum' => 1499,
-            'gold' => 999,
-            'silver' => 500,
-            'bronze' => 0,
+            'bronze' => 500,
+            'silver' => 999,
+            'gold' => 1499,
+            'platinum' => 2000,
+            'diamond' => 2500,
         ];
     }
 }

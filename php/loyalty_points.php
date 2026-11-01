@@ -161,36 +161,36 @@ function loyalty_compute_discount(float $filledLiters, ?float $totalCost, int $p
 // ---------------------------------------------------------------------------
 
 /**
- * Resolve a tier only when both the point and EXP thresholds are met.
+ * Resolve a tier using cumulative EXP. The balance argument is retained for compatibility.
  */
 function loyalty_resolve_tier(int $balance, int $exp = 0, ?PDO $pdo = null): string
 {
-    $balance = max(0, $balance);
     $rules = $pdo ? loyalty_get_tier_rules($pdo) : [];
-    $pointThresholds = loyalty_tier_thresholds();
     $expThresholds = loyalty_tier_exp_thresholds();
     foreach (['diamond', 'platinum', 'gold', 'silver', 'bronze'] as $code) {
-        $minPts = (int) ($rules[$code]['points_threshold'] ?? $pointThresholds[$code] ?? 0);
         $minExp = (int) ($rules[$code]['exp_threshold'] ?? $expThresholds[$code] ?? 0);
-        if ($balance >= $minPts && $exp >= $minExp) {
+        if ($exp >= $minExp) {
             return (string) $code;
         }
     }
     return 'bronze';
 }
 
-/** @return array<string, array{points_threshold:int,exp_threshold:int,monthly_budget_mmk:float}> */
-function loyalty_get_tier_rules(PDO $pdo): array
+/** @return array<string, array{points_cap:int,exp_threshold:int,monthly_budget_mmk:float}> */
+function loyalty_get_tier_rules(PDO $pdo, bool $forUpdate = false): array
 {
     $rules = [];
-    $stmt = $pdo->query(
-        'SELECT tier_code, points_threshold, exp_threshold, monthly_budget_mmk
-         FROM loyalty_tier_rules'
-    );
+    $sql = 'SELECT tier_code, points_threshold AS points_cap, exp_threshold, monthly_budget_mmk
+            FROM loyalty_tier_rules
+            ORDER BY tier_code';
+    if ($forUpdate) {
+        $sql .= ' FOR UPDATE';
+    }
+    $stmt = $pdo->query($sql);
     foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
         $code = strtolower((string) $row['tier_code']);
         $rules[$code] = [
-            'points_threshold' => max(0, (int) $row['points_threshold']),
+            'points_cap' => max(0, (int) $row['points_cap']),
             'exp_threshold' => max(0, (int) $row['exp_threshold']),
             'monthly_budget_mmk' => max(0.0, (float) $row['monthly_budget_mmk']),
         ];
@@ -206,10 +206,33 @@ function loyalty_get_tier_rules(PDO $pdo): array
 }
 
 /**
- * Apply completed Sunday-to-Saturday weeks to the customer's EXP balance.
+ * Calculate capped points for a fill and whether it should earn EXP instead.
+ *
+ * @return array{points_earned:int,exp_eligible:bool}
+ */
+function loyalty_calculate_fill_earnings(
+    float $filledLiters,
+    float $pointsPerLiter,
+    int $balance,
+    int $pointsCap
+): array {
+    $balance = max(0, $balance);
+    $pointsCap = max(0, $pointsCap);
+    $pointsAvailable = max(0, $pointsCap - $balance);
+    $potentialPoints = (int) floor(max(0.0, $filledLiters) * max(0.0, $pointsPerLiter));
+    $pointsEarned = min($potentialPoints, $pointsAvailable);
+
+    return [
+        'points_earned' => $pointsEarned,
+        'exp_eligible' => $balance >= $pointsCap && $pointsEarned === 0,
+    ];
+}
+
+/**
+ * Load and persist the tier matching the customer's cumulative EXP.
  * The caller may include this in a larger transaction.
  *
- * @return array{exp:int,tier_code:string,next_tier:?string,next_points:int,next_exp:int,weekly_quota_liters:float}
+ * @return array{exp:int,tier_code:string,next_tier:?string,next_exp:int,points_cap:int}
  */
 function loyalty_update_tier_progress(PDO $pdo, int $userId, int $pointBalance): array
 {
@@ -229,7 +252,7 @@ function loyalty_update_tier_progress(PDO $pdo, int $userId, int $pointBalance):
         )->execute([$userId]);
 
         $progressStmt = $pdo->prepare(
-            'SELECT exp, last_evaluated_week
+            'SELECT exp
              FROM loyalty_user_tier_progress
              WHERE user_id = ? LIMIT 1 FOR UPDATE'
         );
@@ -239,71 +262,8 @@ function loyalty_update_tier_progress(PDO $pdo, int $userId, int $pointBalance):
             throw new RuntimeException('Could not load customer tier progress.');
         }
 
-        $zone = new DateTimeZone('Asia/Yangon');
-        $currentWeekStart = (new DateTimeImmutable('now', $zone))
-            ->setTime(0, 0)
-            ->modify('-' . (int) (new DateTimeImmutable('now', $zone))->format('w') . ' days');
-        $lastClosedWeek = $currentWeekStart->modify('-7 days');
-        $lastEvaluated = $progress['last_evaluated_week'] !== null
-            ? new DateTimeImmutable((string) $progress['last_evaluated_week'], $zone)
-            : null;
-
-        if ($lastEvaluated === null) {
-            $firstFillStmt = $pdo->prepare(
-                "SELECT MIN(filled_at)
-                 FROM usage_history
-                 WHERE user_id = ? AND LOWER(status) = 'filled'
-                   AND COALESCE(is_internal, 0) = 0
-                   AND filled_at < ?"
-            );
-            $firstFillStmt->execute([$userId, $currentWeekStart->format('Y-m-d H:i:s')]);
-            $firstFill = $firstFillStmt->fetchColumn();
-            if ($firstFill !== false && $firstFill !== null) {
-                $firstDate = new DateTimeImmutable((string) $firstFill, $zone);
-                $lastEvaluated = $firstDate->setTime(0, 0)->modify('-' . (int) $firstDate->format('w') . ' days')->modify('-7 days');
-            } else {
-                $lastEvaluated = $lastClosedWeek->modify('-7 days');
-            }
-        }
-
         $rules = loyalty_get_tier_rules($pdo);
-        $maxExp = max(array_column($rules, 'exp_threshold'));
         $exp = max(0, (int) $progress['exp']);
-        $weekStart = $lastEvaluated->modify('+7 days');
-        if ($weekStart <= $lastClosedWeek) {
-            $weeklyStmt = $pdo->prepare(
-                "SELECT DATE_SUB(DATE(filled_at), INTERVAL WEEKDAY(filled_at) DAY) AS week_start,
-                        COALESCE(SUM(filled_liters), 0) AS liters
-                 FROM usage_history
-                 WHERE user_id = ? AND LOWER(status) = 'filled'
-                   AND COALESCE(is_internal, 0) = 0
-                   AND filled_at >= ? AND filled_at < ?
-                 GROUP BY week_start"
-            );
-            $weeklyStmt->execute([
-                $userId,
-                $weekStart->format('Y-m-d H:i:s'),
-                $currentWeekStart->format('Y-m-d H:i:s'),
-            ]);
-            $weeklyLiters = [];
-            foreach ($weeklyStmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
-                $weekDate = new DateTimeImmutable((string) $row['week_start'], $zone);
-                $sundayStart = $weekDate->modify('-' . (int) $weekDate->format('w') . ' days')->format('Y-m-d');
-                $weeklyLiters[$sundayStart] = (float) $row['liters'];
-            }
-
-            while ($weekStart <= $lastClosedWeek) {
-                $weekKey = $weekStart->format('Y-m-d');
-                if (($weeklyLiters[$weekKey] ?? 0.0) >= MAP_PUMP_FUEL_QUOTA_LITERS) {
-                    $exp = min($maxExp, $exp + 1);
-                } else {
-                    $exp = max(0, $exp - 1);
-                }
-                $lastEvaluated = $weekStart;
-                $weekStart = $weekStart->modify('+7 days');
-            }
-        }
-
         $tierCode = loyalty_resolve_tier($pointBalance, $exp, $pdo);
         $tierOrder = array_keys(loyalty_tier_labels());
         $tierIndex = array_search($tierCode, $tierOrder, true);
@@ -312,16 +272,15 @@ function loyalty_update_tier_progress(PDO $pdo, int $userId, int $pointBalance):
             'exp' => $exp,
             'tier_code' => $tierCode,
             'next_tier' => $nextTier,
-            'next_points' => $nextTier !== null ? $rules[$nextTier]['points_threshold'] : 0,
             'next_exp' => $nextTier !== null ? $rules[$nextTier]['exp_threshold'] : 0,
-            'weekly_quota_liters' => (float) MAP_PUMP_FUEL_QUOTA_LITERS,
+            'points_cap' => $rules[$tierCode]['points_cap'],
         ];
         $save = $pdo->prepare(
             'UPDATE loyalty_user_tier_progress
-             SET exp = ?, tier_code = ?, last_evaluated_week = ?
+             SET tier_code = ?
              WHERE user_id = ?'
         );
-        $save->execute([$exp, $tierCode, $lastEvaluated->format('Y-m-d'), $userId]);
+        $save->execute([$tierCode, $userId]);
 
         if ($ownsTransaction) {
             $pdo->commit();
@@ -336,7 +295,7 @@ function loyalty_update_tier_progress(PDO $pdo, int $userId, int $pointBalance):
 }
 
 /**
- * @return array{tier_code:string,exp:int,next_tier:?string,next_points:int,next_exp:int,tiers:array<string,array{label:string,points_threshold:int,points_remaining:int,exp_threshold:int,exp_remaining:int,pool_remaining_mmk:float,monthly_budget_mmk:float}>}
+ * @return array{tier_code:string,exp:int,next_tier:?string,next_exp:int,points_cap:int,points_remaining_to_cap:int,tiers:array<string,array{label:string,points_cap:int,points_remaining:int,exp_threshold:int,exp_remaining:int,pool_remaining_mmk:float,monthly_budget_mmk:float}>}
  */
 function loyalty_customer_tier_status(PDO $pdo, int $userId, int $pointBalance): array
 {
@@ -347,8 +306,8 @@ function loyalty_customer_tier_status(PDO $pdo, int $userId, int $pointBalance):
         $poolRemaining = loyalty_ensure_tier_pool($pdo, $code);
         $tiers[$code] = [
             'label' => $label,
-            'points_threshold' => $rules[$code]['points_threshold'],
-            'points_remaining' => max(0, $rules[$code]['points_threshold'] - $pointBalance),
+            'points_cap' => $rules[$code]['points_cap'],
+            'points_remaining' => max(0, $rules[$code]['points_cap'] - $pointBalance),
             'exp_threshold' => $rules[$code]['exp_threshold'],
             'exp_remaining' => max(0, $rules[$code]['exp_threshold'] - $progress['exp']),
             'pool_remaining_mmk' => $poolRemaining,
@@ -356,18 +315,10 @@ function loyalty_customer_tier_status(PDO $pdo, int $userId, int $pointBalance):
         ];
     }
 
-    return $progress + ['tiers' => $tiers];
-}
-
-function loyalty_pool_enforcement_enabled(PDO $pdo): bool
-{
-    $stmt = $pdo->prepare('SELECT setting_value FROM platform_settings WHERE setting_key = ? LIMIT 1');
-    $stmt->execute(['loyalty_pool_enforced']);
-    $value = $stmt->fetchColumn();
-    if ($value === false) {
-        throw new RuntimeException('Loyalty pool settings are unavailable. Apply the loyalty redesign migration.');
-    }
-    return (string) $value === '1';
+    return $progress + [
+        'points_remaining_to_cap' => max(0, $progress['points_cap'] - $pointBalance),
+        'tiers' => $tiers,
+    ];
 }
 
 /**
@@ -684,6 +635,113 @@ function loyalty_station_hq_id(PDO $pdo, int $stationId): int
 // Tier pool helpers
 // ---------------------------------------------------------------------------
 
+function loyalty_monthly_pool_budget(PDO $pdo): float
+{
+    $stmt = $pdo->prepare(
+        'SELECT setting_value
+         FROM platform_settings
+         WHERE setting_key = ?
+         LIMIT 1'
+    );
+    $stmt->execute(['loyalty_monthly_budget_mmk']);
+    $value = $stmt->fetchColumn();
+    if ($value !== false) {
+        if (!is_numeric($value) || !is_finite((float) $value) || (float) $value < 0) {
+            throw new RuntimeException('The configured monthly loyalty budget is invalid.');
+        }
+        return (float) $value;
+    }
+
+    return array_sum(array_column(loyalty_get_tier_rules($pdo), 'monthly_budget_mmk'));
+}
+
+/**
+ * Lock the global budget setting to serialize budget changes with redemptions.
+ */
+function loyalty_lock_monthly_pool_budget(PDO $pdo): float
+{
+    $fallbackBudget = loyalty_monthly_pool_budget($pdo);
+    $insert = $pdo->prepare(
+        'INSERT IGNORE INTO platform_settings (setting_key, setting_value)
+         VALUES (?, ?)'
+    );
+    $insert->execute(['loyalty_monthly_budget_mmk', number_format($fallbackBudget, 2, '.', '')]);
+
+    $lock = $pdo->prepare(
+        'SELECT setting_value
+         FROM platform_settings
+         WHERE setting_key = ?
+         LIMIT 1
+         FOR UPDATE'
+    );
+    $lock->execute(['loyalty_monthly_budget_mmk']);
+    $value = $lock->fetchColumn();
+    if ($value === false || !is_numeric($value) || !is_finite((float) $value) || (float) $value < 0) {
+        throw new RuntimeException('The monthly loyalty budget could not be locked safely.');
+    }
+
+    return (float) $value;
+}
+
+/**
+ * Allocate a monthly MMK budget proportionally, rounding only to whole cents.
+ *
+ * @param array<string, float|int> $weights
+ * @return array<string, float>
+ */
+function loyalty_distribute_monthly_pool_budget(float $budgetMmk, array $weights): array
+{
+    if (!is_finite($budgetMmk) || $budgetMmk < 0) {
+        throw new InvalidArgumentException('The monthly loyalty budget must be a non-negative amount.');
+    }
+
+    $codes = array_keys(loyalty_tier_labels());
+    $normalizedWeights = [];
+    foreach ($codes as $code) {
+        $weight = (float) ($weights[$code] ?? 0);
+        $normalizedWeights[$code] = is_finite($weight) ? max(0.0, $weight) : 0.0;
+    }
+    if (array_sum($normalizedWeights) <= 0) {
+        $normalizedWeights = loyalty_tier_pool_budgets();
+    }
+
+    $weightTotal = array_sum($normalizedWeights);
+    if ($weightTotal <= 0) {
+        throw new RuntimeException('Tier pool allocation weights are unavailable.');
+    }
+
+    $totalCents = (int) round($budgetMmk * 100);
+    $allocationsCents = [];
+    $remainders = [];
+    $allocatedCents = 0;
+    foreach ($codes as $index => $code) {
+        $exactCents = $totalCents * ($normalizedWeights[$code] / $weightTotal);
+        $wholeCents = (int) floor($exactCents);
+        $allocationsCents[$code] = $wholeCents;
+        $allocatedCents += $wholeCents;
+        $remainders[$code] = ['fraction' => $exactCents - $wholeCents, 'index' => $index];
+    }
+
+    uasort($remainders, static function (array $left, array $right): int {
+        $fractionOrder = $right['fraction'] <=> $left['fraction'];
+        return $fractionOrder !== 0 ? $fractionOrder : ($left['index'] <=> $right['index']);
+    });
+    $remainingCents = $totalCents - $allocatedCents;
+    foreach (array_keys($remainders) as $code) {
+        if ($remainingCents <= 0) {
+            break;
+        }
+        $allocationsCents[$code]++;
+        $remainingCents--;
+    }
+
+    $allocations = [];
+    foreach ($codes as $code) {
+        $allocations[$code] = $allocationsCents[$code] / 100;
+    }
+    return $allocations;
+}
+
 function loyalty_current_year_month(): string
 {
     return date('Y-m');
@@ -692,14 +750,14 @@ function loyalty_current_year_month(): string
 /**
  * Ensure pool row exists for tier + month; returns remaining MMK or 0 on failure.
  */
-function loyalty_ensure_tier_pool(PDO $pdo, string $tierCode, ?string $yearMonth = null): float
+function loyalty_ensure_tier_pool(PDO $pdo, string $tierCode, ?string $yearMonth = null, ?array $rules = null): float
 {
     $tierCode = strtolower(trim($tierCode));
     if ($tierCode === '') {
         $tierCode = 'bronze';
     }
     $ym = $yearMonth ?: loyalty_current_year_month();
-    $rules = loyalty_get_tier_rules($pdo);
+    $rules ??= loyalty_get_tier_rules($pdo);
     $budget = (float) ($rules[$tierCode]['monthly_budget_mmk'] ?? $rules['bronze']['monthly_budget_mmk']);
     $ins = $pdo->prepare(
         'INSERT INTO loyalty_tier_pool (tier_code, `year_month`, budget_mmk, spent_mmk)
@@ -740,20 +798,24 @@ function loyalty_try_consume_pool(PDO $pdo, string $tierCode, float $amountMmk, 
     $ym = $yearMonth ?: loyalty_current_year_month();
     $amountMmk = round($amountMmk, 2);
 
-    loyalty_ensure_tier_pool($pdo, $tierCode, $ym);
-    if (!loyalty_pool_enforcement_enabled($pdo)) {
-        $track = $pdo->prepare(
-            'UPDATE loyalty_tier_pool
-             SET spent_mmk = spent_mmk + ?
-             WHERE tier_code = ? AND `year_month` = ?'
-        );
-        $track->execute([$amountMmk, $tierCode, $ym]);
-        if ($track->rowCount() !== 1) {
-            throw new RuntimeException('Could not track loyalty pool spending.');
-        }
-        return $amountMmk;
+    $monthlyBudget = loyalty_lock_monthly_pool_budget($pdo);
+    $rules = loyalty_get_tier_rules($pdo, true);
+    $spentStmt = $pdo->prepare(
+        'SELECT spent_mmk
+         FROM loyalty_tier_pool
+         WHERE `year_month` = ?'
+         . ' FOR UPDATE'
+    );
+    $spentStmt->execute([$ym]);
+    $spent = 0.0;
+    while (($spentValue = $spentStmt->fetchColumn()) !== false) {
+        $spent += (float) $spentValue;
+    }
+    if ($spent + $amountMmk > $monthlyBudget + 0.0001) {
+        return 0.0;
     }
 
+    loyalty_ensure_tier_pool($pdo, $tierCode, $ym, $rules);
     $upd = $pdo->prepare(
         'UPDATE loyalty_tier_pool
          SET spent_mmk = spent_mmk + ?
@@ -898,6 +960,7 @@ function hq_billing_station_is_paid(PDO $pdo, int $stationId): bool
  *   company_share_mmk:float,
  *   is_internal:bool,
  *   tier:string,
+ *   exp_earned:int,
  *   pool_limited:bool,
  *   balance_after:int,
  *   loyalty_error:?string
@@ -924,6 +987,7 @@ function loyalty_apply_on_fill(
         'company_share_mmk' => 0.0,
         'is_internal' => $isInternal,
         'tier' => 'bronze',
+        'exp_earned' => 0,
         'pool_limited' => false,
         'balance_after' => 0,
         'loyalty_error' => null,
@@ -1038,7 +1102,17 @@ function loyalty_apply_on_fill(
         ]);
     }
 
-    $earnPoints = (int) floor(max(0.0, $filledLiters) * loyalty_points_per_liter($pdo));
+    $balanceAfterRedemption = $balance - $pointsToRedeem;
+    $pointsPerLiter = $balanceAfterRedemption < $progress['points_cap']
+        ? loyalty_points_per_liter($pdo)
+        : 0.0;
+    $fillEarnings = loyalty_calculate_fill_earnings(
+        $filledLiters,
+        $pointsPerLiter,
+        $balanceAfterRedemption,
+        $progress['points_cap']
+    );
+    $earnPoints = $fillEarnings['points_earned'];
     if ($earnPoints > 0) {
         $credit = $pdo->prepare('UPDATE users SET had_point = had_point + ? WHERE user_id = ?');
         $credit->execute([$earnPoints, $userId]);
@@ -1057,6 +1131,12 @@ function loyalty_apply_on_fill(
             'staff_user_id' => $staffUserId,
             'is_internal' => 0,
         ]);
+    } elseif ($fillEarnings['exp_eligible']) {
+        $awardExp = $pdo->prepare(
+            'UPDATE loyalty_user_tier_progress SET exp = exp + 1 WHERE user_id = ?'
+        );
+        $awardExp->execute([$userId]);
+        $result['exp_earned'] = 1;
     }
 
     $balanceStmt->execute([$userId]);
@@ -1068,6 +1148,9 @@ function loyalty_apply_on_fill(
         $parts = [];
         if ($result['points_earned'] > 0) {
             $parts[] = '+' . $result['points_earned'] . ' points';
+        }
+        if ($result['exp_earned'] > 0) {
+            $parts[] = '+' . $result['exp_earned'] . ' EXP';
         }
         if ($result['points_redeemed'] > 0) {
             $parts[] = '-' . $result['points_redeemed'] . ' points';

@@ -132,12 +132,12 @@ $statusClass = static function (?string $status): string {
                     </div>
                 </div>
 
-                <!-- Extended Switch Account Card (fills vertical space to align with Security & Password card) -->
-                <div class="dashboard-card p-4 flex-grow-1 d-flex flex-column justify-content-between" style="border-color:rgba(0,244,255,.18);background:rgba(0,244,255,.025)!important;">
+                <!-- Compact Customer Profile switch -->
+                <div class="dashboard-card p-4" style="border-color:rgba(0,244,255,.18);background:rgba(0,244,255,.025)!important;">
                     <div>
                         <h6 class="fw-bold text-white mb-2"><i class="bi bi-fuel-pump txt-neon-cyan me-2"></i>Customer Gas Profile</h6>
                     </div>
-                    <form action="../account_switch.php" method="POST" class="m-0 pt-3">
+                    <form action="../account_switch.php" method="POST" class="m-0 mt-3">
                         <input type="hidden" name="mode" value="customer">
                         <button type="submit" class="btn btn-outline-info btn-sm rounded-3 w-100 fw-bold">
                             <i class="bi bi-arrow-left-right me-1"></i>Switch to Customer Profile

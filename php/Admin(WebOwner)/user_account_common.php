@@ -382,6 +382,42 @@ function pending_car_license_rows(string $search = ''): array
     return $rows;
 }
 
+function pending_car_license_count(): int
+{
+    global $conn;
+
+    if (!hq_db_available()) {
+        return 0;
+    }
+
+    $schemaQuery = $conn->query(
+        "SELECT COUNT(*) AS total
+         FROM information_schema.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = 'car_license'
+           AND COLUMN_NAME IN ('car_license_id', 'status')"
+    );
+    if (!$schemaQuery) {
+        error_log('[Account review] Car-license schema check failed: ' . $conn->error);
+        return 0;
+    }
+    if ((int) ($schemaQuery->fetch_assoc()['total'] ?? 0) !== 2) {
+        return 0;
+    }
+
+    $countQuery = $conn->query(
+        "SELECT COUNT(*) AS total
+         FROM car_license
+         WHERE LOWER(TRIM(status)) IN ('pending', 'pending_verification')"
+    );
+    if (!$countQuery) {
+        error_log('[Account review] Pending car-license count failed: ' . $conn->error);
+        return 0;
+    }
+
+    return (int) ($countQuery->fetch_assoc()['total'] ?? 0);
+}
+
 function duplicate_license_record_count(string $licenseType, int $recordId): int
 {
     global $conn;

@@ -15,6 +15,7 @@ $payouts = [];
 $companyTotalBalance = 0.0;
 $unallocatedBalance = 0.0;
 $selectedHeadquarterId = 0;
+$monthlyBudget = 0.0;
 if (empty($_SESSION['admin_loyalty_csrf'])) {
     $_SESSION['admin_loyalty_csrf'] = bin2hex(random_bytes(32));
 }
@@ -29,37 +30,39 @@ try {
             $pointsRate = filter_var($_POST['points_per_liter'] ?? null, FILTER_VALIDATE_FLOAT);
             $registrationFee = filter_var($_POST['registration_fee_mmk'] ?? null, FILTER_VALIDATE_INT);
             $packageRate = filter_var($_POST['package_mmk_per_station_month'] ?? null, FILTER_VALIDATE_INT);
+            $monthlyBudgetInput = filter_var($_POST['monthly_budget_mmk'] ?? null, FILTER_VALIDATE_FLOAT);
             if ($pointsRate === false || $pointsRate < 0 || $pointsRate > 1000
                 || $registrationFee === false || $registrationFee < 0
-                || $packageRate === false || $packageRate < 0) {
-                throw new RuntimeException('Enter valid non-negative earning and billing amounts.');
+                || $packageRate === false || $packageRate < 0
+                || $monthlyBudgetInput === false || !is_finite((float) $monthlyBudgetInput)
+                || $monthlyBudgetInput < 0 || $monthlyBudgetInput > 999999999999.99) {
+                throw new RuntimeException('Enter valid non-negative earning, billing, and monthly budget amounts.');
             }
+            $monthlyBudgetInput = round((float) $monthlyBudgetInput, 2);
 
             $tierInputs = [];
             $redemptionInputs = [];
             foreach (array_keys(loyalty_tier_labels()) as $code) {
                 $tierInputs[$code] = [
-                    'points_threshold' => filter_var($_POST['tier_points'][$code] ?? null, FILTER_VALIDATE_INT),
+                    'points_cap' => filter_var($_POST['tier_caps'][$code] ?? null, FILTER_VALIDATE_INT),
                     'exp_threshold' => filter_var($_POST['tier_exp'][$code] ?? null, FILTER_VALIDATE_INT),
-                    'monthly_budget_mmk' => filter_var($_POST['tier_budget'][$code] ?? null, FILTER_VALIDATE_FLOAT),
+                    'monthly_budget_mmk' => 0.0,
                 ];
-                if ($tierInputs[$code]['points_threshold'] === false || $tierInputs[$code]['points_threshold'] < 0
-                    || $tierInputs[$code]['exp_threshold'] === false || $tierInputs[$code]['exp_threshold'] < 0
-                    || $tierInputs[$code]['monthly_budget_mmk'] === false || $tierInputs[$code]['monthly_budget_mmk'] < 0) {
-                    throw new RuntimeException('Enter valid non-negative point, EXP, and budget thresholds for every tier.');
+                if ($tierInputs[$code]['points_cap'] === false || $tierInputs[$code]['points_cap'] <= 0
+                    || $tierInputs[$code]['exp_threshold'] === false || $tierInputs[$code]['exp_threshold'] < 0) {
+                    throw new RuntimeException('Enter a positive point cap and a non-negative EXP requirement for every tier.');
                 }
             }
             $tierCodes = array_keys($tierInputs);
-            if ($tierInputs['bronze']['points_threshold'] !== 0 || $tierInputs['bronze']['exp_threshold'] !== 0) {
-                throw new RuntimeException('Bronze must remain the starting tier at 0 points and 0 EXP.');
+            if ($tierInputs['bronze']['exp_threshold'] !== 0) {
+                throw new RuntimeException('Bronze must remain the starting tier at 0 EXP.');
             }
             for ($index = 1; $index < count($tierCodes); $index++) {
                 $previous = $tierInputs[$tierCodes[$index - 1]];
                 $current = $tierInputs[$tierCodes[$index]];
-                if ($current['points_threshold'] <= $previous['points_threshold']
-                    || $current['exp_threshold'] <= $previous['exp_threshold']
-                    || $current['monthly_budget_mmk'] <= $previous['monthly_budget_mmk']) {
-                    throw new RuntimeException('Each higher tier must require more points and EXP and have a larger monthly pool budget.');
+                if ($current['points_cap'] <= $previous['points_cap']
+                    || $current['exp_threshold'] <= $previous['exp_threshold']) {
+                    throw new RuntimeException('Each higher tier must have a larger point cap and EXP requirement.');
                 }
             }
 
@@ -80,13 +83,43 @@ try {
             }
 
             $pdo->beginTransaction();
+            $currentMonthlyBudget = loyalty_lock_monthly_pool_budget($pdo);
+            $existingTierRules = loyalty_get_tier_rules($pdo, true);
+            $tierBudgetWeights = [];
+            foreach ($existingTierRules as $code => $rule) {
+                $tierBudgetWeights[$code] = $rule['monthly_budget_mmk'];
+            }
+            $allocatedTierBudgets = loyalty_distribute_monthly_pool_budget((float) $monthlyBudgetInput, $tierBudgetWeights);
+            foreach ($allocatedTierBudgets as $code => $allocatedBudget) {
+                $tierInputs[$code]['monthly_budget_mmk'] = $allocatedBudget;
+            }
+            $currentYearMonth = loyalty_current_year_month();
+            $spentThisMonthStmt = $pdo->prepare(
+                'SELECT spent_mmk
+                 FROM loyalty_tier_pool
+                 WHERE `year_month` = ?
+                 FOR UPDATE'
+            );
+            $spentThisMonthStmt->execute([$currentYearMonth]);
+            $spentThisMonth = 0.0;
+            while (($spentValue = $spentThisMonthStmt->fetchColumn()) !== false) {
+                $spentThisMonth += (float) $spentValue;
+            }
+            if ((float) $monthlyBudgetInput + 0.0001 < $spentThisMonth
+                && (float) $monthlyBudgetInput + 0.0001 < $currentMonthlyBudget) {
+                throw new RuntimeException(
+                    'The monthly budget cannot be reduced below discounts already granted this month (' .
+                    number_format($spentThisMonth, 2) . ' MMK).'
+                );
+            }
+
             $saveSetting = $pdo->prepare(
                 'INSERT INTO platform_settings (setting_key, setting_value)
                  VALUES (?, ?)
                  ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)'
             );
             $saveSetting->execute(['loyalty_points_per_liter', number_format((float) $pointsRate, 4, '.', '')]);
-            $saveSetting->execute(['loyalty_pool_enforced', isset($_POST['pool_enforced']) ? '1' : '0']);
+            $saveSetting->execute(['loyalty_monthly_budget_mmk', number_format((float) $monthlyBudgetInput, 2, '.', '')]);
             $saveSetting->execute(['hq_registration_fee_mmk', (string) $registrationFee]);
             $saveSetting->execute(['hq_package_mmk_per_station_month', (string) $packageRate]);
 
@@ -97,7 +130,7 @@ try {
             );
             foreach ($tierInputs as $code => $rule) {
                 $saveTier->execute([
-                    $rule['points_threshold'],
+                    $rule['points_cap'],
                     $rule['exp_threshold'],
                     $rule['monthly_budget_mmk'],
                     $code,
@@ -109,6 +142,19 @@ try {
                         throw new RuntimeException('A tier rule could not be saved.');
                     }
                 }
+            }
+
+            $saveCurrentPool = $pdo->prepare(
+                'INSERT INTO loyalty_tier_pool (tier_code, `year_month`, budget_mmk, spent_mmk)
+                 VALUES (?, ?, ?, 0)
+                 ON DUPLICATE KEY UPDATE budget_mmk = VALUES(budget_mmk)'
+            );
+            foreach ($tierInputs as $code => $rule) {
+                $saveCurrentPool->execute([
+                    $code,
+                    $currentYearMonth,
+                    $rule['monthly_budget_mmk'],
+                ]);
             }
 
             $saveReward = $pdo->prepare(
@@ -179,12 +225,10 @@ try {
     $pointsRateStmt = $pdo->prepare('SELECT setting_value FROM platform_settings WHERE setting_key = ?');
     $pointsRateStmt->execute(['loyalty_points_per_liter']);
     $pointsRate = (string) $pointsRateStmt->fetchColumn();
-    $poolStmt = $pdo->prepare('SELECT setting_value FROM platform_settings WHERE setting_key = ?');
-    $poolStmt->execute(['loyalty_pool_enforced']);
-    $poolEnforced = (string) $poolStmt->fetchColumn() === '1';
     $registrationFee = billing_admin_setting($pdo, 'hq_registration_fee_mmk', BILLING_HQ_REGISTRATION_FEE_MMK);
     $packageRate = billing_admin_setting($pdo, 'hq_package_mmk_per_station_month', BILLING_HQ_PACKAGE_MMK_PER_STATION_MONTHLY);
     $tierRules = loyalty_get_tier_rules($pdo);
+    $monthlyBudget = loyalty_monthly_pool_budget($pdo);
     $redemptions = loyalty_redemption_options($pdo);
     if (count($redemptions) !== 3) {
         throw new RuntimeException('Exactly three redemption options must be configured.');
@@ -279,11 +323,10 @@ $redemptionValues = array_values($redemptions ?? []);
                     <label class="form-label" for="package-rate">All-in-one station package (MMK / station / month)</label>
                     <input class="form-control" id="package-rate" name="package_mmk_per_station_month" type="number" min="0" step="1" value="<?= (int) $packageRate ?>" required>
                 </div>
-                <div class="col-12">
-                    <div class="form-check">
-                        <input class="form-check-input" id="pool-enforced" name="pool_enforced" type="checkbox" value="1" <?= $poolEnforced ? 'checked' : '' ?>>
-                        <label class="form-check-label" for="pool-enforced">Enforce monthly shared tier-pool budgets</label>
-                    </div>
+                <div class="col-md-4">
+                    <label class="form-label" for="monthly-budget">Total monthly loyalty budget (MMK)</label>
+                    <input class="form-control" id="monthly-budget" name="monthly_budget_mmk" type="number" min="0" max="999999999999.99" step="0.01" value="<?= number_format($monthlyBudget, 2, '.', '') ?>" required>
+                    <div class="form-text">Funds driver discounts and resulting company payouts. Combined tier discounts cannot exceed this amount per calendar month.</div>
                 </div>
             </div>
 
@@ -303,18 +346,18 @@ $redemptionValues = array_values($redemptions ?? []);
                 </table>
             </div>
 
-            <h3 class="h6 mt-4">Tier thresholds and shared monthly MMK pools</h3>
-            <p class="loyalty-muted small">A driver must meet both the point threshold and the EXP threshold. Meeting the 35 L weekly quota adds 1 EXP; a missed week removes 1 EXP. Pool usage is shared by all drivers in the same tier each calendar month.</p>
+            <h3 class="h6 mt-4">Tier point caps, editable EXP requirements, and calculated monthly pools</h3>
+            <p class="loyalty-muted small">EXP alone determines tier. Bronze starts at 0 EXP; each higher tier needs a larger threshold. A successful external fill awards 1 EXP instead of points when the driver has reached their current tier's point cap. The monthly budget is divided proportionally using the current tier-pool shares, and redemption is always capped by those shared pools.</p>
             <div class="table-responsive">
                 <table class="table loyalty-table align-middle">
-                    <thead><tr><th>Tier</th><th>Points</th><th>EXP weeks</th><th>Pool budget (MMK / month)</th></tr></thead>
+                    <thead><tr><th>Tier</th><th>Point cap</th><th>Total EXP required</th><th>Calculated pool (MMK / month)</th></tr></thead>
                     <tbody>
                     <?php foreach ($tierLabels as $code => $label): ?>
                         <tr>
                             <th><?= hq_escape($label) ?></th>
-                            <td><input class="form-control" name="tier_points[<?= hq_escape($code) ?>]" type="number" min="0" step="1" value="<?= $tierRules[$code]['points_threshold'] ?>" required></td>
+                            <td><input class="form-control" name="tier_caps[<?= hq_escape($code) ?>]" type="number" min="1" step="1" value="<?= $tierRules[$code]['points_cap'] ?>" required></td>
                             <td><input class="form-control" name="tier_exp[<?= hq_escape($code) ?>]" type="number" min="0" step="1" value="<?= $tierRules[$code]['exp_threshold'] ?>" required></td>
-                            <td><input class="form-control" name="tier_budget[<?= hq_escape($code) ?>]" type="number" min="0" step="1000" value="<?= number_format($tierRules[$code]['monthly_budget_mmk'], 2, '.', '') ?>" required></td>
+                            <td><?= number_format($tierRules[$code]['monthly_budget_mmk'], 2) ?> MMK</td>
                         </tr>
                     <?php endforeach; ?>
                     </tbody>

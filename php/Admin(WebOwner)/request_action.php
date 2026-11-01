@@ -24,19 +24,12 @@ $action = strtolower(trim((string) ($_POST['action'] ?? '')));
 $reason = trim((string) ($_POST['reason'] ?? ''));
 
 $allowedActions = ['approve', 'reject'];
-$activeRole = strtolower(trim((string) ($reviewer['active_role_name'] ?? '')));
-if ($activeRole === '') {
-    $activeRole = strtolower(trim((string) ($reviewer['role_name'] ?? '')));
-}
-if ($activeRole === 'moderator') {
-    $allowedActions[] = 'flag';
-}
 if (!$requestId || !in_array($action, $allowedActions, true)) {
     request_flash('danger', 'The request action was invalid.');
     request_redirect();
 }
-if (($action === 'reject' || $action === 'flag') && $reason === '') {
-    request_flash('danger', $action === 'flag' ? 'A flag reason is required.' : 'A rejection reason is required.');
+if ($action === 'reject' && $reason === '') {
+    request_flash('danger', 'A rejection reason is required.');
     request_redirect();
 }
 if (mb_strlen($reason) > 2000) {
@@ -138,31 +131,6 @@ try {
             }
             $receiptCheck->close();
         }
-    }
-
-    // Flag keeps the request open for follow-up without approving or rejecting.
-    if ($action === 'flag') {
-        $reviewerId = (int) $reviewer['user_id'];
-        $flagUpdate = $conn->prepare(
-            "UPDATE system_requests
-             SET status = 'flagged', review_reason = ?, reviewed_at = NOW(), reviewed_by = ?, updated_at = NOW()
-             WHERE request_id = ? AND status = 'pending'"
-        );
-        if (!$flagUpdate) {
-            throw new RuntimeException('Could not prepare the flag update.');
-        }
-        $flagUpdate->bind_param('sii', $reason, $reviewerId, $requestId);
-        if (!$flagUpdate->execute() || $flagUpdate->affected_rows !== 1) {
-            throw new RuntimeException('The request was already changed or could not be flagged.');
-        }
-        $flagUpdate->close();
-        $conn->commit();
-        admin_record_log(
-            (int) $reviewer['user_id'],
-            'Flagged request #' . $requestId . ' (' . $target['reference_code'] . ').'
-        );
-        request_flash('success', sprintf('Request %s was flagged for follow-up.', $target['reference_code']));
-        request_redirect();
     }
 
     $createdHeadquarterId = null;

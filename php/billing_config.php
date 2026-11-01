@@ -44,9 +44,9 @@ function billing_admin_setting(PDO $pdo, string $key, int $default): int
 
 if (!defined('BILLING_HQ_VOLUME_DISCOUNTS')) {
     define('BILLING_HQ_VOLUME_DISCOUNTS', [
-        ['label' => '1–7 paid', 'min' => 1, 'percent' => 0],
-        ['label' => '8–22 paid', 'min' => 8, 'percent' => 10],
-        ['label' => '23+ paid', 'min' => 23, 'percent' => 20],
+        ['label' => '1–7 stations', 'min' => 1, 'percent' => 0],
+        ['label' => '8–22 stations', 'min' => 8, 'percent' => 10],
+        ['label' => '23+ stations', 'min' => 23, 'percent' => 20],
     ]);
 }
 if (!defined('BILLING_HQ_TERM_DISCOUNTS')) {

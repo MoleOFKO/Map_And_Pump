@@ -183,68 +183,56 @@
 
     /* ======================================================================
        PRICING CALCULATOR
-       Homepage estimate: the first three stations are included; paid
-       stations use the configured rate and 12/60-month upfront terms.
+       Use the same station, volume, and service-period pricing as registration.
        ====================================================================== */
     var calc = document.getElementById('calc');
     if (calc) {
-        var RATE = Number(calc.dataset.rate) || 37000;
-        var INCLUDED = Number(calc.dataset.included) || 3;
+        var RATE = Number(calc.dataset.rate);
+        var REGISTRATION_FEE = Number(calc.dataset.registrationFee);
+        var VOLUME_DISCOUNTS = JSON.parse(calc.dataset.volumeDiscounts || '[]');
+        var TERM_DISCOUNTS = JSON.parse(calc.dataset.termDiscounts || '[]');
         var rangeEl = document.getElementById('calc-range');
-        var numberEl = document.getElementById('calc-number');
         var countEl = document.getElementById('calc-count');
-        var totalStationsEl = document.getElementById('calc-total-stations');
-        var freeEl = document.getElementById('calc-free');
         var paidEl = document.getElementById('calc-paid');
         var monthsWrap = document.getElementById('calc-months');
         var baseEl = document.getElementById('calc-base');
-        var savingsEl = document.getElementById('calc-savings');
-        var termLabelEl = document.getElementById('calc-term-label');
+        var registrationEl = document.getElementById('calc-registration');
+        var volumeDiscountEl = document.getElementById('calc-vol');
+        var termDiscountEl = document.getElementById('calc-dur');
         var totalEl = document.getElementById('calc-total');
         var perEl = document.getElementById('calc-per');
-        var freeNoteEl = document.getElementById('calc-free-note');
-        var months = 12;
-        var discount = 2;
+        var months = 1;
+        var term = TERM_DISCOUNTS.find(function (item) { return Number(item.months) === months; }) || TERM_DISCOUNTS[0];
 
         function fmt(value) { return Math.round(value).toLocaleString('en-US'); }
-        function clampStations(value) {
-            var parsed = Number.parseInt(value, 10);
-            if (!Number.isFinite(parsed)) parsed = Number(rangeEl.value) || 1;
-            return Math.min(Number(rangeEl.max), Math.max(Number(rangeEl.min), parsed));
-        }
 
-        function update(stationValue) {
-            var stations = clampStations(stationValue);
-            var free = Math.min(stations, INCLUDED);
-            var paid = Math.max(stations - INCLUDED, 0);
-            var base = paid * RATE * months;
-            var savings = base * discount / 100;
-            var upfront = Math.round(base - savings);
+        function update() {
+            var stations = Number(rangeEl.value);
+            var volumeDiscount = VOLUME_DISCOUNTS.reduce(function (current, item) {
+                return stations >= Number(item.min) ? Number(item.percent) : current;
+            }, 0);
+            var termDiscount = Number(term.percent);
+            var base = RATE * stations * months;
+            var afterVolumeDiscount = base * (1 - volumeDiscount / 100);
+            var packageTotal = Math.round(afterVolumeDiscount * (1 - termDiscount / 100) * 100) / 100;
+            var total = REGISTRATION_FEE + packageTotal;
+            var volumeSavings = base - afterVolumeDiscount;
+            var termSavings = afterVolumeDiscount - packageTotal;
 
-            rangeEl.value = String(stations);
-            numberEl.value = String(stations);
             countEl.textContent = String(stations);
-            totalStationsEl.textContent = String(stations);
-            freeEl.textContent = String(free);
-            paidEl.textContent = String(paid);
-            termLabelEl.textContent = months === 12 ? '1 year' : '5 years';
+            paidEl.textContent = String(stations);
             baseEl.textContent = fmt(base) + ' MMK';
-            savingsEl.textContent = fmt(savings) + ' MMK (' + discount + '%)';
-            totalEl.textContent = fmt(upfront) + ' MMK';
-            perEl.textContent = paid
-                ? 'Equivalent to ' + fmt(upfront / paid / months) + ' MMK / paid station / month'
-                : 'No paid stations in this estimate';
-            freeNoteEl.hidden = paid > 0;
+            registrationEl.textContent = fmt(REGISTRATION_FEE) + ' MMK';
+            volumeDiscountEl.textContent = volumeDiscount + '% (' + fmt(volumeSavings) + ' MMK)';
+            termDiscountEl.textContent = termDiscount + '% (' + fmt(termSavings) + ' MMK)';
+            totalEl.textContent = fmt(total) + ' MMK';
+            perEl.textContent = fmt(packageTotal / months / stations) + ' MMK / station / month after discounts';
 
             var pct = ((stations - Number(rangeEl.min)) / (Number(rangeEl.max) - Number(rangeEl.min))) * 100;
             rangeEl.style.setProperty('--fill', pct + '%');
         }
 
-        rangeEl.addEventListener('input', function () { update(rangeEl.value); });
-        numberEl.addEventListener('input', function () {
-            if (numberEl.value !== '') update(numberEl.value);
-        });
-        numberEl.addEventListener('change', function () { update(numberEl.value); });
+        rangeEl.addEventListener('input', update);
 
         monthsWrap.querySelectorAll('button').forEach(function (button) {
             button.addEventListener('click', function () {
@@ -254,12 +242,12 @@
                     item.setAttribute('aria-pressed', String(selected));
                 });
                 months = Number(button.dataset.months);
-                discount = Number(button.dataset.discount);
-                update(numberEl.value);
+                term = TERM_DISCOUNTS.find(function (item) { return Number(item.months) === months; });
+                update();
             });
         });
 
-        update(numberEl.value);
+        update();
     }
 
     /* ======================================================================
