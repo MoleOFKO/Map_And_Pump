@@ -1,0 +1,124 @@
+// MAP & PUMP ER Diagram - PK / FK only
+
+Table roles {
+  role_id int [pk]
+}
+
+Table user_license {
+  license_id int [pk]
+}
+
+Table headquarter {
+  headquarter_id int [pk]
+  headquarters_owner_id int [ref: > users.user_id]
+}
+
+Table users {
+  user_id int [pk]
+  license_id int [ref: > user_license.license_id]
+  headquarter_id int [ref: > headquarter.headquarter_id]
+  role_id int [ref: > roles.role_id]
+  business_role_id int [ref: > roles.role_id]
+  current_role_id int [ref: > roles.role_id]
+}
+
+Table sessions {
+  session_id int [pk]
+  user_id int [ref: > users.user_id]
+}
+
+Table branches {
+  branch_id int [pk]
+  manager_user_id int [ref: > users.user_id]
+}
+
+Table staff {
+  staff_id int [pk]
+  user_id int [ref: > users.user_id]
+  branch_id int [ref: > branches.branch_id]
+}
+
+Table station_business_scope {
+  station_id int [pk]
+  headquarter_id int [ref: > headquarter.headquarter_id]
+  branch_manager_user_id int [ref: > users.user_id]
+}
+
+Table oil_types {
+  oil_type_id int [pk]
+}
+
+Table tanks {
+  tank_id int [pk]
+  branch_id int [ref: > branches.branch_id]
+  oil_type_id int [ref: > oil_types.oil_type_id]
+}
+
+Table station_oil_inventory {
+  inventory_id int [pk]
+  station_id int [ref: > branches.branch_id]
+  oil_type_id int [ref: > oil_types.oil_type_id]
+}
+
+Table car_license {
+  car_license_id int [pk]
+}
+
+Table user_car {
+  user_car_id int [pk]
+  user_id int [ref: > users.user_id]
+  car_id int [ref: > car_license.car_license_id]
+}
+
+Table booking {
+  booking_id int [pk]
+  user_id int [ref: > users.user_id]
+  car_license_id int [ref: > car_license.car_license_id]
+  station_id int [ref: > branches.branch_id]
+  oil_type_id int [ref: > oil_types.oil_type_id]
+}
+
+Table booking_partial_offers {
+  booking_id int [pk, ref: > booking.booking_id]
+  offered_by int [ref: > users.user_id]
+}
+
+Table usage_history {
+  usage_id int [pk]
+  booking_id int [ref: > booking.booking_id]
+  user_id int [ref: > users.user_id]
+  car_license_id int [ref: > car_license.car_license_id]
+  station_id int [ref: > branches.branch_id]
+  oil_type_id int [ref: > oil_types.oil_type_id]
+  staff_user_id int [ref: > users.user_id]
+}
+
+Table feedback {
+  feedback_id int [pk]
+  user_id int [ref: > users.user_id]
+}
+
+Table feedback_replies {
+  reply_id int [pk]
+  feedback_id int [ref: > feedback.feedback_id]
+  staff_id int [ref: > staff.staff_id]
+}
+
+Table system_requests {
+  request_id int [pk]
+  submitter_user_id int [ref: > users.user_id]
+  role_id int [ref: > roles.role_id]
+  headquarter_id int [ref: > headquarter.headquarter_id]
+}
+
+Table notifications {
+  notification_id int [pk]
+  request_id int [ref: > system_requests.request_id]
+  recipient_user_id int [ref: > users.user_id]
+}
+
+Table log {
+  log_id int [pk]
+  user_id int [ref: > users.user_id]
+  role_id int [ref: > roles.role_id]
+}
