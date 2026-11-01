@@ -2089,6 +2089,46 @@ footer.site-footer {
     box-shadow: 0 8px 22px -8px var(--mp-glow-cyan);
 }
 
+.calc-number-label { margin-top: 16px; }
+.calc-number {
+    width: min(100%, 180px);
+    min-height: 46px;
+    padding: 10px 13px;
+    color: #f8fafc;
+    background: rgba(5, 8, 15, 0.62);
+    border: 1px solid var(--mp-line-strong);
+    border-radius: 10px;
+    font: inherit;
+}
+.calc-number:focus-visible,
+.calc-range:focus-visible,
+.calc-months button:focus-visible {
+    outline: 3px solid var(--mp-cyan);
+    outline-offset: 3px;
+}
+.calc-term-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.calc-months.calc-term-cards button {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 5px;
+    min-height: 76px;
+    padding: 14px 16px;
+    border-radius: 14px;
+    text-align: left;
+}
+.calc-term-cards button strong { font-size: .98rem; }
+.calc-term-cards button span { font-size: .78rem; font-weight: 500; }
+.calc-free-note {
+    margin: 14px 0 0;
+    padding: 12px;
+    color: #b7f7d8;
+    background: rgba(16, 185, 129, .12);
+    border: 1px solid rgba(16, 185, 129, .3);
+    border-radius: 10px;
+    font-size: .86rem;
+}
+
 .calc-result {
     padding: 28px 26px;
     border-radius: var(--mp-radius);
@@ -2506,18 +2546,6 @@ footer.site-footer {
 .news-body { color: var(--mp-muted); font-size: 0.93rem; margin: 0; }/* --------------------------------------------------------------------------
    24. REDUCED MOTION
    -------------------------------------------------------------------------- */
-@media (prefers-reduced-motion: reduce) {
-    *,
-    *::before,
-    *::after {
-        animation-duration: 0.001ms !important;
-        animation-iteration-count: 1 !important;
-        transition-duration: 0.001ms !important;
-        scroll-behavior: auto !important;
-    }
-    [data-reveal] { opacity: 1; transform: none; }
-}
-
 .qr-wrapper.qr-sm { width: 58px; height: 58px; margin: 0; font-size: 1.6rem; }
 
 /* --------------------------------------------------------------------------
@@ -2563,4 +2591,22 @@ body.project-consent-open { overflow: hidden; }
     .project-consent__card { border-radius: 18px; }
     .project-consent__actions { flex-direction: column-reverse; }
     .project-consent__actions .btn { width: 100%; }
+}
+
+@media (max-width: 575.98px) {
+    .calc-term-cards { grid-template-columns: 1fr; }
+    .calc-number { width: 100%; }
+}
+
+/* Reduced motion stays last so it overrides component transitions. */
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.001ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.001ms !important;
+        scroll-behavior: auto !important;
+    }
+    [data-reveal] { opacity: 1; transform: none; }
 }
