@@ -89,6 +89,14 @@ if (empty($_SESSION['is_logged_in']) || empty($_SESSION['user_id'])) {
     account_switch_redirect_login();
 }
 
+if (strtolower((string)($_SESSION['role_name'] ?? '')) === 'staff') {
+    $staffCsrfToken = (string)($_SESSION['staff_csrf_token'] ?? '');
+    if ($staffCsrfToken === '' || !hash_equals($staffCsrfToken, (string)($_POST['csrf_token'] ?? ''))) {
+        http_response_code(403);
+        exit('Invalid request token. Reload the page and try again.');
+    }
+}
+
 $userId = (int) $_SESSION['user_id'];
 $targetMode = strtolower(trim((string) ($_POST['mode'] ?? '')));
 

@@ -17,6 +17,17 @@ if (empty($_SESSION['is_logged_in']) || empty($_SESSION['user_id'])) {
     exit;
 }
 
+if (strtolower((string)($_SESSION['role_name'] ?? '')) !== 'staff') {
+    http_response_code(403);
+    exit('This action is only available to staff accounts.');
+}
+
+$staffCsrfToken = (string)($_SESSION['staff_csrf_token'] ?? '');
+if ($staffCsrfToken === '' || !hash_equals($staffCsrfToken, (string)($_POST['csrf_token'] ?? ''))) {
+    http_response_code(403);
+    exit('Invalid request token. Reload the page and try again.');
+}
+
 $userId = (int) $_SESSION['user_id'];
 $currentPassword = (string) ($_POST['current_password'] ?? '');
 $newPassword = (string) ($_POST['new_password'] ?? '');

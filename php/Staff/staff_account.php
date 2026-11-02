@@ -30,6 +30,11 @@ if ($roleName !== 'staff') {
     redirect_to_login('This page is only available to staff accounts.');
 }
 
+if (empty($_SESSION['staff_csrf_token'])) {
+    $_SESSION['staff_csrf_token'] = bin2hex(random_bytes(32));
+}
+$staffCsrfToken = (string)$_SESSION['staff_csrf_token'];
+
 // Handle Profile Avatar Upload Request
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'update_avatar') {
     if (isset($_FILES['profile_logo']) && $_FILES['profile_logo']['error'] === UPLOAD_ERR_OK) {
@@ -453,6 +458,7 @@ $branchCode = trim((string) ($user['branch_code'] ?? '')) ?: 'N/A';
                                 </div>
 
                                 <form id="avatarUploadForm" action="staff_account.php" method="POST" enctype="multipart/form-data" class="d-none">
+                                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($staffCsrfToken, ENT_QUOTES, 'UTF-8') ?>">
                                     <input type="hidden" name="action" value="update_avatar">
                                     <input type="file" id="profileLogoInput" name="profile_logo" accept="image/jpeg,image/png,image/webp">
                                 </form>
@@ -503,6 +509,7 @@ $branchCode = trim((string) ($user['branch_code'] ?? '')) ?: 'N/A';
                                 <p class="text-white-50 small mb-4">Switching profiles keeps this signed-in session active and opens the Customer profile for the same account.</p>
                             </div>
                             <form action="../account_switch.php" method="POST">
+                                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($staffCsrfToken, ENT_QUOTES, 'UTF-8') ?>">
                                 <input type="hidden" name="mode" value="customer">
                                 <button type="submit" class="btn btn-outline-info w-100 py-2 fw-bold rounded-pill">
                                     <i class="bi bi-fuel-pump me-2"></i>Switch to Customer Profile
@@ -541,6 +548,7 @@ $branchCode = trim((string) ($user['branch_code'] ?? '')) ?: 'N/A';
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content">
                 <form action="staff_account.php" method="POST">
+                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($staffCsrfToken, ENT_QUOTES, 'UTF-8') ?>">
                     <input type="hidden" name="action" value="update_profile">
                     <div class="modal-header px-4 pt-4">
                         <div class="d-flex align-items-center gap-3">
@@ -584,6 +592,7 @@ $branchCode = trim((string) ($user['branch_code'] ?? '')) ?: 'N/A';
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content">
                 <form action="change_password_process.php" method="POST">
+                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($staffCsrfToken, ENT_QUOTES, 'UTF-8') ?>">
                     <div class="modal-header px-4 pt-4">
                         <div class="d-flex align-items-center gap-3">
                             <span class="staff-security-icon"><i class="bi bi-shield-lock"></i></span>

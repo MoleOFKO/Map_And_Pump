@@ -44,7 +44,6 @@ Table users {
   email varchar(255) [unique, not null]
   hashed_password varchar(255)
   license_id int
-  headquarter_id int
   role_id int [default: 6]
   business_role_id int
   current_role_id int [default: 6]
@@ -288,7 +287,6 @@ Ref: users.role_id > roles.role_id
 Ref: users.business_role_id > roles.role_id
 Ref: users.current_role_id > roles.role_id
 Ref: users.license_id > user_license.license_id
-Ref: users.headquarter_id > headquarter.headquarter_id
 Ref: headquarter.headquarters_owner_id > users.user_id
 Ref: sessions.user_id > users.user_id
 Ref: branches.manager_user_id > users.user_id
