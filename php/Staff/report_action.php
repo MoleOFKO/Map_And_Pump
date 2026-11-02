@@ -9,9 +9,15 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 
 $userId = isset($_SESSION['user_id']) ? (int)$_SESSION['user_id'] : 0;
-if ($userId <= 0) {
+if ($userId <= 0 || strtolower((string)($_SESSION['role_name'] ?? '')) !== 'staff') {
     header('Location: feedback_manage.php');
     exit;
+}
+
+$staffCsrfToken = (string)($_SESSION['staff_csrf_token'] ?? '');
+if ($staffCsrfToken === '' || !hash_equals($staffCsrfToken, (string)($_POST['csrf_token'] ?? ''))) {
+    http_response_code(403);
+    exit('Invalid request token. Reload the page and try again.');
 }
 
 $importance = strtolower(trim((string)($_POST['importance'] ?? 'normal')));

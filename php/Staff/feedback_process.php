@@ -15,6 +15,12 @@ if ($userId <= 0 || strtolower((string)($_SESSION['role_name'] ?? '')) !== 'staf
     exit;
 }
 
+$staffCsrfToken = (string)($_SESSION['staff_csrf_token'] ?? '');
+if ($staffCsrfToken === '' || !hash_equals($staffCsrfToken, (string)($_POST['csrf_token'] ?? ''))) {
+    http_response_code(403);
+    exit('Invalid request token. Reload the page and try again.');
+}
+
 $action = (string)($_POST['action'] ?? 'reply');
 $feedbackId = isset($_POST['feedback_id']) ? (int)$_POST['feedback_id'] : 0;
 $replyMsg = trim((string)($_POST['response_msg'] ?? ''));

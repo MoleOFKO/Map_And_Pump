@@ -20,6 +20,11 @@ if ($roleName !== 'staff') {
     redirect_to_login('This page is only available to staff accounts.');
 }
 
+if (empty($_SESSION['staff_csrf_token'])) {
+    $_SESSION['staff_csrf_token'] = bin2hex(random_bytes(32));
+}
+$staffCsrfToken = (string)$_SESSION['staff_csrf_token'];
+
 // Load the signed-in staff member and their assigned station.
 $displayName = '';
 $staffStationId = 0;
@@ -285,7 +290,7 @@ $showReplySuccess = isset($_GET['reply_sent']) && $_GET['reply_sent'] === '1';
                             <p class="text-white-70 mb-4 small" style="opacity: 0.85;"><?= nl2br(htmlspecialchars(substr($fb['feedback'], 0, 240))) ?><?= strlen($fb['feedback']) > 240 ? '…' : '' ?></p>
                             <?php if ((int)$fb['reply_count'] > 0): ?><div class="reply-preview"><i class="bi bi-reply-fill me-1"></i><?= (int)$fb['reply_count'] ?> staff repl<?= (int)$fb['reply_count'] === 1 ? 'y' : 'ies' ?> recorded for this feedback.</div><?php endif; ?>
                             <div class="d-flex justify-content-end gap-2 flex-wrap">
-                                <?php if ($isUnread): ?><form action="feedback_process.php" method="POST"><input type="hidden" name="action" value="mark_read"><input type="hidden" name="feedback_id" value="<?= (int)$fb['feedback_id'] ?>"><input type="hidden" name="return_tab" value="<?= htmlspecialchars($activeTab) ?>"><button class="btn btn-outline-light px-4" type="submit"><i class="bi bi-check2 me-1"></i> Mark read</button></form><?php endif; ?>
+                                <?php if ($isUnread): ?><form action="feedback_process.php" method="POST"><input type="hidden" name="csrf_token" value="<?= htmlspecialchars($staffCsrfToken, ENT_QUOTES, 'UTF-8') ?>"><input type="hidden" name="action" value="mark_read"><input type="hidden" name="feedback_id" value="<?= (int)$fb['feedback_id'] ?>"><input type="hidden" name="return_tab" value="<?= htmlspecialchars($activeTab) ?>"><button class="btn btn-outline-light px-4" type="submit"><i class="bi bi-check2 me-1"></i> Mark read</button></form><?php endif; ?>
                                 <button class="btn menu-pill-btn px-4" data-bs-toggle="modal" data-bs-target="#replyModal" data-feedback-id="<?= (int)$fb['feedback_id'] ?>"><i class="bi bi-reply-fill me-1"></i> Reply</button>
                                 <button class="btn btn-outline-light px-4" data-feedback-id="<?= (int)$fb['feedback_id'] ?>" onclick="attachToReport(<?= (int)$fb['feedback_id'] ?>)"><i class="bi bi-pin-angle me-1"></i> Attach to Report</button>
                             </div>
@@ -309,6 +314,7 @@ $showReplySuccess = isset($_GET['reply_sent']) && $_GET['reply_sent'] === '1';
                 <form action="feedback_process.php" method="POST">
                     <div class="modal-body">
                     
+                        <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($staffCsrfToken, ENT_QUOTES, 'UTF-8') ?>">
                         <input type="hidden" name="action" value="reply">
                         <input type="hidden" id="modalFeedbackId" name="feedback_id" value="">
                         <input type="hidden" name="return_tab" value="<?= htmlspecialchars($activeTab) ?>">
@@ -340,6 +346,7 @@ $showReplySuccess = isset($_GET['reply_sent']) && $_GET['reply_sent'] === '1';
                             <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
                         </div>
                         <form action="report_action.php" method="POST">
+                            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($staffCsrfToken, ENT_QUOTES, 'UTF-8') ?>">
                             <div class="modal-body">
                                 <input type="hidden" name="staff_id" value="<?= (int)($_SESSION['user_id'] ?? 0) ?>">
                                 <div class="row g-3">
