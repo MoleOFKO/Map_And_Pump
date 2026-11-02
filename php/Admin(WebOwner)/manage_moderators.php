@@ -195,6 +195,29 @@ $flashType = (string) ($flash['type'] ?? '');
         .moderator-account-select { width:100%; text-align:left; border:0; background:transparent; color:inherit; padding:0; }
         .moderator-account-select:hover { color:var(--neon-cyan); }
         .moderator-account-select.is-selected { color:var(--neon-cyan); }
+        .moderator-status-select {
+            appearance:none;
+            -webkit-appearance:none;
+            padding-right:2.8rem !important;
+            cursor:pointer;
+            background-image:none !important;
+        }
+        .moderator-status-select:focus-visible { outline:2px solid var(--neon-cyan); outline-offset:2px; }
+        .moderator-status-select-wrap { position:relative; }
+        .moderator-status-select-caret {
+            position:absolute;
+            top:50%;
+            right:1.15rem;
+            width:9px;
+            height:9px;
+            border-right:2px solid #70b4ff;
+            border-bottom:2px solid #70b4ff;
+            transform:translateY(-70%) rotate(45deg);
+            pointer-events:none;
+        }
+        #statusModeratorHint { color:#bdcbe0; font-size:.8rem; }
+        body.background_color.light-mode .moderator-status-select-caret { border-color:#0b5ed7; }
+        body.background_color.light-mode #statusModeratorHint { color:#46576b; }
         .moderator-selected-chip {
             display:none; align-items:center; gap:.6rem; margin-top:.65rem;
             padding:.55rem .8rem; border-radius:12px;
@@ -422,7 +445,7 @@ $flashType = (string) ($flash['type'] ?? '');
         </div>
     </div>
 
-    <div class="modal fade glass-modal" id="statusAdminModal" tabindex="-1" aria-labelledby="statusAdminModalLabel" aria-hidden="true"><div class="modal-dialog modal-dialog-centered modal-dialog-scrollable"><div class="modal-content"><div class="modal-header"><h5 class="modal-title fw-bold" id="statusAdminModalLabel"><i class="bi bi-person-x txt-neon-cyan me-2"></i> Change Moderator Status</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button></div><form action="moderator_action.php" method="POST"><input type="hidden" name="action" value="update_status"><input type="hidden" name="user_id" id="statusModeratorId"><div class="modal-body"><label class="form-label text-white-50 small" for="statusModeratorValue">Account Status</label><select id="statusModeratorValue" class="form-select glass-select" name="status" required><option value="approved">Approved</option><option value="suspended">Suspended</option><option value="removed">Revoked / Removed</option></select></div><div class="modal-footer"><button type="button" class="btn btn-outline-secondary rounded-3 text-white-50 border-secondary border-opacity-20" data-bs-dismiss="modal">Cancel</button><button type="submit" class="btn btn-neon">Update Status</button></div></form></div></div></div>
+    <div class="modal fade glass-modal" id="statusAdminModal" tabindex="-1" aria-labelledby="statusAdminModalLabel" aria-hidden="true"><div class="modal-dialog modal-dialog-centered modal-dialog-scrollable"><div class="modal-content"><div class="modal-header"><h5 class="modal-title fw-bold" id="statusAdminModalLabel"><i class="bi bi-person-x txt-neon-cyan me-2"></i> Change Moderator Status</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button></div><form action="moderator_action.php" method="POST"><input type="hidden" name="action" value="update_status"><input type="hidden" name="user_id" id="statusModeratorId"><div class="modal-body"><label class="form-label text-white-50 small" for="statusModeratorValue">Account Status</label><div class="moderator-status-select-wrap"><select id="statusModeratorValue" class="form-select glass-select moderator-status-select" name="status" aria-describedby="statusModeratorHint" required><option value="approved">Approved</option><option value="suspended">Suspended</option><option value="removed">Revoked / Removed</option></select><span class="moderator-status-select-caret" aria-hidden="true"></span></div><div id="statusModeratorHint" class="form-text mt-2">Select the account status to apply.</div></div><div class="modal-footer"><button type="button" class="btn btn-outline-secondary rounded-3 text-white-50 border-secondary border-opacity-20" data-bs-dismiss="modal">Cancel</button><button type="submit" class="btn btn-neon">Update Status</button></div></form></div></div></div>
 
     
 
