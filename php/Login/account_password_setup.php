@@ -36,3 +36,42 @@ function account_password_setup_create_link(mysqli $conn, int $userId, int $expi
 
     return payment_transfer_absolute_url('/php/Login/set_account_password.php?token=' . rawurlencode($token));
 }
+
+function account_password_setup_ensure_schema_pdo(PDO $pdo): void
+{
+    $pdo->exec(
+        "CREATE TABLE IF NOT EXISTS account_password_setup_tokens (
+            token_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            user_id INT NOT NULL,
+            token_hash CHAR(64) COLLATE utf8mb4_bin NOT NULL,
+            expires_at DATETIME NOT NULL,
+            used_at DATETIME DEFAULT NULL,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (token_id),
+            UNIQUE KEY uq_account_password_setup_token_hash (token_hash),
+            KEY idx_account_password_setup_user (user_id, expires_at),
+            CONSTRAINT fk_account_password_setup_user FOREIGN KEY (user_id) REFERENCES users (user_id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin"
+    );
+}
+
+function account_password_setup_create_link_pdo(PDO $pdo, int $userId, int $expiresHours = 48): string
+{
+    if ($userId <= 0 || $expiresHours < 1 || $expiresHours > 168) {
+        throw new InvalidArgumentException('Password setup link parameters are invalid.');
+    }
+
+    $token = rtrim(strtr(base64_encode(random_bytes(32)), '+/', '-_'), '=');
+    $invalidate = $pdo->prepare(
+        'UPDATE account_password_setup_tokens SET used_at = NOW() WHERE user_id = ? AND used_at IS NULL'
+    );
+    $invalidate->execute([$userId]);
+
+    $insert = $pdo->prepare(
+        'INSERT INTO account_password_setup_tokens (user_id, token_hash, expires_at)
+         VALUES (?, ?, DATE_ADD(NOW(), INTERVAL ' . $expiresHours . ' HOUR))'
+    );
+    $insert->execute([$userId, hash('sha256', $token), $expiresHours]);
+
+    return payment_transfer_absolute_url('/php/Login/set_account_password.php?token=' . rawurlencode($token));
+}

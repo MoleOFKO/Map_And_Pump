@@ -785,7 +785,6 @@ if ($paymentTransferSchemaReady) {
                         <i class="fa-solid fa-up-right-and-down-left-from-center me-1" aria-hidden="true"></i>Extend Station Limit
                     </button>
                     <?php endif; ?>
-                    <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#inviteManagerModal">+Add Manager</button>
                     <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="<?= $stationLimitReached ? '#stationLimitModal' : '#registerModal' ?>">+Add Station</button>
                 </div>
             </div>
@@ -891,12 +890,7 @@ if ($paymentTransferSchemaReady) {
                                 <input type="text" name="station_address" class="form-control bg-dark text-light border-secondary" placeholder="e.g. No. 45, Main Road, Township">
                             </div>
                             <div class="col-12 mb-3">
-                                <div class="d-flex justify-content-between align-items-center mb-1">
-                                    <label class="form-label text-light mb-0">Branch Manager Email <span class="text-danger">*</span></label>
-                                    <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#inviteManagerModal" data-reopen-source="registerModal">
-                                        <i class="bi bi-person-plus"></i> Add Manager
-                                    </button>
-                                </div>
+                                <label class="form-label text-light">Branch Manager Email <span class="text-danger">*</span></label>
                                 <select name="manager_email" class="form-select bg-dark text-light border-secondary" required>
                                     <option value="" selected disabled>Select a branch manager</option>
                                     <?php foreach ($availableBranchManagers as $manager): ?>
@@ -928,33 +922,6 @@ if ($paymentTransferSchemaReady) {
         </div>
     </div>
 
-    <div class="modal fade" id="inviteManagerModal" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content modal-content-custom text-light">
-                <form method="POST" action="./invite_account.php">
-                    <div class="modal-header border-secondary">
-                        <h5 class="modal-title">Add Manager</h5>
-                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
-                    </div>
-                    <div class="modal-body">
-                        <label class="form-label text-light">Customer Email</label>
-                        <input type="email" name="email" class="form-control bg-dark text-light border-secondary mb-3" placeholder="customer@example.com" required>
-                        <label class="form-label text-light">Role</label>
-                        <select name="role" class="form-select bg-dark text-light border-secondary" required>
-                            <option value="manager">Branch Manager</option>
-                        </select>
-                        <?php if (empty($stations)): ?>
-                            <div class="alert alert-warning mt-3 mb-0" role="alert">Create a station first so the manager can be assigned to it automatically.</div>
-                        <?php endif; ?>
-                    </div>
-                    <div class="modal-footer border-secondary">
-                        <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Cancel</button>
-                        <button type="submit" class="btn btn-primary">Send Invitation</button>
-                    </div>
-                </form>
-            </div>
-        </div>
-    </div>
     <!-- Station Limit Modal -->
     <div class="modal fade" id="stationLimitModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered">
@@ -1480,36 +1447,6 @@ body{margin:0;padding:24px;background:#0c1422;color:#edf3fb;font:14px/1.5 Arial,
                 alert('Could not get your location. Check browser location permissions and try again.');
             }, { enableHighAccuracy: true, timeout: 10000 });
         }
-
-        document.querySelectorAll('[data-reopen-source]').forEach(button => {
-            button.addEventListener('click', function () {
-                const targetId = this.getAttribute('data-bs-target');
-                const targetModal = targetId ? document.querySelector(targetId) : null;
-                const sourceId = this.getAttribute('data-reopen-source');
-                if (targetModal && sourceId) {
-                    targetModal.setAttribute('data-reopen-source', sourceId);
-                }
-            });
-        });
-
-        document.querySelectorAll('.modal').forEach(modalEl => {
-            modalEl.addEventListener('hidden.bs.modal', function () {
-                const reopenSource = this.getAttribute('data-reopen-source');
-                if (!reopenSource) {
-                    return;
-                }
-
-                const sourceModal = document.getElementById(reopenSource);
-                if (sourceModal) {
-                    window.setTimeout(() => {
-                        const modalInstance = bootstrap.Modal.getOrCreateInstance(sourceModal);
-                        modalInstance.show();
-                    }, 120);
-                }
-
-                this.removeAttribute('data-reopen-source');
-            });
-        });
 
         document.getElementById('registerModal').addEventListener('shown.bs.modal', initializeStationMap);
         document.getElementById('configureModal').addEventListener('shown.bs.modal', initializeConfigMap);

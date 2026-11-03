@@ -4,6 +4,7 @@ require_once __DIR__ . '/../conn.php';
 require_once __DIR__ . '/../business_scope.php';
 require_once __DIR__ . '/../invitations_schema.php';
 require_once __DIR__ . '/../Login/mail_templates.php';
+require_once __DIR__ . '/../Login/account_password_setup.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     header('Location: account.php');
@@ -44,20 +45,47 @@ try {
     }
 
     $userStmt = $pdo->prepare(
-        "SELECT u.user_id, u.user_name
+        "SELECT u.user_id, u.user_name, u.hashed_password,
+                primary_role.role_name AS primary_role_name,
+                active_role.role_name AS active_role_name
          FROM users u
          LEFT JOIN roles primary_role ON primary_role.role_id = u.role_id
          LEFT JOIN roles active_role ON active_role.role_id = u.current_role_id
          WHERE LOWER(TRIM(u.email)) = LOWER(TRIM(?))
-           AND (
-               LOWER(TRIM(primary_role.role_name)) = 'customer'
-               OR LOWER(TRIM(active_role.role_name)) = 'customer'
-           )
          LIMIT 1"
     );
     $userStmt->execute([$email]);
     $invitee = $userStmt->fetch(PDO::FETCH_ASSOC);
-    if (!$invitee) {
+    $createdAccount = false;
+    $setupUrl = '';
+    if ($invitee) {
+        $isCustomer = strtolower(trim((string) ($invitee['primary_role_name'] ?? ''))) === 'customer'
+            || strtolower(trim((string) ($invitee['active_role_name'] ?? ''))) === 'customer';
+        if (!$isCustomer) {
+            throw new RuntimeException('This email belongs to an account that cannot be invited as a branch manager or staff member.');
+        }
+    } elseif ($roleId === 4) {
+        $localPart = strstr($email, '@', true);
+        $userName = trim(str_replace(['.', '_', '-'], ' ', (string) $localPart));
+        if ($userName === '') {
+            $userName = 'Branch Manager';
+        }
+
+        account_password_setup_ensure_schema_pdo($pdo);
+        $pdo->beginTransaction();
+        $createAccount = $pdo->prepare(
+            "INSERT INTO users (user_name, email, hashed_password, role_id, current_role_id, status, created_at, updated_at)
+             VALUES (?, ?, NULL, 6, 6, 'pending', NOW(), NOW())"
+        );
+        $createAccount->execute([$userName, $email]);
+        $invitee = [
+            'user_id' => (int) $pdo->lastInsertId(),
+            'user_name' => $userName,
+            'hashed_password' => null,
+        ];
+        $createdAccount = true;
+        $setupUrl = account_password_setup_create_link_pdo($pdo, (int) $invitee['user_id']);
+    } else {
         throw new RuntimeException('No customer account is registered with that email address.');
     }
 
@@ -82,13 +110,15 @@ try {
         $station ? (string)$station['station_name'] : 'no assigned station'
     );
 
-    $pdo->beginTransaction();
+    if (!$pdo->inTransaction()) {
+        $pdo->beginTransaction();
+    }
     $insert = $pdo->prepare(
         'INSERT INTO invitations
          (headquarter_id, invited_user_id, invited_email, business_role_id, station_id, status)
             VALUES (?, ?, ?, ?, ?, \'pending\')'
     );
-        $insert->execute([$hqId, (int)$invitee['user_id'], $email, $roleId, $stationId ?: null]);
+    $insert->execute([$hqId, (int)$invitee['user_id'], $email, $roleId, $stationId ?: null]);
     $invitationId = (int)$pdo->lastInsertId();
 
     $notification = $pdo->prepare(
@@ -102,14 +132,41 @@ try {
     $pdo->prepare('UPDATE invitations SET notification_id = ? WHERE invitation_id = ?')->execute([$notificationId, $invitationId]);
     $pdo->commit();
 
+    $setupEmailNotice = null;
+    if ($createdAccount) {
+        $setupEmailNotice = mail_send_account_notice($email, [
+            'kind' => 'account_password_setup',
+            'account_label' => 'Branch Manager',
+            'account_name' => (string) $invitee['user_name'],
+            'setup_url' => $setupUrl,
+        ]);
+    }
     $emailNotice = mail_send_account_notice($email, [
         'kind' => 'hq_invitation',
         'action' => 'hq_invited',
     ]);
     $deliveryStatus = (string) ($emailNotice['status'] ?? 'failed');
     $deliveryNote = (string) ($emailNotice['note'] ?? 'Email delivery failed.');
-    $pdo->prepare('UPDATE notifications SET delivery_status = ?, delivery_note = ? WHERE notification_id = ?')->execute([$deliveryStatus, $deliveryNote, $notificationId]);
-    $_SESSION['hq_account_message'] = ['type' => 'success', 'text' => 'Invitation created. The customer must Accept or Decline it before using the account. Email status: ' . $deliveryStatus . '.'];
+    if ($setupEmailNotice !== null) {
+        $setupStatus = (string) ($setupEmailNotice['status'] ?? 'failed');
+        $setupNote = (string) ($setupEmailNotice['note'] ?? 'Password setup email delivery failed.');
+        if ($setupStatus !== 'sent') {
+            $deliveryNote .= ' Password setup email: ' . $setupStatus . ' - ' . $setupNote;
+        } else {
+            $deliveryNote .= ' Password setup email: sent.';
+        }
+    }
+    $pdo->prepare('UPDATE notifications SET delivery_status = ?, delivery_note = ? WHERE notification_id = ?')
+        ->execute([$deliveryStatus, mb_substr($deliveryNote, 0, 255), $notificationId]);
+    $setupStatusMessage = $setupEmailNotice !== null
+        ? ' Password setup email status: ' . (string) ($setupEmailNotice['status'] ?? 'failed') . '.'
+        : '';
+    $_SESSION['hq_account_message'] = [
+        'type' => 'success',
+        'text' => ($createdAccount ? 'Branch manager account created. ' : 'Invitation created.')
+            . 'The invitee must Accept or Decline before using the assigned role. Invitation email status: '
+            . $deliveryStatus . '.' . $setupStatusMessage,
+    ];
 } catch (Throwable $error) {
     if ($pdo->inTransaction()) {
         $pdo->rollBack();
