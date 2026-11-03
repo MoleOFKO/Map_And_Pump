@@ -282,6 +282,13 @@ include 'share_header.php';
                         <a href="car_license.php?add=1" class="btn btn-info w-100 rounded-3 fw-bold py-2 shadow-sm">
                             <i class="bi bi-plus-lg me-1"></i> Register Another Car
                         </a>
+                        <form id="remove-car-form" class="mt-2" method="post">
+                            <input type="hidden" name="action" value="remove">
+                            <input type="hidden" name="car_license_id" value="<?php echo (int) ($selectedCar['car_license_id'] ?? 0); ?>">
+                            <button type="submit" class="btn btn-outline-danger w-100 rounded-3 fw-bold py-2">
+                                <i class="bi bi-trash3 me-1"></i> Remove This Car
+                            </button>
+                        </form>
                     <?php elseif ($showForm && $hasCars): ?>
                         <a href="car_license.php?car_id=<?php echo (int) ($selectedCar['car_license_id'] ?? 0); ?>" class="btn btn-outline-secondary w-100 rounded-3 fw-bold py-2">
                             Cancel & Return
@@ -514,6 +521,7 @@ include 'share_header.php';
 
     document.addEventListener('DOMContentLoaded', () => {
         const carForm = document.getElementById('car-license-form');
+        const removeCarForm = document.getElementById('remove-car-form');
         const carStatus = document.getElementById('car-license-status');
         const carSubmit = document.getElementById('car-license-submit');
         const carSubmitLabel = carSubmit ? carSubmit.innerHTML : '';
@@ -621,6 +629,41 @@ include 'share_header.php';
             carForm.addEventListener('submit', (event) => {
                 event.preventDefault();
                 submitCarForm(carForm, carSubmit, carSubmitLabel);
+            });
+        }
+        if (removeCarForm) {
+            removeCarForm.addEventListener('submit', async (event) => {
+                event.preventDefault();
+                if (!window.confirm('Remove this car from your account? Existing booking records will be preserved.')) return;
+
+                const removeButton = removeCarForm.querySelector('button[type="submit"]');
+                const removeButtonLabel = removeButton.innerHTML;
+                removeButton.disabled = true;
+                removeButton.textContent = 'Removing...';
+                showCarStatus('');
+
+                try {
+                    const response = await fetch('save_car_license.php', {
+                        method: 'POST',
+                        body: new FormData(removeCarForm),
+                        credentials: 'same-origin'
+                    });
+                    const result = await response.json();
+                    if (!result.ok) {
+                        showCarStatus(result.message || 'Could not remove this car.');
+                        if (result.redirect) {
+                            window.setTimeout(() => window.location.href = result.redirect, 900);
+                        }
+                        return;
+                    }
+                    showCarStatus(result.message || 'Car removed from your account.', true);
+                    window.setTimeout(() => window.location.href = result.redirect || 'car_license.php', 650);
+                } catch (error) {
+                    showCarStatus('Could not contact the server. Please try again.');
+                } finally {
+                    removeButton.disabled = false;
+                    removeButton.innerHTML = removeButtonLabel;
+                }
             });
         }
         if (carSwitchForm) {

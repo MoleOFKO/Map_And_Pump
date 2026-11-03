@@ -151,9 +151,6 @@ if ($userId <= 0) {
 }
 
 $licenseExpiryState = customer_sync_license_expiry($pdo, $userId);
-if (($licenseExpiryState['driver']['status'] ?? '') === 'expired') {
-    car_license_json(false, 'Your driver license has expired. Renew it before managing car licenses.', ['redirect' => '/php/Customer/profile_page.php']);
-}
 
 $action = trim((string) ($_POST['action'] ?? 'save'));
 $carId = (int) ($_POST['car_license_id'] ?? 0);
@@ -163,6 +160,64 @@ if (!customer_car_license_schema_ready($pdo)) {
 }
 
 try {
+    if ($action === 'remove') {
+        if ($carId <= 0) {
+            car_license_json(false, 'Choose a car license to remove.');
+        }
+
+        $pdo->beginTransaction();
+        $owned = $pdo->prepare(
+            'SELECT user_car_id
+             FROM user_car
+             WHERE user_id = ? AND car_id = ?
+             LIMIT 1
+             FOR UPDATE'
+        );
+        $owned->execute([$userId, $carId]);
+        if (!$owned->fetchColumn()) {
+            $pdo->rollBack();
+            car_license_json(false, 'That car license is not linked to your account.');
+        }
+
+        $remove = $pdo->prepare('DELETE FROM user_car WHERE user_id = ? AND car_id = ?');
+        $remove->execute([$userId, $carId]);
+
+        $remaining = $pdo->prepare(
+            'SELECT uc.car_id
+             FROM user_car uc
+             INNER JOIN car_license c ON c.car_license_id = uc.car_id
+             WHERE uc.user_id = ?
+             ORDER BY uc.is_active DESC, c.updated_at DESC, c.car_license_id DESC
+             LIMIT 1'
+        );
+        $remaining->execute([$userId]);
+        $activeCarId = (int) ($remaining->fetchColumn() ?: 0);
+
+        $clearActive = $pdo->prepare('UPDATE user_car SET is_active = 0, updated_at = NOW() WHERE user_id = ?');
+        $clearActive->execute([$userId]);
+        if ($activeCarId > 0) {
+            $setActive = $pdo->prepare('UPDATE user_car SET is_active = 1, updated_at = NOW() WHERE user_id = ? AND car_id = ?');
+            $setActive->execute([$userId, $activeCarId]);
+        }
+
+        $pdo->commit();
+        if ($activeCarId > 0) {
+            $_SESSION['car_license_id'] = $activeCarId;
+        } else {
+            unset($_SESSION['car_license_id']);
+        }
+
+        car_license_json(true, 'Car removed from your account. Existing booking records are preserved.', [
+            'redirect' => $activeCarId > 0
+                ? '/php/Customer/car_license.php?car_id=' . $activeCarId
+                : '/php/Customer/car_license.php?add=1',
+        ]);
+    }
+
+    if (($licenseExpiryState['driver']['status'] ?? '') === 'expired') {
+        car_license_json(false, 'Your driver license has expired. Renew it before managing car licenses.', ['redirect' => '/php/Customer/profile_page.php']);
+    }
+
     if ($action === 'switch') {
         if ($carId <= 0) {
             car_license_json(false, 'Choose a car license to switch to.');
