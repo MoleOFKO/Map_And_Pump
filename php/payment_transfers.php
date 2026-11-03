@@ -400,7 +400,7 @@ function payment_transfer_review_recipients(PDO $pdo): array
     return $stmt->fetchAll(PDO::FETCH_ASSOC);
 }
 
-/** Return the owning HQ account contact for customer fuel payment notices. */
+/** Return the owning HQ account contact for HQ-recipient notices. */
 function payment_transfer_hq_recipient(PDO $pdo, int $headquarterId): ?array
 {
     $stmt = $pdo->prepare(
@@ -475,6 +475,35 @@ function payment_transfer_user_owns_hq(PDO $pdo, int $userId, int $headquarterId
     );
     $stmt->execute([$headquarterId, $userId]);
     return (bool) $stmt->fetchColumn();
+}
+
+function payment_transfer_user_is_fuel_staff(PDO $pdo, int $userId, int $usageId): bool
+{
+    if ($userId <= 0 || $usageId <= 0) {
+        return false;
+    }
+
+    $stmt = $pdo->prepare('SELECT 1 FROM usage_history WHERE usage_id = ? AND staff_user_id = ? LIMIT 1');
+    $stmt->execute([$usageId, $userId]);
+    return (bool) $stmt->fetchColumn();
+}
+
+function payment_transfer_fuel_staff_recipient(PDO $pdo, int $usageId): ?array
+{
+    if ($usageId <= 0) {
+        return null;
+    }
+
+    $stmt = $pdo->prepare(
+        'SELECT u.user_id, u.email, u.user_name
+         FROM usage_history uh
+         INNER JOIN users u ON u.user_id = uh.staff_user_id
+         WHERE uh.usage_id = ?
+         LIMIT 1'
+    );
+    $stmt->execute([$usageId]);
+    $recipient = $stmt->fetch(PDO::FETCH_ASSOC);
+    return $recipient ?: null;
 }
 
 /** Attach confirmed monthly extra-station MMK coverage to existing unpaid extra stations. */
@@ -703,12 +732,17 @@ function payment_transfer_send_notices(PDO $pdo, int $transferId, string $recipi
             return;
         }
 
+        $fuelStaffRecipient = $transfer['payment_type'] === 'fuel_purchase'
+            ? payment_transfer_fuel_staff_recipient($pdo, (int) ($transfer['usage_id'] ?? 0))
+            : null;
         if ($recipientSide === 'recipient') {
-            $recipients = $transfer['recipient_role'] === 'station_hq'
-                ? array_filter([payment_transfer_hq_recipient($pdo, (int) $transfer['recipient_headquarter_id'])])
-                : (in_array($transfer['payment_type'], ['hq_period_extension', 'hq_station_package'], true) && $action === 'payer_reported_paid'
-                    ? payment_transfer_review_recipients($pdo)
-                    : payment_transfer_admin_recipients($pdo));
+            $recipients = $transfer['payment_type'] === 'fuel_purchase'
+                ? array_filter([$fuelStaffRecipient])
+                : ($transfer['recipient_role'] === 'station_hq'
+                    ? array_filter([payment_transfer_hq_recipient($pdo, (int) $transfer['recipient_headquarter_id'])])
+                    : (in_array($transfer['payment_type'], ['hq_period_extension', 'hq_station_package'], true) && $action === 'payer_reported_paid'
+                        ? payment_transfer_review_recipients($pdo)
+                        : payment_transfer_admin_recipients($pdo)));
         } else {
             $recipients = [[
                 'user_id' => $transfer['payer_user_id'] ?? null,
@@ -725,7 +759,9 @@ function payment_transfer_send_notices(PDO $pdo, int $transferId, string $recipi
             default => 'The external payment status was updated.',
         };
         $recipientLabel = BILLING_PLATFORM_RECIPIENT_NAME . ' (Admin)';
-        if ($transfer['recipient_role'] === 'station_hq') {
+        if ($transfer['payment_type'] === 'fuel_purchase') {
+            $recipientLabel = trim((string) ($fuelStaffRecipient['user_name'] ?? '')) ?: 'Station staff';
+        } elseif ($transfer['recipient_role'] === 'station_hq') {
             $hqName = $pdo->prepare('SELECT company_name FROM headquarter WHERE headquarter_id = ? LIMIT 1');
             $hqName->execute([(int) $transfer['recipient_headquarter_id']]);
             $recipientLabel = trim((string) ($hqName->fetchColumn() ?: '')) ?: 'Station HQ #' . (int) $transfer['recipient_headquarter_id'];

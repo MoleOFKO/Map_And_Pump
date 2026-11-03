@@ -1,4 +1,8 @@
-<?php 
+<?php
+ini_set('display_errors', '0');
+ini_set('display_startup_errors', '0');
+ini_set('log_errors', '1');
+
 include 'share_header.php'; 
 
 $staffStatusPopupType = null;
@@ -51,6 +55,14 @@ $tierStatus = loyalty_customer_tier_status($pdo, $customerId, $reward_points);
 $reward_tier_code = $tierStatus['tier_code'];
 $reward_tier = loyalty_tier_label($reward_tier_code);
 $redemptionOptions = loyalty_redemption_options($pdo);
+$pointsCap = max(0, (int) $tierStatus['points_cap']);
+$pointsProgress = $pointsCap > 0 ? min(100, ($reward_points / $pointsCap) * 100) : 0;
+$nextTier = $tierStatus['next_tier'];
+$nextExp = max(0, (int) $tierStatus['next_exp']);
+$expRemaining = max(0, $nextExp - (int) $tierStatus['exp']);
+$expProgress = $nextTier !== null && $nextExp > 0
+    ? min(100, ((int) $tierStatus['exp'] / $nextExp) * 100)
+    : 0;
 ?>
 
 <div class="customer-dashboard">
@@ -81,7 +93,19 @@ $redemptionOptions = loyalty_redemption_options($pdo);
     <!-- Card 3: Loyalty Reward Points (New Idea) -->
     <div class="col-lg-4 col-md-6 d-flex">
         <div class="dashboard-panel-card customer-stat-card w-100">
-            <p class="text-secondary text-uppercase tracking-wider mb-2" style="font-size:11px; font-weight:600;">Loyalty Reward Points</p>
+            <div class="d-flex align-items-start justify-content-between gap-2 mb-2">
+                <p class="text-secondary text-uppercase tracking-wider mb-0" style="font-size:11px; font-weight:600;">Loyalty Reward Points</p>
+                <button
+                    type="button"
+                    class="btn btn-sm btn-outline-info rounded-circle d-inline-flex align-items-center justify-content-center flex-shrink-0"
+                    style="width:32px;height:32px;padding:0;"
+                    data-bs-toggle="modal"
+                    data-bs-target="#loyaltyRewardDetails"
+                    aria-label="View loyalty reward details"
+                    title="View loyalty reward details">
+                    <i class="bi bi-three-dots-vertical" aria-hidden="true"></i>
+                </button>
+            </div>
             <h3 class="text-white fs-1 mb-1">
                 <?php echo number_format($reward_points); ?> 
                 <span class="fs-5 text-warning ms-1"><i class="bi bi-star-fill" style="font-size: 20px;"></i></span>
@@ -89,48 +113,152 @@ $redemptionOptions = loyalty_redemption_options($pdo);
             <p class="customer-reward-tier customer-reward-tier-<?php echo htmlspecialchars(strtolower($reward_tier_code), ENT_QUOTES, 'UTF-8'); ?> mb-0 mt-3">
                 <i class="bi bi-award-fill me-1"></i><?php echo htmlspecialchars($reward_tier, ENT_QUOTES, 'UTF-8'); ?> tier
             </p>
-            <p class="text-secondary mb-0 mt-1" style="font-size:12px;">Earn points only on external fills. Select one fixed reward when booking:</p>
-            <ul class="text-secondary small mb-0 mt-1 ps-3">
-                <?php foreach ($redemptionOptions as $points => $discount): ?>
-                    <li><?= number_format($points) ?> pts → <?= number_format($discount) ?> MMK</li>
-                <?php endforeach; ?>
-            </ul>
-            <?php if ($tierStatus['next_tier'] !== null): ?>
-                <p class="text-secondary small mb-0 mt-2">
-                    Your <?= htmlspecialchars($reward_tier, ENT_QUOTES, 'UTF-8') ?> point cap is
-                    <?= number_format($tierStatus['points_cap']) ?> (<?= number_format($tierStatus['points_remaining_to_cap']) ?> points remaining).
-                    Once capped, successful external fills award 1 EXP instead of points.
-                    Reach <?= (int) $tierStatus['next_exp'] ?> total EXP to advance to
-                    <?= htmlspecialchars(loyalty_tier_label($tierStatus['next_tier']), ENT_QUOTES, 'UTF-8') ?>
-                    (you have <?= (int) $tierStatus['exp'] ?>; <?= (int) $tierStatus['exp_remaining'] ?> more).
-                    Reach <?= number_format($tierStatus['weekly_quota_liters'], 1) ?> L in successful external fills each week; each missed week removes 1 EXP.
-                </p>
-            <?php else: ?>
-                <p class="text-secondary small mb-0 mt-2">Diamond tier reached. At your point cap, successful external fills award EXP instead of points.</p>
-            <?php endif; ?>
         </div>
     </div>
 </div>
 
-<section class="dashboard-panel-card mb-4">
-    <h2 class="h5 text-white">Tier points and shared monthly pool</h2>
-    <p class="text-secondary small">Each tier has its own point-balance cap. Once you reach your current cap, successful external fills award EXP instead of points. EXP advances your tier and raises your point cap.</p>
-    <div class="table-responsive">
-        <table class="table table-dark table-sm align-middle mb-0">
-            <thead><tr><th>Tier</th><th>Point cap</th><th>Points until cap</th><th>Pool remaining this month</th></tr></thead>
-            <tbody>
-            <?php foreach ($tierStatus['tiers'] as $tier): ?>
-                <tr>
-                    <th><?= htmlspecialchars($tier['label'], ENT_QUOTES, 'UTF-8') ?></th>
-                    <td><?= number_format($tier['points_cap']) ?></td>
-                    <td><?= number_format($tier['points_remaining']) ?></td>
-                    <td><?= number_format($tier['pool_remaining_mmk'], 2) ?> MMK</td>
-                </tr>
-            <?php endforeach; ?>
-            </tbody>
-        </table>
+<div class="modal fade" id="loyaltyRewardDetails" tabindex="-1" aria-labelledby="loyaltyRewardDetailsTitle" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content text-white" style="background:#0a162c;border:1px solid rgba(56,189,248,.3);border-radius:20px;box-shadow:0 24px 70px rgba(0,0,0,.55);">
+            <div class="modal-header border-secondary border-opacity-25 position-relative pe-5">
+                <div>
+                    <h2 class="modal-title h5 mb-1" id="loyaltyRewardDetailsTitle"><i class="bi bi-stars text-info me-2"></i>Your loyalty rewards</h2>
+                    <p class="text-secondary small mb-0">A quick guide to earning points and moving up tiers.</p>
+                </div>
+                <button type="button" class="btn-close btn-close-white position-absolute top-0 end-0 m-3" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-4">
+                <div class="rounded-3 p-3" style="background:rgba(10,22,44,.7);border:1px solid rgba(56,189,248,.18);">
+                    <div class="mb-3">
+                        <h3 class="h6 text-white mb-1"><i class="bi bi-info-circle text-info me-2"></i>Earn &amp; redeem</h3>
+                        <p class="text-secondary small mb-2">Earn points on successful external fills, then choose one fixed reward when booking.</p>
+                        <div class="row row-cols-2 g-2">
+                            <?php foreach ($redemptionOptions as $points => $discount): ?>
+                                <div class="col">
+                                    <div class="rounded-3 p-2 h-100" style="background:rgba(255,255,255,.04);">
+                                        <span class="d-block text-white fw-semibold"><?= number_format($discount) ?> MMK</span>
+                                        <span class="text-secondary" style="font-size:11px;"><?= number_format($points) ?> points</span>
+                                    </div>
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
+                    </div>
+
+                    <div class="border-top border-secondary border-opacity-25 pt-3">
+                        <div class="d-flex justify-content-between align-items-center gap-2 mb-2">
+                            <span class="text-white small fw-semibold"><?= htmlspecialchars($reward_tier, ENT_QUOTES, 'UTF-8') ?> point cap</span>
+                            <span class="text-secondary small"><?= number_format($reward_points) ?> / <?= number_format($pointsCap) ?></span>
+                        </div>
+                        <div class="progress bg-dark bg-opacity-50 rounded-pill mb-2" style="height:6px;">
+                            <div class="progress-bar bg-info" role="progressbar" style="width:<?= $pointsProgress ?>%;" aria-valuenow="<?= (int) round($pointsProgress) ?>" aria-valuemin="0" aria-valuemax="100" aria-label="Points toward tier cap"></div>
+                        </div>
+                        <?php if ($nextTier !== null): ?>
+                            <p class="text-secondary small mb-0">
+                                <?= number_format((int) $tierStatus['points_remaining_to_cap']) ?> points to cap. After that, each successful external fill earns 1 EXP.
+                            </p>
+                            <div class="d-flex justify-content-between align-items-center gap-2 mt-3 mb-2">
+                                <span class="text-white small fw-semibold">Progress to <?= htmlspecialchars(loyalty_tier_label($nextTier), ENT_QUOTES, 'UTF-8') ?></span>
+                                <span class="text-secondary small"><?= (int) $tierStatus['exp'] ?> / <?= $nextExp ?> EXP</span>
+                            </div>
+                            <div class="progress bg-dark bg-opacity-50 rounded-pill mb-2" style="height:6px;">
+                                <div class="progress-bar" style="width:<?= $expProgress ?>%;background:#a78bfa;" role="progressbar" aria-valuenow="<?= (int) round($expProgress) ?>" aria-valuemin="0" aria-valuemax="100" aria-label="EXP toward next tier"></div>
+                            </div>
+                            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mt-2">
+                                <p class="text-secondary small mb-0">
+                                    <?= $expRemaining ?> more EXP to reach <?= htmlspecialchars(loyalty_tier_label($nextTier), ENT_QUOTES, 'UTF-8') ?>.
+                                </p>
+                                <button type="button" class="btn btn-outline-info btn-sm rounded-3 flex-shrink-0" data-open-tier-details>
+                                    <i class="bi bi-list-ul me-1" aria-hidden="true"></i>Tier details
+                                </button>
+                            </div>
+                        <?php else: ?>
+                            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mt-2">
+                                <p class="text-secondary small mb-0">Diamond tier reached. After your point cap, each successful external fill earns 1 EXP.</p>
+                                <button type="button" class="btn btn-outline-info btn-sm rounded-3 flex-shrink-0" data-open-tier-details>
+                                    <i class="bi bi-list-ul me-1" aria-hidden="true"></i>Tier details
+                                </button>
+                            </div>
+                        <?php endif; ?>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer border-secondary border-opacity-25">
+                <button type="button" class="btn btn-outline-info rounded-3 px-4" data-bs-dismiss="modal">Got it</button>
+            </div>
+        </div>
     </div>
-</section>
+</div>
+
+<div class="modal fade" id="tierDetailsModal" tabindex="-1" aria-labelledby="tierDetailsModalTitle" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-lg">
+        <div class="modal-content text-white" style="border:1px solid rgba(56,189,248,.3);border-radius:20px;box-shadow:0 24px 70px rgba(0,0,0,.55);">
+            <div class="modal-header border-secondary border-opacity-25 position-relative pe-5">
+                <div>
+                    <h2 class="modal-title h5 mb-1" id="tierDetailsModalTitle"><i class="bi bi-award text-info me-2"></i>Tier details</h2>
+                    <p class="text-secondary small mb-0">Point caps and shared monthly reward pool by tier.</p>
+                </div>
+                <button type="button" class="btn-close btn-close-white position-absolute top-0 end-0 m-3" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-4">
+                <p class="text-secondary small mb-3">Each tier has its own point-balance cap. Once you reach your current cap, successful external fills award EXP instead of points. EXP advances your tier and raises your point cap.</p>
+                <div class="table-responsive">
+                    <table class="table table-dark table-sm align-middle mb-0">
+                        <thead>
+                            <tr><th scope="col">Tier</th><th scope="col">Point cap</th><th scope="col">Points until cap</th><th scope="col">Pool remaining this month</th></tr>
+                        </thead>
+                        <tbody>
+                        <?php foreach ($tierStatus['tiers'] as $tier): ?>
+                            <tr>
+                                <th scope="row"><?= htmlspecialchars($tier['label'], ENT_QUOTES, 'UTF-8') ?></th>
+                                <td><?= number_format($tier['points_cap']) ?></td>
+                                <td><?= number_format($tier['points_remaining']) ?></td>
+                                <td><?= number_format($tier['pool_remaining_mmk'], 2) ?> MMK</td>
+                            </tr>
+                        <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer border-secondary border-opacity-25">
+                <button type="button" class="btn btn-outline-info rounded-3 px-4" data-return-to-rewards>Back to rewards</button>
+            </div>
+        </div>
+    </div>
+</div>
+<script>
+    (() => {
+        const loyaltyModalElement = document.getElementById('loyaltyRewardDetails');
+        const tierModalElement = document.getElementById('tierDetailsModal');
+        document.querySelectorAll('#loyaltyRewardDetails, #tierDetailsModal').forEach((modal) => {
+            document.body.appendChild(modal);
+        });
+
+        const initializeModalNavigation = () => {
+            if (!loyaltyModalElement || !tierModalElement || typeof bootstrap === 'undefined') return;
+
+            const loyaltyModal = bootstrap.Modal.getOrCreateInstance(loyaltyModalElement);
+            const tierModal = bootstrap.Modal.getOrCreateInstance(tierModalElement);
+
+            document.querySelectorAll('[data-open-tier-details]').forEach((button) => {
+                button.addEventListener('click', () => {
+                    loyaltyModalElement.addEventListener('hidden.bs.modal', () => tierModal.show(), { once: true });
+                    loyaltyModal.hide();
+                });
+            });
+
+            document.querySelector('[data-return-to-rewards]')?.addEventListener('click', () => {
+                tierModalElement.addEventListener('hidden.bs.modal', () => loyaltyModal.show(), { once: true });
+                tierModal.hide();
+            });
+        };
+
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initializeModalNavigation, { once: true });
+        } else {
+            initializeModalNavigation();
+        }
+    })();
+</script>
 
 <!-- Updated "Track Stations & Book Tokens" Card -->
 <div class="customer-live-queue-card p-4 p-md-4 rounded-4 position-relative overflow-hidden mb-4">
@@ -333,3 +461,4 @@ $redemptionOptions = loyalty_redemption_options($pdo);
     window.MapPumpStaffStatus = { show: show, hide: hide };
 })();
 </script>
+<?php include 'share_footer.php'; ?>

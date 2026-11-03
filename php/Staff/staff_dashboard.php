@@ -159,6 +159,7 @@ if ($staffStatusPopupType !== null) {
             <nav class="staff-nav" aria-label="Main navigation">
                 <a class="staff-nav-link is-active" href="staff_dashboard.php" aria-current="page"><i class="bi bi-grid"></i><span>Overview</span><span class="nav-indicator"></span></a>
                 <a class="staff-nav-link" href="verify_qr.php"><i class="bi bi-upc-scan"></i><span>Verify booking QR</span></a>
+                <a class="staff-nav-link" href="/php/payment_center.php"><i class="bi bi-cash-coin"></i><span>Fuel payment confirmations</span></a>
                 <a class="staff-nav-link" href="feedback_manage.php"><i class="bi bi-chat-square"></i><span>Feedback</span></a>
                 <a class="staff-nav-link" href="staff_account.php"><i class="bi bi-person"></i><span>My account</span></a>
             </nav>
@@ -257,6 +258,7 @@ if ($staffStatusPopupType !== null) {
             <nav class="staff-nav" aria-label="Mobile main navigation">
                 <a class="staff-nav-link is-active" href="staff_dashboard.php" aria-current="page"><i class="bi bi-grid"></i><span>Overview</span><span class="nav-indicator"></span></a>
                 <a class="staff-nav-link" href="verify_qr.php"><i class="bi bi-upc-scan"></i><span>Verify booking QR</span></a>
+                <a class="staff-nav-link" href="/php/payment_center.php"><i class="bi bi-cash-coin"></i><span>Fuel payment confirmations</span></a>
                 <a class="staff-nav-link" href="feedback_manage.php"><i class="bi bi-chat-square"></i><span>Feedback</span></a>
                 <a class="staff-nav-link" href="staff_account.php"><i class="bi bi-person"></i><span>My account</span></a>
             </nav>

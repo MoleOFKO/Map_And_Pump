@@ -241,7 +241,7 @@ include 'share_header.php';
                                     <div class="small text-secondary mt-1">Payment notice cancelled</div>
                                 <?php endif; ?>
                                 <?php if ($paymentReady && empty($usage['is_internal']) && (float) ($usage['total_cost'] ?? 0) > 0 && !in_array($paymentStatus, ['pending_payment', 'payer_reported_paid', 'received'], true)): ?>
-                                    <form method="post" action="/php/Payment/action.php" class="mt-2" onsubmit="return confirm('Create a payment request for this filled bill? The amount is based on the recorded net bill and the recipient is the station HQ.')">
+                                    <form method="post" action="/php/Payment/action.php" class="mt-2" onsubmit="return confirm('Create a payment request for this filled bill? The amount is based on the recorded net bill, and the staff member who recorded the fill will verify receipt.')">
                                         <input type="hidden" name="csrf_token" value="<?= htmlspecialchars((string) ($_SESSION['payment_transfer_csrf'] ?? ''), ENT_QUOTES, 'UTF-8') ?>">
                                         <input type="hidden" name="action" value="create_fuel_payment">
                                         <input type="hidden" name="usage_id" value="<?= (int) $usage['usage_id'] ?>">

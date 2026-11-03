@@ -77,12 +77,8 @@ $flashType = (string) ($flash['type'] ?? '');
     </tbody></table></div></div>
 </main>
 
-<div class="modal fade glass-modal" id="hqDetailsModal" tabindex="-1" aria-labelledby="hqDetailsModalLabel" aria-hidden="true"><div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable"><div class="modal-content"><div class="modal-header"><h5 class="modal-title fw-bold" id="hqDetailsModalLabel"><i class="bi bi-building txt-neon-cyan me-2"></i> HQ Details</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button></div><div class="modal-body" id="hqDetailsBody"><div class="text-center text-white-50 py-5"><div class="spinner-border spinner-border-sm txt-neon-cyan mb-2" role="status"></div><div>Loading HQ details…</div></div></div><div class="modal-footer"><button type="button" class="btn btn-neon js-edit-hq-details" data-bs-target="#editHQModal" data-bs-toggle="modal">Edit details</button></div></div></div></div>
+<div class="modal fade glass-modal" id="hqDetailsModal" tabindex="-1" aria-labelledby="hqDetailsModalLabel" aria-hidden="true"><div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable"><div class="modal-content"><div class="modal-header"><h5 class="modal-title fw-bold" id="hqDetailsModalLabel"><i class="bi bi-building txt-neon-cyan me-2"></i> HQ Details</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button></div><div class="modal-body" id="hqDetailsBody"><div class="text-center text-white-50 py-5"><div class="spinner-border spinner-border-sm txt-neon-cyan mb-2" role="status"></div><div>Loading HQ details…</div></div></div></div></div></div>
 <div class="modal fade glass-modal" id="accountActionModal" tabindex="-1" aria-hidden="true"><div class="modal-dialog modal-dialog-centered modal-dialog-scrollable"><div class="modal-content"><div class="modal-header"><h5 class="modal-title fw-bold"><i class="bi bi-shield-exclamation text-danger me-2"></i> HQ Account Review</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div><form action="hq_account_action(M).php" method="POST"><div class="modal-body"><input type="hidden" name="headquarter_id" id="actionHQId"><div class="small text-white-50 mb-3">Target HQ: <span class="txt-neon-cyan fw-semibold" id="actionHQName">—</span></div><label class="form-label text-white-50 small" for="actionType">Action</label><select id="actionType" name="action_type" class="form-select glass-select mb-3" required><option value="activate">Activate pending HQ</option><option value="suspend">Suspend account</option><option value="remove">Remove account</option><option value="restore">Restore (approve again)</option></select><label class="form-label text-white-50 small" for="actionReason">Reason <span class="text-danger">*</span></label><textarea id="actionReason" name="reason" class="form-control glass-input" rows="5" maxlength="2000" required></textarea></div><div class="modal-footer"><button type="button" class="btn btn-outline-secondary rounded-3 text-white-50" data-bs-dismiss="modal">Cancel</button><button type="submit" class="btn btn-neon">Confirm Activation</button></div></form></div></div></div>
-<div class="modal fade glass-modal" id="editHQModal" tabindex="-1" aria-labelledby="editHQLabel" aria-hidden="true"><div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-lg"><div class="modal-content"><div class="modal-header"><div><h5 class="modal-title fw-bold" id="editHQLabel"><i class="bi bi-pencil-square txt-neon-cyan me-2"></i> Edit HQ</h5></div><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div><form action="hq_update_action(M).php" method="POST"><input type="hidden" name="headquarter_id" id="editHQId"><input type="hidden" name="return_to" value="view_hq_and_user_account(M).php"><div class="modal-body d-flex flex-column gap-3"><div class="manage-hq-note text-white-50 small"><span class="text-danger">*</span> Changing the owner email also updates the linked HQ account email.</div><div><label class="form-label text-white-50 small" for="editHqName">Company / HQ Name <span class="text-danger">*</span></label><input id="editHqName" type="text" name="hq_name" class="form-control glass-input" maxlength="255" required></div><div><label class="form-label text-white-50 small" for="editLogo">Company Logo URL / Storage Path <span class="text-danger">*</span></label><input id="editLogo" type="text" name="company_logo" class="form-control glass-input" maxlength="255" required></div><div class="row g-3"><div class="col-12 col-md-6"><label class="form-label text-white-50 small" for="editOwnerName">Owner Name <span class="text-danger">*</span></label><input id="editOwnerName" type="text" name="owner_name" class="form-control glass-input" maxlength="225" required></div><div class="col-12 col-md-6"><label class="form-label text-white-50 small" for="editOwnerEmail">Owner Email <span class="text-danger">*</span></label><input id="editOwnerEmail" type="email" name="owner_email" class="form-control glass-input" maxlength="225" required></div></div><div><label class="form-label text-white-50 small" for="editContact">Contact Number <span class="text-danger">*</span></label><input id="editContact" type="text" name="contact_number" class="form-control glass-input" maxlength="50" required></div><div><label class="form-label text-white-50 small" for="editRegion">Regional Headquarters Office <span class="text-danger">*</span></label><select id="editRegion" name="region" class="form-select glass-select" required><option value="">Select region</option><?php
-$editRegions = $allowedRegions ?: ['yangon', 'mandalay', 'naypyidaw'];
-foreach ($editRegions as $option): ?><option value="<?= moderator_escape($option) ?>"><?= moderator_escape($regionLabel($option)) ?></option><?php endforeach; ?></select></div><div><label class="form-label text-white-50 small" for="editAddress">Physical Address Details <span class="text-danger">*</span></label><textarea id="editAddress" name="address" rows="3" maxlength="220" class="form-control glass-input" required></textarea></div><div><label class="form-label text-white-50 small" for="editLicense">Business License <span class="text-danger">*</span></label><input id="editLicense" type="text" name="business_license" class="form-control glass-input" maxlength="255" required></div><div><label class="form-label text-white-50 small" for="editExpire">License Expiry Date <span class="text-danger">*</span></label><input id="editExpire" type="date" name="expire_at" min="<?= date('Y-m-d') ?>" class="form-control glass-input" required></div></div><div class="modal-footer"><button type="button" class="btn btn-outline-secondary rounded-3 text-white-50" data-bs-dismiss="modal">Cancel</button><button type="submit" class="btn btn-neon">Save HQ Changes</button></div></form></div></div></div>
-
 <?php $moderatorActiveNav = 'view_hq'; include __DIR__ . '/includes/moderator_offcanvas.php'; ?><footer class="text-white-50 text-center py-4 mt-5 small">&copy; 2026 Map &amp; Pump | All Rights Reserved</footer><?php include __DIR__ . '/includes/moderator_footer_scripts.php'; ?>
 <script>
 document.addEventListener('DOMContentLoaded', () => {
@@ -90,7 +86,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const actionModal = new bootstrap.Modal(document.getElementById('accountActionModal'));
     const detailsBody = document.getElementById('hqDetailsBody');
     const detailsTitle = document.getElementById('hqDetailsModalLabel');
-    let currentHQDetails = null;
     const esc = value => String(value ?? '').replace(/[&<>"']/g, character => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[character]));
     const date = value => value ? new Date(String(value).replace(' ', 'T')).toLocaleString() : 'Not available';
     const statusClass = status => ({active:'hq-status-active', approved:'hq-status-active', suspended:'hq-status-suspended', removed:'hq-status-removed'}[String(status || '').toLowerCase()] || 'hq-status-pending');
@@ -102,7 +97,6 @@ document.addEventListener('DOMContentLoaded', () => {
     <?= function_exists('expiry_js_detail_helper') ? expiry_js_detail_helper() : 'function expiryDetailAlert(){return "";}' ?>
     const renderDetails = payload => {
         const hq = payload.hq || {};
-        currentHQDetails = hq;
         const accounts = payload.accounts || [];
         const stations = payload.stations || [];
         const actions = payload.actions || [];
@@ -112,7 +106,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const currentDate = new Date();
         const today = [currentDate.getFullYear(), String(currentDate.getMonth() + 1).padStart(2, '0'), String(currentDate.getDate()).padStart(2, '0')].join('-');
         const licenseDateWarning = registeredDay && expiryDay && expiryDay <= registeredDay
-            ? '<div class="alert alert-warning py-2 mb-3" role="status"><i class="bi bi-exclamation-triangle-fill me-2"></i>License expiry must be after registration. Correct this date from Edit details using the current business license.</div>'
+            ? '<div class="alert alert-warning py-2 mb-3" role="status"><i class="bi bi-exclamation-triangle-fill me-2"></i>License expiry must be after registration. Verify the current business license before changing account status.</div>'
             : (expiryDay && expiryDay < today ? '<div class="alert alert-warning py-2 mb-3" role="status"><i class="bi bi-exclamation-triangle-fill me-2"></i>This business license has expired. HQ access is limited to the profile until the business license is renewed.</div>' : '');
         const metaCards = '<div class="row g-3 mb-4">' +
             '<div class="col-12 col-md-6"><div class="p-3 rounded-3" style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);"><div class="mod-detail-label">HQ location</div><div class="mod-detail-value mt-1">' + esc(hq.location || 'Not available') + '</div></div></div>' +
@@ -139,34 +133,6 @@ document.addEventListener('DOMContentLoaded', () => {
             event.preventDefault(); document.getElementById('actionHQId').value = actionBtn.dataset.hqId || ''; document.getElementById('actionHQName').textContent = actionBtn.dataset.hqName || 'Selected HQ'; document.getElementById('actionType').value = actionBtn.dataset.hqStatus === 'pending' ? 'activate' : 'suspend'; document.getElementById('actionReason').value = ''; actionModal.show();
             return;
         }
-        const editBtn = event.target.closest('.js-edit-hq-details');
-        if (!editBtn) return;
-        const h = currentHQDetails || {};
-        const location = String(h.location || '');
-        const parts = location.split(/\s+(?:—|-)\s+/);
-        const regionRaw = String(parts[0] || '').toLowerCase().replace(/\s+region$/, '').trim();
-        const address = parts.length > 1 ? parts.slice(1).join(' - ') : location;
-        document.getElementById('editHQId').value = h.headquarter_id || '';
-        document.getElementById('editHqName').value = h.company_name || '';
-        document.getElementById('editLogo').value = h.company_logo || '';
-        document.getElementById('editContact').value = h.contact_number || '';
-        document.getElementById('editOwnerName').value = h.owner_name || '';
-        document.getElementById('editOwnerEmail').value = h.owner_email || h.headquarter_email || '';
-        document.getElementById('editRegion').value = regionRaw;
-        document.getElementById('editAddress').value = address;
-        document.getElementById('editLicense').value = h.business_license || '';
-        document.getElementById('editExpire').value = h.expire_at ? String(h.expire_at).slice(0, 10) : '';
-        const expiryInput = document.getElementById('editExpire');
-        const now = new Date();
-        const localToday = [now.getFullYear(), String(now.getMonth() + 1).padStart(2, '0'), String(now.getDate()).padStart(2, '0')].join('-');
-        let minExpiry = localToday;
-        const createdDay = String(h.created_at || '').slice(0, 10);
-        if (/^\d{4}-\d{2}-\d{2}$/.test(createdDay)) {
-            const dayAfterRegistration = new Date(createdDay + 'T00:00:00Z');
-            dayAfterRegistration.setUTCDate(dayAfterRegistration.getUTCDate() + 1);
-            minExpiry = [minExpiry, dayAfterRegistration.toISOString().slice(0, 10)].sort().pop();
-        }
-        expiryInput.min = minExpiry;
     });
 });
 </script>

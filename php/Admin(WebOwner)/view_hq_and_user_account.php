@@ -358,13 +358,9 @@ $flashContext = $flash['context'] ?? [];
             <div class="modal-content">
                 <div class="modal-header"><h5 class="modal-title fw-bold" id="hqDetailsModalLabel"><i class="bi bi-building txt-neon-cyan me-2"></i> HQ Details</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button></div>
                 <div class="modal-body" id="hqDetailsBody"><div class="text-center text-white-50 py-5"><div class="spinner-border spinner-border-sm txt-neon-cyan mb-2" role="status"></div><div>Loading HQ details…</div></div></div>
-                <div class="modal-footer"><button type="button" class="btn btn-neon js-edit-hq-details" data-bs-target="#editHQModal" data-bs-toggle="modal">Edit details</button></div>
             </div>
         </div>
     </div>
-
-    <div class="modal fade glass-modal" id="editHQModal" tabindex="-1" aria-labelledby="editHQLabel" aria-hidden="true"><div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-lg"><div class="modal-content"><div class="modal-header"><div><h5 class="modal-title fw-bold" id="editHQLabel"><i class="bi bi-pencil-square txt-neon-cyan me-2"></i> Edit HQ</h5></div><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div><form action="hq_update_action.php" method="POST"><input type="hidden" name="headquarter_id" id="editHQId"><input type="hidden" name="return_to" value="view_hq_and_user_account.php"><div class="modal-body d-flex flex-column gap-3"><div class="manage-hq-note text-white-50 small"><span class="text-danger">*</span> Changing the owner email also updates the linked HQ account email.</div><div><label class="form-label text-white-50 small" for="editHqName">Company / HQ Name <span class="text-danger">*</span></label><input id="editHqName" type="text" name="hq_name" class="form-control glass-input" maxlength="255" required></div><div><label class="form-label text-white-50 small" for="editLogo">Company Logo URL / Storage Path <span class="text-danger">*</span></label><input id="editLogo" type="text" name="company_logo" class="form-control glass-input" maxlength="255" required></div><div class="row g-3"><div class="col-12 col-md-6"><label class="form-label text-white-50 small" for="editOwnerName">Owner Name <span class="text-danger">*</span></label><input id="editOwnerName" type="text" name="owner_name" class="form-control glass-input" maxlength="225" required></div><div class="col-12 col-md-6"><label class="form-label text-white-50 small" for="editOwnerEmail">Owner Email <span class="text-danger">*</span></label><input id="editOwnerEmail" type="email" name="owner_email" class="form-control glass-input" maxlength="225" required></div></div><div><label class="form-label text-white-50 small" for="editContact">Contact Number <span class="text-danger">*</span></label><input id="editContact" type="text" name="contact_number" class="form-control glass-input" maxlength="50" required></div><div><label class="form-label text-white-50 small" for="editRegion">Regional Headquarters Office <span class="text-danger">*</span></label><select id="editRegion" name="region" class="form-select glass-select" required><option value="">Select region</option><option value="yangon">Yangon Region</option><option value="mandalay">Mandalay Region</option><option value="naypyidaw">Naypyidaw</option></select></div><div><label class="form-label text-white-50 small" for="editAddress">Physical Address Details <span class="text-danger">*</span></label><textarea id="editAddress" name="address" rows="3" maxlength="220" class="form-control glass-input" required></textarea></div><div><label class="form-label text-white-50 small" for="editLicense">Business License <span class="text-danger">*</span></label><input id="editLicense" type="text" name="business_license" class="form-control glass-input" maxlength="255" required></div><div><label class="form-label text-white-50 small" for="editExpire">License Expiry Date <span class="text-danger">*</span></label><input id="editExpire" type="date" name="expire_at" min="<?= date('Y-m-d') ?>" class="form-control glass-input" required></div></div><div class="modal-footer"><button type="button" class="btn btn-outline-secondary rounded-3 text-white-50" data-bs-dismiss="modal">Cancel</button><button type="submit" class="btn btn-neon">Save HQ Changes</button></div></form></div></div></div>
-
 
 
     <footer class="text-white-50 text-center py-4 mt-5 small">&copy; 2026 Map &amp; Pump | All Rights Reserved</footer>
@@ -380,7 +376,6 @@ $flashContext = $flash['context'] ?? [];
             const actionSubmit = document.getElementById('actionSubmit');
             const detailsTitle = document.getElementById('hqDetailsModalLabel');
             const detailsBody = document.getElementById('hqDetailsBody');
-            let currentHQDetails = null;
 
             const escapeHtml = (value) => String(value ?? '').replace(/[&<>'"]/g, (character) => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#039;','"':'&quot;'}[character]));
             const formatDate = (value) => value ? new Date(String(value).replace(' ', 'T')).toLocaleString() : 'Not available';
@@ -420,7 +415,6 @@ $flashContext = $flash['context'] ?? [];
             <?= function_exists('expiry_js_detail_helper') ? expiry_js_detail_helper() : 'function expiryDetailAlert(){return "";}' ?>
             const renderDetails = (payload) => {
                 const hq = payload.hq || {};
-                currentHQDetails = hq;
                 const accounts = payload.accounts || [];
                 const stations = payload.stations || [];
                 const actions = payload.actions || [];
@@ -431,7 +425,7 @@ $flashContext = $flash['context'] ?? [];
                 const currentDate = new Date();
                 const today = [currentDate.getFullYear(), String(currentDate.getMonth() + 1).padStart(2, '0'), String(currentDate.getDate()).padStart(2, '0')].join('-');
                 const licenseDateWarning = registeredDay && expiryDay && expiryDay <= registeredDay
-                    ? '<div class="alert alert-warning py-2 mb-3" role="status"><i class="bi bi-exclamation-triangle-fill me-2"></i>License expiry must be after registration. Correct this date from Edit details using the current business license.</div>'
+                    ? '<div class="alert alert-warning py-2 mb-3" role="status"><i class="bi bi-exclamation-triangle-fill me-2"></i>License expiry must be after registration. Verify the current business license before changing account status.</div>'
                     : (typeof expiryDetailAlert === 'function' ? expiryDetailAlert(expiryDay, 'hq') : (expiryDay && expiryDay < today ? '<div class="alert alert-danger py-2 mb-3" role="alert"><i class="bi bi-x-circle-fill me-2"></i>This business license has expired. HQ access is limited to the profile until the business license is renewed.</div>' : ''));
 
                 const metaCards =
@@ -503,36 +497,6 @@ $flashContext = $flash['context'] ?? [];
                 }
             });
 
-            document.addEventListener('click', (event) => {
-                const button = event.target.closest('.js-edit-hq-details');
-                if (!button) return;
-                    const hq = currentHQDetails || {};
-                    const location = String(hq.location || '');
-                    const parts = location.split(/\s+(?:—|-)\s+/);
-                    const regionRaw = String(parts[0] || '').toLowerCase().replace(/\s+region$/, '').trim();
-                    const address = parts.length > 1 ? parts.slice(1).join(' - ') : location;
-                    document.getElementById('editHQId').value = hq.headquarter_id || '';
-                    document.getElementById('editHqName').value = hq.company_name || '';
-                    document.getElementById('editLogo').value = hq.company_logo || '';
-                    document.getElementById('editContact').value = hq.contact_number || '';
-                    document.getElementById('editOwnerName').value = hq.owner_name || '';
-                    document.getElementById('editOwnerEmail').value = hq.owner_email || hq.headquarter_email || '';
-                    document.getElementById('editRegion').value = regionRaw;
-                    document.getElementById('editAddress').value = address;
-                    document.getElementById('editLicense').value = hq.business_license || '';
-                    document.getElementById('editExpire').value = hq.expire_at ? String(hq.expire_at).slice(0, 10) : '';
-                    const expiryInput = document.getElementById('editExpire');
-                    const now = new Date();
-                    const localToday = [now.getFullYear(), String(now.getMonth() + 1).padStart(2, '0'), String(now.getDate()).padStart(2, '0')].join('-');
-                    let minExpiry = localToday;
-                    const createdDay = String(hq.created_at || '').slice(0, 10);
-                    if (/^\d{4}-\d{2}-\d{2}$/.test(createdDay)) {
-                        const dayAfterRegistration = new Date(createdDay + 'T00:00:00Z');
-                        dayAfterRegistration.setUTCDate(dayAfterRegistration.getUTCDate() + 1);
-                        minExpiry = [minExpiry, dayAfterRegistration.toISOString().slice(0, 10)].sort().pop();
-                    }
-                    expiryInput.min = minExpiry;
-            });
         })();
     </script>
     <script>document.addEventListener('pointermove', (event) => { document.body.style.setProperty('--bg-x', `${(event.clientX / window.innerWidth) * 100}%`); document.body.style.setProperty('--bg-y', `${(event.clientY / window.innerHeight) * 100}%`); });</script>
