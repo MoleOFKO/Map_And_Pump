@@ -71,7 +71,7 @@ function account_password_setup_create_link_pdo(PDO $pdo, int $userId, int $expi
         'INSERT INTO account_password_setup_tokens (user_id, token_hash, expires_at)
          VALUES (?, ?, DATE_ADD(NOW(), INTERVAL ' . $expiresHours . ' HOUR))'
     );
-    $insert->execute([$userId, hash('sha256', $token), $expiresHours]);
+    $insert->execute([$userId, hash('sha256', $token)]);
 
     return payment_transfer_absolute_url('/php/Login/set_account_password.php?token=' . rawurlencode($token));
 }
