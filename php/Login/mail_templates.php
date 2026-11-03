@@ -154,7 +154,9 @@ function mail_build_account_notice(array $context): array
     if ($kind === 'account_password_setup') {
         $accountLabel = trim((string) ($context['account_label'] ?? 'account'));
         $accountLabel = preg_replace('/[\r\n\t]+/', ' ', $accountLabel) ?: 'account';
-        $accountLabel = mb_substr($accountLabel, 0, 50);
+        $accountLabel = function_exists('mb_substr')
+            ? mb_substr($accountLabel, 0, 50)
+            : substr($accountLabel, 0, 50);
         $accountName = trim((string) ($context['account_name'] ?? ''));
         $setupUrl = trim((string) ($context['setup_url'] ?? ''));
         $referenceCode = trim((string) ($context['reference_code'] ?? ''));
