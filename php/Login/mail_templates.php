@@ -183,24 +183,27 @@ function mail_build_account_notice(array $context): array
         $companyName = trim((string) ($context['company_name'] ?? 'Map & Pump HQ'));
         $roleName = trim((string) ($context['role_name'] ?? 'business account'));
         $stationName = trim((string) ($context['station_name'] ?? ''));
-        $acceptUrl = trim((string) ($context['accept_url'] ?? ''));
-        $declineUrl = trim((string) ($context['decline_url'] ?? ''));
+        $accountActive = !empty($context['account_active']);
+        $passwordSetupSent = !empty($context['password_setup_sent']);
         $subject = 'Invitation to join ' . $companyName . ' on Map & Pump';
         $assignment = $stationName !== '' ? ' at ' . $stationName : '';
         $text = "You have been invited to join {$companyName} as a {$roleName}{$assignment}.\n\n"
-            . "Accept this invitation:\n{$acceptUrl}\n\n"
-            . "Decline this invitation:\n{$declineUrl}\n\n"
-            . "These links expire in 7 days and can only be used once.\n\n"
+            . ($accountActive
+                ? ($passwordSetupSent
+                    ? "Your Map & Pump account has been added to this role. Use the separate password setup email if you need to create your password.\n\n"
+                    : "Your Map & Pump account has been added to this role. Sign in with your existing password.\n\n")
+                : "Sign in to Map & Pump to review and respond to this invitation.\n\n")
             . $footer['text'];
         $html = '<div style="font-family:Arial,Helvetica,sans-serif;line-height:1.55;color:#111827;max-width:560px">'
             . '<p style="margin:0 0 12px;font-size:14px;color:#374151">Map &amp; Pump invitation</p>'
             . '<h2 style="margin:0 0 16px;font-size:20px;color:#111827">You are invited</h2>'
             . '<p>You have been invited to join <strong>' . mail_h($companyName) . '</strong> as a <strong>'
             . mail_h($roleName) . '</strong>' . ($stationName !== '' ? ' at <strong>' . mail_h($stationName) . '</strong>' : '') . '.</p>'
-            . '<p style="margin:24px 0">'
-            . '<a href="' . mail_h($acceptUrl) . '" style="display:inline-block;padding:10px 18px;background:#0b6bcb;color:#fff;text-decoration:none;border-radius:6px;margin-right:8px">Accept invitation</a>'
-            . '<a href="' . mail_h($declineUrl) . '" style="display:inline-block;padding:10px 18px;background:#fff;color:#b42318;text-decoration:none;border:1px solid #b42318;border-radius:6px">Decline</a>'
-            . '</p><p>These links expire in 7 days and can only be used once.</p>'
+            . '<p>' . ($accountActive
+                ? ($passwordSetupSent
+                    ? 'Your account has been added to this role. Check your separate password setup email if you need to create a password.'
+                    : 'Your account has been added to this role. Sign in with your existing password.')
+                : 'Sign in to Map &amp; Pump to review this invitation.') . '</p>'
             . $footer['html'] . '</div>';
         return ['subject' => $subject, 'html' => $html, 'text' => $text];
     }

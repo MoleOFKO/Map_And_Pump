@@ -51,7 +51,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } else {
         $newPassword = (string) ($_POST['password'] ?? '');
         $confirmPassword = (string) ($_POST['confirm_password'] ?? '');
-        $passwordLength = mb_strlen($newPassword);
+        $passwordLength = strlen($newPassword);
         if ($passwordLength < 8 || $passwordLength > 15) {
             $error = 'Password must be 8 to 15 characters long.';
         } elseif (!hash_equals($newPassword, $confirmPassword)) {
