@@ -66,6 +66,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $ownerEmail = strtolower(trim((string) ($_POST['owner_email'] ?? '')));
     $ownerPhone = trim((string) ($_POST['owner_phone'] ?? ''));
     $companyEmail = strtolower(trim((string) ($_POST['company_email'] ?? '')));
+    $accountEmail = $ownerEmail !== '' ? $ownerEmail : $companyEmail;
     $companyPhone = trim((string) ($_POST['company_phone'] ?? ''));
     $paymentMethod = trim((string) ($_POST['payment_method'] ?? ''));
     $bankName = trim((string) ($_POST['bank_name'] ?? ''));
@@ -80,41 +81,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if (($_POST['action'] ?? '') === 'verify_registration_emails') {
         require_once __DIR__ . '/../conn.php';
-        $ownerLookup = $pdo->prepare('SELECT user_id, role_id, business_role_id, headquarter_id FROM users WHERE LOWER(TRIM(email)) = ? LIMIT 1');
-        $ownerLookup->execute([$ownerEmail]);
-        $ownerAccount = $ownerLookup->fetch(PDO::FETCH_ASSOC) ?: [];
-        $ownerUserId = (int) ($ownerAccount['user_id'] ?? 0);
-        if ($ownerUserId <= 0) {
-            $respond(false, 'This owner email is not registered yet.', 409, ['code' => 'owner_unregistered']);
-        }
-        if ((int) ($ownerAccount['role_id'] ?? 0) !== 6 || (int) ($ownerAccount['business_role_id'] ?? 0) > 0
-            || (int) ($ownerAccount['headquarter_id'] ?? 0) > 0) {
-            $respond(false, 'Use an unlinked Customer account as the HQ owner.', 409);
-        }
-        if ($ownerEmail === $companyEmail) {
-            $respond(false, 'Use a separate email for the HQ owner and the company.', 422);
+        if ($ownerEmail !== '' && !filter_var($ownerEmail, FILTER_VALIDATE_EMAIL)) {
+            $respond(false, 'Enter a valid owner email or leave it blank to use the company email.', 422);
         }
         $companyLogin = $pdo->prepare('SELECT 1 FROM users WHERE LOWER(TRIM(email)) = ? LIMIT 1');
         $companyLogin->execute([$companyEmail]);
         if ($companyLogin->fetchColumn()) {
             $respond(false, 'This company email is already used by a login account. Use another company email.', 409);
         }
-        $existingHq = $pdo->prepare('SELECT 1 FROM headquarter WHERE headquarters_owner_id = ? OR LOWER(TRIM(headquarter_email)) = ? LIMIT 1');
-        $existingHq->execute([$ownerUserId, $companyEmail]);
+        $ownerLookup = $pdo->prepare('SELECT user_id, role_id, business_role_id, headquarter_id FROM users WHERE LOWER(TRIM(email)) = ? LIMIT 1');
+        $ownerLookup->execute([$accountEmail]);
+        $ownerAccount = $ownerLookup->fetch(PDO::FETCH_ASSOC) ?: [];
+        $ownerUserId = (int) ($ownerAccount['user_id'] ?? 0);
+        if ($ownerUserId > 0 && ((int) ($ownerAccount['role_id'] ?? 0) !== 6 || (int) ($ownerAccount['business_role_id'] ?? 0) > 0
+            || (int) ($ownerAccount['headquarter_id'] ?? 0) > 0)) {
+            $respond(false, 'The owner email belongs to an account that cannot be linked to an HQ.', 409);
+        }
+        $existingHq = $pdo->prepare('SELECT 1 FROM headquarter WHERE (? > 0 AND headquarters_owner_id = ?) OR LOWER(TRIM(headquarter_email)) = ? LIMIT 1');
+        $existingHq->execute([$ownerUserId, $ownerUserId, $companyEmail]);
         if ($existingHq->fetchColumn()) {
             $respond(false, 'This owner account or company email is already linked to an HQ.', 409);
         }
         $pendingRequest = $pdo->prepare(
             "SELECT 1 FROM system_requests
              WHERE request_type = 'hq_registration' AND status = 'pending'
-               AND (LOWER(TRIM(headquarter_email)) IN (?, ?) OR LOWER(TRIM(headquarter_owner_email)) = ?)
+               AND (LOWER(TRIM(headquarter_email)) IN (?, ?) OR LOWER(TRIM(COALESCE(NULLIF(headquarter_owner_email, ''), sender_email))) = ?)
              LIMIT 1"
         );
-        $pendingRequest->execute([$ownerEmail, $companyEmail, $ownerEmail]);
+        $pendingRequest->execute([$accountEmail, $companyEmail, $accountEmail]);
         if ($pendingRequest->fetchColumn()) {
             $respond(false, 'A pending registration already exists for this email address.', 409);
         }
-        $respond(true, 'Owner account and company email are available.');
+        $respond(true, 'The account email and company email are available.');
     }
 
     $allowedMethods = ['Bank transfer', 'KPay', 'Wave Pay', 'AYA Pay', 'CB Pay'];
@@ -128,10 +126,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($companyAddress === '') $validationErrors[] = 'company address';
     if ($licenseId === '') $validationErrors[] = 'license ID';
     if (!$expiryValid) $validationErrors[] = 'license expiry date';
-    if (!filter_var($ownerEmail, FILTER_VALIDATE_EMAIL)) $validationErrors[] = 'owner email';
+    if ($ownerEmail !== '' && !filter_var($ownerEmail, FILTER_VALIDATE_EMAIL)) $validationErrors[] = 'owner email';
     if (!filter_var($companyEmail, FILTER_VALIDATE_EMAIL)) $validationErrors[] = 'company email';
-    if ($ownerEmail !== '' && $ownerEmail === $companyEmail) $validationErrors[] = 'different owner and company emails';
-    if ($ownerPhone === '') $validationErrors[] = 'owner phone';
     if ($companyPhone === '') $validationErrors[] = 'company phone';
     if ($requestedStations === false || $requestedStations < BILLING_HQ_INCLUDED_STATION_SLOTS || $requestedStations > 60) $validationErrors[] = 'station count (3 to 60)';
     if ($serviceMonths === false || $serviceMonths < 1 || $serviceMonths > 24) $validationErrors[] = 'service period (1 to 24 months)';
@@ -166,7 +162,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if (strlen($companyName) > 255 || strlen($companyAddress) > 255 || strlen($licenseId) > 255
-        || strlen($ownerEmail) > 255 || strlen($companyEmail) > 255 || strlen($ownerPhone) > 50 || strlen($companyPhone) > 50) {
+        || strlen($accountEmail) > 255 || strlen($companyEmail) > 255 || strlen($ownerPhone) > 50 || strlen($companyPhone) > 50) {
         $respond(false, 'One or more fields are longer than allowed.', 422);
     }
 
@@ -265,33 +261,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 || !is_uploaded_file((string) ($receiptFile['tmp_name'] ?? ''))) {
                 throw new RuntimeException('Upload a payment screenshot no larger than 5 MB.');
             }
-            $receiptMime = (new finfo(FILEINFO_MIME_TYPE))->file((string) $receiptFile['tmp_name']);
+            $receiptMime = $detectMime((string) $receiptFile['tmp_name']);
             if (!in_array($receiptMime, ['image/jpeg', 'image/png', 'image/webp'], true)) {
                 throw new RuntimeException('The payment screenshot must be a JPG, PNG, or WEBP image.');
             }
-        }
-        $ownerLookup = $pdo->prepare('SELECT user_id, role_id, business_role_id, headquarter_id FROM users WHERE LOWER(TRIM(email)) = ? LIMIT 1');
-        $ownerLookup->execute([$ownerEmail]);
-        $ownerAccount = $ownerLookup->fetch(PDO::FETCH_ASSOC) ?: [];
-        $ownerUserId = (int) ($ownerAccount['user_id'] ?? 0);
-        if ($ownerUserId <= 0) {
-            $respond(false, 'This owner email is not registered yet.', 409, ['code' => 'owner_unregistered']);
-        }
-        if ((int) ($ownerAccount['role_id'] ?? 0) !== 6 || (int) ($ownerAccount['business_role_id'] ?? 0) > 0
-            || (int) ($ownerAccount['headquarter_id'] ?? 0) > 0) {
-            $respond(false, 'Use an unlinked Customer account as the HQ owner.', 409);
         }
         $companyLogin = $pdo->prepare('SELECT 1 FROM users WHERE LOWER(TRIM(email)) = ? LIMIT 1');
         $companyLogin->execute([$companyEmail]);
         if ($companyLogin->fetchColumn()) {
             $respond(false, 'This company email is already used by a login account. Use another company email.', 409);
         }
+        $ownerLookup = $pdo->prepare('SELECT user_id, role_id, business_role_id, headquarter_id FROM users WHERE LOWER(TRIM(email)) = ? LIMIT 1');
+        $ownerLookup->execute([$accountEmail]);
+        $ownerAccount = $ownerLookup->fetch(PDO::FETCH_ASSOC) ?: [];
+        $ownerUserId = (int) ($ownerAccount['user_id'] ?? 0);
+        if ($ownerUserId > 0 && ((int) ($ownerAccount['role_id'] ?? 0) !== 6 || (int) ($ownerAccount['business_role_id'] ?? 0) > 0
+            || (int) ($ownerAccount['headquarter_id'] ?? 0) > 0)) {
+            $respond(false, 'The owner email belongs to an account that cannot be linked to an HQ.', 409);
+        }
         $emailConflict = $pdo->prepare(
             'SELECT 1 FROM headquarter
-             WHERE headquarters_owner_id = ? OR LOWER(TRIM(headquarter_email)) = ?
+             WHERE (? > 0 AND headquarters_owner_id = ?) OR LOWER(TRIM(headquarter_email)) = ?
              LIMIT 1'
         );
-        $emailConflict->execute([$ownerUserId, $companyEmail]);
+        $emailConflict->execute([$ownerUserId, $ownerUserId, $companyEmail]);
         if ($emailConflict->fetchColumn()) {
             $respond(false, 'This owner account or company email is already linked to an HQ.', 409);
         }
@@ -299,10 +292,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $duplicate = $pdo->prepare(
                         "SELECT request_id FROM system_requests
                          WHERE request_type = 'hq_registration' AND status = 'pending'
-                             AND (LOWER(TRIM(headquarter_email)) IN (?, ?) OR LOWER(TRIM(headquarter_owner_email)) IN (?, ?))
+                             AND (LOWER(TRIM(headquarter_email)) IN (?, ?) OR LOWER(TRIM(COALESCE(NULLIF(headquarter_owner_email, ''), sender_email))) = ?)
                          LIMIT 1"
                 );
-                $duplicate->execute([$ownerEmail, $companyEmail, $ownerEmail, $companyEmail]);
+                $duplicate->execute([$accountEmail, $companyEmail, $accountEmail]);
         if ($duplicate->fetchColumn()) {
             $respond(false, 'A pending registration already exists for this email address.', 409);
         }
@@ -331,16 +324,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                  headquarter_company_logo, headquarter_contact_number, headquarter_expire_at)
              VALUES (?, 'hq_registration', 'pending', ?, 3, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
         );
-        $submitterId = $ownerUserId;
+        $submitterId = $ownerUserId > 0 ? $ownerUserId : null;
         $stmt->execute([
-            $reference, $submitterId, $companyName, $companyName, $ownerEmail, $companyAddress, $details,
-            $licenseId, $licensePath, $ownerEmail, $companyEmail, $logoPath, $companyPhone, $licenseExpiry . ' 23:59:59',
+            $reference, $submitterId, $companyName, $companyName, $accountEmail, $companyAddress, $details,
+            $licenseId, $licensePath, $ownerEmail !== '' ? $ownerEmail : null, $companyEmail, $logoPath, $companyPhone, $licenseExpiry . ' 23:59:59',
         ]);
         $requestId = (int) $pdo->lastInsertId();
         $accessToken = '';
         if (!$noPaymentRequired) {
             $accessToken = rtrim(strtr(base64_encode(random_bytes(32)), '+/', '-_'), '=');
-            $payerUserId = $ownerUserId;
+            $payerUserId = $ownerUserId > 0 ? $ownerUserId : null;
             $transferId = payment_transfer_create($pdo, [
                 'payment_type' => 'hq_registration',
                 'amount_mmk' => $registrationAmount,
@@ -349,7 +342,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'term_months' => $serviceMonths,
                 'service_start_month' => date('Y-m'),
                 'payer_user_id' => $payerUserId,
-                'payer_email' => $ownerEmail,
+                'payer_email' => $accountEmail,
                 'recipient_role' => BILLING_PLATFORM_RECEIVER_ROLE,
                 'request_id' => $requestId,
                 'payment_method' => $paymentMethod === 'Bank transfer' ? $paymentMethod . ': ' . $bankName : $paymentMethod,
@@ -357,7 +350,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'payer_access_expires_at' => date('Y-m-d H:i:s', time() + 30 * 86400),
                 'event_actor_user_id' => null,
                 'event_actor_email' => null,
-                'event_note' => 'HQ registration payment request created; payer access is linked to a time-limited owner-email link.',
+                'event_note' => 'HQ registration payment request created; payer access is linked to a time-limited account-email link.',
             ]);
             $paidUpdate = $pdo->prepare("UPDATE payment_transfers SET status = 'payer_reported_paid', reported_paid_at = NOW(), paid_declared_at = NOW() WHERE payment_transfer_id = ?");
             $paidUpdate->execute([$transferId]);
@@ -372,9 +365,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $receipt->bindValue(4, (int) $receiptFile['size'], PDO::PARAM_INT);
             $receipt->bindValue(5, file_get_contents((string) $receiptFile['tmp_name']), PDO::PARAM_LOB);
             $receipt->bindValue(6, $payerUserId, $payerUserId !== null ? PDO::PARAM_INT : PDO::PARAM_NULL);
-            $receipt->bindValue(7, $ownerEmail);
+            $receipt->bindValue(7, $accountEmail);
             $receipt->execute();
-            payment_transfer_record_event($pdo, $transferId, 'pending_payment', 'payer_reported_paid', $payerUserId, $ownerEmail, 'Registration payment method and transfer screenshot submitted for Admin review.');
+            payment_transfer_record_event($pdo, $transferId, 'pending_payment', 'payer_reported_paid', $payerUserId, $accountEmail, 'Registration payment method and transfer screenshot submitted for Admin review.');
         }
         $pdo->commit();
         if ($noPaymentRequired) {
@@ -393,7 +386,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 @unlink(__DIR__ . '/uploads/' . basename($path));
             }
         }
-        error_log('Company registration failed: ' . $error->getMessage());
+        error_log(sprintf(
+            'Company registration failed [%s] at %s:%d: %s',
+            get_class($error),
+            $error->getFile(),
+            $error->getLine(),
+            $error->getMessage()
+        ));
         $message = $error instanceof RuntimeException
             ? $error->getMessage()
             : 'The registration could not be saved. Please try again or contact support.';
@@ -463,8 +462,8 @@ require __DIR__ . '/../partials/nav.php';
                     <div><h2>Contact details</h2><p>Separate contacts for the owner and company.</p></div>
                 </div>
                 <div class="row g-4">
-                    <div class="col-md-6"><label for="owner-email" class="form-label">Company owner&rsquo;s email</label><input id="owner-email" name="owner_email" class="form-control" type="email" autocomplete="email" placeholder="owner@company.com" required></div>
-                    <div class="col-md-6"><label for="owner-phone" class="form-label">Company owner&rsquo;s phone number</label><input id="owner-phone" name="owner_phone" class="form-control" type="tel" autocomplete="tel" placeholder="09xxxxxxxxx" required></div>
+                    <div class="col-md-6"><label for="owner-email" class="form-label">Company owner&rsquo;s email <span class="text-muted">(optional)</span></label><input id="owner-email" name="owner_email" class="form-control" type="email" autocomplete="email" placeholder="owner@company.com"><small class="form-text">If blank, the company email will receive payment updates and the account password link.</small></div>
+                    <div class="col-md-6"><label for="owner-phone" class="form-label">Company owner&rsquo;s phone number <span class="text-muted">(optional)</span></label><input id="owner-phone" name="owner_phone" class="form-control" type="tel" autocomplete="tel" placeholder="09xxxxxxxxx"></div>
                     <div class="col-md-6"><label for="company-email" class="form-label">Company email</label><input id="company-email" name="company_email" class="form-control" type="email" autocomplete="email" placeholder="info@company.com" required></div>
                     <div class="col-md-6"><label for="company-phone" class="form-label">Company phone number</label><input id="company-phone" name="company_phone" class="form-control" type="tel" autocomplete="tel" placeholder="01xxxxxxx" required></div>
                 </div>

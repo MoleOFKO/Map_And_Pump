@@ -112,24 +112,12 @@ try {
             $quantityValid = !empty($paymentRow['service_start_month'])
                 ? (int) ($paymentRow['quantity'] ?? 0) === $requestedStations
                 : (int) ($paymentRow['quantity'] ?? 0) >= $extraStationCount;
-            if (($paymentRow['status'] ?? '') !== 'received' || (float) ($paymentRow['amount_mmk'] ?? 0) <= 0
-                || !$quantityValid
+            if ((float) ($paymentRow['amount_mmk'] ?? 0) <= 0 || !$quantityValid
                 || (int) ($paymentRow['term_months'] ?? 0) !== $requestedMonths
                 || ($expectedRegistrationAmount !== null
                     && abs((float) $paymentRow['amount_mmk'] - $expectedRegistrationAmount) > 0.01)) {
-                throw new RuntimeException('The selected HQ station term must be recorded as received before approval.');
+                throw new RuntimeException('The HQ payment request does not match the requested amount, station count, or service term.');
             }
-            $receiptCheck = $conn->prepare('SELECT 1 FROM payment_transfer_receipts WHERE payment_transfer_id = ? LIMIT 1');
-            if (!$receiptCheck) {
-                throw new RuntimeException('The registration payment evidence could not be verified.');
-            }
-            $paymentTransferId = (int) $paymentRow['payment_transfer_id'];
-            $receiptCheck->bind_param('i', $paymentTransferId);
-            if (!$receiptCheck->execute() || !$receiptCheck->get_result()?->fetch_row()) {
-                $receiptCheck->close();
-                throw new RuntimeException('The registration payment screenshot is missing.');
-            }
-            $receiptCheck->close();
         }
     }
 
@@ -246,7 +234,8 @@ try {
 
         // Set service period without clobbering license expire_at / created_at.
         // Re-assert expire_at here in case the column still has ON UPDATE CURRENT_TIMESTAMP.
-        $serviceExpiry = $packageAmount > 0
+        $paymentReceived = ($paymentRow['status'] ?? '') === 'received';
+        $serviceExpiry = $packageAmount > 0 && $paymentReceived
             ? payment_transfer_add_months_clamped(new DateTimeImmutable(), $requestedServiceMonths)->format('Y-m-d H:i:s')
             : null;
         $serviceExpiryUpdate = $conn->prepare(
@@ -278,7 +267,7 @@ try {
             }
             $linkPayment->close();
         }
-        if ($registrationTransferId > 0 && $packageAmount > 0) {
+        if ($registrationTransferId > 0 && $packageAmount > 0 && $paymentReceived) {
             $packageStartMonth = (string) ($paymentRow['service_start_month'] ?? '');
             $monthStart = DateTimeImmutable::createFromFormat('!Y-m', $packageStartMonth)
                 ?: new DateTimeImmutable('first day of this month 00:00:00');
@@ -332,19 +321,22 @@ try {
             $coverage->close();
         }
 
-        // A public registration has no submitter account.  Ensure every
-        // approved HQ still receives a linked, role-3 login owner.
+        // Link the provided customer account, or provision a login using the
+        // company email when no owner email was supplied.
         $hqRoleId = hq_hq_role_id();
         if ($hqRoleId !== 3) {
             throw new RuntimeException('The HQ account role must use role ID 3.');
         }
-        $ownerEmail = strtolower(trim((string) ($target['headquarter_email'] ?? '')));
+        $ownerEmail = strtolower(trim((string) ($target['headquarter_owner_email'] ?? '')));
+        if ($ownerEmail === '') {
+            $ownerEmail = strtolower(trim((string) ($target['headquarter_email'] ?? '')));
+        }
         if (!filter_var($ownerEmail, FILTER_VALIDATE_EMAIL)) {
-            throw new RuntimeException('The approved HQ has no valid company email address.');
+            throw new RuntimeException('The approved HQ has no valid owner or company email address.');
         }
         $ownerName = trim((string) ($target['sender_name'] ?: $target['sender_entity']));
         $ownerName = $ownerName !== '' ? $ownerName : $companyName;
-        $ownerLookup = $conn->prepare('SELECT user_id FROM users WHERE email = ? FOR UPDATE');
+        $ownerLookup = $conn->prepare('SELECT user_id, email, role_id, business_role_id, headquarter_id FROM users WHERE LOWER(TRIM(email)) = LOWER(?) LIMIT 1 FOR UPDATE');
         if (!$ownerLookup) {
             throw new RuntimeException('Could not look up the HQ owner account.');
         }
@@ -352,24 +344,48 @@ try {
         $ownerLookup->execute();
         $existingOwner = $ownerLookup->get_result()?->fetch_assoc();
         $ownerLookup->close();
+        $registrantUserId = (int) ($target['existing_user_id'] ?? 0);
         if ($existingOwner) {
-            throw new RuntimeException('The company email is already attached to a login account. Use a different company email before approving this HQ.');
+            $createdOwnerUserId = (int) $existingOwner['user_id'];
+            if ((int) ($existingOwner['role_id'] ?? 0) !== 6
+                || (int) ($existingOwner['business_role_id'] ?? 0) > 0
+                || (int) ($existingOwner['headquarter_id'] ?? 0) > 0
+                || ($registrantUserId > 0 && $registrantUserId !== $createdOwnerUserId)) {
+                throw new RuntimeException('The selected owner account is no longer eligible for HQ linking.');
+            }
+            $ownerUpdate = $conn->prepare(
+                'UPDATE users SET headquarter_id = ?, business_role_id = ?, updated_at = NOW()
+                 WHERE user_id = ? AND role_id = 6
+                   AND (business_role_id IS NULL OR business_role_id = 0)
+                   AND (headquarter_id IS NULL OR headquarter_id = 0)'
+            );
+            if (!$ownerUpdate) {
+                throw new RuntimeException('Could not prepare the Customer-to-HQ account link.');
+            }
+            $ownerUpdate->bind_param('iii', $createdHeadquarterId, $hqRoleId, $createdOwnerUserId);
+            if (!$ownerUpdate->execute() || $ownerUpdate->affected_rows !== 1) {
+                throw new RuntimeException('Could not link the customer account to the approved HQ.');
+            }
+            $ownerUpdate->close();
+        } else {
+            if ($registrantUserId > 0) {
+                throw new RuntimeException('The HQ owner account email no longer matches the registration account.');
+            }
+            $ownerUserName = hq_unique_username($ownerName, $ownerEmail);
+            $ownerInsert = $conn->prepare(
+                "INSERT INTO users (user_name, email, hashed_password, headquarter_id, role_id, business_role_id, current_role_id, status, created_at, updated_at)
+                 VALUES (?, ?, NULL, ?, ?, ?, ?, 'pending', NOW(), NOW())"
+            );
+            if (!$ownerInsert) {
+                throw new RuntimeException('Could not prepare the HQ owner account.');
+            }
+            $ownerInsert->bind_param('ssiiii', $ownerUserName, $ownerEmail, $createdHeadquarterId, $hqRoleId, $hqRoleId, $hqRoleId);
+            if (!$ownerInsert->execute()) {
+                throw new RuntimeException('Could not create the HQ owner account.');
+            }
+            $createdOwnerUserId = (int) $ownerInsert->insert_id;
+            $ownerInsert->close();
         }
-
-        $ownerUserName = hq_unique_username($ownerName, $ownerEmail);
-        $ownerInsert = $conn->prepare(
-            "INSERT INTO users (user_name, email, hashed_password, headquarter_id, role_id, business_role_id, current_role_id, status, created_at, updated_at)
-             VALUES (?, ?, NULL, ?, ?, ?, ?, 'pending', NOW(), NOW())"
-        );
-        if (!$ownerInsert) {
-            throw new RuntimeException('Could not prepare the HQ owner account.');
-        }
-        $ownerInsert->bind_param('ssiiii', $ownerUserName, $ownerEmail, $createdHeadquarterId, $hqRoleId, $hqRoleId, $hqRoleId);
-        if (!$ownerInsert->execute()) {
-            throw new RuntimeException('Could not create the HQ owner account.');
-        }
-        $createdOwnerUserId = (int) $ownerInsert->insert_id;
-        $ownerInsert->close();
 
         $createdOwnerSetupUrl = account_password_setup_create_link($conn, $createdOwnerUserId);
         $createdOwnerEmail = $ownerEmail;
@@ -403,65 +419,6 @@ try {
             throw new RuntimeException('Could not save the HQ owner business-role link.');
         }
         $ownerScope->close();
-
-        $registrantUserId = (int) ($target['existing_user_id'] ?? 0);
-        if ($registrantUserId > 0 && $registrantUserId !== $createdOwnerUserId) {
-            $registrantLookup = $conn->prepare(
-                'SELECT user_id, email, role_id, business_role_id, headquarter_id
-                 FROM users WHERE user_id = ? FOR UPDATE'
-            );
-            if (!$registrantLookup) {
-                throw new RuntimeException('Could not verify the HQ registration customer account.');
-            }
-            $registrantLookup->bind_param('i', $registrantUserId);
-            $registrantLookup->execute();
-            $registrant = $registrantLookup->get_result()?->fetch_assoc();
-            $registrantLookup->close();
-
-            $requestOwnerEmail = strtolower(trim((string) ($target['headquarter_owner_email'] ?: $target['sender_email'])));
-            $registrantEmail = strtolower(trim((string) ($registrant['email'] ?? '')));
-            if (!$registrant || (int) ($registrant['role_id'] ?? 0) !== 6
-                || (int) ($registrant['business_role_id'] ?? 0) > 0
-                || (int) ($registrant['headquarter_id'] ?? 0) > 0
-                || $requestOwnerEmail === '' || !hash_equals($requestOwnerEmail, $registrantEmail)) {
-                throw new RuntimeException('The HQ registration customer account is no longer eligible for business linking.');
-            }
-
-            $registrantUpdate = $conn->prepare(
-                'UPDATE users SET headquarter_id = ?, business_role_id = ?, updated_at = NOW()
-                 WHERE user_id = ? AND role_id = 6
-                   AND (business_role_id IS NULL OR business_role_id = 0)
-                   AND (headquarter_id IS NULL OR headquarter_id = 0)'
-            );
-            if (!$registrantUpdate) {
-                throw new RuntimeException('Could not prepare the Customer-to-HQ account link.');
-            }
-            $registrantUpdate->bind_param('iii', $createdHeadquarterId, $hqRoleId, $registrantUserId);
-            if (!$registrantUpdate->execute() || $registrantUpdate->affected_rows !== 1) {
-                throw new RuntimeException('Could not link the customer account to the approved HQ.');
-            }
-            $registrantUpdate->close();
-
-            $registrantScope = $conn->prepare(
-                "INSERT INTO business_account_scope
-                    (user_id, business_role_id, headquarter_id, branch_manager_user_id, station_id, status)
-                 VALUES (?, ?, ?, NULL, NULL, 'pending')
-                 ON DUPLICATE KEY UPDATE
-                    business_role_id = VALUES(business_role_id),
-                    headquarter_id = VALUES(headquarter_id),
-                    branch_manager_user_id = NULL,
-                    station_id = NULL,
-                    status = 'pending'"
-            );
-            if (!$registrantScope) {
-                throw new RuntimeException('Could not prepare the Customer-to-HQ business scope.');
-            }
-            $registrantScope->bind_param('iii', $registrantUserId, $hqRoleId, $createdHeadquarterId);
-            if (!$registrantScope->execute()) {
-                throw new RuntimeException('Could not save the Customer-to-HQ business scope.');
-            }
-            $registrantScope->close();
-        }
 
         $requestHqUpdate = $conn->prepare('UPDATE system_requests SET headquarter_id = ? WHERE request_id = ?');
         if (!$requestHqUpdate) {

@@ -283,6 +283,89 @@ function payment_transfer_absolute_url(string $path): string
     return rtrim($base, '/') . '/' . ltrim($path, '/');
 }
 
+function payment_transfer_activate_hq_registration(PDO $pdo, array $transfer): bool
+{
+    $headquarterId = (int) ($transfer['payer_headquarter_id'] ?? 0);
+    $requestId = (int) ($transfer['request_id'] ?? 0);
+    $transferId = (int) ($transfer['payment_transfer_id'] ?? 0);
+    if ($headquarterId <= 0 || $requestId <= 0 || $transferId <= 0) {
+        return false;
+    }
+
+    $requestStmt = $pdo->prepare(
+        "SELECT request_details, headquarter_id
+         FROM system_requests
+         WHERE request_id = ? AND request_type = 'hq_registration' AND status = 'approved'
+         LIMIT 1 FOR UPDATE"
+    );
+    $requestStmt->execute([$requestId]);
+    $request = $requestStmt->fetch(PDO::FETCH_ASSOC);
+    if (!$request || (int) ($request['headquarter_id'] ?? 0) !== $headquarterId) {
+        return false;
+    }
+
+    $details = json_decode((string) ($request['request_details'] ?? ''), true);
+    if (!is_array($details)) {
+        throw new RuntimeException('The approved HQ registration package details are invalid.');
+    }
+    $stationCount = (int) ($details['requested_station_count'] ?? 0);
+    $months = (int) ($details['requested_service_months'] ?? 0);
+    $extraStationCount = max(0, $stationCount - BILLING_HQ_INCLUDED_STATION_SLOTS);
+    $packageAmount = isset($details['package_amount_mmk'])
+        ? max(0.0, (float) $details['package_amount_mmk'])
+        : ($extraStationCount > 0 ? (float) ($transfer['amount_mmk'] ?? 0) : 0.0);
+    if ($stationCount < BILLING_HQ_INCLUDED_STATION_SLOTS || $stationCount > 60 || $months < 1 || $months > 24) {
+        throw new RuntimeException('The approved HQ registration station count or service term is invalid.');
+    }
+    if ($packageAmount <= 0) {
+        return true;
+    }
+
+    $serviceExpiry = payment_transfer_add_months_clamped(new DateTimeImmutable(), $months)->format('Y-m-d H:i:s');
+    $expiryUpdate = $pdo->prepare(
+        'UPDATE headquarter
+         SET service_expires_at = ?, included_stations_free_until = NULL
+         WHERE headquarter_id = ?'
+    );
+    $expiryUpdate->execute([$serviceExpiry, $headquarterId]);
+    if ($expiryUpdate->rowCount() !== 1) {
+        throw new RuntimeException('The approved HQ service period could not be activated.');
+    }
+
+    $monthStart = new DateTimeImmutable('first day of this month 00:00:00');
+    $firstCoveredStation = array_key_exists('package_amount_mmk', $details)
+        ? 1
+        : BILLING_HQ_INCLUDED_STATION_SLOTS + 1;
+    $slots = $pdo->prepare(
+        'INSERT INTO company_loyalty_station_slots
+            (headquarter_id, `year_month`, slots_purchased, mmk_slots_purchased, points_spent)
+         VALUES (?, ?, 0, ?, 0)
+         ON DUPLICATE KEY UPDATE mmk_slots_purchased = GREATEST(mmk_slots_purchased, VALUES(mmk_slots_purchased))'
+    );
+    $coverage = $pdo->prepare(
+        'INSERT INTO hq_station_package_coverage
+            (payment_transfer_id, headquarter_id, `year_month`, first_station_number, station_count)
+         VALUES (?, ?, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE first_station_number = VALUES(first_station_number), station_count = VALUES(station_count)'
+    );
+    $entitlements = $pdo->prepare(
+        'INSERT IGNORE INTO hq_station_mmk_entitlements
+            (payment_transfer_id, headquarter_id, `year_month`, slot_number)
+         VALUES (?, ?, ?, ?)'
+    );
+    for ($monthIndex = 0; $monthIndex < $months; $monthIndex++) {
+        $yearMonth = $monthStart->modify('+' . $monthIndex . ' months')->format('Y-m');
+        $slots->execute([$headquarterId, $yearMonth, $extraStationCount]);
+        $coverage->execute([$transferId, $headquarterId, $yearMonth, $firstCoveredStation, $stationCount]);
+        for ($slotNumber = 1; $slotNumber <= $extraStationCount; $slotNumber++) {
+            $entitlements->execute([$transferId, $headquarterId, $yearMonth, $slotNumber]);
+        }
+    }
+    $startMonthUpdate = $pdo->prepare('UPDATE payment_transfers SET service_start_month = ? WHERE payment_transfer_id = ?');
+    $startMonthUpdate->execute([$monthStart->format('Y-m'), $transferId]);
+    return true;
+}
+
 /** Return active platform Admin accounts that may receive platform-fee notices. */
 function payment_transfer_admin_recipients(PDO $pdo): array
 {
