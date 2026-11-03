@@ -13,6 +13,7 @@ try {
 $managers = [];
 $stations = [];
 $branchManagers = [];
+$invitationDecisionMessages = [];
 $dbError = '';
 $statusMessage = '';
 $hqId = map_pump_current_hq_id($pdo);
@@ -23,6 +24,38 @@ if (is_array($sessionMessage)) {
         $dbError = (string)($sessionMessage['text'] ?? '');
     } else {
         $statusMessage = (string)($sessionMessage['text'] ?? '');
+    }
+}
+
+$accountUserId = (int) ($_SESSION['user_id'] ?? 0);
+if ($accountUserId > 0) {
+    try {
+        $decisionStmt = $pdo->prepare(
+            "SELECT notification_id, subject, message, notification_type
+             FROM notifications
+             WHERE recipient_user_id = ?
+               AND notification_type IN ('hq_invitation_accepted', 'hq_invitation_declined')
+               AND read_at IS NULL
+             ORDER BY created_at ASC
+             LIMIT 10"
+        );
+        $decisionStmt->execute([$accountUserId]);
+        $invitationDecisionMessages = $decisionStmt->fetchAll(PDO::FETCH_ASSOC);
+        if ($invitationDecisionMessages) {
+            $notificationIds = array_map(
+                static fn(array $notification): int => (int) $notification['notification_id'],
+                $invitationDecisionMessages
+            );
+            $placeholders = implode(',', array_fill(0, count($notificationIds), '?'));
+            $markRead = $pdo->prepare(
+                "UPDATE notifications SET read_at = NOW()
+                 WHERE recipient_user_id = ? AND notification_id IN ({$placeholders}) AND read_at IS NULL"
+            );
+            $markRead->execute(array_merge([$accountUserId], $notificationIds));
+        }
+    } catch (Throwable $error) {
+        error_log('[HQ account] Could not load invitation responses: ' . $error->getMessage());
+        $dbError = 'Could not load invitation response notifications.';
     }
 }
 
@@ -233,6 +266,13 @@ try {
         <h2 class="title">Manage Branch Managers</h2>
         <p class="subtitle">Invite and control branch managers assigned to this HQ. Staff are managed by their branch manager.</p>
 
+        <?php foreach ($invitationDecisionMessages as $index => $notification): ?>
+            <div class="alert alert-<?= str_contains((string) $notification['notification_type'], 'accepted') ? 'success' : 'warning' ?> invitation-response-alert" role="status" data-alert-index="<?= (int) $index ?>">
+                <strong><?= htmlspecialchars((string) $notification['subject'], ENT_QUOTES, 'UTF-8') ?>:</strong>
+                <?= htmlspecialchars((string) $notification['message'], ENT_QUOTES, 'UTF-8') ?>
+            </div>
+        <?php endforeach; ?>
+
         <?php
 if (!empty($dbError)): ?>
             <div class="alert alert-danger" role="alert">
@@ -331,7 +371,7 @@ endif; ?>
                 <form method="POST" action="./invite_account.php" id="inviteAccountForm">
                     <div class="modal-header border-0"><h5 class="modal-title" id="inviteAccountModalLabel">Add Branch Manager</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button></div>
                     <div class="modal-body">
-                        <p class="small text-white-50">The email must belong to an existing customer account. That customer must Accept or Decline the invitation before continuing. A station is optional for branch managers; staff require one.</p>
+                        <p class="small text-white-50">Branch managers may use an existing customer account or a new email address. New accounts receive password setup only after accepting the emailed invitation. Staff invitations require an existing customer account and station assignment.</p>
                         <label class="form-label" for="inviteEmail">Customer email</label>
                         <input class="form-control mb-3" type="email" id="inviteEmail" name="email" required>
                         <label class="form-label" for="inviteRole">Role</label>
@@ -416,6 +456,14 @@ endif; ?>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
+        document.querySelectorAll('.invitation-response-alert').forEach(alert => {
+            window.setTimeout(() => {
+                alert.classList.add('fade');
+                alert.addEventListener('transitionend', () => alert.remove(), { once: true });
+                window.setTimeout(() => alert.remove(), 500);
+            }, 10000);
+        });
+
         const statusModal = new bootstrap.Modal(document.getElementById('statusConfirmModal'));
         let quickStationMap;
         let quickStationMarker;

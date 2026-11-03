@@ -37,5 +37,25 @@ if (!function_exists('map_pump_ensure_invitation_schema')) {
         if (strtoupper((string) $stmt->fetchColumn()) !== 'YES') {
             $pdo->exec('ALTER TABLE invitations MODIFY COLUMN station_id INT NULL');
         }
+
+        $tokenColumns = [
+            'accept_token_hash' => "CHAR(64) COLLATE utf8mb4_bin DEFAULT NULL",
+            'decline_token_hash' => "CHAR(64) COLLATE utf8mb4_bin DEFAULT NULL",
+            'token_expires_at' => 'DATETIME DEFAULT NULL',
+            'created_account' => 'TINYINT(1) NOT NULL DEFAULT 0',
+        ];
+        foreach ($tokenColumns as $column => $definition) {
+            $columnStmt = $pdo->prepare(
+                "SELECT COUNT(*)
+                 FROM INFORMATION_SCHEMA.COLUMNS
+                 WHERE TABLE_SCHEMA = DATABASE()
+                   AND TABLE_NAME = 'invitations'
+                   AND COLUMN_NAME = ?"
+            );
+            $columnStmt->execute([$column]);
+            if ((int) $columnStmt->fetchColumn() === 0) {
+                $pdo->exec("ALTER TABLE invitations ADD COLUMN {$column} {$definition}");
+            }
+        }
     }
 }

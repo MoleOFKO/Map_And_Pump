@@ -7,6 +7,8 @@ require_once __DIR__ . '/../conn.php';
 require_once __DIR__ . '/../invitations_schema.php';
 require_once __DIR__ . '/../BranchManager/_helpers.php';
 require_once __DIR__ . '/license_expiry.php';
+require_once __DIR__ . '/../Login/mail_templates.php';
+require_once __DIR__ . '/../Login/account_password_setup.php';
 
 try {
     map_pump_ensure_invitation_schema($pdo);
@@ -18,32 +20,129 @@ try {
 
 $invitationId = filter_var($_POST['invitation_id'] ?? ($_GET['invitation'] ?? null), FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
 $decision = strtolower(trim((string)($_POST['decision'] ?? $_GET['decision'] ?? '')));
+$actionToken = trim((string) ($_POST['token'] ?? $_GET['token'] ?? ''));
+$isEmailAction = $actionToken !== '';
 $userId = isset($_SESSION['user_id']) ? (int)$_SESSION['user_id'] : 0;
 $redirectLocation = 'dashboard.php';
-$licenseExpiryState = $userId ? customer_sync_license_expiry($pdo, $userId) : ['driver' => ['status' => 'active']];
+$responseMessage = '';
+$setupEmailNotice = null;
+$setupUrl = '';
 
-if (empty($_SESSION['user_id']) && $decision === '') {
+function customer_invitation_render_email_response(string $message): void
+{
+    ?>
+    <!doctype html>
+    <html lang="en">
+    <head>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1">
+      <title>Invitation response | Map &amp; Pump</title>
+      <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+    </head>
+    <body class="bg-dark text-light d-flex min-vh-100 align-items-center justify-content-center p-3">
+      <main class="card bg-black text-light border-secondary p-4" style="max-width: 34rem">
+        <h1 class="h4">Invitation response</h1>
+        <p><?= htmlspecialchars($message, ENT_QUOTES, 'UTF-8') ?></p>
+        <a class="btn btn-primary align-self-start" href="../Login/login.php">Go to login</a>
+      </main>
+    </body>
+    </html>
+    <?php
+}
+
+function customer_invitation_render_email_confirmation(string $decision, string $token): void
+{
+    $actionLabel = $decision === 'accept' ? 'Accept invitation' : 'Decline invitation';
+    $buttonClass = $decision === 'accept' ? 'btn-primary' : 'btn-outline-danger';
+    ?>
+    <!doctype html>
+    <html lang="en">
+    <head>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1">
+      <title>Confirm invitation response | Map &amp; Pump</title>
+      <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+    </head>
+    <body class="bg-dark text-light d-flex min-vh-100 align-items-center justify-content-center p-3">
+      <main class="card bg-black text-light border-secondary p-4" style="max-width: 34rem">
+        <h1 class="h4">Confirm your response</h1>
+        <p>Confirm that you want to <?= $decision === 'accept' ? 'accept' : 'decline' ?> this Map &amp; Pump invitation.</p>
+        <form method="POST" action="respond_invitation.php">
+          <input type="hidden" name="decision" value="<?= htmlspecialchars($decision, ENT_QUOTES, 'UTF-8') ?>">
+          <input type="hidden" name="token" value="<?= htmlspecialchars($token, ENT_QUOTES, 'UTF-8') ?>">
+          <button type="submit" class="btn <?= $buttonClass ?>"><?= htmlspecialchars($actionLabel, ENT_QUOTES, 'UTF-8') ?></button>
+        </form>
+      </main>
+    </body>
+    </html>
+    <?php
+}
+
+if ($isEmailAction && preg_match('/^[A-Za-z0-9_-]{40,80}$/', $actionToken) === 1) {
+    try {
+        $tokenColumn = $decision === 'accept' ? 'accept_token_hash' : ($decision === 'decline' ? 'decline_token_hash' : '');
+        if ($tokenColumn !== '') {
+            $tokenLookup = $pdo->prepare(
+                "SELECT invitation_id, invited_user_id
+                 FROM invitations
+                 WHERE {$tokenColumn} = ? AND status = 'pending' AND token_expires_at > NOW()
+                 LIMIT 1"
+            );
+            $tokenLookup->execute([hash('sha256', $actionToken)]);
+            $tokenInvitation = $tokenLookup->fetch(PDO::FETCH_ASSOC);
+            if ($tokenInvitation) {
+                $invitationId = (int) $tokenInvitation['invitation_id'];
+                $userId = (int) $tokenInvitation['invited_user_id'];
+                if ($_SERVER['REQUEST_METHOD'] === 'GET') {
+                    customer_invitation_render_email_confirmation($decision, $actionToken);
+                    exit;
+                }
+            }
+        }
+    } catch (Throwable $error) {
+        error_log('[Customer invitation] Email token lookup failed: ' . $error->getMessage());
+    }
+}
+
+$licenseExpiryState = (!$isEmailAction && $userId)
+    ? customer_sync_license_expiry($pdo, $userId)
+    : ['driver' => ['status' => 'active']];
+
+if (empty($_SESSION['user_id']) && !$isEmailAction) {
     header('Location: ../Login/login.php');
     exit;
 }
 
-if (($licenseExpiryState['driver']['status'] ?? '') === 'expired') {
+if (!$isEmailAction && ($licenseExpiryState['driver']['status'] ?? '') === 'expired') {
     header('Location: profile_page.php');
     exit;
 }
 
-if (!$invitationId || !in_array($decision, ['accept', 'decline'], true)) {
-    $_SESSION['customer_invitation_message'] = 'Invalid invitation response.';
-    header('Location: ' . ($userId ? 'dashboard.php' : '../Login/login.php'));
+if (!$invitationId || !in_array($decision, ['accept', 'decline'], true) || ($isEmailAction && $userId <= 0)) {
+    $responseMessage = 'This invitation link is invalid, expired, or already used.';
+    if (!$isEmailAction) {
+        $_SESSION['customer_invitation_message'] = $responseMessage;
+        header('Location: ' . ($userId ? 'dashboard.php' : '../Login/login.php'));
+        exit;
+    }
+    http_response_code(400);
+    customer_invitation_render_email_response($responseMessage);
     exit;
 }
 
 try {
+    if ($decision === 'accept') {
+        account_password_setup_ensure_schema_pdo($pdo);
+    }
     $pdo->beginTransaction();
+    $tokenExpiryCondition = $isEmailAction ? ' AND token_expires_at > NOW()' : '';
     $stmt = $pdo->prepare(
-        "SELECT invitation_id, headquarter_id, invited_email, business_role_id, station_id, invited_user_id
+        "SELECT invitation_id, headquarter_id, invited_email, business_role_id, station_id, invited_user_id,
+                created_account,
+                accept_token_hash, decline_token_hash, token_expires_at
          FROM invitations
          WHERE invitation_id = ? AND invited_user_id = ? AND status = 'pending'
+         {$tokenExpiryCondition}
          FOR UPDATE"
     );
     $stmt->execute([$invitationId, $userId]);
@@ -51,6 +150,22 @@ try {
     if (!$invitation) {
         throw new RuntimeException('This invitation is no longer pending.');
     }
+    if ($isEmailAction) {
+        $tokenColumn = $decision === 'accept' ? 'accept_token_hash' : 'decline_token_hash';
+        if (empty($invitation[$tokenColumn])
+            || !hash_equals((string) $invitation[$tokenColumn], hash('sha256', $actionToken))) {
+            throw new RuntimeException('This invitation link is invalid, expired, or already used.');
+        }
+    }
+    $userDetails = $pdo->prepare('SELECT user_name, email, hashed_password FROM users WHERE user_id = ? LIMIT 1');
+    $userDetails->execute([$userId]);
+    $acceptedUser = $userDetails->fetch(PDO::FETCH_ASSOC);
+    if (!$acceptedUser) {
+        throw new RuntimeException('The invited user account no longer exists.');
+    }
+    $hqOwnerStmt = $pdo->prepare('SELECT headquarters_owner_id FROM headquarter WHERE headquarter_id = ? LIMIT 1');
+    $hqOwnerStmt->execute([(int) $invitation['headquarter_id']]);
+    $hqOwnerUserId = (int) ($hqOwnerStmt->fetchColumn() ?: 0);
 
     $branchId = null;
     if ($decision === 'accept') {
@@ -72,13 +187,6 @@ try {
             }
         } elseif ($roleId === 5) {
             throw new RuntimeException('A staff invitation needs a station assignment before it can be accepted.');
-        }
-
-        $userDetails = $pdo->prepare('SELECT user_name, email FROM users WHERE user_id = ? LIMIT 1');
-        $userDetails->execute([$userId]);
-        $acceptedUser = $userDetails->fetch(PDO::FETCH_ASSOC);
-        if (!$acceptedUser) {
-            throw new RuntimeException('The invited user account no longer exists.');
         }
 
         $userUpdateSql = "UPDATE users SET business_role_id = ?, headquarter_id = ?, status = 'active', updated_at = NOW()";
@@ -205,12 +313,24 @@ try {
                 }
             }
         }
+
+        if ((int) $invitation['created_account'] === 1) {
+            $setupUrl = account_password_setup_create_link_pdo($pdo, $userId);
+        }
     }
 
     $update = $pdo->prepare('UPDATE invitations SET status = ?, responded_at = NOW() WHERE invitation_id = ?');
     $update->execute([$decision === 'accept' ? 'accepted' : 'declined', $invitationId]);
+    $pdo->prepare(
+        'UPDATE invitations
+         SET accept_token_hash = NULL, decline_token_hash = NULL, token_expires_at = NULL
+         WHERE invitation_id = ?'
+    )->execute([$invitationId]);
+    if ($decision === 'decline' && (int) $invitation['created_account'] === 1) {
+        $pdo->prepare("UPDATE users SET status = 'removed', updated_at = NOW() WHERE user_id = ?")->execute([$userId]);
+    }
 
-    if ($decision === 'accept' && $branchId !== null) {
+    if ($decision === 'accept' && (int) $invitation['business_role_id'] === 5 && $branchId !== null) {
         $managerUserId = null;
         $managerStmt = $pdo->prepare(
             "SELECT branch_manager_user_id
@@ -236,7 +356,7 @@ try {
                 $notificationMessage,
             ]);
         }
-    } elseif ($decision === 'decline' && $branchId !== null) {
+    } elseif ($decision === 'decline' && (int) $invitation['business_role_id'] === 5 && $branchId !== null) {
         $managerUserId = null;
         $managerStmt = $pdo->prepare(
             "SELECT branch_manager_user_id
@@ -264,9 +384,50 @@ try {
         }
     }
 
+    if ($hqOwnerUserId > 0) {
+        $accepted = $decision === 'accept';
+        $roleLabel = (int) $invitation['business_role_id'] === 4 ? 'Branch manager' : 'Staff';
+        $managerDecisionMessage = sprintf(
+            '%s (%s) %s the %s invitation%s.',
+            (string) ($acceptedUser['user_name'] ?: 'The invitee'),
+            (string) $acceptedUser['email'],
+            $accepted ? 'accepted' : 'declined',
+            strtolower($roleLabel),
+            $branchId !== null ? ' for station #' . $branchId : ''
+        );
+        $pdo->prepare(
+            'INSERT INTO notifications
+             (recipient_user_id, notification_type, subject, message, delivery_status)
+             VALUES (?, ?, ?, ?, \'sent\')'
+        )->execute([
+            $hqOwnerUserId,
+            $accepted ? 'hq_invitation_accepted' : 'hq_invitation_declined',
+            $roleLabel . ' invitation ' . ($accepted ? 'accepted' : 'declined'),
+            $managerDecisionMessage,
+        ]);
+    }
+
     $pdo->commit();
-    $_SESSION['customer_invitation_message'] = $decision === 'accept' ? 'Invitation accepted. Your business account is now active.' : 'Invitation declined.';
-    if ($decision === 'accept' && (int)$invitation['business_role_id'] === 4) {
+    if ($setupUrl !== '') {
+        $setupEmailNotice = mail_send_account_notice((string) $acceptedUser['email'], [
+            'kind' => 'account_password_setup',
+            'account_label' => (int) $invitation['business_role_id'] === 4 ? 'Branch Manager' : 'Staff',
+            'account_name' => (string) $acceptedUser['user_name'],
+            'setup_url' => $setupUrl,
+        ]);
+        $responseMessage = (string) (($setupEmailNotice['status'] ?? '') === 'sent'
+            ? 'Invitation accepted. A password setup email has been sent to your email address.'
+            : 'Invitation accepted, but the password setup email could not be sent. Please contact the HQ administrator.');
+    } else {
+        $responseMessage = $decision === 'accept'
+            ? 'Invitation accepted. Your business account is now active.'
+            : 'Invitation declined.';
+    }
+
+    if (!$isEmailAction) {
+        $_SESSION['customer_invitation_message'] = $responseMessage;
+    }
+    if (!$isEmailAction && $decision === 'accept' && (int)$invitation['business_role_id'] === 4) {
         $_SESSION['role_id'] = 4;
         $_SESSION['role_name'] = 'BranchManager';
         $_SESSION['business_role_id'] = 4;
@@ -283,7 +444,15 @@ try {
         $pdo->rollBack();
     }
     error_log('[Customer invitation] Response failed: ' . $error->getMessage());
-    $_SESSION['customer_invitation_message'] = $error->getMessage();
+    $responseMessage = $error->getMessage();
+    if (!$isEmailAction) {
+        $_SESSION['customer_invitation_message'] = $responseMessage;
+    }
+}
+
+if ($isEmailAction) {
+    customer_invitation_render_email_response($responseMessage);
+    exit;
 }
 
 header('Location: ' . $redirectLocation);
