@@ -331,7 +331,7 @@ endif; ?>
                 <form method="POST" action="./invite_account.php" id="inviteAccountForm">
                     <div class="modal-header border-0"><h5 class="modal-title" id="inviteAccountModalLabel">Add Branch Manager</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button></div>
                     <div class="modal-body">
-                        <p class="small text-white-50">The email must belong to an existing customer account. That customer must Accept or Decline the invitation before continuing. A station is optional for branch managers; staff require one.</p>
+                        <p class="small text-white-50">Existing customer accounts must Accept or Decline the invitation before continuing. For a new branch manager email, a pending account will be created and the invitee will receive separate invitation and password-setup emails. A station is optional for branch managers; staff require an existing customer account and station assignment.</p>
                         <label class="form-label" for="inviteEmail">Customer email</label>
                         <input class="form-control mb-3" type="email" id="inviteEmail" name="email" required>
                         <label class="form-label" for="inviteRole">Role</label>
