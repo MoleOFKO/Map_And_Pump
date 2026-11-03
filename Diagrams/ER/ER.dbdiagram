@@ -6,7 +6,134 @@
   "defaultView": {
     "detailLevel": "All",
     "relationshipMode": "All",
-    "tablePositions": [],
+    "tablePositions": [
+      {
+        "name": "roles",
+        "schemaName": "public",
+        "x": 12,
+        "y": 12
+      },
+      {
+        "name": "user_license",
+        "schemaName": "public",
+        "x": 12,
+        "y": 190
+      },
+      {
+        "name": "car_license",
+        "schemaName": "public",
+        "x": 12,
+        "y": 630
+      },
+      {
+        "name": "oil_types",
+        "schemaName": "public",
+        "x": 12,
+        "y": 1040
+      },
+      {
+        "name": "users",
+        "schemaName": "public",
+        "x": 480,
+        "y": 12
+      },
+      {
+        "name": "headquarter",
+        "schemaName": "public",
+        "x": 480,
+        "y": 620
+      },
+      {
+        "name": "branches",
+        "schemaName": "public",
+        "x": 480,
+        "y": 1060
+      },
+      {
+        "name": "staff",
+        "schemaName": "public",
+        "x": 950,
+        "y": 60
+      },
+      {
+        "name": "station_business_scope",
+        "schemaName": "public",
+        "x": 950,
+        "y": 430
+      },
+      {
+        "name": "sessions",
+        "schemaName": "public",
+        "x": 950,
+        "y": 650
+      },
+      {
+        "name": "log",
+        "schemaName": "public",
+        "x": 950,
+        "y": 920
+      },
+      {
+        "name": "tanks",
+        "schemaName": "public",
+        "x": 950,
+        "y": 1130
+      },
+      {
+        "name": "station_oil_inventory",
+        "schemaName": "public",
+        "x": 1420,
+        "y": 60
+      },
+      {
+        "name": "user_car",
+        "schemaName": "public",
+        "x": 1420,
+        "y": 350
+      },
+      {
+        "name": "booking",
+        "schemaName": "public",
+        "x": 1420,
+        "y": 620
+      },
+      {
+        "name": "booking_partial_offers",
+        "schemaName": "public",
+        "x": 1420,
+        "y": 1090
+      },
+      {
+        "name": "usage_history",
+        "schemaName": "public",
+        "x": 1420,
+        "y": 1360
+      },
+      {
+        "name": "feedback",
+        "schemaName": "public",
+        "x": 1890,
+        "y": 40
+      },
+      {
+        "name": "feedback_replies",
+        "schemaName": "public",
+        "x": 1890,
+        "y": 240
+      },
+      {
+        "name": "system_requests",
+        "schemaName": "public",
+        "x": 1890,
+        "y": 500
+      },
+      {
+        "name": "notifications",
+        "schemaName": "public",
+        "x": 1890,
+        "y": 1240
+      }
+    ],
     "tableGroupCollapseStates": [],
     "stickyNoteLayouts": [],
     "referencePaths": []
