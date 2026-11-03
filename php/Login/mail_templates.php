@@ -177,6 +177,32 @@ function mail_build_account_notice(array $context): array
         return ['subject' => $subject, 'html' => $html, 'text' => $text];
     }
 
+    if ($kind === 'hq_invitation') {
+        $companyName = trim((string) ($context['company_name'] ?? 'Map & Pump HQ'));
+        $roleName = trim((string) ($context['role_name'] ?? 'business account'));
+        $stationName = trim((string) ($context['station_name'] ?? ''));
+        $acceptUrl = trim((string) ($context['accept_url'] ?? ''));
+        $declineUrl = trim((string) ($context['decline_url'] ?? ''));
+        $subject = 'Invitation to join ' . $companyName . ' on Map & Pump';
+        $assignment = $stationName !== '' ? ' at ' . $stationName : '';
+        $text = "You have been invited to join {$companyName} as a {$roleName}{$assignment}.\n\n"
+            . "Accept this invitation:\n{$acceptUrl}\n\n"
+            . "Decline this invitation:\n{$declineUrl}\n\n"
+            . "These links expire in 7 days and can only be used once.\n\n"
+            . $footer['text'];
+        $html = '<div style="font-family:Arial,Helvetica,sans-serif;line-height:1.55;color:#111827;max-width:560px">'
+            . '<p style="margin:0 0 12px;font-size:14px;color:#374151">Map &amp; Pump invitation</p>'
+            . '<h2 style="margin:0 0 16px;font-size:20px;color:#111827">You are invited</h2>'
+            . '<p>You have been invited to join <strong>' . mail_h($companyName) . '</strong> as a <strong>'
+            . mail_h($roleName) . '</strong>' . ($stationName !== '' ? ' at <strong>' . mail_h($stationName) . '</strong>' : '') . '.</p>'
+            . '<p style="margin:24px 0">'
+            . '<a href="' . mail_h($acceptUrl) . '" style="display:inline-block;padding:10px 18px;background:#0b6bcb;color:#fff;text-decoration:none;border-radius:6px;margin-right:8px">Accept invitation</a>'
+            . '<a href="' . mail_h($declineUrl) . '" style="display:inline-block;padding:10px 18px;background:#fff;color:#b42318;text-decoration:none;border:1px solid #b42318;border-radius:6px">Decline</a>'
+            . '</p><p>These links expire in 7 days and can only be used once.</p>'
+            . $footer['html'] . '</div>';
+        return ['subject' => $subject, 'html' => $html, 'text' => $text];
+    }
+
     if ($kind === 'payment') {
         $paymentStatus = match ($action) {
             'pending', 'pending_payment' => 'Payment request created; awaiting payment',
