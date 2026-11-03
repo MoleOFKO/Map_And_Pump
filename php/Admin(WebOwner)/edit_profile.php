@@ -31,6 +31,31 @@ $statusClass = static function (?string $status): string {
 $avatarUrl = trim((string) ($user['oauth_avatar_url'] ?? ''));
 $avatarInitial = map_pump_profile_initial((string) ($user['user_name'] ?? ''), 'A');
 $avatarFallbackUrl = map_pump_profile_initial_svg((string) ($user['user_name'] ?? ''), 'A');
+$hasCustomerProfile = admin_user_has_role($user, ['customer']);
+$customerVehicle = null;
+$customerVehicleLoadError = false;
+if ($hasCustomerProfile) {
+    global $pdo;
+    if ($pdo instanceof PDO) {
+        try {
+            $vehicleStatement = $pdo->prepare(
+                'SELECT c.car_plate_number, c.vehicle_name, c.vehicle_type
+                 FROM user_car uc
+                 INNER JOIN car_license c ON c.car_license_id = uc.car_id
+                 WHERE uc.user_id = ?
+                 ORDER BY uc.is_active DESC, c.updated_at DESC, c.car_license_id DESC
+                 LIMIT 1'
+            );
+            $vehicleStatement->execute([(int) $user['user_id']]);
+            $customerVehicle = $vehicleStatement->fetch(PDO::FETCH_ASSOC) ?: null;
+        } catch (Throwable $e) {
+            error_log('[Admin profile] Failed to load linked customer vehicle: ' . $e->getMessage());
+            $customerVehicleLoadError = true;
+        }
+    } else {
+        $customerVehicleLoadError = true;
+    }
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -75,8 +100,8 @@ $avatarFallbackUrl = map_pump_profile_initial_svg((string) ($user['user_name'] ?
         
         <div class="row g-4">
             
-            <!-- LEFT COLUMN: Profile Overview & Extended Switch Account Card -->
-            <div class="col-12 col-lg-5 d-flex flex-column gap-4">
+            <!-- Profile overview and personal information -->
+            <div class="col-12 col-lg-5">
                 
                 <!-- Profile Avatar & Details Card -->
                 <div class="dashboard-card p-4">
@@ -107,24 +132,9 @@ $avatarFallbackUrl = map_pump_profile_initial_svg((string) ($user['user_name'] ?
                     </div>
                 </div>
 
-                <!-- Compact Customer Profile switch -->
-                <div class="dashboard-card p-4" style="border-color:rgba(0,244,255,.18);background:rgba(0,244,255,.025)!important;">
-                    <div>
-                        <h6 class="fw-bold text-white mb-2"><i class="bi bi-fuel-pump txt-neon-cyan me-2"></i>Customer Gas Profile</h6>
-                    </div>
-                    <form action="../account_switch.php" method="POST" class="m-0 mt-3">
-                        <input type="hidden" name="mode" value="customer">
-                        <button type="submit" class="btn btn-outline-info btn-sm rounded-3 w-100 fw-bold">
-                            <i class="bi bi-arrow-left-right me-1"></i>Switch to Customer Profile
-                        </button>
-                    </form>
-                </div>
-
             </div>
 
-            <!-- RIGHT COLUMN: Personal Info & Security Cards Stacked -->
-            <div class="col-12 col-lg-7 d-flex flex-column gap-4">
-                
+            <div class="col-12 col-lg-7">
                 <div class="dashboard-card p-4">
                     <h5 class="fw-bold text-white mb-4"><i class="bi bi-sliders txt-neon-cyan me-2"></i>Personal Information</h5>
                     <form action="update_profile_action.php" method="POST">
@@ -143,7 +153,47 @@ $avatarFallbackUrl = map_pump_profile_initial_svg((string) ($user['user_name'] ?
                         </div>
                     </form>
                 </div>
+            </div>
 
+            <!-- Compact linked customer profile beside Security & Password -->
+            <div class="col-12 col-lg-5">
+                <div class="dashboard-card p-4 h-100" style="border-color:rgba(0,244,255,.18);background:rgba(0,244,255,.025)!important;">
+                    <h6 class="fw-bold text-white mb-3"><i class="bi bi-fuel-pump txt-neon-cyan me-2"></i>Customer Gas Profile</h6>
+                    <?php if ($hasCustomerProfile): ?>
+                        <div class="small text-white-50 mb-2">
+                            <span class="text-white fw-semibold"><?= hq_escape((string) $user['user_name']) ?></span>
+                            <span class="d-block"><?= hq_escape((string) $user['email']) ?></span>
+                        </div>
+                        <?php if ($customerVehicle): ?>
+                            <div class="small text-white-50 mb-3">
+                                <i class="bi bi-car-front me-1 txt-neon-cyan"></i>
+                                <?= hq_escape((string) $customerVehicle['car_plate_number']) ?>
+                                <?php
+                                $vehicleDescription = trim(implode(' / ', array_filter([
+                                    trim((string) ($customerVehicle['vehicle_name'] ?? '')),
+                                    trim((string) ($customerVehicle['vehicle_type'] ?? '')),
+                                ])));
+                                ?>
+                                <?php if ($vehicleDescription !== ''): ?> <span class="text-white-50">· <?= hq_escape($vehicleDescription) ?></span><?php endif; ?>
+                            </div>
+                        <?php elseif ($customerVehicleLoadError): ?>
+                            <p class="small text-warning mb-3">Vehicle details are temporarily unavailable.</p>
+                        <?php else: ?>
+                            <p class="small text-white-50 mb-3">No vehicle is linked to this customer profile yet.</p>
+                        <?php endif; ?>
+                    <?php else: ?>
+                        <p class="small text-white-50 mb-3">No customer profile is linked to this account.</p>
+                    <?php endif; ?>
+                    <form action="../account_switch.php" method="POST" class="m-0">
+                        <input type="hidden" name="mode" value="customer">
+                        <button type="submit" class="btn btn-outline-info btn-sm rounded-3 w-100 fw-bold">
+                            <i class="bi bi-arrow-left-right me-1"></i>Switch to Customer Profile
+                        </button>
+                    </form>
+                </div>
+            </div>
+
+            <div class="col-12 col-lg-7">
                 <div class="dashboard-card p-4">
                     <h5 class="fw-bold text-white mb-4"><i class="bi bi-shield-lock-fill txt-neon-cyan me-2"></i>Security &amp; Password</h5>
                     <form action="update_password_action.php" method="POST" id="passwordForm">
@@ -173,13 +223,6 @@ $avatarFallbackUrl = map_pump_profile_initial_svg((string) ($user['user_name'] ?
                     </form>
                 </div>
 
-            </div>
-
-            <!-- FULL-WIDTH COLUMN: Database-backed Profile Notice Card -->
-            <div class="col-12">
-                <div class="dashboard-card p-4" style="border-color:rgba(0,244,255,.18);background:rgba(0,244,255,.025)!important;">
-                    <h6 class="fw-bold text-white mb-2"><i class="bi bi-database-check txt-neon-cyan me-2"></i>Database-backed profile</h6>
-                </div>
             </div>
 
             <div class="col-12">

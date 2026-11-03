@@ -223,6 +223,8 @@ $flashType = $flash['type'] ?? '';
         .request-detail-modal .request-action-btn:disabled { cursor:not-allowed; opacity:.5; }
         .request-detail-modal .request-action-btn--approve { border-color:#4f8d72; background:#4f8d72; color:#fff; box-shadow:0 2px 6px rgba(39,93,68,.22); }
         .request-detail-modal .request-action-btn--approve:hover { border-color:#3e795f; background:#3e795f; color:#fff; box-shadow:0 0 0 3px rgba(95,164,132,.14); }
+        .request-detail-modal .request-action-btn--payment-reject { border-color:#b94a58; background:#b94a58; color:#fff; box-shadow:0 2px 6px rgba(122,38,51,.22); }
+        .request-detail-modal .request-action-btn--payment-reject:hover { border-color:#a43d4a; background:#a43d4a; color:#fff; box-shadow:0 0 0 3px rgba(185,74,88,.16); }
         .request-detail-modal .request-action-btn--reject { border-color:#a96572; background:transparent; color:#e5bfc6; }
         .request-detail-modal .request-action-btn--reject:hover { border-color:#a96572; background:rgba(154,79,94,.2); color:#ffe8eb; }
         .request-detail-modal .request-detail-label { color:#9aa9bb; font-size:.68rem; font-weight:600; letter-spacing:.075em; }
@@ -281,6 +283,10 @@ $flashType = $flash['type'] ?? '';
         body.background_color[data-theme="light"] .request-detail-modal .request-action-btn--approve { border-color:#4f8d72; background:#4f8d72; color:#fff; box-shadow:0 2px 5px rgba(39,93,68,.16); }
         body.background_color.light-mode .request-detail-modal .request-action-btn--approve:hover,
         body.background_color[data-theme="light"] .request-detail-modal .request-action-btn--approve:hover { border-color:#3e795f; background:#3e795f; color:#fff; box-shadow:0 0 0 3px rgba(79,141,114,.14); }
+        body.background_color.light-mode .request-detail-modal .request-action-btn--payment-reject,
+        body.background_color[data-theme="light"] .request-detail-modal .request-action-btn--payment-reject { border-color:#b94a58; background:#b94a58; color:#fff; }
+        body.background_color.light-mode .request-detail-modal .request-action-btn--payment-reject:hover,
+        body.background_color[data-theme="light"] .request-detail-modal .request-action-btn--payment-reject:hover { border-color:#a43d4a; background:#a43d4a; color:#fff; }
         body.background_color.light-mode .request-detail-modal .request-action-btn--secondary,
         body.background_color[data-theme="light"] .request-detail-modal .request-action-btn--secondary { border-color:#c5ceda; background:transparent; color:#344256; }
         body.background_color.light-mode .request-detail-modal .request-action-btn--secondary:hover,
@@ -481,8 +487,8 @@ $flashType = $flash['type'] ?? '';
                                 data-payment-method="<?= hq_escape((string) ($paymentRow['payment_method'] ?? 'Not provided')) ?>" data-receipt-name="<?= hq_escape((string) ($paymentRow['receipt_name'] ?? '')) ?>"
                                 data-receipt-mime="<?= hq_escape((string) ($paymentRow['receipt_mime_type'] ?? '')) ?>" data-is-payer="<?= $isPayer ? 'yes' : 'no' ?>"><i class="bi bi-eye-fill"></i></button>
                             <?php if ($paymentState === 'payer_reported_paid' && !$isPayer): ?><div class="d-none" id="paymentActions<?= $paymentId ?>">
-                                <form action="/php/Payment/action.php" method="POST" class="m-0 flex-fill"><input type="hidden" name="csrf_token" value="<?= hq_escape((string) $_SESSION['payment_transfer_csrf']) ?>"><input type="hidden" name="transfer_id" value="<?= $paymentId ?>"><input type="hidden" name="action" value="confirm_received"><input type="hidden" name="return_to" value="/php/Admin(WebOwner)/view_requests.php"><button type="submit" class="request-action-btn request-action-btn--secondary" onclick="return confirm('Confirm receipt only after checking your bank or wallet records.')">Confirm payment</button></form>
-                                <form action="/php/Payment/action.php" method="POST" class="m-0 flex-fill"><input type="hidden" name="csrf_token" value="<?= hq_escape((string) $_SESSION['payment_transfer_csrf']) ?>"><input type="hidden" name="transfer_id" value="<?= $paymentId ?>"><input type="hidden" name="action" value="mark_not_received"><input type="hidden" name="return_to" value="/php/Admin(WebOwner)/view_requests.php"><input type="hidden" name="decision_note" value="Payment not verified by Admin."><button type="submit" class="request-action-btn request-action-btn--secondary" onclick="return confirm('Record that the payment was not received or could not be verified?')">Mark not received</button></form>
+                                <form action="/php/Payment/action.php" method="POST" class="m-0 flex-fill"><input type="hidden" name="csrf_token" value="<?= hq_escape((string) $_SESSION['payment_transfer_csrf']) ?>"><input type="hidden" name="transfer_id" value="<?= $paymentId ?>"><input type="hidden" name="action" value="confirm_received"><input type="hidden" name="return_to" value="/php/Admin(WebOwner)/view_requests.php"><button type="submit" class="request-action-btn request-action-btn--approve" onclick="return confirm('Confirm receipt only after checking your bank or wallet records.')">Confirm payment</button></form>
+                                <form action="/php/Payment/action.php" method="POST" class="m-0 flex-fill"><input type="hidden" name="csrf_token" value="<?= hq_escape((string) $_SESSION['payment_transfer_csrf']) ?>"><input type="hidden" name="transfer_id" value="<?= $paymentId ?>"><input type="hidden" name="action" value="mark_not_received"><input type="hidden" name="return_to" value="/php/Admin(WebOwner)/view_requests.php"><input type="hidden" name="decision_note" value="Payment not verified by Admin."><button type="submit" class="request-action-btn request-action-btn--payment-reject" onclick="return confirm('Record that the payment was not received or could not be verified?')">Mark not received</button></form>
                             </div><?php endif; ?>
                         </div></td>
                     </tr>

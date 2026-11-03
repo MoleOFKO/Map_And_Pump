@@ -65,20 +65,27 @@ if ($paymentReady) {
     } elseif ($isModeratorReviewer) {
         $conditions[] = "(pt.recipient_role = 'admin' AND pt.payment_type IN ('hq_period_extension', 'hq_station_package'))";
     }
+    if ($userId > 0) {
+        $conditions[] = "(pt.payment_type = 'fuel_purchase' AND uh.staff_user_id = ?)";
+        $params[] = $userId;
+    }
     if ($isHqRecipient) {
-        $conditions[] = "(pt.recipient_role = 'station_hq' AND pt.recipient_headquarter_id = ?)";
+        $conditions[] = "(pt.payment_type <> 'fuel_purchase' AND pt.recipient_role = 'station_hq' AND pt.recipient_headquarter_id = ?)";
         $params[] = $hqId;
     }
     $stmt = $pdo->prepare(
         'SELECT pt.*, h.company_name AS recipient_hq_name,
             COALESCE(payer_hq.company_name, registration.sender_entity) AS payer_hq_name,
             COALESCE(payer_hq.headquarter_email, registration.headquarter_email, pt.payer_email) AS payer_hq_email,
-            b.branch_name AS station_name
+            b.branch_name AS station_name, uh.staff_user_id AS recipient_staff_user_id,
+            staff.user_name AS recipient_staff_name
          FROM payment_transfers pt
          LEFT JOIN headquarter h ON h.headquarter_id = pt.recipient_headquarter_id
          LEFT JOIN headquarter payer_hq ON payer_hq.headquarter_id = pt.payer_headquarter_id
          LEFT JOIN system_requests registration ON registration.request_id = pt.request_id AND pt.payment_type = \'hq_registration\'
          LEFT JOIN branches b ON b.branch_id = pt.station_id
+         LEFT JOIN usage_history uh ON uh.usage_id = pt.usage_id AND pt.payment_type = \'fuel_purchase\'
+         LEFT JOIN users staff ON staff.user_id = uh.staff_user_id
          WHERE (' . implode(' OR ', $conditions) . ')
          ORDER BY (pt.status IN (\'pending_payment\', \'payer_reported_paid\')) DESC, pt.created_at DESC, pt.payment_transfer_id DESC
          LIMIT 200'
@@ -151,12 +158,14 @@ $statusLabels = [
                     $isPayer = (int) ($transfer['payer_user_id'] ?? 0) === $userId
                         || ($userEmail !== '' && strtolower((string) ($transfer['payer_email'] ?? '')) === $userEmail)
                         || (int) ($_SESSION['payment_transfer_access_id'] ?? 0) === (int) $transfer['payment_transfer_id'];
-                    $isRecipient = $isAdmin
-                        ? $transfer['recipient_role'] === 'admin'
-                        : ($isModeratorReviewer
-                            ? $transfer['recipient_role'] === 'admin' && in_array($transfer['payment_type'], ['hq_period_extension', 'hq_station_package'], true)
-                            : ($isHqRecipient && $transfer['recipient_role'] === 'station_hq'
-                                && (int) $transfer['recipient_headquarter_id'] === $hqId));
+                    $isRecipient = $transfer['payment_type'] === 'fuel_purchase'
+                        ? (int) ($transfer['recipient_staff_user_id'] ?? 0) === $userId
+                        : ($isAdmin
+                            ? $transfer['recipient_role'] === 'admin'
+                            : ($isModeratorReviewer
+                                ? $transfer['recipient_role'] === 'admin' && in_array($transfer['payment_type'], ['hq_period_extension', 'hq_station_package'], true)
+                                : ($isHqRecipient && $transfer['payment_type'] !== 'fuel_purchase' && $transfer['recipient_role'] === 'station_hq'
+                                    && (int) $transfer['recipient_headquarter_id'] === $hqId)));
                     $canDecide = $isRecipient && !$isPayer && $transfer['status'] === 'payer_reported_paid';
                     $canCancel = $isPayer && in_array($transfer['status'], ['pending_payment', 'payer_reported_paid'], true);
                     $canReportPaid = $isPayer && $transfer['status'] === 'pending_payment';
@@ -171,9 +180,11 @@ $statusLabels = [
                         'fuel_purchase' => 'Customer fuel payment',
                         default => 'External payment',
                     };
-                    $recipientLabel = $transfer['recipient_role'] === 'station_hq'
-                        ? (trim((string) ($transfer['recipient_hq_name'] ?? '')) ?: 'Station HQ #' . (int) $transfer['recipient_headquarter_id'])
-                        : BILLING_PLATFORM_RECIPIENT_NAME . ' (Admin)';
+                    $recipientLabel = $transfer['payment_type'] === 'fuel_purchase'
+                        ? (trim((string) ($transfer['recipient_staff_name'] ?? '')) ?: 'Station staff')
+                        : ($transfer['recipient_role'] === 'station_hq'
+                            ? (trim((string) ($transfer['recipient_hq_name'] ?? '')) ?: 'Station HQ #' . (int) $transfer['recipient_headquarter_id'])
+                            : BILLING_PLATFORM_RECIPIENT_NAME . ' (Admin)');
                     $statusClass = match ((string) $transfer['status']) {
                         'received' => 'success',
                         'rejected', 'cancelled' => 'secondary',

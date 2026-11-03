@@ -114,7 +114,7 @@ try {
         $pdo->beginTransaction();
         $stmt = $pdo->prepare(
             "SELECT uh.usage_id, uh.user_id, uh.station_id, uh.total_cost, uh.is_internal,
-                    b.branch_name, sbs.headquarter_id, u.email
+                    uh.staff_user_id, b.branch_name, sbs.headquarter_id, u.email
              FROM usage_history uh
              INNER JOIN users u ON u.user_id = uh.user_id
              INNER JOIN branches b ON b.branch_id = uh.station_id
@@ -126,6 +126,9 @@ try {
         $usage = $stmt->fetch(PDO::FETCH_ASSOC);
         if (!$usage || (int) $usage['is_internal'] === 1) {
             throw new RuntimeException('This filled usage record cannot create an external fuel payment notice.');
+        }
+        if ((int) ($usage['staff_user_id'] ?? 0) <= 0) {
+            throw new RuntimeException('No staff account is recorded for this fill, so a payment confirmation request cannot be routed.');
         }
         $amount = max(0.0, round((float) ($usage['total_cost'] ?? 0), 2));
         if ($amount <= 0) {
@@ -343,11 +346,13 @@ try {
             $noticeAction = 'cancelled';
             $noticeSide = 'recipient';
         } else {
-            $canReceive = in_array($transfer['payment_type'], ['hq_period_extension', 'hq_station_package', 'hq_registration'], true)
-                ? payment_transfer_user_is_admin_or_moderator($pdo, $userId)
-                : ($transfer['recipient_role'] === 'station_hq'
-                    ? payment_transfer_user_owns_hq($pdo, $userId, (int) $transfer['recipient_headquarter_id'])
-                    : payment_transfer_user_is_admin($pdo, $userId));
+            $canReceive = $transfer['payment_type'] === 'fuel_purchase'
+                ? payment_transfer_user_is_fuel_staff($pdo, $userId, (int) ($transfer['usage_id'] ?? 0))
+                : (in_array($transfer['payment_type'], ['hq_period_extension', 'hq_station_package', 'hq_registration'], true)
+                    ? payment_transfer_user_is_admin_or_moderator($pdo, $userId)
+                    : ($transfer['recipient_role'] === 'station_hq'
+                        ? payment_transfer_user_owns_hq($pdo, $userId, (int) $transfer['recipient_headquarter_id'])
+                        : payment_transfer_user_is_admin($pdo, $userId)));
             if (!$canReceive || $isPayer || (string) $transfer['status'] !== 'payer_reported_paid') {
                 throw new RuntimeException('Your account is not authorized to update this payment record.');
             }

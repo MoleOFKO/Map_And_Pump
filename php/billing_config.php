@@ -75,7 +75,7 @@ if (!defined('BILLING_PLATFORM_RECEIVER_ROLE')) {
     define('BILLING_PLATFORM_RECEIVER_ROLE', 'admin');
 }
 if (!defined('BILLING_CUSTOMER_FUEL_RECEIVER_ROLE')) {
-    define('BILLING_CUSTOMER_FUEL_RECEIVER_ROLE', 'station_hq');
+    define('BILLING_CUSTOMER_FUEL_RECEIVER_ROLE', 'station_staff');
 }
 if (!defined('BILLING_PAYMENT_DEFAULT_PHONE')) {
     define('BILLING_PAYMENT_DEFAULT_PHONE', '09 795 123 456');

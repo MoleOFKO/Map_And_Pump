@@ -27,11 +27,18 @@ $email = strtolower(trim((string) ($transfer['account_email'] ?? '')));
 $isPayer = ($userId > 0 && (int) ($transfer['payer_user_id'] ?? 0) === $userId)
     || ($email !== '' && $email === strtolower((string) ($transfer['payer_email'] ?? '')))
     || $accessValid;
-$isRecipient = $userId > 0 && ($transfer['recipient_role'] === 'admin'
-    ? (in_array($transfer['payment_type'], ['hq_period_extension', 'hq_station_package'], true)
-        ? payment_transfer_user_is_admin_or_moderator($pdo, $userId)
-        : payment_transfer_user_is_admin($pdo, $userId))
-    : ($transfer['recipient_role'] === 'station_hq' && payment_transfer_user_owns_hq($pdo, $userId, (int) $transfer['recipient_headquarter_id'])));
+$isRecipient = false;
+if ($userId > 0) {
+    if ($transfer['payment_type'] === 'fuel_purchase') {
+        $isRecipient = payment_transfer_user_is_fuel_staff($pdo, $userId, (int) ($transfer['usage_id'] ?? 0));
+    } elseif ($transfer['recipient_role'] === 'admin') {
+        $isRecipient = in_array($transfer['payment_type'], ['hq_period_extension', 'hq_station_package'], true)
+            ? payment_transfer_user_is_admin_or_moderator($pdo, $userId)
+            : payment_transfer_user_is_admin($pdo, $userId);
+    } elseif ($transfer['recipient_role'] === 'station_hq') {
+        $isRecipient = payment_transfer_user_owns_hq($pdo, $userId, (int) $transfer['recipient_headquarter_id']);
+    }
+}
 if ((!$isPayer && !$isRecipient) || ((empty($_SESSION['is_logged_in']) || $userId <= 0) && !$accessValid)) {
     http_response_code(403);
     exit('You are not authorized to view this receipt.');
