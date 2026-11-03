@@ -314,7 +314,8 @@ try {
             }
         }
 
-        if ((int) $invitation['created_account'] === 1) {
+        $needsPasswordSetup = trim((string) ($acceptedUser['hashed_password'] ?? '')) === '';
+        if ($needsPasswordSetup) {
             $setupUrl = account_password_setup_create_link_pdo($pdo, $userId);
         }
     }
@@ -415,9 +416,18 @@ try {
             'account_name' => (string) $acceptedUser['user_name'],
             'setup_url' => $setupUrl,
         ]);
-        $responseMessage = (string) (($setupEmailNotice['status'] ?? '') === 'sent'
-            ? 'Invitation accepted. A password setup email has been sent to your email address.'
-            : 'Invitation accepted, but the password setup email could not be sent. Please contact the HQ administrator.');
+        if (($setupEmailNotice['status'] ?? '') === 'sent') {
+            $responseMessage = 'Invitation accepted. A password setup email has been sent to your email address.';
+        } else {
+            error_log(sprintf(
+                '[Customer invitation] Password setup email for user %d was not sent: %s (%s)',
+                $userId,
+                (string) ($setupEmailNotice['status'] ?? 'failed'),
+                (string) ($setupEmailNotice['note'] ?? 'No delivery details available.')
+            ));
+            $responseMessage = 'Invitation accepted, but the password setup email was not sent ('
+                . (string) ($setupEmailNotice['status'] ?? 'failed') . '). Please contact the HQ administrator.';
+        }
     } else {
         $responseMessage = $decision === 'accept'
             ? 'Invitation accepted. Your business account is now active.'
