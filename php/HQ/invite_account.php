@@ -45,7 +45,7 @@ try {
     }
 
     $userStmt = $pdo->prepare(
-        "SELECT u.user_id, u.user_name, u.hashed_password,
+        "SELECT u.user_id, u.user_name,
                 primary_role.role_name AS primary_role_name,
                 active_role.role_name AS active_role_name
          FROM users u
@@ -81,7 +81,6 @@ try {
         $invitee = [
             'user_id' => (int) $pdo->lastInsertId(),
             'user_name' => $userName,
-            'hashed_password' => null,
         ];
         $createdAccount = true;
         $setupUrl = account_password_setup_create_link_pdo($pdo, (int) $invitee['user_id']);
@@ -116,9 +115,9 @@ try {
     $insert = $pdo->prepare(
         'INSERT INTO invitations
          (headquarter_id, invited_user_id, invited_email, business_role_id, station_id, status)
-            VALUES (?, ?, ?, ?, ?, \'pending\')'
+         VALUES (?, ?, ?, ?, ?, \'pending\')'
     );
-    $insert->execute([$hqId, (int)$invitee['user_id'], $email, $roleId, $stationId ?: null]);
+    $insert->execute([$hqId, (int) $invitee['user_id'], $email, $roleId, $stationId ?: null]);
     $invitationId = (int)$pdo->lastInsertId();
 
     $notification = $pdo->prepare(
@@ -150,11 +149,9 @@ try {
     if ($setupEmailNotice !== null) {
         $setupStatus = (string) ($setupEmailNotice['status'] ?? 'failed');
         $setupNote = (string) ($setupEmailNotice['note'] ?? 'Password setup email delivery failed.');
-        if ($setupStatus !== 'sent') {
-            $deliveryNote .= ' Password setup email: ' . $setupStatus . ' - ' . $setupNote;
-        } else {
-            $deliveryNote .= ' Password setup email: sent.';
-        }
+        $deliveryNote .= $setupStatus === 'sent'
+            ? ' Password setup email: sent.'
+            : ' Password setup email: ' . $setupStatus . ' - ' . $setupNote;
     }
     $pdo->prepare('UPDATE notifications SET delivery_status = ?, delivery_note = ? WHERE notification_id = ?')
         ->execute([$deliveryStatus, mb_substr($deliveryNote, 0, 255), $notificationId]);
