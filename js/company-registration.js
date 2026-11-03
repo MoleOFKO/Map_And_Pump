@@ -413,8 +413,7 @@ registrationForm?.addEventListener('submit', async (event) => {
         });
         const result = await response.json();
         if (!response.ok || !result.success) {
-            setRegistrationStatus(result.message || 'Please check the owner and company emails.', true, result.code === 'owner_unregistered');
-            if (result.code === 'owner_unregistered') ownerEmailInput?.focus();
+            setRegistrationStatus(result.message || 'Please check the owner and company emails.', true);
             return;
         }
     } catch (error) {

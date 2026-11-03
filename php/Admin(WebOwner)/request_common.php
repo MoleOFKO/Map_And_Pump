@@ -5,6 +5,18 @@
 require_once __DIR__ . '/hq_account_common.php';
 require_once __DIR__ . '/../Login/mail_templates.php';
 require_once __DIR__ . '/../payment_transfers.php';
+
+function request_registration_payment_required(array $details): bool
+{
+    if (array_key_exists('registration_amount_mmk', $details)) {
+        $amount = filter_var($details['registration_amount_mmk'], FILTER_VALIDATE_FLOAT);
+        return $amount === false || $amount > 0;
+    }
+
+    $requestedStations = (int) ($details['requested_station_count'] ?? BILLING_HQ_INCLUDED_STATION_SLOTS);
+    return $requestedStations > BILLING_HQ_INCLUDED_STATION_SLOTS;
+}
+
 /** Latest registration payment state keyed by system request id. */
 function request_payment_review_map(array $requestRows): array
 {
@@ -104,7 +116,7 @@ function request_payment_verification_rows(string $reviewerRole, string $search,
     }
     $reviewerRole = strtolower(trim($reviewerRole));
     $types = $reviewerRole === 'moderator'
-        ? ['hq_period_extension', 'hq_station_package']
+        ? ['hq_period_extension', 'hq_station_package', 'hq_registration']
         : ['hq_period_extension', 'hq_station_package', 'hq_extra_station', 'hq_station_operating_quote'];
     if ($reviewerRole !== 'moderator' && $includeRegistration) {
         $types[] = 'hq_registration';

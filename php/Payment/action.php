@@ -363,7 +363,10 @@ try {
                 }
                 $eventNote = 'Designated recipient recorded receipt.';
                 if ($transfer['payment_type'] === 'hq_registration') {
-                    $eventNote = 'Admin or Moderator confirmed the registration payment. The HQ will be created when the registration request is approved.';
+                    $registrationActivated = payment_transfer_activate_hq_registration($pdo, $transfer);
+                    $eventNote = $registrationActivated
+                        ? 'Admin or Moderator confirmed the registration payment for the approved HQ.'
+                        : 'Admin or Moderator confirmed the registration payment. The HQ service package will activate after the request is approved.';
                 }
                 if (in_array($transfer['payment_type'], ['hq_period_extension', 'hq_station_package'], true)) {
                     if (!payment_transfer_ensure_hq_service_expiry_schema($pdo)) {
