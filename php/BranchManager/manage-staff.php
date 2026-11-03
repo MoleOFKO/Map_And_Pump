@@ -218,6 +218,19 @@ function next_available_staff_code(PDO $pdo, int $branchId): string {
     }
 }
 
+function map_pump_customer_role_id(PDO $pdo): int {
+    $stmt = $pdo->prepare(
+        "SELECT role_id
+         FROM roles
+         WHERE LOWER(TRIM(role_name)) = 'customer'
+         ORDER BY role_id ASC
+         LIMIT 1"
+    );
+    $stmt->execute();
+    $roleId = (int) $stmt->fetchColumn();
+    return $roleId > 0 ? $roleId : 6;
+}
+
 function map_pump_staff_role_id(PDO $pdo): int {
     $stmt = $pdo->prepare(
         "SELECT role_id
@@ -538,13 +551,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $sid = (int)($_POST['staff_id'] ?? 0);
 
             $pdo->beginTransaction();
-            $stmt = $pdo->prepare("SELECT staff_id, full_name, staff_code FROM staff WHERE staff_id = :sid AND branch_id = :branch_id FOR UPDATE");
+            $stmt = $pdo->prepare("SELECT staff_id, user_id, full_name, staff_code FROM staff WHERE staff_id = :sid AND branch_id = :branch_id FOR UPDATE");
             $stmt->execute([':sid' => $sid, ':branch_id' => $bid]);
             $target = $stmt->fetch(PDO::FETCH_ASSOC);
             if (!$target) {
                 $pdo->rollBack();
                 json_out(['ok' => false, 'error' => 'That staff account is not available in your branch.'], 404);
             }
+
+            // Restore the linked user to the customer role before deleting the staff record itself.
+            $customerRoleId = map_pump_customer_role_id($pdo);
+            $updateUserRole = $pdo->prepare("UPDATE users SET business_role_id = :role_id, current_role_id = :role_id WHERE user_id = :user_id");
+            $updateUserRole->execute([':role_id' => $customerRoleId, ':user_id' => (int)$target['user_id']]);
 
             $delete = $pdo->prepare("DELETE FROM staff WHERE staff_id = :sid AND branch_id = :branch_id");
             $delete->execute([':sid' => $sid, ':branch_id' => $bid]);
@@ -561,19 +579,115 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if ($action === 'activate' || $action === 'disable') {
             $sid = (int)($_POST['staff_id'] ?? 0);
-            $flag = $action === 'activate' ? 1 : 0;
-            $setClauses = ['is_active = :f'];
-            $params = [':f' => $flag, ':sid' => $sid, ':b' => $bid];
-            if (staff_has_column($pdo, 'updated_at')) {
-                $setClauses[] = 'updated_at = NOW()';
+            $targetAction = $action === 'activate' ? 'activate' : 'disable';
+            $staffRoleId = map_pump_staff_role_id($pdo);
+            $customerRoleId = map_pump_customer_role_id($pdo);
+            if ($staffRoleId <= 0) {
+                json_out(['ok' => false, 'error' => 'The staff role is not configured for this system.'], 409);
             }
 
-            $sql = 'UPDATE staff SET ' . implode(', ', $setClauses) . ' WHERE staff_id = :sid AND branch_id = :b';
-            $stmt = $pdo->prepare($sql);
-            $stmt->execute($params);
+            $pdo->beginTransaction();
+            $targetStmt = $pdo->prepare(
+                'SELECT s.staff_id, s.user_id, s.branch_id, s.full_name, s.staff_code
+                 FROM staff s
+                 WHERE s.staff_id = :sid AND s.branch_id = :branch_id
+                 FOR UPDATE'
+            );
+            $targetStmt->execute([':sid' => $sid, ':branch_id' => $bid]);
+            $target = $targetStmt->fetch(PDO::FETCH_ASSOC);
+            if (!$target) {
+                $pdo->rollBack();
+                json_out(['ok' => false, 'error' => 'That staff member is not available in your branch.'], 404);
+            }
 
-            log_activity($pdo, $bid, 'user', $user['user_id'], $user['full_name'], ($flag ? 'Activated' : 'Disabled') . " staff #{$sid}");
-            json_out(['ok' => true]);
+            $userId = (int)($target['user_id'] ?? 0);
+            if ($userId <= 0) {
+                $pdo->rollBack();
+                json_out(['ok' => false, 'error' => 'This staff record is not linked to a user account.'], 409);
+            }
+
+            $newRoleId = $targetAction === 'activate' ? $staffRoleId : $customerRoleId;
+            $userRoleUpdate = $pdo->prepare(
+                'UPDATE users
+                 SET business_role_id = :business_role_id,
+                     current_role_id = :current_role_id,
+                     updated_at = NOW()
+                 WHERE user_id = :user_id'
+            );
+            $userRoleUpdate->execute([
+                ':business_role_id' => $newRoleId,
+                ':current_role_id' => $newRoleId,
+                ':user_id' => $userId,
+            ]);
+
+            $statusColumn = staff_has_column($pdo, 'status') ? 'status' : 'is_active';
+            $statusSql = $statusColumn === 'status'
+                ? 'UPDATE staff SET status = :status_value, updated_at = NOW() WHERE staff_id = :sid AND branch_id = :branch_id'
+                : 'UPDATE staff SET is_active = :is_active, updated_at = NOW() WHERE staff_id = :sid AND branch_id = :branch_id';
+            $statusParams = [':sid' => $sid, ':branch_id' => $bid];
+            if ($statusColumn === 'status') {
+                $statusParams[':status_value'] = $targetAction === 'activate' ? 'active' : 'disabled';
+            } else {
+                $statusParams[':is_active'] = $targetAction === 'activate' ? 1 : 0;
+            }
+            $statusStmt = $pdo->prepare($statusSql);
+            $statusStmt->execute($statusParams);
+
+            $expectedStatusValue = $targetAction === 'activate'
+                ? ($statusColumn === 'status' ? 'active' : 1)
+                : ($statusColumn === 'status' ? 'disabled' : 0);
+            $actualStatusSql = $statusColumn === 'status'
+                ? 'SELECT status FROM staff WHERE staff_id = :sid AND branch_id = :branch_id LIMIT 1'
+                : 'SELECT is_active FROM staff WHERE staff_id = :sid AND branch_id = :branch_id LIMIT 1';
+            $actualStatusStmt = $pdo->prepare($actualStatusSql);
+            $actualStatusStmt->execute([':sid' => $sid, ':branch_id' => $bid]);
+            $actualStatusValue = $actualStatusStmt->fetchColumn();
+            if ((string) $actualStatusValue !== (string) $expectedStatusValue) {
+                error_log(sprintf(
+                    '[manage-staff] status-toggle failed for staff_id=%d action=%s expected=%s actual=%s rowcount=%d',
+                    $sid,
+                    $targetAction,
+                    var_export($expectedStatusValue, true),
+                    var_export($actualStatusValue, true),
+                    $statusStmt->rowCount()
+                ));
+                $pdo->rollBack();
+                json_out(['ok' => false, 'error' => 'Unable to update the staff status for this branch.'], 409);
+            }
+
+            $targetUserEmailSql = $pdo->prepare('SELECT email FROM users WHERE user_id = :user_id LIMIT 1');
+            $targetUserEmailSql->execute([':user_id' => $userId]);
+            $targetUserEmail = trim((string) $targetUserEmailSql->fetchColumn());
+            error_log(sprintf(
+                '[manage-staff:%s] about_to_create_notification recipient_user_id=%d staff_id=%d targetUserEmail=%s',
+                $targetAction,
+                $userId,
+                $sid,
+                $targetUserEmail !== '' ? $targetUserEmail : 'EMPTY'
+            ));
+
+            $notificationId = staff_status_notification_create(
+                $pdo,
+                $userId,
+                $sid,
+                $targetAction,
+                $targetUserEmail
+            );
+            error_log(sprintf(
+                '[manage-staff:%s] notification_created notification_id=%d recipient_user_id=%d staff_id=%d',
+                $targetAction,
+                $notificationId,
+                $userId,
+                $sid
+            ));
+            if ($notificationId <= 0) {
+                $pdo->rollBack();
+                json_out(['ok' => false, 'error' => 'Unable to record the staff status notification.'], 409);
+            }
+
+            $pdo->commit();
+            log_activity($pdo, $bid, 'user', $user['user_id'], $user['full_name'], ($targetAction === 'activate' ? 'Activated' : 'Disabled') . " staff #{$sid}");
+            json_out(['ok' => true, 'status' => $targetAction === 'activate' ? 'active' : 'disabled', 'notification_id' => $notificationId]);
         }
 
         json_out(['ok' => false, 'error' => 'Unknown action'], 400);
@@ -768,38 +882,61 @@ try {
   .avatar-chip:hover{background: rgba(255,255,255,0.05);}
   .avatar-circle{width:36px; height:36px; border-radius:50%; background:linear-gradient(135deg,var(--sky-400),var(--blue-700)); display:flex; align-items:center; justify-content:center; font-weight:700; font-size:13px; font-family:'Space Grotesk';}
 
-  /* ---------- Notification Popup Dropdown (manage-oil style) ---------- */
+  /* ---------- Notification Popup Dropdown (dashboard style) ---------- */
   .notif-popup {
-    position: absolute; top: 48px; right: 80px; width: 320px;
-    background: var(--navy-800); border: 1px solid rgba(255,255,255,0.12);
-    border-radius: 14px; box-shadow: 0 12px 30px rgba(0,0,0,0.5);
-    z-index: 100; opacity: 0; pointer-events: none; transform: translateY(-10px);
-    transition: opacity 0.25s ease, transform 0.25s ease;
+    position: absolute;
+    top: 48px;
+    right: 60px;
+    width: 320px;
+    max-height: 420px;
+    overflow-y: auto;
+    background: var(--navy-800);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 14px;
+    box-shadow: 0 16px 32px rgba(0, 0, 0, 0.4);
+    padding: 14px 12px;
+    z-index: 100;
+    display: none;
+    animation: fadeInDown 0.25s cubic-bezier(0.16, 1, 0.3, 1);
   }
-  .notif-popup.active { opacity: 1; pointer-events: auto; transform: translateY(0); }
+  .notif-popup.show,
+  .notif-popup.active { display: block; opacity: 1; pointer-events: auto; transform: translateY(0); }
   .notif-header {
-    display: flex; justify-content: space-between; align-items: center;
-    padding: 12px 16px; border-bottom: 1px solid rgba(255,255,255,0.06);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    padding-bottom: 10px;
+    margin-bottom: 10px;
   }
-  .notif-header h4 { font-size: 13.5px; font-weight: 700; margin: 0; }
-  .notif-header button { background: none; border: none; color: var(--amber-400); font-size: 11px; cursor: pointer; font-weight: 600; }
-  .notif-header button:hover { text-decoration: underline; }
+  .notif-header h4 { font-size: 14px; font-weight: 700; margin: 0; }
+  .notif-header button { background: transparent; border: none; color: var(--sky-400); font-size: 11px; cursor: pointer; }
   .notif-list { max-height: 260px; overflow-y: auto; }
   .notif-item {
-    display: flex; gap: 12px; padding: 12px 16px; border-bottom: 1px solid rgba(255,255,255,0.04);
-    font-size: 12px; transition: background 0.2s; cursor: pointer;
+    padding: 9px 8px;
+    border-radius: 10px;
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    transition: background-color 0.2s;
+    border: 1px solid transparent;
+    cursor: pointer;
   }
-  .notif-item:last-child { border-bottom: none; }
-  .notif-item:hover { background: rgba(255,255,255,0.03); }
-  .notif-item .icon { width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 12px; }
-  .notif-item.warning .icon { background: rgba(248,113,113,0.15); color: var(--red-400); }
-  .notif-item.info .icon { background: rgba(56,189,248,0.15); color: var(--sky-400); }
-  .notif-item.success .icon { background: rgba(52,211,153,0.15); color: var(--mint-400); }
-  .notif-item .text b { display: block; color: var(--slate-50); margin-bottom: 2px; }
-  .notif-item .text span { color: var(--slate-400); line-height: 1.3; display: block; }
-  .notif-item .time { font-size: 10px; color: var(--slate-400); margin-top: 4px; }
+  .notif-item:hover { background-color: rgba(255,255,255,0.04); }
+  .notif-item .icon {
+    width: 32px; height: 32px; border-radius: 10px; display:flex; align-items:center; justify-content:center; font-size:12px; flex-shrink:0;
+    background: rgba(148,163,184,0.12); color: var(--slate-200);
+  }
+  .notif-item.unread { border-color: rgba(56,189,248,0.2); }
+  .notif-item.warning .icon { background: rgba(251,191,36,0.16); color: var(--amber-300); }
+  .notif-item.error .icon, .notif-item.err .icon { background: rgba(248,113,113,0.16); color: var(--red-400); }
+  .notif-item.success .icon, .notif-item.ok .icon { background: rgba(52,211,153,0.14); color: var(--mint-400); }
+  .notif-item.info .icon, .notif-item[data-kind="info"] .icon { background: rgba(56,189,248,0.14); color: var(--sky-400); }
+  .notif-item .text b { display:block; font-size:12.5px; color:var(--slate-50); margin-bottom:2px; }
+  .notif-item .text span { color:var(--slate-400); font-size:11.5px; display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .notif-item .time { font-size:10px; color:var(--slate-400); margin-top:4px; }
+  @keyframes fadeInDown { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
 
-  /* Content Entrance Fade */
   .content{
     padding:30px 32px 60px;
     opacity: 0;
@@ -1282,6 +1419,9 @@ try {
       <!-- TAB 1: MANAGE STAFF ACCOUNTS -->
       <div class="tab-panel active" id="tab-manage">
         <div class="toolbar">
+
+
+
           <div class="search">
             <i class="fa-solid fa-magnifying-glass"></i> 
             <input type="text" id="directory-search" placeholder="Search by name, email, or Staff ID...">

@@ -3,6 +3,9 @@ session_start();
 require_once __DIR__ . '/../conn.php';
 require_once __DIR__ . '/../feedback_schema.php';
 require_once __DIR__ . '/../activity_log.php';
+require_once __DIR__ . '/staff_access_guard.php';
+
+map_pump_require_active_staff_session($pdo, true);
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     header('Location: feedback_manage.php');

@@ -12,6 +12,7 @@ require_once __DIR__ . '/../Customer/license_access.php';
 require_once __DIR__ . '/../Customer/car_access.php';
 require_once __DIR__ . '/../role_state.php';
 require_once __DIR__ . '/../moderator_hire_helpers.php';
+require_once __DIR__ . '/../BranchManager/_helpers.php';
 
 function auth_redirect_to_login(string $message = 'Please sign in to continue.', string $prefillEmail = '')
 {
@@ -191,6 +192,10 @@ try {
     // Load pending moderator hire invites so destination pages can show a popup.
     $pendingHires = moderator_hire_pending_for_user_pdo($pdo, (int) $user['user_id']);
     moderator_hire_store_pending_in_session($pendingHires);
+
+    // Load pending staff status notifications for the user without marking them as read.
+    $pendingStaffStatusEvents = staff_status_pending_for_current_user($pdo, (int) $user['user_id']);
+    $_SESSION['pending_staff_status_events'] = $pendingStaffStatusEvents;
 
     header('Location: ' . $destination);
     exit;

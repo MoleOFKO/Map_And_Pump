@@ -1,6 +1,43 @@
 <?php 
 include 'share_header.php'; 
 
+$staffStatusPopupType = null;
+$staffStatusPopupNotificationId = 0;
+if (!empty($_SESSION['staff_status_popup_type'])) {
+    $staffStatusPopupType = strtolower(trim((string) $_SESSION['staff_status_popup_type']));
+}
+$pendingStaffStatusEvents = [];
+if (!empty($_SESSION['pending_staff_status_events']) && is_array($_SESSION['pending_staff_status_events'])) {
+    $pendingStaffStatusEvents = array_values($_SESSION['pending_staff_status_events']);
+}
+if (empty($pendingStaffStatusEvents) && !empty($_SESSION['user_id'])) {
+    $pendingStaffStatusEvents = staff_status_pending_for_current_user($pdo, (int) $_SESSION['user_id']);
+    if (!empty($pendingStaffStatusEvents)) {
+        $_SESSION['pending_staff_status_events'] = $pendingStaffStatusEvents;
+    }
+}
+if ($staffStatusPopupType === null && !empty($pendingStaffStatusEvents)) {
+    foreach ($pendingStaffStatusEvents as $event) {
+        if (!is_array($event)) {
+            continue;
+        }
+        $eventType = strtolower((string) ($event['notification_type'] ?? ''));
+        if ($eventType === 'staff_account_disabled') {
+            $staffStatusPopupType = 'disabled';
+            $staffStatusPopupNotificationId = (int) ($event['notification_id'] ?? 0);
+            break;
+        }
+        if ($eventType === 'staff_account_reactivated') {
+            $staffStatusPopupType = 'activated';
+            $staffStatusPopupNotificationId = (int) ($event['notification_id'] ?? 0);
+            break;
+        }
+    }
+}
+if ($staffStatusPopupType !== null) {
+    $_SESSION['staff_status_popup_type'] = $staffStatusPopupType;
+}
+
 $oilLimit = max(0.1, (float) ($_SESSION['oil_limit'] ?? 35.0));
 $oilUsed = max(0.0, (float) ($_SESSION['oil_used'] ?? 0.0));
 $oilRemaining = max(0.0, (float) ($_SESSION['oil_remaining'] ?? ($oilLimit - $oilUsed)));
@@ -66,6 +103,7 @@ $redemptionOptions = loyalty_redemption_options($pdo);
                     Reach <?= (int) $tierStatus['next_exp'] ?> total EXP to advance to
                     <?= htmlspecialchars(loyalty_tier_label($tierStatus['next_tier']), ENT_QUOTES, 'UTF-8') ?>
                     (you have <?= (int) $tierStatus['exp'] ?>; <?= (int) $tierStatus['exp_remaining'] ?> more).
+                    Reach <?= number_format($tierStatus['weekly_quota_liters'], 1) ?> L in successful external fills each week; each missed week removes 1 EXP.
                 </p>
             <?php else: ?>
                 <p class="text-secondary small mb-0 mt-2">Diamond tier reached. At your point cap, successful external fills award EXP instead of points.</p>
@@ -110,4 +148,188 @@ $redemptionOptions = loyalty_redemption_options($pdo);
 </div>
 </div>
 
-<?php include 'share_footer.php'; ?>
+<!-- Staff account status pop-ups (customer) -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+<style>
+.mp-sa-overlay{position:fixed;inset:0;z-index:2000;display:none;align-items:center;justify-content:center;padding:16px;background:rgba(0,0,0,.72);-webkit-backdrop-filter:blur(4px);backdrop-filter:blur(4px)}
+.mp-sa-overlay.is-open{display:flex;animation:mpSaFade .18s ease-out}
+.mp-sa-card{width:100%;max-width:380px;box-sizing:border-box;padding:26px 24px 22px;background:#05070a;color:#f1f5f9;border:1px solid rgba(255,255,255,.12);border-radius:22px;box-shadow:0 24px 60px rgba(0,0,0,.6);font-family:inherit;animation:mpSaPop .22s cubic-bezier(.2,.9,.3,1.2)}
+.mp-sa-card *{box-sizing:border-box}
+.mp-sa-center{text-align:center}
+.mp-sa-icon{display:block;font-size:34px;line-height:1;margin:0 0 14px}
+.mp-sa-icon.is-red{color:#ef4444}
+.mp-sa-icon.is-green{color:#22c55e}
+.mp-sa-title{margin:0 0 10px;font-size:19px;font-weight:700;letter-spacing:.02em;text-transform:uppercase;color:#f8fafc}
+.mp-sa-text{margin:0 0 20px;font-size:14px;font-weight:600;line-height:1.5;color:#e2e8f0}
+.mp-sa-actions{display:flex;gap:10px}
+.mp-sa-btn{flex:1 1 0;min-width:0;padding:11px 16px;border-radius:999px;border:1px solid rgba(255,255,255,.1);background:#111418;color:#b6bcc6;font:inherit;font-size:13px;font-weight:600;cursor:pointer;text-align:center;text-decoration:none;transition:background .15s,color .15s,border-color .15s}
+.mp-sa-btn:hover{background:#1a1f26;color:#fff;border-color:rgba(255,255,255,.22)}
+.mp-sa-btn:focus-visible{outline:2px solid #38bdf8;outline-offset:2px}
+.mp-sa-btn.is-ghost{background:transparent}
+.mp-sa-btn.is-ghost:hover{background:rgba(255,255,255,.06)}
+/* Unavailable (customer only) */
+.mp-sa-card.is-unavailable{max-width:420px;padding:20px 20px 18px;border-radius:18px}
+.mp-sa-head{display:flex;align-items:center;gap:10px;margin:0 0 14px}
+.mp-sa-head i{font-size:18px;color:#f59e0b}
+.mp-sa-head h2{margin:0;font-size:16px;font-weight:700;color:#f59e0b}
+.mp-sa-card.is-unavailable .mp-sa-text{font-weight:500;margin-bottom:16px}
+@keyframes mpSaFade{from{opacity:0}to{opacity:1}}
+@keyframes mpSaPop{from{opacity:0;transform:translateY(8px) scale(.96)}to{opacity:1;transform:none}}
+@media (max-width:420px){.mp-sa-actions{flex-direction:column-reverse}.mp-sa-card{padding:22px 18px 18px}}
+@media (prefers-reduced-motion:reduce){.mp-sa-overlay.is-open,.mp-sa-card{animation:none}}
+</style>
+
+<div class="mp-sa-overlay" id="mpSaDisabled" data-mp-sa="disabled" data-notification-id="<?php echo (int) ($staffStatusPopupNotificationId ?: 0); ?>" role="dialog" aria-modal="true" aria-labelledby="mpSaDisabledTitle" aria-hidden="true">
+    <div class="mp-sa-card mp-sa-center">
+        <i class="fa-solid fa-user-lock mp-sa-icon is-red" aria-hidden="true"></i>
+        <h2 class="mp-sa-title" id="mpSaDisabledTitle">Staff Account Disabled</h2>
+        <p class="mp-sa-text">Your Branch Manager has disabled your staff account.</p>
+        <div class="mp-sa-actions">
+            <button type="button" class="mp-sa-btn" data-mp-sa-close>I Understand</button>
+        </div>
+    </div>
+</div>
+
+<div class="mp-sa-overlay" id="mpSaActivated" data-mp-sa="activated" data-notification-id="<?php echo (int) ($staffStatusPopupNotificationId ?: 0); ?>" role="dialog" aria-modal="true" aria-labelledby="mpSaActivatedTitle" aria-hidden="true">
+    <div class="mp-sa-card mp-sa-center">
+        <i class="fa-solid fa-user-check mp-sa-icon is-green" aria-hidden="true"></i>
+        <h2 class="mp-sa-title" id="mpSaActivatedTitle">Staff Account Activated</h2>
+        <p class="mp-sa-text">Your Branch Manager has reactivated your staff account. You can now access your previous staff account again.</p>
+        <div class="mp-sa-actions">
+            <button type="button" class="mp-sa-btn" data-mp-sa-switch data-href="<?= htmlspecialchars('staff_dashboard.php', ENT_QUOTES, 'UTF-8') ?>" data-notification-id="<?php echo (int) ($staffStatusPopupNotificationId ?: 0); ?>">Switch Account</button>
+            <button type="button" class="mp-sa-btn is-ghost" data-mp-sa-close>I Understand</button>
+        </div>
+    </div>
+</div>
+
+<div class="mp-sa-overlay" id="mpSaUnavailable" data-mp-sa="unavailable" data-notification-id="<?php echo (int) ($staffStatusPopupNotificationId ?: 0); ?>" role="dialog" aria-modal="true" aria-labelledby="mpSaUnavailableTitle" aria-hidden="true">
+    <div class="mp-sa-card is-unavailable">
+        <div class="mp-sa-head">
+            <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
+            <h2 id="mpSaUnavailableTitle">Staff Account Unavailable</h2>
+        </div>
+        <p class="mp-sa-text">Your staff account has been disabled. You cannot switch accounts.</p>
+        <div class="mp-sa-actions">
+            <button type="button" class="mp-sa-btn" data-mp-sa-close>I Understand</button>
+        </div>
+    </div>
+</div>
+
+<script>
+(function () {
+    if (window.MapPumpStaffStatus) return;
+    var openEl = null, lastFocus = null;
+
+    function find(type) { return document.querySelector('[data-mp-sa="' + type + '"]'); }
+
+    function hide() {
+        if (!openEl) return;
+        var type = openEl.getAttribute('data-mp-sa');
+        openEl.classList.remove('is-open');
+        openEl.setAttribute('aria-hidden', 'true');
+        openEl = null;
+        document.body.style.overflow = '';
+        if (lastFocus && lastFocus.focus) lastFocus.focus();
+        document.dispatchEvent(new CustomEvent('staffstatus:close', { detail: { type: type } }));
+    }
+
+    function show(type) {
+        var el = find(type);
+        if (!el) return false;
+        if (openEl) hide();
+        lastFocus = document.activeElement;
+        openEl = el;
+        el.classList.add('is-open');
+        el.setAttribute('aria-hidden', 'false');
+        document.body.style.overflow = 'hidden';
+        var btn = el.querySelector('.mp-sa-btn');
+        if (btn) btn.focus();
+        return true;
+    }
+
+    function acknowledge(type, notificationId) {
+        if (!type) return;
+        var payload = new FormData();
+        payload.append('type', type);
+        if (notificationId) payload.append('notification_id', String(notificationId));
+        fetch('/php/staff_status_ack.php', {
+            method: 'POST',
+            credentials: 'same-origin',
+            body: payload,
+        }).catch(function () {});
+    }
+
+    function doServerSwitch() {
+        var form = document.createElement('form');
+        form.method = 'POST';
+        form.action = '/php/account_switch.php';
+
+        var input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = 'mode';
+        input.value = 'business';
+        form.appendChild(input);
+
+        document.body.appendChild(form);
+        form.submit();
+        return true;
+    }
+
+    document.addEventListener('click', function (e) {
+        var t = e.target;
+        if (!t.closest) return;
+
+        var sw = t.closest('[data-mp-sa-switch]');
+        if (sw) {
+            var type = openEl ? openEl.getAttribute('data-mp-sa') : 'activated';
+            var ev = new CustomEvent('staffstatus:switch', { detail: { type: type, href: sw.getAttribute('data-href') }, cancelable: true });
+            if (document.dispatchEvent(ev)) {
+                var notificationId = sw.getAttribute('data-notification-id');
+                if (notificationId) {
+                    acknowledge(type, notificationId);
+                }
+                if (type === 'activated') {
+                    doServerSwitch();
+                    return;
+                }
+                if (sw.getAttribute('data-href')) {
+                    window.location.href = sw.getAttribute('data-href');
+                }
+            }
+            return;
+        }
+
+        if (t.closest('[data-mp-sa-close]')) {
+            var ct = openEl ? openEl.getAttribute('data-mp-sa') : '';
+            var notificationId = openEl ? (openEl.getAttribute('data-notification-id') || '') : '';
+            document.dispatchEvent(new CustomEvent('staffstatus:acknowledge', { detail: { type: ct, notification_id: notificationId } }));
+            acknowledge(ct, notificationId || 0);
+            hide();
+            return;
+        }
+
+        if (openEl && t === openEl) hide();
+    });
+
+    document.addEventListener('keydown', function (e) {
+        if (!openEl) return;
+        if (e.key === 'Escape') hide();
+        if (e.key === 'Tab') {
+            var f = openEl.querySelectorAll('button');
+            if (!f.length) return;
+            var first = f[0], last = f[f.length - 1];
+            if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+            else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+        }
+    });
+
+    var triggerType = <?php echo json_encode($staffStatusPopupType ?: ''); ?>;
+    if (triggerType) {
+        setTimeout(function () {
+            show(triggerType);
+        }, 120);
+    }
+
+    window.MapPumpStaffStatus = { show: show, hide: hide };
+})();
+</script>

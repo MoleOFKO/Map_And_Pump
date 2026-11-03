@@ -9,6 +9,7 @@ require_once __DIR__ . '/license_access.php';
 require_once __DIR__ . '/license_expiry.php';
 require_once __DIR__ . '/car_access.php';
 require_once __DIR__ . '/../profile_avatar.php';
+require_once __DIR__ . '/../BranchManager/_helpers.php';
 
 if (!isset($_SESSION['user_id']) || !ctype_digit((string) $_SESSION['user_id'])) {
     header('Location: ../Login/login.php');
@@ -147,6 +148,52 @@ if ($currentPage == 'feedback.php') $viewTitle = "Feedback & Replies";
 if ($currentPage == 'profile_page.php') $viewTitle = "Portal Profile Settings";
 if ($currentPage == 'license.php') $viewTitle = "Driver License Setup";
 if ($currentPage == 'car_license.php') $viewTitle = "Car License Setup";
+
+$customerStaffStatusNotifications = [];
+try {
+    $customerStaffStatusNotifications = staff_status_pending_for_current_user($pdo, (int) $_SESSION['user_id']);
+    if (!empty($customerStaffStatusNotifications)) {
+        $_SESSION['pending_staff_status_events'] = $customerStaffStatusNotifications;
+    }
+} catch (Throwable $e) {
+    error_log('Failed to load customer staff status notifications: ' . $e->getMessage());
+    $customerStaffStatusNotifications = [];
+}
+
+$customerAlertNotifications = [];
+$customerNotificationCount = 0;
+
+foreach ($customerStaffStatusNotifications as $customerStaffNotification) {
+    $customerAlertNotifications[] = [
+        'title' => (string) ($customerStaffNotification['subject'] ?? 'Staff account update'),
+        'message' => (string) ($customerStaffNotification['message'] ?? ''),
+        'type' => 'staff_status',
+        'notification_id' => (int) ($customerStaffNotification['notification_id'] ?? 0),
+        'is_license' => false,
+    ];
+}
+
+if ($customerLicenseNotification !== null) {
+    $customerAlertNotifications[] = [
+        'title' => (string) $customerLicenseNotification['title'],
+        'message' => (string) $customerLicenseNotification['message'],
+        'type' => 'license',
+        'notification_id' => 0,
+        'is_license' => true,
+    ];
+}
+
+$customerNotificationCount = count($customerAlertNotifications);
+
+// Refresh unread badge count from the live notifications table for the current customer.
+if (!empty($_SESSION['user_id'])) {
+    $liveUnreadNotificationCount = (int) $pdo->query(
+        "SELECT COUNT(*) FROM notifications WHERE recipient_user_id = " . (int) $_SESSION['user_id'] . " AND read_at IS NULL"
+    )->fetchColumn();
+    if ($liveUnreadNotificationCount > 0) {
+        $customerNotificationCount = $liveUnreadNotificationCount;
+    }
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -314,22 +361,37 @@ if ($currentPage == 'car_license.php') $viewTitle = "Car License Setup";
                 </span>
             </label>
             <div class="position-relative" id="notif-hub">
-                <button type="button" class="btn btn-link p-0 border-0 text-secondary" id="notif-bell" onclick="toggleAlertBox()" aria-label="Notifications, <?php echo $customerLicenseNotificationCount; ?> available" aria-expanded="false" aria-controls="notif-alert-panel" style="line-height:1;">
+                <button type="button" class="btn btn-link p-0 border-0 text-secondary" id="notif-bell" onclick="toggleAlertBox()" aria-label="Notifications, <?php echo $customerNotificationCount; ?> available" aria-expanded="false" aria-controls="notif-alert-panel" style="line-height:1;">
                     <i class="bi bi-bell-fill fs-5"></i>
-                    <?php if ($customerLicenseNotificationCount > 0): ?>
-                        <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger" id="notif-count"><?php echo $customerLicenseNotificationCount; ?></span>
+                    <?php if ($customerNotificationCount > 0): ?>
+                        <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger" id="notif-count"><?php echo $customerNotificationCount; ?></span>
                     <?php endif; ?>
                 </button>
                 <div id="notif-alert-panel" class="position-absolute end-0 mt-3 bg-dark border border-secondary border-opacity-20 rounded-3 shadow-lg py-2 d-none" style="width:min(340px, calc(100vw - 32px)); z-index:1000;">
                     <div class="px-3 pb-2 border-bottom border-secondary border-opacity-10 fw-semibold text-white">Notifications</div>
-                    <?php if ($customerLicenseNotification !== null): ?>
-                        <a href="license.php?update=1" class="d-block px-3 py-3 text-decoration-none border-bottom border-secondary border-opacity-10" style="color:inherit;">
-                            <span class="d-flex align-items-center gap-2 text-warning fw-semibold small"><i class="bi bi-exclamation-triangle-fill"></i><?php echo htmlspecialchars($customerLicenseNotification['title'], ENT_QUOTES, 'UTF-8'); ?></span>
-                            <span class="d-block mt-2 text-white-50" style="font-size:12px;line-height:1.5;"><?php echo htmlspecialchars($customerLicenseNotification['message'], ENT_QUOTES, 'UTF-8'); ?></span>
-                            <span class="d-inline-block mt-2 text-info small fw-semibold">Review or update license <i class="bi bi-arrow-up-right"></i></span>
-                        </a>
+                    <?php if ($customerNotificationCount > 0): ?>
+                        <?php foreach ($customerAlertNotifications as $customerAlertNotification): ?>
+                            <?php $customerAlertTitle = (string) ($customerAlertNotification['title'] ?? 'Notification'); ?>
+                            <?php $customerAlertMessage = (string) ($customerAlertNotification['message'] ?? ''); ?>
+                            <?php if (!empty($customerAlertNotification['is_license'])): ?>
+                                <a href="license.php?update=1" class="d-block px-3 py-3 text-decoration-none border-bottom border-secondary border-opacity-10" style="color:inherit;">
+                                    <span class="d-flex align-items-center gap-2 text-warning fw-semibold small"><i class="bi bi-exclamation-triangle-fill"></i><?php echo htmlspecialchars($customerAlertTitle, ENT_QUOTES, 'UTF-8'); ?></span>
+                                    <span class="d-block mt-2 text-white-50" style="font-size:12px;line-height:1.5;">
+                                        <?php echo htmlspecialchars($customerAlertMessage, ENT_QUOTES, 'UTF-8'); ?>
+                                    </span>
+                                    <span class="d-inline-block mt-2 text-info small fw-semibold">Review or update license <i class="bi bi-arrow-up-right"></i></span>
+                                </a>
+                            <?php else: ?>
+                                <div class="d-block px-3 py-3 border-bottom border-secondary border-opacity-10" style="color:inherit;">
+                                    <span class="d-flex align-items-center gap-2 text-info fw-semibold small"><i class="bi bi-info-circle-fill"></i><?php echo htmlspecialchars($customerAlertTitle, ENT_QUOTES, 'UTF-8'); ?></span>
+                                    <span class="d-block mt-2 text-white-50" style="font-size:12px;line-height:1.5;">
+                                        <?php echo htmlspecialchars($customerAlertMessage, ENT_QUOTES, 'UTF-8'); ?>
+                                    </span>
+                                </div>
+                            <?php endif; ?>
+                        <?php endforeach; ?>
                     <?php else: ?>
-                        <p class="px-3 py-4 text-center text-secondary mb-0" style="font-size:12px;">No license notifications.</p>
+                        <p class="px-3 py-4 text-center text-secondary mb-0" style="font-size:12px;">No notifications.</p>
                     <?php endif; ?>
                 </div>
             </div>
