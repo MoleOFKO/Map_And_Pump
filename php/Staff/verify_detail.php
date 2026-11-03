@@ -5,6 +5,9 @@ require __DIR__ . '/../conn.php';
 require_once __DIR__ . '/../business_scope.php';
 require_once __DIR__ . '/../loyalty_points.php';
 require_once __DIR__ . '/../booking_reservations.php';
+require_once __DIR__ . '/staff_access_guard.php';
+
+map_pump_require_active_staff_session($pdo, false);
 
 $staffCanAccessBranch = static function (int $staffUserId, int $branchId) use ($pdo): bool {
     return function_exists('map_pump_staff_can_access_branch')

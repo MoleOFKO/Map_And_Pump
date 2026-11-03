@@ -5,6 +5,9 @@ require_once __DIR__ . '/../conn.php';
 require_once __DIR__ . '/../profile_avatar.php';
 require_once __DIR__ . '/../imgbb_image_host.php';
 require_once __DIR__ . '/../activity_log.php';
+require_once __DIR__ . '/staff_access_guard.php';
+
+map_pump_require_active_staff_session($pdo, false);
 
 function redirect_to_login(string $message = 'Please sign in to continue.')
 {

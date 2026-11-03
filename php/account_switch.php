@@ -8,6 +8,8 @@ require_once __DIR__ . '/Customer/license_expiry.php';
 require_once __DIR__ . '/Customer/car_access.php';
 require_once __DIR__ . '/role_state.php';
 require_once __DIR__ . '/profile_avatar.php';
+require_once __DIR__ . '/Staff/staff_access_guard.php';
+require_once __DIR__ . '/BranchManager/_helpers.php';
 
 function account_switch_redirect_login(string $message = 'Please sign in to continue.'): void
 {
@@ -46,10 +48,59 @@ function account_switch_dashboard(string $roleName, int $roleId = 0): string
         'branchmanager' => '/php/BranchManager/dashboard.php',
         'branch manager' => '/php/BranchManager/dashboard.php',
         'staff' => '/php/Staff/staff_dashboard.php',
-        'customer' => 'php/Customer/dashboard.php',
+        'customer' => '/php/Customer/dashboard.php',
     ];
 
     return $dashboards[strtolower($roleName)] ?? '/php/Customer/dashboard.php';
+}
+
+function account_switch_allowed_staff_record(PDO $pdo, int $userId): ?array
+{
+    if ($userId <= 0) {
+        return null;
+    }
+
+    $staffRoleId = account_switch_role_id($pdo, 'staff');
+    if ($staffRoleId <= 0) {
+        return null;
+    }
+
+    try {
+        $stmt = $pdo->prepare(
+            'SELECT u.user_id, u.user_name, u.email, u.status, u.role_id, u.business_role_id, u.current_role_id, u.headquarter_id,
+                    s.staff_id, s.branch_id, s.is_active, s.full_name, s.staff_code,
+                    COALESCE(r.role_name, \'staff\') AS current_role_name
+             FROM users u
+             LEFT JOIN staff s ON s.user_id = u.user_id
+             LEFT JOIN roles r ON r.role_id = u.current_role_id
+             WHERE u.user_id = ?
+             LIMIT 1'
+        );
+        $stmt->execute([$userId]);
+        $user = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$user) {
+            return null;
+        }
+
+        $rowStatus = strtolower(trim((string) ($user['status'] ?? 'active')));
+        $isActiveStaff = ((int) ($user['is_active'] ?? 0) === 1)
+            || ((int) ($user['business_role_id'] ?? 0) === $staffRoleId)
+            || ((int) ($user['current_role_id'] ?? 0) === $staffRoleId)
+            || ((int) ($user['role_id'] ?? 0) === $staffRoleId);
+
+        if (!$isActiveStaff || in_array($rowStatus, ['disabled', 'suspended', 'removed', 'banned'], true)) {
+            return null;
+        }
+
+        if (((int) ($user['business_role_id'] ?? 0) !== $staffRoleId) && ((int) ($user['current_role_id'] ?? 0) !== $staffRoleId)) {
+            return null;
+        }
+
+        return $user;
+    } catch (Throwable $e) {
+        error_log('Account switch staff entitlement validation failed: ' . $e->getMessage());
+        return null;
+    }
 }
 
 /**
@@ -152,18 +203,62 @@ if ($targetMode === 'customer') {
 }
 
 if ($targetMode === 'business') {
-    $targetRoleId = $businessRoleId;
-    $targetRoleName = $businessRoleName;
+    $staffRoleId = account_switch_role_id($pdo, 'staff');
+    $staffRecord = $userId > 0 ? account_switch_allowed_staff_record($pdo, $userId) : null;
+    $isCustomerSwitchingToStaff = $businessRoleId > 0 && $staffRoleId > 0 && $businessRoleId === $staffRoleId;
 
-    if ($targetRoleId <= 0 || trim($targetRoleName) === '') {
+    if ($isCustomerSwitchingToStaff && $staffRecord === null) {
+        $_SESSION['staff_status_popup_type'] = 'unavailable';
+        $_SESSION['profile_flash_message'] = 'Your staff account is disabled and cannot be reopened from this session.';
+        $_SESSION['profile_flash_type'] = 'danger';
+        header('Location: /php/Customer/dashboard.php');
+        exit;
+    }
+
+    if ($businessRoleId <= 0 || trim($businessRoleName) === '') {
+        $_SESSION['staff_status_popup_type'] = 'unavailable';
         $_SESSION['profile_flash_message'] = 'This account does not have a linked business profile yet.';
         $_SESSION['profile_flash_type'] = 'warning';
         header('Location: /php/Customer/profile_page.php');
         exit;
     }
 
+    if ($businessRoleId !== $staffRoleId && strtolower(trim($businessRoleName)) !== 'staff' && strtolower(trim($businessRoleName)) !== 'pump attendant' && strtolower(trim($businessRoleName)) !== 'pumpattendant') {
+        $targetRoleId = $businessRoleId;
+        $targetRoleName = $businessRoleName;
+    } else {
+        if ($staffRecord === null) {
+            $_SESSION['staff_status_popup_type'] = 'unavailable';
+            $_SESSION['profile_flash_message'] = 'This staff account is not active and cannot be accessed.';
+            $_SESSION['profile_flash_type'] = 'danger';
+            header('Location: /php/Customer/dashboard.php');
+            exit;
+        }
+        $targetRoleId = $staffRoleId;
+        $targetRoleName = 'Staff';
+    }
+
     map_pump_set_current_role($pdo, $userId, $targetRoleId);
     account_switch_activate($user, $targetRoleId, $targetRoleName);
+
+    if (strtolower($targetRoleName) === 'staff') {
+        $activationEvent = null;
+        foreach (staff_status_pending_for_current_user($pdo, $userId) as $event) {
+            if (($event['notification_type'] ?? '') === 'staff_account_reactivated') {
+                $activationEvent = $event;
+                break;
+            }
+        }
+        if ($activationEvent && !empty($activationEvent['notification_id'])) {
+            staff_status_notification_acknowledge($pdo, $userId, (int) $activationEvent['notification_id']);
+            $_SESSION['pending_staff_status_events'] = array_values(array_filter(
+                ($_SESSION['pending_staff_status_events'] ?? []),
+                static fn ($event) => !is_array($event) || ((int) ($event['notification_id'] ?? 0) !== (int) $activationEvent['notification_id'])
+            ));
+            unset($_SESSION['staff_status_popup_type']);
+        }
+    }
+
     header('Location: ' . account_switch_dashboard($targetRoleName, $targetRoleId));
     exit;
 }

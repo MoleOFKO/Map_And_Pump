@@ -322,7 +322,7 @@ $has_unread   = $unread_count > 0;
     max-height: 420px;
     overflow-y: auto;
     background: var(--navy-800);
-    border: 1px solid rgba(255,255,255,0.12);
+    border: 1px solid rgba(255, 255, 255, 0.12);
     border-radius: 14px;
     box-shadow: 0 16px 32px rgba(0, 0, 0, 0.4);
     padding: 14px 12px;
@@ -419,8 +419,8 @@ $has_unread   = $unread_count > 0;
           </div>
         </div>
         <div class="avatar-chip">
-          <div class="avatar-circle"><?= h($initials) ?></div>
-          <div><b><?= h(explode(' ', $user['full_name'])[0]) ?></b></div>
+          <div class="avatar-circle"><a href="edit-profile.php"><?= h(mb_substr($initials,0,1)) ?></a></div>
+          <div><b><a href="edit-profile.php"><?= h(explode(' ', $user['full_name'])[0]) ?></a></b></div>
         </div>
       </div>
     </div>

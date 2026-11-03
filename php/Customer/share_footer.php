@@ -75,10 +75,30 @@
         function toggleAlertBox() {
             const panel = document.getElementById('notif-alert-panel');
             const button = document.getElementById('notif-bell');
-            const isOpening = panel.classList.contains('d-none');
-            panel.classList.toggle('d-none');
-            button?.setAttribute('aria-expanded', isOpening ? 'true' : 'false');
+            if (!panel || !button) return;
+            const shouldOpen = panel.classList.contains('d-none');
+            panel.classList.toggle('d-none', !shouldOpen);
+            button.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
+            panel.setAttribute('aria-hidden', shouldOpen ? 'false' : 'true');
         }
+
+        window.toggleAlertBox = toggleAlertBox;
+
+        document.addEventListener('DOMContentLoaded', function () {
+            const button = document.getElementById('notif-bell');
+            const panel = document.getElementById('notif-alert-panel');
+            if (!button) return;
+
+            if (panel) {
+                document.addEventListener('click', function (event) {
+                    if (!panel.classList.contains('d-none') && !button.contains(event.target) && !panel.contains(event.target)) {
+                        panel.classList.add('d-none');
+                        button.setAttribute('aria-expanded', 'false');
+                        panel.setAttribute('aria-hidden', 'true');
+                    }
+                });
+            }
+        });
     </script>
     <?php
     $moderatorHireFlash = '';

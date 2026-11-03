@@ -236,6 +236,32 @@ try {
                 $notificationMessage,
             ]);
         }
+    } elseif ($decision === 'decline' && $branchId !== null) {
+        $managerUserId = null;
+        $managerStmt = $pdo->prepare(
+            "SELECT branch_manager_user_id
+             FROM station_business_scope
+             WHERE station_id = ? AND branch_manager_user_id IS NOT NULL
+             LIMIT 1"
+        );
+        $managerStmt->execute([$branchId]);
+        $managerUserId = (int) $managerStmt->fetchColumn();
+        if ($managerUserId > 0) {
+            $notificationMessage = sprintf(
+                '%s declined the staff invitation for branch %s.',
+                $acceptedUser['user_name'] ?? 'A staff member',
+                $branchId
+            );
+            $pdo->prepare(
+                'INSERT INTO notifications (recipient_user_id, notification_type, subject, message, delivery_status)
+                 VALUES (?, ?, ?, ?, "sent")'
+            )->execute([
+                $managerUserId,
+                'staff_invitation_declined',
+                'Staff invitation declined',
+                $notificationMessage,
+            ]);
+        }
     }
 
     $pdo->commit();

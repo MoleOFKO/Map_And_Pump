@@ -11,8 +11,11 @@ require_once __DIR__ . '/../booking_rules.php';
 require_once __DIR__ . '/../booking_reservations.php';
 require_once __DIR__ . '/../activity_log.php';
 require_once __DIR__ . '/../loyalty_points.php';
+require_once __DIR__ . '/staff_access_guard.php';
 map_pump_booking_configure_timezone($pdo);
 customer_license_status_column_ready($pdo);
+
+map_pump_require_active_staff_session($pdo, true);
 
 $staffCanAccessBranch = static function (int $staffUserId, int $branchId) use ($pdo): bool {
     return function_exists('map_pump_staff_can_access_branch')
@@ -91,7 +94,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
     if ($action === 'confirm') {
         $bookingId = isset($_POST['booking_id']) ? (int)$_POST['booking_id'] : 0;
-        $amountLiters = isset($_POST['amount_liters']) ? trim($_POST['amount_liters']) : '';
+        $amountLiters = isset($_POST['amount_liters']) ? trim((string)$_POST['amount_liters']) : '';
 
         if ($bookingId <= 0 || $amountLiters === '' || !is_numeric($amountLiters) || (float)$amountLiters <= 0) {
             respond(['success' => false, 'message' => 'Please enter a valid amount in liters.'], $ajax, 422, 'verify_detail.php?booking_id=' . urlencode((string)$bookingId));
@@ -185,27 +188,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $userLock->execute([(int)$row['user_id']]);
             if (!$userLock->fetchColumn()) throw new RuntimeException('BOOKING_USER_MISSING');
             if (!customer_license_valid_for_booking($pdo, (int)$row['user_id'], true)) throw new RuntimeException('DRIVER_LICENSE_INVALID');
+
             $lockedBooking = $pdo->prepare("SELECT status, expire_at FROM booking WHERE booking_id = ? FOR UPDATE");
             $lockedBooking->execute([(int)$row['booking_id']]);
             $lockedState = $lockedBooking->fetch(PDO::FETCH_ASSOC);
-            if (!$lockedState || !in_array((string)$lockedState['status'], ['notfilled','waiting','serving'], true)
-                || strtotime((string)$lockedState['expire_at']) <= time()) throw new RuntimeException('BOOKING_NOT_ACTIVE');
+            if (!$lockedState || !in_array((string)$lockedState['status'], ['notfilled', 'waiting', 'serving'], true)
+                || strtotime((string)$lockedState['expire_at']) <= time()) {
+                throw new RuntimeException('BOOKING_NOT_ACTIVE');
+            }
+
             if ((float)$amountLiters + 0.0001 < $requestedLiters) {
                 $lockedOffer = $pdo->prepare("SELECT offered_liters, status FROM booking_partial_offers WHERE booking_id = ? LIMIT 1 FOR UPDATE");
                 $lockedOffer->execute([(int)$row['booking_id']]);
                 $offerState = $lockedOffer->fetch(PDO::FETCH_ASSOC);
-                if (!$offerState || $offerState['status'] !== 'accepted' || abs((float)$offerState['offered_liters'] - (float)$amountLiters) > 0.01) throw new RuntimeException('BOOKING_NOT_ACTIVE');
+                if (!$offerState || $offerState['status'] !== 'accepted' || abs((float)$offerState['offered_liters'] - (float)$amountLiters) > 0.01) {
+                    throw new RuntimeException('BOOKING_NOT_ACTIVE');
+                }
             }
+
             $quota = customer_fuel_quota_for_car($pdo, (int)$row['user_id'], $carLicenseId);
             if ((float)$amountLiters > (float)$quota['remaining']) throw new RuntimeException('QUOTA_EXCEEDED');
+
             $carOwnership = $pdo->prepare('SELECT 1 FROM user_car WHERE user_id = ? AND car_id = ? LIMIT 1 FOR UPDATE');
             $carOwnership->execute([(int)$row['user_id'], $carLicenseId]);
             if (!$carOwnership->fetchColumn()) throw new RuntimeException('CAR_NOT_OWNED');
+
             $carExpiry = $pdo->prepare("SELECT status, license_expire_date FROM car_license WHERE car_license_id = ? LIMIT 1 FOR UPDATE");
             $carExpiry->execute([$carLicenseId]);
             $carState = $carExpiry->fetch(PDO::FETCH_ASSOC);
             if (!$carState || strtolower((string)$carState['status']) === 'expired'
-                || (!empty($carState['license_expire_date']) && $carState['license_expire_date'] < date('Y-m-d'))) throw new RuntimeException('CAR_EXPIRED');
+                || (!empty($carState['license_expire_date']) && $carState['license_expire_date'] < date('Y-m-d'))) {
+                throw new RuntimeException('CAR_EXPIRED');
+            }
+
             $fuelName = strtolower(str_replace(' ', '', (string)($row['oil_name'] ?? '')));
             $tankFuelCode = match ($fuelName) {
                 'octane92' => 'p92',
@@ -218,8 +233,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 throw new RuntimeException('The booking fuel type is not mapped to a station tank.');
             }
 
-            // Deduct stock atomically. A fill cannot be confirmed once the
-            // selected station has insufficient live stock for it.
             $deductTank = $pdo->prepare(
                 'UPDATE tanks
                  SET current_l = current_l - :amount
@@ -412,12 +425,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             $message = $e->getMessage() === 'INSUFFICIENT_LIVE_STOCK'
                 ? 'The station no longer has enough live stock for this fill. Ask the branch manager to update stock before confirming.'
-                : (in_array($e->getMessage(), ['BOOKING_NOT_ACTIVE','CAR_NOT_OWNED','CAR_EXPIRED','QUOTA_EXCEEDED','DRIVER_LICENSE_INVALID'], true)
+                : (in_array($e->getMessage(), ['BOOKING_NOT_ACTIVE', 'CAR_NOT_OWNED', 'CAR_EXPIRED', 'QUOTA_EXCEEDED', 'DRIVER_LICENSE_INVALID'], true)
                     ? 'The booking, vehicle, or quota is no longer valid. Refresh the booking before continuing.'
                 : 'Failed to save fill amount. Please try again.');
             $status = $e->getMessage() === 'INSUFFICIENT_LIVE_STOCK' ? 422
                 : ($e->getMessage() === 'DRIVER_LICENSE_INVALID' ? 403
-                : (in_array($e->getMessage(), ['BOOKING_NOT_ACTIVE','CAR_NOT_OWNED','CAR_EXPIRED','QUOTA_EXCEEDED'], true) ? 409 : 500));
+                : (in_array($e->getMessage(), ['BOOKING_NOT_ACTIVE', 'CAR_NOT_OWNED', 'CAR_EXPIRED', 'QUOTA_EXCEEDED'], true) ? 409 : 500));
             respond(['success' => false, 'message' => $message], $ajax, $status, 'verify_detail.php?booking_id=' . urlencode((string)$bookingId));
         }
 

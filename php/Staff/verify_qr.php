@@ -1,5 +1,10 @@
 <?php
 session_start();
+require_once __DIR__ . '/../conn.php';
+require_once __DIR__ . '/staff_access_guard.php';
+
+map_pump_require_active_staff_session($pdo, false);
+
 if (empty($_SESSION['staff_verify_csrf_token'])) $_SESSION['staff_verify_csrf_token'] = bin2hex(random_bytes(32));
 $staffVerifyCsrfToken = (string)$_SESSION['staff_verify_csrf_token'];
 $verifyFlash = $_SESSION['verify_flash'] ?? null; unset($_SESSION['verify_flash']);

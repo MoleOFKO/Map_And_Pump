@@ -451,8 +451,8 @@ $has_unread   = $unread_count > 0;
           </div>
         </div>
         <div class="avatar-chip">
-          <div class="avatar-circle"><?= htmlspecialchars($initials, ENT_QUOTES, 'UTF-8') ?></div>
-          <div><b><?= htmlspecialchars(explode(' ', $user['full_name'] ?? 'Manager')[0]) ?></b></div>
+          <div class="avatar-circle"><a href="edit-profile.php"><?= htmlspecialchars(mb_substr($initials,0,1), ENT_QUOTES, 'UTF-8') ?></a></div>
+          <div><b><a href="edit-profile.php"><?= htmlspecialchars(explode(' ', $user['full_name'] ?? 'Manager')[0]) ?></a></b></div>
         </div>
       </div>
     </div>
