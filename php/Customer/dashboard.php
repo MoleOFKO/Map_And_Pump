@@ -21,20 +21,16 @@ if (empty($pendingStaffStatusEvents) && !empty($_SESSION['user_id'])) {
     }
 }
 if ($staffStatusPopupType === null && !empty($pendingStaffStatusEvents)) {
-    foreach ($pendingStaffStatusEvents as $event) {
-        if (!is_array($event)) {
-            continue;
-        }
-        $eventType = strtolower((string) ($event['notification_type'] ?? ''));
+    $latestStatusEvent = staff_status_latest_event($pendingStaffStatusEvents);
+    if (is_array($latestStatusEvent)) {
+        $eventType = strtolower((string) ($latestStatusEvent['notification_type'] ?? ''));
         if ($eventType === 'staff_account_disabled') {
             $staffStatusPopupType = 'disabled';
-            $staffStatusPopupNotificationId = (int) ($event['notification_id'] ?? 0);
-            break;
+            $staffStatusPopupNotificationId = (int) ($latestStatusEvent['notification_id'] ?? 0);
         }
         if ($eventType === 'staff_account_reactivated') {
             $staffStatusPopupType = 'activated';
-            $staffStatusPopupNotificationId = (int) ($event['notification_id'] ?? 0);
-            break;
+            $staffStatusPopupNotificationId = (int) ($latestStatusEvent['notification_id'] ?? 0);
         }
     }
 }
@@ -276,11 +272,29 @@ $expProgress = $nextTier !== null && $nextExp > 0
 </div>
 </div>
 
+<script>
+    function toggleAlertBox() {
+        const panel = document.getElementById('notif-alert-panel');
+        const button = document.getElementById('notif-bell');
+        if (!panel || !button) return;
+
+        const shouldOpen = panel.classList.contains('d-none');
+        panel.classList.toggle('d-none', !shouldOpen);
+        button.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
+        panel.setAttribute('aria-hidden', shouldOpen ? 'false' : 'true');
+    }
+
+    window.toggleAlertBox = window.toggleAlertBox || toggleAlertBox;
+</script>
+
 <!-- Staff account status pop-ups (customer) -->
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
 <style>
 .mp-sa-overlay{position:fixed;inset:0;z-index:2000;display:none;align-items:center;justify-content:center;padding:16px;background:rgba(0,0,0,.72);-webkit-backdrop-filter:blur(4px);backdrop-filter:blur(4px)}
 .mp-sa-overlay.is-open{display:flex;animation:mpSaFade .18s ease-out}
+body.mp-sa-locked{pointer-events:none}
+body.mp-sa-locked .mp-sa-overlay,
+body.mp-sa-locked .mp-sa-overlay *{pointer-events:auto}
 .mp-sa-card{width:100%;max-width:380px;box-sizing:border-box;padding:26px 24px 22px;background:#05070a;color:#f1f5f9;border:1px solid rgba(255,255,255,.12);border-radius:22px;box-shadow:0 24px 60px rgba(0,0,0,.6);font-family:inherit;animation:mpSaPop .22s cubic-bezier(.2,.9,.3,1.2)}
 .mp-sa-card *{box-sizing:border-box}
 .mp-sa-center{text-align:center}
@@ -357,6 +371,7 @@ $expProgress = $nextTier !== null && $nextExp > 0
         openEl.setAttribute('aria-hidden', 'true');
         openEl = null;
         document.body.style.overflow = '';
+        document.body.classList.remove('mp-sa-locked');
         if (lastFocus && lastFocus.focus) lastFocus.focus();
         document.dispatchEvent(new CustomEvent('staffstatus:close', { detail: { type: type } }));
     }
@@ -370,6 +385,7 @@ $expProgress = $nextTier !== null && $nextExp > 0
         el.classList.add('is-open');
         el.setAttribute('aria-hidden', 'false');
         document.body.style.overflow = 'hidden';
+        document.body.classList.add('mp-sa-locked');
         var btn = el.querySelector('.mp-sa-btn');
         if (btn) btn.focus();
         return true;
@@ -436,7 +452,8 @@ $expProgress = $nextTier !== null && $nextExp > 0
             return;
         }
 
-        if (openEl && t === openEl) hide();
+        // backdrop click is intentionally disabled: only the modal buttons can close it
+        return;
     });
 
     document.addEventListener('keydown', function (e) {

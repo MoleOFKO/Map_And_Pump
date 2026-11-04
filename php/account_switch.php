@@ -201,6 +201,19 @@ if ($targetMode === 'customer') {
     if ($customerRoleId <= 0) {
         account_switch_redirect_login('The Customer role is unavailable. Please sign in again.');
     }
+
+    if (!empty($_SESSION['user_id'])) {
+        foreach (staff_status_pending_for_current_user($pdo, (int) $_SESSION['user_id']) as $statusEvent) {
+            $statusNotificationId = (int) ($statusEvent['notification_id'] ?? 0);
+            if ($statusNotificationId > 0) {
+                staff_status_notification_acknowledge($pdo, (int) $_SESSION['user_id'], $statusNotificationId);
+            }
+        }
+    }
+
+    unset($_SESSION['staff_status_popup_type']);
+    $_SESSION['pending_staff_status_events'] = [];
+
     map_pump_set_current_role($pdo, $userId, $customerRoleId);
     account_switch_activate($user, $customerRoleId, 'Customer');
     header('Location: ' . account_switch_dashboard('customer', $customerRoleId));

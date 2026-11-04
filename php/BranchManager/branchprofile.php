@@ -7,10 +7,23 @@ require_once __DIR__ . '/_helpers.php';
 require_once __DIR__ . '/../conn.php';
 require_branch_manager();
 
+function map_pump_table_exists(PDO $pdo, string $tableName): bool {
+    try {
+        $stmt = $pdo->prepare(
+            "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?"
+        );
+        $stmt->execute([$tableName]);
+        return (bool) $stmt->fetchColumn();
+    } catch (Throwable $e) {
+        return false;
+    }
+}
+
 $ctx    = current_context($pdo);
 $user   = $ctx['user'];
 $branch = $ctx['branch'];
 $initials = initials($user['full_name']);
+$pumpsTableExists = map_pump_table_exists($pdo, 'pumps');
 
 // ------------------ POST: update branch profile ------------------
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -70,13 +83,17 @@ $stmt = $pdo->prepare("SELECT COUNT(*) FROM staff WHERE branch_id = :b AND is_ac
 $stmt->execute([':b' => $branch['branch_id']]);
 $active_staff = (int)$stmt->fetchColumn();
 
-$stmt = $pdo->prepare("SELECT COUNT(*) FROM pumps WHERE branch_id = :b");
-$stmt->execute([':b' => $branch['branch_id']]);
-$pump_total = (int)$stmt->fetchColumn();
+$pump_total = 0;
+$pump_active = 0;
+if ($pumpsTableExists) {
+    $stmt = $pdo->prepare("SELECT COUNT(*) FROM pumps WHERE branch_id = :b");
+    $stmt->execute([':b' => $branch['branch_id']]);
+    $pump_total = (int)$stmt->fetchColumn();
 
-$stmt = $pdo->prepare("SELECT COUNT(*) FROM pumps WHERE branch_id = :b AND status = 'active'");
-$stmt->execute([':b' => $branch['branch_id']]);
-$pump_active = (int)$stmt->fetchColumn();
+    $stmt = $pdo->prepare("SELECT COUNT(*) FROM pumps WHERE branch_id = :b AND status = 'active'");
+    $stmt->execute([':b' => $branch['branch_id']]);
+    $pump_active = (int)$stmt->fetchColumn();
+}
 
 $stmt = $pdo->prepare("
     SELECT COUNT(DISTINCT customer_id)
@@ -104,9 +121,12 @@ $row = $stmt->fetch();
 $stock_pct = ($row && $row['cap'] > 0) ? round(($row['filled'] / $row['cap']) * 100) : 0;
 
 // pumps list for the map/grid
-$stmt = $pdo->prepare("SELECT * FROM pumps WHERE branch_id = :b ORDER BY pump_no ASC");
-$stmt->execute([':b' => $branch['branch_id']]);
-$pumps = $stmt->fetchAll();
+$pumps = [];
+if ($pumpsTableExists) {
+    $stmt = $pdo->prepare("SELECT * FROM pumps WHERE branch_id = :b ORDER BY pump_no ASC");
+    $stmt->execute([':b' => $branch['branch_id']]);
+    $pumps = $stmt->fetchAll();
+}
 
 // tanks summary
 $stmt = $pdo->prepare("SELECT * FROM tanks WHERE branch_id = :b ORDER BY tank_id ASC");

@@ -152,6 +152,29 @@ if ($currentPage == 'car_license.php') $viewTitle = "Car License Setup";
 $customerStaffStatusNotifications = [];
 try {
     $customerStaffStatusNotifications = staff_status_pending_for_current_user($pdo, (int) $_SESSION['user_id']);
+    if (empty($customerStaffStatusNotifications) && !empty($_SESSION['user_id'])) {
+        $customerStatusFallbackStmt = $pdo->prepare(
+            "SELECT notification_id, request_id, recipient_user_id, notification_type, subject, message, created_at, read_at
+             FROM notifications
+             WHERE recipient_user_id = :user_id
+               AND notification_type IN ('staff_account_disabled', 'staff_account_reactivated')
+               AND read_at IS NULL
+               AND COALESCE(delivery_status, '') <> 'read'
+             ORDER BY created_at DESC, notification_id DESC
+             LIMIT 10"
+        );
+        $customerStatusFallbackStmt->execute([':user_id' => (int) $_SESSION['user_id']]);
+        foreach ($customerStatusFallbackStmt->fetchAll(PDO::FETCH_ASSOC) as $customerStatusRow) {
+            $customerStaffStatusNotifications[] = [
+                'notification_id' => (int) ($customerStatusRow['notification_id'] ?? 0),
+                'subject' => (string) ($customerStatusRow['subject'] ?? 'Staff account update'),
+                'message' => (string) ($customerStatusRow['message'] ?? ''),
+                'notification_type' => (string) ($customerStatusRow['notification_type'] ?? ''),
+                'created_at' => (string) ($customerStatusRow['created_at'] ?? ''),
+                'is_read' => !empty($customerStatusRow['read_at']),
+            ];
+        }
+    }
     if (!empty($customerStaffStatusNotifications)) {
         $_SESSION['pending_staff_status_events'] = $customerStaffStatusNotifications;
     }
@@ -188,7 +211,7 @@ $customerNotificationCount = count($customerAlertNotifications);
 // Refresh unread badge count from the live notifications table for the current customer.
 if (!empty($_SESSION['user_id'])) {
     $liveUnreadNotificationCount = (int) $pdo->query(
-        "SELECT COUNT(*) FROM notifications WHERE recipient_user_id = " . (int) $_SESSION['user_id'] . " AND read_at IS NULL"
+        "SELECT COUNT(*) FROM notifications WHERE recipient_user_id = " . (int) $_SESSION['user_id'] . " AND read_at IS NULL AND COALESCE(delivery_status, '') <> 'read'"
     )->fetchColumn();
     if ($liveUnreadNotificationCount > 0) {
         $customerNotificationCount = $liveUnreadNotificationCount;
