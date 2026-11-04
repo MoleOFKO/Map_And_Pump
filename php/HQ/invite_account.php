@@ -14,25 +14,13 @@ $email = strtolower(trim((string)($_POST['email'] ?? '')));
 $role = strtolower(trim((string)($_POST['role'] ?? '')));
 $password = (string) ($_POST['password'] ?? '');
 $stationValue = trim((string)($_POST['station_id'] ?? ''));
-$stationId = $stationValue === '' ? null : filter_var($stationValue, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+$stationNotAssigned = $stationValue === '' || $stationValue === 'none';
+$stationId = $stationNotAssigned ? null : filter_var($stationValue, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
 $hqId = map_pump_current_hq_id($pdo);
 $roleId = $role === 'manager' ? 4 : ($role === 'staff' ? 5 : 0);
 
-if ($hqId <= 0 || !filter_var($email, FILTER_VALIDATE_EMAIL) || $roleId <= 0 || ($stationValue !== '' && !$stationId) || ($roleId === 5 && !$stationId)) {
+if ($hqId <= 0 || !filter_var($email, FILTER_VALIDATE_EMAIL) || $roleId <= 0 || (!$stationNotAssigned && !$stationId) || ($roleId === 5 && !$stationId)) {
     $_SESSION['hq_account_message'] = ['type' => 'danger', 'text' => 'Please provide a valid email and role. Staff invitations require a station assignment.'];
-    header('Location: account.php');
-    exit;
-}
-
-if ($roleId === 4 && (strlen($password) < 8 || strlen($password) > 15
-    || !preg_match('/[a-z]/', $password)
-    || !preg_match('/[A-Z]/', $password)
-    || !preg_match('/\d/', $password)
-    || !preg_match('/[^a-zA-Z0-9]/', $password))) {
-    $_SESSION['hq_account_message'] = [
-        'type' => 'danger',
-        'text' => 'Branch manager passwords must be 8–15 characters and include uppercase and lowercase letters, a number, and a symbol.',
-    ];
     header('Location: account.php');
     exit;
 }
@@ -57,12 +45,13 @@ try {
         }
     }
 
-    if ($roleId === 4 && !$stationId) {
-        throw new RuntimeException('Assign a station to the branch manager before sending the invitation.');
-    }
-
     $userStmt = $pdo->prepare(
         "SELECT u.user_id, u.user_name, u.hashed_password, u.status,
+                (SELECT manager_branch.branch_password
+                 FROM branches manager_branch
+                 WHERE manager_branch.manager_user_id = u.user_id
+                 ORDER BY manager_branch.branch_id
+                 LIMIT 1) AS branch_password,
                 primary_role.role_name AS primary_role_name,
                 active_role.role_name AS active_role_name
          FROM users u
@@ -99,6 +88,16 @@ try {
         throw new RuntimeException('No customer account is registered with that email address.');
     }
 
+    if ($roleId === 4 && $createdAccount && (strlen($password) < 8 || strlen($password) > 15
+        || !preg_match('/[a-z]/', $password)
+        || !preg_match('/[A-Z]/', $password)
+        || !preg_match('/\d/', $password)
+        || !preg_match('/[^a-zA-Z0-9]/', $password))) {
+        throw new RuntimeException(
+            'For a new branch manager account, the password must be 8–15 characters and include uppercase and lowercase letters, a number, and a symbol.'
+        );
+    }
+
     if ($roleId === 4 && !$createdAccount && (int) $invitee['user_id'] > 0) {
         $existingAssignmentStmt = $pdo->prepare(
             'SELECT station_id, headquarter_id
@@ -110,20 +109,6 @@ try {
         $existingAssignment = $existingAssignmentStmt->fetch(PDO::FETCH_ASSOC);
         if ($existingAssignment && (int) $existingAssignment['headquarter_id'] !== $hqId) {
             throw new RuntimeException('This customer is already assigned as a branch manager under another HQ.');
-        }
-        if (!$stationId && $existingAssignment) {
-            $stationId = (int) $existingAssignment['station_id'];
-            $existingStationStmt = $pdo->prepare(
-                'SELECT branch_name AS station_name
-                 FROM branches
-                 WHERE branch_id = ?
-                 LIMIT 1'
-            );
-            $existingStationStmt->execute([$stationId]);
-            $existingStationName = $existingStationStmt->fetchColumn();
-            if ($existingStationName !== false) {
-                $station = ['station_name' => (string) $existingStationName];
-            }
         }
     }
 
@@ -151,23 +136,31 @@ try {
     );
 
     $notificationId = null;
+    $passwordHash = null;
+    if ($roleId === 4) {
+        $existingPasswordHash = trim((string) ($invitee['hashed_password'] ?? ''));
+        $existingBranchPasswordHash = trim((string) ($invitee['branch_password'] ?? ''));
+        $passwordHash = $createdAccount
+            ? password_hash($password, PASSWORD_DEFAULT)
+            : ($existingPasswordHash !== '' ? $existingPasswordHash : ($existingBranchPasswordHash !== '' ? $existingBranchPasswordHash : null));
+    }
     $pdo->beginTransaction();
     if ($roleId === 4) {
         if ($createdAccount) {
             $createAccount = $pdo->prepare(
                 "INSERT INTO users
                     (user_name, email, hashed_password, role_id, business_role_id, current_role_id, status, created_at, updated_at)
-                 VALUES (?, ?, NULL, 6, 4, 4, 'active', NOW(), NOW())"
+                 VALUES (?, ?, ?, 6, 4, 4, 'active', NOW(), NOW())"
             );
-            $createAccount->execute([$invitee['user_name'], $email]);
+            $createAccount->execute([$invitee['user_name'], $email, $passwordHash]);
             $invitee['user_id'] = (int) $pdo->lastInsertId();
         } else {
             $userUpdate = $pdo->prepare(
                 "UPDATE users
-                  SET business_role_id = 4, current_role_id = 4, status = 'active', updated_at = NOW()
+                  SET hashed_password = COALESCE(hashed_password, ?), business_role_id = 4, current_role_id = 4, status = 'active', updated_at = NOW()
                  WHERE user_id = ?"
             );
-              $userUpdate->execute([(int) $invitee['user_id']]);
+              $userUpdate->execute([$passwordHash, (int) $invitee['user_id']]);
         }
 
         if ($stationId) {
@@ -197,9 +190,19 @@ try {
             $branchManagerUpdate = $pdo->prepare('UPDATE branches SET manager_user_id = ?, branch_password = ? WHERE branch_id = ?');
             $branchManagerUpdate->execute([
                 (int) $invitee['user_id'],
-                password_hash($password, PASSWORD_DEFAULT),
+                $passwordHash,
                 $stationId,
             ]);
+        } else {
+            $clearStationManager = $pdo->prepare(
+                'UPDATE station_business_scope SET branch_manager_user_id = NULL
+                 WHERE branch_manager_user_id = ? AND headquarter_id = ?'
+            );
+            $clearStationManager->execute([(int) $invitee['user_id'], $hqId]);
+            $clearBranchManager = $pdo->prepare(
+                'UPDATE branches SET manager_user_id = NULL, branch_password = NULL WHERE manager_user_id = ?'
+            );
+            $clearBranchManager->execute([(int) $invitee['user_id']]);
         }
 
         $accountScope = $pdo->prepare(
