@@ -187,7 +187,7 @@ if (!function_exists('map_pump_latest_station_inventory_sql')) {
                            CAST(t.current_l AS DECIMAL(12,2)) AS current_amount_liters,
                            t.updated_at
                     FROM tanks t
-                    LEFT JOIN oil_types ot ON LOWER(TRIM(ot.oil_name)) = LOWER(TRIM(t.fuel_name))";
+                          LEFT JOIN oil_types ot ON ot.oil_type_id = t.oil_type_id";
         }
 
         return "SELECT soi.*

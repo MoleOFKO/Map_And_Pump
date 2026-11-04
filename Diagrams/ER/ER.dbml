@@ -59,6 +59,18 @@ Table users {
   last_login_at timestamp
 }
 
+Table business_account_scope {
+  business_account_id int [pk, increment]
+  user_id int [not null, unique]
+  business_role_id int [not null]
+  headquarter_id int
+  branch_manager_user_id int
+  station_id int
+  status varchar(50) [not null, default: 'active']
+  created_at timestamp [not null, default: `CURRENT_TIMESTAMP`]
+  updated_at timestamp [not null, default: `CURRENT_TIMESTAMP`]
+}
+
 Table sessions {
   session_id int [pk, increment]
   user_id int [not null]
@@ -288,6 +300,11 @@ Ref: users.business_role_id > roles.role_id
 Ref: users.current_role_id > roles.role_id
 Ref: users.license_id > user_license.license_id
 Ref: headquarter.headquarters_owner_id > users.user_id
+Ref: business_account_scope.user_id > users.user_id
+Ref: business_account_scope.business_role_id > roles.role_id
+Ref: business_account_scope.headquarter_id > headquarter.headquarter_id
+Ref: business_account_scope.branch_manager_user_id > users.user_id
+Ref: business_account_scope.station_id > branches.branch_id
 Ref: sessions.user_id > users.user_id
 Ref: branches.manager_user_id > users.user_id
 Ref: staff.user_id > users.user_id

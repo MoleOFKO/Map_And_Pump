@@ -16,10 +16,18 @@ Table headquarter {
 Table users {
   user_id int [pk]
   license_id int [ref: > user_license.license_id]
-  headquarter_id int [ref: > headquarter.headquarter_id]
   role_id int [ref: > roles.role_id]
   business_role_id int [ref: > roles.role_id]
   current_role_id int [ref: > roles.role_id]
+}
+
+Table business_account_scope {
+  business_account_id int [pk]
+  user_id int [ref: > users.user_id, unique]
+  business_role_id int [ref: > roles.role_id]
+  headquarter_id int [ref: > headquarter.headquarter_id]
+  branch_manager_user_id int [ref: > users.user_id]
+  station_id int [ref: > branches.branch_id]
 }
 
 Table sessions {
