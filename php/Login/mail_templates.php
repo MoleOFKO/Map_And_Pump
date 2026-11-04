@@ -191,7 +191,7 @@ function mail_build_account_notice(array $context): array
             . ($accountActive
                 ? ($passwordSetupSent
                     ? "Your Map & Pump account has been added to this role. Use the separate password setup email if you need to create your password.\n\n"
-                    : "Your Map & Pump account has been added to this role. Sign in with your existing password.\n\n")
+                    : "Your Map & Pump account has been added to this role. Sign in with the password configured for your account.\n\n")
                 : "Sign in to Map & Pump to review and respond to this invitation.\n\n")
             . $footer['text'];
         $html = '<div style="font-family:Arial,Helvetica,sans-serif;line-height:1.55;color:#111827;max-width:560px">'
@@ -202,7 +202,7 @@ function mail_build_account_notice(array $context): array
             . '<p>' . ($accountActive
                 ? ($passwordSetupSent
                     ? 'Your account has been added to this role. Check your separate password setup email if you need to create a password.'
-                    : 'Your account has been added to this role. Sign in with your existing password.')
+                    : 'Your account has been added to this role. Sign in with the password configured for your account.')
                 : 'Sign in to Map &amp; Pump to review this invitation.') . '</p>'
             . $footer['html'] . '</div>';
         return ['subject' => $subject, 'html' => $html, 'text' => $text];

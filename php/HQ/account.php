@@ -364,11 +364,16 @@ endif; ?>
                 <form method="POST" action="./invite_account.php" id="inviteAccountForm">
                     <div class="modal-header border-0"><h5 class="modal-title" id="inviteAccountModalLabel">Add Branch Manager</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button></div>
                     <div class="modal-body">
-                        <p class="small text-white-50">Adding a branch manager activates the role immediately and sends an invitation email with a password setup link. A station assignment is required so the manager password can be stored securely. Staff invitations require an existing customer account and station assignment.</p>
+                        <p class="small text-white-50">Adding a branch manager activates the role immediately and sends an invitation email. Set the manager's password here; it will be stored securely for branch manager sign-in. Staff invitations require an existing customer account and station assignment.</p>
                         <label class="form-label" for="inviteEmail">Customer email</label>
                         <input class="form-control mb-3" type="email" id="inviteEmail" name="email" required>
                         <label class="form-label" for="inviteRole">Role</label>
                         <select class="form-select mb-3" id="inviteRole" name="role" required><option value="manager">Branch Manager</option><option value="staff">Staff</option></select>
+                        <div id="inviteManagerPasswordWrap">
+                            <label class="form-label" for="inviteManagerPassword">Branch manager password</label>
+                            <input class="form-control mb-3" type="password" id="inviteManagerPassword" name="password" minlength="8" maxlength="15" pattern="(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^a-zA-Z0-9]).{8,15}" title="Use 8–15 characters with uppercase and lowercase letters, a number, and a symbol." autocomplete="new-password" required>
+                            <div class="form-text text-white-50 mb-3">Use 8–15 characters with uppercase and lowercase letters, a number, and a symbol.</div>
+                        </div>
                         <div class="d-flex align-items-center justify-content-between gap-2 mb-2">
                             <label class="form-label mb-0" for="inviteStation">Station</label>
                             <button type="button" class="btn btn-sm btn-outline-info" data-bs-toggle="modal" data-bs-target="#quickStationModal" data-reopen-source="inviteAccountModal">+ Add Station</button>
@@ -663,6 +668,20 @@ endif; ?>
 
         const inviteAccountForm = document.getElementById('inviteAccountForm');
         if (inviteAccountForm) {
+            const inviteRole = document.getElementById('inviteRole');
+            const managerPasswordWrap = document.getElementById('inviteManagerPasswordWrap');
+            const managerPassword = document.getElementById('inviteManagerPassword');
+            const syncManagerPasswordField = function () {
+                const isManager = inviteRole.value === 'manager';
+                managerPasswordWrap.hidden = !isManager;
+                managerPassword.required = isManager;
+                if (!isManager) {
+                    managerPassword.value = '';
+                }
+            };
+            inviteRole.addEventListener('change', syncManagerPasswordField);
+            syncManagerPasswordField();
+
             inviteAccountForm.addEventListener('submit', function (event) {
                 if (!inviteAccountForm.checkValidity()) {
                     event.preventDefault();
