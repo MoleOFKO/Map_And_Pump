@@ -38,7 +38,7 @@
                 <?php endif; ?>
             </div>
             <div class="p-4 bg-black bg-opacity-20">
-                <?php if (!($customerDriverLicenseExpired ?? false) && ($linkedBusinessRoleNameHeader ?? '') !== ''): ?>
+                <?php if ((!(($customerDriverLicenseExpired ?? false)) || ($linkedBusinessRoleNameHeader ?? '') === 'HQ') && ($linkedBusinessRoleNameHeader ?? '') !== ''): ?>
                     <form action="../account_switch.php" method="POST" class="mb-3">
                         <input type="hidden" name="mode" value="business">
                         <button type="submit" class="btn btn-outline-info w-100 py-2">

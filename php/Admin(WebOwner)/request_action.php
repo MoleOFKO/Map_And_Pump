@@ -121,7 +121,7 @@ try {
         }
     }
 
-    $createdHeadquarterId = null;
+    $createdHeadquarterId = (int) ($target['headquarter_id'] ?? 0) ?: null;
     $createdOwnerUserId = null;
     $createdOwnerEmail = null;
     $createdOwnerSetupUrl = null;
@@ -171,7 +171,7 @@ try {
         }
     }
 
-    if ($action === 'approve' && strtolower((string) $target['request_type']) === 'hq_registration' && empty($target['headquarter_id'])) {
+    if ($action === 'approve' && strtolower((string) $target['request_type']) === 'hq_registration') {
         $details = json_decode((string) ($target['request_details'] ?? ''), true);
         if (!is_array($details)) {
             throw new RuntimeException('The company registration details are invalid.');
@@ -195,42 +195,44 @@ try {
             ? max(0.0, (float) $details['package_amount_mmk'])
             : ($extraStationCount > 0 ? (float) ($paymentRow['amount_mmk'] ?? 0) : 0.0);
 
-        $headquarterInsert = $conn->prepare(
-            'INSERT INTO headquarter
-                (company_name, company_logo, contact_number, headquarter_email, location,
-                 business_license, business_license_image, business_license_expire_date,
-                 expire_at, station_count, status)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, \'pending\')'
-        );
-        if (!$headquarterInsert) {
-            throw new RuntimeException('Could not prepare the company account creation.');
-        }
         $companyName = (string) $target['sender_entity'];
-        $companyLogo = (string) $target['headquarter_company_logo'];
-        $companyPhone = (string) $target['headquarter_contact_number'];
-        $companyEmail = (string) $target['headquarter_email'];
-        $companyLocation = (string) $target['location'];
-        $businessLicense = (string) $target['document_name'];
-        $licenseImage = (string) $target['document_path'];
-        $includedStationCount = BILLING_HQ_INCLUDED_STATION_SLOTS;
-        $headquarterInsert->bind_param(
-            'sssssssssi',
-            $companyName,
-            $companyLogo,
-            $companyPhone,
-            $companyEmail,
-            $companyLocation,
-            $businessLicense,
-            $licenseImage,
-            $licenseExpiryDate,
-            $licenseExpiryTs,
-            $includedStationCount
-        );
-        if (!$headquarterInsert->execute()) {
-            throw new RuntimeException('Could not create the approved company account.');
+        if ($createdHeadquarterId === null) {
+            $headquarterInsert = $conn->prepare(
+                'INSERT INTO headquarter
+                    (company_name, company_logo, contact_number, headquarter_email, location,
+                     business_license, business_license_image, business_license_expire_date,
+                     expire_at, station_count, status)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, \'pending\')'
+            );
+            if (!$headquarterInsert) {
+                throw new RuntimeException('Could not prepare the company account creation.');
+            }
+            $companyLogo = (string) $target['headquarter_company_logo'];
+            $companyPhone = (string) $target['headquarter_contact_number'];
+            $companyEmail = (string) $target['headquarter_email'];
+            $companyLocation = (string) $target['location'];
+            $businessLicense = (string) $target['document_name'];
+            $licenseImage = (string) $target['document_path'];
+            $includedStationCount = BILLING_HQ_INCLUDED_STATION_SLOTS;
+            $headquarterInsert->bind_param(
+                'sssssssssi',
+                $companyName,
+                $companyLogo,
+                $companyPhone,
+                $companyEmail,
+                $companyLocation,
+                $businessLicense,
+                $licenseImage,
+                $licenseExpiryDate,
+                $licenseExpiryTs,
+                $includedStationCount
+            );
+            if (!$headquarterInsert->execute()) {
+                throw new RuntimeException('Could not create the approved company account.');
+            }
+            $createdHeadquarterId = (int) $conn->insert_id;
+            $headquarterInsert->close();
         }
-        $createdHeadquarterId = (int) $conn->insert_id;
-        $headquarterInsert->close();
 
         // Set service period without clobbering license expire_at / created_at.
         // Re-assert expire_at here in case the column still has ON UPDATE CURRENT_TIMESTAMP.
@@ -240,7 +242,8 @@ try {
             : null;
         $serviceExpiryUpdate = $conn->prepare(
             'UPDATE headquarter
-             SET service_expires_at = ?,
+             SET status = \'pending\',
+                 service_expires_at = ?,
                  included_stations_free_until = NULL,
                  expire_at = ?,
                  business_license_expire_date = ?
@@ -381,7 +384,7 @@ try {
             $ownerUserName = hq_unique_username($ownerName, $ownerEmail);
             $ownerInsert = $conn->prepare(
                 "INSERT INTO users (user_name, email, hashed_password, role_id, business_role_id, current_role_id, status, created_at, updated_at)
-                 VALUES (?, ?, NULL, ?, ?, ?, 'pending', NOW(), NOW())"
+                 VALUES (?, ?, NULL, ?, ?, ?, 'active', NOW(), NOW())"
             );
             if (!$ownerInsert) {
                 throw new RuntimeException('Could not prepare the HQ owner account.');
@@ -472,16 +475,16 @@ try {
     }
     $requestUpdate->close();
 
-    if ($recipientUserId !== null && $requestType === 'hq_registration' && $action === 'approve') {
-        $userUpdate = $conn->prepare('UPDATE users SET status = \'pending\', updated_at = NOW() WHERE user_id = ?');
-        if (!$userUpdate) {
-            throw new RuntimeException('Could not prepare the pending HQ owner status update.');
+    if ($requestType === 'hq_registration' && $action === 'reject' && $createdHeadquarterId !== null) {
+        $headquarterReject = $conn->prepare("UPDATE headquarter SET status = 'rejected' WHERE headquarter_id = ?");
+        if (!$headquarterReject) {
+            throw new RuntimeException('Could not prepare the HQ registration rejection.');
         }
-        $userUpdate->bind_param('i', $recipientUserId);
-        if (!$userUpdate->execute()) {
-            throw new RuntimeException('Could not set the HQ owner account to pending.');
+        $headquarterReject->bind_param('i', $createdHeadquarterId);
+        if (!$headquarterReject->execute()) {
+            throw new RuntimeException('Could not reject the HQ registration.');
         }
-        $userUpdate->close();
+        $headquarterReject->close();
     } elseif ($recipientUserId !== null && $requestType === 'license_modification') {
         $accountStatus = $newStatus;
         if ($requestType === 'license_modification' && $action === 'reject') {

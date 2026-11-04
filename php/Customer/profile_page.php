@@ -221,7 +221,13 @@ if (isset($_SESSION['user_id']) && ctype_digit((string) $_SESSION['user_id'])) {
             'SELECT u.role_id, u.business_role_id,
                     primary_role.role_name AS primary_role_name,
                     business_role.role_name AS business_role_name,
-                    customer_role.role_id AS customer_role_id
+                    customer_role.role_id AS customer_role_id,
+                    (SELECT h.company_name
+                     FROM business_account_scope linked_scope
+                     INNER JOIN headquarter h ON h.headquarter_id = linked_scope.headquarter_id
+                     WHERE linked_scope.user_id = u.user_id
+                       AND linked_scope.business_role_id = customer_role.role_id
+                     LIMIT 1) AS linked_hq_name
              FROM users u
              LEFT JOIN roles primary_role ON primary_role.role_id = u.role_id
              LEFT JOIN roles business_role ON business_role.role_id = u.business_role_id
@@ -232,6 +238,9 @@ if (isset($_SESSION['user_id']) && ctype_digit((string) $_SESSION['user_id'])) {
         $businessStmt->execute([(int) $_SESSION['user_id']]);
         $profileRoles = $businessStmt->fetch(PDO::FETCH_ASSOC) ?: [];
         $linkedBusinessRoleName = trim((string) ($profileRoles['business_role_name'] ?? ''));
+        if ($linkedBusinessRoleName === '' && trim((string) ($profileRoles['linked_hq_name'] ?? '')) !== '') {
+            $linkedBusinessRoleName = 'HQ';
+        }
         
         $activeCarId = customer_active_car_id($pdo, (int) $_SESSION['user_id']);
 
@@ -326,7 +335,7 @@ include 'share_header.php';
 
     <div class="col-lg-6">
         <div class="d-flex flex-column gap-4 h-100">
-            <?php if (!$customerDriverLicenseExpired): ?>
+            <?php if (!$customerDriverLicenseExpired || $linkedBusinessRoleName === 'HQ'): ?>
             <div class="dashboard-panel-card">
                 <div class="d-flex align-items-start justify-content-between gap-3 mb-3">
                     <div class="d-flex align-items-start gap-3">

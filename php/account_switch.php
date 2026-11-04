@@ -156,8 +156,10 @@ $targetMode = strtolower(trim((string) ($_POST['mode'] ?? '')));
 
 try {
     $stmt = $pdo->prepare(
-        'SELECT u.user_id, u.user_name, u.email, u.oauth_avatar_url, u.status, u.role_id, u.business_role_id,
+        'SELECT u.user_id, u.user_public_id, u.user_name, u.email, u.oauth_avatar_url, u.status, u.role_id, u.business_role_id,
                 COALESCE(owned_hq.headquarter_id, bas.headquarter_id) AS headquarter_id,
+                bas.business_role_id AS scope_business_role_id,
+                bas.headquarter_id AS scope_headquarter_id,
                 COALESCE(
                     (SELECT st.branch_id FROM staff st WHERE st.user_id = u.user_id LIMIT 1),
                     (SELECT MIN(b.branch_id) FROM branches b WHERE b.manager_user_id = u.user_id),
@@ -185,7 +187,7 @@ if (!$user) {
     account_switch_redirect_login('Your account could not be found. Please sign in again.');
 }
 
-if ((int) ($_SESSION['role_id'] ?? 0) === 6 || strtolower(trim((string) ($_SESSION['role_name'] ?? ''))) === 'customer') {
+if ($targetMode !== 'business' && ((int) ($_SESSION['role_id'] ?? 0) === 6 || strtolower(trim((string) ($_SESSION['role_name'] ?? ''))) === 'customer')) {
     $licenseExpiryState = customer_sync_license_expiry($pdo, $userId);
     if (($licenseExpiryState['driver']['status'] ?? '') === 'expired') {
         header('Location: /php/Customer/profile_page.php');
@@ -214,6 +216,40 @@ if ($targetMode === 'customer') {
     unset($_SESSION['staff_status_popup_type']);
     $_SESSION['pending_staff_status_events'] = [];
 
+    $hqRoleId = account_switch_role_id($pdo, 'HQ');
+    $isHqProfile = $hqRoleId > 0 && (
+        (int) ($user['role_id'] ?? 0) === $hqRoleId
+        || (int) ($user['business_role_id'] ?? 0) === $hqRoleId
+        || (int) ($_SESSION['role_id'] ?? 0) === $hqRoleId
+    );
+    if ($isHqProfile && (int) ($user['headquarter_id'] ?? 0) > 0) {
+        $linkedCustomerStmt = $pdo->prepare(
+            "SELECT u.user_id, u.user_public_id, u.user_name, u.email, u.oauth_avatar_url,
+                    u.status, u.role_id, u.business_role_id, u.license_id,
+                    bas.headquarter_id
+             FROM business_account_scope bas
+             INNER JOIN users u ON u.user_id = bas.user_id
+             INNER JOIN headquarter h ON h.headquarter_id = bas.headquarter_id
+                 AND h.headquarters_owner_id = ?
+             WHERE bas.headquarter_id = ? AND bas.business_role_id = ?
+               AND u.role_id = ?
+               AND LOWER(TRIM(u.status)) IN ('active', 'approved', 'license_expired')
+             LIMIT 1"
+        );
+        $linkedCustomerStmt->execute([$userId, (int) $user['headquarter_id'], $customerRoleId, $customerRoleId]);
+        $linkedCustomer = $linkedCustomerStmt->fetch(PDO::FETCH_ASSOC);
+        if ($linkedCustomer) {
+            customer_sync_license_expiry($pdo, (int) $linkedCustomer['user_id']);
+            map_pump_set_current_role($pdo, (int) $linkedCustomer['user_id'], $customerRoleId);
+            account_switch_activate($linkedCustomer, $customerRoleId, 'Customer');
+            $licenseAccess = customer_license_access($pdo, (int) $linkedCustomer['user_id']);
+            header('Location: ' . ($licenseAccess['is_approved']
+                ? account_switch_dashboard('customer', $customerRoleId)
+                : '/php/Customer/license.php'));
+            exit;
+        }
+    }
+
     map_pump_set_current_role($pdo, $userId, $customerRoleId);
     account_switch_activate($user, $customerRoleId, 'Customer');
     header('Location: ' . account_switch_dashboard('customer', $customerRoleId));
@@ -221,6 +257,35 @@ if ($targetMode === 'customer') {
 }
 
 if ($targetMode === 'business') {
+    $scopedHqId = (int) ($user['scope_headquarter_id'] ?? 0);
+    if ((int) ($user['scope_business_role_id'] ?? 0) === $customerRoleId && $scopedHqId > 0) {
+        $hqRoleId = account_switch_role_id($pdo, 'HQ');
+        $linkedHqStmt = $pdo->prepare(
+            'SELECT owner.user_id, owner.user_public_id, owner.user_name, owner.email,
+                    owner.oauth_avatar_url, owner.status, owner.role_id, owner.business_role_id,
+                    owner.license_id, h.headquarter_id,
+                    primary_role.role_name AS primary_role_name,
+                    business_role.role_name AS business_role_name
+             FROM headquarter h
+             INNER JOIN users owner ON owner.user_id = h.headquarters_owner_id
+             LEFT JOIN roles primary_role ON primary_role.role_id = owner.role_id
+             LEFT JOIN roles business_role ON business_role.role_id = owner.business_role_id
+             WHERE h.headquarter_id = ?
+               AND (owner.role_id = ? OR owner.business_role_id = ? OR owner.current_role_id = ?)
+               AND LOWER(TRIM(owner.status)) IN (\'active\', \'approved\', \'pending\')
+             LIMIT 1'
+        );
+        $linkedHqStmt->execute([$scopedHqId, $hqRoleId, $hqRoleId, $hqRoleId]);
+        $linkedHq = $linkedHqStmt->fetch(PDO::FETCH_ASSOC);
+        if (!$linkedHq) {
+            account_switch_redirect_login('The linked HQ account is unavailable.');
+        }
+        map_pump_set_current_role($pdo, (int) $linkedHq['user_id'], $hqRoleId);
+        account_switch_activate($linkedHq, $hqRoleId, 'HQ');
+        header('Location: ' . account_switch_dashboard('HQ', $hqRoleId));
+        exit;
+    }
+
     $staffRoleId = account_switch_role_id($pdo, 'staff');
     $staffRecord = $userId > 0 ? account_switch_allowed_staff_record($pdo, $userId) : null;
     $isCustomerSwitchingToStaff = $businessRoleId > 0 && $staffRoleId > 0 && $businessRoleId === $staffRoleId;

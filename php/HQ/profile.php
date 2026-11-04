@@ -13,6 +13,10 @@ if (empty($_SESSION['user_id'])) {
 }
 
 $userId = (int) $_SESSION['user_id'];
+if (empty($_SESSION['hq_customer_link_csrf'])) {
+    $_SESSION['hq_customer_link_csrf'] = bin2hex(random_bytes(32));
+}
+$customerLinkCsrf = (string) $_SESSION['hq_customer_link_csrf'];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     header('Content-Type: application/json; charset=utf-8');
@@ -227,6 +231,33 @@ $profileEmail = !empty($user['email']) ? $user['email'] : '';
 $profileImage = map_pump_profile_avatar_url((string) ($user['oauth_avatar_url'] ?? ''), '');
 $profileInitial = map_pump_profile_initial($profileName, 'H');
 $profileFallbackUrl = map_pump_profile_initial_svg($profileName, 'H');
+$customerRoleStmt = $pdo->query("SELECT role_id FROM roles WHERE LOWER(TRIM(role_name)) = 'customer' LIMIT 1");
+$customerRoleId = (int) ($customerRoleStmt->fetchColumn() ?: 0);
+$headquarterId = (int) ($_SESSION['headquarter_id'] ?? 0);
+$linkedCustomer = null;
+$canLinkCustomer = false;
+if ($headquarterId > 0 && $customerRoleId > 0) {
+    $customerLinkStmt = $pdo->prepare(
+        'SELECT u.user_id, u.user_name, u.email, u.status
+         FROM headquarter h
+         INNER JOIN business_account_scope bas ON bas.headquarter_id = h.headquarter_id
+             AND bas.business_role_id = ?
+         INNER JOIN users u ON u.user_id = bas.user_id
+         WHERE h.headquarter_id = ? AND h.headquarters_owner_id = ?
+           AND u.role_id = ?
+         LIMIT 1'
+    );
+    $customerLinkStmt->execute([$customerRoleId, $headquarterId, $userId, $customerRoleId]);
+    $linkedCustomer = $customerLinkStmt->fetch(PDO::FETCH_ASSOC) ?: null;
+    $ownerCheck = $pdo->prepare('SELECT 1 FROM headquarter WHERE headquarter_id = ? AND headquarters_owner_id = ? LIMIT 1');
+    $ownerCheck->execute([$headquarterId, $userId]);
+    $canLinkCustomer = (bool) $ownerCheck->fetchColumn();
+}
+$linkedCustomerCanSwitch = $linkedCustomer !== null
+    && in_array(strtolower(trim((string) ($linkedCustomer['status'] ?? ''))), ['active', 'approved', 'license_expired'], true);
+$hasCustomerProfile = (int) ($user['role_id'] ?? 0) === $customerRoleId || $linkedCustomerCanSwitch;
+$linkedCustomerUnavailable = $linkedCustomer !== null && !$linkedCustomerCanSwitch;
+$canLinkCustomer = $canLinkCustomer && $linkedCustomer === null;
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -421,12 +452,19 @@ $profileFallbackUrl = map_pump_profile_initial_svg($profileName, 'H');
                 <!-- Account Interface Switcher Card -->
                 <div class="card p-4 text-center">
                     <h3 class="mb-3">Account Interface Switcher</h3>
-                    <p class="subtitle mb-4">Interlink your account proxy with downstream customer interface metrics.</p>
-
-                    <form action="../account_switch.php" method="POST" target="_top">
-                        <input type="hidden" name="mode" value="customer">
-                        <button type="submit" class="btn btn-outline-primary w-100">Switch to Customer Profile</button>
-                    </form>
+                    <p class="subtitle mb-4">Link a customer account to this HQ to switch between the two profiles.</p>
+                    <?php if ($hasCustomerProfile): ?>
+                        <form action="../account_switch.php" method="POST" target="_top">
+                            <input type="hidden" name="mode" value="customer">
+                            <button type="submit" class="btn btn-outline-primary w-100">Switch to Customer Profile</button>
+                        </form>
+                    <?php elseif ($canLinkCustomer): ?>
+                        <button type="button" class="btn btn-outline-primary w-100" onclick="openCustomerLinkModal()">Link to Customer Account</button>
+                    <?php elseif ($linkedCustomerUnavailable): ?>
+                        <p class="small text-warning mb-0">The linked customer account is currently unavailable.</p>
+                    <?php else: ?>
+                        <p class="small text-warning mb-0">Only the HQ account owner can link a customer account.</p>
+                    <?php endif; ?>
                 </div>
             </div>
         </div>
@@ -510,6 +548,72 @@ $profileFallbackUrl = map_pump_profile_initial_svg($profileName, 'H');
             </form>
         </div>
     </div>
+
+    <?php if ($canLinkCustomer && !$hasCustomerProfile): ?>
+    <div class="password-modal-overlay" id="customerLinkModal" role="dialog" aria-modal="true" aria-labelledby="customerLinkModalTitle" aria-hidden="true">
+        <div class="password-modal" role="document">
+            <div class="password-modal-header">
+                <h2 id="customerLinkModalTitle">Link a Customer Account</h2>
+                <button type="button" class="password-modal-close" aria-label="Close" onclick="closeCustomerLinkModal()">&times;</button>
+            </div>
+            <p class="text-white-50">Choose how to link a customer profile. Verification codes expire after 10 minutes.</p>
+            <div id="customerLinkStatus" class="alert d-none" role="alert"></div>
+            <div id="customerLinkOptions" class="d-grid gap-3">
+                <button type="button" class="btn btn-primary" onclick="showCustomerLinkForm('new')">Create a new customer account</button>
+                <button type="button" class="btn btn-outline-primary" onclick="showCustomerLinkForm('existing')">Link with existing account</button>
+            </div>
+            <form id="newCustomerAccountForm" class="d-none mt-3">
+                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($customerLinkCsrf, ENT_QUOTES, 'UTF-8') ?>">
+                <div class="mb-3">
+                    <label class="form-label" for="linkCustomerUsername">Username</label>
+                    <input class="form-control" id="linkCustomerUsername" name="username" maxlength="225" required>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label" for="linkCustomerNewEmail">Email</label>
+                    <input class="form-control" id="linkCustomerNewEmail" name="email" type="email" required>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label" for="linkCustomerPassword">Password</label>
+                    <input class="form-control" id="linkCustomerPassword" name="password" type="password" minlength="8" maxlength="15" autocomplete="new-password" required>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label" for="linkCustomerConfirmPassword">Confirm password</label>
+                    <input class="form-control" id="linkCustomerConfirmPassword" name="confirm_password" type="password" minlength="8" maxlength="15" autocomplete="new-password" required>
+                </div>
+                <div class="form-check mb-3">
+                    <input class="form-check-input" id="linkCustomerPrivacyAck" name="test_data_acknowledgement" type="checkbox" value="yes" required>
+                    <label class="form-check-label text-white-50" for="linkCustomerPrivacyAck">I understand this is a school demo. I will use an accessible email for verification and fictional information for other fields.</label>
+                </div>
+                <div class="d-flex gap-2">
+                    <button type="button" class="btn btn-outline-secondary" onclick="showCustomerLinkOptions()">Back</button>
+                    <button type="submit" class="btn btn-primary flex-grow-1">Send verification code</button>
+                </div>
+            </form>
+            <form id="existingCustomerAccountForm" class="d-none mt-3">
+                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($customerLinkCsrf, ENT_QUOTES, 'UTF-8') ?>">
+                <div class="mb-3">
+                    <label class="form-label" for="linkCustomerExistingEmail">Customer account email</label>
+                    <input class="form-control" id="linkCustomerExistingEmail" name="email" type="email" required>
+                </div>
+                <div class="d-flex gap-2">
+                    <button type="button" class="btn btn-outline-secondary" onclick="showCustomerLinkOptions()">Back</button>
+                    <button type="submit" class="btn btn-primary flex-grow-1">Send verification code</button>
+                </div>
+            </form>
+            <form id="customerLinkVerifyForm" class="d-none mt-3">
+                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($customerLinkCsrf, ENT_QUOTES, 'UTF-8') ?>">
+                <div class="mb-3">
+                    <label class="form-label" for="linkCustomerCode">6-digit verification code</label>
+                    <input class="form-control" id="linkCustomerCode" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" required>
+                </div>
+                <div class="d-flex gap-2">
+                    <button type="button" class="btn btn-outline-secondary" onclick="showCustomerLinkOptions()">Cancel</button>
+                    <button type="submit" class="btn btn-primary flex-grow-1">Verify and link</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    <?php endif; ?>
 
     <script>
         const serverName = <?= json_encode($profileName, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
@@ -662,6 +766,98 @@ $profileFallbackUrl = map_pump_profile_initial_svg($profileName, 'H');
             window.parent.postMessage({ type: 'map-pump-profile-updated', profile }, window.location.origin);
         }
 
+        function openCustomerLinkModal() {
+            const modal = document.getElementById('customerLinkModal');
+            if (!modal) return;
+            showCustomerLinkOptions();
+            modal.classList.add('is-visible');
+            modal.setAttribute('aria-hidden', 'false');
+        }
+
+        function closeCustomerLinkModal() {
+            const modal = document.getElementById('customerLinkModal');
+            if (!modal) return;
+            modal.classList.remove('is-visible');
+            modal.setAttribute('aria-hidden', 'true');
+        }
+
+        function showCustomerLinkStatus(message, ok = false) {
+            const status = document.getElementById('customerLinkStatus');
+            if (!status) return;
+            status.textContent = message;
+            status.className = `alert ${ok ? 'alert-success' : 'alert-danger'}`;
+        }
+
+        function showCustomerLinkOptions() {
+            document.getElementById('customerLinkOptions')?.classList.remove('d-none');
+            document.getElementById('newCustomerAccountForm')?.classList.add('d-none');
+            document.getElementById('existingCustomerAccountForm')?.classList.add('d-none');
+            document.getElementById('customerLinkVerifyForm')?.classList.add('d-none');
+            const status = document.getElementById('customerLinkStatus');
+            if (status) {
+                status.className = 'alert d-none';
+                status.textContent = '';
+            }
+        }
+
+        function showCustomerLinkForm(kind) {
+            document.getElementById('customerLinkOptions')?.classList.add('d-none');
+            document.getElementById(kind === 'new' ? 'newCustomerAccountForm' : 'existingCustomerAccountForm')?.classList.remove('d-none');
+            const status = document.getElementById('customerLinkStatus');
+            if (status) {
+                status.className = 'alert d-none';
+                status.textContent = '';
+            }
+        }
+
+        async function sendCustomerLinkRequest(form, action) {
+            const data = new FormData(form);
+            data.set('action', action);
+            const response = await fetch('link_customer_account.php', {
+                method: 'POST',
+                body: data,
+                credentials: 'same-origin'
+            });
+            const result = await response.json();
+            if (!response.ok || !result.ok) {
+                throw new Error(result.message || 'The customer account could not be linked.');
+            }
+            return result;
+        }
+
+        for (const [formId, action] of [
+            ['newCustomerAccountForm', 'start_new_registration'],
+            ['existingCustomerAccountForm', 'send_existing_code']
+        ]) {
+            document.getElementById(formId)?.addEventListener('submit', async (event) => {
+                event.preventDefault();
+                try {
+                    const result = await sendCustomerLinkRequest(event.currentTarget, action);
+                    showCustomerLinkStatus(result.message, true);
+                    document.getElementById('linkCustomerPassword')?.value = '';
+                    document.getElementById('linkCustomerConfirmPassword')?.value = '';
+                    document.getElementById('customerLinkOptions')?.classList.add('d-none');
+                    document.getElementById('newCustomerAccountForm')?.classList.add('d-none');
+                    document.getElementById('existingCustomerAccountForm')?.classList.add('d-none');
+                    document.getElementById('customerLinkVerifyForm')?.classList.remove('d-none');
+                    document.getElementById('linkCustomerCode')?.focus();
+                } catch (error) {
+                    showCustomerLinkStatus(error.message);
+                }
+            });
+        }
+
+        document.getElementById('customerLinkVerifyForm')?.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            try {
+                const result = await sendCustomerLinkRequest(event.currentTarget, 'verify_code');
+                showCustomerLinkStatus(result.message, true);
+                window.location.reload();
+            } catch (error) {
+                showCustomerLinkStatus(error.message);
+            }
+        });
+
         document.getElementById('updateModal').addEventListener('click', (event) => {
             if (event.target.id === 'updateModal') {
                 closeUpdateModal();
@@ -674,10 +870,17 @@ $profileFallbackUrl = map_pump_profile_initial_svg($profileName, 'H');
             }
         });
 
+        document.getElementById('customerLinkModal')?.addEventListener('click', (event) => {
+            if (event.target.id === 'customerLinkModal') {
+                closeCustomerLinkModal();
+            }
+        });
+
         document.addEventListener('keydown', (event) => {
             if (event.key === 'Escape') {
                 closePasswordModal();
                 closeUpdateModal();
+                closeCustomerLinkModal();
             }
         });
     </script>
