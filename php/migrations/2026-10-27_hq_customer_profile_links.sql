@@ -5,12 +5,17 @@ INNER JOIN system_requests approved_request
    AND approved_request.status = 'approved'
 INNER JOIN headquarter h
     ON h.headquarter_id = approved_request.headquarter_id
-SET u.headquarter_id = h.headquarter_id,
-    u.business_role_id = 3,
+SET u.business_role_id = 3,
     u.updated_at = NOW()
 WHERE u.role_id = 6
   AND (u.business_role_id IS NULL OR u.business_role_id = 0)
-  AND (u.headquarter_id IS NULL OR u.headquarter_id = 0)
+  AND NOT EXISTS (
+      SELECT 1
+      FROM business_account_scope existing_scope
+      WHERE existing_scope.user_id = u.user_id
+        AND existing_scope.headquarter_id IS NOT NULL
+        AND existing_scope.headquarter_id <> h.headquarter_id
+  )
   AND h.headquarters_owner_id IS NOT NULL
   AND h.headquarters_owner_id <> u.user_id
   AND LOWER(TRIM(u.email)) = LOWER(TRIM(COALESCE(NULLIF(approved_request.headquarter_owner_email, ''), approved_request.sender_email)))
@@ -37,7 +42,13 @@ INNER JOIN headquarter h
     ON h.headquarter_id = approved_request.headquarter_id
 WHERE u.role_id = 6
   AND u.business_role_id = 3
-  AND u.headquarter_id = h.headquarter_id
+  AND NOT EXISTS (
+      SELECT 1
+      FROM business_account_scope existing_scope
+      WHERE existing_scope.user_id = u.user_id
+        AND existing_scope.headquarter_id IS NOT NULL
+        AND existing_scope.headquarter_id <> h.headquarter_id
+  )
   AND h.headquarters_owner_id IS NOT NULL
   AND h.headquarters_owner_id <> u.user_id
   AND LOWER(TRIM(u.email)) = LOWER(TRIM(COALESCE(NULLIF(approved_request.headquarter_owner_email, ''), approved_request.sender_email)))

@@ -43,15 +43,16 @@ if ($hqRoleId <= 0) {
 // Match HQ accounts on any role slot (base / business / current). Older rows
 // sometimes only populate current_role_id after role switching.
 $targetQuery = $conn->prepare(
-    "SELECT h.company_name, h.status AS hq_status, owner.user_id, owner.email
+          "SELECT h.company_name, h.status AS hq_status, owner.user_id, owner.email
      FROM headquarter h
      LEFT JOIN (
-         SELECT u.headquarter_id, MIN(u.user_id) AS owner_user_id
-         FROM users u
+         SELECT bas.headquarter_id, MIN(u.user_id) AS owner_user_id
+         FROM business_account_scope bas
+         INNER JOIN users u ON u.user_id = bas.user_id
          WHERE u.role_id = ? OR u.business_role_id = ? OR u.current_role_id = ?
-         GROUP BY u.headquarter_id
+         GROUP BY bas.headquarter_id
      ) owner_link ON owner_link.headquarter_id = h.headquarter_id
-     LEFT JOIN users owner ON owner.user_id = owner_link.owner_user_id
+     LEFT JOIN users owner ON owner.user_id = COALESCE(h.headquarters_owner_id, owner_link.owner_user_id)
      WHERE h.headquarter_id = ?
      LIMIT 1"
 );

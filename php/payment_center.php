@@ -35,7 +35,13 @@ if ((empty($_SESSION['is_logged_in']) || $userId <= 0)
 
 $isAdmin = payment_transfer_user_is_admin($pdo, $userId);
 $isModeratorReviewer = !$isAdmin && payment_transfer_user_is_admin_or_moderator($pdo, $userId);
-$userStmt = $pdo->prepare('SELECT email, headquarter_id FROM users WHERE user_id = ? LIMIT 1');
+$userStmt = $pdo->prepare(
+    'SELECT u.email, COALESCE(owned_hq.headquarter_id, bas.headquarter_id) AS headquarter_id
+     FROM users u
+     LEFT JOIN business_account_scope bas ON bas.user_id = u.user_id
+     LEFT JOIN headquarter owned_hq ON owned_hq.headquarters_owner_id = u.user_id
+     WHERE u.user_id = ? LIMIT 1'
+);
 $userStmt->execute([$userId]);
 $currentUser = $userStmt->fetch(PDO::FETCH_ASSOC) ?: [];
 $userEmail = strtolower(trim((string) ($currentUser['email'] ?? '')));

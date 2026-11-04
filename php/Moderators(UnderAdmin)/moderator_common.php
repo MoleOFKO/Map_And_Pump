@@ -143,12 +143,15 @@ function moderator_hq_rows(string $search, string $region, string $status, strin
        COALESCE(station_counts.station_count, 0) AS station_count
    FROM headquarter h
    LEFT JOIN (
-       SELECT u.headquarter_id, MIN(u.user_id) AS owner_user_id, COUNT(*) AS user_count
-       FROM users u
-       WHERE (u.role_id = {$hqRoleId} OR u.business_role_id = {$hqRoleId} OR u.current_role_id = {$hqRoleId})
-       GROUP BY headquarter_id
+       SELECT bas.headquarter_id,
+              COUNT(DISTINCT bas.user_id) AS user_count,
+              MIN(CASE WHEN u.role_id = {$hqRoleId} OR u.business_role_id = {$hqRoleId} OR u.current_role_id = {$hqRoleId} THEN u.user_id END) AS owner_user_id
+       FROM business_account_scope bas
+       INNER JOIN users u ON u.user_id = bas.user_id
+       WHERE bas.headquarter_id IS NOT NULL
+       GROUP BY bas.headquarter_id
    ) user_counts ON user_counts.headquarter_id = h.headquarter_id
-   LEFT JOIN users owner ON owner.user_id = user_counts.owner_user_id
+   LEFT JOIN users owner ON owner.user_id = COALESCE(h.headquarters_owner_id, user_counts.owner_user_id)
    LEFT JOIN (
        SELECT scope.headquarter_id, COUNT(DISTINCT scope.station_id) AS station_count
        FROM station_business_scope scope

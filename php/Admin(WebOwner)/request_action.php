@@ -336,7 +336,12 @@ try {
         }
         $ownerName = trim((string) ($target['sender_name'] ?: $target['sender_entity']));
         $ownerName = $ownerName !== '' ? $ownerName : $companyName;
-        $ownerLookup = $conn->prepare('SELECT user_id, email, role_id, business_role_id, headquarter_id FROM users WHERE LOWER(TRIM(email)) = LOWER(?) LIMIT 1 FOR UPDATE');
+        $ownerLookup = $conn->prepare(
+            'SELECT u.user_id, u.email, u.role_id, u.business_role_id,
+                EXISTS (SELECT 1 FROM business_account_scope bas WHERE bas.user_id = u.user_id AND bas.headquarter_id IS NOT NULL) AS has_hq_scope,
+                EXISTS (SELECT 1 FROM headquarter owned_hq WHERE owned_hq.headquarters_owner_id = u.user_id) AS owns_hq
+             FROM users u WHERE LOWER(TRIM(u.email)) = LOWER(?) LIMIT 1 FOR UPDATE'
+        );
         if (!$ownerLookup) {
             throw new RuntimeException('Could not look up the HQ owner account.');
         }
@@ -349,20 +354,22 @@ try {
             $createdOwnerUserId = (int) $existingOwner['user_id'];
             if ((int) ($existingOwner['role_id'] ?? 0) !== 6
                 || (int) ($existingOwner['business_role_id'] ?? 0) > 0
-                || (int) ($existingOwner['headquarter_id'] ?? 0) > 0
+                || (int) ($existingOwner['has_hq_scope'] ?? 0) === 1
+                || (int) ($existingOwner['owns_hq'] ?? 0) === 1
                 || ($registrantUserId > 0 && $registrantUserId !== $createdOwnerUserId)) {
                 throw new RuntimeException('The selected owner account is no longer eligible for HQ linking.');
             }
             $ownerUpdate = $conn->prepare(
-                'UPDATE users SET headquarter_id = ?, business_role_id = ?, updated_at = NOW()
+                     'UPDATE users SET business_role_id = ?, updated_at = NOW()
                  WHERE user_id = ? AND role_id = 6
                    AND (business_role_id IS NULL OR business_role_id = 0)
-                   AND (headquarter_id IS NULL OR headquarter_id = 0)'
+                         AND NOT EXISTS (SELECT 1 FROM business_account_scope bas WHERE bas.user_id = users.user_id AND bas.headquarter_id IS NOT NULL)
+                         AND NOT EXISTS (SELECT 1 FROM headquarter owned_hq WHERE owned_hq.headquarters_owner_id = users.user_id)'
             );
             if (!$ownerUpdate) {
                 throw new RuntimeException('Could not prepare the Customer-to-HQ account link.');
             }
-            $ownerUpdate->bind_param('iii', $createdHeadquarterId, $hqRoleId, $createdOwnerUserId);
+            $ownerUpdate->bind_param('ii', $hqRoleId, $createdOwnerUserId);
             if (!$ownerUpdate->execute() || $ownerUpdate->affected_rows !== 1) {
                 throw new RuntimeException('Could not link the customer account to the approved HQ.');
             }
@@ -373,13 +380,13 @@ try {
             }
             $ownerUserName = hq_unique_username($ownerName, $ownerEmail);
             $ownerInsert = $conn->prepare(
-                "INSERT INTO users (user_name, email, hashed_password, headquarter_id, role_id, business_role_id, current_role_id, status, created_at, updated_at)
-                 VALUES (?, ?, NULL, ?, ?, ?, ?, 'pending', NOW(), NOW())"
+                "INSERT INTO users (user_name, email, hashed_password, role_id, business_role_id, current_role_id, status, created_at, updated_at)
+                 VALUES (?, ?, NULL, ?, ?, ?, 'pending', NOW(), NOW())"
             );
             if (!$ownerInsert) {
                 throw new RuntimeException('Could not prepare the HQ owner account.');
             }
-            $ownerInsert->bind_param('ssiiii', $ownerUserName, $ownerEmail, $createdHeadquarterId, $hqRoleId, $hqRoleId, $hqRoleId);
+            $ownerInsert->bind_param('ssiii', $ownerUserName, $ownerEmail, $hqRoleId, $hqRoleId, $hqRoleId);
             if (!$ownerInsert->execute()) {
                 throw new RuntimeException('Could not create the HQ owner account.');
             }

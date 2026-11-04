@@ -460,8 +460,7 @@ function payment_transfer_user_owns_hq(PDO $pdo, int $userId, int $headquarterId
              u.user_id = h.headquarters_owner_id
              OR (
                (
-                 u.headquarter_id = h.headquarter_id
-                 OR bas.headquarter_id = h.headquarter_id
+                 bas.headquarter_id = h.headquarter_id
                  OR LOWER(TRIM(u.email)) = LOWER(TRIM(h.headquarter_email))
                )
                AND (

@@ -67,7 +67,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // Load the headquarters belonging to the signed-in user.
     if ($loggedUserId > 0) {
-        $stmt = $pdo->prepare("SELECT h.headquarter_id, h.company_logo, h.headquarter_email, h.company_name, h.location, h.business_license, h.business_license_expire_date, h.expire_at FROM users u JOIN headquarter h ON h.headquarter_id = u.headquarter_id WHERE u.user_id = ? LIMIT 1");
+        $stmt = $pdo->prepare("SELECT h.headquarter_id, h.company_logo, h.headquarter_email, h.company_name, h.location, h.business_license, h.business_license_expire_date, h.expire_at FROM users u LEFT JOIN business_account_scope bas ON bas.user_id = u.user_id LEFT JOIN headquarter h ON (h.headquarters_owner_id = u.user_id OR h.headquarter_id = bas.headquarter_id) WHERE u.user_id = ? ORDER BY (h.headquarters_owner_id = u.user_id) DESC LIMIT 1");
         $stmt->execute([$loggedUserId]);
     } elseif ($loggedHqId > 0) {
         $stmt = $pdo->prepare("SELECT headquarter_id, company_logo, headquarter_email, company_name, location, business_license, business_license_expire_date, expire_at FROM headquarter WHERE headquarter_id = ? LIMIT 1");
@@ -182,7 +182,7 @@ if ($loggedHqId > 0) {
     $stmt = $pdo->prepare("SELECT h.*, owner.user_name AS owner_name, COALESCE((SELECT MIN(request.created_at) FROM system_requests request WHERE request.headquarter_id = h.headquarter_id AND request.request_type = 'hq_registration'), h.created_at) AS registration_date FROM headquarter h LEFT JOIN users owner ON owner.user_id = h.headquarters_owner_id WHERE h.headquarter_id = ? LIMIT 1");
     $stmt->execute([$loggedHqId]);
 } elseif ($loggedUserId > 0) {
-    $stmt = $pdo->prepare("SELECT h.*, COALESCE(owner.user_name, u.user_name) AS owner_name, COALESCE((SELECT MIN(request.created_at) FROM system_requests request WHERE request.headquarter_id = h.headquarter_id AND request.request_type = 'hq_registration'), h.created_at) AS registration_date FROM users u JOIN headquarter h ON h.headquarter_id = u.headquarter_id LEFT JOIN users owner ON owner.user_id = h.headquarters_owner_id WHERE u.user_id = ? LIMIT 1");
+    $stmt = $pdo->prepare("SELECT h.*, COALESCE(owner.user_name, u.user_name) AS owner_name, COALESCE((SELECT MIN(request.created_at) FROM system_requests request WHERE request.headquarter_id = h.headquarter_id AND request.request_type = 'hq_registration'), h.created_at) AS registration_date FROM users u LEFT JOIN business_account_scope bas ON bas.user_id = u.user_id LEFT JOIN headquarter h ON (h.headquarters_owner_id = u.user_id OR h.headquarter_id = bas.headquarter_id) LEFT JOIN users owner ON owner.user_id = h.headquarters_owner_id WHERE u.user_id = ? ORDER BY (h.headquarters_owner_id = u.user_id) DESC LIMIT 1");
     $stmt->execute([$loggedUserId]);
 } else {
     $stmt = $pdo->query("SELECT h.*, owner.user_name AS owner_name, COALESCE((SELECT MIN(request.created_at) FROM system_requests request WHERE request.headquarter_id = h.headquarter_id AND request.request_type = 'hq_registration'), h.created_at) AS registration_date FROM headquarter h LEFT JOIN users owner ON owner.user_id = h.headquarters_owner_id LIMIT 1");

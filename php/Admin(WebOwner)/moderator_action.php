@@ -83,7 +83,8 @@ function moderator_target_data(int $userId): ?array
          LEFT JOIN roles br ON br.role_id = u.business_role_id
          LEFT JOIN roles cr ON cr.role_id = u.current_role_id
          WHERE u.user_id = ?
-           AND u.headquarter_id IS NULL
+           AND NOT EXISTS (SELECT 1 FROM business_account_scope bas WHERE bas.user_id = u.user_id AND bas.headquarter_id IS NOT NULL)
+           AND NOT EXISTS (SELECT 1 FROM headquarter owned_hq WHERE owned_hq.headquarters_owner_id = u.user_id)
            AND (
                 LOWER(TRIM(COALESCE(r.role_name, ''))) = 'moderator'
                 OR LOWER(TRIM(COALESCE(br.role_name, ''))) = 'moderator'
@@ -321,7 +322,7 @@ if ($action === 'update_profile') {
     // Administrators may manage moderator identity, role, and status, but
     // must never change another account's password through this workflow.
     $statement = $conn->prepare(
-        'UPDATE users SET user_name = ?, email = ?, role_id = ?, current_role_id = ?, updated_at = NOW() WHERE user_id = ? AND headquarter_id IS NULL'
+        'UPDATE users SET user_name = ?, email = ?, role_id = ?, current_role_id = ?, updated_at = NOW() WHERE user_id = ? AND NOT EXISTS (SELECT 1 FROM business_account_scope bas WHERE bas.user_id = users.user_id AND bas.headquarter_id IS NOT NULL) AND NOT EXISTS (SELECT 1 FROM headquarter owned_hq WHERE owned_hq.headquarters_owner_id = users.user_id)'
     );
     if ($statement) {
         $statement->bind_param('ssiii', $userName, $email, $roleId, $roleId, $userId);
@@ -363,7 +364,9 @@ if ($action === 'update_status') {
 
     $previousStatus = strtolower(trim((string) ($target['status'] ?? '')));
     $statement = $conn->prepare(
-        'UPDATE users SET status = ?, updated_at = NOW() WHERE user_id = ? AND headquarter_id IS NULL'
+        'UPDATE users SET status = ?, updated_at = NOW() WHERE user_id = ?
+         AND NOT EXISTS (SELECT 1 FROM business_account_scope bas WHERE bas.user_id = users.user_id AND bas.headquarter_id IS NOT NULL)
+         AND NOT EXISTS (SELECT 1 FROM headquarter owned_hq WHERE owned_hq.headquarters_owner_id = users.user_id)'
     );
     if (!$statement) {
         moderator_flash('danger', 'The moderator status could not be updated.');

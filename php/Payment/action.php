@@ -535,10 +535,15 @@ function payment_transfer_create_pending_registration_hq(PDO $pdo, array $transf
     }
 
     $ownerEmail = strtolower(trim((string) ($request['headquarter_owner_email'] ?: $request['sender_email'])));
-    $ownerStmt = $pdo->prepare('SELECT user_id, headquarter_id FROM users WHERE LOWER(TRIM(email)) = ? LIMIT 1 FOR UPDATE');
+    $ownerStmt = $pdo->prepare(
+        'SELECT u.user_id,
+                EXISTS (SELECT 1 FROM business_account_scope bas WHERE bas.user_id = u.user_id AND bas.headquarter_id IS NOT NULL) AS has_hq_scope,
+                EXISTS (SELECT 1 FROM headquarter owned_hq WHERE owned_hq.headquarters_owner_id = u.user_id) AS owns_hq
+         FROM users u WHERE LOWER(TRIM(u.email)) = ? LIMIT 1 FOR UPDATE'
+    );
     $ownerStmt->execute([$ownerEmail]);
     $owner = $ownerStmt->fetch(PDO::FETCH_ASSOC);
-    if (!$owner || (int) ($owner['headquarter_id'] ?? 0) > 0) {
+    if (!$owner || (int) ($owner['has_hq_scope'] ?? 0) === 1 || (int) ($owner['owns_hq'] ?? 0) === 1) {
         throw new RuntimeException('The owner account is unavailable or already linked to an HQ.');
     }
     $roleStmt = $pdo->prepare("SELECT role_id FROM roles WHERE LOWER(TRIM(role_name)) IN ('hq', 'headquarter', 'headquarters') ORDER BY (role_id = 3) DESC LIMIT 1");
@@ -580,10 +585,10 @@ function payment_transfer_create_pending_registration_hq(PDO $pdo, array $transf
     $headquarterId = (int) $pdo->lastInsertId();
 
     $ownerUpdate = $pdo->prepare(
-        "UPDATE users SET headquarter_id = ?, business_role_id = ?, status = 'pending', updated_at = NOW()
-         WHERE user_id = ? AND (headquarter_id IS NULL OR headquarter_id = 0)"
+           "UPDATE users SET business_role_id = ?, status = 'pending', updated_at = NOW()
+            WHERE user_id = ? AND (business_role_id IS NULL OR business_role_id = 0)"
     );
-    $ownerUpdate->execute([$headquarterId, $hqRoleId, (int) $owner['user_id']]);
+        $ownerUpdate->execute([$hqRoleId, (int) $owner['user_id']]);
     if ($ownerUpdate->rowCount() !== 1) {
         throw new RuntimeException('Could not link the owner account to the pending HQ.');
     }

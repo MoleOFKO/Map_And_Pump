@@ -1,16 +1,9 @@
-ALTER TABLE `users`
-    ADD COLUMN `headquarter_id` int DEFAULT NULL AFTER `license_id`,
-    ADD KEY `fk_users_headquarter_id_idx` (`headquarter_id`),
-    ADD CONSTRAINT `fk_users_headquarter_id`
-        FOREIGN KEY (`headquarter_id`) REFERENCES `headquarter` (`headquarter_id`)
-        ON DELETE CASCADE ON UPDATE CASCADE;
-
-UPDATE `users` u
-INNER JOIN `business_account_scope` bas ON bas.`user_id` = u.`user_id`
-SET u.`headquarter_id` = bas.`headquarter_id`
-WHERE bas.`headquarter_id` IS NOT NULL;
-
-UPDATE `users` u
-INNER JOIN `headquarter` h ON h.`headquarters_owner_id` = u.`user_id`
-SET u.`headquarter_id` = h.`headquarter_id`
-WHERE u.`headquarter_id` IS NULL;
+INSERT INTO `business_account_scope`
+    (`user_id`, `business_role_id`, `headquarter_id`, `branch_manager_user_id`, `station_id`, `status`)
+SELECT u.`user_id`, 3, h.`headquarter_id`, NULL, NULL,
+       COALESCE(NULLIF(u.`status`, ''), NULLIF(h.`status`, ''), 'active')
+FROM `headquarter` h
+INNER JOIN `users` u ON u.`user_id` = h.`headquarters_owner_id`
+ON DUPLICATE KEY UPDATE
+    `business_role_id` = 3,
+    `headquarter_id` = VALUES(`headquarter_id`);

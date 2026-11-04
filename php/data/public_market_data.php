@@ -36,18 +36,19 @@ if (!function_exists('map_pump_grade_catalog')) {
 if (!function_exists('map_pump_public_hq_owner_join_sql')) {
     function map_pump_public_hq_owner_join_sql(): string
     {
-        return "LEFT JOIN (
-                    SELECT u.headquarter_id, MIN(u.user_id) AS owner_user_id
-                    FROM users u
-                    LEFT JOIN roles primary_role ON primary_role.role_id = u.role_id
-                    LEFT JOIN roles business_role ON business_role.role_id = u.business_role_id
-                    LEFT JOIN roles current_role_lookup ON current_role_lookup.role_id = u.current_role_id
-                    WHERE LOWER(TRIM(COALESCE(primary_role.role_name, ''))) IN ('hq', 'headquarter', 'headquarters')
-                       OR LOWER(TRIM(COALESCE(business_role.role_name, ''))) IN ('hq', 'headquarter', 'headquarters')
-                       OR LOWER(TRIM(COALESCE(current_role_lookup.role_name, ''))) IN ('hq', 'headquarter', 'headquarters')
-                    GROUP BY u.headquarter_id
-                ) hq_owner_ids ON hq_owner_ids.headquarter_id = h.headquarter_id
-                LEFT JOIN users hq_owner ON hq_owner.user_id = COALESCE(hq_owner_ids.owner_user_id, h.headquarters_owner_id)";
+          return "LEFT JOIN (
+                          SELECT bas.headquarter_id, MIN(u.user_id) AS owner_user_id
+                          FROM business_account_scope bas
+                          INNER JOIN users u ON u.user_id = bas.user_id
+                          LEFT JOIN roles primary_role ON primary_role.role_id = u.role_id
+                          LEFT JOIN roles business_role ON business_role.role_id = u.business_role_id
+                          LEFT JOIN roles current_role_lookup ON current_role_lookup.role_id = u.current_role_id
+                          WHERE LOWER(TRIM(COALESCE(primary_role.role_name, ''))) IN ('hq', 'headquarter', 'headquarters')
+                              OR LOWER(TRIM(COALESCE(business_role.role_name, ''))) IN ('hq', 'headquarter', 'headquarters')
+                              OR LOWER(TRIM(COALESCE(current_role_lookup.role_name, ''))) IN ('hq', 'headquarter', 'headquarters')
+                          GROUP BY bas.headquarter_id
+                     ) hq_owner_ids ON hq_owner_ids.headquarter_id = h.headquarter_id
+                     LEFT JOIN users hq_owner ON hq_owner.user_id = COALESCE(h.headquarters_owner_id, hq_owner_ids.owner_user_id)";
     }
 }
 

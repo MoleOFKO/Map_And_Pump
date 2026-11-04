@@ -147,18 +147,20 @@ function admin_current_user(bool $allowDevelopmentFallback = true): ?array
     $baseSql = <<<'SQL'
 SELECT u.user_id, u.user_name, u.email, u.hashed_password, u.role_id, u.business_role_id, u.current_role_id,
        u.status, u.created_at, u.updated_at, u.last_login_at,
-       u.oauth_avatar_url, u.headquarter_id,
+    u.oauth_avatar_url, COALESCE(bas.headquarter_id, owned_hq.headquarter_id) AS headquarter_id,
        COALESCE(u.current_role_id, u.business_role_id, u.role_id) AS effective_role_id,
        COALESCE(active_role.role_name, business_role.role_name, primary_role.role_name) AS role_name,
        primary_role.role_name AS primary_role_name,
        business_role.role_name AS business_role_name,
        active_role.role_name AS active_role_name,
-       h.company_name AS hq_name
+    COALESCE(h.company_name, owned_hq.company_name) AS hq_name
 FROM users u
 LEFT JOIN roles primary_role ON primary_role.role_id = u.role_id
 LEFT JOIN roles business_role ON business_role.role_id = u.business_role_id
 LEFT JOIN roles active_role ON active_role.role_id = u.current_role_id
-LEFT JOIN headquarter h ON h.headquarter_id = u.headquarter_id
+LEFT JOIN business_account_scope bas ON bas.user_id = u.user_id
+LEFT JOIN headquarter h ON h.headquarter_id = bas.headquarter_id
+LEFT JOIN headquarter owned_hq ON owned_hq.headquarters_owner_id = u.user_id
 SQL;
 
     $sessionUserId = 0;
@@ -186,7 +188,7 @@ SQL;
         }
 
         $statement = $pdo->query(
-            $baseSql . " WHERE u.headquarter_id IS NULL AND {$roleFilter}
+            $baseSql . " WHERE bas.headquarter_id IS NULL AND owned_hq.headquarter_id IS NULL AND {$roleFilter}
              ORDER BY CASE WHEN LOWER(u.status) IN ('approved', 'active') THEN 0 ELSE 1 END,
                       u.user_id ASC LIMIT 1"
         );
@@ -211,7 +213,7 @@ SQL;
     }
 
     $result = $conn->query(
-        $baseSql . " WHERE u.headquarter_id IS NULL
+        $baseSql . " WHERE bas.headquarter_id IS NULL AND owned_hq.headquarter_id IS NULL
          AND (LOWER(TRIM(primary_role.role_name)) IN ('admin', 'moderator') OR LOWER(TRIM(business_role.role_name)) IN ('admin', 'moderator') OR LOWER(TRIM(active_role.role_name)) IN ('admin', 'moderator'))
          ORDER BY CASE WHEN LOWER(u.status) IN ('approved', 'active') THEN 0 ELSE 1 END,
                   u.user_id ASC LIMIT 1"

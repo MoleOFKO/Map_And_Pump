@@ -164,10 +164,10 @@ function resolve_manager_headquarter_id(PDO $pdo, int $managerUserId, int $branc
             [':manager_user_id' => $managerUserId],
         ],
         [
-            "SELECT u.headquarter_id
-             FROM users u
-             WHERE u.user_id = :manager_user_id
-               AND u.headquarter_id IS NOT NULL
+            "SELECT bas.headquarter_id
+             FROM business_account_scope bas
+             WHERE bas.user_id = :manager_user_id
+               AND bas.headquarter_id IS NOT NULL
              LIMIT 1",
             [':manager_user_id' => $managerUserId],
         ],

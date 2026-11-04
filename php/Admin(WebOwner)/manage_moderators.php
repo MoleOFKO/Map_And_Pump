@@ -64,7 +64,8 @@ $moderatorRolePredicate = "(
 if (moderator_schema_ready()) {
     $roles = moderator_role_options();
     $where = [
-        'u.headquarter_id IS NULL',
+        'NOT EXISTS (SELECT 1 FROM business_account_scope bas WHERE bas.user_id = u.user_id AND bas.headquarter_id IS NOT NULL)',
+        'NOT EXISTS (SELECT 1 FROM headquarter owned_hq WHERE owned_hq.headquarters_owner_id = u.user_id)',
         $moderatorRolePredicate,
     ];
     $params = [];
@@ -104,7 +105,8 @@ if (moderator_schema_ready()) {
          LEFT JOIN roles r ON r.role_id = u.role_id
          LEFT JOIN roles br ON br.role_id = u.business_role_id
          LEFT JOIN roles cr ON cr.role_id = u.current_role_id
-         WHERE u.headquarter_id IS NULL
+                 WHERE NOT EXISTS (SELECT 1 FROM business_account_scope bas WHERE bas.user_id = u.user_id AND bas.headquarter_id IS NOT NULL)
+                     AND NOT EXISTS (SELECT 1 FROM headquarter owned_hq WHERE owned_hq.headquarters_owner_id = u.user_id)
            AND $moderatorRolePredicate"
     );
     if ($metricQuery) {

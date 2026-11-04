@@ -88,12 +88,13 @@ function customer_account_rows(string $search = '', string $status = '', string 
 
     $sql = <<<'SQL'
 SELECT u.user_id, u.user_public_id, u.user_name, u.email, u.status, u.created_at, u.updated_at,
-       u.headquarter_id, u.role_id, base_role.role_name,
-       h.company_name AS headquarter_name, h.location AS headquarter_location,
+    bas.headquarter_id, u.role_id, base_role.role_name,
+    h.company_name AS headquarter_name, h.location AS headquarter_location,
        l.license_last_valid_date
 FROM users u
 INNER JOIN roles base_role ON base_role.role_id = u.role_id
-LEFT JOIN headquarter h ON h.headquarter_id = u.headquarter_id
+LEFT JOIN business_account_scope bas ON bas.user_id = u.user_id
+LEFT JOIN headquarter h ON h.headquarter_id = bas.headquarter_id
 LEFT JOIN user_license l ON l.license_id = u.license_id
 SQL;
     $sql .= ' WHERE ' . implode(' AND ', $where) . ' ORDER BY u.updated_at DESC, u.user_id DESC';
@@ -185,7 +186,7 @@ function user_account_schema_ready(): bool
     $requiredColumns = [
         'roles' => ['role_id', 'role_name'],
         'headquarter' => ['headquarter_id', 'company_name', 'location'],
-        'users' => ['user_id', 'user_name', 'email', 'headquarter_id', 'role_id', 'license_id', 'status', 'created_at', 'updated_at'],
+        'users' => ['user_id', 'user_name', 'email', 'role_id', 'license_id', 'status', 'created_at', 'updated_at'],
         'user_license' => ['license_id', 'license_image', 'license_number', 'license_name', 'phone_number', 'nrc_number', 'date_of_birth', 'blood_type', 'license_last_valid_date'],
     ];
     $tableSql = "'" . implode("','", array_keys($requiredColumns)) . "'";
@@ -288,7 +289,7 @@ function pending_account_rows(string $search = ''): array
     $sql = <<<SQL
 SELECT u.user_id, {$publicIdSelect}, u.user_name, u.email, u.status, u.created_at, u.updated_at,
        u.license_id,
-       u.headquarter_id, u.role_id AS role_id, r.role_name,
+    bas.headquarter_id, u.role_id AS role_id, r.role_name,
        h.company_name AS headquarter_name, h.location AS headquarter_location,
        l.license_number, l.license_name, l.phone_number, l.nrc_number,
        l.date_of_birth, l.blood_type, l.license_last_valid_date,
@@ -298,7 +299,8 @@ SELECT u.user_id, {$publicIdSelect}, u.user_name, u.email, u.status, u.created_a
        {$licenseStatusSelect}, l.license_image, {$faceImageSelect}
 FROM users u
 LEFT JOIN roles r ON r.role_id = u.role_id
-LEFT JOIN headquarter h ON h.headquarter_id = u.headquarter_id
+LEFT JOIN business_account_scope bas ON bas.user_id = u.user_id
+LEFT JOIN headquarter h ON h.headquarter_id = bas.headquarter_id
 LEFT JOIN user_license l ON l.license_id = u.license_id
 SQL;
     $sql .= ' WHERE ' . implode(' AND ', $where) . ' ORDER BY u.created_at DESC, u.user_id DESC';

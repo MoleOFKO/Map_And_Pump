@@ -44,7 +44,11 @@ try {
     $stmt = $pdo->prepare(
         "SELECT u.user_id, u.user_public_id, u.user_name, u.email, u.hashed_password, u.status,
             u.oauth_avatar_url,
-                u.role_id, u.business_role_id, u.license_id, u.headquarter_id,
+                u.role_id, u.business_role_id, u.license_id,
+                COALESCE((SELECT owned_hq.headquarter_id
+                    FROM headquarter owned_hq
+                    WHERE owned_hq.headquarters_owner_id = u.user_id
+                    ORDER BY owned_hq.headquarter_id DESC LIMIT 1), bas.headquarter_id) AS headquarter_id,
                 COALESCE(
                     (SELECT st.branch_id FROM staff st WHERE st.user_id = u.user_id LIMIT 1),
                     (SELECT MIN(b.branch_id) FROM branches b WHERE b.manager_user_id = u.user_id),
@@ -53,6 +57,7 @@ try {
                 {$currentRoleSelect}
                 r.role_name, br.role_name AS business_role_name
          FROM users u
+         LEFT JOIN business_account_scope bas ON bas.user_id = u.user_id
          LEFT JOIN roles r ON r.role_id = u.role_id
          LEFT JOIN roles br ON br.role_id = u.business_role_id
          {$currentRoleJoin}
