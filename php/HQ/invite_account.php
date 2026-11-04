@@ -4,7 +4,6 @@ require_once __DIR__ . '/../conn.php';
 require_once __DIR__ . '/../business_scope.php';
 require_once __DIR__ . '/../invitations_schema.php';
 require_once __DIR__ . '/../Login/mail_templates.php';
-require_once __DIR__ . '/../Login/account_password_setup.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     header('Location: account.php');
@@ -13,6 +12,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 
 $email = strtolower(trim((string)($_POST['email'] ?? '')));
 $role = strtolower(trim((string)($_POST['role'] ?? '')));
+$password = (string) ($_POST['password'] ?? '');
 $stationValue = trim((string)($_POST['station_id'] ?? ''));
 $stationId = $stationValue === '' ? null : filter_var($stationValue, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
 $hqId = map_pump_current_hq_id($pdo);
@@ -20,6 +20,19 @@ $roleId = $role === 'manager' ? 4 : ($role === 'staff' ? 5 : 0);
 
 if ($hqId <= 0 || !filter_var($email, FILTER_VALIDATE_EMAIL) || $roleId <= 0 || ($stationValue !== '' && !$stationId) || ($roleId === 5 && !$stationId)) {
     $_SESSION['hq_account_message'] = ['type' => 'danger', 'text' => 'Please provide a valid email and role. Staff invitations require a station assignment.'];
+    header('Location: account.php');
+    exit;
+}
+
+if ($roleId === 4 && (strlen($password) < 8 || strlen($password) > 15
+    || !preg_match('/[a-z]/', $password)
+    || !preg_match('/[A-Z]/', $password)
+    || !preg_match('/\d/', $password)
+    || !preg_match('/[^a-zA-Z0-9]/', $password))) {
+    $_SESSION['hq_account_message'] = [
+        'type' => 'danger',
+        'text' => 'Branch manager passwords must be 8–15 characters and include uppercase and lowercase letters, a number, and a symbol.',
+    ];
     header('Location: account.php');
     exit;
 }
@@ -61,7 +74,6 @@ try {
     $userStmt->execute([$email]);
     $invitee = $userStmt->fetch(PDO::FETCH_ASSOC);
     $createdAccount = false;
-    $setupUrl = '';
     if ($invitee) {
         $isCustomer = strtolower(trim((string) ($invitee['primary_role_name'] ?? ''))) === 'customer'
             || strtolower(trim((string) ($invitee['active_role_name'] ?? ''))) === 'customer';
@@ -182,8 +194,12 @@ try {
                 'UPDATE station_business_scope SET branch_manager_user_id = ? WHERE station_id = ? AND headquarter_id = ?'
             );
             $stationManagerUpdate->execute([(int) $invitee['user_id'], $stationId, $hqId]);
-            $branchManagerUpdate = $pdo->prepare('UPDATE branches SET manager_user_id = ? WHERE branch_id = ?');
-            $branchManagerUpdate->execute([(int) $invitee['user_id'], $stationId]);
+            $branchManagerUpdate = $pdo->prepare('UPDATE branches SET manager_user_id = ?, branch_password = ? WHERE branch_id = ?');
+            $branchManagerUpdate->execute([
+                (int) $invitee['user_id'],
+                password_hash($password, PASSWORD_DEFAULT),
+                $stationId,
+            ]);
         }
 
         $accountScope = $pdo->prepare(
@@ -205,7 +221,6 @@ try {
         $notification->execute([(int) $invitee['user_id'], $email, $subject, $message]);
         $notificationId = (int) $pdo->lastInsertId();
 
-        $setupUrl = account_password_setup_create_link_pdo($pdo, (int) $invitee['user_id']);
     } else {
         $insert = $pdo->prepare(
             "INSERT INTO invitations
@@ -234,34 +249,17 @@ try {
         'role_name' => $roleName,
         'station_name' => (string) ($station['station_name'] ?? ''),
         'account_active' => $roleId === 4,
-        'password_setup_sent' => $setupUrl !== '',
     ]);
     $deliveryStatus = (string) ($emailNotice['status'] ?? 'failed');
     $deliveryNote = (string) ($emailNotice['note'] ?? 'Email delivery failed.');
-    $setupEmailNotice = null;
-    if ($setupUrl !== '') {
-        $setupEmailNotice = mail_send_account_notice($email, [
-            'kind' => 'account_password_setup',
-            'account_label' => 'Branch Manager',
-            'account_name' => (string) $invitee['user_name'],
-            'setup_url' => $setupUrl,
-        ]);
-        if (($setupEmailNotice['status'] ?? '') !== 'sent') {
-            $deliveryNote .= ' Password setup email: ' . (string) ($setupEmailNotice['status'] ?? 'failed')
-                . ' - ' . (string) ($setupEmailNotice['note'] ?? 'Email delivery failed.');
-        }
-    }
     if ($notificationId !== null) {
         $pdo->prepare('UPDATE notifications SET delivery_status = ?, delivery_note = ? WHERE notification_id = ?')
             ->execute([$deliveryStatus, substr($deliveryNote, 0, 255), $notificationId]);
     }
-    $setupStatus = $setupEmailNotice !== null
-        ? ' Password setup email status: ' . (string) ($setupEmailNotice['status'] ?? 'failed') . '.'
-        : '';
     $_SESSION['hq_account_message'] = [
-        'type' => $deliveryStatus === 'sent' && ($setupEmailNotice === null || ($setupEmailNotice['status'] ?? '') === 'sent') ? 'success' : 'danger',
+        'type' => $deliveryStatus === 'sent' ? 'success' : 'danger',
         'text' => ($roleId === 4 ? 'Branch manager added. ' : 'Staff invitation created. ')
-            . 'Invitation email status: ' . $deliveryStatus . '.' . $setupStatus,
+            . 'Invitation email status: ' . $deliveryStatus . '.',
     ];
 } catch (Throwable $error) {
     if ($pdo->inTransaction()) {
