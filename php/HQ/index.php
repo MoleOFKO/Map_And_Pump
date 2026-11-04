@@ -65,7 +65,8 @@ if ($loggedUserId > 0) {
         'SELECT u.user_name, u.email, u.oauth_avatar_url, 
                   h.company_name, h.company_logo, h.headquarter_id
          FROM users u
-              LEFT JOIN headquarter h ON h.headquarter_id = u.headquarter_id
+              LEFT JOIN business_account_scope bas ON bas.user_id = u.user_id
+              LEFT JOIN headquarter h ON (h.headquarters_owner_id = u.user_id OR h.headquarter_id = bas.headquarter_id)
          WHERE u.user_id = ?
          LIMIT 1'
     );

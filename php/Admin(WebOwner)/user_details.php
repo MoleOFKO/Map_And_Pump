@@ -44,7 +44,7 @@ $scopeCondition = $requestContext
        AND LOWER(TRIM(r.role_name)) = 'customer'";
 $statement = $conn->prepare(
     "SELECT u.user_id, {$publicIdSelect}, u.user_name, u.email, u.status, u.created_at, u.updated_at, {$lastLoginSelect},
-            u.license_id, u.headquarter_id,
+            u.license_id, bas.headquarter_id,
             {$roleIdSql} AS role_id,
             r.role_name,
             h.company_name AS headquarter_name, h.headquarters_owner_id, h.company_logo,
@@ -55,7 +55,8 @@ $statement = $conn->prepare(
             l.license_image, {$licenseFaceImageSelect}
      FROM users u
      LEFT JOIN roles r ON r.role_id = {$roleIdSql}
-     LEFT JOIN headquarter h ON h.headquarter_id = u.headquarter_id
+    LEFT JOIN business_account_scope bas ON bas.user_id = u.user_id
+    LEFT JOIN headquarter h ON h.headquarter_id = bas.headquarter_id
      LEFT JOIN user_license l ON l.license_id = u.license_id
      WHERE u.user_id = ? {$scopeCondition}
      LIMIT 1"

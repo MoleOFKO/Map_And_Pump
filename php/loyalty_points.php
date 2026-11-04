@@ -569,9 +569,11 @@ function loyalty_is_internal_fill(PDO $pdo, int $bookerUserId, int $stationId): 
 
         // (C) Business role (HQ=3, Manager=4, Staff=5) + same HQ as station
         $userStmt = $pdo->prepare(
-            "SELECT u.role_id, u.business_role_id, u.headquarter_id,
+                "SELECT u.role_id, u.business_role_id, COALESCE(bas.headquarter_id, sbs.headquarter_id) AS headquarter_id,
                     COALESCE(u.business_role_id, u.role_id) AS effective_role
              FROM users u
+                 LEFT JOIN business_account_scope bas ON bas.user_id = u.user_id
+                 LEFT JOIN station_business_scope sbs ON sbs.branch_manager_user_id = u.user_id
              WHERE u.user_id = ?
              LIMIT 1"
         );
@@ -588,9 +590,6 @@ function loyalty_is_internal_fill(PDO $pdo, int $bookerUserId, int $stationId): 
         }
 
         $hqId = (int) ($user['headquarter_id'] ?? 0);
-        if ($hqId <= 0 && function_exists('map_pump_current_hq_id')) {
-            $hqId = (int) map_pump_current_hq_id($pdo, $bookerUserId);
-        }
         if ($hqId <= 0) {
             return false;
         }

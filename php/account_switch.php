@@ -67,10 +67,13 @@ function account_switch_allowed_staff_record(PDO $pdo, int $userId): ?array
 
     try {
         $stmt = $pdo->prepare(
-            'SELECT u.user_id, u.user_name, u.email, u.status, u.role_id, u.business_role_id, u.current_role_id, u.headquarter_id,
+                'SELECT u.user_id, u.user_name, u.email, u.status, u.role_id, u.business_role_id, u.current_role_id,
+                    COALESCE(owned_hq.headquarter_id, bas.headquarter_id) AS headquarter_id,
                     s.staff_id, s.branch_id, s.is_active, s.full_name, s.staff_code,
                     COALESCE(r.role_name, \'staff\') AS current_role_name
              FROM users u
+             LEFT JOIN business_account_scope bas ON bas.user_id = u.user_id
+             LEFT JOIN headquarter owned_hq ON owned_hq.headquarters_owner_id = u.user_id
              LEFT JOIN staff s ON s.user_id = u.user_id
              LEFT JOIN roles r ON r.role_id = u.current_role_id
              WHERE u.user_id = ?
@@ -154,7 +157,7 @@ $targetMode = strtolower(trim((string) ($_POST['mode'] ?? '')));
 try {
     $stmt = $pdo->prepare(
         'SELECT u.user_id, u.user_name, u.email, u.oauth_avatar_url, u.status, u.role_id, u.business_role_id,
-                u.headquarter_id,
+                COALESCE(owned_hq.headquarter_id, bas.headquarter_id) AS headquarter_id,
                 COALESCE(
                     (SELECT st.branch_id FROM staff st WHERE st.user_id = u.user_id LIMIT 1),
                     (SELECT MIN(b.branch_id) FROM branches b WHERE b.manager_user_id = u.user_id),
@@ -164,6 +167,8 @@ try {
                 primary_role.role_name AS primary_role_name,
                 business_role.role_name AS business_role_name
          FROM users u
+         LEFT JOIN business_account_scope bas ON bas.user_id = u.user_id
+         LEFT JOIN headquarter owned_hq ON owned_hq.headquarters_owner_id = u.user_id
          LEFT JOIN roles primary_role ON primary_role.role_id = u.role_id
          LEFT JOIN roles business_role ON business_role.role_id = u.business_role_id
          WHERE u.user_id = ?

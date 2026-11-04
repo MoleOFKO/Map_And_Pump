@@ -15,7 +15,6 @@ if (!function_exists('map_pump_current_hq_id')) {
                      WHERE owned_hq.headquarters_owner_id = u.user_id
                      ORDER BY owned_hq.headquarter_id DESC
                      LIMIT 1),
-                    NULLIF(u.headquarter_id, 0),
                     NULLIF(bas.headquarter_id, 0),
                     (SELECT email_hq.headquarter_id
                      FROM headquarter email_hq
@@ -39,8 +38,7 @@ if (!function_exists('map_pump_manager_report_scope_sql')) {
     {
         return "(u.role_id = ? OR u.business_role_id = ? OR u.current_role_id = ?)
             AND (
-                u.headquarter_id = ?
-                OR EXISTS (
+                EXISTS (
                     SELECT 1
                     FROM business_account_scope report_account_scope
                     WHERE report_account_scope.user_id = u.user_id
@@ -70,7 +68,7 @@ if (!function_exists('map_pump_manager_in_hq')) {
              WHERE u.user_id = ?
                AND COALESCE(u.business_role_id, u.role_id) = 4
                AND (
-                   COALESCE(bas.headquarter_id, u.headquarter_id) = ?
+                   bas.headquarter_id = ?
                    OR EXISTS (
                        SELECT 1 FROM station_business_scope sbs
                        WHERE sbs.branch_manager_user_id = u.user_id

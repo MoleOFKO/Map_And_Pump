@@ -83,11 +83,11 @@ try {
             throw new RuntimeException('A staff invitation needs a station assignment before it can be accepted.');
         }
 
-        $userUpdateSql = "UPDATE users SET business_role_id = ?, headquarter_id = ?, status = 'active', updated_at = NOW()";
-        $userParams = [$roleId, $hqId, $userId];
+        $userUpdateSql = "UPDATE users SET business_role_id = ?, status = 'active', updated_at = NOW()";
+        $userParams = [$roleId, $userId];
         if (column_exists($pdo, 'users', 'current_role_id')) {
             $userUpdateSql .= ', current_role_id = ?';
-            $userParams = [$roleId, $hqId, $roleId, $userId];
+            $userParams = [$roleId, $roleId, $userId];
         }
         $userUpdateSql .= " WHERE user_id = ?";
         $userUpdate = $pdo->prepare($userUpdateSql);

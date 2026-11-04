@@ -89,12 +89,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($companyLogin->fetchColumn()) {
             $respond(false, 'This company email is already used by a login account. Use another company email.', 409);
         }
-        $ownerLookup = $pdo->prepare('SELECT user_id, role_id, business_role_id, headquarter_id FROM users WHERE LOWER(TRIM(email)) = ? LIMIT 1');
+        $ownerLookup = $pdo->prepare(
+            'SELECT u.user_id, u.role_id, u.business_role_id,
+                EXISTS (SELECT 1 FROM business_account_scope bas WHERE bas.user_id = u.user_id AND bas.headquarter_id IS NOT NULL) AS has_hq_scope
+             FROM users u WHERE LOWER(TRIM(u.email)) = ? LIMIT 1'
+        );
         $ownerLookup->execute([$accountEmail]);
         $ownerAccount = $ownerLookup->fetch(PDO::FETCH_ASSOC) ?: [];
         $ownerUserId = (int) ($ownerAccount['user_id'] ?? 0);
         if ($ownerUserId > 0 && ((int) ($ownerAccount['role_id'] ?? 0) !== 6 || (int) ($ownerAccount['business_role_id'] ?? 0) > 0
-            || (int) ($ownerAccount['headquarter_id'] ?? 0) > 0)) {
+            || (int) ($ownerAccount['has_hq_scope'] ?? 0) === 1)) {
             $respond(false, 'The owner email belongs to an account that cannot be linked to an HQ.', 409);
         }
         $existingHq = $pdo->prepare('SELECT 1 FROM headquarter WHERE (? > 0 AND headquarters_owner_id = ?) OR LOWER(TRIM(headquarter_email)) = ? LIMIT 1');
@@ -271,12 +275,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($companyLogin->fetchColumn()) {
             $respond(false, 'This company email is already used by a login account. Use another company email.', 409);
         }
-        $ownerLookup = $pdo->prepare('SELECT user_id, role_id, business_role_id, headquarter_id FROM users WHERE LOWER(TRIM(email)) = ? LIMIT 1');
+        $ownerLookup = $pdo->prepare(
+            'SELECT u.user_id, u.role_id, u.business_role_id,
+                EXISTS (SELECT 1 FROM business_account_scope bas WHERE bas.user_id = u.user_id AND bas.headquarter_id IS NOT NULL) AS has_hq_scope
+             FROM users u WHERE LOWER(TRIM(u.email)) = ? LIMIT 1'
+        );
         $ownerLookup->execute([$accountEmail]);
         $ownerAccount = $ownerLookup->fetch(PDO::FETCH_ASSOC) ?: [];
         $ownerUserId = (int) ($ownerAccount['user_id'] ?? 0);
         if ($ownerUserId > 0 && ((int) ($ownerAccount['role_id'] ?? 0) !== 6 || (int) ($ownerAccount['business_role_id'] ?? 0) > 0
-            || (int) ($ownerAccount['headquarter_id'] ?? 0) > 0)) {
+            || (int) ($ownerAccount['has_hq_scope'] ?? 0) === 1)) {
             $respond(false, 'The owner email belongs to an account that cannot be linked to an HQ.', 409);
         }
         $emailConflict = $pdo->prepare(

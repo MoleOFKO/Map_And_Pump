@@ -129,7 +129,12 @@ if ($action === 'generate') {
 
     $summary = '';
     if ($scope === 'hq_performance') {
-        $summaryQuery = $conn->query('SELECT COUNT(*) AS total, COALESCE(SUM(CASE WHEN LOWER(u.status) IN (0x617070726f766564,0x616374697665) THEN 1 ELSE 0 END),0) AS active FROM headquarter h LEFT JOIN users u ON u.headquarter_id=h.headquarter_id');
+                $summaryQuery = $conn->query("SELECT COUNT(*) AS total,
+                        COALESCE(SUM((SELECT COUNT(*) FROM business_account_scope bas
+                                                    INNER JOIN users u ON u.user_id = bas.user_id
+                                                    WHERE bas.headquarter_id = h.headquarter_id
+                                                        AND LOWER(u.status) IN (0x617070726f766564,0x616374697665))), 0) AS active
+                        FROM headquarter h");
         $summaryRow = $summaryQuery?->fetch_assoc() ?: ['total' => 0, 'active' => 0];
         $summary = 'HQ records: ' . (int) $summaryRow['total'] . '; active linked accounts: ' . (int) $summaryRow['active'];
     } elseif ($scope === 'stations') {

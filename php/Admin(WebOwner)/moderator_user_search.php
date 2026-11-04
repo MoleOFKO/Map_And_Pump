@@ -88,12 +88,14 @@ $emailPrefix = $exact . '%';
 // Prefer a query that accounts for business_role_id when the column exists.
 // Fall back without that join if prepare fails (partial deploys / older schema).
 $sqlWithBusiness = "
-    SELECT u.user_id, u.user_name, u.email, u.status, r.role_name, h.company_name AS hq_name
+    SELECT u.user_id, u.user_name, u.email, u.status, r.role_name, COALESCE(h.company_name, owned_hq.company_name) AS hq_name
     FROM users u
     LEFT JOIN roles r ON r.role_id = u.role_id
     LEFT JOIN roles br ON br.role_id = u.business_role_id
     LEFT JOIN roles cr ON cr.role_id = u.current_role_id
-    LEFT JOIN headquarter h ON h.headquarter_id = u.headquarter_id
+    LEFT JOIN business_account_scope bas ON bas.user_id = u.user_id
+    LEFT JOIN headquarter h ON h.headquarter_id = bas.headquarter_id
+    LEFT JOIN headquarter owned_hq ON owned_hq.headquarters_owner_id = u.user_id
     WHERE (
            ? = ''
         OR LOWER(u.user_name) LIKE ?
@@ -110,10 +112,12 @@ $sqlWithBusiness = "
        u.user_name ASC";
 
 $sqlWithoutBusiness = "
-    SELECT u.user_id, u.user_name, u.email, u.status, r.role_name, h.company_name AS hq_name
+    SELECT u.user_id, u.user_name, u.email, u.status, r.role_name, COALESCE(h.company_name, owned_hq.company_name) AS hq_name
     FROM users u
     LEFT JOIN roles r ON r.role_id = u.role_id
-    LEFT JOIN headquarter h ON h.headquarter_id = u.headquarter_id
+    LEFT JOIN business_account_scope bas ON bas.user_id = u.user_id
+    LEFT JOIN headquarter h ON h.headquarter_id = bas.headquarter_id
+    LEFT JOIN headquarter owned_hq ON owned_hq.headquarters_owner_id = u.user_id
     WHERE (
            ? = ''
         OR LOWER(u.user_name) LIKE ?

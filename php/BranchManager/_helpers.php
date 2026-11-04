@@ -254,10 +254,10 @@ function hq_recipient_ids(PDO $db, int $managerUserId): array {
 
     if ($hqId <= 0) {
         $userStmt = $db->prepare(
-            "SELECT headquarter_id
-             FROM users
-             WHERE user_id = :uid
-               AND headquarter_id IS NOT NULL
+                        "SELECT headquarter_id
+                         FROM business_account_scope
+                         WHERE user_id = :uid
+                             AND headquarter_id IS NOT NULL
              LIMIT 1"
         );
         $userStmt->execute([':uid' => $managerUserId]);
@@ -271,9 +271,9 @@ function hq_recipient_ids(PDO $db, int $managerUserId): array {
     $stmt = $db->prepare(
         "SELECT DISTINCT u.user_id
          FROM users u
+                 LEFT JOIN business_account_scope bas ON bas.user_id = u.user_id
          LEFT JOIN roles r ON r.role_id = COALESCE(u.current_role_id, u.business_role_id, u.role_id)
-         WHERE u.headquarter_id = :hq_id
-           AND (
+                 WHERE (bas.headquarter_id = :hq_id AND (
                 LOWER(COALESCE(r.role_name, '')) IN ('hq', 'headquarter', 'headquarters', 'company admin')
                 OR u.user_id = (
                     SELECT h.headquarters_owner_id
@@ -281,7 +281,10 @@ function hq_recipient_ids(PDO $db, int $managerUserId): array {
                     WHERE h.headquarter_id = :hq_id
                     LIMIT 1
                 )
-           )
+             )) OR u.user_id = (
+                 SELECT h.headquarters_owner_id FROM headquarter h
+                 WHERE h.headquarter_id = :hq_id LIMIT 1
+             )
          ORDER BY u.user_id ASC"
     );
     $stmt->execute([':hq_id' => $hqId]);

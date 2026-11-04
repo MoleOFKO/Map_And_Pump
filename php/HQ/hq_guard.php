@@ -60,12 +60,15 @@ try {
     $currentRoleJoin = $hasCurrentRole ? 'LEFT JOIN roles cr ON cr.role_id = u.current_role_id' : '';
 
     $stmt = $pdo->prepare(
-        "SELECT u.user_id, u.user_name, u.email, u.role_id, u.business_role_id, u.headquarter_id, u.status,
+        "SELECT u.user_id, u.user_name, u.email, u.role_id, u.business_role_id,
+            COALESCE(owned_hq.headquarter_id, bas.headquarter_id) AS headquarter_id, u.status,
             h.expire_at, h.business_license_expire_date, h.service_expires_at, h.status AS headquarter_status,
                 {$currentRoleSelect}
                 r.role_name, br.role_name AS business_role_name
          FROM users u
-         LEFT JOIN headquarter h ON h.headquarter_id = u.headquarter_id
+         LEFT JOIN business_account_scope bas ON bas.user_id = u.user_id
+         LEFT JOIN headquarter owned_hq ON owned_hq.headquarters_owner_id = u.user_id
+         LEFT JOIN headquarter h ON h.headquarter_id = COALESCE(owned_hq.headquarter_id, bas.headquarter_id)
          LEFT JOIN roles r ON r.role_id = u.role_id
          LEFT JOIN roles br ON br.role_id = u.business_role_id
          {$currentRoleJoin}

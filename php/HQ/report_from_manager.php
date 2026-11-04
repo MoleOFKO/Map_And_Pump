@@ -25,7 +25,7 @@ try {
                  r.created_at DESC
         LIMIT 5'
     );
-    $stmt->execute([$managerRoleId, $managerRoleId, $managerRoleId, $headquarterId, $headquarterId, $headquarterId]);
+    $stmt->execute([$managerRoleId, $managerRoleId, $managerRoleId, $headquarterId, $headquarterId]);
     $reports = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     $logStmt = $pdo->prepare(
@@ -35,8 +35,7 @@ try {
          LEFT JOIN business_account_scope bas ON bas.user_id = u.user_id
          WHERE (l.role_id = ? OR (l.role_id IS NULL AND (u.role_id = ? OR u.business_role_id = ? OR u.current_role_id = ?)))
            AND (
-                u.headquarter_id = ?
-                OR bas.headquarter_id = ?
+             bas.headquarter_id = ?
                 OR EXISTS (
                     SELECT 1
                     FROM station_business_scope sbs
@@ -47,7 +46,7 @@ try {
          ORDER BY l.created_at DESC
          LIMIT 10'
     );
-    $logStmt->execute([$managerRoleId, $managerRoleId, $managerRoleId, $managerRoleId, $headquarterId, $headquarterId, $headquarterId]);
+    $logStmt->execute([$managerRoleId, $managerRoleId, $managerRoleId, $managerRoleId, $headquarterId, $headquarterId]);
     $logs = $logStmt->fetchAll(PDO::FETCH_ASSOC);
 } catch (Throwable $e) {
     error_log('Failed to load manager activities: ' . $e->getMessage());

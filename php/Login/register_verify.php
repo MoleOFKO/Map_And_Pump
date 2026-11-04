@@ -88,7 +88,7 @@ try {
     $currentRoleSelect = $hasCurrentRole ? 'current_role_id,' : 'NULL AS current_role_id,';
     $stmt = $pdo->prepare(
         "SELECT user_id, user_public_id, user_name, email, role_id, business_role_id,
-                license_id, headquarter_id, {$currentRoleSelect} status
+            license_id, {$currentRoleSelect} status
          FROM users
          WHERE user_id = ? AND LOWER(email) = LOWER(?)
          LIMIT 1"
@@ -142,7 +142,7 @@ try {
     $_SESSION['current_role_name'] = 'customer';
     $_SESSION['business_role_id'] = (int) ($user['business_role_id'] ?? 0);
     $_SESSION['business_role_name'] = '';
-    $_SESSION['headquarter_id'] = (int) ($user['headquarter_id'] ?? 0);
+    $_SESSION['headquarter_id'] = 0;
     $_SESSION['branch_id'] = 0;
     $_SESSION['license_id'] = (int) ($user['license_id'] ?? 0);
     $_SESSION['oil_limit'] = 35.0;

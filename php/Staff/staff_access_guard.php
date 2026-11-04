@@ -20,12 +20,15 @@ function map_pump_staff_record_for_user(PDO $pdo, int $userId): ?array
         $staffRoleId = (int) ($roleStmt ? $roleStmt->fetchColumn() : 0);
 
         $stmt = $pdo->prepare(
-            "SELECT u.user_id, u.user_name, u.email, u.status, u.role_id, u.business_role_id, u.current_role_id, u.headquarter_id,
+                "SELECT u.user_id, u.user_name, u.email, u.status, u.role_id, u.business_role_id, u.current_role_id,
+                    COALESCE(bas.headquarter_id, sbs.headquarter_id) AS headquarter_id,
                     s.staff_id, s.branch_id, s.is_active, s.full_name, s.staff_code,
                     r.role_name AS current_role_name,
                     br.role_name AS business_role_name
              FROM users u
              LEFT JOIN staff s ON s.user_id = u.user_id
+             LEFT JOIN business_account_scope bas ON bas.user_id = u.user_id
+             LEFT JOIN station_business_scope sbs ON sbs.station_id = s.branch_id
              LEFT JOIN roles r ON r.role_id = u.current_role_id
              LEFT JOIN roles br ON br.role_id = u.business_role_id
              WHERE u.user_id = :user_id

@@ -54,9 +54,11 @@ try {
     if (isset($pdo)) {
         $stmt = $pdo->prepare('SELECT u.user_name, h.company_name AS headquarter_name, h.company_logo AS headquarter_logo, b.branch_name, b.branch_code
             FROM users u
-            LEFT JOIN headquarter h ON h.headquarter_id = u.headquarter_id
             LEFT JOIN staff st ON st.user_id = u.user_id
             LEFT JOIN branches b ON b.branch_id = st.branch_id
+            LEFT JOIN business_account_scope bas ON bas.user_id = u.user_id
+            LEFT JOIN station_business_scope sbs ON sbs.station_id = st.branch_id
+            LEFT JOIN headquarter h ON h.headquarter_id = COALESCE(bas.headquarter_id, sbs.headquarter_id)
             WHERE u.user_id = ? LIMIT 1');
         $stmt->execute([(int)$_SESSION['user_id']]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);

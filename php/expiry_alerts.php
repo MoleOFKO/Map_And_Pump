@@ -225,12 +225,13 @@ SELECT h.headquarter_id, h.company_name, h.expire_at, h.location,
        COALESCE(owner.status, 'pending') AS account_status
 FROM headquarter h
 LEFT JOIN (
-    SELECT u.headquarter_id, MIN(u.user_id) AS owner_user_id
-    FROM users u
-    WHERE (u.role_id = 3 OR u.business_role_id = 3) AND u.headquarter_id IS NOT NULL
-    GROUP BY u.headquarter_id
+    SELECT bas.headquarter_id, MIN(u.user_id) AS owner_user_id
+    FROM business_account_scope bas
+    INNER JOIN users u ON u.user_id = bas.user_id
+    WHERE u.role_id = 3 OR u.business_role_id = 3
+    GROUP BY bas.headquarter_id
 ) owners ON owners.headquarter_id = h.headquarter_id
-LEFT JOIN users owner ON owner.user_id = owners.owner_user_id
+LEFT JOIN users owner ON owner.user_id = COALESCE(h.headquarters_owner_id, owners.owner_user_id)
 WHERE h.expire_at IS NOT NULL
 {$whereExtra}
 ORDER BY h.expire_at ASC

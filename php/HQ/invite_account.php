@@ -144,18 +144,18 @@ try {
         if ($createdAccount) {
             $createAccount = $pdo->prepare(
                 "INSERT INTO users
-                    (user_name, email, hashed_password, headquarter_id, role_id, business_role_id, current_role_id, status, created_at, updated_at)
-                 VALUES (?, ?, NULL, ?, 6, 4, 4, 'active', NOW(), NOW())"
+                    (user_name, email, hashed_password, role_id, business_role_id, current_role_id, status, created_at, updated_at)
+                 VALUES (?, ?, NULL, 6, 4, 4, 'active', NOW(), NOW())"
             );
-            $createAccount->execute([$invitee['user_name'], $email, $hqId]);
+            $createAccount->execute([$invitee['user_name'], $email]);
             $invitee['user_id'] = (int) $pdo->lastInsertId();
         } else {
             $userUpdate = $pdo->prepare(
                 "UPDATE users
-                 SET headquarter_id = ?, business_role_id = 4, current_role_id = 4, status = 'active', updated_at = NOW()
+                  SET business_role_id = 4, current_role_id = 4, status = 'active', updated_at = NOW()
                  WHERE user_id = ?"
             );
-            $userUpdate->execute([$hqId, (int) $invitee['user_id']]);
+              $userUpdate->execute([(int) $invitee['user_id']]);
         }
 
         if ($stationId) {

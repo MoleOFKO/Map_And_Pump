@@ -150,16 +150,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'updat
 try {
     $stmt = $pdo->prepare(
         'SELECT u.user_id, u.user_name, u.email, u.oauth_avatar_url, u.status, u.role_id, u.business_role_id,
-                u.headquarter_id, st.branch_id, u.created_at,
+                COALESCE(bas.headquarter_id, sbs.headquarter_id) AS headquarter_id, st.branch_id, u.created_at,
                 r.role_name, br.role_name AS business_role_name,
                 h.company_name AS headquarter_name,
                 b.branch_name, b.branch_code
          FROM users u
          LEFT JOIN roles r ON r.role_id = u.role_id
          LEFT JOIN roles br ON br.role_id = u.business_role_id
-         LEFT JOIN headquarter h ON h.headquarter_id = u.headquarter_id
          LEFT JOIN staff st ON st.user_id = u.user_id
          LEFT JOIN branches b ON b.branch_id = st.branch_id
+         LEFT JOIN business_account_scope bas ON bas.user_id = u.user_id
+         LEFT JOIN station_business_scope sbs ON sbs.station_id = st.branch_id
+         LEFT JOIN headquarter h ON h.headquarter_id = COALESCE(bas.headquarter_id, sbs.headquarter_id)
          WHERE u.user_id = ?
          LIMIT 1'
     );

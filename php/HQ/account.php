@@ -107,20 +107,13 @@ try {
             LEFT JOIN station_business_scope sbs ON sbs.branch_manager_user_id = u.user_id AND sbs.headquarter_id = :hq_id_scope
                         LEFT JOIN branches s ON s.branch_id = COALESCE(bas.station_id, sbs.station_id)
                             WHERE COALESCE(u.business_role_id, u.role_id) = 4
-              AND (
-                  bas.headquarter_id = :hq_id
-                  OR (
-                      bas.headquarter_id IS NULL
-                      AND (u.headquarter_id = :hq_id_user OR sbs.headquarter_id = :hq_id_scope_filter)
-                  )
-              )
+              AND (bas.headquarter_id = :hq_id OR sbs.headquarter_id = :hq_id_scope_filter)
             ORDER BY u.user_id ASC";
 
     $stmt = $pdo->prepare($sql);
     $stmt->execute([
         ':hq_id_scope' => $hqId,
         ':hq_id' => $hqId,
-        ':hq_id_user' => $hqId,
         ':hq_id_scope_filter' => $hqId,
     ]);
     $managers = $stmt ? $stmt->fetchAll(PDO::FETCH_ASSOC) : [];
@@ -150,7 +143,7 @@ try {
          LEFT JOIN business_account_scope bas ON bas.user_id = u.user_id
          WHERE COALESCE(u.business_role_id, u.role_id) = 4
            AND (
-               COALESCE(bas.headquarter_id, u.headquarter_id) = ?
+               bas.headquarter_id = ?
                OR EXISTS (
                    SELECT 1 FROM station_business_scope sbs
                    WHERE sbs.branch_manager_user_id = u.user_id

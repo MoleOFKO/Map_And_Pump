@@ -13,7 +13,7 @@ if (!in_array($expiryFilter, ['warning', 'expired', 'any'], true)) {
 
 $allowedRegions = function_exists('admin_filter_hq_regions') ? admin_filter_hq_regions() : [];
 $allowedStatuses = function_exists('admin_filter_user_statuses')
-    ? admin_filter_user_statuses('u.headquarter_id IS NOT NULL')
+    ? admin_filter_user_statuses('EXISTS (SELECT 1 FROM business_account_scope bas WHERE bas.user_id = u.user_id AND bas.headquarter_id IS NOT NULL)')
     : hq_manageable_statuses();
 foreach (['active', 'approved', 'pending', 'rejected', 'suspended', 'removed'] as $fallbackStatus) {
     if (!in_array($fallbackStatus, $allowedStatuses, true)) {

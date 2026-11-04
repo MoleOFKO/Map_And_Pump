@@ -27,7 +27,6 @@ if ($hqRoleId <= 0) {
 }
 
 try {
-    /* TiDB does not allow a subquery inside a JOIN condition. */
     $hqQuery = $conn->prepare(
         'SELECT h.headquarter_id, h.company_name, h.location, h.contact_number,
                 h.headquarter_email, h.company_logo, h.business_license,
@@ -35,12 +34,13 @@ try {
                 owner.user_name AS owner_name, owner.email AS owner_email
          FROM headquarter h
          LEFT JOIN (
-             SELECT u.headquarter_id, MIN(u.user_id) AS owner_user_id
-             FROM users u
+             SELECT bas.headquarter_id, MIN(u.user_id) AS owner_user_id
+             FROM business_account_scope bas
+             INNER JOIN users u ON u.user_id = bas.user_id
              WHERE u.role_id = ? OR u.business_role_id = ?
-             GROUP BY u.headquarter_id
+             GROUP BY bas.headquarter_id
          ) owner_link ON owner_link.headquarter_id = h.headquarter_id
-         LEFT JOIN users owner ON owner.user_id = owner_link.owner_user_id
+         LEFT JOIN users owner ON owner.user_id = COALESCE(h.headquarters_owner_id, owner_link.owner_user_id)
          WHERE h.headquarter_id = ?
          LIMIT 1'
     );
@@ -84,9 +84,9 @@ try {
                 u.role_id, u.business_role_id,
                 COALESCE(business_role.role_name, base_role.role_name) AS role_name
          FROM users u
+         INNER JOIN business_account_scope bas ON bas.user_id = u.user_id AND bas.headquarter_id = ?
          LEFT JOIN roles base_role ON base_role.role_id = u.role_id
          LEFT JOIN roles business_role ON business_role.role_id = u.business_role_id
-         WHERE u.headquarter_id = ?
          ORDER BY u.created_at DESC, u.user_id DESC
          LIMIT 100'
     );
@@ -151,8 +151,9 @@ try {
                     s.address AS station_address, s.status, s.created_at,
                     manager.user_name AS manager_name
                  FROM branches s
-                 INNER JOIN users manager ON manager.user_id = s.manager_user_id
-             WHERE manager.headquarter_id = ?
+                 INNER JOIN station_business_scope scope ON scope.station_id = s.branch_id AND scope.headquarter_id = ?
+                 LEFT JOIN users manager ON manager.user_id = COALESCE(scope.branch_manager_user_id, s.manager_user_id)
+             WHERE manager.user_id IS NOT NULL
             ORDER BY s.branch_name ASC, s.branch_id ASC
              LIMIT 100'
         );

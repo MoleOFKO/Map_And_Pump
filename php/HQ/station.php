@@ -133,7 +133,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                      WHERE u.email = ?
                        AND COALESCE(u.business_role_id, u.role_id) = 4
                        AND (
-                           COALESCE(bas.headquarter_id, u.headquarter_id) = ?
+                           bas.headquarter_id = ?
                            OR EXISTS (
                                SELECT 1 FROM station_business_scope sbs
                                WHERE sbs.branch_manager_user_id = u.user_id
@@ -200,8 +200,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     );
                     $accountScopeStmt->execute([$manager_id, $hqId, $stationId]);
 
-                    $userScopeStmt = $pdo->prepare("UPDATE users SET headquarter_id = ?, business_role_id = 4 WHERE user_id = ?");
-                    $userScopeStmt->execute([$hqId, $manager_id]);
+                    $userScopeStmt = $pdo->prepare("UPDATE users SET business_role_id = 4 WHERE user_id = ?");
+                    $userScopeStmt->execute([$manager_id]);
                 }
 
                 $tankSeedStmt = $pdo->prepare(
@@ -298,7 +298,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                  WHERE u.email = ?
                    AND COALESCE(u.business_role_id, u.role_id) = 4
                    AND (
-                       COALESCE(bas.headquarter_id, u.headquarter_id) = ?
+                       bas.headquarter_id = ?
                        OR EXISTS (
                            SELECT 1 FROM station_business_scope sbs
                            WHERE sbs.branch_manager_user_id = u.user_id
@@ -327,8 +327,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                  ON DUPLICATE KEY UPDATE headquarter_id = VALUES(headquarter_id), station_id = VALUES(station_id), status = 'active'"
             );
             $accountScopeStmt->execute([$manager_id, $hqId, $station_id]);
-            $userScopeStmt = $pdo->prepare("UPDATE users SET headquarter_id = ?, business_role_id = 4 WHERE user_id = ?");
-            $userScopeStmt->execute([$hqId, $manager_id]);
+            $userScopeStmt = $pdo->prepare("UPDATE users SET business_role_id = 4 WHERE user_id = ?");
+            $userScopeStmt->execute([$manager_id]);
             $pdo->commit();
             $message = "Configuration saved successfully!";
         } catch (PDOException $e) {
@@ -447,7 +447,7 @@ try {
          LEFT JOIN business_account_scope bas ON bas.user_id = u.user_id
          WHERE COALESCE(u.business_role_id, u.role_id) = 4
            AND (
-               COALESCE(bas.headquarter_id, u.headquarter_id) = ?
+               bas.headquarter_id = ?
                OR EXISTS (
                    SELECT 1 FROM station_business_scope sbs
                    WHERE sbs.branch_manager_user_id = u.user_id
@@ -466,7 +466,7 @@ try {
          LEFT JOIN business_account_scope bas ON bas.user_id = u.user_id
          WHERE COALESCE(u.business_role_id, u.role_id) = 4
            AND (
-               COALESCE(bas.headquarter_id, u.headquarter_id) = ?
+               bas.headquarter_id = ?
                OR EXISTS (
                    SELECT 1 FROM station_business_scope sbs
                    WHERE sbs.branch_manager_user_id = u.user_id

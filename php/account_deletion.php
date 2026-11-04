@@ -39,15 +39,14 @@ function map_pump_hq_owner_context(PDO $pdo, int $userId): ?array
 
     $stmt = $pdo->prepare(
         "SELECT u.user_id, u.user_name, u.status, u.role_id, u.business_role_id,
-                u.headquarter_id, h.account_deletion_requested_at, h.account_deletion_scheduled_for,
+                                h.headquarter_id, h.account_deletion_requested_at, h.account_deletion_scheduled_for,
                 h.company_name, h.headquarters_owner_id
          FROM users u
-         LEFT JOIN headquarter h ON h.headquarter_id = u.headquarter_id
+                 INNER JOIN business_account_scope bas ON bas.user_id = u.user_id AND bas.business_role_id = 3
+                 INNER JOIN headquarter h ON h.headquarter_id = bas.headquarter_id
          WHERE u.user_id = ?
            AND (u.business_role_id = 3 OR u.role_id = 3)
-           AND u.headquarter_id IS NOT NULL
-           AND h.headquarter_id IS NOT NULL
-           AND (h.headquarters_owner_id IS NULL OR h.headquarters_owner_id = u.user_id)
+                     AND (h.headquarters_owner_id IS NULL OR h.headquarters_owner_id = u.user_id)
          LIMIT 1"
     );
     $stmt->execute([$userId]);
@@ -124,9 +123,10 @@ function map_pump_cleanup_due_account_deletions(PDO $pdo): int
     }
 
     $stmt = $pdo->query(
-        "SELECT u.user_id, u.headquarter_id
+        "SELECT u.user_id, h.headquarter_id
          FROM users u
-         INNER JOIN headquarter h ON h.headquarter_id = u.headquarter_id
+         INNER JOIN business_account_scope bas ON bas.user_id = u.user_id AND bas.business_role_id = 3
+         INNER JOIN headquarter h ON h.headquarter_id = bas.headquarter_id
          WHERE u.status = 'pending_deletion'
            AND h.account_deletion_requested_at <= DATE_SUB(NOW(), INTERVAL " . MAP_PUMP_ACCOUNT_DELETION_DAYS . " DAY)
            AND h.account_deletion_scheduled_for <= NOW()
@@ -143,8 +143,10 @@ function map_pump_cleanup_due_account_deletions(PDO $pdo): int
             $clearOwner->execute([(int) $account['headquarter_id'], $userId]);
                         $deleteUser = $pdo->prepare(
                                 "DELETE u FROM users u
-                                 INNER JOIN headquarter h ON h.headquarter_id = u.headquarter_id
+                                 INNER JOIN business_account_scope bas ON bas.user_id = u.user_id
+                                 INNER JOIN headquarter h ON h.headquarter_id = bas.headquarter_id
                                  WHERE u.user_id = ? AND u.status = 'pending_deletion'
+                                     AND (h.headquarters_owner_id IS NULL OR h.headquarters_owner_id = u.user_id)
                                      AND h.account_deletion_requested_at <= DATE_SUB(NOW(), INTERVAL " . MAP_PUMP_ACCOUNT_DELETION_DAYS . " DAY)
                                      AND h.account_deletion_scheduled_for <= NOW()"
                         );

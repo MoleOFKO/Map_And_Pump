@@ -29,15 +29,13 @@ if (!hq_db_available() || !hq_registry_schema_ready()) {
 
 global $conn;
 $targetQuery = $conn->prepare(
-    'SELECT u.user_id, u.user_name, u.email AS user_email, u.headquarter_id, h.company_name,
-            (SELECT MIN(u2.user_id)
-             FROM users u2
-             WHERE u2.headquarter_id = u.headquarter_id
-               AND (u2.role_id = 3 OR u2.business_role_id = 3)) AS owner_user_id
+        'SELECT u.user_id, u.user_name, u.email AS user_email, bas.headquarter_id, h.company_name,
+            h.headquarters_owner_id AS owner_user_id
      FROM users u
+         INNER JOIN business_account_scope bas ON bas.user_id = u.user_id
      INNER JOIN roles r ON r.role_id = u.role_id
-     INNER JOIN headquarter h ON h.headquarter_id = u.headquarter_id
-     WHERE u.user_id = ? AND u.headquarter_id = ?
+         INNER JOIN headquarter h ON h.headquarter_id = bas.headquarter_id
+         WHERE u.user_id = ? AND bas.headquarter_id = ?
        AND (u.role_id = 3 OR u.business_role_id = 3)
      LIMIT 1'
 );
@@ -84,7 +82,7 @@ if ($duplicate) {
 try {
     $conn->begin_transaction();
 
-    $userUpdate = $conn->prepare('UPDATE users SET user_name = ?, email = ?, updated_at = NOW() WHERE user_id = ? AND headquarter_id = ?');
+    $userUpdate = $conn->prepare('UPDATE users SET user_name = ?, email = ?, updated_at = NOW() WHERE user_id = ? AND EXISTS (SELECT 1 FROM business_account_scope bas WHERE bas.user_id = users.user_id AND bas.headquarter_id = ?)');
     if (!$userUpdate) {
         throw new RuntimeException('Could not prepare the user account update.');
     }
