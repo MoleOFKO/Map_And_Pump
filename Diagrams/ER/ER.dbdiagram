@@ -38,6 +38,12 @@
         "y": 12
       },
       {
+        "name": "business_account_scope",
+        "schemaName": "public",
+        "x": 950,
+        "y": 260
+      },
+      {
         "name": "headquarter",
         "schemaName": "public",
         "x": 480,

@@ -65,11 +65,7 @@ try {
          FROM branches b
          LEFT JOIN tanks t ON t.branch_id = b.branch_id
             AND t.is_enabled = 1
-         LEFT JOIN oil_types ot ON
-            (t.fuel_code = 'p92' AND LOWER(REPLACE(ot.oil_name, ' ', '')) = 'octane92')
-            OR (t.fuel_code = 'p95' AND LOWER(REPLACE(ot.oil_name, ' ', '')) = 'octane95')
-            OR (t.fuel_code = 'dsl' AND LOWER(REPLACE(ot.oil_name, ' ', '')) IN ('disel', 'diesel'))
-            OR (t.fuel_code = 'pdsl' AND LOWER(REPLACE(ot.oil_name, ' ', '')) IN ('premiumdisel', 'premiumdiesel'))
+            LEFT JOIN oil_types ot ON ot.oil_type_id = t.oil_type_id
          LEFT JOIN ({$latestInventorySql}) latest_inventory
             ON latest_inventory.station_id = b.branch_id
             AND latest_inventory.oil_type_id = ot.oil_type_id

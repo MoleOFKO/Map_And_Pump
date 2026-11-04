@@ -32,6 +32,12 @@
         "y": 74
       },
       {
+        "name": "business_account_scope",
+        "schemaName": "public",
+        "x": 560.20556640625,
+        "y": 430
+      },
+      {
         "name": "sessions",
         "schemaName": "public",
         "x": 1160.537109375,
@@ -154,6 +160,21 @@
       },
       {
         "firstFieldNames": [
+          "user_id"
+        ],
+        "firstTableName": "users",
+        "firstSchemaName": "public",
+        "firstRelation": "1",
+        "secondFieldNames": [
+          "user_id"
+        ],
+        "secondTableName": "business_account_scope",
+        "secondSchemaName": "public",
+        "secondRelation": "1",
+        "checkPoints": []
+      },
+      {
+        "firstFieldNames": [
           "license_id"
         ],
         "firstTableName": "user_license",
@@ -169,6 +190,21 @@
       },
       {
         "firstFieldNames": [
+          "role_id"
+        ],
+        "firstTableName": "roles",
+        "firstSchemaName": "public",
+        "firstRelation": "1",
+        "secondFieldNames": [
+          "business_role_id"
+        ],
+        "secondTableName": "business_account_scope",
+        "secondSchemaName": "public",
+        "secondRelation": "*",
+        "checkPoints": []
+      },
+      {
+        "firstFieldNames": [
           "headquarter_id"
         ],
         "firstTableName": "headquarter",
@@ -177,7 +213,37 @@
         "secondFieldNames": [
           "headquarter_id"
         ],
-        "secondTableName": "users",
+        "secondTableName": "business_account_scope",
+        "secondSchemaName": "public",
+        "secondRelation": "*",
+        "checkPoints": []
+      },
+      {
+        "firstFieldNames": [
+          "user_id"
+        ],
+        "firstTableName": "users",
+        "firstSchemaName": "public",
+        "firstRelation": "1",
+        "secondFieldNames": [
+          "branch_manager_user_id"
+        ],
+        "secondTableName": "business_account_scope",
+        "secondSchemaName": "public",
+        "secondRelation": "*",
+        "checkPoints": []
+      },
+      {
+        "firstFieldNames": [
+          "branch_id"
+        ],
+        "firstTableName": "branches",
+        "firstSchemaName": "public",
+        "firstRelation": "1",
+        "secondFieldNames": [
+          "station_id"
+        ],
+        "secondTableName": "business_account_scope",
         "secondSchemaName": "public",
         "secondRelation": "*",
         "checkPoints": []
