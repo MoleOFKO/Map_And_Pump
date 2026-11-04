@@ -44,6 +44,10 @@ try {
         }
     }
 
+    if ($roleId === 4 && !$stationId) {
+        throw new RuntimeException('Assign a station to the branch manager before sending the invitation.');
+    }
+
     $userStmt = $pdo->prepare(
         "SELECT u.user_id, u.user_name, u.hashed_password, u.status,
                 primary_role.role_name AS primary_role_name,
@@ -135,10 +139,6 @@ try {
     );
 
     $notificationId = null;
-    if ($roleId === 4) {
-        account_password_setup_ensure_schema_pdo($pdo);
-    }
-
     $pdo->beginTransaction();
     if ($roleId === 4) {
         if ($createdAccount) {
@@ -205,9 +205,7 @@ try {
         $notification->execute([(int) $invitee['user_id'], $email, $subject, $message]);
         $notificationId = (int) $pdo->lastInsertId();
 
-        if (trim((string) ($invitee['hashed_password'] ?? '')) === '') {
-            $setupUrl = account_password_setup_create_link_pdo($pdo, (int) $invitee['user_id']);
-        }
+        $setupUrl = account_password_setup_create_link_pdo($pdo, (int) $invitee['user_id']);
     } else {
         $insert = $pdo->prepare(
             "INSERT INTO invitations

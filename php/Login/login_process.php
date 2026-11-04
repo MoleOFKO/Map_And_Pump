@@ -43,6 +43,11 @@ try {
 
     $stmt = $pdo->prepare(
         "SELECT u.user_id, u.user_public_id, u.user_name, u.email, u.hashed_password, u.status,
+            (SELECT manager_branch.branch_password
+             FROM branches manager_branch
+             WHERE manager_branch.manager_user_id = u.user_id
+             ORDER BY manager_branch.branch_id
+             LIMIT 1) AS branch_password,
             u.oauth_avatar_url,
                 u.role_id, u.business_role_id, u.license_id,
                 COALESCE((SELECT owned_hq.headquarter_id
@@ -75,7 +80,13 @@ try {
         auth_redirect_to_login('Invalid email or password.', $email);
     }
 
-    if (!isset($user['hashed_password']) || !password_verify($password, $user['hashed_password'])) {
+    $isBranchManagerAccount = (int) ($user['business_role_id'] ?? 0) === 4
+        || (int) ($user['current_role_id'] ?? 0) === 4
+        || (int) ($user['role_id'] ?? 0) === 4;
+    $passwordHash = $isBranchManagerAccount && trim((string) ($user['branch_password'] ?? '')) !== ''
+        ? (string) $user['branch_password']
+        : (string) ($user['hashed_password'] ?? '');
+    if ($passwordHash === '' || !password_verify($password, $passwordHash)) {
         auth_redirect_to_login('Invalid email or password.', $email);
     }
 
