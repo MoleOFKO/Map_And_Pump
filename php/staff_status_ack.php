@@ -19,13 +19,11 @@ $type = strtolower(trim((string) ($_POST['type'] ?? $_REQUEST['type'] ?? '')));
 try {
     if ($notificationId > 0) {
         $ok = staff_status_notification_acknowledge($pdo, $userId, $notificationId);
-        if (!empty($_SESSION['pending_staff_status_events'])) {
-            $_SESSION['pending_staff_status_events'] = array_values(array_filter(
-                (array) $_SESSION['pending_staff_status_events'],
-                static fn ($event) => !is_array($event) || ((int) ($event['notification_id'] ?? 0) !== $notificationId)
-            ));
-        }
         unset($_SESSION['staff_status_popup_type']);
+        $_SESSION['pending_staff_status_events'] = array_values(array_filter(
+            (array) $_SESSION['pending_staff_status_events'],
+            static fn ($event) => !is_array($event) || ((int) ($event['notification_id'] ?? 0) !== $notificationId)
+        ));
         echo json_encode(['ok' => $ok, 'notification_id' => $notificationId]);
         exit;
     }

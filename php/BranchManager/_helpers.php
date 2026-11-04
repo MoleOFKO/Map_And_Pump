@@ -526,14 +526,12 @@ function staff_status_pending_for_user_pdo(PDO $db, int $userId): array {
     $typeList = implode(', ', array_fill(0, count($types), '?'));
 
     $sql = "
-        SELECT notification_id, recipient_user_id, request_id, notification_type, subject, message, delivery_status, created_at
+        SELECT notification_id, recipient_user_id, request_id, notification_type, subject, message, delivery_status, created_at, read_at
         FROM notifications
         WHERE recipient_user_id = ?
-          AND notification_type IN ($typeList)";
-
-    if (notif_has_read_column($db)) {
-        $sql .= ' AND read_at IS NULL';
-    }
+          AND notification_type IN ($typeList)
+          AND read_at IS NULL
+          AND COALESCE(delivery_status, '') <> 'read'";
 
     $sql .= ' ORDER BY created_at DESC, notification_id DESC';
 
@@ -556,7 +554,7 @@ function staff_status_pending_for_user_pdo(PDO $db, int $userId): array {
             'message' => (string) ($row['message'] ?? ''),
             'delivery_status' => (string) ($row['delivery_status'] ?? 'pending'),
             'created_at' => (string) ($row['created_at'] ?? ''),
-            'is_read' => false,
+            'is_read' => !empty($row['read_at']) || in_array(strtolower((string) ($row['delivery_status'] ?? '')), ['read'], true),
         ];
     }
 
@@ -572,18 +570,51 @@ function staff_status_pending_for_current_user(PDO $db, int $userId): array {
     return staff_status_pending_for_user_pdo($db, $userId);
 }
 
-function staff_status_popup_type_from_events(array $events): ?string {
+function staff_status_latest_event(array $events): ?array {
+    $latest = null;
+
     foreach ($events as $event) {
         if (!is_array($event)) {
             continue;
         }
+
         $eventType = strtolower(trim((string) ($event['notification_type'] ?? '')));
-        if ($eventType === 'staff_account_disabled') {
-            return 'disabled';
+        if (!in_array($eventType, ['staff_account_disabled', 'staff_account_reactivated'], true)) {
+            continue;
         }
-        if ($eventType === 'staff_account_reactivated') {
-            return 'activated';
+
+        if ($latest === null) {
+            $latest = $event;
+            continue;
         }
+
+        $latestCreatedAt = (string) ($latest['created_at'] ?? '');
+        $eventCreatedAt = (string) ($event['created_at'] ?? '');
+        if ($eventCreatedAt > $latestCreatedAt) {
+            $latest = $event;
+            continue;
+        }
+
+        if ($eventCreatedAt === $latestCreatedAt && ((int) ($event['notification_id'] ?? 0) > (int) ($latest['notification_id'] ?? 0))) {
+            $latest = $event;
+        }
+    }
+
+    return $latest;
+}
+
+function staff_status_popup_type_from_events(array $events): ?string {
+    $latest = staff_status_latest_event($events);
+    if ($latest === null) {
+        return null;
+    }
+
+    $eventType = strtolower(trim((string) ($latest['notification_type'] ?? '')));
+    if ($eventType === 'staff_account_disabled') {
+        return 'disabled';
+    }
+    if ($eventType === 'staff_account_reactivated') {
+        return 'activated';
     }
     return null;
 }
@@ -637,11 +668,10 @@ function staff_status_notification_acknowledge(PDO $db, int $userId, int $notifi
 
     $sql = "
         UPDATE notifications
-        SET read_at = NOW()
+        SET read_at = NOW(), delivery_status = 'read'
         WHERE notification_id = :notification_id
           AND recipient_user_id = :recipient_user_id
-          AND notification_type IN ('staff_account_disabled', 'staff_account_reactivated')
-          AND read_at IS NULL";
+          AND notification_type IN ('staff_account_disabled', 'staff_account_reactivated')";
 
     $stmt = $db->prepare($sql);
     $stmt->execute([
