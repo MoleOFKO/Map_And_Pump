@@ -185,13 +185,14 @@ try {
         $accountRoleStmt = $pdo->prepare('SELECT business_role_id FROM users WHERE user_id = ? LIMIT 1');
         $accountRoleStmt->execute([(int) $activeCode['user_id']]);
         if ((int) $accountRoleStmt->fetchColumn() === 4) {
+            $userPasswordUpdate = $pdo->prepare(
+                'UPDATE users SET hashed_password = ?, updated_at = NOW() WHERE user_id = ?'
+            );
+            $userPasswordUpdate->execute([$newPasswordHash, (int) $activeCode['user_id']]);
             $passwordUpdate = $pdo->prepare(
                 'UPDATE branches SET branch_password = ? WHERE manager_user_id = ?'
             );
             $passwordUpdate->execute([$newPasswordHash, (int) $activeCode['user_id']]);
-            if ($passwordUpdate->rowCount() !== 1) {
-                throw new RuntimeException('The assigned branch could not be found for this manager.');
-            }
         } else {
             $passwordUpdate = $pdo->prepare('UPDATE users SET hashed_password = ?, updated_at = NOW() WHERE user_id = ?');
             $passwordUpdate->execute([$newPasswordHash, (int) $activeCode['user_id']]);

@@ -364,23 +364,23 @@ endif; ?>
                 <form method="POST" action="./invite_account.php" id="inviteAccountForm">
                     <div class="modal-header border-0"><h5 class="modal-title" id="inviteAccountModalLabel">Add Branch Manager</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button></div>
                     <div class="modal-body">
-                        <p class="small text-white-50">Adding a branch manager activates the role immediately and sends an invitation email. Set the manager's password here; it will be stored securely for branch manager sign-in. Staff invitations require an existing customer account and station assignment.</p>
+                        <p class="small text-white-50">Adding a branch manager activates the role immediately and sends an invitation email. A password is only needed if this email does not already have an account; existing accounts keep their current password. You can assign a station now or choose not to assign one. Staff invitations require an existing customer account and station assignment.</p>
                         <label class="form-label" for="inviteEmail">Customer email</label>
                         <input class="form-control mb-3" type="email" id="inviteEmail" name="email" required>
                         <label class="form-label" for="inviteRole">Role</label>
                         <select class="form-select mb-3" id="inviteRole" name="role" required><option value="manager">Branch Manager</option><option value="staff">Staff</option></select>
                         <div id="inviteManagerPasswordWrap">
                             <label class="form-label" for="inviteManagerPassword">Branch manager password</label>
-                            <input class="form-control mb-3" type="password" id="inviteManagerPassword" name="password" minlength="8" maxlength="15" pattern="(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^a-zA-Z0-9]).{8,15}" title="Use 8–15 characters with uppercase and lowercase letters, a number, and a symbol." autocomplete="new-password" required>
-                            <div class="form-text text-white-50 mb-3">Use 8–15 characters with uppercase and lowercase letters, a number, and a symbol.</div>
+                            <input class="form-control mb-3" type="password" id="inviteManagerPassword" name="password" minlength="8" maxlength="15" pattern="(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^a-zA-Z0-9]).{8,15}" title="Use 8–15 characters with uppercase and lowercase letters, a number, and a symbol." autocomplete="new-password">
+                            <div class="form-text text-white-50 mb-3">Only needed for a new account: use 8–15 characters with uppercase and lowercase letters, a number, and a symbol.</div>
                         </div>
                         <div class="d-flex align-items-center justify-content-between gap-2 mb-2">
-                            <label class="form-label mb-0" for="inviteStation">Station</label>
+                            <label class="form-label mb-0" for="inviteStation">Station <span id="inviteStationRequirement" class="text-white-50">(optional for branch managers)</span></label>
                             <button type="button" class="btn btn-sm btn-outline-info" data-bs-toggle="modal" data-bs-target="#quickStationModal" data-reopen-source="inviteAccountModal">+ Add Station</button>
                         </div>
-                        <select class="form-select" id="inviteStation" name="station_id" required><option value="">Select a station</option><?php foreach ($stations as $station): ?><option value="<?= (int)$station['station_id'] ?>"><?= htmlspecialchars((string)$station['station_name'] . ' — ' . (string)$station['location']) ?></option><?php endforeach; ?></select>
+                        <select class="form-select" id="inviteStation" name="station_id"><option value="">Select a station</option><option value="none">Do not assign a station</option><?php foreach ($stations as $station): ?><option value="<?= (int)$station['station_id'] ?>"><?= htmlspecialchars((string)$station['station_name'] . ' — ' . (string)$station['location']) ?></option><?php endforeach; ?></select>
                         <?php if (empty($stations)): ?>
-                            <div class="alert alert-info mt-2 mb-0" role="alert">Add a station to this HQ before inviting a branch manager or staff member.</div>
+                            <div class="alert alert-info mt-2 mb-0" role="alert">A station is optional for branch managers. Add a station before inviting staff.</div>
                         <?php endif; ?>
                     </div>
                     <div class="modal-footer border-0"><button type="button" class="btn btn-outline-secondary text-white" data-bs-dismiss="modal">Cancel</button><button type="submit" class="btn btn-primary">Send Invitation</button></div>
@@ -671,12 +671,21 @@ endif; ?>
             const inviteRole = document.getElementById('inviteRole');
             const managerPasswordWrap = document.getElementById('inviteManagerPasswordWrap');
             const managerPassword = document.getElementById('inviteManagerPassword');
+            const inviteStation = document.getElementById('inviteStation');
+            const stationRequirement = document.getElementById('inviteStationRequirement');
+            const unassignedStationOption = inviteStation.querySelector('option[value="none"]');
             const syncManagerPasswordField = function () {
                 const isManager = inviteRole.value === 'manager';
                 managerPasswordWrap.hidden = !isManager;
-                managerPassword.required = isManager;
+                managerPassword.required = false;
+                inviteStation.required = !isManager;
+                unassignedStationOption.disabled = !isManager;
+                stationRequirement.textContent = isManager ? '(optional for branch managers)' : '(required for staff)';
                 if (!isManager) {
                     managerPassword.value = '';
+                    if (inviteStation.value === 'none') {
+                        inviteStation.value = '';
+                    }
                 }
             };
             inviteRole.addEventListener('change', syncManagerPasswordField);
