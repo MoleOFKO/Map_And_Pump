@@ -1,6 +1,6 @@
 <mxfile host="65bd71144e">
     <diagram id="CqnTRcVHVSdDhjYHL4Py" name="Page-1">
-        <mxGraphModel dx="1494" dy="965" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="900" background="#ffffff" math="0" shadow="0">
+        <mxGraphModel dx="1431" dy="558" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="900" background="#ffffff" math="0" shadow="0">
             <root>
                 <mxCell id="0"/>
                 <mxCell id="1" parent="0"/>
@@ -117,7 +117,7 @@
                         <mxPoint x="577.1257485029939" y="526.4957264957266" as="targetPoint"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="Q91VaeD_xFDlWY7UAIW1-34" parent="Q91VaeD_xFDlWY7UAIW1-74" style="whiteSpace=wrap;html=1;fontSize=17;rounded=0;strokeWidth=2;fontStyle=1;" value="View payment&lt;div&gt;history&lt;/div&gt;" vertex="1">
+                <mxCell id="Q91VaeD_xFDlWY7UAIW1-34" parent="Q91VaeD_xFDlWY7UAIW1-74" style="whiteSpace=wrap;html=1;fontSize=17;rounded=0;strokeWidth=2;fontStyle=1;" value="View payment&lt;div&gt;status&lt;/div&gt;" vertex="1">
                     <mxGeometry height="63.5" width="113.53" x="321.68" y="590" as="geometry"/>
                 </mxCell>
                 <mxCell id="Q91VaeD_xFDlWY7UAIW1-35" edge="1" parent="Q91VaeD_xFDlWY7UAIW1-74" source="Q91VaeD_xFDlWY7UAIW1-32" style="edgeStyle=orthogonalEdgeStyle;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;fontFamily=Helvetica;fontSize=17;fontColor=default;fontStyle=1;rounded=0;curved=0;strokeWidth=2;" target="Q91VaeD_xFDlWY7UAIW1-34">

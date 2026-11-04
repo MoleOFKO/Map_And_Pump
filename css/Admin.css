@@ -589,8 +589,21 @@ body.background_color.light-mode .expiry-bell-item .text-white {
 /* ===================================================
    METRIC CARDS
    =================================================== */
+.row.g-3 > [class*="col-"] {
+    display: flex;
+}
+
+.metric-card-link {
+    display: flex;
+    width: 100%;
+    height: 100%;
+    text-decoration: none;
+    color: inherit;
+}
+
 .metric-card {
     min-height: 125px;
+    height: 100%;
     display: flex;
     flex-direction: column;
     justify-content: space-between;
@@ -601,6 +614,7 @@ body.background_color.light-mode .expiry-bell-item .text-white {
     cursor: default;
     position: relative;
     overflow: hidden;
+    width: 100%;
 }
 
 /* Shimmer highlight on hover */

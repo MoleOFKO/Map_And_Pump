@@ -154,6 +154,102 @@ $showReplySuccess = isset($_GET['reply_sent']) && $_GET['reply_sent'] === '1';
         body.background_color.light-mode #createReportModal .modal-footer .btn-outline-light { color:#334155; border-color:rgba(15,23,42,.34); }
         body.background_color.light-mode #createReportModal .modal-footer .btn-outline-light:hover,
         body.background_color.light-mode #createReportModal .modal-footer .btn-outline-light:focus-visible { color:#084298; background:rgba(11,94,215,.08); border-color:#0b5ed7; }
+        #createReportModal .report-modal-content {
+            overflow: hidden;
+            border: 1px solid #1e293b;
+            border-radius: 18px;
+            background: #131b2e;
+            color: #f8fafc;
+            box-shadow: 0 24px 64px rgba(0,0,0,.4);
+        }
+        #createReportModal .report-modal-dialog { max-width: min(660px, calc(100% - 1.5rem)); }
+        #createReportModal .report-modal-header,
+        #createReportModal .report-modal-footer {
+            padding: 1.25rem 1.5rem;
+            border-color: #263247;
+        }
+        #createReportModal .report-modal-title { margin: 0; color: #f8fafc; font-size: 1.1rem; font-weight: 700; }
+        #createReportModal .report-modal-body { padding: 1.5rem; }
+        #createReportModal .report-form-fields { display: grid; gap: 1.15rem; }
+        #createReportModal .report-form-field { min-width: 0; }
+        #createReportModal .report-modal-label {
+            display: block;
+            margin-bottom: .5rem;
+            color: #94a3b8;
+            font-size: .875rem;
+            font-weight: 600;
+        }
+        #createReportModal .report-modal-control {
+            display: block;
+            width: 100%;
+            min-height: 46px;
+            padding: .7rem .9rem;
+            border: 1px solid #334155;
+            border-radius: .7rem;
+            background-color: #0f172a;
+            color: #f8fafc;
+            box-shadow: none;
+        }
+        #createReportModal textarea.report-modal-control { min-height: 132px; resize: vertical; }
+        #createReportModal select.report-modal-control {
+            padding-right: 2.5rem;
+            background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='%2394a3b8' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='m2 5 6 6 6-6'/%3e%3c/svg%3e");
+        }
+        #createReportModal .report-modal-control::placeholder { color: #64748b; opacity: 1; }
+        #createReportModal .report-modal-control:focus {
+            border-color: #4386f5;
+            box-shadow: 0 0 0 .2rem rgba(67,134,245,.18);
+        }
+        #createReportModal select.report-modal-control option { background: #0f172a; color: #f8fafc; }
+        #createReportModal .report-modal-footer {
+            display: flex;
+            justify-content: flex-end;
+            gap: .75rem;
+            border-top: 1px solid #263247;
+        }
+        body.background_color.light-mode #createReportModal .report-modal-content,
+        body.background_color[data-theme="light"] #createReportModal .report-modal-content {
+            border-color: #f1f5f9;
+            background: #fff;
+            color: #0f172a;
+            box-shadow: 0 24px 64px rgba(15,23,42,.18);
+        }
+        body.background_color.light-mode #createReportModal .report-modal-header,
+        body.background_color[data-theme="light"] #createReportModal .report-modal-header,
+        body.background_color.light-mode #createReportModal .report-modal-footer,
+        body.background_color[data-theme="light"] #createReportModal .report-modal-footer {
+            border-color: #e2e8f0;
+        }
+        body.background_color.light-mode #createReportModal .report-modal-title,
+        body.background_color[data-theme="light"] #createReportModal .report-modal-title { color: #0f172a; }
+        body.background_color.light-mode #createReportModal .report-modal-label,
+        body.background_color[data-theme="light"] #createReportModal .report-modal-label { color: #475569; }
+        body.background_color.light-mode #createReportModal .report-modal-control,
+        body.background_color[data-theme="light"] #createReportModal .report-modal-control {
+            border-color: #e2e8f0;
+            background-color: #f8fafc;
+            color: #0f172a;
+        }
+        body.background_color.light-mode #createReportModal .report-modal-control::placeholder,
+        body.background_color[data-theme="light"] #createReportModal .report-modal-control::placeholder { color: #64748b; }
+        body.background_color.light-mode #createReportModal select.report-modal-control,
+        body.background_color[data-theme="light"] #createReportModal select.report-modal-control {
+            background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='%23475569' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='m2 5 6 6 6-6'/%3e%3c/svg%3e");
+        }
+        body.background_color.light-mode #createReportModal select.report-modal-control option,
+        body.background_color[data-theme="light"] #createReportModal select.report-modal-control option {
+            background: #f8fafc;
+            color: #0f172a;
+        }
+        body.background_color.light-mode #createReportModal .btn-close,
+        body.background_color[data-theme="light"] #createReportModal .btn-close { filter: none; }
+        @media (max-width: 575.98px) {
+            #createReportModal .report-modal-header,
+            #createReportModal .report-modal-body,
+            #createReportModal .report-modal-footer { padding: 1rem; }
+            #createReportModal .report-modal-footer { flex-direction: column-reverse; }
+            #createReportModal .report-modal-footer .btn { width: 100%; }
+        }
         .feedback-card { border-left:4px solid rgba(255,255,255,.2); }
         .feedback-card.is-unread { border-left-color:#ffc107; box-shadow:0 0 0 1px rgba(255,193,7,.16); }
         .feedback-status { display:inline-flex; align-items:center; gap:6px; font-size:.76rem; font-weight:800; text-transform:uppercase; letter-spacing:.04em; }
@@ -304,91 +400,6 @@ $showReplySuccess = isset($_GET['reply_sent']) && $_GET['reply_sent'] === '1';
         </div>
     </div>
 
-    <!-- REPLY MODAL -->
-    <div class="modal fade" id="replyModal" tabindex="-1" aria-labelledby="replyModalLabel" aria-hidden="true">
-        <div class="modal-dialog modal-dialog-centered px-3">
-            <div class="modal-content text_color" style="background: var(--glass-bg); backdrop-filter: blur(28px); border: 1px solid var(--glass-border); border-radius: var(--card-radius);">
-                <div class="modal-header border-bottom border-secondary border-opacity-25">
-                    <h5 class="modal-title text-white fw-bold" id="replyModalLabel">Draft Response to User</h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                
-                <!-- Form pointing directly to your processing script -->
-                <form action="feedback_process.php" method="POST">
-                    <div class="modal-body">
-                    
-                        <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($staffCsrfToken, ENT_QUOTES, 'UTF-8') ?>">
-                        <input type="hidden" name="action" value="reply">
-                        <input type="hidden" id="modalFeedbackId" name="feedback_id" value="">
-                        <input type="hidden" name="return_tab" value="<?= htmlspecialchars($activeTab) ?>">
-
-                        <div class="mb-3">
-                            <label for="responseTextarea" class="form-label text-white-50 small">Message Body</label>
-                            <textarea class="form-control glass-input" id="responseTextarea" name="response_msg" rows="5" 
-                                    placeholder="Type your official reply or internal notes here..." 
-                                    required></textarea>
-                        </div>
-                    </div>
-                    <div class="modal-footer border-top border-secondary border-opacity-25">
-                        <button type="button" class="btn btn-outline-light rounded-pill px-4" data-bs-dismiss="modal">Cancel</button>
-                        <button type="submit" name="submit_feedback_reply" class="btn btn-primary rounded-pill px-4" style="background: var(--neon-cyan); border:none; color: #000; font-weight: 600;">
-                            <i class="bi bi-send-fill me-2"></i>Send Reply
-                        </button>
-                    </div>
-                </form>
-            </div>
-        </div>
-    </div>
-
-            <!-- CREATE REPORT MODAL -->
-            <div class="modal fade" id="createReportModal" tabindex="-1" aria-labelledby="createReportModalLabel" aria-hidden="true">
-                <div class="modal-dialog modal-dialog-centered modal-lg">
-                    <div class="modal-content text_color" style="background: var(--glass-bg); backdrop-filter: blur(18px); border: 1px solid var(--glass-border); border-radius: var(--card-radius);">
-                        <div class="modal-header">
-                            <h5 class="modal-title text-white fw-bold" id="createReportModalLabel">Create Report for Branch Manager</h5>
-                            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
-                        </div>
-                        <form action="report_action.php" method="POST">
-                            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($staffCsrfToken, ENT_QUOTES, 'UTF-8') ?>">
-                            <div class="modal-body">
-                                <input type="hidden" name="staff_id" value="<?= (int)($_SESSION['user_id'] ?? 0) ?>">
-                                <div class="row g-3">
-                                    <div class="col-12 col-md-6">
-                                        <label class="form-label text-white-50 small">Importance</label>
-                                        <select name="importance" class="form-select glass-select" required>
-                                            <option value="low">Low</option>
-                                            <option value="normal" selected>Normal</option>
-                                            <option value="high">High</option>
-                                        </select>
-                                    </div>
-                                    <div class="col-12 col-md-6">
-                                        <label class="form-label text-white-50 small">Attach Recent Feedback (optional)</label>
-                                        <select id="attachFeedbackSelect" name="attach_feedback_id" class="form-select glass-select">
-                                            <option value="">-- None --</option>
-                                            <?php foreach ($recentFeedback as $fbOpt): ?>
-                                                <option value="<?= (int)$fbOpt['feedback_id'] ?>"><?= htmlspecialchars(substr($fbOpt['feedback'], 0, 80)) ?><?= strlen($fbOpt['feedback']) > 80 ? '…' : '' ?> — Customer UID #<?= (int)$fbOpt['user_id'] ?></option>
-                                            <?php endforeach; ?>
-                                        </select>
-                                    </div>
-                                    <div class="col-12">
-                                        <label class="form-label text-white-50 small">Reason / Short Summary</label>
-                                        <input type="text" name="short_summary" class="form-control glass-input" maxlength="255" placeholder="Short title for the report" required>
-                                    </div>
-                                    <div class="col-12">
-                                        <label class="form-label text-white-50 small">Why it happened (optional)</label>
-                                        <textarea name="why_happened" class="form-control glass-input" rows="3" placeholder="Optional: analysis or suspected cause"></textarea>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="modal-footer">
-                                <button type="button" class="btn btn-outline-light rounded-pill px-4" data-bs-dismiss="modal">Cancel</button>
-                                <button type="submit" name="submit_staff_report" class="btn btn-primary rounded-pill px-4" style="background: var(--neon-cyan); border:none; color:#000; font-weight:600;"><i class="bi bi-send-fill me-2"></i>Send to Branch Manager</button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-            </div>
-
     <!-- SIDEBAR MAIN MENU -->
     <div class="offcanvas offcanvas-end legacy-staff-menu" tabindex="-1" id="legacyMainMenuOffcanvas" style="width: 320px; background: rgba(6, 12, 24, 0.98); backdrop-filter: blur(28px); border-left: 1px solid rgba(0, 180, 255, 0.18);">
         <div class="offcanvas-header pb-2 border-bottom border-white border-opacity-10">
@@ -441,6 +452,81 @@ $showReplySuccess = isset($_GET['reply_sent']) && $_GET['reply_sent'] === '1';
     </div>
 
     <?php require __DIR__ . '/staff_layout_end.php'; ?>
+    <div class="modal fade" id="replyModal" tabindex="-1" aria-labelledby="replyModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered px-3">
+            <div class="modal-content text_color" style="background: var(--glass-bg); backdrop-filter: blur(28px); border: 1px solid var(--glass-border); border-radius: var(--card-radius);">
+                <div class="modal-header border-bottom border-secondary border-opacity-25">
+                    <h5 class="modal-title text-white fw-bold" id="replyModalLabel">Draft Response to User</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <form action="feedback_process.php" method="POST">
+                    <div class="modal-body">
+                        <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($staffCsrfToken, ENT_QUOTES, 'UTF-8') ?>">
+                        <input type="hidden" name="action" value="reply">
+                        <input type="hidden" id="modalFeedbackId" name="feedback_id" value="">
+                        <input type="hidden" name="return_tab" value="<?= htmlspecialchars($activeTab) ?>">
+                        <div class="mb-3">
+                            <label for="responseTextarea" class="form-label text-white-50 small">Message Body</label>
+                            <textarea class="form-control glass-input" id="responseTextarea" name="response_msg" rows="5" placeholder="Type your official reply or internal notes here..." required></textarea>
+                        </div>
+                    </div>
+                    <div class="modal-footer border-top border-secondary border-opacity-25">
+                        <button type="button" class="btn btn-outline-light rounded-pill px-4" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" name="submit_feedback_reply" class="btn btn-primary rounded-pill px-4" style="background: var(--neon-cyan); border:none; color: #000; font-weight: 600;">
+                            <i class="bi bi-send-fill me-2"></i>Send Reply
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    <div class="modal fade" id="createReportModal" tabindex="-1" aria-labelledby="createReportModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered report-modal-dialog">
+            <div class="modal-content report-modal-content">
+                <div class="modal-header report-modal-header">
+                    <h5 class="modal-title report-modal-title" id="createReportModalLabel">Create Report for Branch Manager</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <form action="report_action.php" method="POST">
+                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($staffCsrfToken, ENT_QUOTES, 'UTF-8') ?>">
+                    <div class="modal-body report-modal-body">
+                        <input type="hidden" name="staff_id" value="<?= (int)($_SESSION['user_id'] ?? 0) ?>">
+                        <div class="report-form-fields">
+                            <div class="report-form-field">
+                                <label for="reportImportance" class="report-modal-label">Importance</label>
+                                <select id="reportImportance" name="importance" class="form-select report-modal-control" required>
+                                    <option value="low">Low</option>
+                                    <option value="normal" selected>Normal</option>
+                                    <option value="high">High</option>
+                                </select>
+                            </div>
+                            <div class="report-form-field">
+                                <label for="attachFeedbackSelect" class="report-modal-label">Attach Recent Feedback (optional)</label>
+                                <select id="attachFeedbackSelect" name="attach_feedback_id" class="form-select report-modal-control">
+                                    <option value="">-- None --</option>
+                                    <?php foreach ($recentFeedback as $fbOpt): ?>
+                                        <option value="<?= (int)$fbOpt['feedback_id'] ?>"><?= htmlspecialchars(substr($fbOpt['feedback'], 0, 80)) ?><?= strlen($fbOpt['feedback']) > 80 ? '…' : '' ?> — Customer UID #<?= (int)$fbOpt['user_id'] ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+                            <div class="report-form-field">
+                                <label for="reportShortSummary" class="report-modal-label">Reason / Short Summary</label>
+                                <input id="reportShortSummary" type="text" name="short_summary" class="form-control report-modal-control" maxlength="255" placeholder="Short title for the report" required>
+                            </div>
+                            <div class="report-form-field">
+                                <label for="reportWhy" class="report-modal-label">Why it happened (optional)</label>
+                                <textarea id="reportWhy" name="why_happened" class="form-control report-modal-control" rows="3" placeholder="Optional: analysis or suspected cause"></textarea>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer report-modal-footer">
+                        <button type="button" class="btn btn-outline-light rounded-pill px-4" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" name="submit_staff_report" class="btn btn-primary rounded-pill px-4" style="background: var(--neon-cyan); border:none; color:#000; font-weight:600;"><i class="bi bi-send-fill me-2"></i>Send to Branch Manager</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script src="/js/Admin.js"></script>
     <script>
