@@ -1,0 +1,5 @@
+PROBLEM SOLVING
+
+Drivers often cannot find reliable information about which fuel stations have stock or what prices they currently charge. They may travel to a station only to discover that fuel is unavailable, the price has changed, or the queue is too long. This wastes time and creates uneven demand across stations.
+
+MAP & PUMP addresses this problem through a web platform where participating fuel companies and stations can publish fuel availability and prices. Drivers can check stations on a map, reserve fuel before travelling, and present a booking QR code at the station. Staff verify the booking and record the amount dispensed, while station teams manage stock and bookings through their dashboards.
