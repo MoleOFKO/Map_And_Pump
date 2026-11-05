@@ -1,6 +1,6 @@
-<?php
+﻿<?php
 /**
- * manage-staff.php  —  Staff CRUD + status toggle + activity log
+ * manage-staff.php  â€”  Staff CRUD + status toggle + activity log
  * Actions handled here (form-post):
  *   ?action=add         -> POST full_name, email, contact
  *   ?action=edit        -> POST staff_id, full_name, email, contact
@@ -468,6 +468,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($action === 'add') {
             $email = trim((string)($_POST['email'] ?? ''));
             $hireMessage = trim((string)($_POST['hire_message'] ?? ''));
+            $accountType = strtolower(trim((string)($_POST['account_type'] ?? 'customer')));
+            $password = (string)($_POST['password'] ?? '');
+            $confirmPassword = (string)($_POST['confirm_password'] ?? '');
 
             if ($email === '') {
                 json_out(['ok' => false, 'error' => 'Email address is required.']);
@@ -479,8 +482,72 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 json_out(['ok' => false, 'error' => 'Please add a hire message before sending the invite.']);
             }
 
+            if ($accountType === 'standalone') {
+                if ($password === '' || $confirmPassword === '') {
+                    json_out(['ok' => false, 'error' => 'Please provide and confirm a staff password.']);
+                }
+                if ($password !== $confirmPassword) {
+                    json_out(['ok' => false, 'error' => 'The password and confirmation do not match.']);
+                }
+                if (!preg_match('/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,15}$/', $password)) {
+                    json_out(['ok' => false, 'error' => 'Use 8-15 characters with upper and lower case letters, a number, and a symbol.']);
+                }
+                if (staff_email_in_use($pdo, $email)) {
+                    json_out(['ok' => false, 'error' => 'This email is already in use by another staff account.']);
+                }
+            }
+
             try {
                 $pdo->beginTransaction();
+                if ($accountType === 'standalone') {
+                    $fullName = trim((string)($_POST['full_name'] ?? ''));
+                    if ($fullName === '') {
+                        $fullName = preg_replace('/[^a-zA-Z0-9 .\'-]/', ' ', strstr($email, '@', true) ?? $email);
+                        $fullName = trim(preg_replace('/\s+/', ' ', $fullName));
+                    }
+                    if ($fullName === '') {
+                        $pdo->rollBack();
+                        json_out(['ok' => false, 'error' => 'Full name is required for standalone staff accounts.']);
+                    }
+                    if (!preg_match('/^\d{11}$/', trim((string)($_POST['contact'] ?? '')))) {
+                        $pdo->rollBack();
+                        json_out(['ok' => false, 'error' => 'Phone number must be exactly 11 digits and contain only numbers.']);
+                    }
+
+                    $staffCode = next_available_staff_code($pdo, $bid);
+                    $hash = password_hash($password, PASSWORD_DEFAULT);
+                    $insert = $pdo->prepare(
+                        "INSERT INTO staff (branch_id, full_name, email, staff_password, contact, staff_code, user_id, is_active, hired_at, created_at, updated_at)
+                         VALUES (:branch_id, :full_name, :email, :staff_password, :contact, :staff_code, NULL, 1, CURDATE(), NOW(), NOW())"
+                    );
+                    $insert->execute([
+                        ':branch_id' => $bid,
+                        ':full_name' => $fullName,
+                        ':email' => $email,
+                        ':staff_password' => $hash,
+                        ':contact' => trim((string)($_POST['contact'] ?? '')),
+                        ':staff_code' => $staffCode,
+                    ]);
+
+                    $staffId = (int) $pdo->lastInsertId();
+                    $companyName = map_pump_branch_company_name($pdo, $bid);
+                    $loginLink = ((isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http') . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost') . '/php/Login/login.php';
+                    $body = '<p>Hello ' . htmlspecialchars($fullName, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') . ',</p>'
+                        . '<p>You have been hired as a standalone staff member for <strong>' . htmlspecialchars($companyName, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') . '</strong>.</p>'
+                        . '<p>Your email: <strong>' . htmlspecialchars($email, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') . '</strong></p>'
+                        . '<p>Your password: <strong>' . htmlspecialchars($password, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') . '</strong></p>'
+                        . '<p style="margin: 24px 0;">'
+                        . '<a href="' . htmlspecialchars($loginLink, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') . '" style="display:inline-block;background-color:#0d6efd;color:#ffffff;text-decoration:none;padding:12px 24px;border-radius:6px;font-weight:600;">Login to Map & Pump</a>'
+                        . '</p>'
+                        . '<p>After signing in, you can use your existing email and password to access your staff account.</p>';
+                    $subject = 'Your Map & Pump staff account is ready';
+                    $emailSent = map_pump_send_staff_invitation_email($email, $subject, $body);
+                    $notificationMessage = $emailSent ? 'Standalone staff account created and login instructions sent.' : 'Standalone staff account created. Email delivery could not be completed; share the password securely with the staff member.';
+                    $pdo->commit();
+                    log_activity($pdo, $bid, 'user', $user['user_id'], $user['full_name'], 'Created standalone staff account: ' . $fullName . ' (' . $staffCode . ')');
+                    json_out(['ok' => true, 'message' => $notificationMessage, 'staff_id' => $staffId]);
+                }
+
                 $result = map_pump_existing_customer_invitation($pdo, $bid, $email, $hireMessage, (int) $user['user_id']);
                 $pdo->commit();
 
@@ -509,7 +576,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 json_out(['ok' => false, 'error' => 'Invalid email address']);
             }
 
-            $staffRow = $pdo->prepare("SELECT staff_code FROM staff WHERE staff_id = :sid AND branch_id = :b LIMIT 1");
+            $staffRow = $pdo->prepare("SELECT staff_code, user_id, email FROM staff WHERE staff_id = :sid AND branch_id = :b LIMIT 1");
             $staffRow->execute([':sid' => $sid, ':b' => $bid]);
             $staffData = $staffRow->fetch(PDO::FETCH_ASSOC);
             if (!$staffData) {
@@ -559,10 +626,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 json_out(['ok' => false, 'error' => 'That staff account is not available in your branch.'], 404);
             }
 
-            // Restore the linked user to the customer role before deleting the staff record itself.
-            $customerRoleId = map_pump_customer_role_id($pdo);
-            $updateUserRole = $pdo->prepare("UPDATE users SET business_role_id = :role_id, current_role_id = :role_id WHERE user_id = :user_id");
-            $updateUserRole->execute([':role_id' => $customerRoleId, ':user_id' => (int)$target['user_id']]);
+            if (!empty($target['user_id'])) {
+                $customerRoleId = map_pump_customer_role_id($pdo);
+                $updateUserRole = $pdo->prepare("UPDATE users SET business_role_id = :role_id, current_role_id = :role_id WHERE user_id = :user_id");
+                $updateUserRole->execute([':role_id' => $customerRoleId, ':user_id' => (int)$target['user_id']]);
+            }
 
             $delete = $pdo->prepare("DELETE FROM staff WHERE staff_id = :sid AND branch_id = :branch_id");
             $delete->execute([':sid' => $sid, ':branch_id' => $bid]);
@@ -588,7 +656,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             $pdo->beginTransaction();
             $targetStmt = $pdo->prepare(
-                'SELECT s.staff_id, s.user_id, s.branch_id, s.full_name, s.staff_code
+                'SELECT s.staff_id, s.user_id, s.branch_id, s.full_name, s.staff_code, s.email, s.is_active
                  FROM staff s
                  WHERE s.staff_id = :sid AND s.branch_id = :branch_id
                  FOR UPDATE'
@@ -601,24 +669,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
 
             $userId = (int)($target['user_id'] ?? 0);
-            if ($userId <= 0) {
-                $pdo->rollBack();
-                json_out(['ok' => false, 'error' => 'This staff record is not linked to a user account.'], 409);
+            $targetEmail = trim((string)($target['email'] ?? ''));
+            if ($userId > 0) {
+                $newRoleId = $targetAction === 'activate' ? $staffRoleId : $customerRoleId;
+                $userRoleUpdate = $pdo->prepare(
+                    'UPDATE users
+                     SET business_role_id = :business_role_id,
+                         current_role_id = :current_role_id,
+                         updated_at = NOW()
+                     WHERE user_id = :user_id'
+                );
+                $userRoleUpdate->execute([
+                    ':business_role_id' => $newRoleId,
+                    ':current_role_id' => $newRoleId,
+                    ':user_id' => $userId,
+                ]);
             }
-
-            $newRoleId = $targetAction === 'activate' ? $staffRoleId : $customerRoleId;
-            $userRoleUpdate = $pdo->prepare(
-                'UPDATE users
-                 SET business_role_id = :business_role_id,
-                     current_role_id = :current_role_id,
-                     updated_at = NOW()
-                 WHERE user_id = :user_id'
-            );
-            $userRoleUpdate->execute([
-                ':business_role_id' => $newRoleId,
-                ':current_role_id' => $newRoleId,
-                ':user_id' => $userId,
-            ]);
 
             $statusColumn = staff_has_column($pdo, 'status') ? 'status' : 'is_active';
             $statusSql = $statusColumn === 'status'
@@ -655,9 +721,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 json_out(['ok' => false, 'error' => 'Unable to update the staff status for this branch.'], 409);
             }
 
-            $targetUserEmailSql = $pdo->prepare('SELECT email FROM users WHERE user_id = :user_id LIMIT 1');
-            $targetUserEmailSql->execute([':user_id' => $userId]);
-            $targetUserEmail = trim((string) $targetUserEmailSql->fetchColumn());
+            $targetUserEmail = $targetEmail !== '' ? $targetEmail : '';
+            if ($targetUserEmail === '') {
+                $targetUserEmailSql = $pdo->prepare('SELECT email FROM users WHERE user_id = :user_id LIMIT 1');
+                $targetUserEmailSql->execute([':user_id' => $userId]);
+                $targetUserEmail = trim((string) $targetUserEmailSql->fetchColumn());
+            }
             error_log(sprintf(
                 '[manage-staff:%s] about_to_create_notification recipient_user_id=%d staff_id=%d targetUserEmail=%s',
                 $targetAction,
@@ -701,18 +770,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 // -------- Load data for display --------
 if (isset($_GET['ajax']) && $_GET['ajax'] === 'staff_table') {
-    $stmt = $pdo->prepare("SELECT * FROM staff WHERE branch_id = :b ORDER BY staff_code ASC");
+    $stmt = $pdo->prepare("SELECT s.*, 
+            CASE 
+                WHEN TRIM(COALESCE(ul.phone_number, '')) = '' THEN ' - ' 
+                ELSE TRIM(ul.phone_number) 
+            END AS phone_number
+        FROM staff s
+        LEFT JOIN users u ON u.user_id = s.user_id
+        LEFT JOIN user_license ul ON ul.license_id = u.license_id
+        WHERE s.branch_id = :b
+        ORDER BY s.staff_code ASC");
     $stmt->execute([':b' => $bid]);
     $staff = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     $payload = [];
     foreach ($staff as $s) {
+        $contactValue = trim((string) ($s['phone_number'] ?? ''));
         $payload[] = [
             'staff_id' => (int) ($s['staff_id'] ?? 0),
             'staff_code' => (string) ($s['staff_code'] ?? ''),
             'full_name' => (string) ($s['full_name'] ?? ''),
             'email' => (string) ($s['email'] ?? ''),
-            'contact' => (string) ($s['contact'] ?? ''),
+            'contact' => $contactValue === '' || $contactValue === ' - ' ? ' - ' : $contactValue,
             'is_active' => (int) ($s['is_active'] ?? 0),
         ];
     }
@@ -722,7 +801,16 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'staff_table') {
     exit;
 }
 
-$stmt = $pdo->prepare("SELECT * FROM staff WHERE branch_id = :b ORDER BY staff_code ASC");
+$stmt = $pdo->prepare("SELECT s.*, 
+        CASE 
+            WHEN TRIM(COALESCE(ul.phone_number, '')) = '' THEN ' - ' 
+            ELSE TRIM(ul.phone_number) 
+        END AS phone_number
+        FROM staff s
+        LEFT JOIN users u ON u.user_id = s.user_id
+        LEFT JOIN user_license ul ON ul.license_id = u.license_id
+        WHERE s.branch_id = :b
+        ORDER BY s.staff_code ASC");
 $stmt->execute([':b' => $bid]);
 $staff = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
@@ -776,7 +864,7 @@ try {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>MAP & PUMP — Manage Staff</title>
+<title>MAP & PUMP â€” Manage Staff</title>
 
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
@@ -1024,7 +1112,7 @@ try {
   }
   .staff-table-scroll::-webkit-scrollbar-thumb:hover { background: rgba(148, 163, 184, 0.62); }
   table{width:100%; border-collapse:collapse;}
-  thead th{text-align:left; font-size:11.5px; color:var(--slate-400); text-transform:uppercase; letter-spacing:0.4px; padding:14px 18px; border-bottom:1px solid rgba(255,255,255,0.07);}
+  thead th{text-align:left; font-size:11.5px; color:var(--slate-400); text-transform:uppercase; letter-spacing: 0.4px; padding:14px 18px; border-bottom:1px solid rgba(255,255,255,0.07);}
   
   tbody tr { transition: opacity 0.2s ease, transform 0.2s ease, background-color 0.2s ease; }
   tbody tr:has(.table-actions-menu-wrap:hover),
@@ -1209,6 +1297,42 @@ try {
   .staff-detail-fields.hidden {
     display: none;
   }
+  #staff-modal .modal-card-custom { max-width: 760px; }
+  .modal-header-actions { display: flex; align-items: center; gap: 10px; }
+  .staff-info-btn {
+    width: 24px; height: 24px; border-radius: 50%; border: none; cursor: pointer;
+    background: linear-gradient(135deg,var(--sky-400),var(--blue-700)); color: #fff;
+    font-size: 13px; font-weight: 700; line-height: 1; display: inline-flex; align-items: center; justify-content: center;
+  }
+  .staff-info-btn.hidden { display: none; }
+  .staff-info-panel {
+    display: none; margin-bottom: 16px; padding: 14px 16px; border-radius: 12px;
+    background: var(--navy-950); border: 1px solid rgba(255,255,255,0.1);
+    font-size: 12px; line-height: 1.6; color: var(--slate-300);
+  }
+  .staff-info-panel.show { display: block; }
+  .staff-info-panel p + p { margin-top: 8px; }
+  .staff-info-panel strong { color: var(--slate-50); }
+  .account-type-group { display: flex; flex-wrap: wrap; gap: 8px 32px; }
+  .account-type-option {
+    display: inline-flex !important; align-items: center; gap: 8px; margin: 0 !important;
+    font-size: 13px !important; color: var(--slate-50) !important; font-weight: 600 !important; cursor: pointer;
+  }
+  .account-type-option input { accent-color: var(--sky-400); cursor: pointer; }
+  .staff-password-fields.hidden { display: none; }
+  .staff-password-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .staff-password-grid .form-group { position: relative; }
+  .staff-password-grid .form-control-custom { padding-right: 42px; }
+  .password-toggle-btn {
+    position: absolute; right: 0; bottom: 0; width: 42px; height: 40px;
+    background: none; border: none; color: var(--slate-400); cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; font-size: 14px;
+    transition: color 0.2s;
+  }
+  .password-toggle-btn:hover { color: var(--slate-50); }
+  .staff-password-hint { font-size: 11.5px; color: var(--slate-400); margin-top: 8px; line-height: 1.5; }
+  @media (max-width:520px){ .staff-password-grid { grid-template-columns: 1fr; } }
+
   .staff-form-feedback {
     display: none;
     margin-top: 12px;
@@ -1227,7 +1351,7 @@ try {
     color: var(--mint-400);
     font-weight: 600;
   }
-  
+
   .modal-actions { display: flex; gap: 12px; justify-content: flex-end; margin-top: 24px; }
   .btn-secondary-custom {
     background: transparent; border: 1px solid rgba(255,255,255,0.15); color: var(--slate-300);
@@ -1356,7 +1480,7 @@ try {
     <div class="topbar">
       <div>
         <h1>Manage Staff</h1>
-        <div class="date" id="live-clock">Wednesday · July 9, 2026</div>
+        <div class="date" id="live-clock">Wednesday Â· July 9, 2026</div>
       </div>
       <div class="topbar-right">
         <!-- Bell Trigger Button -->
@@ -1436,6 +1560,7 @@ try {
                 $duty_class  = ['On Duty' => 'on', 'Off Duty' => 'off', 'Leave' => 'leave'];
                 foreach ($staff as $s):
                   $staff_email = $s['email'] ?? '';
+                  $staff_contact = trim((string) ($s['phone_number'] ?? ''));
                   $on = (int)$s['is_active'] === 1;
                 ?>
                 <tr data-id="<?= (int)$s['staff_id'] ?>">
@@ -1446,7 +1571,7 @@ try {
                     </div>
                   </td>
                   <td><?= $staff_email !== '' ? h($staff_email) : '<span style="color:var(--slate-400);">—</span>' ?></td>
-                  <td><?= h($s['contact']) ?></td>
+                  <td><?= $staff_contact !== '' ? h($staff_contact) : ' - ' ?></td>
                   <td>
                     <span class="status-pill <?= $on ? 'on' : 'off' ?>">
                       <span class="d"></span>
@@ -1455,7 +1580,7 @@ try {
                   </td>
                   <td class="staff-action-cell">
                     <div class="staff-actions-wrap">
-                      <button type="button" class="staff-action-btn edit-btn edit-action" data-id="<?= (int)$s['staff_id'] ?>" data-email="<?= h($staff_email) ?>" data-name="<?= h($s['full_name']) ?>" data-contact="<?= h($s['contact']) ?>" title="Edit staff member" aria-label="Edit staff member">
+                      <button type="button" class="staff-action-btn edit-btn edit-action" data-id="<?= (int)$s['staff_id'] ?>" data-email="<?= h($staff_email) ?>" data-name="<?= h($s['full_name']) ?>" data-contact="<?= h($staff_contact) ?>" title="Edit staff member" aria-label="Edit staff member">
                         <i class="fa-solid fa-pen-to-square"></i>
                       </button>
                       <?php if ($on): ?>
@@ -1492,11 +1617,11 @@ try {
           <?php else: ?>
             <?php foreach ($activities as $a): ?>
               <div class="activity-row">
-                <span class="t"><?= h(date('M j · h:i A', strtotime($a['created_at']))) ?></span>
+                <span class="t"><?= h(date('M j Â· h:i A', strtotime($a['created_at']))) ?></span>
                 <span>
                   <i class="fa-solid fa-user-clock" style="color:var(--sky-400); margin-right:6px;"></i>
                   <b><?= h($a['staff_name']) ?></b>
-                  <span style="color:var(--slate-300);"> — <?= h($a['action']) ?></span>
+                  <span style="color:var(--slate-300);"> â€” <?= h($a['action']) ?></span>
                 </span>
               </div>
             <?php endforeach; ?>
@@ -1505,7 +1630,7 @@ try {
         </div>
       </div>
 
-      <div class="page-foot">© 2026 MAP & PUMP | All Rights Reserved</div>
+      <div class="page-foot">Â© 2026 MAP & PUMP | All Rights Reserved</div>
     </div>
   </div>
 </div>
@@ -1515,7 +1640,10 @@ try {
   <div class="modal-card-custom">
     <div class="modal-header-custom">
       <h3 id="modal-title">Add New Staff Member</h3>
-      <button class="modal-close" id="modal-close-btn">&times;</button>
+      <div class="modal-header-actions">
+        <button type="button" class="staff-info-btn" id="staff-info-btn" aria-label="Account type information" aria-expanded="false" aria-controls="staff-info-panel">!</button>
+        <button class="modal-close" id="modal-close-btn">&times;</button>
+      </div>
     </div>
     <form id="staff-form" method="POST" action="manage-staff.php">
       <input type="hidden" name="csrf"     value="<?= h(csrf_token()) ?>">
@@ -1527,6 +1655,38 @@ try {
         <label for="staff-email-input">Email Address</label>
         <input type="email" id="staff-email-input" name="email" class="form-control-custom" placeholder="e.g. aungkolatt@mappump.mm">
       </div>
+      <div id="staff-info-panel" class="staff-info-panel" role="note">
+        <p><strong>New Customer Account:</strong> Select this when the email entered above does not already have a customer account. The password you set will be used to create that account and sign in with that email.</p>
+        <p><strong>Existing Customer Account:</strong> Select this when the email already belongs to a customer. Their current password is kept and is not changed.</p>
+      </div>
+      <div id="staff-account-fields">
+        <div class="form-group">
+          <div class="account-type-group">
+            <label class="account-type-option"><input type="radio" name="account_type" value="standalone" id="account-type-standalone"> Create with Standalone Account</label>
+            <label class="account-type-option"><input type="radio" name="account_type" value="customer" id="account-type-customer" checked> Invite with Customer Account</label>
+          </div>
+        </div>
+        <div id="staff-password-fields" class="staff-password-fields hidden">
+          <div class="staff-password-grid">
+            <div class="form-group" style="margin-bottom:0;">
+              <label for="staff-password-input">Set a Password</label>
+              <input type="password" id="staff-password-input" name="password" class="form-control-custom" autocomplete="new-password" disabled>
+              <button type="button" class="password-toggle-btn" data-password-target="staff-password-input" aria-label="Show password">
+                <i class="fa-solid fa-eye"></i>
+              </button>
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+              <label for="staff-confirm-password-input">Confirm Password</label>
+              <input type="password" id="staff-confirm-password-input" name="confirm_password" class="form-control-custom" autocomplete="new-password" disabled>
+              <button type="button" class="password-toggle-btn" data-password-target="staff-confirm-password-input" aria-label="Show password">
+                <i class="fa-solid fa-eye"></i>
+              </button>
+            </div>
+          </div>
+          <div class="staff-password-hint">Use 8-15 characters with uppercase and lowercase letters, a number, and a symbol.</div>
+          <div style="height:16px;"></div>
+        </div>
+      </div>
       <div id="staff-detail-fields" class="staff-detail-fields hidden">
         <div class="form-group">
           <label for="staff-name-visible">Full Name</label>
@@ -1536,10 +1696,6 @@ try {
           <label for="staff-contact-visible">Contact Phone</label>
           <input type="text" id="staff-contact-visible" class="form-control-custom" placeholder="e.g. 09-751-XXXXXX">
         </div>
-      </div>
-      <div class="form-group">
-        <label for="staff-invite-message">Hire Message</label>
-        <textarea id="staff-invite-message" name="hire_message" class="form-control-custom textarea-custom" rows="5" placeholder="Explain why they're being invited"></textarea>
       </div>
       <div id="staff-form-feedback" class="staff-form-feedback" aria-live="polite"></div>
       <div class="modal-actions">
@@ -1588,7 +1744,7 @@ try {
       const options = { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' };
       const dateString = now.toLocaleDateString('en-US', options);
       const timeString = now.toLocaleTimeString('en-US', { hour12: true, hour: '2-digit', minute: '2-digit', second: '2-digit' });
-      document.getElementById('live-clock').textContent = `${dateString} · ${timeString}`;
+      document.getElementById('live-clock').textContent = `${dateString} Â· ${timeString}`;
     }
     setInterval(updateClock, 1000);
     updateClock();
@@ -1802,7 +1958,7 @@ try {
                     <div><b>${safeName}</b><span>ID: ${safeCode}</span></div>
                   </div>
                 </td>
-                <td>${email ? safeEmail : '<span style="color:var(--slate-400);">—</span>'}</td>
+                <td>${email ? safeEmail : '<span style="color:var(--slate-400);">â€”</span>'}</td>
                 <td>${safeContact}</td>
                 <td>
                   <span class="status-pill ${isActive ? 'on' : 'off'}">
@@ -2020,8 +2176,77 @@ try {
       contactInput.value = contactVisibleInput.value.trim();
     }
 
+    const accountFields = document.getElementById('staff-account-fields');
+    const infoBtn = document.getElementById('staff-info-btn');
+    const infoPanel = document.getElementById('staff-info-panel');
+    const passwordFields = document.getElementById('staff-password-fields');
+    const passwordInput = document.getElementById('staff-password-input');
+    const confirmPasswordInput = document.getElementById('staff-confirm-password-input');
+    const accountTypeRadios = document.querySelectorAll('input[name="account_type"]');
+
+    function setInfoPanel(show) {
+      infoPanel.classList.toggle('show', show);
+      infoBtn.setAttribute('aria-expanded', show ? 'true' : 'false');
+    }
+
+    function resetPasswordToggleButtons() {
+      document.querySelectorAll('.password-toggle-btn').forEach((button) => {
+        const targetId = button.getAttribute('data-password-target');
+        const targetInput = targetId ? document.getElementById(targetId) : null;
+        if (!targetInput) return;
+        targetInput.type = 'password';
+        const icon = button.querySelector('i');
+        if (icon) {
+          icon.classList.remove('fa-eye-slash');
+          icon.classList.add('fa-eye');
+        }
+        button.setAttribute('aria-label', 'Show password');
+      });
+    }
+
+    function bindPasswordToggleButtons() {
+      document.querySelectorAll('.password-toggle-btn').forEach((button) => {
+        const targetId = button.getAttribute('data-password-target');
+        const targetInput = targetId ? document.getElementById(targetId) : null;
+        if (!targetInput) return;
+
+        button.addEventListener('click', () => {
+          const isHidden = targetInput.type === 'password';
+          targetInput.type = isHidden ? 'text' : 'password';
+          const icon = button.querySelector('i');
+          if (icon) {
+            icon.classList.toggle('fa-eye', !isHidden);
+            icon.classList.toggle('fa-eye-slash', isHidden);
+          }
+          button.setAttribute('aria-label', isHidden ? 'Hide password' : 'Show password');
+        });
+      });
+    }
+
+    bindPasswordToggleButtons();
+
+    function syncPasswordFields() {
+      const standalone = document.getElementById('account-type-standalone').checked;
+      passwordFields.classList.toggle('hidden', !standalone);
+      passwordInput.disabled = !standalone;
+      confirmPasswordInput.disabled = !standalone;
+      if (!standalone) {
+        passwordInput.value = '';
+        confirmPasswordInput.value = '';
+      }
+      resetPasswordToggleButtons();
+    }
+
+    accountTypeRadios.forEach((r) => r.addEventListener('change', syncPasswordFields));
+    infoBtn.addEventListener('click', (e) => { e.stopPropagation(); setInfoPanel(!infoPanel.classList.contains('show')); });
+    infoPanel.addEventListener('click', (e) => e.stopPropagation());
+    document.addEventListener('click', () => setInfoPanel(false));
+
     function openModal(isEdit = false, name = '', email = '', contact = '') {
       const submitBtn = document.getElementById('staff-submit-btn');
+      accountFields.style.display = isEdit ? 'none' : '';
+      infoBtn.classList.toggle('hidden', isEdit);
+      setInfoPanel(false);
       if (detailFields) detailFields.classList.toggle('hidden', !isEdit);
       if (isEdit) {
         document.getElementById('modal-title').textContent = 'Edit Staff Member Details';
@@ -2039,9 +2264,9 @@ try {
         emailInput.value = '';
         nameInput.value = '';
         contactInput.value = '';
-        document.getElementById('staff-invite-message').value = '';
         if (submitBtn) submitBtn.textContent = 'Send Invite';
       }
+      syncPasswordFields();
       clearStaffFormFeedback();
       modal.classList.add('active');
     }
@@ -2051,6 +2276,8 @@ try {
       editTargetRow = null;
       clearStaffFormFeedback();
       form.reset();
+      setInfoPanel(false);
+      syncPasswordFields();
     }
 
     openAddBtn.addEventListener('click', () => {
@@ -2067,13 +2294,12 @@ try {
       const action = document.getElementById('staff-form-action').value;
       const staffId = document.getElementById('staff-form-id').value;
       const email = document.getElementById('staff-email-input').value.trim();
-      const inviteMessage = document.getElementById('staff-invite-message').value.trim();
+      const inviteMessage = 'You have been invited to join as a staff member.';
       const fullName = (nameInput.value || nameVisibleInput?.value || '').trim();
       const contact = (contactInput.value || contactVisibleInput?.value || '').trim();
 
       clearStaffFormFeedback();
       if (action !== 'edit' && !email) { showStaffFormFeedback('Email address is required.', 'error'); return; }
-      if (action !== 'edit' && !inviteMessage) { showStaffFormFeedback('Please add a hire message before sending the invite.', 'error'); return; }
       if (action === 'edit' && !fullName) { showStaffFormFeedback('Full name is required.', 'error'); return; }
       if (action === 'edit' && !contact) { showStaffFormFeedback('Contact number is required.', 'error'); return; }
 
@@ -2082,9 +2308,17 @@ try {
       fd.append('action', action);
       fd.append('full_name', action === 'edit' ? fullName : (fullName || email.split('@')[0].replace(/[._-]+/g, ' ').trim() || 'New Staff Member'));
       fd.append('email', email);
-      fd.append('contact', action === 'edit' ? contact : (contact || '00000000000'));
+      fd.append('contact', action === 'edit' ? contact : (contact || ''));
       fd.append('hire_message', inviteMessage);
       if (action === 'edit') fd.append('staff_id', staffId);
+      if (action === 'add') {
+        const accountType = document.querySelector('input[name="account_type"]:checked')?.value || 'customer';
+        fd.append('account_type', accountType);
+        if (accountType === 'standalone') {
+          fd.append('password', passwordInput.value);
+          fd.append('confirm_password', confirmPasswordInput.value);
+        }
+      }
 
       try {
         const res = await fetch('manage-staff.php', { method: 'POST', body: fd });
@@ -2106,3 +2340,11 @@ try {
 </script>
 </body>
 </html>
+
+
+
+
+
+
+
+

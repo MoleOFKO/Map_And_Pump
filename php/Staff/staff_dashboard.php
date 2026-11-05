@@ -5,7 +5,11 @@ require_once __DIR__ . '/../BranchManager/_helpers.php';
 require_once __DIR__ . '/staff_access_guard.php';
 
 if (!empty($_SESSION['user_id'])) {
-    $hydratedStaffStatusEvents = staff_status_pending_for_current_user($pdo, (int) $_SESSION['user_id']);
+    $hydratedStaffStatusEvents = staff_status_pending_for_current_user(
+        $pdo,
+        (int) $_SESSION['user_id'],
+        (string) ($_SESSION['user_email'] ?? $_SESSION['staff_email'] ?? '')
+    );
     if (!empty($hydratedStaffStatusEvents)) {
         $_SESSION['pending_staff_status_events'] = $hydratedStaffStatusEvents;
     }
@@ -105,7 +109,11 @@ if (!empty($_SESSION['pending_staff_status_events']) && is_array($_SESSION['pend
     $pendingStaffStatusEvents = array_values($_SESSION['pending_staff_status_events']);
 }
 if (empty($pendingStaffStatusEvents) && !empty($_SESSION['user_id'])) {
-    $pendingStaffStatusEvents = staff_status_pending_for_current_user($pdo, (int) $_SESSION['user_id']);
+    $pendingStaffStatusEvents = staff_status_pending_for_current_user(
+        $pdo,
+        (int) $_SESSION['user_id'],
+        (string) ($_SESSION['user_email'] ?? '')
+    );
     if (!empty($pendingStaffStatusEvents)) {
         $_SESSION['pending_staff_status_events'] = $pendingStaffStatusEvents;
     }
