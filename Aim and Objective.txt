@@ -1,0 +1,14 @@
+AIM AND OBJECTIVE
+
+Aim
+To design and build a role-based web platform that makes fuel availability visible and fuel collection more orderly for drivers, station staff, fuel companies, and the platform owner.
+
+Objectives
+- Provide a public homepage with fuel prices, news, and station information.
+- Let verified drivers book fuel at a chosen station and receive a QR code that is valid for a limited time.
+- Let station staff verify bookings and record the fuel actually dispensed.
+- Apply fair-use rules, including one active booking per driver, a weekly litre quota, and booking expiry.
+- Give branch managers tools to manage staff, fuel stock, deliveries, and booking slots.
+- Give fuel company headquarters tools to manage stations, prices, manager reports, and billing records.
+- Give moderators and the admin tools to review documents, manage accounts, handle requests, and audit activity.
+- Reward drivers through a configurable loyalty-points system.
