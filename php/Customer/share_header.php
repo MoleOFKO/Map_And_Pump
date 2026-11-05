@@ -83,7 +83,13 @@ try {
         'SELECT u.user_name, u.email, u.oauth_avatar_url, u.role_id, u.business_role_id,
                 primary_role.role_name AS primary_role_name,
                 business_role.role_name AS business_role_name,
-                customer_role.role_id AS customer_role_id
+                customer_role.role_id AS customer_role_id,
+                (SELECT h.company_name
+                 FROM business_account_scope linked_scope
+                 INNER JOIN headquarter h ON h.headquarter_id = linked_scope.headquarter_id
+                 WHERE linked_scope.user_id = u.user_id
+                   AND linked_scope.business_role_id = customer_role.role_id
+                 LIMIT 1) AS linked_hq_name
          FROM users u
          LEFT JOIN roles primary_role ON primary_role.role_id = u.role_id
          LEFT JOIN roles business_role ON business_role.role_id = u.business_role_id
@@ -107,11 +113,15 @@ try {
         }
     }
     $linkedBusinessRoleNameHeader = trim((string) ($profileModeRoles['business_role_name'] ?? ''));
+    if ($linkedBusinessRoleNameHeader === '' && trim((string) ($profileModeRoles['linked_hq_name'] ?? '')) !== '') {
+        $linkedBusinessRoleNameHeader = 'HQ';
+    }
     $customerBusinessRoleId = (int) ($profileModeRoles['business_role_id'] ?? 0);
     $customerBaseRoleId = (int) ($profileModeRoles['role_id'] ?? 0);
-    $customerHasDistinctBusinessRole = $customerBusinessRoleId > 0
+    $customerHasDistinctBusinessRole = ($customerBusinessRoleId > 0
         && $customerBusinessRoleId !== $customerBaseRoleId
-        && $linkedBusinessRoleNameHeader !== '';
+        && $linkedBusinessRoleNameHeader !== '')
+        || trim((string) ($profileModeRoles['linked_hq_name'] ?? '')) !== '';
 } catch (Throwable $e) {
     error_log('Failed to load customer account profile modes: ' . $e->getMessage());
 }
@@ -350,7 +360,7 @@ if (!empty($_SESSION['user_id'])) {
                     <small class="text-secondary" style="font-size: 11px;">ID <?php echo htmlspecialchars($customerPublicUserId); ?></small>
                 </div>
             </a>
-            <?php if (!$customerDriverLicenseExpired && $customerHasDistinctBusinessRole): ?>
+            <?php if ((!$customerDriverLicenseExpired || $linkedBusinessRoleNameHeader === 'HQ') && $customerHasDistinctBusinessRole): ?>
                 <form action="../account_switch.php" method="POST" class="mb-3">
                     <input type="hidden" name="mode" value="business">
                     <button type="submit" class="btn btn-outline-info btn-sm w-100 py-2 border-opacity-25" style="border-radius:10px;">

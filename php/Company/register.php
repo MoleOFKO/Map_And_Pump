@@ -325,16 +325,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
         $reference = 'HQ-REG-' . date('YmdHis') . '-' . strtoupper(bin2hex(random_bytes(3)));
         $pdo->beginTransaction();
+        $headquarterInsert = $pdo->prepare(
+            "INSERT INTO headquarter
+                (company_name, company_logo, contact_number, headquarter_email, location,
+                 business_license, business_license_image, business_license_expire_date,
+                 expire_at, station_count, status)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')"
+        );
+        $headquarterInsert->execute([
+            $companyName,
+            $logoPath,
+            $companyPhone,
+            $companyEmail,
+            $companyAddress,
+            $licenseId,
+            $licensePath,
+            $licenseExpiry,
+            $licenseExpiry . ' 23:59:59',
+            BILLING_HQ_INCLUDED_STATION_SLOTS,
+        ]);
+        $headquarterId = (int) $pdo->lastInsertId();
         $stmt = $pdo->prepare(
             "INSERT INTO system_requests
-                (reference_code, request_type, status, submitter_user_id, role_id, sender_entity, sender_name, sender_email,
+                (reference_code, request_type, status, submitter_user_id, role_id, headquarter_id, sender_entity, sender_name, sender_email,
                  location, request_details, document_name, document_path, headquarter_owner_email, headquarter_email,
                  headquarter_company_logo, headquarter_contact_number, headquarter_expire_at)
-             VALUES (?, 'hq_registration', 'pending', ?, 3, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+             VALUES (?, 'hq_registration', 'pending', ?, 3, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
         );
         $submitterId = $ownerUserId > 0 ? $ownerUserId : null;
         $stmt->execute([
-            $reference, $submitterId, $companyName, $companyName, $accountEmail, $companyAddress, $details,
+            $reference, $submitterId, $headquarterId, $companyName, $companyName, $accountEmail, $companyAddress, $details,
             $licenseId, $licensePath, $ownerEmail !== '' ? $ownerEmail : null, $companyEmail, $logoPath, $companyPhone, $licenseExpiry . ' 23:59:59',
         ]);
         $requestId = (int) $pdo->lastInsertId();
