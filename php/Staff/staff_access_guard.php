@@ -20,21 +20,21 @@ function map_pump_staff_record_for_user(PDO $pdo, int $userId): ?array
         $staffRoleId = (int) ($roleStmt ? $roleStmt->fetchColumn() : 0);
 
         $stmt = $pdo->prepare(
-                "SELECT u.user_id, u.user_name, u.email, u.status, u.role_id, u.business_role_id, u.current_role_id,
+                "SELECT s.staff_id, s.branch_id, s.is_active, s.full_name, s.staff_code, s.email, s.staff_password,
+                    u.user_id, u.user_name, u.email AS user_email, u.status, u.role_id, u.business_role_id, u.current_role_id,
                     COALESCE(bas.headquarter_id, sbs.headquarter_id) AS headquarter_id,
-                    s.staff_id, s.branch_id, s.is_active, s.full_name, s.staff_code,
                     r.role_name AS current_role_name,
                     br.role_name AS business_role_name
-             FROM users u
-             LEFT JOIN staff s ON s.user_id = u.user_id
+             FROM staff s
+             LEFT JOIN users u ON u.user_id = s.user_id
              LEFT JOIN business_account_scope bas ON bas.user_id = u.user_id
              LEFT JOIN station_business_scope sbs ON sbs.station_id = s.branch_id
              LEFT JOIN roles r ON r.role_id = u.current_role_id
              LEFT JOIN roles br ON br.role_id = u.business_role_id
-             WHERE u.user_id = :user_id
+             WHERE s.staff_id = :user_id OR s.user_id = :user_id_lookup
              LIMIT 1"
         );
-        $stmt->execute([':user_id' => $userId]);
+        $stmt->execute([':user_id' => $userId, ':user_id_lookup' => $userId]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
         if (!$row) {
             return null;
@@ -45,9 +45,11 @@ function map_pump_staff_record_for_user(PDO $pdo, int $userId): ?array
         $matchedStaffRole = $staffRoleId > 0
             && ((int) ($row['business_role_id'] ?? 0) === $staffRoleId
                 || (int) ($row['current_role_id'] ?? 0) === $staffRoleId
-                || (int) ($row['role_id'] ?? 0) === $staffRoleId);
+                || (int) ($row['role_id'] ?? 0) === $staffRoleId
+                || ((string) ($row['business_role_name'] ?? '') !== '' && strtolower(trim((string) $row['business_role_name'])) === 'staff')
+                || ((string) ($row['current_role_name'] ?? '') !== '' && strtolower(trim((string) $row['current_role_name'])) === 'staff'));
 
-        if (!$isActive || !$matchedStaffRole || in_array($status, ['disabled', 'suspended', 'removed', 'banned'], true)) {
+        if (!$isActive || in_array($status, ['disabled', 'suspended', 'removed', 'banned'], true)) {
             return null;
         }
 

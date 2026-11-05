@@ -7,7 +7,8 @@ require_once __DIR__ . '/BranchManager/_helpers.php';
 header('Content-Type: application/json; charset=utf-8');
 
 $userId = (int) ($_SESSION['user_id'] ?? 0);
-if ($userId <= 0) {
+$userEmail = trim((string) ($_SESSION['user_email'] ?? ''));
+if ($userId <= 0 && !filter_var($userEmail, FILTER_VALIDATE_EMAIL)) {
     http_response_code(401);
     echo json_encode(['ok' => false, 'error' => 'Please sign in to continue.']);
     exit;
@@ -18,7 +19,7 @@ $type = strtolower(trim((string) ($_POST['type'] ?? $_REQUEST['type'] ?? '')));
 
 try {
     if ($notificationId > 0) {
-        $ok = staff_status_notification_acknowledge($pdo, $userId, $notificationId);
+        $ok = staff_status_notification_acknowledge($pdo, $userId, $notificationId, $userEmail);
         unset($_SESSION['staff_status_popup_type']);
         $_SESSION['pending_staff_status_events'] = array_values(array_filter(
             (array) $_SESSION['pending_staff_status_events'],
@@ -38,14 +39,14 @@ try {
     }
 
     $acknowledged = 0;
-    foreach (staff_status_pending_for_current_user($pdo, $userId) as $event) {
+    foreach (staff_status_pending_for_current_user($pdo, $userId, $userEmail) as $event) {
         $eventType = (string) ($event['notification_type'] ?? '');
         if (!in_array($eventType, $matchingTypes, true)) {
             continue;
         }
         $eventNotificationId = (int) ($event['notification_id'] ?? 0);
         if ($eventNotificationId > 0) {
-            if (staff_status_notification_acknowledge($pdo, $userId, $eventNotificationId)) {
+            if (staff_status_notification_acknowledge($pdo, $userId, $eventNotificationId, $userEmail)) {
                 $acknowledged++;
             }
         }
