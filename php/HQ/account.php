@@ -252,6 +252,88 @@ try {
             align-items: center;
             justify-content: center;
         }
+
+        .invite-account-type {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.75rem 1.5rem;
+            margin: 0.15rem 0 1rem;
+        }
+
+        .invite-account-type .form-check {
+            margin: 0;
+        }
+
+        .invite-account-type .form-check-label {
+            color: var(--slate-50);
+            font-weight: 500;
+        }
+
+        .invite-modal-header {
+            position: relative;
+            align-items: flex-start;
+            min-height: 3.5rem;
+            padding-right: 4rem;
+        }
+
+        .invite-modal-actions {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.4rem;
+            flex-shrink: 0;
+            position: absolute;
+            top: 0.75rem;
+            right: 1rem;
+        }
+
+        .invite-help-button {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 2rem;
+            height: 2rem;
+            padding: 0;
+            border-radius: 50%;
+            font-weight: 700;
+            line-height: 1;
+        }
+
+        .invite-help-panel {
+            border: 1px solid var(--border);
+            border-radius: 0.75rem;
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .invite-password-row[hidden],
+        #inviteAccountTypeOptions[hidden] {
+            display: none !important;
+        }
+
+        .invite-password-input {
+            position: relative;
+        }
+
+        .invite-password-input .form-control {
+            padding-right: 2.75rem;
+        }
+
+        .invite-password-toggle {
+            position: absolute;
+            top: 50%;
+            right: 0.75rem;
+            transform: translateY(-50%);
+            padding: 0.25rem;
+            border: 0;
+            background: transparent;
+            color: var(--slate-300);
+            cursor: pointer;
+        }
+
+        .invite-password-toggle:hover,
+        .invite-password-toggle:focus-visible {
+            color: var(--slate-50);
+        }
     </style>
 </head>
 <body>
@@ -359,23 +441,68 @@ endif; ?>
     </div>
 
     <div class="modal fade" id="inviteAccountModal" tabindex="-1" aria-labelledby="inviteAccountModalLabel" aria-hidden="true">
-        <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-dialog modal-dialog-centered modal-lg">
             <div class="modal-content" style="background: var(--bg, #111827); color: var(--slate-50, #f8fafc); border: 1px solid rgba(255,255,255,0.08); border-radius: 18px;">
                 <form method="POST" action="./invite_account.php" id="inviteAccountForm">
-                    <div class="modal-header border-0"><h5 class="modal-title" id="inviteAccountModalLabel">Add Branch Manager</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button></div>
-                    <div class="modal-body">
-                        <p class="small text-white-50">Adding a branch manager activates the role immediately and sends an invitation email. A password is only needed if this email does not already have an account; existing accounts keep their current password. You can assign a station now or choose not to assign one. Staff invitations require an existing customer account and station assignment.</p>
-                        <label class="form-label" for="inviteEmail">Customer email</label>
-                        <input class="form-control mb-3" type="email" id="inviteEmail" name="email" required>
-                        <label class="form-label" for="inviteRole">Role</label>
-                        <select class="form-select mb-3" id="inviteRole" name="role" required><option value="manager">Branch Manager</option><option value="staff">Staff</option></select>
-                        <div id="inviteManagerPasswordWrap">
-                            <label class="form-label" for="inviteManagerPassword">Branch manager password</label>
-                            <input class="form-control mb-3" type="password" id="inviteManagerPassword" name="password" minlength="8" maxlength="15" pattern="(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^a-zA-Z0-9]).{8,15}" title="Use 8–15 characters with uppercase and lowercase letters, a number, and a symbol." autocomplete="new-password">
-                            <div class="form-text text-white-50 mb-3">Only needed for a new account: use 8–15 characters with uppercase and lowercase letters, a number, and a symbol.</div>
+                    <div class="modal-header border-0 invite-modal-header">
+                        <h5 class="modal-title" id="inviteAccountModalLabel">Add Branch Manager or Staff Account</h5>
+                        <div class="invite-modal-actions">
+                            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                            <button type="button" class="btn btn-sm btn-outline-info invite-help-button" id="inviteAccountHelpButton" aria-label="Show account type and password information" aria-expanded="false" aria-controls="inviteAccountHelp">!</button>
                         </div>
+                    </div>
+                    <div class="modal-body">
+                        <div id="inviteAccountHelp" class="invite-help-panel small p-3 mb-3" hidden>
+                            <p class="mb-2"><strong>New Customer Account:</strong> Select this when the email entered above does not already have a customer account. The password you set will be used to create that account and sign in with that email.</p>
+                            <p class="mb-2"><strong>Existing Customer Account:</strong> Select this when the email already belongs to a customer. Their current password is kept and is not changed.</p>
+                            <p class="mb-0"><strong>Staff:</strong> Staff must use an existing customer account and must be assigned to a station.</p>
+                        </div>
+
+                        <div class="row g-3 align-items-end mb-3">
+                            <div class="col-md-8">
+                                <label class="form-label" for="inviteEmail">Email for Invitee Account</label>
+                                <input class="form-control" type="email" id="inviteEmail" name="email" required>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label" for="inviteRole">Role</label>
+                                <select class="form-select" id="inviteRole" name="role" required><option value="manager">Branch Manager</option><option value="staff">Staff</option></select>
+                            </div>
+                        </div>
+
+                        <fieldset id="inviteAccountTypeOptions" class="border-0 p-0 m-0">
+                            <legend class="visually-hidden">Customer account type</legend>
+                            <div class="invite-account-type">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" name="invitee_account_type" id="inviteNewCustomerAccount" value="new">
+                                    <label class="form-check-label" for="inviteNewCustomerAccount">Create with Standalone Account</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" name="invitee_account_type" id="inviteExistingCustomerAccount" value="existing" checked>
+                                    <label class="form-check-label" for="inviteExistingCustomerAccount">Invite with Customer Account</label>
+                                </div>
+                            </div>
+                        </fieldset>
+
+                        <div class="row g-3 invite-password-row mb-3" id="inviteManagerPasswordWrap" hidden>
+                            <div class="col-md-6">
+                                <label class="form-label" for="inviteManagerPassword">Set a Password</label>
+                                <div class="invite-password-input">
+                                    <input class="form-control" type="password" id="inviteManagerPassword" name="password" minlength="8" maxlength="15" pattern="(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^a-zA-Z0-9]).{8,15}" title="Use 8–15 characters with uppercase and lowercase letters, a number, and a symbol." autocomplete="new-password">
+                                    <button type="button" class="invite-password-toggle" data-password-target="inviteManagerPassword" aria-label="Show password" aria-pressed="false"><i class="fa-solid fa-eye" aria-hidden="true"></i></button>
+                                </div>
+                                <div class="form-text text-white-50">Use 8–15 characters with uppercase and lowercase letters, a number, and a symbol.</div>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label" for="inviteManagerPasswordConfirm">Confirm Password</label>
+                                <div class="invite-password-input">
+                                    <input class="form-control" type="password" id="inviteManagerPasswordConfirm" minlength="8" maxlength="15" autocomplete="new-password">
+                                    <button type="button" class="invite-password-toggle" data-password-target="inviteManagerPasswordConfirm" aria-label="Show password confirmation" aria-pressed="false"><i class="fa-solid fa-eye" aria-hidden="true"></i></button>
+                                </div>
+                            </div>
+                        </div>
+
                         <div class="d-flex align-items-center justify-content-between gap-2 mb-2">
-                            <label class="form-label mb-0" for="inviteStation">Station <span id="inviteStationRequirement" class="text-white-50">(optional for branch managers)</span></label>
+                            <label class="form-label mb-0" for="inviteStation">Assign To Station <span id="inviteStationRequirement" class="text-white-50">(optional for branch managers)</span></label>
                             <button type="button" class="btn btn-sm btn-outline-info" data-bs-toggle="modal" data-bs-target="#quickStationModal" data-reopen-source="inviteAccountModal">+ Add Station</button>
                         </div>
                         <select class="form-select" id="inviteStation" name="station_id"><option value="">Select a station</option><option value="none">Do not assign a station</option><?php foreach ($stations as $station): ?><option value="<?= (int)$station['station_id'] ?>"><?= htmlspecialchars((string)$station['station_name'] . ' — ' . (string)$station['location']) ?></option><?php endforeach; ?></select>
@@ -669,29 +796,89 @@ endif; ?>
         const inviteAccountForm = document.getElementById('inviteAccountForm');
         if (inviteAccountForm) {
             const inviteRole = document.getElementById('inviteRole');
+            const accountTypeOptions = document.getElementById('inviteAccountTypeOptions');
+            const newCustomerAccount = document.getElementById('inviteNewCustomerAccount');
+            const existingCustomerAccount = document.getElementById('inviteExistingCustomerAccount');
             const managerPasswordWrap = document.getElementById('inviteManagerPasswordWrap');
             const managerPassword = document.getElementById('inviteManagerPassword');
+            const managerPasswordConfirm = document.getElementById('inviteManagerPasswordConfirm');
             const inviteStation = document.getElementById('inviteStation');
             const stationRequirement = document.getElementById('inviteStationRequirement');
             const unassignedStationOption = inviteStation.querySelector('option[value="none"]');
+            const helpButton = document.getElementById('inviteAccountHelpButton');
+            const helpPanel = document.getElementById('inviteAccountHelp');
+
+            document.querySelectorAll('#inviteAccountModal .invite-password-toggle').forEach(function (toggle) {
+                toggle.addEventListener('click', function () {
+                    const passwordInput = document.getElementById(toggle.dataset.passwordTarget);
+                    const icon = toggle.querySelector('i');
+                    const isVisible = passwordInput.type === 'password';
+
+                    passwordInput.type = isVisible ? 'text' : 'password';
+                    toggle.setAttribute('aria-pressed', String(isVisible));
+                    toggle.setAttribute('aria-label', isVisible
+                        ? (passwordInput.id === 'inviteManagerPassword' ? 'Hide password' : 'Hide password confirmation')
+                        : (passwordInput.id === 'inviteManagerPassword' ? 'Show password' : 'Show password confirmation'));
+                    icon.classList.toggle('fa-eye', !isVisible);
+                    icon.classList.toggle('fa-eye-slash', isVisible);
+                });
+            });
+
+            helpButton.addEventListener('click', function () {
+                const isExpanded = helpButton.getAttribute('aria-expanded') === 'true';
+                helpButton.setAttribute('aria-expanded', isExpanded ? 'false' : 'true');
+                helpPanel.hidden = isExpanded;
+            });
+
             const syncManagerPasswordField = function () {
                 const isManager = inviteRole.value === 'manager';
-                managerPasswordWrap.hidden = !isManager;
-                managerPassword.required = false;
+                const isNewAccount = newCustomerAccount.checked;
+                accountTypeOptions.hidden = !isManager;
+                managerPasswordWrap.hidden = !isManager || !isNewAccount;
+                managerPassword.required = isManager && isNewAccount;
+                managerPasswordConfirm.required = isManager && isNewAccount;
                 inviteStation.required = !isManager;
                 unassignedStationOption.disabled = !isManager;
                 stationRequirement.textContent = isManager ? '(optional for branch managers)' : '(required for staff)';
-                if (!isManager) {
+                if (!isManager || !isNewAccount) {
                     managerPassword.value = '';
+                    managerPasswordConfirm.value = '';
+                    managerPasswordConfirm.setCustomValidity('');
+                    document.querySelectorAll('#inviteAccountModal .invite-password-toggle').forEach(function (toggle) {
+                        const passwordInput = document.getElementById(toggle.dataset.passwordTarget);
+                        const icon = toggle.querySelector('i');
+                        passwordInput.type = 'password';
+                        toggle.setAttribute('aria-pressed', 'false');
+                        toggle.setAttribute('aria-label', passwordInput.id === 'inviteManagerPassword'
+                            ? 'Show password'
+                            : 'Show password confirmation');
+                        icon.classList.add('fa-eye');
+                        icon.classList.remove('fa-eye-slash');
+                    });
+                }
+                if (!isManager) {
+                    existingCustomerAccount.checked = true;
                     if (inviteStation.value === 'none') {
                         inviteStation.value = '';
                     }
                 }
             };
+
             inviteRole.addEventListener('change', syncManagerPasswordField);
+            newCustomerAccount.addEventListener('change', syncManagerPasswordField);
+            existingCustomerAccount.addEventListener('change', syncManagerPasswordField);
             syncManagerPasswordField();
 
+            const validatePasswordConfirmation = function () {
+                managerPasswordConfirm.setCustomValidity(
+                    managerPasswordConfirm.value === managerPassword.value ? '' : 'Passwords do not match.'
+                );
+            };
+            managerPassword.addEventListener('input', validatePasswordConfirmation);
+            managerPasswordConfirm.addEventListener('input', validatePasswordConfirmation);
+
             inviteAccountForm.addEventListener('submit', function (event) {
+                validatePasswordConfirmation();
                 if (!inviteAccountForm.checkValidity()) {
                     event.preventDefault();
                     inviteAccountForm.reportValidity();
