@@ -826,37 +826,53 @@ foreach ($staff as $member) {
 }
 
 $activities = [];
+$selectedStaffId = isset($_GET['view_staff_id']) ? (int) $_GET['view_staff_id'] : 0;
+$selectedStaffName = '';
+$activityHasOverflow = false;
+
 try {
-    $activityStmt = $pdo->prepare(
-        "SELECT uh.filled_at AS created_at,
-                COALESCE(staff.user_name, 'Staff member') AS staff_name,
-                CONCAT(
-                    COALESCE(customer.user_name, 'Customer'),
-                    ' visited ',
-                    COALESCE(branch.branch_name, 'this branch'),
-                    ' and was served by ',
-                    COALESCE(staff.user_name, 'staff')
-                ) AS action
-         FROM usage_history uh
-         INNER JOIN users customer ON customer.user_id = uh.user_id
-         INNER JOIN branches branch ON branch.branch_id = uh.station_id
-         INNER JOIN users staff ON staff.user_id = uh.staff_user_id
-         WHERE uh.station_id = :branch_id
-           AND uh.staff_user_id IS NOT NULL
-           AND EXISTS (
-               SELECT 1
-               FROM staff s
-               WHERE s.user_id = uh.staff_user_id
-                 AND s.branch_id = :branch_id
-           )
-           AND LOWER(COALESCE(uh.status, '')) = 'filled'
-         ORDER BY uh.filled_at DESC, uh.usage_id DESC
-         LIMIT 12"
-    );
-    $activityStmt->execute([':branch_id' => $bid]);
-    $activities = $activityStmt->fetchAll(PDO::FETCH_ASSOC);
+    if ($selectedStaffId > 0) {
+        $selectedStaffStmt = $pdo->prepare(
+            "SELECT s.staff_id, s.user_id, s.full_name
+             FROM staff s
+             WHERE s.staff_id = :staff_id
+               AND s.branch_id = :branch_id
+             LIMIT 1"
+        );
+        $selectedStaffStmt->execute([':staff_id' => $selectedStaffId, ':branch_id' => $bid]);
+        $selectedStaffRow = $selectedStaffStmt->fetch(PDO::FETCH_ASSOC);
+
+        if ($selectedStaffRow) {
+            $selectedStaffUserId = (int) ($selectedStaffRow['user_id'] ?? 0);
+            $selectedStaffName = trim((string) ($selectedStaffRow['full_name'] ?? ''));
+
+            if ($selectedStaffUserId > 0) {
+                $activityStmt = $pdo->prepare(
+                    "SELECT l.log_id, l.user_id, l.action, l.created_at
+                     FROM log l
+                     WHERE l.user_id = :staff_user_id
+                       AND l.role_id = 5
+                       AND (
+                           LOWER(l.action) LIKE 'confirmed fuel fill for booking %'
+                           OR LOWER(l.action) LIKE 'replied to customer feedback %'
+                           OR LOWER(l.action) LIKE 'submitted staff report:%'
+                       )
+                     ORDER BY l.created_at DESC, l.log_id DESC
+                     LIMIT 11"
+                );
+                $activityStmt->execute([':staff_user_id' => $selectedStaffUserId]);
+                $rawActivities = $activityStmt->fetchAll(PDO::FETCH_ASSOC);
+                $activityHasOverflow = count($rawActivities) > 10;
+                $activities = array_slice($rawActivities, 0, 10);
+            }
+        }
+    }
 } catch (Throwable $e) {
+    $selectedStaffId = 0;
+    $selectedStaffName = '';
     $activities = [];
+    $activityHasOverflow = false;
+    error_log('Unable to load selected staff activity log: ' . $e->getMessage());
 }
 ?>
 <!DOCTYPE html>
@@ -1138,42 +1154,62 @@ try {
     text-align: center;
     white-space: nowrap;
   }
+  #staff-directory-table{table-layout:fixed;}
+  #staff-directory-table thead th,
+  #staff-directory-table tbody td,
+  #staff-directory-table thead th:last-child,
+  #staff-directory-table tbody td:last-child{
+    width:20%;
+    min-width:0;
+    max-width:none;
+    overflow:hidden;
+    text-overflow:ellipsis;
+  }
+  #staff-directory-table thead th:last-child,
+  #staff-directory-table tbody td:last-child{
+    padding-left:8px;
+    padding-right:8px;
+    text-align:center;
+    white-space:nowrap;
+    overflow:visible;
+  }
   .staff-actions-wrap{
     display:flex;
     align-items:center;
     justify-content:center;
-    gap:10px;
+    gap:6px;
     white-space:nowrap;
   }
   .staff-action-btn{
-    width:22px;
-    height:22px;
-    border:none;
+    border:1px solid var(--slate-400);
     background:transparent;
-    color:var(--slate-400);
+    color:var(--slate-300);
     display:inline-flex;
     align-items:center;
     justify-content:center;
-    border-radius:6px;
+    border-radius:8px;
     cursor:pointer;
-    padding:0;
-    font-size:14px;
-    line-height:1;
-    transition:none;
+    padding:5px 10px;
+    font-size:12px;
+    font-weight:600;
+    line-height:1.2;
+    transition:background-color 0.15s ease;
   }
   .staff-action-btn:focus-visible{
     outline: 1px solid rgba(251,191,36,0.42);
     outline-offset: 2px;
   }
-  .staff-action-btn.edit-btn { color: var(--slate-400); }
-  .staff-action-btn.toggle-btn { color: var(--slate-400); }
-  .staff-action-btn.toggle-btn.active { color: var(--mint-400); }
-  .staff-action-btn.delete-btn { color: var(--red-400); }
-  .staff-action-btn:hover,
+  .staff-action-btn.view-btn { color: var(--slate-50); border-color: #64748b; }
+  .staff-action-btn.view-btn:hover { background: rgba(100,116,139,0.18); }
+  .staff-action-btn.toggle-btn { color: #ea580c; border-color: #d97706; }
+  .staff-action-btn.toggle-btn:hover { background: rgba(217,119,6,0.14); }
+  .staff-action-btn.toggle-btn.activate { color: #22c55e; border-color: #16a34a; }
+  .staff-action-btn.toggle-btn.activate:hover { background: rgba(22,163,74,0.14); }
+  .staff-action-btn.delete-btn { color: var(--red-400); border-color: #dc2626; }
+  .staff-action-btn.delete-btn:hover { background: rgba(220,38,38,0.14); }
   .staff-action-btn:active,
   .staff-action-btn:focus,
   .staff-action-btn:focus-visible {
-    background: transparent;
     box-shadow: none;
     transform: none;
     opacity: 1;
@@ -1249,6 +1285,12 @@ try {
   .activity-scroll::-webkit-scrollbar-thumb:hover { background: rgba(148, 163, 184, 0.62); }
   .activity-row .t{font-size:11.5px; color:var(--slate-400); min-width:70px;}
   .activity-row b{color:var(--slate-50);}
+  .staff-activity-table thead th {
+    position: sticky;
+    top: 0;
+    background: rgba(15, 23, 42, 0.96);
+    z-index: 1;
+  }
 
   /* ---------- Modern Modal CSS ---------- */
   .modal-overlay {
@@ -1580,21 +1622,13 @@ try {
                   </td>
                   <td class="staff-action-cell">
                     <div class="staff-actions-wrap">
-                      <button type="button" class="staff-action-btn edit-btn edit-action" data-id="<?= (int)$s['staff_id'] ?>" data-email="<?= h($staff_email) ?>" data-name="<?= h($s['full_name']) ?>" data-contact="<?= h($staff_contact) ?>" title="Edit staff member" aria-label="Edit staff member">
-                        <i class="fa-solid fa-pen-to-square"></i>
-                      </button>
+                      <button type="button" class="staff-action-btn view-btn view-action" data-id="<?= (int)$s['staff_id'] ?>" data-name="<?= h($s['full_name']) ?>" title="View staff activity" aria-label="View staff activity">View</button>
                       <?php if ($on): ?>
-                        <button type="button" class="staff-action-btn toggle-btn active" data-action="disable" data-id="<?= (int)$s['staff_id'] ?>" title="Disable staff account" aria-label="Disable staff account">
-                          <i class="fa-solid fa-toggle-on"></i>
-                        </button>
+                        <button type="button" class="staff-action-btn toggle-btn active" data-action="disable" data-id="<?= (int)$s['staff_id'] ?>" title="Disable staff account" aria-label="Disable staff account">Disable</button>
                       <?php else: ?>
-                        <button type="button" class="staff-action-btn toggle-btn" data-action="activate" data-id="<?= (int)$s['staff_id'] ?>" title="Activate staff account" aria-label="Activate staff account">
-                          <i class="fa-solid fa-toggle-off"></i>
-                        </button>
+                        <button type="button" class="staff-action-btn toggle-btn activate" data-action="activate" data-id="<?= (int)$s['staff_id'] ?>" title="Activate staff account" aria-label="Activate staff account">Activate</button>
                       <?php endif; ?>
-                      <button type="button" class="staff-action-btn delete-btn delete-action" data-id="<?= (int)$s['staff_id'] ?>" data-name="<?= h($s['full_name']) ?>" data-code="<?= h($s['staff_code']) ?>" title="Delete staff member" aria-label="Delete staff member">
-                        <i class="fa-solid fa-trash"></i>
-                      </button>
+                      <button type="button" class="staff-action-btn delete-btn delete-action" data-id="<?= (int)$s['staff_id'] ?>" data-name="<?= h($s['full_name']) ?>" data-code="<?= h($s['staff_code']) ?>" title="Delete staff member" aria-label="Delete staff member">Delete</button>
                     </div>
                   </td>
                 </tr>
@@ -1611,21 +1645,46 @@ try {
       <!-- TAB 2: STAFF ACTIVITY LOG -->
       <div class="tab-panel" id="tab-activity">
         <div class="panel">
+          <div class="staff-activity-toolbar" style="display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:12px; flex-wrap:wrap;">
+            <div style="font-size:12.5px; color:var(--slate-300);">
+              <?php if ($selectedStaffId > 0 && $selectedStaffName !== ''): ?>
+                Showing activity for <strong style="color:var(--slate-50);"><?= h($selectedStaffName) ?></strong>
+              <?php else: ?>
+                Select a staff member to review their activity.
+              <?php endif; ?>
+            </div>
+            <?php if ($selectedStaffId > 0): ?>
+              <a href="manage-staff.php#tab-activity" class="small-link" style="color:var(--sky-300); text-decoration:none;">Clear selection</a>
+            <?php endif; ?>
+          </div>
           <div class="activity-scroll" id="activity-scroll">
-          <?php if (!$activities): ?>
-            <div style="text-align:center; padding:22px; color:var(--slate-400); font-size: 12.5px;">No staff activity yet.</div>
-          <?php else: ?>
-            <?php foreach ($activities as $a): ?>
-              <div class="activity-row">
-                <span class="t"><?= h(date('M j Â· h:i A', strtotime($a['created_at']))) ?></span>
-                <span>
-                  <i class="fa-solid fa-user-clock" style="color:var(--sky-400); margin-right:6px;"></i>
-                  <b><?= h($a['staff_name']) ?></b>
-                  <span style="color:var(--slate-300);"> â€” <?= h($a['action']) ?></span>
-                </span>
-              </div>
-            <?php endforeach; ?>
-          <?php endif; ?>
+            <?php if ($selectedStaffId <= 0): ?>
+              <div style="text-align:center; padding:22px; color:var(--slate-400); font-size: 12.5px;">Select a staff member to view their recorded activities.</div>
+            <?php elseif (!$activities): ?>
+              <div style="text-align:center; padding:22px; color:var(--slate-400); font-size: 12.5px;">No qualifying activity found for this staff member.</div>
+            <?php else: ?>
+              <table class="staff-activity-table" style="width:100%; border-collapse:collapse;">
+                <thead>
+                  <tr>
+                    <th style="text-align:left; padding:10px 12px; font-size:11.5px; text-transform:uppercase; color:var(--slate-400); border-bottom:1px solid rgba(255,255,255,0.08);">Date</th>
+                    <th style="text-align:left; padding:10px 12px; font-size:11.5px; text-transform:uppercase; color:var(--slate-400); border-bottom:1px solid rgba(255,255,255,0.08);">Staff</th>
+                    <th style="text-align:left; padding:10px 12px; font-size:11.5px; text-transform:uppercase; color:var(--slate-400); border-bottom:1px solid rgba(255,255,255,0.08);">Activity</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <?php foreach ($activities as $a): ?>
+                    <tr style="border-bottom:1px solid rgba(255,255,255,0.04);">
+                      <td style="padding:12px; font-size:12.5px; color:var(--slate-300); white-space:nowrap;"><?= h(date('M j, Y · h:i A', strtotime($a['created_at']))) ?></td>
+                      <td style="padding:12px; font-size:12.5px; color:var(--slate-100); font-weight:600; min-width:150px;"><?= h($selectedStaffName !== '' ? $selectedStaffName : 'Staff Member') ?></td>
+                      <td style="padding:12px; font-size:12.5px; color:var(--slate-200);"><?= h($a['action']) ?></td>
+                    </tr>
+                  <?php endforeach; ?>
+                </tbody>
+              </table>
+              <?php if ($activityHasOverflow): ?>
+                <div style="padding:8px 12px 0; color:var(--slate-400); font-size:11.5px;">Showing the latest 10 records.</div>
+              <?php endif; ?>
+            <?php endif; ?>
           </div>
         </div>
       </div>
@@ -1851,20 +1910,34 @@ try {
       });
     }
 
-    // Staff Activity: show 5 rows by default, scroll when there are more
+    // Staff activity selection is driven by the existing query param used by the page.
+    document.addEventListener('click', (e) => {
+      const viewBtn = e.target.closest('.view-action');
+      if (!viewBtn) return;
+      e.stopPropagation();
+      const staffId = viewBtn.dataset.id;
+      const url = new URL(window.location.href);
+      url.searchParams.set('view_staff_id', String(staffId));
+      url.hash = 'tab-activity';
+      window.location.href = url.toString();
+    });
+
     const activityScroll = document.getElementById('activity-scroll');
     function updateActivityScrollState() {
       if (!activityScroll) return;
-      const rows = activityScroll.querySelectorAll('.activity-row');
-      if (rows.length <= 5) {
+      const rows = activityScroll.querySelectorAll('tbody tr');
+      if (!rows.length || rows.length <= 10) {
         activityScroll.classList.remove('has-scroll');
         activityScroll.style.maxHeight = 'none';
         activityScroll.style.overflowY = 'hidden';
         return;
       }
-      // Height of the first 5 rows (measured, so wrapped text is handled). Returns 0 while the tab is hidden.
       let height = 0;
-      for (let i = 0; i < 5; i++) height += rows[i].offsetHeight;
+      for (let i = 0; i < 10; i++) {
+        const row = rows[i];
+        if (!row) break;
+        height += row.offsetHeight;
+      }
       if (!height) return;
       activityScroll.classList.add('has-scroll');
       activityScroll.style.maxHeight = height + 'px';
@@ -1872,7 +1945,6 @@ try {
     }
     updateActivityScrollState();
     window.addEventListener('resize', updateActivityScrollState);
-    // The tab starts hidden, so re-measure once it becomes visible
     if (activityScroll && window.ResizeObserver) {
       new ResizeObserver(updateActivityScrollState).observe(activityScroll);
     }
@@ -1968,21 +2040,13 @@ try {
                 </td>
                 <td class="staff-action-cell">
                   <div class="staff-actions-wrap">
-                    <button type="button" class="staff-action-btn edit-btn edit-action" data-id="${s.staff_id}" data-email="${safeEmail}" data-name="${safeName}" data-contact="${safeContact}" title="Edit staff member" aria-label="Edit staff member">
-                      <i class="fa-solid fa-pen-to-square"></i>
-                    </button>
+                    <button type="button" class="staff-action-btn view-btn view-action" data-id="${s.staff_id}" data-name="${safeName}" title="View staff activity" aria-label="View staff activity">View</button>
                     ${isActive ? `
-                      <button type="button" class="staff-action-btn toggle-btn active" data-action="disable" data-id="${s.staff_id}" title="Disable staff account" aria-label="Disable staff account">
-                        <i class="fa-solid fa-toggle-on"></i>
-                      </button>
+                      <button type="button" class="staff-action-btn toggle-btn active" data-action="disable" data-id="${s.staff_id}" title="Disable staff account" aria-label="Disable staff account">Disable</button>
                     ` : `
-                      <button type="button" class="staff-action-btn toggle-btn" data-action="activate" data-id="${s.staff_id}" title="Activate staff account" aria-label="Activate staff account">
-                        <i class="fa-solid fa-toggle-off"></i>
-                      </button>
+                      <button type="button" class="staff-action-btn toggle-btn activate" data-action="activate" data-id="${s.staff_id}" title="Activate staff account" aria-label="Activate staff account">Activate</button>
                     `}
-                    <button type="button" class="staff-action-btn delete-btn delete-action" data-id="${s.staff_id}" data-name="${safeName}" data-code="${safeCode}" title="Delete staff member" aria-label="Delete staff member">
-                      <i class="fa-solid fa-trash"></i>
-                    </button>
+                    <button type="button" class="staff-action-btn delete-btn delete-action" data-id="${s.staff_id}" data-name="${safeName}" data-code="${safeCode}" title="Delete staff member" aria-label="Delete staff member">Delete</button>
                   </div>
                 </td>
               </tr>
@@ -2340,11 +2404,3 @@ try {
 </script>
 </body>
 </html>
-
-
-
-
-
-
-
-

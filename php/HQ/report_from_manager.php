@@ -6,10 +6,56 @@ $reports = [];
 $logs = [];
 $managerRoleId = 4;
 $headquarterId = map_pump_current_hq_id($pdo, (int) ($_SESSION['user_id'] ?? 0));
+$todayDate = (new DateTimeImmutable('now'))->format('Y-m-d');
+$hqCreatedDate = $todayDate;
+$startDate = trim((string) ($_GET['start_date'] ?? ''));
+$endDate = trim((string) ($_GET['end_date'] ?? ''));
+$managerActivityHasOverflow = false;
 
 try {
     if ($headquarterId <= 0) {
         throw new RuntimeException('No HQ scope is available for this account.');
+    }
+
+    $hqCreatedStmt = $pdo->prepare('SELECT DATE(created_at) FROM headquarter WHERE headquarter_id = ? LIMIT 1');
+    $hqCreatedStmt->execute([$headquarterId]);
+    $hqCreatedValue = $hqCreatedStmt->fetchColumn();
+    if (is_string($hqCreatedValue) && $hqCreatedValue !== '') {
+        $hqCreatedDate = $hqCreatedValue;
+    }
+
+    $validDatePattern = '/^\d{4}-\d{2}-\d{2}$/';
+    $normalizeDate = function (string $rawDate, string $minDate, string $maxDate): string {
+        $rawDate = trim($rawDate);
+        if ($rawDate === '') {
+            return '';
+        }
+
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $rawDate)) {
+            return $minDate;
+        }
+
+        $date = DateTimeImmutable::createFromFormat('!Y-m-d', $rawDate);
+        if ($date === false) {
+            return $minDate;
+        }
+
+        $normalizedDate = $date->format('Y-m-d');
+        if ($normalizedDate < $minDate) {
+            return $minDate;
+        }
+        if ($normalizedDate > $maxDate) {
+            return $maxDate;
+        }
+
+        return $normalizedDate;
+    };
+
+    $startDate = $normalizeDate($startDate, $hqCreatedDate, $todayDate);
+    $endDate = $normalizeDate($endDate, $hqCreatedDate, $todayDate);
+
+    if ($startDate !== '' && $endDate !== '' && $startDate > $endDate) {
+        [$startDate, $endDate] = [$endDate, $startDate];
     }
 
     $stmt = $pdo->prepare(
@@ -28,7 +74,7 @@ try {
     $stmt->execute([$managerRoleId, $managerRoleId, $managerRoleId, $headquarterId, $headquarterId]);
     $reports = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    $logStmt = $pdo->prepare(
+    $logSql =
         'SELECT l.log_id, l.user_id, l.action, l.created_at, u.user_name
          FROM log l
          LEFT JOIN users u ON u.user_id = l.user_id
@@ -42,16 +88,29 @@ try {
                     WHERE sbs.branch_manager_user_id = u.user_id
                       AND sbs.headquarter_id = ?
                 )
-           )
-         ORDER BY l.created_at DESC
-         LIMIT 10'
-    );
-    $logStmt->execute([$managerRoleId, $managerRoleId, $managerRoleId, $managerRoleId, $headquarterId, $headquarterId]);
-    $logs = $logStmt->fetchAll(PDO::FETCH_ASSOC);
+           )';
+    $logParams = [$managerRoleId, $managerRoleId, $managerRoleId, $managerRoleId, $headquarterId, $headquarterId];
+
+    if ($startDate !== '') {
+        $logSql .= ' AND DATE(l.created_at) >= :start_date';
+        $logParams[':start_date'] = $startDate;
+    }
+    if ($endDate !== '') {
+        $logSql .= ' AND DATE(l.created_at) <= :end_date';
+        $logParams[':end_date'] = $endDate;
+    }
+
+    $logSql .= ' ORDER BY l.created_at DESC';
+
+    $logStmt = $pdo->prepare($logSql);
+    $logStmt->execute($logParams);
+    $rawLogs = $logStmt->fetchAll(PDO::FETCH_ASSOC);
+    $logs = $rawLogs;
 } catch (Throwable $e) {
     error_log('Failed to load manager activities: ' . $e->getMessage());
     $reports = [];
     $logs = [];
+    $managerActivityHasOverflow = false;
 }
 ?>
 <!DOCTYPE html>
@@ -146,6 +205,45 @@ try {
             display: flex;
             align-items: center;
             justify-content: center;
+        }
+
+        /* Manager activity log (monospace audit-trail lines) */
+        .manager-activity-row {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+            font-size: 0.9rem;
+            color: var(--slate-50);
+            padding: 12px 12px;
+            border-bottom: 1px solid var(--border);
+            word-break: break-word;
+        }
+
+        .manager-activity-log {
+            max-height: calc(10 * 42px + 2px);
+            overflow-y: auto;
+            overflow-x: hidden;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: rgba(15, 23, 42, 0.08);
+        }
+
+        .manager-activity-log::-webkit-scrollbar {
+            width: 10px;
+        }
+
+        .manager-activity-log::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .manager-activity-log::-webkit-scrollbar-thumb {
+            background: rgba(148, 163, 184, 0.45);
+            border-radius: 999px;
+            border: 2px solid transparent;
+            background-clip: content-box;
+        }
+
+        .manager-activity-log::-webkit-scrollbar-thumb:hover {
+            background: rgba(148, 163, 184, 0.7);
+            border-radius: 999px;
         }
     </style>
 </head>
@@ -245,27 +343,32 @@ endif; ?>
         </div>
 
         <div class="card p-3">
-            <h3>Recent Manager Activity</h3>
-            <p class="subtitle" style="margin-bottom: 12px;">Audit trail of critical events occurring at active pumps.</p>
-            
-            <ul style="list-style: none; padding-left: 0; font-family: monospace; font-size: 0.9rem; color: var(--slate-50);">
-                <?php
-if (empty($logs)): ?>
-                    <li style="border-bottom: 1px solid var(--border); padding: 8px 0; color: var(--slate-50);">
-                        No manager activity has been recorded yet.
-                    </li>
-                <?php
-else: ?>
-                    <?php
-foreach ($logs as $log): ?>
-                        <li style="border-bottom: 1px solid var(--border); padding: 8px 0; color: var(--slate-50);">
-                            [<?= htmlspecialchars($log['created_at']) ?>] USER <?= htmlspecialchars($log['user_name'] ?? 'Unknown Manager') ?>: <?= htmlspecialchars($log['action'] ?? 'No action detail') ?>
-                        </li>
-                    <?php
-endforeach; ?>
-                <?php
-endif; ?>
-            </ul>
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:16px; flex-wrap:wrap; margin-bottom:12px;">
+                <div>
+                    <h3 style="margin: 0;">Recent Manager Activity</h3>
+                    <p class="subtitle" style="margin-bottom: 0;">Audit trail of branch-manager actions within your HQ scope.</p>
+                </div>
+                <form method="GET" style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin:0;">
+                    <label style="display:flex; align-items:center; gap:6px; font-size:12px; color: var(--slate-300);">
+                        <span>From</span>
+                        <input type="date" name="start_date" value="<?= htmlspecialchars($startDate, ENT_QUOTES, 'UTF-8') ?>" min="<?= htmlspecialchars($hqCreatedDate, ENT_QUOTES, 'UTF-8') ?>" max="<?= htmlspecialchars($todayDate, ENT_QUOTES, 'UTF-8') ?>" style="background: rgba(255,255,255,0.04); border:1px solid var(--border); border-radius:8px; padding:7px 10px; color:var(--slate-50);">
+                    </label>
+                    <label style="display:flex; align-items:center; gap:6px; font-size:12px; color: var(--slate-300);">
+                        <span>To</span>
+                        <input type="date" name="end_date" value="<?= htmlspecialchars($endDate, ENT_QUOTES, 'UTF-8') ?>" min="<?= htmlspecialchars($hqCreatedDate, ENT_QUOTES, 'UTF-8') ?>" max="<?= htmlspecialchars($todayDate, ENT_QUOTES, 'UTF-8') ?>" style="background: rgba(255,255,255,0.04); border:1px solid var(--border); border-radius:8px; padding:7px 10px; color:var(--slate-50);">
+                    </label>
+                    <button type="submit" class="btn btn-sm btn-primary" style="padding:8px 12px;">Apply</button>
+                    <a href="report_from_manager.php" class="btn btn-sm btn-outline-light" style="padding:8px 12px;">All</a>
+                </form>
+            </div>
+
+            <div class="manager-activity-log">
+                <?php if (empty($logs)): ?>
+                    <div style="text-align:center; color:var(--slate-400); padding:18px;">No manager activity is recorded for the selected date range.</div>
+                <?php else: foreach ($logs as $log): ?>
+                    <div class="manager-activity-row">[<?= htmlspecialchars($log['created_at']) ?>] USER <?= htmlspecialchars($log['user_name'] ?? 'Unknown Manager') ?>: <?= htmlspecialchars($log['action'] ?? 'No action detail') ?></div>
+                <?php endforeach; endif; ?>
+            </div>
         </div>
     </div>
 
@@ -294,6 +397,38 @@ endif; ?>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
+        (function () {
+            const startInput = document.querySelector('input[name="start_date"]');
+            const endInput = document.querySelector('input[name="end_date"]');
+            if (!startInput || !endInput) return;
+
+            const minDate = startInput.min || '';
+            const maxDate = startInput.max || '';
+
+            function clampValue(input) {
+                const value = input.value;
+                if (!value) return;
+                if (minDate && value < minDate) input.value = minDate;
+                if (maxDate && value > maxDate) input.value = maxDate;
+            }
+
+            startInput.addEventListener('change', function () {
+                clampValue(startInput);
+                if (endInput.value && startInput.value > endInput.value) {
+                    endInput.value = startInput.value;
+                }
+                clampValue(endInput);
+            });
+
+            endInput.addEventListener('change', function () {
+                clampValue(endInput);
+                if (startInput.value && endInput.value < startInput.value) {
+                    startInput.value = endInput.value;
+                }
+                clampValue(startInput);
+            });
+        })();
+
         // Live search filter for the site reports table
         (function () {
             const input = document.getElementById('reportSearch');
@@ -505,6 +640,39 @@ endif; ?>
                 });
             }
         }
+
+        // Filter manager activity by date range
+        (function () {
+            const startDateInput = document.getElementById('startDate');
+            const endDateInput = document.getElementById('endDate');
+            const filterBtn = document.getElementById('filterBtn');
+            const resetFilterBtn = document.getElementById('resetFilterBtn');
+            const activityList = document.querySelector('.card.p-3 ul');
+            
+            function filterActivities() {
+                const startDate = startDateInput.value;
+                const endDate = endDateInput.value;
+                
+                // Redirect with query parameters
+                const url = new URL(window.location);
+                if (startDate) url.searchParams.set('start_date', startDate);
+                else url.searchParams.delete('start_date');
+                
+                if (endDate) url.searchParams.set('end_date', endDate);
+                else url.searchParams.delete('end_date');
+                
+                window.location = url;
+            }
+
+            function resetFilters() {
+                startDateInput.value = '';
+                endDateInput.value = '';
+                filterActivities();
+            }
+
+            filterBtn.addEventListener('click', filterActivities);
+            resetFilterBtn.addEventListener('click', resetFilters);
+        })();
     </script>
 </body>
 <footer class="text-white-50 text-center py-4 mt-5 small">&copy; 2026 Map & Pump | All Rights Reserved</footer>
