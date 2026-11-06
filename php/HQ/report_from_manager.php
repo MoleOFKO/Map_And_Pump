@@ -58,20 +58,30 @@ try {
         [$startDate, $endDate] = [$endDate, $startDate];
     }
 
-    $stmt = $pdo->prepare(
+    $reportSql =
         'SELECT r.*, u.user_name
         FROM report r
         LEFT JOIN users u ON u.user_id = r.user_id
-        WHERE ' . map_pump_manager_report_scope_sql() . '
-        ORDER BY CASE
+        WHERE ' . map_pump_manager_report_scope_sql();
+    $reportParams = [$managerRoleId, $managerRoleId, $managerRoleId, $headquarterId, $headquarterId];
+    if ($startDate !== '') {
+        $reportSql .= ' AND DATE(r.created_at) >= ?';
+        $reportParams[] = $startDate;
+    }
+    if ($endDate !== '') {
+        $reportSql .= ' AND DATE(r.created_at) <= ?';
+        $reportParams[] = $endDate;
+    }
+    $reportSql .=
+        ' ORDER BY CASE
                    WHEN LOWER(TRIM(COALESCE(r.importance, \'\'))) = \'high\'
                     AND r.created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)
                    THEN 0 ELSE 1
                  END,
                  r.created_at DESC
-        LIMIT 5'
-    );
-    $stmt->execute([$managerRoleId, $managerRoleId, $managerRoleId, $headquarterId, $headquarterId]);
+        LIMIT 5';
+    $stmt = $pdo->prepare($reportSql);
+    $stmt->execute($reportParams);
     $reports = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     $logSql =
@@ -92,12 +102,12 @@ try {
     $logParams = [$managerRoleId, $managerRoleId, $managerRoleId, $managerRoleId, $headquarterId, $headquarterId];
 
     if ($startDate !== '') {
-        $logSql .= ' AND DATE(l.created_at) >= :start_date';
-        $logParams[':start_date'] = $startDate;
+        $logSql .= ' AND DATE(l.created_at) >= ?';
+        $logParams[] = $startDate;
     }
     if ($endDate !== '') {
-        $logSql .= ' AND DATE(l.created_at) <= :end_date';
-        $logParams[':end_date'] = $endDate;
+        $logSql .= ' AND DATE(l.created_at) <= ?';
+        $logParams[] = $endDate;
     }
 
     $logSql .= ' ORDER BY l.created_at DESC';
@@ -249,7 +259,21 @@ try {
 </head>
 <body>
     <div class="container my-4">
-        <h2 class="title">Manager Reports & Activity</h2>
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:16px; flex-wrap:wrap; margin-bottom:8px;">
+            <h2 class="title" style="margin:0;">Manager Reports & Activity</h2>
+            <form method="GET" id="dateRangeFilter" style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin:0;">
+                <label style="display:flex; align-items:center; gap:6px; font-size:12px; color:var(--slate-300);">
+                    <span>From</span>
+                    <input type="date" name="start_date" value="<?= htmlspecialchars($startDate, ENT_QUOTES, 'UTF-8') ?>" min="<?= htmlspecialchars($hqCreatedDate, ENT_QUOTES, 'UTF-8') ?>" max="<?= htmlspecialchars($todayDate, ENT_QUOTES, 'UTF-8') ?>" style="background:rgba(255,255,255,0.04); border:1px solid var(--border); border-radius:8px; padding:7px 10px; color:var(--slate-50);">
+                </label>
+                <label style="display:flex; align-items:center; gap:6px; font-size:12px; color:var(--slate-300);">
+                    <span>To</span>
+                    <input type="date" name="end_date" value="<?= htmlspecialchars($endDate, ENT_QUOTES, 'UTF-8') ?>" min="<?= htmlspecialchars($hqCreatedDate, ENT_QUOTES, 'UTF-8') ?>" max="<?= htmlspecialchars($todayDate, ENT_QUOTES, 'UTF-8') ?>" style="background:rgba(255,255,255,0.04); border:1px solid var(--border); border-radius:8px; padding:7px 10px; color:var(--slate-50);">
+                </label>
+                <button type="submit" class="btn btn-sm btn-primary" style="padding:8px 12px;">Apply</button>
+                <a href="report_from_manager.php" class="btn btn-sm btn-outline-light" style="padding:8px 12px;">All</a>
+            </form>
+        </div>
         <p class="subtitle">Review operational data, volume logs, and localized site edits from TiDB Cloud.</p>
 
         <?php
@@ -348,18 +372,6 @@ endif; ?>
                     <h3 style="margin: 0;">Recent Manager Activity</h3>
                     <p class="subtitle" style="margin-bottom: 0;">Audit trail of branch-manager actions within your HQ scope.</p>
                 </div>
-                <form method="GET" style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin:0;">
-                    <label style="display:flex; align-items:center; gap:6px; font-size:12px; color: var(--slate-300);">
-                        <span>From</span>
-                        <input type="date" name="start_date" value="<?= htmlspecialchars($startDate, ENT_QUOTES, 'UTF-8') ?>" min="<?= htmlspecialchars($hqCreatedDate, ENT_QUOTES, 'UTF-8') ?>" max="<?= htmlspecialchars($todayDate, ENT_QUOTES, 'UTF-8') ?>" style="background: rgba(255,255,255,0.04); border:1px solid var(--border); border-radius:8px; padding:7px 10px; color:var(--slate-50);">
-                    </label>
-                    <label style="display:flex; align-items:center; gap:6px; font-size:12px; color: var(--slate-300);">
-                        <span>To</span>
-                        <input type="date" name="end_date" value="<?= htmlspecialchars($endDate, ENT_QUOTES, 'UTF-8') ?>" min="<?= htmlspecialchars($hqCreatedDate, ENT_QUOTES, 'UTF-8') ?>" max="<?= htmlspecialchars($todayDate, ENT_QUOTES, 'UTF-8') ?>" style="background: rgba(255,255,255,0.04); border:1px solid var(--border); border-radius:8px; padding:7px 10px; color:var(--slate-50);">
-                    </label>
-                    <button type="submit" class="btn btn-sm btn-primary" style="padding:8px 12px;">Apply</button>
-                    <a href="report_from_manager.php" class="btn btn-sm btn-outline-light" style="padding:8px 12px;">All</a>
-                </form>
             </div>
 
             <div class="manager-activity-log">
@@ -397,9 +409,10 @@ endif; ?>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-        (function () {
-            const startInput = document.querySelector('input[name="start_date"]');
-            const endInput = document.querySelector('input[name="end_date"]');
+        function setupDateRangeFilter(formId, startName, endName) {
+            const filterForm = document.getElementById(formId);
+            const startInput = filterForm?.querySelector(`input[name="${startName}"]`);
+            const endInput = filterForm?.querySelector(`input[name="${endName}"]`);
             if (!startInput || !endInput) return;
 
             const minDate = startInput.min || '';
@@ -427,7 +440,9 @@ endif; ?>
                 }
                 clampValue(startInput);
             });
-        })();
+        }
+
+        setupDateRangeFilter('dateRangeFilter', 'start_date', 'end_date');
 
         // Live search filter for the site reports table
         (function () {
@@ -641,38 +656,6 @@ endif; ?>
             }
         }
 
-        // Filter manager activity by date range
-        (function () {
-            const startDateInput = document.getElementById('startDate');
-            const endDateInput = document.getElementById('endDate');
-            const filterBtn = document.getElementById('filterBtn');
-            const resetFilterBtn = document.getElementById('resetFilterBtn');
-            const activityList = document.querySelector('.card.p-3 ul');
-            
-            function filterActivities() {
-                const startDate = startDateInput.value;
-                const endDate = endDateInput.value;
-                
-                // Redirect with query parameters
-                const url = new URL(window.location);
-                if (startDate) url.searchParams.set('start_date', startDate);
-                else url.searchParams.delete('start_date');
-                
-                if (endDate) url.searchParams.set('end_date', endDate);
-                else url.searchParams.delete('end_date');
-                
-                window.location = url;
-            }
-
-            function resetFilters() {
-                startDateInput.value = '';
-                endDateInput.value = '';
-                filterActivities();
-            }
-
-            filterBtn.addEventListener('click', filterActivities);
-            resetFilterBtn.addEventListener('click', resetFilters);
-        })();
     </script>
 </body>
 <footer class="text-white-50 text-center py-4 mt-5 small">&copy; 2026 Map & Pump | All Rights Reserved</footer>
