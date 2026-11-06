@@ -501,17 +501,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $pdo->beginTransaction();
                 if ($accountType === 'standalone') {
                     $fullName = trim((string)($_POST['full_name'] ?? ''));
-                    if ($fullName === '') {
-                        $fullName = preg_replace('/[^a-zA-Z0-9 .\'-]/', ' ', strstr($email, '@', true) ?? $email);
-                        $fullName = trim(preg_replace('/\s+/', ' ', $fullName));
-                    }
+                    $contact = trim((string)($_POST['contact'] ?? ''));
+                    $contact = $contact === '' ? null : $contact;
                     if ($fullName === '') {
                         $pdo->rollBack();
                         json_out(['ok' => false, 'error' => 'Full name is required for standalone staff accounts.']);
-                    }
-                    if (!preg_match('/^\d{11}$/', trim((string)($_POST['contact'] ?? '')))) {
-                        $pdo->rollBack();
-                        json_out(['ok' => false, 'error' => 'Phone number must be exactly 11 digits and contain only numbers.']);
                     }
 
                     $staffCode = next_available_staff_code($pdo, $bid);
@@ -525,7 +519,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         ':full_name' => $fullName,
                         ':email' => $email,
                         ':staff_password' => $hash,
-                        ':contact' => trim((string)($_POST['contact'] ?? '')),
+                        ':contact' => $contact,
                         ':staff_code' => $staffCode,
                     ]);
 
@@ -768,6 +762,104 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
+// -------- Staff log viewer (modal) --------
+if (isset($_GET['ajax']) && $_GET['ajax'] === 'staff_logs') {
+    header('Content-Type: application/json');
+    $logStaffId = (int) ($_GET['staff_id'] ?? 0);
+    $logStart = trim((string) ($_GET['start_date'] ?? ''));
+    $logEnd = trim((string) ($_GET['end_date'] ?? ''));
+    $isValidDate = static function (string $d): bool {
+        $dt = DateTime::createFromFormat('Y-m-d', $d);
+        return $dt && $dt->format('Y-m-d') === $d;
+    };
+
+    try {
+        $logStaffStmt = $pdo->prepare(
+            "SELECT s.staff_id, s.user_id, s.full_name, s.staff_code, s.created_at
+             FROM staff s
+             WHERE s.staff_id = :staff_id
+               AND s.branch_id = :branch_id
+             LIMIT 1"
+        );
+        $logStaffStmt->execute([':staff_id' => $logStaffId, ':branch_id' => $bid]);
+        $logStaff = $logStaffStmt->fetch(PDO::FETCH_ASSOC);
+        if (!$logStaff) {
+            echo json_encode(['ok' => false, 'error' => 'Staff member not found.']);
+            exit;
+        }
+
+        $staffCreatedDate = '';
+        if (!empty($logStaff['created_at'])) {
+            $staffCreatedDt = new DateTime((string) $logStaff['created_at']);
+            if ($staffCreatedDt) {
+                $staffCreatedDate = $staffCreatedDt->format('Y-m-d');
+            }
+        }
+
+        $todayDate = (new DateTimeImmutable('now'))->format('Y-m-d');
+        if ($logStart === '' || !$isValidDate($logStart)) {
+            $logStart = $staffCreatedDate !== '' ? $staffCreatedDate : $todayDate;
+        }
+        if ($logEnd === '' || !$isValidDate($logEnd)) {
+            $logEnd = $todayDate;
+        }
+        if ($staffCreatedDate !== '' && $logStart < $staffCreatedDate) {
+            $logStart = $staffCreatedDate;
+        }
+        if ($logEnd > $todayDate) {
+            $logEnd = $todayDate;
+        }
+        if ($logStart > $logEnd) {
+            $logStart = $staffCreatedDate !== '' ? $staffCreatedDate : $logEnd;
+        }
+
+        $logRows = [];
+        $logOverflow = false;
+        $logStaffUserId = (int) ($logStaff['user_id'] ?? 0);
+        if ($logStaffUserId > 0) {
+            $logSql =
+                "SELECT l.log_id, l.action, l.created_at
+                 FROM log l
+                 INNER JOIN staff s ON s.user_id = l.user_id
+                 WHERE s.staff_id = :staff_id
+                   AND s.branch_id = :branch_id
+                   AND l.user_id = :staff_user_id";
+            $logParams = [':staff_id' => $logStaffId, ':branch_id' => $bid, ':staff_user_id' => $logStaffUserId];
+            if ($logStart !== '' && $isValidDate($logStart)) {
+                $logSql .= ' AND DATE(l.created_at) >= :start_date';
+                $logParams[':start_date'] = $logStart;
+            }
+            if ($logEnd !== '' && $isValidDate($logEnd)) {
+                $logSql .= ' AND DATE(l.created_at) <= :end_date';
+                $logParams[':end_date'] = $logEnd;
+            }
+            $logSql .= ' ORDER BY l.created_at DESC, l.log_id DESC';
+            $logStmt = $pdo->prepare($logSql);
+            $logStmt->execute($logParams);
+            $rawLogRows = $logStmt->fetchAll(PDO::FETCH_ASSOC);
+            $logOverflow = count($rawLogRows) > 10;
+            $logRows = $rawLogRows;
+        }
+
+        echo json_encode([
+            'ok' => true,
+            'staff' => [
+                'full_name' => (string) ($logStaff['full_name'] ?? ''),
+                'staff_code' => (string) ($logStaff['staff_code'] ?? ''),
+                'created_at' => $staffCreatedDate,
+            ],
+            'logs' => array_map(static function ($r) {
+                return ['created_at' => (string) $r['created_at'], 'action' => (string) $r['action']];
+            }, $logRows),
+            'overflow' => $logOverflow,
+        ]);
+    } catch (Throwable $e) {
+        error_log('Unable to load staff logs: ' . $e->getMessage());
+        echo json_encode(['ok' => false, 'error' => 'Unable to load logs.']);
+    }
+    exit;
+}
+
 // -------- Load data for display --------
 if (isset($_GET['ajax']) && $_GET['ajax'] === 'staff_table') {
     $stmt = $pdo->prepare("SELECT s.*, 
@@ -793,6 +885,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'staff_table') {
             'email' => (string) ($s['email'] ?? ''),
             'contact' => $contactValue === '' || $contactValue === ' - ' ? ' - ' : $contactValue,
             'is_active' => (int) ($s['is_active'] ?? 0),
+            'created_at' => !empty($s['created_at']) ? date('Y-m-d', strtotime((string)$s['created_at'])) : '',
         ];
     }
 
@@ -825,54 +918,61 @@ foreach ($staff as $member) {
     }
 }
 
+$branchCreatedDate = '';
+$branchCreatedStmt = $pdo->prepare('SELECT DATE(created_at) AS created_date FROM branches WHERE branch_id = :branch_id LIMIT 1');
+$branchCreatedStmt->execute([':branch_id' => $bid]);
+$rawBranchCreated = $branchCreatedStmt->fetchColumn();
+if (is_string($rawBranchCreated) && trim($rawBranchCreated) !== '') {
+    $branchCreatedDate = date('Y-m-d', strtotime($rawBranchCreated));
+}
+
 $activities = [];
-$selectedStaffId = isset($_GET['view_staff_id']) ? (int) $_GET['view_staff_id'] : 0;
-$selectedStaffName = '';
-$activityHasOverflow = false;
+$activityStart = trim((string) ($_GET['activity_start_date'] ?? ''));
+$activityEnd = trim((string) ($_GET['activity_end_date'] ?? ''));
+$validActivityDate = static function (string $date): bool {
+    $dt = DateTime::createFromFormat('Y-m-d', $date);
+    return $dt && $dt->format('Y-m-d') === $date;
+};
+$todayDate = (new DateTimeImmutable('now'))->format('Y-m-d');
+if (!$validActivityDate($activityStart)) {
+    $activityStart = $branchCreatedDate !== '' ? $branchCreatedDate : '';
+}
+if (!$validActivityDate($activityEnd)) {
+    $activityEnd = $todayDate;
+}
+if ($branchCreatedDate !== '' && $activityStart < $branchCreatedDate) {
+    $activityStart = $branchCreatedDate;
+}
+if ($activityEnd > $todayDate) {
+    $activityEnd = $todayDate;
+}
+if ($activityStart > $activityEnd) {
+    $activityStart = $branchCreatedDate !== '' ? $branchCreatedDate : $activityEnd;
+}
 
 try {
-    if ($selectedStaffId > 0) {
-        $selectedStaffStmt = $pdo->prepare(
-            "SELECT s.staff_id, s.user_id, s.full_name
-             FROM staff s
-             WHERE s.staff_id = :staff_id
-               AND s.branch_id = :branch_id
-             LIMIT 1"
-        );
-        $selectedStaffStmt->execute([':staff_id' => $selectedStaffId, ':branch_id' => $bid]);
-        $selectedStaffRow = $selectedStaffStmt->fetch(PDO::FETCH_ASSOC);
-
-        if ($selectedStaffRow) {
-            $selectedStaffUserId = (int) ($selectedStaffRow['user_id'] ?? 0);
-            $selectedStaffName = trim((string) ($selectedStaffRow['full_name'] ?? ''));
-
-            if ($selectedStaffUserId > 0) {
-                $activityStmt = $pdo->prepare(
-                    "SELECT l.log_id, l.user_id, l.action, l.created_at
-                     FROM log l
-                     WHERE l.user_id = :staff_user_id
-                       AND l.role_id = 5
-                       AND (
-                           LOWER(l.action) LIKE 'confirmed fuel fill for booking %'
-                           OR LOWER(l.action) LIKE 'replied to customer feedback %'
-                           OR LOWER(l.action) LIKE 'submitted staff report:%'
-                       )
-                     ORDER BY l.created_at DESC, l.log_id DESC
-                     LIMIT 11"
-                );
-                $activityStmt->execute([':staff_user_id' => $selectedStaffUserId]);
-                $rawActivities = $activityStmt->fetchAll(PDO::FETCH_ASSOC);
-                $activityHasOverflow = count($rawActivities) > 10;
-                $activities = array_slice($rawActivities, 0, 10);
-            }
-        }
+    $activitySql =
+        "SELECT l.log_id, l.user_id, l.action, l.created_at,
+                s.full_name AS staff_name
+         FROM log l
+         INNER JOIN staff s ON s.user_id = l.user_id
+         WHERE s.branch_id = :branch_id";
+    $activityParams = [':branch_id' => $bid];
+    if ($activityStart !== '') {
+        $activitySql += ' AND DATE(l.created_at) >= :start_date';
+        $activityParams[':start_date'] = $activityStart;
     }
+    if ($activityEnd !== '') {
+        $activitySql += ' AND DATE(l.created_at) <= :end_date';
+        $activityParams[':end_date'] = $activityEnd;
+    }
+    $activitySql += ' ORDER BY l.created_at DESC, l.log_id DESC';
+    $activityStmt = $pdo->prepare($activitySql);
+    $activityStmt->execute($activityParams);
+    $activities = $activityStmt->fetchAll(PDO::FETCH_ASSOC);
 } catch (Throwable $e) {
-    $selectedStaffId = 0;
-    $selectedStaffName = '';
     $activities = [];
-    $activityHasOverflow = false;
-    error_log('Unable to load selected staff activity log: ' . $e->getMessage());
+    error_log('Unable to load staff activity log: ' . $e->getMessage());
 }
 ?>
 <!DOCTYPE html>
@@ -1165,10 +1265,17 @@ try {
     overflow:hidden;
     text-overflow:ellipsis;
   }
+  #staff-directory-table tbody td:nth-child(2){
+    white-space:normal;
+    overflow-wrap:anywhere;
+    word-break:normal;
+    overflow:visible;
+    text-overflow:clip;
+  }
   #staff-directory-table thead th:last-child,
   #staff-directory-table tbody td:last-child{
-    padding-left:8px;
-    padding-right:8px;
+    padding-left:4px;
+    padding-right:4px;
     text-align:center;
     white-space:nowrap;
     overflow:visible;
@@ -1177,7 +1284,7 @@ try {
     display:flex;
     align-items:center;
     justify-content:center;
-    gap:6px;
+    gap:5px;
     white-space:nowrap;
   }
   .staff-action-btn{
@@ -1189,7 +1296,7 @@ try {
     justify-content:center;
     border-radius:8px;
     cursor:pointer;
-    padding:5px 10px;
+    padding:5px 8px;
     font-size:12px;
     font-weight:600;
     line-height:1.2;
@@ -1270,8 +1377,11 @@ try {
     overflow-x: hidden;
     overflow-y: hidden;
     max-height: none;
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 10px;
+    padding: 0 12px;
     scrollbar-width: thin;
-    scrollbar-color: rgba(148, 163, 184, 0.45) transparent;
+    scrollbar-color:rgba(148,163,184,0.45) transparent;
   }
   .activity-scroll.has-scroll { overflow-y: auto; }
   .activity-scroll::-webkit-scrollbar { width: 8px; }
@@ -1285,12 +1395,25 @@ try {
   .activity-scroll::-webkit-scrollbar-thumb:hover { background: rgba(148, 163, 184, 0.62); }
   .activity-row .t{font-size:11.5px; color:var(--slate-400); min-width:70px;}
   .activity-row b{color:var(--slate-50);}
-  .staff-activity-table thead th {
-    position: sticky;
-    top: 0;
-    background: rgba(15, 23, 42, 0.96);
-    z-index: 1;
-  }
+
+  /* ---------- Staff Logs Modal ---------- */
+  .modal-card-custom.logs-modal-card{position:relative; max-width:900px; width:calc(100% - 32px); padding:26px;}
+  .logs-modal-close{position:absolute; top:14px; right:18px;}
+  .logs-modal-head{display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; margin-bottom:18px; padding-right:28px;}
+  .logs-modal-profile{display:flex; align-items:center; gap:11px;}
+  .logs-modal-profile .mini-avatar{width:44px; height:44px; font-size:14px;}
+  .logs-modal-profile b{display:block; font-size:15px;}
+  .logs-modal-profile span{font-size:12px; color:var(--slate-400);}
+  .logs-modal-filters{display:flex; align-items:center; gap:10px; flex-wrap:wrap;}
+  .logs-modal-filters label{display:flex; align-items:center; gap:6px; font-size:12px; color:var(--slate-300); margin:0;}
+  .logs-modal-filters input[type="date"]{background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.1); border-radius:8px; padding:7px 10px; color:var(--slate-50); font-size:12.5px; color-scheme:dark;}
+  .logs-modal-btn{background:#0d5fdb; color:#fff; border:none; border-radius:8px; padding:8px 14px; font-size:13px; font-weight:700; cursor:pointer; transition:background 0.15s;}
+  .logs-modal-btn:hover{background:#1d6ff0;}
+  .logs-modal-box{max-height:none; overflow-y:hidden; border:1px solid rgba(255,255,255,0.1); border-radius:10px; padding:0 12px; scrollbar-width:thin; scrollbar-color:rgba(148,163,184,0.45) transparent;}
+  .logs-modal-row{font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; font-size:13px; color:var(--slate-50); padding:14px 0; border-bottom:1px solid rgba(255,255,255,0.08); overflow-wrap:anywhere;}
+  .logs-modal-row:last-child{border-bottom:none;}
+  .logs-modal-empty{text-align:center; padding:26px; color:var(--slate-400); font-size:12.5px;}
+  .logs-modal-note{padding-top:8px; color:var(--slate-400); font-size:11.5px;}
 
   /* ---------- Modern Modal CSS ---------- */
   .modal-overlay {
@@ -1622,7 +1745,7 @@ try {
                   </td>
                   <td class="staff-action-cell">
                     <div class="staff-actions-wrap">
-                      <button type="button" class="staff-action-btn view-btn view-action" data-id="<?= (int)$s['staff_id'] ?>" data-name="<?= h($s['full_name']) ?>" title="View staff activity" aria-label="View staff activity">View</button>
+                      <button type="button" class="staff-action-btn view-btn view-action" data-id="<?= (int)$s['staff_id'] ?>" data-name="<?= h($s['full_name']) ?>" data-code="<?= h($s['staff_code']) ?>" title="View staff logs" aria-label="View staff logs">View Logs</button>
                       <?php if ($on): ?>
                         <button type="button" class="staff-action-btn toggle-btn active" data-action="disable" data-id="<?= (int)$s['staff_id'] ?>" title="Disable staff account" aria-label="Disable staff account">Disable</button>
                       <?php else: ?>
@@ -1645,45 +1768,25 @@ try {
       <!-- TAB 2: STAFF ACTIVITY LOG -->
       <div class="tab-panel" id="tab-activity">
         <div class="panel">
-          <div class="staff-activity-toolbar" style="display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:12px; flex-wrap:wrap;">
-            <div style="font-size:12.5px; color:var(--slate-300);">
-              <?php if ($selectedStaffId > 0 && $selectedStaffName !== ''): ?>
-                Showing activity for <strong style="color:var(--slate-50);"><?= h($selectedStaffName) ?></strong>
-              <?php else: ?>
-                Select a staff member to review their activity.
-              <?php endif; ?>
+          <div class="staff-activity-toolbar">
+            <div class="staff-activity-heading">
+              <h3>Recent Staff Activity</h3>
+              <p>Track completed tasks and actions performed by staff members.</p>
             </div>
-            <?php if ($selectedStaffId > 0): ?>
-              <a href="manage-staff.php#tab-activity" class="small-link" style="color:var(--sky-300); text-decoration:none;">Clear selection</a>
-            <?php endif; ?>
+            <form class="logs-modal-filters" id="activity-filters" method="get" action="manage-staff.php#tab-activity">
+              <label><span>From</span><input type="date" name="activity_start_date" value="<?= h($activityStart) ?>" min="<?= h($branchCreatedDate !== '' ? $branchCreatedDate : '') ?>" max="<?= h($todayDate) ?>"></label>
+              <label><span>To</span><input type="date" name="activity_end_date" value="<?= h($activityEnd) ?>" min="<?= h($branchCreatedDate !== '' ? $branchCreatedDate : '') ?>" max="<?= h($todayDate) ?>"></label>
+              <button type="submit" class="logs-modal-btn">Apply</button>
+              <button type="button" class="logs-modal-btn" id="activity-clear-btn">Clear</button>
+            </form>
           </div>
           <div class="activity-scroll" id="activity-scroll">
-            <?php if ($selectedStaffId <= 0): ?>
-              <div style="text-align:center; padding:22px; color:var(--slate-400); font-size: 12.5px;">Select a staff member to view their recorded activities.</div>
-            <?php elseif (!$activities): ?>
-              <div style="text-align:center; padding:22px; color:var(--slate-400); font-size: 12.5px;">No qualifying activity found for this staff member.</div>
+            <?php if (!$activities): ?>
+              <div class="logs-modal-empty">No staff activity is recorded for the selected date range.</div>
             <?php else: ?>
-              <table class="staff-activity-table" style="width:100%; border-collapse:collapse;">
-                <thead>
-                  <tr>
-                    <th style="text-align:left; padding:10px 12px; font-size:11.5px; text-transform:uppercase; color:var(--slate-400); border-bottom:1px solid rgba(255,255,255,0.08);">Date</th>
-                    <th style="text-align:left; padding:10px 12px; font-size:11.5px; text-transform:uppercase; color:var(--slate-400); border-bottom:1px solid rgba(255,255,255,0.08);">Staff</th>
-                    <th style="text-align:left; padding:10px 12px; font-size:11.5px; text-transform:uppercase; color:var(--slate-400); border-bottom:1px solid rgba(255,255,255,0.08);">Activity</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <?php foreach ($activities as $a): ?>
-                    <tr style="border-bottom:1px solid rgba(255,255,255,0.04);">
-                      <td style="padding:12px; font-size:12.5px; color:var(--slate-300); white-space:nowrap;"><?= h(date('M j, Y · h:i A', strtotime($a['created_at']))) ?></td>
-                      <td style="padding:12px; font-size:12.5px; color:var(--slate-100); font-weight:600; min-width:150px;"><?= h($selectedStaffName !== '' ? $selectedStaffName : 'Staff Member') ?></td>
-                      <td style="padding:12px; font-size:12.5px; color:var(--slate-200);"><?= h($a['action']) ?></td>
-                    </tr>
-                  <?php endforeach; ?>
-                </tbody>
-              </table>
-              <?php if ($activityHasOverflow): ?>
-                <div style="padding:8px 12px 0; color:var(--slate-400); font-size:11.5px;">Showing the latest 10 records.</div>
-              <?php endif; ?>
+              <?php foreach ($activities as $a): ?>
+                <div class="staff-activity-log">[<?= h($a['created_at']) ?>] USER <?= h($a['staff_name'] ?? 'Staff Member') ?>: <?= h($a['action']) ?></div>
+              <?php endforeach; ?>
             <?php endif; ?>
           </div>
         </div>
@@ -1762,6 +1865,26 @@ try {
         <button type="submit" class="btn-primary" id="staff-submit-btn" style="box-shadow: none; padding: 10px 18px;">Send Invite</button>
       </div>
     </form>
+  </div>
+</div>
+
+<!-- ---------- Staff Logs Modal ---------- -->
+<div class="modal-overlay" id="logs-modal">
+  <div class="modal-card-custom logs-modal-card" role="dialog" aria-modal="true" aria-label="Staff logs">
+    <button type="button" class="modal-close logs-modal-close" id="logs-modal-close" aria-label="Close"><i class="fa-solid fa-xmark"></i></button>
+    <div class="logs-modal-head">
+      <div class="logs-modal-profile">
+        <div class="mini-avatar" id="logs-modal-avatar"></div>
+        <div><b id="logs-modal-name"></b><span id="logs-modal-code"></span></div>
+      </div>
+      <div class="logs-modal-filters">
+        <label><span>From</span><input type="date" id="logs-start-date"></label>
+        <label><span>To</span><input type="date" id="logs-end-date"></label>
+        <button type="button" class="logs-modal-btn" id="logs-apply-btn">Apply</button>
+        <button type="button" class="logs-modal-btn" id="logs-clear-btn">Clear</button>
+      </div>
+    </div>
+    <div class="logs-modal-box" id="logs-modal-box"></div>
   </div>
 </div>
 
@@ -1910,44 +2033,148 @@ try {
       });
     }
 
-    // Staff activity selection is driven by the existing query param used by the page.
+    // "View Logs" opens the staff log modal (profile, date range, log lines).
+    const logsModal = document.getElementById('logs-modal');
+    const logsBox = document.getElementById('logs-modal-box');
+    const logsStart = document.getElementById('logs-start-date');
+    const logsEnd = document.getElementById('logs-end-date');
+    let logsStaffId = null;
+    let logsRequestSeq = 0;
+
+    function logsShowMessage(text) {
+      const div = document.createElement('div');
+      div.className = 'logs-modal-empty';
+      div.textContent = text;
+      logsBox.replaceChildren(div);
+      updateLogScrollState(logsBox, '.logs-modal-row');
+    }
+
+    function loadStaffLogs() {
+      if (!logsStaffId) return;
+      const seq = ++logsRequestSeq;
+      const params = new URLSearchParams({ ajax: 'staff_logs', staff_id: logsStaffId });
+      if (logsStart.value) params.set('start_date', logsStart.value);
+      if (logsEnd.value) params.set('end_date', logsEnd.value);
+      logsShowMessage('Loading logs...');
+      fetch('manage-staff.php?' + params.toString())
+        .then(res => res.json())
+        .then(payload => {
+          if (seq !== logsRequestSeq) return;
+          if (!payload.ok) { logsShowMessage(payload.error || 'Unable to load logs.'); return; }
+          const name = (payload.staff && payload.staff.full_name) || '';
+          const startDate = (payload.staff && payload.staff.created_at) || '';
+          if (startDate) {
+            logsStart.min = startDate;
+            logsStart.max = new Date().toISOString().slice(0, 10);
+            if (!logsStart.value || logsStart.value < startDate) {
+              logsStart.value = startDate;
+            }
+          } else {
+            logsStart.min = '';
+          }
+          if (!logsEnd.value || logsEnd.value > logsStart.max) {
+            logsEnd.value = logsStart.max;
+          }
+          logsEnd.min = logsStart.min || '';
+          logsEnd.max = logsStart.max;
+          if (!payload.logs.length) {
+            logsShowMessage('No activity is recorded for the selected date range.');
+            return;
+          }
+          logsBox.replaceChildren(...payload.logs.map(l => {
+            const row = document.createElement('div');
+            row.className = 'logs-modal-row';
+            row.textContent = `[${l.created_at}] USER ${name}: ${l.action}`;
+            return row;
+          }));
+          updateLogScrollState(logsBox, '.logs-modal-row');
+        })
+        .catch(() => { if (seq === logsRequestSeq) logsShowMessage('Unable to load logs.'); });
+    }
+
+    function openLogsModal(btn) {
+      logsStaffId = btn.dataset.id;
+      const name = btn.dataset.name || '';
+      const initials = name.trim().split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0].toUpperCase()).join('');
+      document.getElementById('logs-modal-avatar').textContent = initials;
+      document.getElementById('logs-modal-name').textContent = name;
+      document.getElementById('logs-modal-code').textContent = btn.dataset.code ? 'ID: ' + btn.dataset.code : '';
+
+      const todayIso = new Date().toISOString().slice(0, 10);
+      logsStart.min = '';
+      logsEnd.min = '';
+      logsStart.max = todayIso;
+      logsEnd.max = todayIso;
+      logsStart.value = '';
+      logsEnd.value = todayIso;
+      logsModal.classList.add('active');
+      loadStaffLogs();
+    }
+
+    function closeLogsModal() {
+      logsModal.classList.remove('active');
+      logsStaffId = null;
+      logsRequestSeq++;
+    }
+
     document.addEventListener('click', (e) => {
       const viewBtn = e.target.closest('.view-action');
       if (!viewBtn) return;
       e.stopPropagation();
-      const staffId = viewBtn.dataset.id;
-      const url = new URL(window.location.href);
-      url.searchParams.set('view_staff_id', String(staffId));
-      url.hash = 'tab-activity';
-      window.location.href = url.toString();
+      openLogsModal(viewBtn);
+    });
+    document.getElementById('logs-apply-btn').addEventListener('click', loadStaffLogs);
+    document.getElementById('logs-clear-btn').addEventListener('click', () => {
+      logsStart.value = '';
+      logsEnd.value = '';
+      loadStaffLogs();
+    });
+    document.getElementById('logs-modal-close').addEventListener('click', closeLogsModal);
+    logsModal.addEventListener('click', (e) => { if (e.target === logsModal) closeLogsModal(); });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && logsModal.classList.contains('active')) closeLogsModal();
     });
 
     const activityScroll = document.getElementById('activity-scroll');
-    function updateActivityScrollState() {
-      if (!activityScroll) return;
-      const rows = activityScroll.querySelectorAll('tbody tr');
-      if (!rows.length || rows.length <= 10) {
-        activityScroll.classList.remove('has-scroll');
-        activityScroll.style.maxHeight = 'none';
-        activityScroll.style.overflowY = 'hidden';
+    function updateLogScrollState(box, selector) {
+      if (!box) return;
+      const rows = box.querySelectorAll(selector);
+      if (rows.length <= 10) {
+        box.classList.remove('has-scroll');
+        box.style.maxHeight = 'none';
+        box.style.overflowY = 'hidden';
         return;
       }
       let height = 0;
       for (let i = 0; i < 10; i++) {
-        const row = rows[i];
-        if (!row) break;
-        height += row.offsetHeight;
+        height += rows[i].getBoundingClientRect().height;
       }
       if (!height) return;
-      activityScroll.classList.add('has-scroll');
-      activityScroll.style.maxHeight = height + 'px';
-      activityScroll.style.overflowY = 'auto';
+      const style = getComputedStyle(box);
+      height += parseFloat(style.paddingTop) + parseFloat(style.paddingBottom);
+      if (style.boxSizing === 'border-box') {
+        height += parseFloat(style.borderTopWidth) + parseFloat(style.borderBottomWidth);
+      }
+      box.classList.add('has-scroll');
+      box.style.maxHeight = height + 'px';
+      box.style.overflowY = 'auto';
     }
+    function updateActivityScrollState() {
+      updateLogScrollState(activityScroll, '.staff-activity-log');
+      updateLogScrollState(logsBox, '.logs-modal-row');
+    }
+    if (window.location.hash === '#tab-activity') showTab('activity');
     updateActivityScrollState();
     window.addEventListener('resize', updateActivityScrollState);
     if (activityScroll && window.ResizeObserver) {
       new ResizeObserver(updateActivityScrollState).observe(activityScroll);
+      new ResizeObserver(updateActivityScrollState).observe(logsBox);
     }
+    document.getElementById('activity-clear-btn').addEventListener('click', () => {
+      const form = document.getElementById('activity-filters');
+      form.querySelectorAll('input[type="date"]').forEach(input => { input.value = ''; });
+      form.submit();
+    });
 
     const csrfToken = '<?= h(csrf_token()) ?>';
     const directoryTable = document.getElementById('staff-directory-table');
@@ -2040,7 +2267,7 @@ try {
                 </td>
                 <td class="staff-action-cell">
                   <div class="staff-actions-wrap">
-                    <button type="button" class="staff-action-btn view-btn view-action" data-id="${s.staff_id}" data-name="${safeName}" title="View staff activity" aria-label="View staff activity">View</button>
+                    <button type="button" class="staff-action-btn view-btn view-action" data-id="${s.staff_id}" data-name="${safeName}" data-code="${safeCode}" title="View staff logs" aria-label="View staff logs">View Logs</button>
                     ${isActive ? `
                       <button type="button" class="staff-action-btn toggle-btn active" data-action="disable" data-id="${s.staff_id}" title="Disable staff account" aria-label="Disable staff account">Disable</button>
                     ` : `
@@ -2162,6 +2389,8 @@ try {
       editTargetRow = row;
       document.getElementById('staff-form-action').value = 'edit';
       document.getElementById('staff-form-id').value = staffId;
+      document.getElementById('staff-name-input').value = name;
+      document.getElementById('staff-contact-input').value = contact;
       openModal(true, name, email, contact);
     }
 
