@@ -580,7 +580,8 @@ function staff_status_pending_for_user_pdo(PDO $db, int $userId, ?string $recipi
 
     $normalizedEmail = strtolower(trim((string) ($recipientEmail ?? '')));
     if ($normalizedEmail !== '') {
-        $conditions[] = '(LOWER(TRIM(COALESCE(recipient_email, \"\"))) = ? AND recipient_user_id IS NULL)';
+        $conditions[] = '(recipient_user_id IS NULL AND LOWER(TRIM(COALESCE(recipient_email, \'\'))) = ?)';
+
         $params[] = $normalizedEmail;
     }
 
