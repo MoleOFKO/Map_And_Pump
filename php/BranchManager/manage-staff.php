@@ -17,6 +17,8 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
 require_once __DIR__ . '/../profile_avatar.php';
 require_once __DIR__ . '/_helpers.php';
 require_once __DIR__ . '/../conn.php';
+require_once __DIR__ . '/../Login/mailer.php';
+require_once __DIR__ . '/../Login/mail_templates.php';
 require_branch_manager();
 
 $managerDisplayName = trim((string) ($_SESSION['user_name'] ?? 'Manager'));
@@ -266,53 +268,28 @@ function map_pump_staff_invitation_link(int $invitationId): string {
     return $host ? $scheme . '://' . $host . $path : $path;
 }
 
-function map_pump_send_staff_invitation_email(string $toEmail, string $subject, string $body): bool {
+function map_pump_send_staff_invitation_email(string $toEmail, string $subject, string $body, array $context = []): bool {
     $toEmail = trim($toEmail);
     if ($toEmail === '') {
         return false;
     }
 
-    $smtpHost = getenv('SMTP_HOST');
-    $smtpUser = getenv('SMTP_USERNAME');
-    $smtpPass = getenv('SMTP_PASSWORD');
-    $smtpPort = (int) (getenv('SMTP_PORT') ?: 587);
-    $from = getenv('SMTP_FROM_EMAIL') ?: getenv('MAIL_FROM_EMAIL') ?: 'notifications@example.com';
-    $fromName = getenv('SMTP_FROM_NAME') ?: getenv('MAIL_FROM_NAME') ?: 'Map & Pump';
+    try {
+        $noticeContext = [
+            'kind' => 'hq_invitation',
+            'company_name' => $context['company_name'] ?? 'Map & Pump',
+            'role_name' => $context['role_name'] ?? 'Staff',
+            'station_name' => $context['station_name'] ?? '',
+            'account_active' => $context['account_active'] ?? false,
+            'password_setup_sent' => $context['password_setup_sent'] ?? false,
+        ];
 
-    if (class_exists('PHPMailer\\PHPMailer\\PHPMailer')) {
-        try {
-            require_once __DIR__ . '/../vendor/autoload.php';
-            $mail = new \PHPMailer\PHPMailer\PHPMailer(true);
-            $mail->isSMTP();
-            $mail->Host = $smtpHost ?: 'localhost';
-            $mail->SMTPAuth = !empty($smtpUser) && !empty($smtpPass);
-            $mail->Username = $smtpUser ?: '';
-            $mail->Password = $smtpPass ?: '';
-            $mail->SMTPSecure = $smtpHost ? 'tls' : '';
-            $mail->Port = $smtpPort > 0 ? $smtpPort : 587;
-            $mail->CharSet = 'UTF-8';
-            $mail->From = $from;
-            $mail->FromName = $fromName;
-            $mail->addAddress($toEmail);
-            $mail->Subject = $subject;
-            $mail->isHTML(true);
-            $mail->Body = $body;
-            if (empty($smtpHost) || empty($smtpUser) || empty($smtpPass)) {
-                return @mail($toEmail, $subject, $body, "From: {$fromName} <{$from}>\r\nContent-Type: text/html; charset=UTF-8\r\n");
-            }
-            return $mail->send();
-        } catch (Throwable $e) {
-            error_log('[Map & Pump invite email] ' . $e->getMessage());
-            return false;
-        }
+        $result = mail_send_account_notice($toEmail, $noticeContext);
+        return !empty($result['sent']);
+    } catch (Throwable $e) {
+        error_log('[Map & Pump invite email] ' . $e->getMessage());
+        return false;
     }
-
-    $headers = [
-        "From: {$fromName} <{$from}>",
-        'MIME-Version: 1.0',
-        'Content-Type: text/html; charset=UTF-8',
-    ];
-    return @mail($toEmail, $subject, $body, implode("\r\n", $headers));
 }
 
 function map_pump_branch_manager_hq(PDO $pdo, int $branchId, int $managerUserId): int {
@@ -443,7 +420,12 @@ function map_pump_existing_customer_invitation(PDO $pdo, int $branchId, string $
 
     $notifId = notif_create($pdo, null, $email, 'staff_invitation', $subject, $body, $invitationId);
     $pdo->prepare('UPDATE invitations SET notification_id = ? WHERE invitation_id = ?')->execute([$notifId, $invitationId]);
-    $emailSent = map_pump_send_staff_invitation_email($email, $subject, $body);
+    $emailSent = map_pump_send_staff_invitation_email($email, $subject, $body, [
+        'company_name' => $companyName,
+        'role_name' => 'Staff',
+        'station_name' => $companyName,
+        'account_active' => false,
+    ]);
     $pdo->prepare('UPDATE notifications SET delivery_status = ? WHERE notification_id = ?')->execute([$emailSent ? 'sent' : 'failed', $notifId]);
 
     $pdo->prepare(
@@ -525,18 +507,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                     $staffId = (int) $pdo->lastInsertId();
                     $companyName = map_pump_branch_company_name($pdo, $bid);
-                    $loginLink = ((isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http') . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost') . '/php/Login/login.php';
-                    $body = '<p>Hello ' . htmlspecialchars($fullName, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') . ',</p>'
-                        . '<p>You have been hired as a standalone staff member for <strong>' . htmlspecialchars($companyName, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') . '</strong>.</p>'
-                        . '<p>Your email: <strong>' . htmlspecialchars($email, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') . '</strong></p>'
-                        . '<p>Your password: <strong>' . htmlspecialchars($password, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') . '</strong></p>'
-                        . '<p style="margin: 24px 0;">'
-                        . '<a href="' . htmlspecialchars($loginLink, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') . '" style="display:inline-block;background-color:#0d6efd;color:#ffffff;text-decoration:none;padding:12px 24px;border-radius:6px;font-weight:600;">Login to Map & Pump</a>'
-                        . '</p>'
-                        . '<p>After signing in, you can use your existing email and password to access your staff account.</p>';
-                    $subject = 'Your Map & Pump staff account is ready';
-                    $emailSent = map_pump_send_staff_invitation_email($email, $subject, $body);
-                    $notificationMessage = $emailSent ? 'Standalone staff account created and login instructions sent.' : 'Standalone staff account created. Email delivery could not be completed; share the password securely with the staff member.';
+                    $emailSent = map_pump_send_staff_invitation_email($email, '', '', [
+                        'company_name' => $companyName,
+                        'role_name' => 'Staff',
+                        'station_name' => $companyName,
+                        'account_active' => true,
+                        'password_setup_sent' => false,
+                    ]);
+                    $notificationMessage = $emailSent ? 'Standalone staff account created and invitation sent.' : 'Standalone staff account created. Email delivery could not be completed.';
                     $pdo->commit();
                     log_activity($pdo, $bid, 'user', $user['user_id'], $user['full_name'], 'Created standalone staff account: ' . $fullName . ' (' . $staffCode . ')');
                     json_out(['ok' => true, 'message' => $notificationMessage, 'staff_id' => $staffId]);
@@ -1395,6 +1373,14 @@ try {
   .activity-scroll::-webkit-scrollbar-thumb:hover { background: rgba(148, 163, 184, 0.62); }
   .activity-row .t{font-size:11.5px; color:var(--slate-400); min-width:70px;}
   .activity-row b{color:var(--slate-50);}
+  #tab-activity .panel{padding:24px;}
+  #tab-activity .staff-activity-toolbar{display:flex; align-items:center; justify-content:space-between; gap:20px; flex-wrap:wrap; margin-bottom:20px;}
+  #tab-activity .staff-activity-heading{flex:1 1 280px; min-width:0;}
+  #tab-activity .staff-activity-heading h3{margin:0 0 10px; font-size:16px; font-weight:700; line-height:1.4; color:var(--slate-50);}
+  #tab-activity .staff-activity-heading p{margin:0; font-size:13px; line-height:1.6; color:var(--slate-300);}
+  #tab-activity .logs-modal-filters{margin:0; margin-left:auto;}
+  #tab-activity .staff-activity-log{font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; font-size:13px; line-height:1.5; color:var(--slate-50); padding:12px 0; border-bottom:1px solid rgba(255,255,255,0.08); overflow-wrap:anywhere;}
+  #tab-activity .staff-activity-log:last-child{border-bottom:none;}
 
   /* ---------- Staff Logs Modal ---------- */
   .modal-card-custom.logs-modal-card{position:relative; max-width:900px; width:calc(100% - 32px); padding:26px;}

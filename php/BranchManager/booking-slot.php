@@ -58,6 +58,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         json_out(['ok' => false, 'error' => 'This station is paused until its HQ pays the monthly operating fee.'], 403);
     }
 
+    if (!booking_unfulfillment_reason_schema_ready($pdo) && $action === 'unable_to_fulfill') {
+        json_out(['ok' => false, 'error' => 'Unable to record the unfulfillment reason right now.'], 500);
+    }
+
     try {
         if ($action === 'call_next') {
             $token_id = (int)($_POST['token_id'] ?? 0);
@@ -124,8 +128,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if ($action === 'unable_to_fulfill') {
             $token_id = (int)($_POST['token_id'] ?? 0);
+            $reason = trim((string)($_POST['reason'] ?? ''));
+            $reason_note = trim((string)($_POST['reason_note'] ?? ''));
+            $allowedReasons = ['Insufficient Resources', 'Service Unavailable', 'Staff Unavailable', 'Other'];
+            if ($token_id <= 0 || !in_array($reason, $allowedReasons, true)) {
+                json_out(['ok' => false, 'error' => 'Please select a valid reason.'], 422);
+            }
+            if ($reason === 'Other' && $reason_note === '') {
+                json_out(['ok' => false, 'error' => 'Please add a brief description for the selected reason.'], 422);
+            }
+            $details = $reason === 'Other' ? $reason_note : null;
+
             $pdo->beginTransaction();
-            $stmt = $pdo->prepare("SELECT bk.booking_id, bk.station_id, bk.status, bk.expire_at, p.pump_id
+            $stmt = $pdo->prepare("SELECT bk.booking_id, bk.station_id, bk.status, bk.expire_at, p.pump_id, bk.qr_refrence_code
                 FROM booking bk INNER JOIN station_business_scope sbs ON sbs.station_id = bk.station_id
                 LEFT JOIN pumps p ON p.current_token = bk.qr_refrence_code AND p.branch_id = ?
                 WHERE bk.booking_id = ? AND sbs.branch_manager_user_id = ? LIMIT 1 FOR UPDATE");
@@ -133,23 +148,70 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $unable = $stmt->fetch(PDO::FETCH_ASSOC);
             if (!$unable || !in_array((string)$unable['status'], ['notfilled','waiting','serving'], true)
                 || strtotime((string)$unable['expire_at']) <= time()) { $pdo->rollBack(); json_out(['ok' => false, 'error' => 'Booking is no longer active.'], 409); }
+
+            $saveReason = $pdo->prepare(
+                "INSERT INTO booking_unfulfillment_reason (booking_id, user_id, reason, details)
+                 VALUES (:booking_id, :user_id, :reason, :details)
+                 ON DUPLICATE KEY UPDATE reason = VALUES(reason), details = VALUES(details), user_id = VALUES(user_id), created_at = CURRENT_TIMESTAMP"
+            );
+            $saveReason->execute([
+                ':booking_id' => (int)$token_id,
+                ':user_id' => (int)$user['user_id'],
+                ':reason' => $reason,
+                ':details' => $details,
+            ]);
+
             $stmt = $pdo->prepare("UPDATE booking SET status = 'station_unable_to_fulfill' WHERE booking_id = ? AND status IN ('notfilled','waiting','serving')");
             $stmt->execute([$token_id]);
+            if ($stmt->rowCount() !== 1) { $pdo->rollBack(); json_out(['ok' => false, 'error' => 'Booking state changed while submitting the reason.'], 409); }
             map_pump_issue_shortfall_coupon($pdo, (int)$unable['booking_id'], 0.0);
             if (!empty($unable['pump_id'])) {
                 $stmt = $pdo->prepare("UPDATE pumps SET status = 'idle', current_token = NULL WHERE pump_id = ?");
                 $stmt->execute([(int)$unable['pump_id']]);
             }
             $pdo->commit();
+            log_activity($pdo, $bid, 'user', $user['user_id'], $user['full_name'], "Marked token {$unable['qr_refrence_code']} as unable to fulfill: {$reason}");
             json_out(['ok' => true, 'message' => 'Closed and issued a full-value station coupon.']);
         }
 
+        if ($action === 'cancel') {
+            $token_id = (int)($_POST['token_id'] ?? 0);
+            $pdo->beginTransaction();
+            $stmt = $pdo->prepare("
+                SELECT bk.booking_id, p.pump_id, bk.qr_refrence_code AS token_code
+                FROM booking bk
+                INNER JOIN station_business_scope sbs ON sbs.station_id = bk.station_id
+                LEFT JOIN pumps p ON p.current_token = bk.qr_refrence_code AND p.branch_id = :branch_id
+                WHERE bk.booking_id = :t
+                  AND bk.status IN ('notfilled', 'waiting', 'serving')
+                  AND bk.expire_at > NOW()
+                  AND sbs.branch_manager_user_id = :manager_id
+                LIMIT 1 FOR UPDATE
+            ");
+            $stmt->execute([':t' => $token_id, ':manager_id' => $user['user_id'], ':branch_id' => $bid]);
+            $tok = $stmt->fetch();
+            if (!$tok) { $pdo->rollBack(); json_out(['ok' => false, 'error' => 'Token not found']); }
+
+            $stmt = $pdo->prepare("UPDATE booking SET status = 'cancelled' WHERE booking_id = :t AND status IN ('notfilled', 'waiting', 'serving') AND expire_at > NOW()");
+            $stmt->execute([':t' => $token_id]);
+            if ($stmt->rowCount() !== 1) { $pdo->rollBack(); json_out(['ok' => false, 'error' => 'Booking state changed. Refresh the queue.'], 409); }
+            if ($tok['pump_id']) {
+                $stmt = $pdo->prepare("UPDATE pumps SET status = 'idle', current_token = NULL WHERE pump_id = :p");
+                $stmt->execute([':p' => $tok['pump_id']]);
+            }
+            $pdo->commit();
+            log_activity($pdo, $bid, 'user', $user['user_id'], $user['full_name'], "Cancelled token {$tok['token_code']}");
+            json_out(['ok' => true]);
+        }
+
         if ($action === 'complete') {
-            $token_id      = (int)($_POST['token_id'] ?? 0);
+            $token_id = (int)($_POST['token_id'] ?? 0);
             $filled_liters = round(max(0, (float)($_POST['filled_liters'] ?? 0)), 2);
+
             if ($filled_liters <= 0) {
                 json_out(['ok' => false, 'error' => 'Enter the actual liters dispensed before completing this fill.'], 422);
             }
+
             $pdo->beginTransaction();
             $stmt = $pdo->prepare("
                 SELECT bk.booking_id, bk.user_id, bk.car_license_id, bk.station_id, bk.oil_type_id,
@@ -168,10 +230,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 LIMIT 1 FOR UPDATE
             ");
             $stmt->execute([':t' => $token_id, ':manager_id' => $user['user_id'], ':branch_id' => $bid]);
-            $tok = $stmt->fetch();
-            if (!$tok) { $pdo->rollBack(); json_out(['ok' => false, 'error' => 'Token not found']); }
+            $tok = $stmt->fetch(PDO::FETCH_ASSOC);
+            if (!$tok) {
+                $pdo->rollBack();
+                json_out(['ok' => false, 'error' => 'Token not found']);
+            }
 
-            if ($filled_liters > (float)$tok['requested_liters']) { $pdo->rollBack(); json_out(['ok' => false, 'error' => 'The fill cannot exceed the reserved quantity.'], 422); }
+            if ($filled_liters > (float)$tok['requested_liters']) {
+                $pdo->rollBack();
+                json_out(['ok' => false, 'error' => 'The fill cannot exceed the reserved quantity.'], 422);
+            }
+
             if ($filled_liters + 0.0001 < (float)$tok['requested_liters']) {
                 $offerCheck = $pdo->prepare("SELECT offered_liters FROM booking_partial_offers WHERE booking_id = ? AND status = 'accepted' LIMIT 1");
                 $offerCheck->execute([(int)$tok['booking_id']]);
@@ -184,36 +253,42 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             $userLock = $pdo->prepare('SELECT user_id FROM users WHERE user_id = ? LIMIT 1 FOR UPDATE');
             $userLock->execute([(int)$tok['user_id']]);
-            if (!$userLock->fetchColumn()) { $pdo->rollBack(); json_out(['ok' => false, 'error' => 'Customer account is unavailable.'], 409); }
-            if (!customer_license_valid_for_booking($pdo, (int)$tok['user_id'], true)) { $pdo->rollBack(); json_out(['ok' => false, 'error' => 'Driver license is expired or no longer approved.'], 403); }
+            if (!$userLock->fetchColumn()) {
+                $pdo->rollBack();
+                json_out(['ok' => false, 'error' => 'Customer account is unavailable.'], 409);
+            }
+
+            if (!customer_license_valid_for_booking($pdo, (int)$tok['user_id'], true)) {
+                $pdo->rollBack();
+                json_out(['ok' => false, 'error' => 'Driver license is expired or no longer approved.'], 403);
+            }
 
             $carLink = $pdo->prepare('SELECT 1 FROM user_car WHERE user_id = ? AND car_id = ? LIMIT 1 FOR UPDATE');
             $carLink->execute([(int)$tok['user_id'], (int)$tok['car_license_id']]);
-            if (!$carLink->fetchColumn()) { $pdo->rollBack(); json_out(['ok' => false, 'error' => 'Vehicle is not linked to this customer.'], 403); }
+            if (!$carLink->fetchColumn()) {
+                $pdo->rollBack();
+                json_out(['ok' => false, 'error' => 'Vehicle is not linked to this customer.'], 403);
+            }
 
             $carStatus = $pdo->prepare('SELECT status, license_expire_date FROM car_license WHERE car_license_id = ? LIMIT 1 FOR UPDATE');
             $carStatus->execute([(int)$tok['car_license_id']]);
             $carData = $carStatus->fetch(PDO::FETCH_ASSOC);
-            if (!$carData || strtolower((string)$carData['status']) === 'expired' || (!empty($carData['license_expire_date']) && $carData['license_expire_date'] < date('Y-m-d'))) { $pdo->rollBack(); json_out(['ok' => false, 'error' => 'Vehicle registration is expired or invalid.'], 403); }
+            if (!$carData || strtolower((string)$carData['status']) === 'expired' || (!empty($carData['license_expire_date']) && $carData['license_expire_date'] < date('Y-m-d'))) {
+                $pdo->rollBack();
+                json_out(['ok' => false, 'error' => 'Vehicle registration is expired or invalid.'], 403);
+            }
 
             $quota = customer_fuel_quota_for_car($pdo, (int)$tok['user_id'], (int)$tok['car_license_id']);
-            if ($filled_liters > (float)$quota['remaining']) { $pdo->rollBack(); json_out(['ok' => false, 'error' => 'This fill exceeds the customer weekly quota.'], 422); }
+            if ($filled_liters > (float)$quota['remaining']) {
+                $pdo->rollBack();
+                json_out(['ok' => false, 'error' => 'This fill exceeds the customer weekly quota.'], 422);
+            }
 
-            $priceStmt = $pdo->prepare(
-                "
-                SELECT price_per_litre
-                FROM station_oil_inventory
-                WHERE station_id = :s AND oil_type_id = :o
-                ORDER BY is_active DESC, updated_at DESC LIMIT 1
-                "
-            );
-            $priceStmt->execute([':s' => $tok['station_id'], ':o' => $tok['oil_type_id']]);
-            $price = (float) $tok['booking_price'];
-            $total = $price !== null ? round($price * $filled_liters, 2) : null;
+            $price = (float)$tok['booking_price'];
+            $total = round($price * $filled_liters, 2);
 
-            $fg = $filled_liters;
             $stmt = $pdo->prepare("UPDATE booking SET status = 'completed', filled_gas = :fg, time_of_filled = NOW() WHERE booking_id = :t AND status = 'serving'");
-            $stmt->execute([':fg' => $fg, ':t' => $token_id]);
+            $stmt->execute([':fg' => $filled_liters, ':t' => $token_id]);
 
             if ($tok['pump_id']) {
                 $stmt = $pdo->prepare("UPDATE pumps SET status = 'idle', current_token = NULL WHERE pump_id = :p");
@@ -247,32 +322,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ]);
             $usageId = (int) $pdo->lastInsertId();
 
-            $isInternal = loyalty_is_internal_fill(
-                $pdo,
-                (int) $tok['user_id'],
-                (int) $tok['station_id']
-            );
+            $isInternal = loyalty_is_internal_fill($pdo, (int)$tok['user_id'], (int)$tok['station_id']);
             $loyaltyResult = loyalty_apply_on_fill(
                 $pdo,
-                (int) $tok['user_id'],
+                (int)$tok['user_id'],
                 $filled_liters,
                 $total,
-                (int) $tok['points_to_redeem'],
-                (int) $tok['booking_id'],
-                (int) $user['user_id'],
+                (int)$tok['points_to_redeem'],
+                (int)$tok['booking_id'],
+                (int)$user['user_id'],
                 $isInternal,
-                (int) $tok['station_id'],
+                (int)$tok['station_id'],
                 $usageId > 0 ? $usageId : null
             );
 
-            $discount = (float) ($loyaltyResult['discount_mmk'] ?? 0);
-            $netTotal = $total !== null ? max(0.0, round($total - $discount, 2)) : null;
-            $couponRedemption = $netTotal !== null
-                ? map_pump_redeem_company_coupon($pdo, (int)$tok['user_id'], (int)$tok['station_id'], $usageId, $netTotal)
-                : ['coupon_id' => null, 'discount_mmk' => 0.0];
-            if ($netTotal !== null) {
-                $netTotal = max(0.0, round($netTotal - (float)$couponRedemption['discount_mmk'], 2));
-            }
+            $discount = (float)($loyaltyResult['discount_mmk'] ?? 0);
+            $netTotal = max(0.0, round($total - $discount, 2));
+            $couponRedemption = map_pump_redeem_company_coupon($pdo, (int)$tok['user_id'], (int)$tok['station_id'], $usageId, $netTotal);
+            $netTotal = max(0.0, round($netTotal - (float)($couponRedemption['discount_mmk'] ?? 0), 2));
 
             $loyaltyUpdate = $pdo->prepare(
                 'UPDATE usage_history
@@ -287,12 +354,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             );
             $loyaltyUpdate->execute([
                 ':net_total' => $netTotal,
-                ':earned' => (int) ($loyaltyResult['points_earned'] ?? 0),
-                ':redeemed' => (int) ($loyaltyResult['points_redeemed'] ?? 0),
+                ':earned' => (int)($loyaltyResult['points_earned'] ?? 0),
+                ':redeemed' => (int)($loyaltyResult['points_redeemed'] ?? 0),
                 ':discount' => $discount,
                 ':is_internal' => !empty($loyaltyResult['is_internal']) ? 1 : 0,
-                ':admin_share' => (float) ($loyaltyResult['admin_share_mmk'] ?? 0),
-                ':company_share' => (float) ($loyaltyResult['company_share_mmk'] ?? 0),
+                ':admin_share' => (float)($loyaltyResult['admin_share_mmk'] ?? 0),
+                ':company_share' => (float)($loyaltyResult['company_share_mmk'] ?? 0),
                 ':usage_id' => $usageId,
             ]);
 
@@ -306,13 +373,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'premiumdiesel', 'premiumdisel' => 'pdsl',
                 default => ''
             };
-            if ($fuelCode === '') throw new RuntimeException('Unknown booked fuel tank.');
+            if ($fuelCode === '') {
+                throw new RuntimeException('Unknown booked fuel tank.');
+            }
+
             $deduct = $pdo->prepare('UPDATE tanks SET current_l = current_l - ? WHERE branch_id = ? AND fuel_code = ? AND is_enabled = 1 AND current_l >= ?');
             $deduct->execute([$filled_liters, (int)$tok['station_id'], $fuelCode, $filled_liters]);
-            if ($deduct->rowCount() !== 1) throw new RuntimeException('Insufficient live tank stock.');
+            if ($deduct->rowCount() !== 1) {
+                throw new RuntimeException('Insufficient live tank stock.');
+            }
+
             $tankNow = $pdo->prepare('SELECT current_l FROM tanks WHERE branch_id = ? AND fuel_code = ? LIMIT 1');
             $tankNow->execute([(int)$tok['station_id'], $fuelCode]);
             map_pump_append_station_inventory_snapshot($pdo, (int)$tok['station_id'], (int)$tok['oil_type_id'], (float)$tankNow->fetchColumn());
+
             if ($filled_liters + 0.0001 < (float)$tok['requested_liters']) {
                 map_pump_issue_shortfall_coupon($pdo, (int)$tok['booking_id'], $filled_liters);
             }
@@ -325,40 +399,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'total_cost' => $netTotal,
                 'discount_mmk' => $discount,
                 'station_coupon_discount_mmk' => (float)($couponRedemption['discount_mmk'] ?? 0),
-                'points_earned' => (int) ($loyaltyResult['points_earned'] ?? 0),
-                'exp_earned' => (int) ($loyaltyResult['exp_earned'] ?? 0),
-                'points_redeemed' => (int) ($loyaltyResult['points_redeemed'] ?? 0),
+                'points_earned' => (int)($loyaltyResult['points_earned'] ?? 0),
+                'exp_earned' => (int)($loyaltyResult['exp_earned'] ?? 0),
+                'points_redeemed' => (int)($loyaltyResult['points_redeemed'] ?? 0),
             ]);
-        }
-
-        if ($action === 'cancel') {
-            $token_id = (int)($_POST['token_id'] ?? 0);
-            $pdo->beginTransaction();
-            $stmt = $pdo->prepare("
-                SELECT bk.booking_id, p.pump_id, bk.qr_refrence_code AS token_code
-                FROM booking bk
-                INNER JOIN station_business_scope sbs ON sbs.station_id = bk.station_id
-                LEFT JOIN pumps p ON p.current_token = bk.qr_refrence_code AND p.branch_id = :branch_id
-                WHERE bk.booking_id = :t
-                  AND bk.status IN ('notfilled', 'waiting', 'serving')
-                  AND bk.expire_at > NOW()
-                  AND sbs.branch_manager_user_id = :manager_id
-                LIMIT 1 FOR UPDATE
-            ");
-            $stmt->execute([':t' => $token_id, ':manager_id' => $user['user_id'], ':branch_id' => $bid]);
-            $tok = $stmt->fetch();
-            if (!$tok) { $pdo->rollBack(); json_out(['ok' => false, 'error' => 'Token not found']); }
-
-            $stmt = $pdo->prepare("UPDATE booking SET status = 'cancelled' WHERE booking_id = :t AND status IN ('notfilled', 'waiting', 'serving') AND expire_at > NOW()");
-            $stmt->execute([':t' => $token_id]);
-            if ($stmt->rowCount() !== 1) { $pdo->rollBack(); json_out(['ok' => false, 'error' => 'Booking state changed. Refresh the queue.'], 409); }
-            if ($tok['pump_id']) {
-                $stmt = $pdo->prepare("UPDATE pumps SET status = 'idle', current_token = NULL WHERE pump_id = :p");
-                $stmt->execute([':p' => $tok['pump_id']]);
-            }
-            $pdo->commit();
-            log_activity($pdo, $bid, 'user', $user['user_id'], $user['full_name'], "Cancelled token {$tok['token_code']}");
-            json_out(['ok' => true]);
         }
 
         if ($action === 'pump_state') {
@@ -389,15 +433,11 @@ if ($pumpsTableExists) {
 }
 
 // KPI stats
-$stmt = $pdo->prepare("
-    SELECT COUNT(*)
-    FROM booking bk
-    INNER JOIN station_business_scope sbs ON sbs.station_id = bk.station_id
-    WHERE sbs.branch_manager_user_id = :manager_id
-      AND bk.status IN ('notfilled','waiting','serving')
-");
-$stmt->execute([':manager_id' => $user['user_id']]);
-$waiting_count = (int)$stmt->fetchColumn();
+$summary = booking_manager_summary_counts($pdo, (int)$user['user_id']);
+$waiting_count = (int)$summary['token_issue'];
+$completed_count = (int)$summary['token_completed'];
+$customer_cancel_count = (int)$summary['cancel_by_customer'];
+$branch_manager_cancel_count = (int)$summary['cancel_by_manager'];
 
 $stmt = $pdo->prepare("
     SELECT AVG(TIMESTAMPDIFF(MINUTE, booked_at, filled_at))
@@ -428,60 +468,121 @@ if ($pumpsTableExists) {
 }
 $pump_total = count($pumps);
 
-// live queue (all non-completed, plus a few recently completed for context)
-$stmt = $pdo->prepare("
-    SELECT bk.booking_id AS token_id,
-           bk.qr_refrence_code AS token_code,
-           bk.created_at AS requested_at,
-           bk.expire_at AS estimated_at,
-           bk.time_of_filled AS served_at,
-           CASE WHEN bk.status = 'notfilled' THEN 'waiting' ELSE bk.status END AS status,
-           u.user_name AS full_name,
-           NULL AS vehicle_no,
-           ot.oil_name AS fuel_code,
-           NULL AS pump_no
-    FROM booking bk
-    INNER JOIN station_business_scope sbs ON sbs.station_id = bk.station_id
-    LEFT JOIN users u ON u.user_id = bk.user_id
-    LEFT JOIN oil_types ot ON ot.oil_type_id = bk.oil_type_id
-    WHERE sbs.branch_manager_user_id = :manager_id
-      AND (bk.status IN ('notfilled','waiting','serving')
-           OR (bk.status = 'completed' AND bk.time_of_filled >= DATE_SUB(NOW(), INTERVAL 30 MINUTE)))
-    ORDER BY FIELD(bk.status, 'serving','notfilled','waiting','completed'), bk.created_at ASC
-    LIMIT 30
-");
-$stmt->execute([':manager_id' => $user['user_id']]);
-$queue = $stmt->fetchAll();
-
-// booking history (everything that is no longer in the live queue: completed, cancelled, unable to fulfill, etc.)
-$history = [];
+// Live queue used by the queue table.
+$queue = [];
 try {
-    $stmt = $pdo->prepare("
-        SELECT bk.booking_id,
-               bk.qr_refrence_code AS token_code,
-               bk.status,
-               bk.filled_gas,
-               COALESCE(bk.time_of_filled, bk.created_at) AS logged_at,
-               u.user_name AS customer_name,
-               ot.oil_name AS fuel_name
-        FROM booking bk
-        INNER JOIN station_business_scope sbs ON sbs.station_id = bk.station_id
-        LEFT JOIN users u ON u.user_id = bk.user_id
-        LEFT JOIN oil_types ot ON ot.oil_type_id = bk.oil_type_id
-        WHERE sbs.branch_manager_user_id = :manager_id
-          AND bk.status NOT IN ('notfilled','waiting','serving')
-        ORDER BY COALESCE(bk.time_of_filled, bk.created_at) DESC, bk.booking_id DESC
-        LIMIT 100
-    ");
-    $stmt->execute([':manager_id' => $user['user_id']]);
-    $history = $stmt->fetchAll();
+    $queue = booking_manager_live_queue($pdo, (int)$user['user_id']);
 } catch (Throwable $e) {
-    $history = [];
+    $queue = [];
 }
 
-$alerts       = notif_recent($pdo, (int)$user['user_id'], 5);
-$unread_count = notif_unread_count($pdo, (int)$user['user_id']);
-$has_unread   = $unread_count > 0;
+// Notifications used by the existing topbar template.
+$alerts = [];
+$has_unread = false;
+if (function_exists('notif_recent') && function_exists('notif_unread_count')) {
+    try {
+        $alerts = notif_recent($pdo, (int)$user['user_id'], 5);
+        $unread_count = notif_unread_count($pdo, (int)$user['user_id']);
+        $has_unread = $unread_count > 0;
+    } catch (Throwable $e) {
+        $alerts = [];
+        $has_unread = false;
+    }
+}
+
+// Booking history for the History tab.
+$history = [];
+$branchCreatedDate = '';
+$historyStart = '';
+$historyEnd = '';
+$todayDate = (new DateTimeImmutable('now'))->format('Y-m-d');
+
+$branchCreatedStmt = $pdo->prepare('SELECT DATE(created_at) AS created_date FROM branches WHERE branch_id = :branch_id LIMIT 1');
+$branchCreatedStmt->execute([':branch_id' => $bid]);
+$rawBranchCreated = $branchCreatedStmt->fetchColumn();
+if (is_string($rawBranchCreated) && trim($rawBranchCreated) !== '') {
+    $branchCreatedDate = date('Y-m-d', strtotime($rawBranchCreated));
+}
+
+$validHistoryDate = static function (string $date): bool {
+    $dt = DateTime::createFromFormat('Y-m-d', $date);
+    return $dt && $dt->format('Y-m-d') === $date;
+};
+
+$historyStart = trim((string) ($_GET['history_from'] ?? ''));
+$historyEnd = trim((string) ($_GET['history_to'] ?? ''));
+if (!$validHistoryDate($historyStart)) {
+    $historyStart = $branchCreatedDate !== '' ? $branchCreatedDate : '';
+}
+if (!$validHistoryDate($historyEnd)) {
+    $historyEnd = $todayDate;
+}
+if ($branchCreatedDate !== '' && $historyStart < $branchCreatedDate) {
+    $historyStart = $branchCreatedDate;
+}
+if ($historyEnd > $todayDate) {
+    $historyEnd = $todayDate;
+}
+if ($historyStart > $historyEnd) {
+    $historyStart = $branchCreatedDate !== '' ? $branchCreatedDate : $historyEnd;
+}
+
+try {
+    $historySql = "
+        SELECT l.log_id, l.user_id, l.action, l.created_at
+        FROM log l
+        WHERE l.user_id = :manager_id
+          AND (
+                l.action LIKE 'Completed token %'
+             OR l.action LIKE 'Cancelled token %'
+             OR l.action LIKE 'Marked token % as unable to fulfill:%'
+          )
+    ";
+    $historyParams = [':manager_id' => (int)$user['user_id']];
+    if ($historyStart !== '') {
+        $historySql .= ' AND DATE(l.created_at) >= :start_date';
+        $historyParams[':start_date'] = $historyStart;
+    }
+    if ($historyEnd !== '') {
+        $historySql .= ' AND DATE(l.created_at) <= :end_date';
+        $historyParams[':end_date'] = $historyEnd;
+    }
+    $historySql .= ' ORDER BY l.created_at DESC, l.log_id DESC';
+
+    $stmt = $pdo->prepare($historySql);
+    $stmt->execute($historyParams);
+    $rawHistory = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    $history = [];
+    foreach ($rawHistory as $row) {
+        $action = (string)($row['action'] ?? '');
+        $status = 'cancelled';
+        if (stripos($action, 'Completed token ') === 0) {
+            $status = 'completed';
+        } elseif (stripos($action, 'Marked token ') === 0 && stripos($action, 'unable to fulfill') !== false) {
+            $status = 'station_unable_to_fulfill';
+        }
+
+        $token = '';
+        if (preg_match('/Token\s+([^\s]+)\b/i', $action, $m)) {
+            $token = $m[1];
+        } elseif (preg_match('/token\s+([^\s]+)\b/i', $action, $m)) {
+            $token = $m[1];
+        }
+
+        $history[] = [
+            'status' => $status,
+            'logged_at' => $row['created_at'],
+            'token_code' => $token,
+            'customer_name' => 'Customer',
+            'fuel_name' => '',
+            'filled_gas' => null,
+        ];
+    }
+} catch (Throwable $e) {
+    $history = [];
+    error_log('Unable to load booking history log: ' . $e->getMessage());
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -779,11 +880,107 @@ $has_unread   = $unread_count > 0;
   .table-custom tbody tr:hover td {
     background: rgba(255,255,255,0.015);
   }
-  .table-custom th:nth-child(4),
-  .table-custom td:nth-child(4) {
-    width: 42%;
-    min-width: 360px;
+  #queue-table {
+    table-layout: fixed;
+    width: 100%;
   }
+  #queue-table th,
+  #queue-table td {
+    width: 20%;
+  }
+  #queue-scroll { overflow-y: hidden; scrollbar-width: thin; scrollbar-color: rgba(148, 163, 184, 0.45) transparent; }
+  #queue-scroll.has-scroll { overflow-y: auto; }
+  #queue-scroll::-webkit-scrollbar { width: 8px; height: 8px; }
+  #queue-scroll::-webkit-scrollbar-track { background: transparent; }
+  #queue-scroll::-webkit-scrollbar-thumb {
+    background: rgba(148, 163, 184, 0.38); border-radius: 999px; border: 2px solid transparent; background-clip: content-box;
+  }
+  #queue-scroll::-webkit-scrollbar-thumb:hover { background: rgba(148, 163, 184, 0.62); }
+  #queue-scroll.has-scroll #queue-table thead th { position: sticky; top: 0; z-index: 2; background: #0f1a30; }
+  .status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1.4;
+    white-space: nowrap;
+    background: rgba(139,150,173,0.14);
+    color: var(--slate-400);
+  }
+  .status-pill .d { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  .status-pill.st-complete { color: #34d399; background: rgba(52,211,153,0.14); }
+  .status-pill.st-waiting { color: #60a5fa; background: rgba(96,165,250,0.14); }
+  .status-pill.st-unable { color: #fb923c; background: rgba(251,146,60,0.14); }
+  .status-pill.st-canceled { color: #f87171; background: rgba(248,113,113,0.14); }
+  .status-pill.st-neutral { color: var(--slate-400); background: rgba(139,150,173,0.14); }
+  .act-link.unable-btn { color: #ef4444; gap: 6px; padding: 4px 12px; border: 1px solid #ef4444; border-radius: 999px; background: transparent; }
+  .act-link.unable-btn:hover { color: #fff; background: #ef4444; }
+  .ufm-backdrop {
+    position: fixed; inset: 0; background: rgba(3,6,12,0.7);
+    display: none; align-items: center; justify-content: center;
+    z-index: 1100; padding: 20px;
+  }
+  .ufm-backdrop.show { display: flex; }
+  .ufm-dialog {
+    width: 100%; max-width: 440px;
+    background: linear-gradient(160deg, var(--navy-800), var(--navy-900));
+    border: 1px solid rgba(255,255,255,0.1); border-radius: 16px;
+    box-shadow: 0 20px 40px rgba(0,0,0,0.5); overflow: visible;
+  }
+  .ufm-head {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 16px 20px; border-bottom: 1px solid rgba(255,255,255,0.07);
+    font-weight: 700; font-size: 15px;
+  }
+  .ufm-x { background: none; border: none; color: var(--slate-400); font-size: 20px; line-height: 1; cursor: pointer; }
+  .ufm-x:hover { color: var(--slate-50); }
+  .ufm-body { padding: 18px 20px; }
+  .ufm-body > p { font-size: 13px; color: var(--slate-300); margin-bottom: 16px; }
+  .ufm-label { display: block; font-size: 12px; font-weight: 600; color: var(--slate-300); margin-bottom: 6px; }
+  .ufm-label .req { color: var(--red-400); }
+  .ufm-select { position: relative; margin-bottom: 16px; }
+  .ufm-trigger {
+    width: 100%; display: flex; justify-content: space-between; align-items: center;
+    padding: 10px 12px; background: var(--navy-950);
+    border: 1px solid rgba(255,255,255,0.12); border-radius: 10px;
+    color: var(--slate-50); font-size: 13.5px; text-align: left; cursor: pointer;
+  }
+  .ufm-trigger[aria-expanded="true"] { border-color: rgba(56,189,248,0.5); }
+  .ufm-trigger i { color: var(--slate-400); transition: transform 0.2s; }
+  .ufm-trigger[aria-expanded="true"] i { transform: rotate(180deg); }
+  .ufm-options {
+    list-style: none; margin: 0; padding: 4px;
+    position: absolute; left: 0; right: 0; top: calc(100% + 6px); z-index: 5;
+    background: var(--navy-950); border: 1px solid rgba(255,255,255,0.12); border-radius: 10px;
+    display: none;
+  }
+  .ufm-options.show { display: block; }
+  .ufm-options li { padding: 9px 10px; border-radius: 7px; font-size: 13.5px; color: var(--slate-300); cursor: pointer; }
+  .ufm-options li:hover { background: rgba(255,255,255,0.05); color: var(--slate-50); }
+  .ufm-options li.sel { color: var(--sky-400); }
+  .ufm-comment-wrap { margin-top: 4px; }
+  .ufm-comment {
+    width: 100%; min-height: 84px; resize: vertical;
+    background: var(--navy-950); border: 1px solid rgba(255,255,255,0.12); border-radius: 10px;
+    padding: 10px 12px; color: var(--slate-50); font-family: inherit; font-size: 13.5px;
+  }
+  .ufm-comment:focus { outline: none; border-color: rgba(56,189,248,0.5); }
+  .ufm-error { color: var(--red-400); font-size: 12px; margin-top: 6px; display: none; }
+  .ufm-error.show { display: block; }
+  .ufm-foot {
+    display: flex; justify-content: flex-end; gap: 10px;
+    padding: 14px 20px; border-top: 1px solid rgba(255,255,255,0.07);
+  }
+  .ufm-btn {
+    padding: 9px 18px; border-radius: 10px; font-size: 13px; font-weight: 600; cursor: pointer;
+    border: 1px solid rgba(255,255,255,0.12); background: transparent; color: var(--slate-300);
+  }
+  .ufm-btn:hover { color: var(--slate-50); }
+  .ufm-btn.primary { background: linear-gradient(135deg, var(--sky-400), var(--blue-700)); border-color: transparent; color: #fff; }
+  .ufm-btn:disabled { opacity: 0.6; cursor: wait; }
   .queue-actions {
     display: flex;
     align-items: center;
@@ -818,12 +1015,13 @@ $has_unread   = $unread_count > 0;
   }
   .activity-row:hover{background: rgba(255,255,255,0.01);}
   .activity-row:last-child{border-bottom:none;}
+  .activity-row{white-space:nowrap; min-width:max-content; align-items:center;}
   .activity-scroll {
-    overflow-x: hidden; overflow-y: hidden; max-height: none;
+    overflow-x: auto; overflow-y: hidden; max-height: none;
     scrollbar-width: thin; scrollbar-color: rgba(148, 163, 184, 0.45) transparent;
   }
   .activity-scroll.has-scroll { overflow-y: auto; }
-  .activity-scroll::-webkit-scrollbar { width: 8px; }
+  .activity-scroll::-webkit-scrollbar { width: 8px; height: 8px; }
   .activity-scroll::-webkit-scrollbar-track { background: transparent; }
   .activity-scroll::-webkit-scrollbar-thumb {
     background: rgba(148, 163, 184, 0.38); border-radius: 999px; border: 2px solid transparent; background-clip: content-box;
@@ -831,6 +1029,26 @@ $has_unread   = $unread_count > 0;
   .activity-scroll::-webkit-scrollbar-thumb:hover { background: rgba(148, 163, 184, 0.62); }
   .activity-row .t{font-size:11.5px; color:var(--slate-400); min-width:90px;}
   .activity-row b{color:var(--slate-50);}
+
+  .history-head{display:flex; align-items:center; justify-content:space-between; gap:16px 24px; flex-wrap:nowrap; padding:20px 22px 0;}
+  .history-head > div:first-child{flex:1 1 0; min-width:0;}
+  .history-head h3{font-family:'Space Grotesk',sans-serif; font-size:17px; font-weight:700; margin:0 0 6px; color:var(--slate-50);}
+  .history-head p{font-size:13px; color:var(--slate-400); margin:0;}
+  .history-filter{display:flex; align-items:center; gap:10px; flex-wrap:nowrap; flex-shrink:0;}
+  @media (max-width: 900px){
+    .history-head{flex-wrap:wrap;}
+    .history-filter{flex-wrap:wrap;}
+  }
+  .history-filter label{font-size:12.5px; color:var(--slate-400); display:flex; align-items:center; gap:8px; margin:0;}
+  .history-filter input[type="date"]{
+    background: rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.1); border-radius:10px;
+    padding:8px 10px; color:var(--slate-50); font-family:inherit; font-size:13px; color-scheme: dark;
+  }
+  .history-filter input[type="date"]:focus{outline:none; border-color:var(--sky-400);}
+  .history-btn{border:none; border-radius:10px; padding:9px 18px; font-size:13px; font-weight:700; color:#fff; background:var(--blue-500); cursor:pointer; transition: background 0.2s;}
+  .history-btn:hover{background:var(--blue-700);}
+  .history-box{margin:18px 22px 22px; border:1px solid rgba(255,255,255,0.08); border-radius:14px; background:rgba(255,255,255,0.02); overflow:hidden;}
+  .history-empty{text-align:center; padding:22px; color:var(--slate-400); font-size:12.5px;}
 
   .act-link{font-size:12px; color:var(--sky-400); font-weight:600; margin-right:0; transition: color 0.15s ease, opacity 0.2s; cursor: pointer; text-decoration: none; white-space: nowrap; display:inline-flex; align-items:center; justify-content:center;}
 </style>
@@ -926,25 +1144,25 @@ $has_unread   = $unread_count > 0;
       <div class="row g-3 mb-4">
         <div class="col-6 col-lg-3">
           <div class="stat-card">
-            <div class="n" id="stat-waiting"><?= $waiting_count ?></div>
+            <div class="n" id="stat-waiting"><?= (int)$waiting_count ?></div>
             <div class="l">Token Issue</div>
           </div>
         </div>
         <div class="col-6 col-lg-3">
           <div class="stat-card">
-            <div class="n"><?= $avg_wait ?: '—' ?> min</div>
+            <div class="n"><?= (int)$completed_count ?></div>
             <div class="l">Token completed</div>
           </div>
         </div>
         <div class="col-6 col-lg-3">
           <div class="stat-card">
-            <div class="n" id="stat-issued"><?= $issued_today ?></div>
+            <div class="n" id="stat-issued"><?= (int)$customer_cancel_count ?></div>
             <div class="l">Cancel by Customer</div>
           </div>
         </div>
         <div class="col-6 col-lg-3">
           <div class="stat-card">
-            <div class="n" style="color:var(--red-400)"><?= $pump_maint ?> / <?= $pump_total ?></div>
+            <div class="n" style="color:var(--red-400)"><?= (int)$branch_manager_cancel_count ?></div>
             <div class="l">Cancel by Branch Manager</div>
           </div>
         </div>
@@ -958,43 +1176,38 @@ $has_unread   = $unread_count > 0;
       <!-- TAB 1: LIVE BOOKING QUEUE -->
       <div class="tab-panel active" id="tab-queue">
       <div class="panel">
-        <div class="table-responsive">
+        <div class="table-responsive" id="queue-scroll">
           <table class="table table-custom" id="queue-table">
             <thead>
               <tr>
                 <th style="width:20%">Token</th>
                 <th style="width:20%">Requested Time</th>
                 <th style="width:20%">Expire Time</th>
-                <th style="width:40%">Actions</th>
+                <th style="width:20%">Status</th>
+                <th style="width:20%">Actions</th>
               </tr>
             </thead>
             <tbody>
               <?php
               $stat_map = ['waiting' => 'waiting', 'serving' => 'serving', 'completed' => 'done', 'cancelled' => 'done'];
-              $stat_label = ['waiting' => 'Waiting', 'serving' => 'Serving', 'completed' => 'Done', 'cancelled' => 'Cancelled'];
+              $stat_label = ['waiting' => 'Waiting', 'serving' => 'Serving', 'completed' => 'Completed', 'cancelled' => 'Cancelled', 'station_unable_to_fulfill' => 'Unable to Fulfill'];
+              $stat_class = ['waiting' => 'st-waiting', 'completed' => 'st-complete', 'cancelled' => 'st-canceled', 'station_unable_to_fulfill' => 'st-unable'];
               // find first idle pump for "Call Next" default target
               $default_pump = null;
               foreach ($pumps as $p) { if ($p['status'] === 'idle') { $default_pump = $p; break; } }
               if (!$queue): ?>
-                <tr><td colspan="4" style="text-align:center; color:var(--slate-400); padding:22px;">Queue is empty.</td></tr>
+                <tr><td colspan="5" style="text-align:center; color:var(--slate-400); padding:22px;">Queue is empty.</td></tr>
               <?php else: foreach ($queue as $q): ?>
                 <tr id="row-<?= h($q['token_code']) ?>" data-token-id="<?= (int)$q['token_id'] ?>">
                   <td class="tok-cell"><?= h($q['token_code']) ?></td>
                   <td><?= h(date('h:i A', strtotime($q['requested_at']))) ?></td>
                   <td><?= $q['estimated_at'] ? h(date('h:i A', strtotime($q['estimated_at']))) : '—' ?></td>
+                  <td><span class="status-pill <?= h($stat_class[$q['status']] ?? 'st-neutral') ?>"><span class="d"></span><?= h($stat_label[$q['status']] ?? ucfirst((string)$q['status'])) ?></span></td>
                   <td>
                     <?php if ($q['status'] === 'serving'): ?>
-                      <a class="act-link btn-complete" data-token-id="<?= (int)$q['token_id'] ?>">Complete</a>
-                      <a class="act-link btn-partial" data-token-id="<?= (int)$q['token_id'] ?>">Offer partial</a>
-                      <a class="act-link danger btn-cancel" data-token-id="<?= (int)$q['token_id'] ?>">Cancel</a>
-                      <a class="act-link danger btn-unable" data-token-id="<?= (int)$q['token_id'] ?>">Unable to fulfill</a>
+                      <a class="act-link danger unable-btn btn-unable" data-token-id="<?= (int)$q['token_id'] ?>"><i class="fa-solid fa-triangle-exclamation"></i>Unable to fulfill</a>
                     <?php elseif ($q['status'] === 'waiting'): ?>
-                      <?php if ($default_pump): ?>
-                        <a class="act-link btn-next" data-token-id="<?= (int)$q['token_id'] ?>" data-pump-id="<?= (int)$default_pump['pump_id'] ?>">Call Next</a>
-                      <?php endif; ?>
-                      <a class="act-link btn-partial" data-token-id="<?= (int)$q['token_id'] ?>">Offer partial</a>
-                      <a class="act-link danger btn-cancel" data-token-id="<?= (int)$q['token_id'] ?>">Cancel</a>
-                      <a class="act-link danger btn-unable" data-token-id="<?= (int)$q['token_id'] ?>">Unable to fulfill</a>
+                      <a class="act-link danger unable-btn btn-unable" data-token-id="<?= (int)$q['token_id'] ?>"><i class="fa-solid fa-triangle-exclamation"></i>Unable to fulfill</a>
                     <?php else: ?>
                       —
                     <?php endif; ?>
@@ -1010,9 +1223,22 @@ $has_unread   = $unread_count > 0;
       <!-- TAB 2: BOOKING HISTORY LOG -->
       <div class="tab-panel" id="tab-history">
         <div class="panel">
+          <div class="history-head">
+            <div>
+              <h3>Booking Records</h3>
+              <p>View completed, canceled, and unfulfilled bookings.</p>
+            </div>
+            <div class="history-filter">
+              <label for="history-from">From <input type="date" id="history-from" name="history_from" value="<?= h($branchCreatedDate !== '' ? $branchCreatedDate : $todayDate) ?>" min="<?= h($branchCreatedDate !== '' ? $branchCreatedDate : '') ?>" max="<?= h($todayDate) ?>"></label>
+              <label for="history-to">To <input type="date" id="history-to" name="history_to" value="<?= h($todayDate) ?>" min="<?= h($branchCreatedDate !== '' ? $branchCreatedDate : '') ?>" max="<?= h($todayDate) ?>"></label>
+              <button type="button" class="history-btn" id="history-apply">Apply</button>
+              <button type="button" class="history-btn" id="history-clear">Clear</button>
+            </div>
+          </div>
+          <div class="history-box">
           <div class="activity-scroll" id="history-scroll">
           <?php if (!$history): ?>
-            <div style="text-align:center; padding:22px; color:var(--slate-400); font-size: 12.5px;">No Booking History yet.</div>
+            <div class="history-empty">No Booking History yet.</div>
           <?php else: ?>
             <?php
             $hist_meta = [
@@ -1031,16 +1257,17 @@ $has_unread   = $unread_count > 0;
                     $extra = ' · ' . $hrow['fuel_name'] . $extra;
                 }
             ?>
-              <div class="activity-row">
+              <div class="activity-row" data-date="<?= h(date('Y-m-d', strtotime($hrow['logged_at']))) ?>">
                 <span class="t"><?= h(date('M j · h:i A', strtotime($hrow['logged_at']))) ?></span>
-                <span>
                   <i class="fa-solid <?= h($meta[0]) ?>" style="color:<?= $meta[1] ?>; margin-right:6px;"></i>
                   <b><?= h($hrow['customer_name'] ?: 'Customer') ?></b>
                   <span style="color:var(--slate-300);"> — Token <?= h($hrow['token_code']) ?> <?= h($meta[2]) ?><?= h($extra) ?></span>
                 </span>
               </div>
             <?php endforeach; ?>
+            <div class="history-empty" id="history-filter-empty" style="display:none;">No booking records for the selected date range.</div>
           <?php endif; ?>
+          </div>
           </div>
         </div>
       </div>
@@ -1064,29 +1291,91 @@ $has_unread   = $unread_count > 0;
 
   document.addEventListener('DOMContentLoaded', () => {
 
-    // Booking History: show 5 rows by default, scroll when there are more
+    // Booking History: all records shown by default; scrollbar appears when more than 10 rows are visible
+    const HISTORY_VISIBLE_ROWS = 10;
     const historyScroll = document.getElementById('history-scroll');
+    const historyFrom = document.getElementById('history-from');
+    const historyTo = document.getElementById('history-to');
+    const historyEmpty = document.getElementById('history-filter-empty');
+
     function updateHistoryScrollState() {
       if (!historyScroll) return;
-      const rows = historyScroll.querySelectorAll('.activity-row');
-      if (rows.length <= 5) {
+      const rows = Array.from(historyScroll.querySelectorAll('.activity-row')).filter(r => r.style.display !== 'none');
+      if (rows.length <= HISTORY_VISIBLE_ROWS) {
         historyScroll.classList.remove('has-scroll');
         historyScroll.style.maxHeight = 'none';
         historyScroll.style.overflowY = 'hidden';
         return;
       }
       let height = 0;
-      for (let i = 0; i < 5; i++) height += rows[i].offsetHeight;
+      for (let i = 0; i < HISTORY_VISIBLE_ROWS; i++) height += rows[i].offsetHeight;
       if (!height) return; // tab hidden
+      // account for the horizontal scrollbar, if shown
+      height += historyScroll.offsetHeight - historyScroll.clientHeight;
       historyScroll.classList.add('has-scroll');
       historyScroll.style.maxHeight = height + 'px';
       historyScroll.style.overflowY = 'auto';
     }
+
+    function applyHistoryFilter() {
+      if (!historyScroll) return;
+      const from = historyFrom.value;
+      const to = historyTo.value;
+      const invalid = from && to && from > to;
+      let shown = 0;
+      historyScroll.querySelectorAll('.activity-row').forEach(row => {
+        const d = row.dataset.date;
+        const match = !invalid && (!from || d >= from) && (!to || d <= to);
+        row.style.display = match ? '' : 'none';
+        if (match) shown++;
+      });
+      if (historyEmpty) {
+        historyEmpty.textContent = invalid
+          ? 'The From date cannot be later than the To date.'
+          : 'No booking records for the selected date range.';
+        historyEmpty.style.display = shown === 0 ? '' : 'none';
+      }
+      historyScroll.scrollTop = 0;
+      updateHistoryScrollState();
+    }
+
+    document.getElementById('history-apply')?.addEventListener('click', applyHistoryFilter);
+    document.getElementById('history-clear')?.addEventListener('click', () => {
+      historyFrom.value = '';
+      historyTo.value = '';
+      applyHistoryFilter();
+    });
+
     updateHistoryScrollState();
     window.addEventListener('resize', updateHistoryScrollState);
+    document.getElementById('tabbtn-history')?.addEventListener('click', () => setTimeout(updateHistoryScrollState, 0));
     if (historyScroll && window.ResizeObserver) {
       new ResizeObserver(updateHistoryScrollState).observe(historyScroll);
     }
+
+    // Live Booking Queue: show 6 rows by default, scroll when there are more (no row limit)
+    const QUEUE_VISIBLE_ROWS = 6;
+    const queueScroll = document.getElementById('queue-scroll');
+    function updateQueueScrollState() {
+      if (!queueScroll) return;
+      const rows = queueScroll.querySelectorAll('#queue-table tbody tr');
+      if (rows.length <= QUEUE_VISIBLE_ROWS) {
+        queueScroll.classList.remove('has-scroll');
+        queueScroll.style.maxHeight = 'none';
+        return;
+      }
+      const lastVisible = rows[QUEUE_VISIBLE_ROWS - 1];
+      const rowBottom = lastVisible.getBoundingClientRect().bottom - queueScroll.getBoundingClientRect().top + queueScroll.scrollTop;
+      if (rowBottom <= 0) return; // tab hidden
+      queueScroll.classList.add('has-scroll');
+      queueScroll.style.maxHeight = Math.ceil(rowBottom + 8) + 'px';
+    }
+    updateQueueScrollState();
+    window.addEventListener('resize', updateQueueScrollState);
+    document.getElementById('tabbtn-queue')?.addEventListener('click', () => setTimeout(updateQueueScrollState, 0));
+    const queueBody = document.querySelector('#queue-table tbody');
+    if (queueBody) new MutationObserver(updateQueueScrollState).observe(queueBody, { childList: true });
+    if (queueScroll && window.ResizeObserver) new ResizeObserver(updateQueueScrollState).observe(document.getElementById('queue-table'));
 
     // 1. Live Dynamic Clock
     function updateClock() {
@@ -1176,6 +1465,87 @@ $has_unread   = $unread_count > 0;
       return res.json();
     }
 
+    // UNABLE TO FULFILL MODAL
+    const ufm = {
+      modal: document.getElementById('ufm-modal'),
+      trigger: document.getElementById('ufm-trigger'),
+      options: document.getElementById('ufm-options'),
+      current: document.getElementById('ufm-current'),
+      otherWrap: document.getElementById('ufm-other-wrap'),
+      comment: document.getElementById('ufm-comment'),
+      error: document.getElementById('ufm-error'),
+      submit: document.getElementById('ufm-submit'),
+      cancel: document.getElementById('ufm-cancel'),
+      close: document.getElementById('ufm-close'),
+      tokenId: null,
+    };
+
+    function setUfmOpen(open) {
+      ufm.options.classList.remove('show');
+      ufm.trigger.setAttribute('aria-expanded', 'false');
+      ufm.modal.classList.toggle('show', open);
+    }
+
+    function selectUfmReason(value) {
+      ufm.current.textContent = value;
+      ufm.options.querySelectorAll('li').forEach((li) => {
+        li.classList.toggle('sel', li.dataset.value === value);
+        li.setAttribute('aria-selected', li.dataset.value === value ? 'true' : 'false');
+      });
+      const isOther = value === 'Other';
+      ufm.otherWrap.hidden = !isOther;
+      if (!isOther) { ufm.comment.value = ''; ufm.error.classList.remove('show'); }
+    }
+
+    function openUnableModal(tokenId) {
+      ufm.tokenId = tokenId;
+      selectUfmReason('Service Unavailable');
+      ufm.comment.value = '';
+      ufm.error.classList.remove('show');
+      ufm.submit.disabled = false;
+      setUfmOpen(true);
+    }
+
+    ufm.trigger.addEventListener('click', () => {
+      const open = ufm.trigger.getAttribute('aria-expanded') !== 'true';
+      ufm.trigger.setAttribute('aria-expanded', open ? 'true' : 'false');
+      ufm.options.classList.toggle('show', open);
+    });
+
+    ufm.options.addEventListener('click', (e) => {
+      const li = e.target.closest('li[data-value]');
+      if (!li) return;
+      selectUfmReason(li.dataset.value);
+      ufm.trigger.setAttribute('aria-expanded', 'false');
+      ufm.options.classList.remove('show');
+    });
+
+    ufm.comment.addEventListener('input', () => {
+      if (ufm.comment.value.trim()) ufm.error.classList.remove('show');
+    });
+
+    [ufm.cancel, ufm.close].forEach((btn) => btn.addEventListener('click', () => setUfmOpen(false)));
+    ufm.modal.addEventListener('click', (e) => { if (e.target === ufm.modal) setUfmOpen(false); });
+
+    ufm.submit.addEventListener('click', async () => {
+      const reason = ufm.current.textContent.trim();
+      const note = ufm.comment.value.trim();
+      if (reason === 'Other' && !note) {
+        ufm.error.classList.add('show');
+        ufm.comment.focus();
+        return;
+      }
+      ufm.submit.disabled = true;
+      try {
+        const data = await serverAction('unable_to_fulfill', { token_id: ufm.tokenId, reason: reason, reason_note: note });
+        if (!data.ok) { alert('Failed: ' + (data.error || 'unknown')); ufm.submit.disabled = false; return; }
+        window.location.reload();
+      } catch (err) {
+        alert('Network error: ' + err.message);
+        ufm.submit.disabled = false;
+      }
+    });
+
     queueTable.addEventListener('click', async (e) => {
       const target = e.target;
 
@@ -1222,14 +1592,10 @@ $has_unread   = $unread_count > 0;
         } catch (err) { alert('Network error: ' + err.message); }
       }
 
-      if (target.classList.contains('btn-unable')) {
-        const tokenId = target.dataset.tokenId;
-        if (!confirm('Close this reservation as unfulfillable and issue a full-value station coupon?')) return;
-        try {
-          const data = await serverAction('unable_to_fulfill', { token_id: tokenId });
-          if (!data.ok) { alert('Failed: ' + (data.error || 'unknown')); return; }
-          window.location.reload();
-        } catch (err) { alert('Network error: ' + err.message); }
+      const unableBtn = target.closest('.btn-unable');
+      if (unableBtn) {
+        openUnableModal(unableBtn.dataset.tokenId);
+        return;
       }
 
       // CANCEL ACTION
@@ -1251,5 +1617,123 @@ $has_unread   = $unread_count > 0;
     });
   });
 </script>
+<div class="ufm-backdrop" id="ufm-modal">
+  <div class="ufm-dialog" role="dialog" aria-modal="true" aria-labelledby="ufm-title">
+    <div class="ufm-head">
+      <span id="ufm-title">Mark as Unable to Fulfill</span>
+      <button type="button" class="ufm-x" id="ufm-close" aria-label="Close">&times;</button>
+    </div>
+    <div class="ufm-body">
+      <p>Select a reason for being unable to fulfill this booking:</p>
+      <span class="ufm-label">Reason for Unfulfillment <span class="req">*</span></span>
+      <div class="ufm-select">
+        <button type="button" class="ufm-trigger" id="ufm-trigger" aria-haspopup="listbox" aria-expanded="false">
+          <span id="ufm-current">Service Unavailable</span><i class="fa-solid fa-chevron-down"></i>
+        </button>
+        <ul class="ufm-options" id="ufm-options" role="listbox">
+          <li role="option" data-value="Insufficient Resources">Insufficient Resources</li>
+          <li role="option" data-value="Service Unavailable" class="sel">Service Unavailable</li>
+          <li role="option" data-value="Staff Unavailable">Staff Unavailable</li>
+          <li role="option" data-value="Other">Other</li>
+        </ul>
+      </div>
+      <div class="ufm-comment-wrap" id="ufm-other-wrap" hidden>
+        <span class="ufm-label">Please specify the reason <span class="req">*</span></span>
+        <textarea class="ufm-comment" id="ufm-comment" maxlength="500" placeholder="Describe the reason"></textarea>
+        <div class="ufm-error" id="ufm-error">Please specify the reason.</div>
+      </div>
+    </div>
+    <div class="ufm-foot">
+      <button type="button" class="ufm-btn" id="ufm-cancel">Cancel</button>
+      <button type="button" class="ufm-btn primary" id="ufm-submit">Submit</button>
+    </div>
+  </div>
+</div>
 </body>
 </html>
+
+<?php
+function booking_cancellation_table_name(PDO $pdo): string {
+    static $name = null;
+    if ($name !== null) {
+        return $name;
+    }
+
+    foreach (['booking_cancellation', 'booking_cancelation'] as $candidate) {
+        try {
+            $stmt = $pdo->prepare("SELECT 1 FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = :table LIMIT 1");
+            $stmt->execute([':table' => $candidate]);
+            if ($stmt->fetchColumn()) {
+                $name = $candidate;
+                return $name;
+            }
+        } catch (Throwable $e) {
+            // Ignore unsupported schema checks and keep probing the next table name.
+        }
+    }
+
+    $name = 'booking_cancellation';
+    return $name;
+}
+
+function booking_unfulfillment_reason_schema_ready(PDO $pdo): bool {
+    try {
+        $pdo->exec(
+            "CREATE TABLE IF NOT EXISTS booking_unfulfillment_reason (
+                reason_id INT NOT NULL AUTO_INCREMENT,
+                booking_id INT NOT NULL,
+                user_id INT NOT NULL,
+                reason VARCHAR(120) NOT NULL,
+                details VARCHAR(1000) DEFAULT NULL,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (reason_id),
+                UNIQUE KEY uq_booking_unfulfillment_reason_booking (booking_id),
+                KEY idx_booking_unfulfillment_reason_user (user_id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+        );
+        return true;
+    } catch (Throwable $e) {
+        error_log('Could not prepare booking_unfulfillment_reason table: ' . $e->getMessage());
+        return false;
+    }
+}
+
+function booking_manager_summary_counts(PDO $pdo, int $managerId): array {
+    $stmt = $pdo->prepare(
+        "SELECT
+            COUNT(bk.booking_id) AS token_issue,
+            SUM(CASE WHEN LOWER(COALESCE(bk.status, '')) IN ('completed', 'filled') THEN 1 ELSE 0 END) AS token_completed,
+            SUM(CASE WHEN LOWER(COALESCE(bk.status, '')) IN ('canceled', 'cancelled') THEN 1 ELSE 0 END) AS cancel_by_customer,
+            SUM(CASE WHEN LOWER(COALESCE(bk.status, '')) IN ('unable_to_fulfill', 'station_unable_to_fulfill', 'unable to fulfill') THEN 1 ELSE 0 END) AS cancel_by_manager
+         FROM booking bk
+         INNER JOIN station_business_scope sbs ON sbs.station_id = bk.station_id
+         WHERE sbs.branch_manager_user_id = :manager_id"
+    );
+    $stmt->execute([':manager_id' => $managerId]);
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    return [
+        'token_issue' => (int) ($row['token_issue'] ?? 0),
+        'token_completed' => (int) ($row['token_completed'] ?? 0),
+        'cancel_by_customer' => (int) ($row['cancel_by_customer'] ?? 0),
+        'cancel_by_manager' => (int) ($row['cancel_by_manager'] ?? 0),
+    ];
+}
+
+function booking_manager_live_queue(PDO $pdo, int $managerId): array {
+    $stmt = $pdo->prepare(
+        "SELECT bk.booking_id AS token_id,
+                bk.qr_refrence_code AS token_code,
+                bk.created_at AS requested_at,
+                bk.expire_at AS estimated_at,
+                bk.status,
+                bk.time_of_filled AS served_at
+         FROM booking bk
+         INNER JOIN station_business_scope sbs ON sbs.station_id = bk.station_id
+         WHERE sbs.branch_manager_user_id = :manager_id
+           AND bk.status IN ('notfilled', 'waiting', 'serving')
+         ORDER BY FIELD(bk.status, 'serving', 'notfilled', 'waiting'), bk.created_at ASC"
+    );
+    $stmt->execute([':manager_id' => $managerId]);
+    return $stmt->fetchAll(PDO::FETCH_ASSOC);
+}

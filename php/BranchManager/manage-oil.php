@@ -579,33 +579,31 @@ body[unresolved] {opacity: 0; display: block; overflow: hidden; position: relati
     white-space: nowrap;
   }
   .fuel-row-btn {
-    width: 22px;
-    height: 22px;
-    border: none;
+    border: 1px solid rgba(148,163,184,0.45);
     background: transparent;
-    color: var(--slate-400);
+    color: var(--slate-50);
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    border-radius: 6px;
+    border-radius: 10px;
     cursor: pointer;
-    padding: 0;
-    font-size: 14px;
-    line-height: 1;
+    padding: 6px 14px;
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 12.5px;
+    font-weight: 700;
+    line-height: 1.2;
+    white-space: nowrap;
+    transition: background 0.2s ease, box-shadow 0.2s ease;
   }
-  .fuel-row-btn.edit-btn { color: var(--slate-400); }
-  .fuel-row-btn.toggle-btn.on { color: var(--mint-400); }
-  .fuel-row-btn.toggle-btn.off { color: var(--slate-400); }
-  .fuel-row-btn.delete-btn { color: var(--red-400); }
-  .fuel-row-btn:hover,
-  .fuel-row-btn:focus,
-  .fuel-row-btn:focus-visible,
-  .fuel-row-btn:active {
-    background: transparent;
-    box-shadow: none;
-    transform: none;
-    opacity: 1;
-  }
+  .fuel-row-btn.edit-btn { color: var(--slate-50); border-color: rgba(148,163,184,0.45); }
+  .fuel-row-btn.toggle-btn.on { color: #fb923c; border-color: rgba(245,158,11,0.75); }
+  .fuel-row-btn.toggle-btn.off { color: var(--mint-400); border-color: rgba(52,211,153,0.6); }
+  .fuel-row-btn.delete-btn { color: var(--red-400); border-color: rgba(220,38,38,0.8); }
+  .fuel-row-btn.edit-btn:hover { background: rgba(148,163,184,0.14); }
+  .fuel-row-btn.toggle-btn.on:hover { background: rgba(245,158,11,0.12); }
+  .fuel-row-btn.toggle-btn.off:hover { background: rgba(52,211,153,0.12); }
+  .fuel-row-btn.delete-btn:hover { background: rgba(220,38,38,0.12); }
+  .fuel-row-btn:focus-visible { outline: 2px solid rgba(148,163,184,0.6); outline-offset: 2px; }
   .fuel-action-table thead th:last-child,
   .fuel-action-table tbody td:last-child {
     width: 124px;
@@ -615,6 +613,12 @@ body[unresolved] {opacity: 0; display: block; overflow: hidden; position: relati
     white-space: nowrap;
     padding-left: 10px;
     padding-right: 10px;
+  }
+  .fuel-types-table thead th:last-child,
+  .fuel-types-table tbody td:last-child {
+    width: auto;
+    min-width: 250px;
+    max-width: none;
   }
   
   /* ---------- Tabs ---------- */
@@ -1026,12 +1030,12 @@ body[unresolved] {opacity: 0; display: block; overflow: hidden; position: relati
       <!-- TAB 2: MANAGE FUEL TYPES -->
       <div class="tab-panel" id="tab-types">
         <div class="panel fuel-table-scroll" style="max-height: none; overflow-y: hidden;">
-          <table class="fuel-action-table">
+          <table class="fuel-action-table fuel-types-table">
             <thead>
               <tr>
-                <th style="width:35%;">Name</th>
-                <th style="width:45%;">Stock Level</th>
-                <th style="width:20%; text-align:right;">Action</th>
+                <th style="width:30%;">Name</th>
+                <th style="width:38%;">Stock Level</th>
+                <th style="width:32%; text-align:right;">Action</th>
               </tr>
             </thead>
             <tbody id="fuel-table-tbody">
@@ -1046,13 +1050,13 @@ body[unresolved] {opacity: 0; display: block; overflow: hidden; position: relati
                   <td class="fuel-action-cell">
                     <div class="fuel-actions">
                       <button type="button" class="fuel-row-btn edit-btn edit-action" data-action="edit" data-id="<?= (int)$tank['tank_id'] ?>" data-fuel="fuel_<?= (int)$tank['tank_id'] ?>" data-name="<?= htmlspecialchars($tank['fuel_name'], ENT_QUOTES, 'UTF-8') ?>" data-capacity="<?= (int)$tank['capacity_l'] ?>" data-price="<?= htmlspecialchars((string)($tank['fuel_price'] ?? '0'), ENT_QUOTES, 'UTF-8') ?>" title="Edit fuel" aria-label="Edit fuel">
-                        <i class="fa-solid fa-pen-to-square"></i>
+                        Edit
                       </button>
-                      <button type="button" class="fuel-row-btn toggle-btn <?= $enabled ? 'on' : 'off' ?>" data-action="toggle" data-id="<?= (int)$tank['tank_id'] ?>" data-fuel="fuel_<?= (int)$tank['tank_id'] ?>" data-enabled="<?= (int)$enabled ?>" title="<?= $enabled ? 'Disable fuel' : 'Enable fuel' ?>" aria-label="<?= $enabled ? 'Disable fuel' : 'Enable fuel' ?>">
-                        <i class="fa-solid fa-toggle-<?= $enabled ? 'on' : 'off' ?>"></i>
+                      <button type="button" class="fuel-row-btn toggle-btn <?= $enabled ? 'on' : 'off' ?>" data-action="toggle" data-id="<?= (int)$tank['tank_id'] ?>" data-fuel="fuel_<?= (int)$tank['tank_id'] ?>" data-enabled="<?= (int)$enabled ?>" title="<?= $enabled ? 'Disable fuel' : 'Activate fuel' ?>" aria-label="<?= $enabled ? 'Disable fuel' : 'Activate fuel' ?>">
+                        <?= $enabled ? 'Disable' : 'Activate' ?>
                       </button>
                       <button type="button" class="fuel-row-btn delete-btn" data-action="delete" data-id="<?= (int)$tank['tank_id'] ?>" data-fuel="fuel_<?= (int)$tank['tank_id'] ?>" title="Delete fuel type" aria-label="Delete fuel type">
-                        <i class="fa-solid fa-trash"></i>
+                        Delete
                       </button>
                     </div>
                   </td>
