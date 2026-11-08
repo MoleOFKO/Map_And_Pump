@@ -99,21 +99,34 @@ $has_unread   = $unread_count > 0;
 
 // -------- Feedback (latest 12) --------
 $stmt = $pdo->prepare("
-    SELECT f.feedback_id, f.user_id, f.station_id, f.rating, f.feedback AS body, f.created_at, u.user_name AS full_name,
-           fr.reply_text AS staff_reply,
-           fr.created_at AS reply_date,
-           staff_user.user_name AS staff_name
+    SELECT f.feedback_id, f.user_id, f.station_id, f.rating, f.feedback AS body, f.created_at, u.user_name AS full_name
     FROM feedback f
     LEFT JOIN users u ON u.user_id = f.user_id
-    LEFT JOIN feedback_replies fr ON fr.feedback_id = f.feedback_id
-    LEFT JOIN users staff_user ON staff_user.user_id = fr.staff_id
     INNER JOIN station_business_scope sbs ON sbs.station_id = f.station_id
     WHERE f.station_id = :branch_id
       AND sbs.branch_manager_user_id = :manager_id
-    ORDER BY f.created_at DESC LIMIT 12
+    ORDER BY f.created_at DESC
 ");
 $stmt->execute([':manager_id' => $user['user_id'], ':branch_id' => $bid]);
 $feedbacks = $stmt->fetchAll();
+
+// Fetch conversation log replies for all loaded feedbacks
+$feedbackIds = array_column($feedbacks, 'feedback_id');
+$repliesByFeedback = [];
+if (!empty($feedbackIds)) {
+    $placeholders = implode(',', array_fill(0, count($feedbackIds), '?'));
+    $replyStmt = $pdo->prepare("
+        SELECT fr.reply_id, fr.feedback_id, fr.reply_text, fr.created_at AS reply_date, staff_user.user_name AS staff_name
+        FROM feedback_replies fr
+        LEFT JOIN users staff_user ON staff_user.user_id = fr.staff_id
+        WHERE fr.feedback_id IN ($placeholders)
+        ORDER BY fr.created_at ASC
+    ");
+    $replyStmt->execute($feedbackIds);
+    while ($rRow = $replyStmt->fetch()) {
+        $repliesByFeedback[$rRow['feedback_id']][] = $rRow;
+    }
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -388,7 +401,7 @@ $feedbacks = $stmt->fetchAll();
   .fb-profile .fb-name{margin:0; font-size:15px; overflow-wrap:anywhere;}
   .fb-profile .tier-pill{flex-shrink:0;}
   .feedback-grid .fb-text{flex:1; font-size:13.5px; white-space:pre-wrap; overflow-wrap:anywhere;}
-  .fb-actions{display:flex; align-items:center; justify-content:flex-end; gap:12px; border-top:1px solid rgba(255,255,255,0.06); padding-top:16px; margin-top:20px;}
+  .fb-actions{display:flex; align-items:center; justify-content:space-between; gap:12px; border-top:1px solid rgba(255,255,255,0.06); padding-top:16px; margin-top:20px;}
   .fb-action{background:none; border:none; padding:0; color:var(--sky-400); font-size:12.5px; font-weight:600; cursor:pointer; text-align:left;}
   .fb-action i{margin-right:6px;}
   .fb-details{color:var(--slate-400); font-size:13px; font-weight:400; white-space:nowrap; margin-left:auto;}
@@ -424,6 +437,30 @@ $feedbacks = $stmt->fetchAll();
     .fb-actions{flex-wrap:wrap;}
     #feedback-modal .modal-header,#feedback-modal .modal-body{padding:18px;}
   }
+  /* Conversation Log modal */
+  #conv-log-modal{--bs-modal-width:680px; --bs-modal-bg:var(--navy-900); --bs-modal-color:var(--slate-50); --bs-modal-border-color:rgba(255,255,255,0.12); --bs-modal-border-radius:18px; --bs-modal-header-border-color:rgba(255,255,255,0.08);}
+  #conv-log-modal .modal-content{box-shadow:0 24px 70px rgba(0,0,0,0.55);}
+  #conv-log-modal .modal-header{padding:20px 24px;}
+  #conv-log-modal .modal-title{font-size:18px; font-weight:700; display:flex; align-items:center; gap:10px;}
+  #conv-log-modal .modal-title i{color:var(--sky-400);}
+  #conv-log-modal .btn-close{filter:invert(1) grayscale(100%) brightness(180%); opacity:0.6;}
+  #conv-log-modal .modal-body{padding:22px 24px;}
+  .log-timeline{display:flex; flex-direction:column; gap:14px; max-height:360px; overflow-y:auto; padding-right:6px; scrollbar-width:thin; scrollbar-color:rgba(56,189,248,0.35) transparent;}
+  .log-timeline::-webkit-scrollbar{width:6px;}
+  .log-timeline::-webkit-scrollbar-track{background:transparent;}
+  .log-timeline::-webkit-scrollbar-thumb{background:rgba(56,189,248,0.3); border-radius:8px;}
+  .log-timeline::-webkit-scrollbar-thumb:hover{background:rgba(56,189,248,0.5);}
+  .log-entry{flex-shrink:0; border-radius:13px; padding:15px 17px; border:1px solid rgba(255,255,255,0.07); background:rgba(255,255,255,0.02);}
+  .log-entry.is-customer{border-left:3px solid var(--amber-400);}
+  .log-entry.is-staff{background:var(--navy-800); border-color:rgba(56,189,248,0.22); border-left:3px solid var(--sky-400);}
+  .log-entry-head{display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:8px; flex-wrap:wrap;}
+  .log-author{display:flex; align-items:center; gap:8px; font-size:13.5px; font-weight:700;}
+  .log-badge{font-size:10.5px; font-weight:600; padding:2px 8px; border-radius:999px;}
+  .log-badge.customer{background:rgba(251,191,36,0.14); color:var(--amber-400);}
+  .log-badge.staff{background:rgba(56,189,248,0.14); color:var(--sky-400);}
+  .log-badge.latest{background:rgba(52,211,153,0.14); color:var(--mint-400);}
+  .log-time{font-size:11.5px; color:var(--slate-400);}
+  .log-body{font-size:13.5px; color:var(--slate-300); line-height:1.6; white-space:pre-wrap; overflow-wrap:anywhere;}
 </style>
 </head>
 <body>
@@ -597,7 +634,6 @@ $feedbacks = $stmt->fetchAll();
           <?php foreach ($feedbacks as $f):
             $r = max(0, min(5, (int)($f['rating'] ?? 0)));
             $stars = str_repeat('★', $r) . str_repeat('☆', 5 - $r);
-            // Presentation-only lookup: use tiers already available in the directory.
             $feedbackTierCode = strtolower(trim((string)($f['tier_code'] ?? '')));
             if ($feedbackTierCode === '') {
                 foreach ($customers as $feedbackCustomer) {
@@ -612,14 +648,12 @@ $feedbacks = $stmt->fetchAll();
             }
             $feedbackTierLabel = ucfirst($feedbackTierCode) . ' Tier';
             $feedbackName = $f['full_name'] ?: 'Anonymous';
-            // Presentation-only: shows a staff reply if the row carries one; empty means "No staff reply yet."
-            $staffReply = trim((string)($f['staff_reply'] ?? ''));
-            $staffName = trim((string)($f['staff_name'] ?? ''));
-            $replyDate = trim((string)($f['reply_date'] ?? ''));
+            
+            $fId = (int)$f['feedback_id'];
+            $cardReplies = $repliesByFeedback[$fId] ?? [];
+            $repliesJson = htmlspecialchars(json_encode($cardReplies), ENT_QUOTES, 'UTF-8');
           ?>
-            <div class="fb-card" data-feedback-id="<?= (int)$f['feedback_id'] ?>" data-rating="<?= $r ?>" data-staff-reply="<?= h($staffReply) ?>" data-staff-name="<?= h($staffName) ?>" data-reply-date="<?= h($replyDate) ?>">
-          ?>
-            <div class="fb-card" data-feedback-id="<?= (int)$f['feedback_id'] ?>" data-rating="<?= $r ?>" data-staff-reply="<?= h($staffReply) ?>">
+            <div class="fb-card" data-feedback-id="<?= $fId ?>" data-rating="<?= $r ?>" data-replies='<?= $repliesJson ?>' data-created-at="<?= h($f['created_at']) ?>">
               <div class="fb-head">
                 <span class="fb-stars" aria-label="<?= $r ?> out of 5 stars"><?= h($stars) ?></span>
                 <span class="fb-date"><?= h(fmt_date($f['created_at'])) ?></span>
@@ -631,6 +665,7 @@ $feedbacks = $stmt->fetchAll();
               </div>
               <div class="fb-text"><?= h($f['body']) ?></div>
               <div class="fb-actions">
+                <button type="button" class="fb-action fb-log" data-feedback-open="log"><i class="fa-regular fa-comments" aria-hidden="true"></i> View Conversation Log</button>
                 <button type="button" class="fb-action fb-details" data-feedback-open="details">View Details <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></button>
               </div>
             </div>
@@ -658,13 +693,26 @@ $feedbacks = $stmt->fetchAll();
           <span class="fb-date" id="feedback-modal-date"></span>
         </div>
         <span class="tier-pill feedback-tier feedback-modal-tier regular" id="feedback-modal-tier">Regular Tier</span>
-        <div class="feedback-modal-text" id="feedback-modal-text"></div>
+        <div class="feedback-modal-text mb-3" id="feedback-modal-text"></div>
         <div class="feedback-reply-section">
-          <div class="d-flex justify-content-between align-items-center mb-2">
-            <span class="feedback-reply-label mb-0" id="feedback-reply-heading"><i class="fa-solid fa-reply" aria-hidden="true"></i>Staff Reply</span>
-            <small class="text-muted" id="feedback-reply-date"></small>
-          </div>
-          <div class="feedback-reply-text is-empty" id="feedback-staff-reply">No staff reply yet.</div>
+          <span class="feedback-reply-label"><i class="fa-solid fa-reply" aria-hidden="true"></i> Staff Reply</span>
+          <div class="feedback-reply-text" id="feedback-modal-reply"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="conv-log-modal" tabindex="-1" aria-labelledby="conv-log-title" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 class="modal-title disp" id="conv-log-title"><i class="fa-regular fa-comments" aria-hidden="true"></i> Conversation Log</h2>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="log-timeline" id="feedback-conversation-log">
+          <!-- Populated dynamically via JS. A scrollbar appears automatically if count > 3 -->
         </div>
       </div>
     </div>
@@ -770,7 +818,7 @@ $feedbacks = $stmt->fetchAll();
     const feedbackSearch = document.getElementById('feedback-search');
     const feedbackEmpty = document.getElementById('feedback-empty');
     const feedbackPageControls = document.getElementById('feedback-pg-controls');
-    const FEEDBACK_PER_PAGE = 4;
+    const FEEDBACK_PER_PAGE = 6;
     let selectedRating = 'all';
 
     // Each rating filter owns its page, like the separate paginators in manage-oil.php.
@@ -840,40 +888,163 @@ $feedbacks = $stmt->fetchAll();
     });
     filterFeedback();
 
-    // Read-only details modal; shows the staff reply when the card carries one.
-    const feedbackModalElement = document.getElementById('feedback-modal');
-    const feedbackModal = new bootstrap.Modal(feedbackModalElement);
-    const staffReplyBox = document.getElementById('feedback-staff-reply');
+// -------- Feedback Modal Populator & Conversation Log Handler --------
+    const modalFeedbackCards = document.querySelectorAll('.fb-card');
+    const feedbackModalEl = document.getElementById('feedback-modal');
+    const feedbackModal = feedbackModalEl ? new bootstrap.Modal(feedbackModalEl) : null;
+    const convLogModalEl = document.getElementById('conv-log-modal');
+    const convLogModal = convLogModalEl ? new bootstrap.Modal(convLogModalEl) : null;
     let feedbackOpener = null;
-    feedbackCards.forEach(card => {
-      card.querySelectorAll('[data-feedback-open]').forEach(button => button.addEventListener('click', () => {
-        feedbackOpener = button;
-        document.getElementById('feedback-modal-title').textContent = `${card.querySelector('.fb-name').textContent}’s Feedback`;
-        const stars = document.getElementById('feedback-modal-stars');
-        stars.textContent = card.querySelector('.fb-stars').textContent;
-        stars.setAttribute('aria-label', card.querySelector('.fb-stars').getAttribute('aria-label'));
-        document.getElementById('feedback-modal-date').textContent = card.querySelector('.fb-date').textContent;
-        const tier = card.querySelector('.feedback-tier');
-        const modalTier = document.getElementById('feedback-modal-tier');
-        modalTier.className = `${tier.className} feedback-modal-tier`;
-        modalTier.textContent = tier.textContent;
-        document.getElementById('feedback-modal-text').textContent = card.querySelector('.fb-text').textContent;
-        const staffReply = (card.dataset.staffReply || '').trim();
-        const staffName = (card.dataset.staffName || '').trim();
-        const replyDate = (card.dataset.replyDate || '').trim();
 
-        const replyHeading = document.getElementById('feedback-reply-heading');
-        replyHeading.innerHTML = '<i class="fa-solid fa-reply" aria-hidden="true"></i>';
-        replyHeading.append(document.createTextNode(staffName ? `${staffName}'s Reply` : 'Staff Reply'));
-
-        const replyDateEl = document.getElementById('feedback-reply-date');
-        replyDateEl.textContent = replyDate ? new Date(replyDate).toLocaleString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
-
-        staffReplyBox.textContent = staffReply || 'No staff reply yet.';
-        staffReplyBox.classList.toggle('is-empty', !staffReply);
-        feedbackModal.show();
-      }));
+    [feedbackModalEl, convLogModalEl].forEach(modalEl => {
+      if (!modalEl) return;
+      modalEl.addEventListener('hidden.bs.modal', () => {
+        if (feedbackOpener) {
+          feedbackOpener.focus();
+          feedbackOpener = null;
+        }
+      });
     });
+
+    // Show a scrollbar only when the log has more than 3 rows
+    if (convLogModalEl) {
+      convLogModalEl.addEventListener('shown.bs.modal', () => {
+        const list = document.getElementById('feedback-conversation-log');
+        if (!list) return;
+        list.style.maxHeight = '';
+        const entries = list.querySelectorAll('.log-entry');
+        if (entries.length > 3) {
+          const gap = parseFloat(getComputedStyle(list).rowGap) || 0;
+          let h = 0;
+          for (let i = 0; i < 3; i++) h += entries[i].offsetHeight + gap;
+          list.style.maxHeight = (h + 40) + 'px'; // 3 rows + a peek of the 4th
+          list.style.overflowY = 'auto';
+        } else {
+          list.style.maxHeight = 'none';
+          list.style.overflowY = 'visible';
+        }
+      });
+    }
+
+    modalFeedbackCards.forEach(card => {
+      card.querySelectorAll('[data-feedback-open]').forEach(button => {
+        button.addEventListener('click', () => {
+          feedbackOpener = button;
+          
+          const nameEl = card.querySelector('.fb-name');
+          const titleEl = document.getElementById('feedback-modal-title');
+          if (titleEl && nameEl) {
+            titleEl.textContent = `${nameEl.textContent}’s Feedback`;
+          }
+
+          const stars = document.getElementById('feedback-modal-stars');
+          const cardStars = card.querySelector('.fb-stars');
+          if (stars && cardStars) {
+            stars.textContent = cardStars.textContent;
+            stars.setAttribute('aria-label', cardStars.getAttribute('aria-label'));
+          }
+
+          const modalDate = document.getElementById('feedback-modal-date');
+          const cardDate = card.querySelector('.fb-date');
+          if (modalDate && cardDate) {
+            modalDate.textContent = cardDate.textContent;
+          }
+
+          const tier = card.querySelector('.feedback-tier');
+          const modalTier = document.getElementById('feedback-modal-tier');
+          if (modalTier && tier) {
+            modalTier.className = `${tier.className} feedback-modal-tier`;
+            modalTier.textContent = tier.textContent;
+          }
+
+          const modalText = document.getElementById('feedback-modal-text');
+          const cardText = card.querySelector('.fb-text');
+          if (modalText && cardText) {
+            modalText.textContent = cardText.textContent;
+          }
+          
+          let replies = [];
+          try {
+            replies = JSON.parse(card.dataset.replies || '[]');
+          } catch(e) {
+            replies = [];
+          }
+          const fmtStamp = (raw) => {
+            if (!raw) return '';
+            const d = new Date(String(raw).replace(' ', 'T'));
+            if (isNaN(d)) return '';
+            return d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
+              + ' · ' + d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+          };
+
+          if (button.dataset.feedbackOpen === 'log') {
+            // Conversation Log modal: customer feedback first, then staff replies (oldest -> latest)
+            const logContainer = document.getElementById('feedback-conversation-log');
+            if (logContainer) {
+              logContainer.innerHTML = '';
+              const customerName = nameEl ? nameEl.textContent : 'Customer';
+              const customerBody = (cardText ? cardText.textContent : '').replace(/^\s*\[Usage[^\]]*\]\s*/, '');
+              const first = document.createElement('div');
+              first.className = 'log-entry is-customer';
+              first.innerHTML = `
+                <div class="log-entry-head">
+                  <div class="log-author">${escapeHtml(customerName)} <span class="log-badge customer">Customer</span></div>
+                  <span class="log-time">${escapeHtml(fmtStamp(card.dataset.createdAt))}</span>
+                </div>
+                <div class="log-body">${escapeHtml(customerBody)}</div>
+              `;
+              logContainer.appendChild(first);
+
+              replies.forEach((rep, idx) => {
+                const item = document.createElement('div');
+                item.className = 'log-entry is-staff';
+                const staffName = rep.staff_name ? rep.staff_name : 'Staff Member';
+                const latest = idx === replies.length - 1 ? ' <span class="log-badge latest">Latest</span>' : '';
+                item.innerHTML = `
+                  <div class="log-entry-head">
+                    <div class="log-author">${escapeHtml(staffName)} <span class="log-badge staff">Staff</span>${latest}</div>
+                    <span class="log-time">${escapeHtml(fmtStamp(rep.reply_date))}</span>
+                  </div>
+                  <div class="log-body">${escapeHtml(rep.reply_text)}</div>
+                `;
+                logContainer.appendChild(item);
+              });
+            }
+            if (convLogModal) {
+              convLogModal.show();
+            }
+            return;
+          }
+
+          // View Details modal: latest staff reply only
+          const replyBox = document.getElementById('feedback-modal-reply');
+          if (replyBox) {
+            const latestReply = replies.length ? replies[replies.length - 1] : null;
+            if (latestReply && latestReply.reply_text) {
+              replyBox.textContent = latestReply.reply_text;
+              replyBox.classList.remove('is-empty');
+            } else {
+              replyBox.textContent = 'No staff reply yet.';
+              replyBox.classList.add('is-empty');
+            }
+          }
+
+          if (feedbackModal) {
+            feedbackModal.show();
+          }
+        });
+      });
+    });
+
+    function escapeHtml(str) {
+      if (!str) return '';
+      return str.toString()
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
     feedbackModalElement.addEventListener('hidden.bs.modal', () => {
       if (feedbackOpener && !feedbackOpener.closest('.fb-card').hidden) feedbackOpener.focus();
     });
