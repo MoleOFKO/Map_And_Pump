@@ -26,8 +26,7 @@ if ($userId > 0 && $usageHistoryReady) {
                 'SELECT uh.usage_id, uh.booking_id, uh.qr_refrence_code, uh.filled_liters, uh.price_per_litre,
                     uh.staff_user_id,
                     uh.total_cost, uh.status, uh.is_internal, uh.filled_at, s.branch_name AS station_name,
-                    CASE WHEN s.latitude IS NOT NULL AND s.longitude IS NOT NULL
-                        THEN CONCAT(s.latitude, \', \', s.longitude) ELSE s.address END AS station_location,
+                    s.address AS station_location,
                     o.oil_name, c.car_plate_number,
                     COALESCE(fb.feedback_count, 0) AS feedback_count, fb.latest_rating,
                     COALESCE(uh.points_earned, 0) AS points_earned,
@@ -59,8 +58,7 @@ if ($userId > 0 && $usageHistoryReady) {
                 'SELECT uh.usage_id, uh.booking_id, uh.qr_refrence_code, uh.filled_liters, uh.price_per_litre,
                     uh.staff_user_id,
                     uh.total_cost, uh.status, uh.is_internal, uh.filled_at, s.branch_name AS station_name,
-                    CASE WHEN s.latitude IS NOT NULL AND s.longitude IS NOT NULL
-                        THEN CONCAT(s.latitude, \', \', s.longitude) ELSE s.address END AS station_location,
+                    s.address AS station_location,
                     o.oil_name, c.car_plate_number,
                     COALESCE(fb.feedback_count, 0) AS feedback_count, fb.latest_rating,
                     COALESCE(scr.applied_mmk, 0) AS station_coupon_discount
@@ -121,6 +119,18 @@ function customer_usage_fuel_class(?string $oilName): string
     return 'fuel-92';
 }
 
+function customer_usage_fmt_liters(float $liters): string
+{
+    return rtrim(rtrim(number_format($liters, 1, '.', ''), '0'), '.');
+}
+
+// Totals for the summary bar (match the visible rows on first paint).
+$summaryCount = count($usageRows);
+$summaryLiters = 0.0;
+foreach ($usageRows as $summaryRow) {
+    $summaryLiters += (float) ($summaryRow['filled_liters'] ?? 0);
+}
+
 include 'share_header.php';
 ?>
 <div class="dashboard-panel-card">
@@ -164,38 +174,46 @@ include 'share_header.php';
         </div>
     </div>
 
+    <div class="usage-summary d-flex flex-wrap gap-2 align-items-center mb-3" aria-live="polite">
+        <span class="usage-summary-chip"><strong id="usage-sum-count"><?php echo (int) $summaryCount; ?></strong> <span id="usage-sum-count-label"><?php echo $summaryCount === 1 ? 'fill' : 'fills'; ?></span></span>
+        <span class="usage-summary-chip"><strong id="usage-sum-liters"><?php echo htmlspecialchars(customer_usage_fmt_liters($summaryLiters), ENT_QUOTES, 'UTF-8'); ?></strong> L total</span>
+    </div>
+
     <div class="table-responsive">
-        <table class="table table-dark table-hover align-middle mb-0" style="--bs-table-bg: transparent; border-color: rgba(255,255,255,0.05);">
+        <table class="table table-dark table-hover align-middle mb-0 usage-table">
+            <caption class="visually-hidden">Filled fuel usage records</caption>
             <thead>
-                <tr class="text-secondary border-bottom border-secondary border-opacity-15" style="font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.05em;">
-                    <th class="pb-3 border-0">TRANSACTION ID</th>
-                    <th class="pb-3 border-0">DISPATCH DATE</th>
-                    <th class="pb-3 border-0">STATION LOCATION</th>
-                    <th class="pb-3 border-0">VOLUME REGISTERED</th>
-                    <th class="pb-3 border-0">FUEL CLASSIFICATION</th>
-                    <th class="pb-3 border-0">LOYALTY</th>
-                    <th class="pb-3 border-0">STATUS STATE</th>
-                    <th class="pb-3 border-0 text-end">FEEDBACK</th>
+                <tr>
+                    <th scope="col">Transaction</th>
+                    <th scope="col">Date</th>
+                    <th scope="col">Station</th>
+                    <th scope="col" class="text-end">Volume</th>
+                    <th scope="col">Fuel</th>
+                    <th scope="col">Loyalty</th>
+                    <th scope="col">Status</th>
+                    <th scope="col">Payment</th>
+                    <th scope="col" class="text-end">Feedback</th>
                 </tr>
             </thead>
-            <tbody id="usage-log-body" class="text-white" style="font-size:13px; font-weight:500;">
+            <tbody id="usage-log-body" class="text-white">
                 <?php if (!$usageHistoryReady): ?>
-                    <tr><td colspan="8" class="py-4 text-center text-secondary">Usage history table is not available yet.</td></tr>
+                    <tr><td colspan="9" class="py-4 text-center text-secondary">Usage history table is not available yet.</td></tr>
                 <?php elseif (!$usageRows): ?>
-                    <tr><td colspan="8" class="py-4 text-center text-secondary">No filled usage history yet.</td></tr>
+                    <tr><td colspan="9" class="py-4 text-center text-secondary">No filled usage history yet.</td></tr>
                 <?php else: ?>
                     <?php foreach ($usageRows as $usage): ?>
                         <?php
                             $filledAt = (string) ($usage['filled_at'] ?? '');
-                            $date = $filledAt !== '' ? date('Y-m-d', strtotime($filledAt)) : '';
-                            $liters = rtrim(rtrim(number_format((float) ($usage['filled_liters'] ?? 0), 1, '.', ''), '0'), '.');
-                            $stationText = trim((string) ($usage['station_name'] ?? 'Unknown station'));
+                            $filledTs = $filledAt !== '' ? strtotime($filledAt) : false;
+                            $date = $filledTs !== false ? date('Y-m-d', $filledTs) : '';
+                            $dateLabel = $filledTs !== false ? date('d M Y', $filledTs) : 'Not recorded';
+                            $timeLabel = $filledTs !== false ? date('H:i', $filledTs) : '';
+                            $liters = customer_usage_fmt_liters((float) ($usage['filled_liters'] ?? 0));
+                            $stationName = trim((string) ($usage['station_name'] ?? '')) ?: 'Unknown station';
                             $stationLocation = trim((string) ($usage['station_location'] ?? ''));
-                            if ($stationLocation !== '') {
-                                $stationText .= ' / ' . $stationLocation;
-                            }
                             $oilName = (string) ($usage['oil_name'] ?? 'Fuel');
                             $status = ucfirst((string) ($usage['status'] ?? 'filled'));
+                            $statusLabel = $status === 'Filled' ? 'Delivered' : $status;
                             $feedbackCount = (int) ($usage['feedback_count'] ?? 0);
                             $latestRating = (int) ($usage['latest_rating'] ?? 0);
                             $feedbackModalId = 'feedbackModal' . (int) $usage['usage_id'];
@@ -214,51 +232,83 @@ include 'share_header.php';
                             if ($discountMmk > 0) {
                                 $loyaltyBits[] = number_format($discountMmk, 0) . ' MMK off';
                             }
-                            $couponDiscount = (float)($usage['station_coupon_discount'] ?? 0);
+                            $couponDiscount = (float) ($usage['station_coupon_discount'] ?? 0);
                             if ($couponDiscount > 0) {
                                 $loyaltyBits[] = number_format($couponDiscount, 0) . ' MMK station coupon';
                             }
-                            $loyaltyText = $loyaltyBits !== [] ? implode(' · ', $loyaltyBits) : '—';
                         ?>
-                        <tr class="border-bottom border-secondary border-opacity-5" data-date="<?php echo htmlspecialchars($date); ?>">
-                            <td class="py-3 font-semibold text-white">TXN-<?php echo (int) $usage['usage_id']; ?>-MP</td>
-                            <td class="py-3 text-secondary"><?php echo htmlspecialchars($date ?: 'Not recorded'); ?></td>
-                            <td class="py-3"><?php echo htmlspecialchars($stationText); ?></td>
-                            <td class="py-3"><?php echo htmlspecialchars($liters); ?> Liters</td>
-                            <td class="py-3"><span class="fuel-tag <?php echo htmlspecialchars(customer_usage_fuel_class($oilName)); ?>"><?php echo htmlspecialchars($oilName); ?></span></td>
-                            <td class="py-3"><span class="text-warning" style="font-size:12px;"><?php echo htmlspecialchars($loyaltyText, ENT_QUOTES, 'UTF-8'); ?></span></td>
-                            <td class="py-3">
-                                <span class="status-pill active" style="font-size:9px;"><?php echo htmlspecialchars($status === 'Filled' ? 'Delivered' : $status); ?></span>
+                        <tr class="usage-row" data-date="<?php echo htmlspecialchars($date, ENT_QUOTES, 'UTF-8'); ?>" data-liters="<?php echo htmlspecialchars(number_format((float) ($usage['filled_liters'] ?? 0), 2, '.', ''), ENT_QUOTES, 'UTF-8'); ?>">
+                            <td>
+                                <span class="usage-txn">TXN-<?php echo (int) $usage['usage_id']; ?>-MP</span>
+                            </td>
+                            <td>
+                                <div class="text-white"><?php echo htmlspecialchars($dateLabel, ENT_QUOTES, 'UTF-8'); ?></div>
+                                <?php if ($timeLabel !== ''): ?>
+                                    <div class="usage-sub"><?php echo htmlspecialchars($timeLabel, ENT_QUOTES, 'UTF-8'); ?></div>
+                                <?php endif; ?>
+                            </td>
+                            <td>
+                                <div class="text-white fw-semibold"><?php echo htmlspecialchars($stationName, ENT_QUOTES, 'UTF-8'); ?></div>
+                                <?php if ($stationLocation !== ''): ?>
+                                    <div class="usage-sub"><?php echo htmlspecialchars($stationLocation, ENT_QUOTES, 'UTF-8'); ?></div>
+                                <?php endif; ?>
+                            </td>
+                            <td class="text-end text-nowrap">
+                                <span class="usage-volume"><?php echo htmlspecialchars($liters, ENT_QUOTES, 'UTF-8'); ?></span>
+                                <span class="usage-unit">L</span>
+                            </td>
+                            <td>
+                                <span class="fuel-tag <?php echo htmlspecialchars(customer_usage_fuel_class($oilName), ENT_QUOTES, 'UTF-8'); ?>"><?php echo htmlspecialchars($oilName, ENT_QUOTES, 'UTF-8'); ?></span>
+                            </td>
+                            <td>
+                                <?php if ($loyaltyBits !== []): ?>
+                                    <div class="d-flex flex-wrap gap-1">
+                                        <?php foreach ($loyaltyBits as $bit): ?>
+                                            <span class="loyalty-chip"><?php echo htmlspecialchars($bit, ENT_QUOTES, 'UTF-8'); ?></span>
+                                        <?php endforeach; ?>
+                                    </div>
+                                <?php else: ?>
+                                    <span class="usage-sub">—</span>
+                                <?php endif; ?>
+                            </td>
+                            <td>
+                                <span class="status-pill active"><?php echo htmlspecialchars($statusLabel, ENT_QUOTES, 'UTF-8'); ?></span>
+                            </td>
+                            <td class="usage-payment-cell">
                                 <?php if ($paymentStatus === 'pending_payment'): ?>
-                                    <div class="small text-warning mt-1">Payment request awaiting your payment</div>
+                                    <div class="small text-warning">Payment request awaiting your payment</div>
                                 <?php elseif ($paymentStatus === 'payer_reported_paid'): ?>
-                                    <div class="small text-warning mt-1">Payment reported · awaiting HQ</div>
+                                    <div class="small text-warning">Payment reported · awaiting HQ</div>
                                 <?php elseif ($paymentStatus === 'received'): ?>
-                                    <div class="small text-success mt-1">HQ recorded receipt</div>
+                                    <div class="small text-success">HQ recorded receipt</div>
                                 <?php elseif ($paymentStatus === 'rejected'): ?>
-                                    <div class="small text-warning mt-1">HQ did not confirm receipt</div>
+                                    <div class="small text-warning">HQ did not confirm receipt</div>
                                 <?php elseif ($paymentStatus === 'cancelled'): ?>
-                                    <div class="small text-secondary mt-1">Payment notice cancelled</div>
+                                    <div class="small text-secondary">Payment notice cancelled</div>
                                 <?php endif; ?>
                                 <?php if ($paymentReady && empty($usage['is_internal']) && (float) ($usage['total_cost'] ?? 0) > 0 && !in_array($paymentStatus, ['pending_payment', 'payer_reported_paid', 'received'], true)): ?>
-                                    <form method="post" action="/php/Payment/action.php" class="mt-2" onsubmit="return confirm('Create a payment request for this filled bill? The amount is based on the recorded net bill, and the staff member who recorded the fill will verify receipt.')">
+                                    <form method="post" action="/php/Payment/action.php" class="mt-1" onsubmit="return confirm('Create a payment request for this filled bill? The amount is based on the recorded net bill, and the staff member who recorded the fill will verify receipt.')">
                                         <input type="hidden" name="csrf_token" value="<?= htmlspecialchars((string) ($_SESSION['payment_transfer_csrf'] ?? ''), ENT_QUOTES, 'UTF-8') ?>">
                                         <input type="hidden" name="action" value="create_fuel_payment">
                                         <input type="hidden" name="usage_id" value="<?= (int) $usage['usage_id'] ?>">
                                         <button type="submit" class="btn btn-outline-warning btn-sm">Create payment request · <?= number_format((float) $usage['total_cost'], 0) ?> MMK</button>
                                     </form>
+                                <?php elseif (empty($usage['is_internal']) && (float) ($usage['total_cost'] ?? 0) <= 0): ?>
+                                    <span class="usage-sub">No amount due</span>
+                                <?php elseif (!empty($usage['is_internal'])): ?>
+                                    <span class="usage-sub">Internal fill</span>
                                 <?php endif; ?>
                             </td>
-                            <td class="py-3 text-end">
+                            <td class="text-end">
                                 <?php if (!empty($usage['staff_user_id'])): ?>
                                     <button type="button" class="btn btn-outline-info btn-sm rounded-pill px-3" data-bs-toggle="modal" data-bs-target="#<?php echo htmlspecialchars($feedbackModalId, ENT_QUOTES, 'UTF-8'); ?>">
                                         <i class="bi bi-chat-left-heart me-1"></i><?php echo $feedbackCount > 0 ? 'Feedback again' : 'Give feedback'; ?>
                                     </button>
                                 <?php else: ?>
-                                    <span class="text-secondary small">Staff details unavailable</span>
+                                    <span class="usage-sub">Staff details unavailable</span>
                                 <?php endif; ?>
                                 <?php if ($feedbackCount > 0): ?>
-                                    <div class="text-secondary mt-1" style="font-size:11px;"><?php echo $feedbackCount; ?> sent<?php echo $latestRating > 0 ? ' · last ' . $latestRating . '/5' : ''; ?></div>
+                                    <div class="usage-sub mt-1"><?php echo $feedbackCount; ?> sent<?php echo $latestRating > 0 ? ' · last ' . $latestRating . '/5' : ''; ?></div>
                                 <?php endif; ?>
                             </td>
                         </tr>
@@ -277,7 +327,7 @@ include 'share_header.php';
             $feedbackModalId = 'feedbackModal' . (int)$usage['usage_id'];
             $modalStation = trim((string)($usage['station_name'] ?? 'Unknown station'));
             $modalFuel = (string)($usage['oil_name'] ?? 'Fuel');
-            $modalLiters = rtrim(rtrim(number_format((float)($usage['filled_liters'] ?? 0), 1, '.', ''), '0'), '.');
+            $modalLiters = customer_usage_fmt_liters((float) ($usage['filled_liters'] ?? 0));
             $modalPtsEarned = (int) ($usage['points_earned'] ?? 0);
             $modalPtsRedeemed = (int) ($usage['points_redeemed'] ?? 0);
             $modalDiscount = (float) ($usage['discount_mmk'] ?? 0);
@@ -558,6 +608,111 @@ include 'share_header.php';
     flex: 0 0 auto;
 }
 
+/* Usage table */
+.usage-table {
+    width: 100%;
+    min-width: 1240px;
+}
+.usage-summary-chip {
+    font-size: 12px;
+    padding: 6px 12px;
+    border-radius: 999px;
+    border: 1px solid rgba(13, 110, 253, 0.25);
+    background: rgba(13, 110, 253, 0.08);
+    color: #9fc3ff;
+}
+.usage-summary-chip strong {
+    color: #fff;
+    font-variant-numeric: tabular-nums;
+}
+.usage-table thead th {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #8fa0dd;
+    background: transparent;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+    padding: 0 12px 12px;
+    white-space: nowrap;
+}
+.usage-table thead th:first-child,
+.usage-table tbody td:first-child {
+    padding-left: 0;
+}
+.usage-table thead th:last-child,
+.usage-table tbody td:last-child {
+    padding-right: 0;
+}
+.usage-table tbody td {
+    padding: 14px 12px;
+    font-size: 13px;
+    font-weight: 500;
+    vertical-align: middle;
+    border-color: rgba(255, 255, 255, 0.06);
+}
+.usage-table tbody tr:hover td {
+    background: rgba(13, 110, 253, 0.04);
+}
+.usage-txn {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+}
+.usage-sub {
+    font-size: 11px;
+    color: #8b97ad;
+}
+.usage-volume {
+    font-size: 14px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+.usage-unit {
+    font-size: 11px;
+    color: #8b97ad;
+    margin-left: 2px;
+}
+.usage-payment-cell {
+    min-width: 180px;
+}
+.loyalty-chip {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: rgba(255, 193, 7, 0.12);
+    color: #ffc107;
+    white-space: nowrap;
+}
+
+body.customer-light-mode .usage-summary-chip {
+    color: #0b5ed7;
+    background: rgba(11, 94, 215, 0.07);
+    border-color: rgba(11, 94, 215, 0.2);
+}
+body.customer-light-mode .usage-summary-chip strong {
+    color: #102033;
+}
+body.customer-light-mode .usage-sub,
+body.customer-light-mode .usage-unit {
+    color: #64748b;
+}
+body.customer-light-mode .loyalty-chip {
+    color: #b45309;
+    background: rgba(245, 158, 11, 0.15);
+}
+body.customer-light-mode .usage-table thead th {
+    color: #475569;
+    border-bottom-color: rgba(15, 23, 42, 0.12);
+}
+body.customer-light-mode .usage-table tbody td {
+    border-color: rgba(15, 23, 42, 0.06);
+}
+
 body.customer-light-mode .usage-range-toggle {
     color: #102033 !important;
 }
@@ -603,7 +758,7 @@ document.addEventListener('DOMContentLoaded', function () {
         document.body.appendChild(modal);
     });
 
-    const rows = Array.from(document.querySelectorAll('#usage-log-body tr'));
+    const rows = Array.from(document.querySelectorAll('#usage-log-body tr.usage-row'));
     const emptyMsg = document.getElementById('usage-empty-msg');
     const toggleBtn = document.getElementById('usage-range-toggle');
     const clearBtn = document.getElementById('usage-date-clear');
@@ -613,6 +768,9 @@ document.addEventListener('DOMContentLoaded', function () {
     const prevBtn = document.getElementById('usage-cal-prev');
     const nextBtn = document.getElementById('usage-cal-next');
     const labelEl = document.getElementById('usage-range-label');
+    const sumCountEl = document.getElementById('usage-sum-count');
+    const sumCountLabelEl = document.getElementById('usage-sum-count-label');
+    const sumLitersEl = document.getElementById('usage-sum-liters');
 
     const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 
@@ -645,6 +803,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     function filterRows() {
         let visibleCount = 0;
+        let visibleLiters = 0;
         rows.forEach(row => {
             const rowDate = row.getAttribute('data-date');
             let show = true;
@@ -652,14 +811,21 @@ document.addEventListener('DOMContentLoaded', function () {
                 show = rowDate >= rangeStart && rowDate <= rangeEnd;
             } else if (rangeStart && !rangeEnd) {
                 show = rowDate === rangeStart;
-            } else {
-                show = true;
             }
             row.classList.toggle('d-none', !show);
-            if (show) visibleCount++;
+            if (show) {
+                visibleCount++;
+                visibleLiters += parseFloat(row.getAttribute('data-liters') || '0') || 0;
+            }
         });
-        emptyMsg.classList.toggle('d-none', visibleCount > 0);
+        emptyMsg.classList.toggle('d-none', rows.length === 0 || visibleCount > 0);
         labelEl.textContent = formatLabel(rangeStart, rangeEnd);
+
+        if (sumCountEl) {
+            sumCountEl.textContent = visibleCount;
+            sumCountLabelEl.textContent = visibleCount === 1 ? 'fill' : 'fills';
+            sumLitersEl.textContent = visibleLiters.toLocaleString(undefined, { maximumFractionDigits: 1 });
+        }
     }
 
     function renderCalendar() {

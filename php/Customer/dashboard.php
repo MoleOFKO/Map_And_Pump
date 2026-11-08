@@ -66,7 +66,7 @@ $expProgress = $nextTier !== null && $nextExp > 0
     <!-- Card 1: Remaining Fuel Quota -->
     <div class="col-lg-4 col-md-6 d-flex">
         <div class="dashboard-panel-card customer-stat-card w-100">
-            <p class="text-secondary text-uppercase tracking-wider mb-2" style="font-size:11px; font-weight:600;">Remaining Fuel Quota</p>
+            <p class="text-secondary text-uppercase tracking-wider mb-2 dash-label">Remaining Fuel Quota</p>
             <h3 class="text-sky-400 fs-1 mb-1">
                 <?php echo number_format($oilRemaining, 1); ?>
                 <span class="fs-4 text-secondary fw-normal">/ <?php echo number_format($oilLimit, 1); ?> L</span>
@@ -80,9 +80,9 @@ $expProgress = $nextTier !== null && $nextExp > 0
     <!-- Card 2: Monthly Station Visits -->
     <div class="col-lg-4 col-md-6 d-flex">
         <div class="dashboard-panel-card customer-stat-card w-100">
-            <p class="text-secondary text-uppercase tracking-wider mb-2" style="font-size:11px; font-weight:600;">Monthly Station Visits</p>
+            <p class="text-secondary text-uppercase tracking-wider mb-2 dash-label">Monthly Station Visits</p>
             <h3 class="text-white fs-1 mb-1"><?php echo $monthly_visits; ?> <span class="fs-5 text-secondary fw-normal">Times</span></h3>
-            <p class="text-secondary mb-0 mt-3" style="font-size:12px;">Total refueling sessions recorded this month</p>
+            <p class="text-secondary mb-0 mt-3 dash-note">Total refueling sessions recorded this month</p>
         </div>
     </div>
 
@@ -90,11 +90,10 @@ $expProgress = $nextTier !== null && $nextExp > 0
     <div class="col-lg-4 col-md-6 d-flex">
         <div class="dashboard-panel-card customer-stat-card w-100">
             <div class="d-flex align-items-start justify-content-between gap-2 mb-2">
-                <p class="text-secondary text-uppercase tracking-wider mb-0" style="font-size:11px; font-weight:600;">Loyalty Reward Points</p>
+                <p class="text-secondary text-uppercase tracking-wider mb-0 dash-label">Loyalty Reward Points</p>
                 <button
                     type="button"
-                    class="btn btn-sm btn-outline-info rounded-circle d-inline-flex align-items-center justify-content-center flex-shrink-0"
-                    style="width:32px;height:32px;padding:0;"
+                    class="btn btn-sm btn-outline-info rounded-circle d-inline-flex align-items-center justify-content-center flex-shrink-0 dash-info-btn"
                     data-bs-toggle="modal"
                     data-bs-target="#loyaltyRewardDetails"
                     aria-label="View loyalty reward details"
@@ -104,7 +103,7 @@ $expProgress = $nextTier !== null && $nextExp > 0
             </div>
             <h3 class="text-white fs-1 mb-1">
                 <?php echo number_format($reward_points); ?> 
-                <span class="fs-5 text-warning ms-1"><i class="bi bi-star-fill" style="font-size: 20px;"></i></span>
+                <span class="fs-5 text-warning ms-1"><i class="bi bi-star-fill dash-star"></i></span>
             </h3>
             <p class="customer-reward-tier customer-reward-tier-<?php echo htmlspecialchars(strtolower($reward_tier_code), ENT_QUOTES, 'UTF-8'); ?> mb-0 mt-3">
                 <i class="bi bi-award-fill me-1"></i><?php echo htmlspecialchars($reward_tier, ENT_QUOTES, 'UTF-8'); ?> tier
@@ -115,7 +114,7 @@ $expProgress = $nextTier !== null && $nextExp > 0
 
 <div class="modal fade" id="loyaltyRewardDetails" tabindex="-1" aria-labelledby="loyaltyRewardDetailsTitle" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
-        <div class="modal-content text-white" style="background:#0a162c;border:1px solid rgba(56,189,248,.3);border-radius:20px;box-shadow:0 24px 70px rgba(0,0,0,.55);">
+        <div class="modal-content text-white dash-modal">
             <div class="modal-header border-secondary border-opacity-25 position-relative pe-5">
                 <div>
                     <h2 class="modal-title h5 mb-1" id="loyaltyRewardDetailsTitle"><i class="bi bi-stars text-info me-2"></i>Your loyalty rewards</h2>
@@ -124,16 +123,16 @@ $expProgress = $nextTier !== null && $nextExp > 0
                 <button type="button" class="btn-close btn-close-white position-absolute top-0 end-0 m-3" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body p-4">
-                <div class="rounded-3 p-3" style="background:rgba(10,22,44,.7);border:1px solid rgba(56,189,248,.18);">
+                <div class="rounded-3 p-3 dash-modal-panel">
                     <div class="mb-3">
                         <h3 class="h6 text-white mb-1"><i class="bi bi-info-circle text-info me-2"></i>Earn &amp; redeem</h3>
                         <p class="text-secondary small mb-2">Earn points on successful external fills, then choose one fixed reward when booking.</p>
                         <div class="row row-cols-2 g-2">
                             <?php foreach ($redemptionOptions as $points => $discount): ?>
                                 <div class="col">
-                                    <div class="rounded-3 p-2 h-100" style="background:rgba(255,255,255,.04);">
+                                    <div class="rounded-3 p-2 h-100 dash-redeem-tile">
                                         <span class="d-block text-white fw-semibold"><?= number_format($discount) ?> MMK</span>
-                                        <span class="text-secondary" style="font-size:11px;"><?= number_format($points) ?> points</span>
+                                        <span class="text-secondary dash-tile-points"><?= number_format($points) ?> points</span>
                                     </div>
                                 </div>
                             <?php endforeach; ?>
@@ -187,7 +186,7 @@ $expProgress = $nextTier !== null && $nextExp > 0
 
 <div class="modal fade" id="tierDetailsModal" tabindex="-1" aria-labelledby="tierDetailsModalTitle" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-lg">
-        <div class="modal-content text-white" style="border:1px solid rgba(56,189,248,.3);border-radius:20px;box-shadow:0 24px 70px rgba(0,0,0,.55);">
+        <div class="modal-content text-white dash-modal">
             <div class="modal-header border-secondary border-opacity-25 position-relative pe-5">
                 <div>
                     <h2 class="modal-title h5 mb-1" id="tierDetailsModalTitle"><i class="bi bi-award text-info me-2"></i>Tier details</h2>
@@ -262,8 +261,8 @@ $expProgress = $nextTier !== null && $nextExp > 0
         <div class="col-lg-10 col-xl-8">
             <span class="status-pill active mb-2 inline-block"><span class="spinner-grow spinner-grow-sm me-1" role="status"></span> Live Queue Verification active</span>
             <h2 class="text-white mb-2 fs-2">Track Stations & Book Tokens</h2>
-            <p class="text-secondary mb-3 max-width-md" style="font-size:13px; line-height: 1.5;">Generate token barcodes, and queue dynamically at localized stations.</p>
-            <a href="track_book.php" class="btn btn-info px-4 py-2 fw-bold rounded-3 shadow" style="font-size:13px; font-family:'Space Grotesk';">
+            <p class="text-secondary mb-3 max-width-md dash-queue-copy">Generate token barcodes, and queue dynamically at localized stations.</p>
+            <a href="track_book.php" class="btn btn-info px-4 py-2 fw-bold rounded-3 shadow dash-queue-cta">
                 Begin Reservation Hub <i class="fa-solid fa-arrow-right ms-2"></i>
             </a>
         </div>
@@ -319,6 +318,47 @@ body.mp-sa-locked .mp-sa-overlay *{pointer-events:auto}
 @keyframes mpSaPop{from{opacity:0;transform:translateY(8px) scale(.96)}to{opacity:1;transform:none}}
 @media (max-width:420px){.mp-sa-actions{flex-direction:column-reverse}.mp-sa-card{padding:22px 18px 18px}}
 @media (prefers-reduced-motion:reduce){.mp-sa-overlay.is-open,.mp-sa-card{animation:none}}
+</style>
+
+<style>
+/* ===== Customer dashboard UI refinements (presentation only) ===== */
+.customer-stat-card { position: relative; overflow: hidden; border-radius: 18px !important; padding: 20px 22px !important; transition: transform .15s ease, border-color .15s ease; }
+.customer-stat-card::after { content: ''; position: absolute; top: 0; right: 0; width: 120px; height: 120px; background: radial-gradient(circle at top right, rgba(56,189,248,.12), transparent 70%); pointer-events: none; }
+.customer-stat-card:hover { transform: translateY(-2px); border-color: rgba(125,211,252,.3) !important; }
+.dash-label { font-size: 11px; font-weight: 700; letter-spacing: .08em; line-height: 1.4; }
+.dash-note { font-size: 12px; line-height: 1.5; }
+.customer-stat-card h3 { line-height: 1.1; letter-spacing: -.02em; font-weight: 700; }
+.dash-star { font-size: 20px; filter: drop-shadow(0 0 8px rgba(251,191,36,.35)); }
+.dash-info-btn { width: 32px; height: 32px; padding: 0; }
+.dash-modal { background: #0a162c; border: 1px solid rgba(56,189,248,.3); border-radius: 20px; box-shadow: 0 24px 70px rgba(0,0,0,.55); }
+.dash-modal .modal-header { padding: 20px 22px 16px; }
+.dash-modal .modal-body { padding: 20px 22px !important; }
+.dash-modal .modal-footer { padding: 14px 22px 18px; }
+.dash-modal .modal-title { font-weight: 700; }
+.dash-modal-panel { background: rgba(10,22,44,.7); border: 1px solid rgba(56,189,248,.18); }
+.dash-redeem-tile { background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.06); transition: border-color .15s ease; }
+.dash-redeem-tile:hover { border-color: rgba(56,189,248,.35); }
+.dash-tile-points { font-size: 11px; }
+.dash-modal .table { --bs-table-bg: transparent; }
+.dash-modal .table th, .dash-modal .table td { padding: 10px 8px; font-size: 13px; }
+.dash-modal .table thead th { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: #8b9ab0; font-weight: 700; }
+.customer-live-queue-card { background: linear-gradient(135deg, rgba(13,110,253,.12), rgba(56,189,248,.04)); border: 1px solid rgba(56,189,248,.18); }
+.dash-queue-copy { font-size: 13px; line-height: 1.6; max-width: 520px; }
+.dash-queue-cta { font-size: 13px; font-family: 'Space Grotesk', sans-serif; }
+@media (max-width: 575.98px) {
+    .customer-stat-card { padding: 18px !important; }
+    .customer-stat-card h3 { font-size: 2rem !important; }
+    .dash-queue-cta { width: 100%; text-align: center; }
+    .dash-modal .modal-header, .dash-modal .modal-body, .dash-modal .modal-footer { padding-left: 16px !important; padding-right: 16px !important; }
+}
+body.customer-light-mode .customer-stat-card:hover { border-color: rgba(11,94,215,.3) !important; }
+body.customer-light-mode .dash-label,
+body.customer-light-mode .dash-note,
+body.customer-light-mode .dash-queue-copy { color: #526174 !important; }
+body.customer-light-mode .dash-modal { background: #ffffff; border-color: rgba(11,94,215,.22); color: #102033; }
+body.customer-light-mode .dash-modal-panel { background: rgba(240,246,255,.9); border-color: rgba(11,94,215,.14); }
+body.customer-light-mode .dash-redeem-tile { background: rgba(15,23,42,.03); border-color: rgba(15,23,42,.08); }
+body.customer-light-mode .customer-live-queue-card { background: linear-gradient(135deg, rgba(11,94,215,.08), rgba(56,189,248,.03)); border-color: rgba(11,94,215,.16); }
 </style>
 
 <div class="mp-sa-overlay" id="mpSaDisabled" data-mp-sa="disabled" data-notification-id="<?php echo (int) ($staffStatusPopupNotificationId ?: 0); ?>" role="dialog" aria-modal="true" aria-labelledby="mpSaDisabledTitle" aria-hidden="true">

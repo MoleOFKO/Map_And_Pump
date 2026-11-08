@@ -39,59 +39,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         respond(['success' => false, 'message' => 'Your session expired. Reload the scanner or booking details and try again.'], $ajax, 403);
     }
     $action = isset($_POST['action']) ? trim($_POST['action']) : 'verify';
-    if ($action === 'offer_partial') {
-        $bookingId = (int)($_POST['booking_id'] ?? 0);
-        $offered = round((float)($_POST['amount_liters'] ?? 0), 2);
-        if ($bookingId <= 0 || $offered <= 0 || !map_pump_booking_schema_ready($pdo)) {
-            respond(['success' => false, 'message' => 'Invalid partial-fill offer.'], $ajax, 422, 'verify_detail.php?booking_id=' . $bookingId);
-        }
-        try {
-            $pdo->beginTransaction();
-            $offerBooking = $pdo->prepare("SELECT b.station_id, b.status, b.expire_at, r.requested_liters
-                FROM booking b INNER JOIN booking_reservations r ON r.booking_id = b.booking_id
-                WHERE b.booking_id = ? LIMIT 1 FOR UPDATE");
-            $offerBooking->execute([$bookingId]);
-            $offerRow = $offerBooking->fetch(PDO::FETCH_ASSOC);
-            if (!$offerRow || !$staffCanAccessBranch((int)$_SESSION['user_id'], (int)$offerRow['station_id'])
-                || !in_array((string)$offerRow['status'], ['notfilled', 'waiting', 'serving'], true)
-                || strtotime((string)$offerRow['expire_at']) <= time()
-                || $offered >= (float)$offerRow['requested_liters']) {
-                throw new RuntimeException('This booking cannot accept that partial-fill offer.');
-            }
-            $saveOffer = $pdo->prepare("INSERT INTO booking_partial_offers (booking_id, offered_liters, status, offered_by, offered_at, answered_at)
-                VALUES (?, ?, 'pending', ?, NOW(), NULL)
-                ON DUPLICATE KEY UPDATE offered_liters = VALUES(offered_liters), status = 'pending', offered_by = VALUES(offered_by), offered_at = NOW(), answered_at = NULL");
-            $saveOffer->execute([$bookingId, round($offered, 2), (int)$_SESSION['user_id']]);
-            $pdo->commit();
-            respond(['success' => true, 'message' => 'Partial quantity sent to the driver for acceptance.'], $ajax, 200, 'verify_detail.php?booking_id=' . $bookingId);
-        } catch (Throwable $e) {
-            if ($pdo->inTransaction()) $pdo->rollBack();
-            respond(['success' => false, 'message' => $e->getMessage()], $ajax, 409, 'verify_detail.php?booking_id=' . $bookingId);
-        }
-    }
-    if ($action === 'unable_to_fulfill') {
-        $bookingId = (int)($_POST['booking_id'] ?? 0);
-        if ($bookingId <= 0 || !map_pump_booking_schema_ready($pdo)) respond(['success' => false, 'message' => 'Invalid booking.'], $ajax, 422);
-        try {
-            $pdo->beginTransaction();
-            $unableStmt = $pdo->prepare("SELECT b.station_id, b.qr_refrence_code, b.status, b.expire_at FROM booking b WHERE b.booking_id = ? LIMIT 1 FOR UPDATE");
-            $unableStmt->execute([$bookingId]);
-            $unable = $unableStmt->fetch(PDO::FETCH_ASSOC);
-            if (!$unable || !$staffCanAccessBranch((int)$_SESSION['user_id'], (int)$unable['station_id'])
-                || !in_array((string)$unable['status'], ['notfilled','waiting','serving'], true)
-                || strtotime((string)$unable['expire_at']) <= time()) throw new RuntimeException('This booking can no longer be closed as unfulfillable.');
-            $close = $pdo->prepare("UPDATE booking SET status = 'station_unable_to_fulfill' WHERE booking_id = ? AND status IN ('notfilled','waiting','serving')");
-            $close->execute([$bookingId]);
-            $freePump = $pdo->prepare("UPDATE pumps SET status = 'idle', current_token = NULL WHERE branch_id = ? AND current_token = ? AND status = 'active'");
-            $freePump->execute([(int)$unable['station_id'], (string)$unable['qr_refrence_code']]);
-            map_pump_issue_shortfall_coupon($pdo, $bookingId, 0.0);
-            $pdo->commit();
-            respond(['success' => true, 'message' => 'Booking closed. A full-value station coupon was issued to the driver.'], $ajax, 200, 'verify_qr.php');
-        } catch (Throwable $e) {
-            if ($pdo->inTransaction()) $pdo->rollBack();
-            respond(['success' => false, 'message' => $e->getMessage()], $ajax, 409, 'verify_detail.php?booking_id=' . $bookingId);
-        }
-    }
     if ($action === 'confirm') {
         $bookingId = isset($_POST['booking_id']) ? (int)$_POST['booking_id'] : 0;
         $amountLiters = isset($_POST['amount_liters']) ? trim((string)$_POST['amount_liters']) : '';
@@ -152,15 +99,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($requestedLiters <= 0 || (float)$amountLiters > $requestedLiters) {
             respond(['success' => false, 'message' => 'The fill must not exceed the quantity reserved for this booking.'], $ajax, 422, 'verify_detail.php?booking_id=' . urlencode((string)$bookingId));
         }
-        if ((float)$amountLiters + 0.0001 < $requestedLiters) {
-            $offerStmt = $pdo->prepare("SELECT offered_liters, status FROM booking_partial_offers WHERE booking_id = ? LIMIT 1");
-            $offerStmt->execute([$bookingId]);
-            $offer = $offerStmt->fetch(PDO::FETCH_ASSOC);
-            if (!$offer || $offer['status'] !== 'accepted' || abs((float)$offer['offered_liters'] - (float)$amountLiters) > 0.01) {
-                respond(['success' => false, 'message' => 'The driver must accept this exact partial-fill amount in their booking page before the fill can be confirmed.'], $ajax, 409, 'verify_detail.php?booking_id=' . urlencode((string)$bookingId));
-            }
-        }
-
         if (!empty($row['expire_at']) && strtotime((string)$row['expire_at']) < time()) {
             $expireUpdate = $pdo->prepare("UPDATE booking SET status = 'expired' WHERE booking_id = :booking_id AND status IN ('notfilled','waiting','serving') AND expire_at <= NOW()");
             $expireUpdate->execute([':booking_id' => $row['booking_id']]);
@@ -197,15 +135,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 throw new RuntimeException('BOOKING_NOT_ACTIVE');
             }
 
-            if ((float)$amountLiters + 0.0001 < $requestedLiters) {
-                $lockedOffer = $pdo->prepare("SELECT offered_liters, status FROM booking_partial_offers WHERE booking_id = ? LIMIT 1 FOR UPDATE");
-                $lockedOffer->execute([(int)$row['booking_id']]);
-                $offerState = $lockedOffer->fetch(PDO::FETCH_ASSOC);
-                if (!$offerState || $offerState['status'] !== 'accepted' || abs((float)$offerState['offered_liters'] - (float)$amountLiters) > 0.01) {
-                    throw new RuntimeException('BOOKING_NOT_ACTIVE');
-                }
-            }
-
             $quota = customer_fuel_quota_for_car($pdo, (int)$row['user_id'], $carLicenseId);
             if ((float)$amountLiters > (float)$quota['remaining']) throw new RuntimeException('QUOTA_EXCEEDED');
 
@@ -221,41 +150,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 throw new RuntimeException('CAR_EXPIRED');
             }
 
-            $fuelName = strtolower(str_replace(' ', '', (string)($row['oil_name'] ?? '')));
-            $tankFuelCode = match ($fuelName) {
-                'octane92' => 'p92',
-                'octane95' => 'p95',
-                'disel', 'diesel' => 'dsl',
-                'premiumdisel', 'premiumdiesel' => 'pdsl',
-                default => '',
-            };
-            if ($tankFuelCode === '') {
-                throw new RuntimeException('The booking fuel type is not mapped to a station tank.');
-            }
-
             $deductTank = $pdo->prepare(
                 'UPDATE tanks
                  SET current_l = current_l - :amount
                  WHERE branch_id = :station_id
-                   AND fuel_code = :fuel_code
+                   AND oil_type_id = :oil_type_id
                    AND is_enabled = 1
                    AND current_l >= :amount'
             );
             $deductTank->execute([
                 ':amount' => (float)$amountLiters,
                 ':station_id' => (int)$row['station_id'],
-                ':fuel_code' => $tankFuelCode,
+                ':oil_type_id' => (int)$row['oil_type_id'],
             ]);
             if ($deductTank->rowCount() !== 1) {
                 throw new RuntimeException('INSUFFICIENT_LIVE_STOCK');
             }
 
             $tankLevelStmt = $pdo->prepare(
-                'SELECT current_l FROM tanks WHERE branch_id = :station_id AND fuel_code = :fuel_code LIMIT 1'
+                'SELECT current_l FROM tanks WHERE branch_id = :station_id AND oil_type_id = :oil_type_id AND is_enabled = 1 LIMIT 1'
             );
             $tankLevelStmt->execute([
                 ':station_id' => (int)$row['station_id'],
-                ':fuel_code' => $tankFuelCode,
+                ':oil_type_id' => (int)$row['oil_type_id'],
             ]);
             $remainingTankLiters = (float)($tankLevelStmt->fetchColumn() ?: 0);
             map_pump_append_station_inventory_snapshot($pdo, (int)$row['station_id'], (int)$row['oil_type_id'], $remainingTankLiters);

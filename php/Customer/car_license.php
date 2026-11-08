@@ -235,6 +235,34 @@ include 'share_header.php';
     }
 </style>
 
+<style>
+/* ===== Car license UI refinements (presentation only) ===== */
+.cl-field-label { display: block; margin-bottom: 6px; font-size: 11px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; }
+.cl-hint { font-size: 11px; line-height: 1.5; }
+.cl-hint-xs { display: block; margin-top: 6px; font-size: 10px; letter-spacing: .04em; }
+.cl-btn { font-size: 13px; border-radius: 12px !important; }
+.cl-image-card { min-height: 100%; border-radius: 14px; }
+.car-license-fact { border-radius: 14px; }
+.car-license-fact > span:first-child { letter-spacing: .06em; text-transform: uppercase; font-size: 10px; }
+#car-license-form .custom-form-field { min-height: 46px; border-radius: 12px; }
+#car-license-form .form-control::placeholder { opacity: .55; }
+#car-license-form .row.g-3 > [class*="col-"] { display: flex; flex-direction: column; }
+
+#car-license-form .row.g-3 > [class*="col-"] > input[type="date"],
+#car-license-form .row.g-3 > [class*="col-"] > input[type="text"],
+#car-license-form .row.g-3 > [class*="col-"] > input[type="number"],
+#car-license-form .row.g-3 > [class*="col-"] > select { width: 100%; }
+#car-license-status { font-size: 13px; }
+body.customer-light-mode .cl-field-label { color: #526174 !important; }
+body.customer-light-mode .cl-hint,
+body.customer-light-mode .cl-hint-xs { color: #526174 !important; }
+body.customer-light-mode .car-license-fact { background: rgba(255, 255, 255, .7); border-color: rgba(15, 23, 42, .1); }
+@media (max-width: 575.98px) {
+    .cl-btn { width: 100%; }
+    #car-license-form .d-flex.justify-content-end { flex-direction: column-reverse; }
+}
+</style>
+
 <div class="container-fluid py-3">
     <div class="row g-4">
         <!-- Sidebar Quick Info / Active Car Overview -->
@@ -327,7 +355,7 @@ include 'share_header.php';
                     
                     <div class="row g-3 mt-2">
                         <div class="col-md-6">
-                            <div class="car-license-fact h-150">
+                            <div class="car-license-fact cl-image-card">
                                 <span>Front License Image</span>
                                 <div class="mt-2">
                                     <?php if (!empty($selectedCar['car_license_front_image'])): ?>
@@ -342,7 +370,7 @@ include 'share_header.php';
                             </div>
                         </div>
                         <div class="col-md-6">
-                            <div class="car-license-fact h-150">
+                            <div class="car-license-fact cl-image-card">
                                 <span>Back License Image</span>
                                 <div class="mt-2">
                                     <?php if (!empty($selectedCar['car_license_back_image'])): ?>
@@ -366,13 +394,13 @@ include 'share_header.php';
                     
                     <div class="row g-3">
                         <div class="col-md-6">
-                            <label class="form-label text-secondary fw-bold" style="font-size:11px;">CAR LICENSE FRONT IMAGE</label>
+                            <label class="cl-field-label text-secondary">CAR LICENSE FRONT IMAGE</label>
                             <div class="image-dropzone" id="frontImageDropzone">
                                 <input type="file" name="car_license_front_image" id="frontImageInput" accept="image/jpeg,image/png,image/webp" <?php echo !empty($formCar['car_license_front_image']) ? '' : 'required'; ?>>
                                 <div class="image-dropzone-content" id="frontDropzoneContent">
                                     <i class="bi bi-cloud-arrow-up-fill"></i>
                                     <span><strong>Drag & drop</strong> or browse front image</span>
-                                    <small class="text-secondary" style="font-size: 10px;">JPG, PNG, WEBP</small>
+                                    <small class="text-secondary cl-hint-xs">JPG, PNG, WEBP</small>
                                 </div>
                                 <img id="frontImagePreview" class="image-preview-thumb" alt="Front Preview">
                             </div>
@@ -380,20 +408,20 @@ include 'share_header.php';
                                 <div class="mt-2">
                                     <a class="car-license-image-link d-inline-flex align-items-center gap-2" href="<?php echo htmlspecialchars((string) $formCar['car_license_front_image']); ?>" target="_blank" rel="noopener">
                                         <img src="<?php echo htmlspecialchars((string) $formCar['car_license_front_image']); ?>" alt="Front License" style="width: 40px; height: 40px; object-fit: cover; border-radius: 6px; border: 1px solid rgba(255,255,255,0.2);">
-                                        <!-- <span><i class="bi bi-image-fill"></i> Current front image saved[cite: 1]</span> -->
+                                        <!-- <span><i class="bi bi-image-fill"></i> Current front image saved</span> -->
                                     </a>
                                 </div>
                             <?php endif; ?>
                         </div>
 
                         <div class="col-md-6">
-                            <label class="form-label text-secondary fw-bold" style="font-size:11px;">CAR LICENSE BACK IMAGE</label>
+                            <label class="cl-field-label text-secondary">CAR LICENSE BACK IMAGE</label>
                             <div class="image-dropzone" id="backImageDropzone">
                                 <input type="file" name="car_license_back_image" id="backImageInput" accept="image/jpeg,image/png,image/webp" <?php echo !empty($formCar['car_license_back_image']) ? '' : 'required'; ?>>
                                 <div class="image-dropzone-content" id="backDropzoneContent">
                                     <i class="bi bi-cloud-arrow-up-fill"></i>
                                     <span><strong>Drag & drop</strong> or browse back image</span>
-                                    <small class="text-secondary" style="font-size: 10px;">JPG, PNG, WEBP</small>
+                                    <small class="text-secondary cl-hint-xs">JPG, PNG, WEBP</small>
                                 </div>
                                 <img id="backImagePreview" class="image-preview-thumb" alt="Back Preview">
                             </div>
@@ -401,31 +429,31 @@ include 'share_header.php';
                                 <div class="mt-2">
                                     <a class="car-license-image-link d-inline-flex align-items-center gap-2" href="<?php echo htmlspecialchars((string) $formCar['car_license_back_image']); ?>" target="_blank" rel="noopener">
                                         <img src="<?php echo htmlspecialchars((string) $formCar['car_license_back_image']); ?>" alt="Back License" style="width: 40px; height: 40px; object-fit: cover; border-radius: 6px; border: 1px solid rgba(255,255,255,0.2);">
-                                        <!-- <span><i class="bi bi-image-fill"></i> Current back image saved[cite: 1]</span> -->
+                                        <!-- <span><i class="bi bi-image-fill"></i> Current back image saved</span> -->
                                     </a>
                                 </div>
                             <?php endif; ?>
                         </div>
 
                         <div class="col-md-6">
-                            <label class="form-label text-secondary fw-bold" style="font-size:11px;">CAR LICENSE PLATE NUMBER</label>
+                            <label class="cl-field-label text-secondary">CAR LICENSE PLATE NUMBER</label>
                             <input type="text" name="car_plate_number" id="carPlateNumber" class="form-control custom-form-field" maxlength="7" placeholder="1A/1234" value="<?php echo htmlspecialchars($plateValue); ?>" inputmode="text" autocomplete="off" required>
-                            <small class="text-secondary d-block mt-1" style="font-size: 11px;">Example: 1A/1234. Formatted automatically.</small>
+                            <small class="text-secondary d-block mt-1 cl-hint">Example: 1A/1234. Formatted automatically.</small>
                         </div>
                         <div class="col-md-6">
-                            <label class="form-label text-secondary fw-bold" style="font-size:11px;">CAR OWNER NAME</label>
+                            <label class="cl-field-label text-secondary">CAR OWNER NAME</label>
                             <input type="text" name="car_owner_name" class="form-control custom-form-field" maxlength="100" value="<?php echo htmlspecialchars((string) ($formCar['car_owner_name'] ?? ($_SESSION['user_name'] ?? ''))); ?>" required>
                         </div>
                         <div class="col-md-4">
-                            <label class="form-label text-secondary fw-bold" style="font-size:11px;">MODEL YEAR</label>
+                            <label class="cl-field-label text-secondary">MODEL YEAR</label>
                             <input type="number" name="model_year" class="form-control custom-form-field" min="1950" max="<?php echo $currentYear + 1; ?>" placeholder="2020" value="<?php echo htmlspecialchars((string) ($formCar['model_year'] ?? '')); ?>" required>
                         </div>
                         <div class="col-md-4">
-                            <label class="form-label text-secondary fw-bold" style="font-size:11px;">VEHICLE NAME</label>
+                            <label class="cl-field-label text-secondary">VEHICLE NAME</label>
                             <input type="text" name="vehicle_name" class="form-control custom-form-field" maxlength="100" placeholder="Honda Fit" value="<?php echo htmlspecialchars((string) ($formCar['vehicle_name'] ?? '')); ?>" required>
                         </div>
                         <div class="col-md-4">
-                            <label class="form-label text-secondary fw-bold" style="font-size:11px;">VEHICLE TYPE</label>
+                            <label class="cl-field-label text-secondary">VEHICLE TYPE</label>
                             <select name="vehicle_type" class="form-select custom-form-field" required>
                                 <option value="">Select</option>
                                 <?php foreach ($vehicleTypes as $type): ?>
@@ -434,29 +462,29 @@ include 'share_header.php';
                             </select>
                         </div>
                         <div class="col-md-6">
-                            <label class="form-label text-secondary fw-bold" style="font-size:11px;">CHASSIS NUMBER</label>
+                            <label class="cl-field-label text-secondary">CHASSIS NUMBER</label>
                             <input type="text" name="chassis_number" class="form-control custom-form-field" maxlength="20" placeholder="JHMGD3840YS000000" value="<?php echo htmlspecialchars((string) ($formCar['chassis_number'] ?? '')); ?>" required>
                         </div>
                         <div class="col-md-6">
-                            <label class="form-label text-secondary fw-bold" style="font-size:11px;">LOCATION</label>
+                            <label class="cl-field-label text-secondary">LOCATION</label>
                             <input type="text" name="location" class="form-control custom-form-field" maxlength="255" placeholder="Yangon Region" value="<?php echo htmlspecialchars((string) ($formCar['location'] ?? '')); ?>" required>
                         </div>
                         <div class="col-md-12">
-                            <label class="form-label text-secondary fw-bold" style="font-size:11px;">ISSUED DATE</label>
+                            <label class="cl-field-label text-secondary">ISSUED DATE</label>
                             <input type="date" name="issue_date" class="form-control custom-form-field" max="<?php echo htmlspecialchars($today); ?>" value="<?php echo htmlspecialchars((string) ($formCar['issue_date'] ?? $today)); ?>" required>
                         </div>
                         <div class="col-md-12">
-                            <label class="form-label text-secondary fw-bold" style="font-size:11px;">LICENSE EXPIRY DATE</label>
+                            <label class="cl-field-label text-secondary">LICENSE EXPIRY DATE</label>
                             <input type="date" name="license_expire_date" class="form-control custom-form-field" min="<?php echo htmlspecialchars($today); ?>" value="<?php echo htmlspecialchars((string) ($formCar['license_expire_date'] ?? '')); ?>" required>
-                            <small class="text-secondary d-block mt-1" style="font-size:11px;">You will receive a reminder during the 10 days before expiry.</small>
+                            <small class="text-secondary d-block mt-1 cl-hint">You will receive a reminder during the 10 days before expiry.</small>
                         </div>
                     </div>
 
                     <div class="d-flex justify-content-end gap-2 mt-4 pt-3 border-top border-secondary border-opacity-10">
                         <?php if ($showForm && $hasCars): ?>
-                            <a href="car_license.php?car_id=<?php echo (int) ($selectedCar['car_license_id'] ?? 0); ?>" class="btn btn-outline-secondary px-4 py-2 fw-bold rounded-3" style="font-size:13px;">Cancel</a>
+                            <a href="car_license.php?car_id=<?php echo (int) ($selectedCar['car_license_id'] ?? 0); ?>" class="btn btn-outline-secondary px-4 py-2 fw-bold rounded-3 cl-btn">Cancel</a>
                         <?php endif; ?>
-                        <button type="submit" id="car-license-submit" class="btn btn-info px-4 py-2 fw-bold rounded-3 shadow-sm" style="font-size:13px;">
+                        <button type="submit" id="car-license-submit" class="btn btn-info px-4 py-2 fw-bold rounded-3 shadow-sm cl-btn">
                             <?php echo $isAdding ? 'Save Car License' : 'Update Car License'; ?> <i class="bi bi-arrow-right ms-2"></i>
                         </button>
                     </div>
