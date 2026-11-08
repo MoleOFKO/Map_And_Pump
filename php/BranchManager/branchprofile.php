@@ -1,7 +1,7 @@
 <?php
 /**
  * branchprofile.php  —  Branch (station) profile management
- * Shows physical info about the station itself (not the user account).
+ * Shows physical info about the station itself (not the user account
  */
 require_once __DIR__ . '/_helpers.php';
 require_once __DIR__ . '/../conn.php';
@@ -120,16 +120,14 @@ $stmt->execute([':b' => $branch['branch_id']]);
 $row = $stmt->fetch();
 $stock_pct = ($row && $row['cap'] > 0) ? round(($row['filled'] / $row['cap']) * 100) : 0;
 
-// pumps list for the map/grid
-$pumps = [];
-if ($pumpsTableExists) {
-    $stmt = $pdo->prepare("SELECT * FROM pumps WHERE branch_id = :b ORDER BY pump_no ASC");
-    $stmt->execute([':b' => $branch['branch_id']]);
-    $pumps = $stmt->fetchAll();
-}
-
 // tanks summary
-$stmt = $pdo->prepare("SELECT * FROM tanks WHERE branch_id = :b ORDER BY tank_id ASC");
+$stmt = $pdo->prepare("
+    SELECT t.*, COALESCE(ot.oil_name, CONCAT('Fuel ', t.tank_id)) AS fuel_name
+    FROM tanks t
+    LEFT JOIN oil_types ot ON ot.oil_type_id = t.oil_type_id
+    WHERE t.branch_id = :b
+    ORDER BY t.tank_id ASC
+");
 $stmt->execute([':b' => $branch['branch_id']]);
 $tanks = $stmt->fetchAll();
 
@@ -299,30 +297,19 @@ $has_unread   = $unread_count > 0;
   }
   .btn-save:hover{transform:translateY(-2px); box-shadow:0 12px 28px -8px rgba(56,189,248,0.7);}
 
-  /* right column: pumps grid + tanks summary + branch quick info */
-  .pump-grid{display:grid; grid-template-columns:repeat(2,1fr); gap:10px;}
-  .pump-mini{
-    background:var(--navy-950); border:1px solid rgba(255,255,255,0.06); border-radius:12px; padding:12px 14px;
-    display:flex; align-items:center; justify-content:space-between; font-size:13px;
-    transition: border-color 0.25s;
-  }
-  .pump-mini:hover{border-color:rgba(56,189,248,0.24);}
-  .pump-mini b{font-family:'Space Grotesk'; letter-spacing:0.5px;}
-  .p-dot{width:8px; height:8px; border-radius:50%; margin-right:8px; display:inline-block;}
-  .p-dot.active{background:var(--mint-400);}
-  .p-dot.idle{background:var(--slate-400);}
-  .p-dot.maintenance{background:var(--amber-400);}
-  .p-dot.offline{background:var(--red-400);}
-  .p-status{font-size:11.5px; color:var(--slate-400); display:flex; align-items:center;}
-
+  /* right column: tanks summary + branch quick info */
   .tank-mini{
-    background:var(--navy-950); border:1px solid rgba(255,255,255,0.06); border-radius:12px; padding:12px 14px; margin-top:10px;
+    background:var(--navy-950); border:1px solid rgba(255,255,255,0.06); border-radius:14px; padding:16px 18px;
   }
-  .tank-mini-top{display:flex; align-items:center; justify-content:space-between; font-size:13px; margin-bottom:8px;}
-  .tank-mini-top b{font-family:'Space Grotesk';}
-  .tank-mini-top .pct{font-weight:700; font-family:'Space Grotesk';}
-  .gauge-mini{height:6px; background:rgba(255,255,255,0.06); border-radius:99px; overflow:hidden;}
+  .tank-mini-top{display:flex; align-items:center; justify-content:space-between; gap:12px; font-size:14px; margin-bottom:12px;}
+  .tank-mini-top b{font-family:'Space Grotesk'; font-size:15px; letter-spacing:0.3px;}
+  .tank-mini-top .pct{font-weight:700; font-family:'Space Grotesk'; font-size:18px; line-height:1;}
+  .gauge-mini{height:8px; background:rgba(255,255,255,0.06); border-radius:99px; overflow:hidden;}
   .gauge-mini i{display:block; height:100%; border-radius:99px;}
+  .tank-mini-meta{display:flex; align-items:center; justify-content:space-between; gap:12px; font-size:12px; color:var(--slate-400); margin-top:12px;}
+  .tank-status{display:inline-flex; align-items:center; gap:6px; padding:3px 10px; border-radius:99px; font-size:11px; font-weight:600; background:rgba(148,163,184,0.12); color:var(--slate-400);}
+  .tank-status::before{content:''; width:6px; height:6px; border-radius:50%; background:currentColor;}
+  .tank-status.on{background:rgba(52,211,153,0.12); color:var(--mint-400);}
 
   .info-list{display:flex; flex-direction:column; gap:12px; font-size:13px;}
   .info-list .row{display:flex; justify-content:space-between; align-items:center; padding-bottom:12px; border-bottom:1px dashed rgba(255,255,255,0.06);}
@@ -366,6 +353,30 @@ $has_unread   = $unread_count > 0;
   .notif-item .text span { color:var(--slate-400); font-size:11.5px; display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .notif-item .time { font-size:10px; color:var(--slate-400); margin-top:4px; }
   @keyframes fadeInDown { from { opacity:0; transform: translateY(-8px); } to { opacity:1; transform: translateY(0); } }
+
+  /* ---------- Tank Carousel Styles ---------- */
+  .tank-panel-head{display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:18px;}
+  .tank-panel-head h3{margin-bottom:0;}
+  .tank-carousel-controls{display:flex; align-items:center; gap:8px;}
+  .tank-counter{font-size:12px; color:var(--slate-400); font-family:'Space Grotesk'; min-width:36px; text-align:center;}
+  .tank-carousel-container { position: relative; min-width: 0; }
+  .tank-slider-track { display: flex; overflow: hidden; scroll-behavior: smooth; width: 100%; min-width: 0; }
+  .tank-slide { flex: 0 0 100%; min-width: 0; }
+  .tank-carousel-nav {
+    background: var(--navy-900); border: 1px solid rgba(255,255,255,0.12);
+    color: var(--slate-50); width: 34px; height: 34px; border-radius: 50%; font-size: 13px; padding: 0;
+    display: flex; align-items:center; justify-content:center; cursor: pointer;
+    transition: background 0.2s, border-color 0.2s;
+  }
+  .tank-carousel-nav:hover { background: var(--navy-700); border-color: var(--sky-400); }
+  .tank-carousel-dots {
+    display: flex; justify-content: center; gap: 6px; margin-top: 16px;
+  }
+  .tank-dot {
+    width: 8px; height: 8px; border-radius: 50%; background: rgba(255,255,255,0.2);
+    display: block; transition: background 0.2s, width 0.2s; pointer-events: none;
+  }
+  .tank-dot.active { background: var(--slate-50); width: 20px; border-radius: 4px; }
 </style>
 </head>
 <body>
@@ -588,8 +599,8 @@ $has_unread   = $unread_count > 0;
           </form>
         </div>
 
-        <!-- RIGHT: quick info + pumps + tanks -->
-        <div style="display:flex; flex-direction:column; gap:20px;">
+        <!-- RIGHT: quick info + tanks -->
+        <div style="display:flex; flex-direction:column; gap:20px; min-width:0;">
           <div class="panel">
             <h3>Branch Quick Info</h3>
             <div class="info-list">
@@ -607,39 +618,51 @@ $has_unread   = $unread_count > 0;
           </div>
 
           <div class="panel">
-            <h3>Pumps On Site</h3>
-            <div class="pump-grid">
-              <?php if (!$pumps): ?>
-                <div style="grid-column:1/-1; color:var(--slate-400); font-size:12.5px;">No pumps registered for this branch yet.</div>
-              <?php else: foreach ($pumps as $p): ?>
-                <div class="pump-mini">
-                  <b>Pump #<?= (int)$p['pump_no'] ?></b>
-                  <span class="p-status"><span class="p-dot <?= h($p['status']) ?>"></span><?= h(ucfirst($p['status'])) ?></span>
+            <div class="tank-panel-head">
+              <h3>Fuel Tanks Overview</h3>
+              <?php if ($tanks && count($tanks) > 1): ?>
+                <div class="tank-carousel-controls">
+                  <button type="button" class="tank-carousel-nav tank-carousel-prev" id="tank-prev" aria-label="Previous tank"><i class="fa-solid fa-arrow-left"></i></button>
+                  <span class="tank-counter" id="tank-counter">1 / <?= count($tanks) ?></span>
+                  <button type="button" class="tank-carousel-nav tank-carousel-next" id="tank-next" aria-label="Next tank"><i class="fa-solid fa-arrow-right"></i></button>
                 </div>
-              <?php endforeach; endif; ?>
+              <?php endif; ?>
             </div>
-          </div>
-
-          <div class="panel">
-            <h3>Fuel Tanks Overview</h3>
             <?php if (!$tanks): ?>
               <div style="color:var(--slate-400); font-size:12.5px;">No tanks registered yet.</div>
-            <?php else: foreach ($tanks as $t):
-              $pct = $t['capacity_l'] > 0 ? round(($t['current_l'] / $t['capacity_l']) * 100) : 0;
-              $color = $pct <= $t['alert_pct'] ? 'var(--red-400)' : ($pct < 60 ? 'var(--amber-400)' : 'var(--mint-400)');
-            ?>
-              <div class="tank-mini">
-                <div class="tank-mini-top">
-                  <b><?= h($t['fuel_name']) ?></b>
-                  <span class="pct" style="color:<?= $color ?>"><?= $pct ?>%</span>
+            <?php else: ?>
+              <div class="tank-carousel-container">
+
+                <div class="tank-slider-track" id="tank-slider-track">
+                  <?php foreach ($tanks as $index => $t):
+                    $pct = $t['capacity_l'] > 0 ? round(($t['current_l'] / $t['capacity_l']) * 100) : 0;
+                    $color = $pct <= $t['alert_pct'] ? 'var(--red-400)' : ($pct < 60 ? 'var(--amber-400)' : 'var(--mint-400)');
+                  ?>
+                    <div class="tank-slide" data-index="<?= $index ?>">
+                      <div class="tank-mini">
+                        <div class="tank-mini-top">
+                          <b><?= h($t['fuel_name']) ?></b>
+                          <span class="pct" style="color:<?= $color ?>"><?= $pct ?>%</span>
+                        </div>
+                        <div class="gauge-mini"><i style="width:<?= $pct ?>%; background:<?= $color ?>;"></i></div>
+                        <div class="tank-mini-meta">
+                          <span><?= number_format((float)$t['current_l'], 2) ?> L used of <?= number_format((float)$t['capacity_l']) ?> L</span>
+                          <span class="tank-status <?= $t['is_enabled'] ? 'on' : '' ?>"><?= $t['is_enabled'] ? 'Enabled' : 'Disabled' ?></span>
+                        </div>
+                      </div>
+                    </div>
+                  <?php endforeach; ?>
                 </div>
-                <div class="gauge-mini"><i style="width:<?= $pct ?>%; background:<?= $color ?>;"></i></div>
-                <div style="display:flex; justify-content:space-between; font-size:11.5px; color:var(--slate-400); margin-top:6px;">
-                  <span><?= number_format((float)$t['current_l'], 2) ?> L used of <?= number_format((float)$t['capacity_l']) ?> L</span>
-                  <span><?= $t['is_enabled'] ? 'Enabled' : 'Disabled' ?></span>
-                </div>
+
+                <?php if (count($tanks) > 1): ?>
+                  <div class="tank-carousel-dots" id="tank-carousel-dots" aria-hidden="true">
+                    <?php foreach ($tanks as $index => $t): ?>
+                      <span class="tank-dot <?= $index === 0 ? 'active' : '' ?>"></span>
+                    <?php endforeach; ?>
+                  </div>
+                <?php endif; ?>
               </div>
-            <?php endforeach; endif; ?>
+            <?php endif; ?>
           </div>
         </div>
       </div>
@@ -757,6 +780,38 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 });
+// Tank Carousel Slider Controller
+  const tankTrack = document.getElementById('tank-slider-track');
+  const tankSlides = document.querySelectorAll('.tank-slide');
+  const tankPrev = document.getElementById('tank-prev');
+  const tankNext = document.getElementById('tank-next');
+  const tankDots = document.querySelectorAll('.tank-dot');
+  const tankCounter = document.getElementById('tank-counter');
+  
+  if (tankTrack && tankSlides.length > 0) {
+    let currentTankIndex = 0;
+    const totalTanks = tankSlides.length;
+
+    function updateTankSlide(index) {
+      if (index < 0) currentTankIndex = totalTanks - 1;
+      else if (index >= totalTanks) currentTankIndex = 0;
+      else currentTankIndex = index;
+
+      tankTrack.scrollTo({
+        left: tankTrack.clientWidth * currentTankIndex,
+        behavior: 'smooth'
+      });
+
+      tankDots.forEach((dot, idx) => {
+        dot.classList.toggle('active', idx === currentTankIndex);
+      });
+      if (tankCounter) tankCounter.textContent = (currentTankIndex + 1) + ' / ' + totalTanks;
+    }
+
+    if (tankNext) tankNext.addEventListener('click', () => updateTankSlide(currentTankIndex + 1));
+    if (tankPrev) tankPrev.addEventListener('click', () => updateTankSlide(currentTankIndex - 1));
+
+  }
 </script>
 </body>
 </html>

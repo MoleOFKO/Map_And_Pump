@@ -3,6 +3,28 @@ require_once __DIR__ . '/_helpers.php';
 require_once __DIR__ . '/../conn.php';
 require_branch_manager();
 
+$DEFAULT_FUEL_NAMES = ['Octane 92', 'Octane 95', 'Diesel', 'Premium Diesel'];
+
+function normalizeFuelName(string $name): string
+{
+    $normalized = preg_replace('/\s+/', ' ', trim($name));
+    return strtolower((string) $normalized);
+}
+
+function isDefaultFuelName(string $name): bool
+{
+    global $DEFAULT_FUEL_NAMES;
+
+    $normalized = normalizeFuelName($name);
+    foreach ($DEFAULT_FUEL_NAMES as $defaultName) {
+        if (normalizeFuelName($defaultName) === $normalized) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $ctx = current_context($pdo);
     $branch = $ctx['branch'] ?? null;
@@ -32,12 +54,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     json_out(['ok' => false, 'error' => 'Fuel name is required.'], 400);
                 }
 
-                // Duplicate name check (case-insensitive).
-                // JOIN with tanks so orphaned oil_types rows (no tank references) never block re-adding a deleted fuel type.
-                $dupCheck = $pdo->prepare('SELECT COUNT(*) FROM oil_types ot INNER JOIN tanks t ON t.oil_type_id = ot.oil_type_id WHERE LOWER(ot.oil_name) = LOWER(:name)');
-                $dupCheck->execute([':name' => $fuelName]);
+                if (isDefaultFuelName($fuelName)) {
+                    json_out(['ok' => false, 'error' => 'This default fuel type is already available to the branch.', 409]);
+                }
+
+                $dupCheck = $pdo->prepare(
+                    'SELECT COUNT(*)
+                     FROM tanks t
+                     INNER JOIN oil_types ot ON ot.oil_type_id = t.oil_type_id
+                     WHERE t.branch_id = :branch_id AND LOWER(ot.oil_name) = LOWER(:name)'
+                );
+                $dupCheck->execute([':branch_id' => $branchId, ':name' => $fuelName]);
                 if ((int)$dupCheck->fetchColumn() > 0) {
-                    json_out(['ok' => false, 'error' => 'A fuel type with this name already exists.'], 409);
+                    json_out(['ok' => false, 'error' => 'A fuel type with this name already exists in this branch.'], 409);
                 }
 
                 $pdo->beginTransaction();
@@ -71,44 +100,71 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     json_out(['ok' => false, 'error' => 'Invalid fuel record.'], 400);
                 }
 
-                $tankStmt = $pdo->prepare('SELECT oil_type_id FROM tanks WHERE tank_id = :tank_id AND branch_id = :branch_id LIMIT 1');
+                $tankStmt = $pdo->prepare('SELECT tank_id, oil_type_id FROM tanks WHERE tank_id = :tank_id AND branch_id = :branch_id LIMIT 1');
                 $tankStmt->execute([':tank_id' => $tankId, ':branch_id' => $branchId]);
-                $oldOilTypeId = (int)$tankStmt->fetchColumn();
-                if (!$oldOilTypeId) {
+                $tank = $tankStmt->fetch(PDO::FETCH_ASSOC);
+                if (!$tank) {
                     json_out(['ok' => false, 'error' => 'Fuel record not found in this branch.'], 404);
                 }
 
-                // Fetch current oil_name to detect name change
+                $oldOilTypeId = (int)($tank['oil_type_id'] ?? 0);
                 $curNameStmt = $pdo->prepare('SELECT oil_name FROM oil_types WHERE oil_type_id = :oid LIMIT 1');
                 $curNameStmt->execute([':oid' => $oldOilTypeId]);
                 $currentOilName = (string)$curNameStmt->fetchColumn();
-                $nameChanged = (strtolower(trim($fuelName)) !== strtolower(trim($currentOilName)));
+                $nameChanged = (normalizeFuelName($fuelName) !== normalizeFuelName($currentOilName));
+
+                if ($nameChanged && isDefaultFuelName($currentOilName)) {
+                    json_out(['ok' => false, 'error' => 'Default fuel names cannot be renamed.', 409]);
+                }
+
+                if ($nameChanged && isDefaultFuelName($fuelName)) {
+                    json_out(['ok' => false, 'error' => 'Default fuel names are reserved and cannot be assigned to custom fuel types.', 409]);
+                }
+
+                if (!$nameChanged) {
+                    $updTank = $pdo->prepare('UPDATE tanks SET capacity_l = :capacity_l, fuel_price = :price WHERE tank_id = :tank_id AND branch_id = :branch_id');
+                    $updTank->execute([
+                        ':capacity_l' => $capacityL,
+                        ':price' => $price,
+                        ':tank_id' => $tankId,
+                        ':branch_id' => $branchId,
+                    ]);
+                    json_out(['ok' => true]);
+                }
+
+                $dupCheck = $pdo->prepare(
+                    'SELECT COUNT(*)
+                     FROM tanks t
+                     INNER JOIN oil_types ot ON ot.oil_type_id = t.oil_type_id
+                     WHERE t.branch_id = :branch_id
+                       AND t.tank_id != :tank_id
+                       AND LOWER(ot.oil_name) = LOWER(:name)'
+                );
+                $dupCheck->execute([':branch_id' => $branchId, ':tank_id' => $tankId, ':name' => $fuelName]);
+                if ((int)$dupCheck->fetchColumn() > 0) {
+                    json_out(['ok' => false, 'error' => 'A fuel type with this name already exists in this branch.'], 409);
+                }
 
                 $pdo->beginTransaction();
                 try {
-                    if ($nameChanged) {
-                        // Name changed — insert a new oil_types row and point tank to it
-                        $ins = $pdo->prepare('INSERT INTO oil_types (oil_name) VALUES (:name)');
-                        $ins->execute([':name' => $fuelName]);
-                        $newOilTypeId = (int)$pdo->lastInsertId();
+                    $ins = $pdo->prepare('INSERT INTO oil_types (oil_name) VALUES (:name)');
+                    $ins->execute([':name' => $fuelName]);
+                    $newOilTypeId = (int)$pdo->lastInsertId();
 
-                        $updTank = $pdo->prepare('UPDATE tanks SET oil_type_id = :new_oil_type_id, capacity_l = :capacity_l, fuel_price = :price WHERE tank_id = :tank_id AND branch_id = :branch_id');
-                        $updTank->execute([
-                            ':new_oil_type_id' => $newOilTypeId,
-                            ':capacity_l' => $capacityL,
-                            ':price' => $price,
-                            ':tank_id' => $tankId,
-                            ':branch_id' => $branchId,
-                        ]);
-                    } else {
-                        // Name unchanged — update capacity and price only, keep existing oil_type_id
-                        $updTank = $pdo->prepare('UPDATE tanks SET capacity_l = :capacity_l, fuel_price = :price WHERE tank_id = :tank_id AND branch_id = :branch_id');
-                        $updTank->execute([
-                            ':capacity_l' => $capacityL,
-                            ':price' => $price,
-                            ':tank_id' => $tankId,
-                            ':branch_id' => $branchId,
-                        ]);
+                    $updTank = $pdo->prepare('UPDATE tanks SET oil_type_id = :new_oil_type_id, capacity_l = :capacity_l, fuel_price = :price WHERE tank_id = :tank_id AND branch_id = :branch_id');
+                    $updTank->execute([
+                        ':new_oil_type_id' => $newOilTypeId,
+                        ':capacity_l' => $capacityL,
+                        ':price' => $price,
+                        ':tank_id' => $tankId,
+                        ':branch_id' => $branchId,
+                    ]);
+
+                    $refCheck = $pdo->prepare('SELECT COUNT(*) FROM tanks WHERE oil_type_id = :old_oil_type_id');
+                    $refCheck->execute([':old_oil_type_id' => $oldOilTypeId]);
+                    if ((int)$refCheck->fetchColumn() === 0) {
+                        $deleteOld = $pdo->prepare('DELETE FROM oil_types WHERE oil_type_id = :old_oil_type_id');
+                        $deleteOld->execute([':old_oil_type_id' => $oldOilTypeId]);
                     }
 
                     $pdo->commit();
@@ -137,17 +193,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     json_out(['ok' => false, 'error' => 'Invalid tank id.'], 400);
                 }
 
-                $tankStmt = $pdo->prepare('SELECT oil_type_id FROM tanks WHERE tank_id = :tank_id AND branch_id = :branch_id LIMIT 1');
+                $tankStmt = $pdo->prepare('SELECT t.oil_type_id, ot.oil_name FROM tanks t LEFT JOIN oil_types ot ON ot.oil_type_id = t.oil_type_id WHERE t.tank_id = :tank_id AND t.branch_id = :branch_id LIMIT 1');
                 $tankStmt->execute([':tank_id' => $tankId, ':branch_id' => $branchId]);
-                $oilTypeId = (int)$tankStmt->fetchColumn();
-                if (!$oilTypeId) {
+                $tank = $tankStmt->fetch(PDO::FETCH_ASSOC);
+                if (!$tank) {
                     json_out(['ok' => false, 'error' => 'Fuel record not found in this branch.'], 404);
                 }
 
-                // Fetch the oil_name so orphaned rows with the same name can be purged
-                $oilNameFetch = $pdo->prepare('SELECT oil_name FROM oil_types WHERE oil_type_id = :oid LIMIT 1');
-                $oilNameFetch->execute([':oid' => $oilTypeId]);
-                $deletedOilName = (string)$oilNameFetch->fetchColumn();
+                $oilTypeId = (int)($tank['oil_type_id'] ?? 0);
+                $deletedOilName = (string)($tank['oil_name'] ?? '');
+                if (isDefaultFuelName($deletedOilName)) {
+                    json_out(['ok' => false, 'error' => 'Default fuel types cannot be removed.', 409]);
+                }
 
                 $pdo->beginTransaction();
                 try {
@@ -157,17 +214,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $stmt = $pdo->prepare('DELETE FROM tanks WHERE tank_id = :tank_id AND branch_id = :branch_id');
                     $stmt->execute([':tank_id' => $tankId, ':branch_id' => $branchId]);
 
-                    $check = $pdo->prepare('SELECT COUNT(*) FROM tanks WHERE oil_type_id = :oil_type_id');
-                    $check->execute([':oil_type_id' => $oilTypeId]);
-                    if ((int)$check->fetchColumn() === 0) {
+                    $refCheck = $pdo->prepare('SELECT COUNT(*) FROM tanks WHERE oil_type_id = :oil_type_id');
+                    $refCheck->execute([':oil_type_id' => $oilTypeId]);
+                    if ((int)$refCheck->fetchColumn() === 0) {
                         $deleteOilType = $pdo->prepare('DELETE FROM oil_types WHERE oil_type_id = :oil_type_id');
                         $deleteOilType->execute([':oil_type_id' => $oilTypeId]);
-                    }
-
-                    // Purge any remaining orphaned oil_types rows with the same name that have no tanks
-                    if ($deletedOilName !== '') {
-                        $purgeOrphans = $pdo->prepare('DELETE FROM oil_types WHERE LOWER(oil_name) = LOWER(:name) AND oil_type_id NOT IN (SELECT oil_type_id FROM tanks)');
-                        $purgeOrphans->execute([':name' => $deletedOilName]);
                     }
 
                     $pdo->commit();
@@ -233,7 +284,30 @@ $ctx = current_context($pdo);
 $user = $ctx['user'];
 $branch = $ctx['branch'];
 $branchId = (int)($branch['branch_id'] ?? 0);
+// --- ADD THIS AUTO-PROVISIONING BLOCK HERE ---
+$defaultFuels = ['Octane 92', 'Octane 95', 'Diesel', 'Premium Diesel'];
+foreach ($defaultFuels as $defaultName) {
+    $otStmt = $pdo->prepare('SELECT oil_type_id FROM oil_types WHERE LOWER(oil_name) = LOWER(:name) LIMIT 1');
+    $otStmt->execute([':name' => $defaultName]);
+    $oilTypeId = $otStmt->fetchColumn();
 
+    if (!$oilTypeId) {
+        $insOt = $pdo->prepare('INSERT INTO oil_types (oil_name) VALUES (:name)');
+        $insOt->execute([':name' => $defaultName]);
+        $oilTypeId = $pdo->lastInsertId();
+    }
+
+    $chkTank = $pdo->prepare('SELECT COUNT(*) FROM tanks WHERE branch_id = :branch_id AND oil_type_id = :oil_type_id');
+    $chkTank->execute([':branch_id' => $branchId, ':oil_type_id' => $oilTypeId]);
+    
+    if ((int)$chkTank->fetchColumn() === 0) {
+        $insTank = $pdo->prepare('INSERT INTO tanks (branch_id, oil_type_id, fuel_price, capacity_l, current_l, alert_pct, is_enabled) VALUES (:branch_id, :oil_type_id, 0, 10000, 0, 25, 1)');
+        $insTank->execute([
+            ':branch_id' => $branchId,
+            ':oil_type_id' => $oilTypeId
+        ]);
+    }
+}
 $stmt = $pdo->prepare(
     'SELECT t.tank_id, t.branch_id, t.oil_type_id, t.capacity_l, t.current_l, t.alert_pct, t.is_enabled, t.fuel_price,
             COALESCE(ot.oil_name, CONCAT("Fuel ", t.tank_id)) AS fuel_name
@@ -579,6 +653,8 @@ body[unresolved] {opacity: 0; display: block; overflow: hidden; position: relati
     white-space: nowrap;
   }
   .fuel-row-btn {
+    height: 34px;
+    padding: 0 14px;
     border: 1px solid rgba(148,163,184,0.45);
     background: transparent;
     color: var(--slate-50);
@@ -587,11 +663,10 @@ body[unresolved] {opacity: 0; display: block; overflow: hidden; position: relati
     justify-content: center;
     border-radius: 10px;
     cursor: pointer;
-    padding: 6px 14px;
-    font-family: 'Space Grotesk', sans-serif;
-    font-size: 12.5px;
+    font-size: 13px;
     font-weight: 700;
-    line-height: 1.2;
+    font-family: inherit;
+    line-height: 1;
     white-space: nowrap;
     transition: background 0.2s ease, box-shadow 0.2s ease;
   }
@@ -599,6 +674,10 @@ body[unresolved] {opacity: 0; display: block; overflow: hidden; position: relati
   .fuel-row-btn.toggle-btn.on { color: #fb923c; border-color: rgba(245,158,11,0.75); }
   .fuel-row-btn.toggle-btn.off { color: var(--mint-400); border-color: rgba(52,211,153,0.6); }
   .fuel-row-btn.delete-btn { color: var(--red-400); border-color: rgba(220,38,38,0.8); }
+  .fuel-row-btn:hover,
+  .fuel-row-btn:focus-visible {
+    background: rgba(255,255,255,0.06);
+  }
   .fuel-row-btn.edit-btn:hover { background: rgba(148,163,184,0.14); }
   .fuel-row-btn.toggle-btn.on:hover { background: rgba(245,158,11,0.12); }
   .fuel-row-btn.toggle-btn.off:hover { background: rgba(52,211,153,0.12); }
@@ -606,9 +685,9 @@ body[unresolved] {opacity: 0; display: block; overflow: hidden; position: relati
   .fuel-row-btn:focus-visible { outline: 2px solid rgba(148,163,184,0.6); outline-offset: 2px; }
   .fuel-action-table thead th:last-child,
   .fuel-action-table tbody td:last-child {
-    width: 124px;
-    min-width: 124px;
-    max-width: 124px;
+    width: 270px;
+    min-width: 270px;
+    max-width: 270px;
     text-align: right;
     white-space: nowrap;
     padding-left: 10px;
@@ -1052,8 +1131,8 @@ body[unresolved] {opacity: 0; display: block; overflow: hidden; position: relati
                       <button type="button" class="fuel-row-btn edit-btn edit-action" data-action="edit" data-id="<?= (int)$tank['tank_id'] ?>" data-fuel="fuel_<?= (int)$tank['tank_id'] ?>" data-name="<?= htmlspecialchars($tank['fuel_name'], ENT_QUOTES, 'UTF-8') ?>" data-capacity="<?= (int)$tank['capacity_l'] ?>" data-price="<?= htmlspecialchars((string)($tank['fuel_price'] ?? '0'), ENT_QUOTES, 'UTF-8') ?>" title="Edit fuel" aria-label="Edit fuel">
                         Edit
                       </button>
-                      <button type="button" class="fuel-row-btn toggle-btn <?= $enabled ? 'on' : 'off' ?>" data-action="toggle" data-id="<?= (int)$tank['tank_id'] ?>" data-fuel="fuel_<?= (int)$tank['tank_id'] ?>" data-enabled="<?= (int)$enabled ?>" title="<?= $enabled ? 'Disable fuel' : 'Activate fuel' ?>" aria-label="<?= $enabled ? 'Disable fuel' : 'Activate fuel' ?>">
-                        <?= $enabled ? 'Disable' : 'Activate' ?>
+                      <button type="button" class="fuel-row-btn toggle-btn <?= $enabled ? 'on' : 'off' ?>" data-action="toggle" data-id="<?= (int)$tank['tank_id'] ?>" data-fuel="fuel_<?= (int)$tank['tank_id'] ?>" data-enabled="<?= (int)$enabled ?>" title="<?= $enabled ? 'Disable fuel' : 'Enable fuel' ?>" aria-label="<?= $enabled ? 'Disable fuel' : 'Enable fuel' ?>">
+                        <?= $enabled ? 'Disable' : 'Enable' ?>
                       </button>
                       <button type="button" class="fuel-row-btn delete-btn" data-action="delete" data-id="<?= (int)$tank['tank_id'] ?>" data-fuel="fuel_<?= (int)$tank['tank_id'] ?>" title="Delete fuel type" aria-label="Delete fuel type">
                         Delete
@@ -1119,7 +1198,7 @@ body[unresolved] {opacity: 0; display: block; overflow: hidden; position: relati
       <input type="hidden" name="action" value="save_limits">
       <div class="limit-form-list" id="limit-form-list">
         <?php foreach ($tanks as $tank): ?>
-          <div class="limit-form-item">
+                   <div class="limit-form-item">
             <div class="limit-name-wrap">
               <span class="limit-dot"></span>
               <label for="limit-<?= (int)$tank['tank_id'] ?>"><?= htmlspecialchars($tank['fuel_name']) ?></label>
