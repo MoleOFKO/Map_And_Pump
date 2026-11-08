@@ -33,7 +33,6 @@ function map_pump_station_coordinates(string $location): ?array
 
 $customerStationsData = [];
 try {
-    $latestInventorySql = map_pump_latest_station_inventory_sql();
     $monthlyFeePaidSql = $billingReady
         ? "EXISTS (
                 SELECT 1 FROM company_loyalty_station_fees fee
@@ -60,15 +59,11 @@ try {
                            AND active_b.status IN ('notfilled','waiting','serving')
                            AND active_b.expire_at > NOW()
                      ), 0)) AS fuel_stock_liters,
-                     ot.oil_type_id, ot.oil_name,
-                     latest_inventory.price_per_litre, latest_inventory.is_active AS price_is_active
+                            ot.oil_type_id, ot.oil_name, t.fuel_price AS price_per_litre,
+                            t.is_enabled AS price_is_active
          FROM branches b
          LEFT JOIN tanks t ON t.branch_id = b.branch_id
-            AND t.is_enabled = 1
             LEFT JOIN oil_types ot ON ot.oil_type_id = t.oil_type_id
-         LEFT JOIN ({$latestInventorySql}) latest_inventory
-            ON latest_inventory.station_id = b.branch_id
-            AND latest_inventory.oil_type_id = ot.oil_type_id
          ORDER BY b.branch_id ASC, ot.oil_name ASC"
     );
     $stationStmt->execute($billingReady ? [$billingMonth] : []);
@@ -143,7 +138,7 @@ try {
     unset($station);
 
     try {
-        if ($stationsById && map_pump_usage_history_schema_ready($pdo) && map_pump_feedback_schema_ready($pdo)) {
+        if ($stationsById && map_pump_feedback_schema_ready($pdo)) {
             $reviewPlaceholders = implode(',', array_fill(0, count($stationsById), '?'));
             $reviewStmt = $pdo->prepare(
                 "SELECT f.station_id, f.rating,
@@ -151,22 +146,15 @@ try {
                              THEN TRIM(SUBSTRING(f.feedback, LOCATE(CHAR(10), f.feedback) + 1))
                              ELSE TRIM(f.feedback) END AS review_text,
                         u.user_name AS customer_name, f.created_at
-                 FROM feedback f
-                 INNER JOIN usage_history uh
-                    ON uh.usage_id = f.usage_id
-                    AND uh.station_id = f.station_id
-                    AND uh.user_id = f.user_id
-                 INNER JOIN users u ON u.user_id = f.user_id
+                                 FROM feedback f
+                                 LEFT JOIN users u ON u.user_id = f.user_id
                  WHERE f.station_id IN ({$reviewPlaceholders})
-                   AND LOWER(uh.status) = 'filled'
-                   AND uh.staff_user_id IS NOT NULL
-                   AND COALESCE(uh.is_internal, 0) = 0
                  ORDER BY f.station_id ASC, f.created_at DESC, f.feedback_id DESC"
             );
             $reviewStmt->execute(array_keys($stationsById));
             foreach ($reviewStmt->fetchAll(PDO::FETCH_ASSOC) as $reviewRow) {
                 $stationId = (int) $reviewRow['station_id'];
-                if (count($stationsById[$stationId]['reviews'] ?? []) >= 5) {
+                if (count($stationsById[$stationId]['reviews'] ?? []) >= 12) {
                     continue;
                 }
 
@@ -624,6 +612,39 @@ body.customer-light-mode .customer-map-back-btn:hover {
     border-radius: 50%;
     box-shadow: 0 1px 6px rgba(0, 0, 0, 0.45);
 }
+.station-review-summary {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 12px;
+    border: 1px solid rgba(255,255,255,.1);
+    border-radius: 8px;
+    background: rgba(255,255,255,.035);
+}
+.station-review-average { flex: 0 0 68px; text-align: center; }
+.station-review-average strong { display: block; color: #fff; font-size: 24px; line-height: 1.1; }
+.station-review-stars { color: #fbbf24; letter-spacing: 1px; white-space: nowrap; }
+.station-review-caption { color: #9aa8b8; font-size: 10px; }
+.station-review-distribution { display: grid; flex: 1; gap: 5px; }
+.station-review-row { display: flex; align-items: center; gap: 7px; color: #dce5ef; font-size: 10px; }
+.station-review-row-label { flex: 0 0 30px; }
+.station-review-track { height: 5px; flex: 1; overflow: hidden; border-radius: 999px; background: rgba(255,255,255,.12); }
+.station-review-fill { display: block; height: 100%; border-radius: inherit; background: #fbbf24; }
+.station-review-percent { flex: 0 0 28px; color: #9aa8b8; text-align: right; }
+.station-review-filters { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; }
+.station-review-filter { padding: 5px 8px; border: 1px solid rgba(255,255,255,.12); border-radius: 6px; color: #dce5ef; background: rgba(255,255,255,.04); font-size: 10px; }
+.station-review-filter.active { color: #0b1b2b; border-color: #fbbf24; background: #fbbf24; }
+.station-review-filter:focus-visible { outline: 2px solid #0dcaf0; outline-offset: 2px; }
+.customer-review-card { padding: 12px; border: 1px solid rgba(255,255,255,.12); border-radius: 8px; background: rgba(255,255,255,.025); }
+.customer-review-card[hidden] { display: none !important; }
+.customer-review-card p { color: #dce5ef; font-size: 12px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
+body.customer-light-mode .station-review-summary,
+body.customer-light-mode .customer-review-card { border-color: rgba(15,23,42,.12); background: rgba(255,255,255,.65); }
+body.customer-light-mode .station-review-average strong,
+body.customer-light-mode .station-review-row,
+body.customer-light-mode .customer-review-card p { color: #102033; }
+body.customer-light-mode .station-review-caption,
+body.customer-light-mode .station-review-percent { color: #526174; }
 .customer-station-marker.active { background: #198754; }
 .customer-station-marker.inactive { background: #6c757d; }
 .customer-station-tooltip { min-width: 160px; }
@@ -698,7 +719,10 @@ body.customer-light-mode .customer-map-recenter-btn:hover {
             </button>
             <section id="station-reviews" class="d-none mt-3" aria-live="polite" aria-label="Customer reviews for this station">
                 <h5 class="text-white mb-2">Customer reviews</h5>
+                <div id="station-review-summary" class="station-review-summary mb-2"></div>
+                <div id="station-review-filters" class="station-review-filters" role="group" aria-label="Filter reviews by rating"></div>
                 <div id="station-reviews-list" class="d-flex flex-column gap-2"></div>
+                <p id="station-review-empty" class="text-secondary small mb-0" hidden>No reviews match this rating.</p>
             </section>
         </div>
 
@@ -1032,7 +1056,6 @@ body.customer-light-mode .customer-map-recenter-btn:hover {
                     direction: 'top',
                     offset: [0, -16]
                 });
-                marker.bindPopup(createStationPopup(station));
                 marker.on('click', () => selectStation(station.id));
             });
             if (stationsData.length && !autoSelectNearest && !preselectStationId) {
@@ -1196,6 +1219,9 @@ body.customer-light-mode .customer-map-recenter-btn:hover {
         const reviewsToggle = document.getElementById('station-reviews-toggle');
         const reviewsPanel = document.getElementById('station-reviews');
         const reviewsList = document.getElementById('station-reviews-list');
+        const reviewSummary = document.getElementById('station-review-summary');
+        const reviewFilters = document.getElementById('station-review-filters');
+        const reviewEmpty = document.getElementById('station-review-empty');
         if (!station) return;
 
         name.textContent = station.name;
@@ -1223,33 +1249,123 @@ body.customer-light-mode .customer-map-recenter-btn:hover {
         reviewsPanel.classList.add('d-none');
         reviewsToggle.setAttribute('aria-expanded', 'false');
         reviewsList.replaceChildren();
+        reviewSummary.replaceChildren();
+        reviewFilters.replaceChildren();
+        reviewEmpty.hidden = true;
         if (station.reviews?.length) {
+            const ratedReviews = station.reviews.filter(review => Number(review.rating) >= 1 && Number(review.rating) <= 5);
+            const ratingAverage = ratedReviews.length
+                ? ratedReviews.reduce((sum, review) => sum + Number(review.rating), 0) / ratedReviews.length
+                : 0;
+            const average = document.createElement('div');
+            average.className = 'station-review-average';
+            const averageValue = document.createElement('strong');
+            averageValue.textContent = ratingAverage.toFixed(1);
+            const averageStars = document.createElement('span');
+            averageStars.className = 'station-review-stars';
+            averageStars.textContent = '\u2605'.repeat(Math.round(ratingAverage)) + '\u2606'.repeat(5 - Math.round(ratingAverage));
+            averageStars.setAttribute('aria-label', `${ratingAverage.toFixed(1)} out of 5 stars`);
+            const averageCaption = document.createElement('span');
+            averageCaption.className = 'station-review-caption';
+            averageCaption.textContent = `${ratedReviews.length} ${ratedReviews.length === 1 ? 'rating' : 'ratings'}`;
+            average.append(averageValue, averageStars, averageCaption);
+
+            const distribution = document.createElement('div');
+            distribution.className = 'station-review-distribution';
+            for (let level = 5; level >= 1; level--) {
+                const count = ratedReviews.filter(review => Number(review.rating) === level).length;
+                const percentage = ratedReviews.length ? Math.round(count / ratedReviews.length * 100) : 0;
+                const row = document.createElement('div');
+                row.className = 'station-review-row';
+                const label = document.createElement('span');
+                label.className = 'station-review-row-label';
+                label.textContent = `${level} star`;
+                const track = document.createElement('span');
+                track.className = 'station-review-track';
+                track.setAttribute('aria-label', `${count} ${level}-star reviews`);
+                const fill = document.createElement('span');
+                fill.className = 'station-review-fill';
+                fill.style.width = `${percentage}%`;
+                track.append(fill);
+                const percent = document.createElement('span');
+                percent.className = 'station-review-percent';
+                percent.textContent = `${percentage}%`;
+                row.append(label, track, percent);
+                distribution.append(row);
+            }
+            reviewSummary.append(average, distribution);
+
+            const allFilter = document.createElement('button');
+            allFilter.type = 'button';
+            allFilter.className = 'station-review-filter active';
+            allFilter.dataset.ratingFilter = 'all';
+            allFilter.setAttribute('aria-pressed', 'true');
+            allFilter.textContent = 'All reviews';
+            reviewFilters.append(allFilter);
+            for (let level = 5; level >= 1; level--) {
+                const filter = document.createElement('button');
+                filter.type = 'button';
+                filter.className = 'station-review-filter';
+                filter.dataset.ratingFilter = String(level);
+                filter.setAttribute('aria-pressed', 'false');
+                filter.textContent = `${level} star${level === 1 ? '' : 's'}`;
+                reviewFilters.append(filter);
+            }
+            reviewFilters.querySelectorAll('.station-review-filter').forEach(filter => {
+                filter.addEventListener('click', () => {
+                    reviewFilters.querySelectorAll('.station-review-filter').forEach(button => {
+                        const active = button === filter;
+                        button.classList.toggle('active', active);
+                        button.setAttribute('aria-pressed', String(active));
+                    });
+                    const selectedRating = filter.dataset.ratingFilter;
+                    let visibleCount = 0;
+                    reviewsList.querySelectorAll('.customer-review-card').forEach(card => {
+                        const visible = selectedRating === 'all' || card.dataset.rating === selectedRating;
+                        card.hidden = !visible;
+                        if (visible) visibleCount++;
+                    });
+                    reviewEmpty.hidden = visibleCount > 0;
+                });
+            });
+
             station.reviews.forEach(review => {
                 const reviewCard = document.createElement('article');
-                reviewCard.className = 'p-3 rounded-2 border border-secondary border-opacity-25';
+                reviewCard.className = 'customer-review-card';
+                const ratingValue = Math.max(0, Math.min(5, Number(review.rating) || 0));
+                reviewCard.dataset.rating = String(ratingValue);
                 const heading = document.createElement('div');
                 heading.className = 'd-flex justify-content-between gap-2';
                 const customer = document.createElement('strong');
                 customer.className = 'text-white';
                 customer.textContent = review.customer || 'Customer';
                 const rating = document.createElement('span');
-                rating.className = 'text-warning small';
-                rating.textContent = review.rating > 0 ? `Rating ${review.rating}/5` : 'No rating';
+                rating.className = 'station-review-stars small';
+                rating.textContent = ratingValue > 0
+                    ? '\u2605'.repeat(ratingValue) + '\u2606'.repeat(5 - ratingValue)
+                    : 'No rating';
+                rating.setAttribute('aria-label', ratingValue > 0 ? `${ratingValue} out of 5 stars` : 'No rating');
                 heading.append(customer, rating);
                 const date = document.createElement('small');
                 date.className = 'text-secondary d-block mt-1';
                 date.textContent = review.createdAt ? new Date(review.createdAt.replace(' ', 'T')).toLocaleDateString() : '';
                 const text = document.createElement('p');
-                text.className = 'text-secondary small mb-0 mt-2';
+                text.className = 'mb-0 mt-2';
                 text.textContent = review.text || 'No written comment.';
                 reviewCard.append(heading, date, text);
                 reviewsList.append(reviewCard);
             });
         } else {
+            reviewSummary.classList.add('d-none');
+            reviewFilters.classList.add('d-none');
             const emptyState = document.createElement('p');
             emptyState.className = 'text-secondary small mb-0';
             emptyState.textContent = 'No customer reviews for this station yet.';
             reviewsList.append(emptyState);
+        }
+        if (station.reviews?.length) {
+            reviewSummary.classList.remove('d-none');
+            reviewFilters.classList.remove('d-none');
         }
 
         const fuels = station.fuels && station.fuels.length
@@ -1406,31 +1522,6 @@ body.customer-light-mode .customer-map-recenter-btn:hover {
 
     document.getElementById('station-fuel-select').addEventListener('change', updateSelectedFuelDetails);
     document.getElementById('booking-car-select').addEventListener('change', updateBookingCarQuota);
-
-    function createStationPopup(station) {
-        const popup = document.createElement('div');
-        const name = document.createElement('strong');
-        const address = document.createElement('div');
-        const status = document.createElement('div');
-        const fuels = document.createElement('div');
-
-        name.textContent = station.name;
-        address.textContent = station.address;
-        status.textContent = `Station status: ${station.status}`;
-        fuels.textContent = station.fuels.length
-            ? station.fuels.map(fuel => station.isOpen
-                ? `${fuel.name}: ${Number(fuel.price).toLocaleString()} MMK/L, ${Number(fuel.stock).toLocaleString()} L left`
-                : `${fuel.name}: ${Number(fuel.stock).toLocaleString()} L left`).join(' · ')
-            : 'No active fuel available';
-        address.style.marginTop = '4px';
-        status.style.marginTop = '6px';
-        status.style.fontWeight = '600';
-        status.style.color = station.isActive ? '#198754' : '#b45309';
-        fuels.style.marginTop = '4px';
-
-        popup.append(name, address, status, fuels);
-        return popup;
-    }
 
     function createStationIcon(station) {
         return L.divIcon({

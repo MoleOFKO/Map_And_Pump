@@ -79,28 +79,18 @@ try {
         exit;
     }
 
-    $latestInventorySql = map_pump_latest_station_inventory_sql();
     $stationStmt = $pdo->prepare(
         "SELECT b.branch_id AS station_id, b.branch_name AS station_name,
-                ot.oil_type_id, ot.oil_name, t.current_l AS available_liters,
-                latest_inventory.price_per_litre
+                     ot.oil_type_id, ot.oil_name, t.current_l AS available_liters,
+                     t.fuel_price AS price_per_litre
          FROM branches b
          INNER JOIN tanks t ON t.branch_id = b.branch_id
             AND t.is_enabled = 1
             AND t.current_l > 0
-         INNER JOIN oil_types ot ON LOWER(REPLACE(ot.oil_name, ' ', '')) = LOWER(REPLACE(:fuel_type, ' ', ''))
-            AND (
-                (t.fuel_code = 'p92' AND LOWER(REPLACE(ot.oil_name, ' ', '')) = 'octane92')
-                OR (t.fuel_code = 'p95' AND LOWER(REPLACE(ot.oil_name, ' ', '')) = 'octane95')
-                OR (t.fuel_code = 'dsl' AND LOWER(REPLACE(ot.oil_name, ' ', '')) IN ('disel', 'diesel'))
-                OR (t.fuel_code = 'pdsl' AND LOWER(REPLACE(ot.oil_name, ' ', '')) IN ('premiumdisel', 'premiumdiesel'))
-            )
-         INNER JOIN ({$latestInventorySql}) latest_inventory
-            ON latest_inventory.station_id = b.branch_id
-            AND latest_inventory.oil_type_id = ot.oil_type_id
-            AND latest_inventory.is_active = 1
-            AND latest_inventory.price_per_litre > 0
+            INNER JOIN oil_types ot ON ot.oil_type_id = t.oil_type_id
+                AND LOWER(REPLACE(ot.oil_name, ' ', '')) = LOWER(REPLACE(:fuel_type, ' ', ''))
          WHERE b.branch_id = :station_id
+              AND CAST(NULLIF(t.fuel_price, '') AS DECIMAL(12,2)) > 0
            AND LOWER(COALESCE(b.status, 'active')) = 'active'
            AND EXISTS (
                SELECT 1
@@ -263,14 +253,10 @@ try {
     }
 
     $stationId = (int)$stationFuel['station_id'];
-    $tankFuelCode = match (strtolower(preg_replace('/\s+/', '', $fuelType))) {
-        'octane92' => 'p92', 'octane95' => 'p95', 'disel', 'diesel' => 'dsl',
-        'premiumdisel', 'premiumdiesel' => 'pdsl', default => '',
-    };
-    $tankStmt = $pdo->prepare('SELECT tank_id, current_l FROM tanks WHERE branch_id = ? AND fuel_code = ? AND is_enabled = 1 LIMIT 1 FOR UPDATE');
-    $tankStmt->execute([$stationId, $tankFuelCode]);
+    $tankStmt = $pdo->prepare('SELECT tank_id, oil_type_id, current_l, fuel_price FROM tanks WHERE branch_id = ? AND oil_type_id = ? AND is_enabled = 1 LIMIT 1 FOR UPDATE');
+    $tankStmt->execute([$stationId, $oilTypeId]);
     $tankRow = $tankStmt->fetch(PDO::FETCH_ASSOC);
-    if (!$tankRow || $tankFuelCode === '') {
+    if (!$tankRow || (float)$tankRow['fuel_price'] <= 0) {
         $pdo->rollBack();
         http_response_code(422);
         echo json_encode(['success' => false, 'message' => 'This station or fuel type is no longer available. Please refresh and choose another station.']);
@@ -316,20 +302,7 @@ try {
         exit;
     }
 
-    $priceLock = $pdo->prepare("SELECT inventory_id, price_per_litre, is_active
-        FROM station_oil_inventory
-        WHERE station_id = ? AND oil_type_id = ?
-        ORDER BY inventory_id DESC
-        LIMIT 1 FOR UPDATE");
-    $priceLock->execute([$stationId, $oilTypeId]);
-    $lockedPrice = $priceLock->fetch(PDO::FETCH_ASSOC);
-    if (!$lockedPrice || (int)$lockedPrice['is_active'] !== 1 || (float)$lockedPrice['price_per_litre'] <= 0) {
-        $pdo->rollBack();
-        http_response_code(409);
-        echo json_encode(['success' => false, 'message' => 'This fuel is no longer offered at the selected station. Please refresh and choose another option.']);
-        exit;
-    }
-    $stationFuel['price_per_litre'] = (float)$lockedPrice['price_per_litre'];
+    $stationFuel['price_per_litre'] = (float)$tankRow['fuel_price'];
     $stationName = (string)$lockedStation['branch_name'];
     $displayPayload = $bookingCode . '|' . $stationName . '|' . $fuelType . '|' . rtrim(rtrim(number_format($quantity, 1, '.', ''), '0'), '.') . 'L';
 
