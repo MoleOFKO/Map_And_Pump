@@ -400,6 +400,7 @@ function map_pump_existing_customer_invitation(PDO $pdo, int $branchId, string $
 
     $hqId = map_pump_branch_manager_hq($pdo, $branchId, $managerUserId);
     $companyName = map_pump_branch_company_name($pdo, $branchId);
+    $roleName = 'Staff';
 
     $insert = $pdo->prepare(
         "INSERT INTO invitations (headquarter_id, invited_user_id, invited_email, business_role_id, station_id, status, created_at)
@@ -415,8 +416,8 @@ function map_pump_existing_customer_invitation(PDO $pdo, int $branchId, string $
     $invitationId = (int) $pdo->lastInsertId();
 
     $link = map_pump_staff_invitation_link($invitationId);
-    $body = '<p>Hello,</p><p>You have been invited to join <strong>' . htmlspecialchars($companyName, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') . '</strong> as a staff member.</p><p><strong>Reason:</strong><br>' . nl2br(htmlspecialchars($hireMessage, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8')) . '</p><p>Accept the invitation here:</p><p><a href="' . htmlspecialchars($link, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') . '">Accept invitation</a></p><p>Thank you,<br>' . htmlspecialchars($companyName, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') . '</p>';
-    $subject = 'Staff invitation from ' . $companyName;
+    $body = '<p>Hello,</p><p>You have been invited to join <strong>' . htmlspecialchars($companyName, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') . '</strong> as a <strong>' . htmlspecialchars($roleName, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') . '</strong>.</p><p><strong>Reason:</strong><br>' . nl2br(htmlspecialchars($hireMessage, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8')) . '</p><p>Accept the invitation here:</p><p><a href="' . htmlspecialchars($link, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') . '">Accept invitation</a></p><p>Thank you,<br>' . htmlspecialchars($companyName, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') . '</p>';
+    $subject = 'Invitation to join ' . $companyName . ' as a ' . $roleName;
 
     $notifId = notif_create($pdo, null, $email, 'staff_invitation', $subject, $body, $invitationId);
     $pdo->prepare('UPDATE invitations SET notification_id = ? WHERE invitation_id = ?')->execute([$notifId, $invitationId]);
@@ -507,14 +508,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                     $staffId = (int) $pdo->lastInsertId();
                     $companyName = map_pump_branch_company_name($pdo, $bid);
-                    $emailSent = map_pump_send_staff_invitation_email($email, '', '', [
-                        'company_name' => $companyName,
-                        'role_name' => 'Staff',
-                        'station_name' => $companyName,
-                        'account_active' => true,
-                        'password_setup_sent' => false,
-                    ]);
-                    $notificationMessage = $emailSent ? 'Standalone staff account created and invitation sent.' : 'Standalone staff account created. Email delivery could not be completed.';
+                    $roleName = 'Staff';
+                    $loginLink = ((isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http') . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost') . '/php/Login/login.php';
+                    $body = '<p>Hello ' . htmlspecialchars($fullName, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') . ',</p>'
+                        . '<p>You have been invited to join <strong>' . htmlspecialchars($companyName, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') . '</strong> as a <strong>' . htmlspecialchars($roleName, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') . '</strong>.</p>'
+                        . '<p>Your email: <strong>' . htmlspecialchars($email, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') . '</strong></p>'
+                        . '<p>Your password: <strong>' . htmlspecialchars($password, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') . '</strong></p>'
+                        . '<p style="margin: 24px 0;">'
+                        . '<a href="' . htmlspecialchars($loginLink, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') . '" style="display:inline-block;background-color:#0d6efd;color:#ffffff;text-decoration:none;padding:12px 24px;border-radius:6px;font-weight:600;">Login to Map & Pump</a>'
+                        . '</p>'
+                        . '<p>After signing in, you can use your existing email and password to access your staff account.</p>';
+                    $subject = 'Invitation to join ' . $companyName . ' as a ' . $roleName;
+                    $emailSent = map_pump_send_staff_invitation_email($email, $subject, $body);
+                    $notificationMessage = $emailSent ? 'Standalone staff account created and login instructions sent.' : 'Standalone staff account created. Email delivery could not be completed; share the password securely with the staff member.';
                     $pdo->commit();
                     log_activity($pdo, $bid, 'user', $user['user_id'], $user['full_name'], 'Created standalone staff account: ' . $fullName . ' (' . $staffCode . ')');
                     json_out(['ok' => true, 'message' => $notificationMessage, 'staff_id' => $staffId]);
@@ -937,14 +943,14 @@ try {
          WHERE s.branch_id = :branch_id";
     $activityParams = [':branch_id' => $bid];
     if ($activityStart !== '') {
-        $activitySql += ' AND DATE(l.created_at) >= :start_date';
+        $activitySql .= ' AND DATE(l.created_at) >= :start_date';
         $activityParams[':start_date'] = $activityStart;
     }
     if ($activityEnd !== '') {
-        $activitySql += ' AND DATE(l.created_at) <= :end_date';
+        $activitySql .= ' AND DATE(l.created_at) <= :end_date';
         $activityParams[':end_date'] = $activityEnd;
     }
-    $activitySql += ' ORDER BY l.created_at DESC, l.log_id DESC';
+    $activitySql .= ' ORDER BY l.created_at DESC, l.log_id DESC';
     $activityStmt = $pdo->prepare($activitySql);
     $activityStmt->execute($activityParams);
     $activities = $activityStmt->fetchAll(PDO::FETCH_ASSOC);
@@ -958,7 +964,7 @@ try {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>MAP & PUMP â€” Manage Staff</title>
+<title>MAP & PUMP &mdash; Manage Staff</title>
 
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
@@ -1351,6 +1357,18 @@ try {
   }
   .activity-row:hover{background: rgba(255,255,255,0.01);}
   .activity-row:last-child{border-bottom:none;}
+  #tab-activity > .panel{padding:24px;}
+  #tab-activity .staff-activity-toolbar{
+    display:flex; align-items:center; justify-content:space-between;
+    gap:20px; flex-wrap:wrap; margin-bottom:22px;
+  }
+  #tab-activity .staff-activity-heading{min-width:0;}
+  #tab-activity .staff-activity-heading h3{
+    font-size:16px; font-weight:700; line-height:1.2; margin:0 0 12px;
+  }
+  #tab-activity .staff-activity-heading p{
+    font-size:13.5px; line-height:1.5; color:var(--slate-300); margin:0;
+  }
   .activity-scroll {
     overflow-x: hidden;
     overflow-y: hidden;

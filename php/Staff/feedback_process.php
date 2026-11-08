@@ -40,27 +40,28 @@ try {
         throw new RuntimeException('Feedback storage is unavailable.');
     }
 
-    $stationStmt = $pdo->prepare(
-         'SELECT COALESCE(st.branch_id, bas.station_id) AS station_id
-         FROM users u
-         LEFT JOIN staff st ON st.user_id = u.user_id
-         LEFT JOIN business_account_scope bas ON bas.user_id = u.user_id
-         WHERE u.user_id = ?
+    $staffRow = $pdo->prepare(
+        'SELECT staff_id, branch_id
+         FROM staff
+         WHERE user_id = :user_id AND is_active = 1
          LIMIT 1'
     );
-    $stationStmt->execute([$userId]);
-    $stationId = (int)($stationStmt->fetchColumn() ?: 0);
+    $staffRow->execute([':user_id' => $userId]);
+    $staffRecord = $staffRow->fetch(PDO::FETCH_ASSOC);
+    if (!$staffRecord) {
+        throw new RuntimeException('Staff record not found for the current user.');
+    }
+    $staffId = (int)($staffRecord['staff_id'] ?? 0);
+    $stationId = (int)($staffRecord['branch_id'] ?? 0);
 
-        $feedbackStmt = $pdo->prepare(
-                'SELECT f.feedback_id
-                 FROM feedback f
-                 INNER JOIN usage_history uh ON uh.usage_id = f.usage_id
-                 WHERE f.feedback_id = ?
-                     AND f.station_id = ?
-                     AND uh.station_id = f.station_id
-                 LIMIT 1'
-        );
-    $feedbackStmt->execute([$feedbackId, $stationId]);
+    $feedbackStmt = $pdo->prepare(
+        'SELECT feedback_id
+         FROM feedback
+         WHERE feedback_id = :feedback_id
+           AND station_id = :station_id
+         LIMIT 1'
+    );
+    $feedbackStmt->execute([':feedback_id' => $feedbackId, ':station_id' => $stationId]);
     if (!$feedbackStmt->fetchColumn()) {
         throw new RuntimeException('Feedback is outside this station.');
     }
@@ -74,8 +75,34 @@ try {
     }
 
     $pdo->beginTransaction();
-    $replyStmt = $pdo->prepare('INSERT INTO feedback_replies (feedback_id, staff_id, reply_text, created_at) VALUES (?, ?, ?, NOW())');
-    $replyStmt->execute([$feedbackId, $userId, $replyMsg]);
+    $existsStmt = $pdo->prepare(
+        'SELECT 1
+         FROM feedback_replies
+         WHERE feedback_id = :feedback_id
+           AND staff_id = :staff_id
+           AND reply_text = :reply_text
+         LIMIT 1'
+    );
+    $existsStmt->execute([
+        ':feedback_id' => $feedbackId,
+        ':staff_id' => $staffId,
+        ':reply_text' => $replyMsg,
+    ]);
+    if ($existsStmt->fetchColumn()) {
+        $pdo->commit();
+        header('Location: feedback_manage.php?tab=replies&reply_sent=1');
+        exit;
+    }
+
+    $replyStmt = $pdo->prepare(
+        'INSERT INTO feedback_replies (feedback_id, staff_id, reply_text, customer_read_at, created_at)
+         VALUES (:feedback_id, :staff_id, :reply_text, NULL, NOW())'
+    );
+    $replyStmt->execute([
+        ':feedback_id' => $feedbackId,
+        ':staff_id' => $staffId,
+        ':reply_text' => $replyMsg,
+    ]);
     $markRead = $pdo->prepare('UPDATE feedback SET staff_read_at = COALESCE(staff_read_at, NOW()) WHERE feedback_id = ?');
     $markRead->execute([$feedbackId]);
     $pdo->commit();

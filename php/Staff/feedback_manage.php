@@ -31,23 +31,44 @@ $staffCsrfToken = (string)$_SESSION['staff_csrf_token'];
 // Load the signed-in staff member and their assigned station.
 $displayName = '';
 $staffStationId = 0;
+$loggedStaffId = 0;
 try {
     if (isset($pdo)) {
-        $stmtUser = $pdo->prepare(
-            'SELECT u.user_name, COALESCE(st.branch_id, bas.station_id) AS station_id
-             FROM users u
-             LEFT JOIN staff st ON st.user_id = u.user_id
-             LEFT JOIN business_account_scope bas ON bas.user_id = u.user_id
-             WHERE u.user_id = ?
+        $staffStmt = $pdo->prepare(
+            'SELECT staff_id, branch_id, full_name
+             FROM staff
+             WHERE user_id = :user_id AND is_active = 1
              LIMIT 1'
         );
-        $stmtUser->execute([(int)$_SESSION['user_id']]);
-        $uRow = $stmtUser->fetch(PDO::FETCH_ASSOC);
-        $displayName = trim((string)($uRow['user_name'] ?? ''));
-        $staffStationId = (int)($uRow['station_id'] ?? 0);
+        $staffStmt->execute([':user_id' => (int)$_SESSION['user_id']]);
+        $staffRow = $staffStmt->fetch(PDO::FETCH_ASSOC);
+
+        if ($staffRow) {
+            $loggedStaffId = (int)($staffRow['staff_id'] ?? 0);
+            $staffStationId = (int)($staffRow['branch_id'] ?? 0);
+            $displayName = trim((string)($staffRow['full_name'] ?? ''));
+        }
+
+        if ($staffStationId <= 0) {
+            $scopeStmt = $pdo->prepare(
+                'SELECT station_id
+                 FROM station_business_scope
+                 WHERE branch_manager_user_id = :manager_user_id
+                 ORDER BY station_id ASC
+                 LIMIT 1'
+            );
+            $scopeStmt->execute([':manager_user_id' => (int)$_SESSION['user_id']]);
+            $staffStationId = (int)($scopeStmt->fetchColumn() ?: 0);
+        }
+
+        if ($displayName === '') {
+            $userStmt = $pdo->prepare('SELECT user_name FROM users WHERE user_id = :user_id LIMIT 1');
+            $userStmt->execute([':user_id' => (int)$_SESSION['user_id']]);
+            $displayName = trim((string)($userStmt->fetchColumn() ?: ''));
+        }
     }
 } catch (Throwable $e) {
-    // ignore — displayName remains empty
+    error_log('Failed to resolve staff branch context: ' . $e->getMessage());
 }
 
 map_pump_feedback_schema_ready($pdo);
@@ -67,11 +88,9 @@ try {
                 SUM(CASE WHEN f.staff_read_at IS NOT NULL THEN 1 ELSE 0 END) AS read_count,
                 SUM(CASE WHEN f.staff_read_at IS NULL THEN 1 ELSE 0 END) AS unread_count
          FROM feedback f
-                 INNER JOIN usage_history uh ON uh.usage_id = f.usage_id
-                 WHERE f.station_id = ?
-                     AND uh.station_id = f.station_id'
+         WHERE f.station_id = :station_id'
     );
-    $countStmt->execute([$staffStationId]);
+    $countStmt->execute([':station_id' => $staffStationId]);
     $counts = $countStmt->fetch(PDO::FETCH_ASSOC) ?: [];
     $feedbackCounts['all'] = (int)($counts['all_count'] ?? 0);
     $feedbackCounts['read'] = (int)($counts['read_count'] ?? 0);
@@ -81,43 +100,46 @@ try {
         'SELECT COUNT(*)
          FROM feedback_replies fr
          INNER JOIN feedback f ON f.feedback_id = fr.feedback_id
-         WHERE fr.staff_id = ? AND f.station_id = ?'
+         WHERE fr.staff_id = :staff_id
+           AND f.station_id = :station_id'
     );
-    $replyCountStmt->execute([(int)$_SESSION['user_id'], $staffStationId]);
+    $replyCountStmt->execute([':staff_id' => $loggedStaffId, ':station_id' => $staffStationId]);
     $feedbackCounts['replies'] = (int)$replyCountStmt->fetchColumn();
 
     if ($activeTab === 'replies') {
         $replyStmt = $pdo->prepare(
-                        'SELECT fr.reply_id, fr.reply_text, fr.created_at, f.feedback_id, f.feedback, f.user_id, f.usage_id
+            'SELECT fr.reply_id, fr.reply_text, fr.created_at, fr.feedback_id,
+                    f.feedback, f.user_id, u.user_name AS customer_name,
+                    st.full_name AS staff_name
              FROM feedback_replies fr
              INNER JOIN feedback f ON f.feedback_id = fr.feedback_id
-                         INNER JOIN usage_history uh ON uh.usage_id = f.usage_id
-             WHERE fr.staff_id = ? AND f.station_id = ?
-                             AND uh.station_id = f.station_id
+             LEFT JOIN users u ON u.user_id = f.user_id
+             LEFT JOIN staff st ON st.staff_id = fr.staff_id
+             WHERE fr.staff_id = :staff_id
+               AND f.station_id = :station_id
              ORDER BY fr.created_at DESC, fr.reply_id DESC'
         );
-        $replyStmt->execute([(int)$_SESSION['user_id'], $staffStationId]);
+        $replyStmt->execute([':staff_id' => $loggedStaffId, ':station_id' => $staffStationId]);
         $staffReplies = $replyStmt->fetchAll(PDO::FETCH_ASSOC);
     } else {
         $stateFilter = $activeTab === 'read' ? ' AND f.staff_read_at IS NOT NULL' : ($activeTab === 'unread' ? ' AND f.staff_read_at IS NULL' : '');
         $stmt = $pdo->prepare(
-                'SELECT f.feedback_id, f.user_id, f.feedback, f.created_at, f.usage_id, f.station_id, f.rating, f.staff_read_at,
-                    uh.qr_refrence_code, s.branch_name AS station_name, o.oil_name,
+            'SELECT f.feedback_id, f.user_id, u.user_name AS customer_name, f.feedback, f.created_at, f.station_id, f.rating, f.staff_read_at,
+                    COALESCE(ltp.tier_code, "bronze") AS tier_code,
                     (SELECT COUNT(*) FROM feedback_replies fr WHERE fr.feedback_id = f.feedback_id) AS reply_count
              FROM feedback f
-             INNER JOIN usage_history uh ON uh.usage_id = f.usage_id
-             LEFT JOIN branches s ON s.branch_id = f.station_id
-             LEFT JOIN oil_types o ON o.oil_type_id = uh.oil_type_id
-                         WHERE f.station_id = ?
-                             AND uh.station_id = f.station_id' . $stateFilter . '
+             LEFT JOIN users u ON u.user_id = f.user_id
+             LEFT JOIN loyalty_user_tier_progress ltp ON ltp.user_id = f.user_id
+             WHERE f.station_id = :station_id' . $stateFilter . '
              ORDER BY f.created_at DESC, f.feedback_id DESC'
         );
-        $stmt->execute([$staffStationId]);
+        $stmt->execute([':station_id' => $staffStationId]);
         $recentFeedback = $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 } catch (Throwable $e) {
     error_log('Failed to load staff feedback: ' . $e->getMessage());
     $recentFeedback = [];
+    $staffReplies = [];
 }
 $showSuccess = isset($_GET['report_created']) && $_GET['report_created'] === '1';
 $showReplySuccess = isset($_GET['reply_sent']) && $_GET['reply_sent'] === '1';

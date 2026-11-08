@@ -22,49 +22,39 @@ $managerInitial     = map_pump_profile_initial($managerDisplayName, $initials ?:
 
 $q = trim($_GET['q'] ?? '');
 
-// -------- Load customers (all who booked or filled at one of this manager's stations) --------
-$where = "(
-    EXISTS (
-        SELECT 1
-        FROM booking bke
-        INNER JOIN station_business_scope sbs ON sbs.station_id = bke.station_id
-        WHERE bke.user_id = u.user_id AND sbs.branch_manager_user_id = :manager_id
-    )
-    OR EXISTS (
-        SELECT 1
-        FROM usage_history uhe
-        INNER JOIN station_business_scope sbs ON sbs.station_id = uhe.station_id
-        WHERE uhe.user_id = u.user_id AND sbs.branch_manager_user_id = :manager_id
-    )
+// -------- Load customers (all who booked at this branch) --------
+$customerWhere = "EXISTS (
+    SELECT 1
+    FROM booking bk2
+    INNER JOIN station_business_scope sbs ON sbs.station_id = bk2.station_id
+    WHERE bk2.user_id = u.user_id
+      AND bk2.station_id = :branch_id
+      AND sbs.branch_manager_user_id = :manager_id
 )";
-$params = [':manager_id' => $user['user_id']];
+$params = [':manager_id' => $user['user_id'], ':branch_id' => $bid];
 if ($q !== '') {
-    $where .= " AND (u.user_name LIKE :q OR u.email LIKE :q OR u.user_public_id LIKE :q OR cl.car_plate_number LIKE :q)";
+    $customerWhere .= " AND (u.user_name LIKE :q OR u.email LIKE :q OR u.user_public_id LIKE :q)";
     $params[':q'] = '%' . $q . '%';
 }
 $stmt = $pdo->prepare("
-    SELECT u.user_id AS customer_id,
-           COALESCE(u.user_public_id, u.user_id) AS customer_code,
-           u.user_name AS full_name,
-           u.email AS phone,
-           COALESCE(cl.car_plate_number, 'N/A') AS vehicle_no,
-           (COUNT(DISTINCT bk.booking_id) + COUNT(DISTINCT uh.usage_id)) AS total_visits,
-           GREATEST(
-               COALESCE(MAX(bk.created_at), '1970-01-01'),
-               COALESCE(MAX(uh.filled_at), '1970-01-01')
-           ) AS last_visit_at,
-           CASE
-               WHEN COUNT(uh.usage_id) >= 10 THEN 'gold'
-               WHEN COUNT(uh.usage_id) >= 3 THEN 'silver'
-               ELSE 'regular'
-           END AS tier
+    SELECT
+        u.user_id AS customer_id,
+        COALESCE(u.user_public_id, CAST(u.user_id AS CHAR)) AS customer_code,
+        u.user_name AS full_name,
+        COALESCE(ltp.tier_code, '') AS tier_code,
+        COUNT(DISTINCT CASE
+            WHEN LOWER(COALESCE(bk.status, '')) IN ('completed', 'filled')
+            THEN bk.booking_id
+        END) AS total_visits,
+        MAX(CASE
+            WHEN LOWER(COALESCE(bk.status, '')) IN ('completed', 'filled')
+            THEN bk.time_of_filled
+        END) AS last_visit_at
     FROM users u
-    LEFT JOIN user_car uc ON uc.user_id = u.user_id AND uc.is_active = 1
-    LEFT JOIN car_license cl ON cl.car_license_id = uc.car_id
-    LEFT JOIN booking bk ON bk.user_id = u.user_id
-    LEFT JOIN usage_history uh ON uh.user_id = u.user_id
-    WHERE {$where}
-    GROUP BY u.user_id, u.user_public_id, u.user_name, u.email, cl.car_plate_number
+    LEFT JOIN booking bk ON bk.user_id = u.user_id AND bk.station_id = :branch_id
+    LEFT JOIN loyalty_user_tier_progress ltp ON ltp.user_id = u.user_id
+    WHERE {$customerWhere}
+    GROUP BY u.user_id, u.user_public_id, u.user_name, ltp.tier_code
     ORDER BY last_visit_at DESC, customer_id DESC
     LIMIT 200
 ");
@@ -73,54 +63,35 @@ $customers = $stmt->fetchAll();
 
 // -------- Aggregate stats --------
 $stmt = $pdo->prepare("
-    SELECT COUNT(DISTINCT customer_id)
-    FROM (
-        SELECT bk.user_id AS customer_id
-        FROM booking bk
-        INNER JOIN station_business_scope sbs ON sbs.station_id = bk.station_id
-        WHERE sbs.branch_manager_user_id = :manager_id
-        UNION
-        SELECT uh.user_id AS customer_id
-        FROM usage_history uh
-        INNER JOIN station_business_scope sbs ON sbs.station_id = uh.station_id
-        WHERE sbs.branch_manager_user_id = :manager_id
-    ) scoped_customers
-");
-$stmt->execute([':manager_id' => $user['user_id']]);
-$total_customers = (int)$stmt->fetchColumn();
-
-$stmt = $pdo->prepare("
     SELECT COUNT(DISTINCT bk.user_id)
     FROM booking bk
     INNER JOIN station_business_scope sbs ON sbs.station_id = bk.station_id
-    WHERE sbs.branch_manager_user_id = :manager_id
-      AND bk.created_at >= DATE_SUB(CURDATE(), INTERVAL 1 MONTH)
+    WHERE bk.station_id = :branch_id
+      AND sbs.branch_manager_user_id = :manager_id
 ");
-$stmt->execute([':manager_id' => $user['user_id']]);
-$new_this_month = (int)$stmt->fetchColumn();
+$stmt->execute([':manager_id' => $user['user_id'], ':branch_id' => $bid]);
+$total_customers = (int)$stmt->fetchColumn();
 
 $stmt = $pdo->prepare("
-    SELECT AVG(f.rating)
+    SELECT ROUND(AVG(f.rating), 1)
     FROM feedback f
     INNER JOIN station_business_scope sbs ON sbs.station_id = f.station_id
-    WHERE sbs.branch_manager_user_id = :manager_id
+    WHERE f.station_id = :branch_id
+      AND sbs.branch_manager_user_id = :manager_id
+      AND f.rating IS NOT NULL
 ");
-$stmt->execute([':manager_id' => $user['user_id']]);
+$stmt->execute([':manager_id' => $user['user_id'], ':branch_id' => $bid]);
 $avg_rating = round((float)$stmt->fetchColumn(), 1);
 
 $stmt = $pdo->prepare("
     SELECT COUNT(*)
-    FROM (
-        SELECT uh.user_id
-        FROM usage_history uh
-        INNER JOIN station_business_scope sbs ON sbs.station_id = uh.station_id
-        WHERE sbs.branch_manager_user_id = :manager_id
-        GROUP BY uh.user_id
-        HAVING COUNT(*) >= 10
-    ) gold_customers
+    FROM feedback f
+    INNER JOIN station_business_scope sbs ON sbs.station_id = f.station_id
+    WHERE f.station_id = :branch_id
+      AND sbs.branch_manager_user_id = :manager_id
 ");
-$stmt->execute([':manager_id' => $user['user_id']]);
-$gold_count = (int)$stmt->fetchColumn();
+$stmt->execute([':manager_id' => $user['user_id'], ':branch_id' => $bid]);
+$feedback_count = (int)$stmt->fetchColumn();
 
 $alerts       = notif_recent($pdo, (int)$user['user_id'], 5);
 $unread_count = notif_unread_count($pdo, (int)$user['user_id']);
@@ -128,14 +99,20 @@ $has_unread   = $unread_count > 0;
 
 // -------- Feedback (latest 12) --------
 $stmt = $pdo->prepare("
-    SELECT f.*, u.user_name AS full_name
+    SELECT f.feedback_id, f.user_id, f.station_id, f.rating, f.feedback AS body, f.created_at, u.user_name AS full_name,
+           fr.reply_text AS staff_reply,
+           fr.created_at AS reply_date,
+           staff_user.user_name AS staff_name
     FROM feedback f
     LEFT JOIN users u ON u.user_id = f.user_id
+    LEFT JOIN feedback_replies fr ON fr.feedback_id = f.feedback_id
+    LEFT JOIN users staff_user ON staff_user.user_id = fr.staff_id
     INNER JOIN station_business_scope sbs ON sbs.station_id = f.station_id
-    WHERE sbs.branch_manager_user_id = :manager_id
+    WHERE f.station_id = :branch_id
+      AND sbs.branch_manager_user_id = :manager_id
     ORDER BY f.created_at DESC LIMIT 12
 ");
-$stmt->execute([':manager_id' => $user['user_id']]);
+$stmt->execute([':manager_id' => $user['user_id'], ':branch_id' => $bid]);
 $feedbacks = $stmt->fetchAll();
 ?>
 <!DOCTYPE html>
@@ -286,7 +263,7 @@ $feedbacks = $stmt->fetchAll();
   .page-head h2{font-size:20px; font-weight:700;}
   .page-head p{font-size:13px; color:var(--slate-400); margin-top:4px;}
 
-  .stat-strip{display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:26px;}
+  .stat-strip{display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin-bottom:26px;}
   @media (max-width:1000px){.stat-strip{grid-template-columns:repeat(2,1fr);}}
   .stat{
     background:linear-gradient(160deg, var(--navy-800), var(--navy-900)); border:1px solid rgba(255,255,255,0.07);
@@ -328,6 +305,15 @@ $feedbacks = $stmt->fetchAll();
   tbody tr:last-child td{border-bottom:none;}
   tbody tr:hover{background:rgba(255,255,255,0.02);}
 
+  /* scrollable customer table: max-height is set by JS to fit exactly 5 rows */
+  .table-scroll{overflow-y:auto; overflow-x:auto;}
+  .table-scroll thead th{position:sticky; top:0; z-index:2; background:var(--navy-800);}
+  .table-scroll{scrollbar-width:thin; scrollbar-color:rgba(56,189,248,0.35) transparent;}
+  .table-scroll::-webkit-scrollbar{width:8px; height:8px;}
+  .table-scroll::-webkit-scrollbar-track{background:transparent;}
+  .table-scroll::-webkit-scrollbar-thumb{background:rgba(56,189,248,0.3); border-radius:8px;}
+  .table-scroll::-webkit-scrollbar-thumb:hover{background:rgba(56,189,248,0.5);}
+
   .cust-name{display:flex; align-items:center; gap:11px;}
   .mini-avatar{
     width:34px; height:34px; border-radius:50%; background:linear-gradient(135deg,var(--sky-400),var(--blue-700));
@@ -336,8 +322,11 @@ $feedbacks = $stmt->fetchAll();
   .cust-name b{display:block; font-size:13.5px;}
   .cust-name span{font-size:11.5px; color:var(--slate-400);}
   .tier-pill{font-size:11px; padding:4px 10px; border-radius:999px; font-weight:600;}
-  .tier-pill.gold{background:rgba(251,191,36,0.14); color:var(--amber-300);}
-  .tier-pill.silver{background:rgba(139,150,173,0.14); color:var(--slate-300);}
+  .tier-pill.bronze{background:rgba(217,119,6,0.13); color:#f5ac35; border:1px solid rgba(217,119,6,0.35);}
+  .tier-pill.silver{background:rgba(139,150,173,0.13); color:var(--slate-300); border:1px solid rgba(139,150,173,0.3);}
+  .tier-pill.gold{background:rgba(251,191,36,0.13); color:var(--amber-300); border:1px solid rgba(251,191,36,0.35);}
+  .tier-pill.platinum{background:rgba(203,213,225,0.12); color:#e2e8f0; border:1px solid rgba(203,213,225,0.35);}
+  .tier-pill.diamond{background:rgba(56,189,248,0.12); color:#7dd3fc; border:1px solid rgba(56,189,248,0.35);}
   .tier-pill.regular{background:rgba(255,255,255,0.06); color:var(--slate-400);}
 
   .feedback-grid{display:grid; grid-template-columns:repeat(2,1fr); gap:16px;}
@@ -352,6 +341,89 @@ $feedbacks = $stmt->fetchAll();
   .fb-date{font-size:11.5px; color:var(--slate-400);}
   .fb-name{font-size:13.5px; font-weight:700; margin-bottom:6px;}
   .fb-text{font-size:13px; color:var(--slate-300); line-height:1.6;}
+
+  /* Customer feedback frontend; existing directory and application shell are unchanged. */
+  .tabs .tab-btn i{margin-right:7px;}
+  .tab-btn:focus-visible,.rating-filter:focus-visible,.fb-action:focus-visible{outline:2px solid var(--sky-400); outline-offset:4px;}
+  .feedback-summary{display:flex; align-items:center; gap:30px; padding:22px 24px; margin-bottom:24px; background:linear-gradient(160deg,var(--navy-800),var(--navy-900)); border:1px solid rgba(255,255,255,0.07); border-radius:16px;}
+  .rating-overall{width:120px; flex-shrink:0; text-align:center;}
+  .rating-average{font-family:'Space Grotesk',sans-serif; font-size:44px; line-height:1.2; font-weight:700;}
+  .rating-overall .fb-stars{display:block; margin:8px 0;}
+  .rating-caption{font-size:11.5px; color:var(--slate-400);}
+  .rating-distribution{flex:1; min-width:0; display:grid; gap:8px;}
+  .rating-row{display:flex; align-items:center; gap:14px; font-size:11.5px; color:var(--slate-300);}
+  .rating-row-label{width:38px; flex-shrink:0;}
+  .rating-row-label i{color:var(--amber-400);}
+  .rating-track{flex:1; height:7px; overflow:hidden; border-radius:999px; background:rgba(139,150,173,0.16);}
+  .rating-fill{display:block; height:100%; width:0; background:var(--amber-400); border-radius:inherit;}
+  .rating-percent{width:34px; text-align:right; color:var(--slate-400);}
+  .feedback-toolbar{display:flex; align-items:center; gap:18px; flex-wrap:wrap; margin-bottom:22px;}
+  .rating-filters{display:flex; gap:8px; flex-wrap:wrap;}
+  .rating-filter{background:var(--navy-800); border:1px solid rgba(255,255,255,0.07); border-radius:999px; padding:8px 13px; color:var(--slate-300); font-size:11.5px; font-weight:600; cursor:pointer;}
+  .rating-filter.active{color:var(--sky-400); background:rgba(56,189,248,0.1); border-color:var(--sky-400);}
+  .feedback-search{margin-left:auto; flex:1; max-width:300px; min-width:220px;}
+  .feedback-empty{grid-column:1/-1; text-align:center; color:var(--slate-400); padding:22px;}
+  .feedback-grid [hidden]{display:none !important;}
+  /* Same numbered pagination as manage-oil.php's All Fuel Types grid. */
+  .pg-controls {
+    display: flex; align-items: center; justify-content: center;
+    gap: 6px; margin-top: 18px; flex-wrap: wrap;
+  }
+  .pg-btn {
+    background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.10);
+    color: var(--slate-300); border-radius: 8px; padding: 6px 13px;
+    font-size: 12.5px; font-weight: 600; cursor: pointer;
+    transition: background 0.18s, color 0.18s, border-color 0.18s;
+    min-width: 34px; text-align: center;
+  }
+  .pg-btn:hover:not(:disabled) { background: rgba(255,255,255,0.10); color: var(--slate-50); }
+  .pg-btn.active { background: var(--amber-400); border-color: var(--amber-400); color: #1d1306; }
+  .pg-btn:disabled { opacity: 0.35; cursor: default; }
+  #feedback-pg-controls[hidden] { display: none; }
+  #feedback-pg-controls .pg-btn.active,
+  #feedback-pg-controls .pg-btn.active:hover:not(:disabled) { background:linear-gradient(135deg, #3b8dff, #1d4ed8); border-color:#2f6feb; color:#fff; box-shadow:0 8px 18px -10px rgba(59,141,255,0.75); }
+  .feedback-grid .fb-card{display:flex; flex-direction:column; padding:22px 24px;}
+  .fb-profile{display:flex; align-items:center; gap:10px; margin:8px 0 14px; flex-wrap:wrap;}
+  .fb-profile .mini-avatar{background:rgba(56,189,248,0.12); color:var(--sky-400);}
+  .fb-profile .fb-name{margin:0; font-size:15px; overflow-wrap:anywhere;}
+  .fb-profile .tier-pill{flex-shrink:0;}
+  .feedback-grid .fb-text{flex:1; font-size:13.5px; white-space:pre-wrap; overflow-wrap:anywhere;}
+  .fb-actions{display:flex; align-items:center; justify-content:flex-end; gap:12px; border-top:1px solid rgba(255,255,255,0.06); padding-top:16px; margin-top:20px;}
+  .fb-action{background:none; border:none; padding:0; color:var(--sky-400); font-size:12.5px; font-weight:600; cursor:pointer; text-align:left;}
+  .fb-action i{margin-right:6px;}
+  .fb-details{color:var(--slate-400); font-size:13px; font-weight:400; white-space:nowrap; margin-left:auto;}
+  .fb-details i{margin:0 0 0 5px;}
+  .fb-details:hover{color:var(--slate-50);}
+  .feedback-tier.gold{background:rgba(251,191,36,0.13); color:var(--amber-300); border:1px solid rgba(251,191,36,0.35);}
+  .feedback-tier.silver{background:rgba(139,150,173,0.13); color:var(--slate-300); border:1px solid rgba(139,150,173,0.3);}
+  .feedback-tier.bronze{background:rgba(217,119,6,0.13); color:#f5ac35; border:1px solid rgba(217,119,6,0.35);}
+  .feedback-tier.regular{background:rgba(139,150,173,0.08); color:var(--slate-400); border:1px solid rgba(139,150,173,0.18);}
+  .feedback-tier.platinum{background:rgba(203,213,225,0.12); color:#e2e8f0; border:1px solid rgba(203,213,225,0.35);}
+  .feedback-tier.diamond{background:rgba(56,189,248,0.12); color:#7dd3fc; border:1px solid rgba(56,189,248,0.35);}
+  #feedback-modal{--bs-modal-width:800px; --bs-modal-bg:var(--navy-900); --bs-modal-color:var(--slate-50); --bs-modal-border-color:rgba(255,255,255,0.12); --bs-modal-border-radius:18px; --bs-modal-header-border-color:rgba(255,255,255,0.08); --bs-modal-footer-border-color:rgba(255,255,255,0.08);}
+  #feedback-modal .modal-content{box-shadow:0 24px 70px rgba(0,0,0,0.45);}
+  #feedback-modal .modal-header{padding:22px 24px;}
+  #feedback-modal .modal-title{font-size:20px; font-weight:700; overflow-wrap:anywhere;}
+  #feedback-modal .btn-close{filter:invert(1) grayscale(100%) brightness(180%); opacity:0.6;}
+  #feedback-modal .modal-body{padding:24px;}
+  .feedback-modal-meta{display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:14px;}
+  .feedback-modal-tier{display:inline-block; margin-bottom:18px;}
+  .feedback-modal-text{background:rgba(255,255,255,0.015); border:1px solid rgba(255,255,255,0.06); border-radius:13px; padding:18px; font-size:14px; color:var(--slate-50); line-height:1.7; white-space:pre-wrap; overflow-wrap:anywhere;}
+  .feedback-reply-section{border-top:1px solid rgba(255,255,255,0.08); margin-top:24px; padding-top:18px;}
+  .feedback-reply-label{display:block; font-size:14px; font-weight:700; margin-bottom:10px;}
+  .feedback-reply-label i{color:var(--sky-400); margin-right:7px;}
+  .feedback-reply-text{background:var(--navy-800); border:1px solid rgba(56,189,248,0.28); border-radius:13px; padding:16px 18px; font-size:14px; color:var(--slate-50); line-height:1.7; white-space:pre-wrap; overflow-wrap:anywhere;}
+  .feedback-reply-text.is-empty{color:var(--slate-400); font-style:italic;}
+  @media(max-width:650px){
+    .feedback-summary{gap:18px; padding:18px 14px;}
+    .rating-overall{width:90px;}
+    .rating-average{font-size:36px;}
+    .rating-row{gap:7px;}
+    .feedback-search{max-width:none; min-width:0; width:100%; flex-basis:100%;}
+    .feedback-grid .fb-card{padding:18px;}
+    .fb-actions{flex-wrap:wrap;}
+    #feedback-modal .modal-header,#feedback-modal .modal-body{padding:18px;}
+  }
 </style>
 </head>
 <body>
@@ -443,28 +515,39 @@ $feedbacks = $stmt->fetchAll();
 
       <div class="stat-strip">
         <div class="stat"><div class="n"><?= number_format($total_customers) ?></div><div class="l">Total Customers</div></div>
-        <div class="stat"><div class="n"><?= number_format($new_this_month) ?></div><div class="l">New This Month</div></div>
-        <div class="stat"><div class="n"><?= $avg_rating ? $avg_rating . ' ★' : '—' ?></div><div class="l">Avg. Feedback Rating</div></div>
-        <div class="stat"><div class="n"><?= number_format($gold_count) ?></div><div class="l">Gold Tier Members</div></div>
+        <div class="stat"><div class="n"><?= number_format($avg_rating, 1) ?> ★</div><div class="l">Avg. Feedback Rating</div></div>
+        <div class="stat"><div class="n"><?= number_format($feedback_count) ?></div><div class="l">Customer Feedbacks</div></div>
       </div>
 
-      <div class="tabs">
-        <button class="tab-btn" data-tab="tab-feedback">Feedback</button>
+      <div class="tabs" role="tablist" aria-label="Customer views">
+        <button class="tab-btn active" id="directory-tab" data-tab="tab-list" type="button" role="tab" aria-controls="tab-list" aria-selected="true"><i class="fa-solid fa-list" aria-hidden="true"></i>Customer Directory</button>
+        <button class="tab-btn" id="feedback-tab" data-tab="tab-feedback" type="button" role="tab" aria-controls="tab-feedback" aria-selected="false" tabindex="-1"><i class="fa-solid fa-comments" aria-hidden="true"></i>Feedback &amp; Reviews (<?= number_format($feedback_count) ?>)</button>
       </div>
 
-      <div class="tab-panel active" id="tab-list">
+      <div class="tab-panel active" id="tab-list" role="tabpanel" aria-labelledby="directory-tab">
         <div class="toolbar">
           <div class="search"><i class="fa-solid fa-magnifying-glass"></i><input type="text" id="customer-search" placeholder="Search by name, phone, or vehicle no..." value="<?= h($q) ?>"></div>
         </div>
         <div class="panel">
+          <div class="table-scroll" id="customer-scroll">
           <table id="customer-table">
             <thead>
-              <tr><th>Customer</th><th>Phone</th><th>Vehicle No.</th><th>Total Visits</th><th>Last Visit</th><th>Tier</th></tr>
+              <tr><th>Customer</th><th>Total Visits</th><th>Last Visit</th><th>Tier</th></tr>
             </thead>
             <tbody>
               <?php if (!$customers): ?>
-                <tr><td colspan="6" style="text-align:center; color:var(--slate-400); padding:22px;">No customers found.</td></tr>
-              <?php else: foreach ($customers as $c): ?>
+                <tr><td colspan="4" style="text-align:center; color:var(--slate-400); padding:22px;">No customers found.</td></tr>
+              <?php else: foreach ($customers as $c):
+                $tierCode = trim((string)($c['tier_code'] ?? ''));
+                $tierClass = strtolower($tierCode);
+                $tierDisplay = $tierCode !== '' ? ucfirst(strtolower($tierCode)) : '-';
+                if (!in_array($tierClass, ['bronze','silver','gold','platinum','diamond'], true)) {
+                    $tierClass = 'regular';
+                    $tierDisplay = '-';
+                }
+                $totalVisits = isset($c['total_visits']) && $c['total_visits'] !== null ? (int)$c['total_visits'] : 0;
+                $lastVisitText = !empty($c['last_visit_at']) ? h(fmt_date($c['last_visit_at'])) : '—';
+              ?>
                 <tr>
                   <td>
                     <div class="cust-name">
@@ -472,39 +555,118 @@ $feedbacks = $stmt->fetchAll();
                       <div><b><?= h($c['full_name']) ?></b><span>ID: <?= h($c['customer_code']) ?></span></div>
                     </div>
                   </td>
-                  <td><?= h($c['phone']) ?></td>
-                  <td><?= h($c['vehicle_no']) ?></td>
-                  <td><?= (int)$c['total_visits'] ?></td>
-                  <td><?= h(fmt_date($c['last_visit_at'])) ?></td>
-                  <td><span class="tier-pill <?= h($c['tier']) ?>"><?= h(ucfirst($c['tier'])) ?></span></td>
+                  <td><?= $totalVisits ?></td>
+                  <td><?= $lastVisitText ?></td>
+                  <td><span class="tier-pill <?= h($tierClass) ?>"><?= h($tierDisplay) ?></span></td>
                 </tr>
               <?php endforeach; endif; ?>
             </tbody>
           </table>
+          </div>
         </div>
       </div>
 
-      <div class="tab-panel" id="tab-feedback">
+      <div class="tab-panel" id="tab-feedback" role="tabpanel" aria-labelledby="feedback-tab">
+        <div class="feedback-summary" aria-label="Feedback rating summary" data-total-feedback="<?= (int)$feedback_count ?>">
+          <div class="rating-overall">
+            <div class="rating-average" id="feedback-average">0.0</div>
+            <span class="fb-stars" id="feedback-summary-stars" aria-label="0 out of 5 stars">☆☆☆☆☆</span>
+            <div class="rating-caption" id="feedback-rating-caption">Based on 0 reviews</div>
+          </div>
+          <div class="rating-distribution">
+            <?php for ($level = 5; $level >= 1; $level--): ?>
+              <div class="rating-row" data-rating-level="<?= $level ?>">
+                <span class="rating-row-label"><?= $level ?> <i class="fa-solid fa-star" aria-hidden="true"></i></span>
+                <div class="rating-track" role="progressbar" aria-label="<?= $level ?> star reviews" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span class="rating-fill"></span></div>
+                <span class="rating-percent">0%</span>
+              </div>
+            <?php endfor; ?>
+          </div>
+        </div>
+        <div class="feedback-toolbar">
+          <div class="rating-filters" role="group" aria-label="Filter feedback by rating">
+            <button type="button" class="rating-filter active" data-rating-filter="all" aria-pressed="true">All Ratings</button>
+            <button type="button" class="rating-filter" data-rating-filter="5" aria-pressed="false">5 Stars ★★★★★</button>
+            <button type="button" class="rating-filter" data-rating-filter="4" aria-pressed="false">4 Stars ★★★★☆</button>
+            <button type="button" class="rating-filter" data-rating-filter="3" aria-pressed="false">3 Stars ★★★☆☆</button>
+            <button type="button" class="rating-filter" data-rating-filter="1-2" aria-pressed="false">1–2 Stars ★★☆☆☆</button>
+          </div>
+          <div class="search feedback-search"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i><input type="search" id="feedback-search" aria-label="Search feedback text" placeholder="Search feedback text..."></div>
+        </div>
         <div class="feedback-grid">
-          <?php if (!$feedbacks): ?>
-            <div style="grid-column:1/-1; text-align:center; color:var(--slate-400); padding:22px;">No feedback yet.</div>
-          <?php else: foreach ($feedbacks as $f):
-            $r = max(0, min(5, (int)$f['rating']));
+          <?php foreach ($feedbacks as $f):
+            $r = max(0, min(5, (int)($f['rating'] ?? 0)));
             $stars = str_repeat('★', $r) . str_repeat('☆', 5 - $r);
+            // Presentation-only lookup: use tiers already available in the directory.
+            $feedbackTierCode = strtolower(trim((string)($f['tier_code'] ?? '')));
+            if ($feedbackTierCode === '') {
+                foreach ($customers as $feedbackCustomer) {
+                    if ((string)$feedbackCustomer['customer_id'] === (string)($f['user_id'] ?? '')) {
+                        $feedbackTierCode = strtolower(trim((string)($feedbackCustomer['tier_code'] ?? '')));
+                        break;
+                    }
+                }
+            }
+            if (!in_array($feedbackTierCode, ['bronze','silver','gold','platinum','diamond'], true)) {
+                $feedbackTierCode = 'regular';
+            }
+            $feedbackTierLabel = ucfirst($feedbackTierCode) . ' Tier';
+            $feedbackName = $f['full_name'] ?: 'Anonymous';
+            // Presentation-only: shows a staff reply if the row carries one; empty means "No staff reply yet."
+            $staffReply = trim((string)($f['staff_reply'] ?? ''));
+            $staffName = trim((string)($f['staff_name'] ?? ''));
+            $replyDate = trim((string)($f['reply_date'] ?? ''));
           ?>
-            <div class="fb-card">
+            <div class="fb-card" data-feedback-id="<?= (int)$f['feedback_id'] ?>" data-rating="<?= $r ?>" data-staff-reply="<?= h($staffReply) ?>" data-staff-name="<?= h($staffName) ?>" data-reply-date="<?= h($replyDate) ?>">
+          ?>
+            <div class="fb-card" data-feedback-id="<?= (int)$f['feedback_id'] ?>" data-rating="<?= $r ?>" data-staff-reply="<?= h($staffReply) ?>">
               <div class="fb-head">
-                <span class="fb-stars"><?= h($stars) ?></span>
+                <span class="fb-stars" aria-label="<?= $r ?> out of 5 stars"><?= h($stars) ?></span>
                 <span class="fb-date"><?= h(fmt_date($f['created_at'])) ?></span>
               </div>
-              <div class="fb-name"><?= h($f['full_name'] ?: 'Anonymous') ?></div>
+              <div class="fb-profile">
+                <div class="mini-avatar" aria-hidden="true"><?= h(initials($feedbackName)) ?></div>
+                <div class="fb-name"><?= h($feedbackName) ?></div>
+                <span class="tier-pill feedback-tier <?= h($feedbackTierCode) ?>"><?= h($feedbackTierLabel) ?></span>
+              </div>
               <div class="fb-text"><?= h($f['body']) ?></div>
+              <div class="fb-actions">
+                <button type="button" class="fb-action fb-details" data-feedback-open="details">View Details <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></button>
+              </div>
             </div>
-          <?php endforeach; endif; ?>
+          <?php endforeach; ?>
+          <div class="feedback-empty" id="feedback-empty" role="status"<?= $feedbacks ? ' hidden' : '' ?>>No feedback yet.</div>
         </div>
+        <nav class="pg-controls" id="feedback-pg-controls" aria-label="Feedback pages" hidden></nav>
       </div>
 
       <div class="page-foot">© 2026 MAP & PUMP | All Right Reserved</div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="feedback-modal" tabindex="-1" aria-labelledby="feedback-modal-title" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 class="modal-title disp" id="feedback-modal-title">Customer Feedback</h2>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="feedback-modal-meta">
+          <span class="fb-stars" id="feedback-modal-stars"></span>
+          <span class="fb-date" id="feedback-modal-date"></span>
+        </div>
+        <span class="tier-pill feedback-tier feedback-modal-tier regular" id="feedback-modal-tier">Regular Tier</span>
+        <div class="feedback-modal-text" id="feedback-modal-text"></div>
+        <div class="feedback-reply-section">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <span class="feedback-reply-label mb-0" id="feedback-reply-heading"><i class="fa-solid fa-reply" aria-hidden="true"></i>Staff Reply</span>
+            <small class="text-muted" id="feedback-reply-date"></small>
+          </div>
+          <div class="feedback-reply-text is-empty" id="feedback-staff-reply">No staff reply yet.</div>
+        </div>
+      </div>
     </div>
   </div>
 </div>
@@ -522,16 +684,55 @@ $feedbacks = $stmt->fetchAll();
     setInterval(updateClock, 1000);
     updateClock();
 
-    // Tab switching (Customer List <-> Feedback)
+    // Tab switching (Customer Directory <-> Feedback & Reviews)
     const tabButtons = document.querySelectorAll('.tab-btn');
     tabButtons.forEach(btn => {
       btn.addEventListener('click', () => {
-        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        tabButtons.forEach(b => {
+          b.classList.remove('active');
+          b.setAttribute('aria-selected', 'false');
+          b.tabIndex = -1;
+        });
         document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
         btn.classList.add('active');
+        btn.setAttribute('aria-selected', 'true');
+        btn.tabIndex = 0;
         document.getElementById(btn.dataset.tab).classList.add('active');
+        if (btn.dataset.tab === 'tab-list') fitCustomerTable();
+      });
+      btn.addEventListener('keydown', (event) => {
+        const buttons = Array.from(tabButtons);
+        let nextIndex = buttons.indexOf(btn);
+        if (event.key === 'ArrowRight') nextIndex = (nextIndex + 1) % buttons.length;
+        else if (event.key === 'ArrowLeft') nextIndex = (nextIndex - 1 + buttons.length) % buttons.length;
+        else if (event.key === 'Home') nextIndex = 0;
+        else if (event.key === 'End') nextIndex = buttons.length - 1;
+        else return;
+        event.preventDefault();
+        buttons[nextIndex].click();
+        buttons[nextIndex].focus();
       });
     });
+
+    // Limit customer table to 5 visible rows; scrollbar appears when there are more
+    const scrollBox = document.getElementById('customer-scroll');
+    const custTable = document.getElementById('customer-table');
+    const VISIBLE_ROWS = 5;
+    function fitCustomerTable() {
+      const rows = custTable.querySelectorAll('tbody tr');
+      const isEmptyState = rows.length === 1 && rows[0].children.length === 1;
+      if (isEmptyState || rows.length <= VISIBLE_ROWS) {
+        scrollBox.style.maxHeight = '';
+        return;
+      }
+      let h = custTable.querySelector('thead').offsetHeight;
+      for (let i = 0; i < VISIBLE_ROWS; i++) h += rows[i].offsetHeight;
+      scrollBox.style.maxHeight = h + 'px';
+    }
+    fitCustomerTable();
+    window.addEventListener('load', fitCustomerTable);
+    window.addEventListener('resize', fitCustomerTable);
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(fitCustomerTable);
 
     // Live search filter on customer list
     const searchInput = document.getElementById('customer-search');
@@ -540,6 +741,141 @@ $feedbacks = $stmt->fetchAll();
       document.querySelectorAll('#customer-table tbody tr').forEach(row => {
         row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
       });
+    });
+
+    // Feedback summary and filters use only the feedback supplied by the existing query.
+    // The query currently loads the latest 12; no backend/SQL changes are made here.
+    const feedbackCards = Array.from(document.querySelectorAll('#tab-feedback .fb-card'));
+    const ratedCards = feedbackCards.filter(card => Number(card.dataset.rating) >= 1);
+    const ratingCount = ratedCards.length;
+    const ratingAverage = ratingCount ? ratedCards.reduce((sum, card) => sum + Number(card.dataset.rating), 0) / ratingCount : 0;
+    document.getElementById('feedback-average').textContent = ratingAverage.toFixed(1);
+    const summaryStars = document.getElementById('feedback-summary-stars');
+    const roundedAverage = Math.round(ratingAverage);
+    summaryStars.textContent = '★'.repeat(roundedAverage) + '☆'.repeat(5 - roundedAverage);
+    summaryStars.setAttribute('aria-label', `${ratingAverage.toFixed(1)} out of 5 stars`);
+    const totalFeedback = Number(document.querySelector('.feedback-summary').dataset.totalFeedback);
+    const displayedQualifier = totalFeedback > feedbackCards.length ? ' displayed' : '';
+    document.getElementById('feedback-rating-caption').textContent = `Based on ${ratingCount}${displayedQualifier} ${ratingCount === 1 ? 'review' : 'reviews'}`;
+    document.querySelectorAll('.rating-row').forEach(row => {
+      const count = ratedCards.filter(card => card.dataset.rating === row.dataset.ratingLevel).length;
+      const percentage = ratingCount ? count / ratingCount * 100 : 0;
+      row.querySelector('.rating-fill').style.width = `${percentage}%`;
+      row.querySelector('.rating-percent').textContent = `${Math.round(percentage)}%`;
+      row.querySelector('.rating-track').setAttribute('aria-valuenow', percentage.toFixed(1));
+      row.querySelector('.rating-track').setAttribute('aria-valuetext', `${count} of ${ratingCount} rated reviews`);
+    });
+
+    const ratingFilters = document.querySelectorAll('.rating-filter');
+    const feedbackSearch = document.getElementById('feedback-search');
+    const feedbackEmpty = document.getElementById('feedback-empty');
+    const feedbackPageControls = document.getElementById('feedback-pg-controls');
+    const FEEDBACK_PER_PAGE = 4;
+    let selectedRating = 'all';
+
+    // Each rating filter owns its page, like the separate paginators in manage-oil.php.
+    // Preserve pages on reload and clamp them when results shrink, using that same behavior.
+    const feedbackPageStoragePrefix = `customer_feedback_pg:${location.pathname}:${document.querySelector('.side-branch .txt span').textContent.trim()}:`;
+    function makeFeedbackPaginator(ratingFilter) {
+      let currentPage = 1;
+      const storageKey = feedbackPageStoragePrefix + ratingFilter;
+      try {
+        const nav = performance.getEntriesByType('navigation')[0];
+        const saved = parseInt(sessionStorage.getItem(storageKey), 10);
+        if (nav && nav.type === 'reload' && saved > 0) currentPage = saved;
+      } catch (e) {}
+      function savePage() {
+        try { sessionStorage.setItem(storageKey, String(currentPage)); } catch (e) {}
+      }
+      function render(items) {
+        const totalPages = Math.max(1, Math.ceil(items.length / FEEDBACK_PER_PAGE));
+        currentPage = Math.max(1, Math.min(currentPage, totalPages));
+        savePage();
+        const start = (currentPage - 1) * FEEDBACK_PER_PAGE;
+        feedbackCards.forEach(card => { card.hidden = true; });
+        items.slice(start, start + FEEDBACK_PER_PAGE).forEach(card => { card.hidden = false; });
+        feedbackEmpty.hidden = items.length > 0;
+        feedbackEmpty.textContent = feedbackCards.length ? 'No feedback matches your filters.' : 'No feedback yet.';
+        feedbackPageControls.innerHTML = '';
+        feedbackPageControls.hidden = totalPages <= 1;
+        if (totalPages <= 1) return;
+        // The fuel-grid paginator uses hideNav=true: numbered buttons, no Previous/Next.
+        for (let page = 1; page <= totalPages; page++) {
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.className = 'pg-btn' + (page === currentPage ? ' active' : '');
+          button.textContent = String(page);
+          button.setAttribute('aria-label', `Page ${page}`);
+          if (page === currentPage) button.setAttribute('aria-current', 'page');
+          button.addEventListener('click', () => { currentPage = page; render(items); });
+          feedbackPageControls.appendChild(button);
+        }
+      }
+      return { render, reset: () => { currentPage = 1; savePage(); } };
+    }
+    const feedbackPaginators = new Map(Array.from(ratingFilters, filter => [filter.dataset.ratingFilter, makeFeedbackPaginator(filter.dataset.ratingFilter)]));
+    function filterFeedback() {
+      const query = feedbackSearch.value.trim().toLowerCase();
+      const matchingCards = feedbackCards.filter(card => {
+        const rating = Number(card.dataset.rating);
+        const ratingMatches = selectedRating === 'all' || (selectedRating === '1-2' ? rating >= 1 && rating <= 2 : rating === Number(selectedRating));
+        const textMatches = card.querySelector('.fb-text').textContent.toLowerCase().includes(query);
+        return ratingMatches && textMatches;
+      });
+      feedbackPaginators.get(selectedRating).render(matchingCards);
+    }
+    ratingFilters.forEach(button => button.addEventListener('click', () => {
+      selectedRating = button.dataset.ratingFilter;
+      ratingFilters.forEach(filter => {
+        const active = filter === button;
+        filter.classList.toggle('active', active);
+        filter.setAttribute('aria-pressed', String(active));
+      });
+      filterFeedback();
+    }));
+    feedbackSearch.addEventListener('input', () => {
+      // A changed search defines a new result set for every filter; start each on page one.
+      feedbackPaginators.forEach(paginator => paginator.reset());
+      filterFeedback();
+    });
+    filterFeedback();
+
+    // Read-only details modal; shows the staff reply when the card carries one.
+    const feedbackModalElement = document.getElementById('feedback-modal');
+    const feedbackModal = new bootstrap.Modal(feedbackModalElement);
+    const staffReplyBox = document.getElementById('feedback-staff-reply');
+    let feedbackOpener = null;
+    feedbackCards.forEach(card => {
+      card.querySelectorAll('[data-feedback-open]').forEach(button => button.addEventListener('click', () => {
+        feedbackOpener = button;
+        document.getElementById('feedback-modal-title').textContent = `${card.querySelector('.fb-name').textContent}’s Feedback`;
+        const stars = document.getElementById('feedback-modal-stars');
+        stars.textContent = card.querySelector('.fb-stars').textContent;
+        stars.setAttribute('aria-label', card.querySelector('.fb-stars').getAttribute('aria-label'));
+        document.getElementById('feedback-modal-date').textContent = card.querySelector('.fb-date').textContent;
+        const tier = card.querySelector('.feedback-tier');
+        const modalTier = document.getElementById('feedback-modal-tier');
+        modalTier.className = `${tier.className} feedback-modal-tier`;
+        modalTier.textContent = tier.textContent;
+        document.getElementById('feedback-modal-text').textContent = card.querySelector('.fb-text').textContent;
+        const staffReply = (card.dataset.staffReply || '').trim();
+        const staffName = (card.dataset.staffName || '').trim();
+        const replyDate = (card.dataset.replyDate || '').trim();
+
+        const replyHeading = document.getElementById('feedback-reply-heading');
+        replyHeading.innerHTML = '<i class="fa-solid fa-reply" aria-hidden="true"></i>';
+        replyHeading.append(document.createTextNode(staffName ? `${staffName}'s Reply` : 'Staff Reply'));
+
+        const replyDateEl = document.getElementById('feedback-reply-date');
+        replyDateEl.textContent = replyDate ? new Date(replyDate).toLocaleString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+
+        staffReplyBox.textContent = staffReply || 'No staff reply yet.';
+        staffReplyBox.classList.toggle('is-empty', !staffReply);
+        feedbackModal.show();
+      }));
+    });
+    feedbackModalElement.addEventListener('hidden.bs.modal', () => {
+      if (feedbackOpener && !feedbackOpener.closest('.fb-card').hidden) feedbackOpener.focus();
     });
 
     // Notifications Popup Toggle, Clear Badge, & Clear All Handler
