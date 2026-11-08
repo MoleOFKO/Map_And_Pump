@@ -28,6 +28,15 @@ if (empty($_SESSION['staff_csrf_token'])) {
 }
 $staffCsrfToken = (string)$_SESSION['staff_csrf_token'];
 
+function staff_feedback_comment_only(?string $feedback): string
+{
+    $feedback = trim((string)$feedback);
+    if (preg_match('/^\[Usage #[^\r\n]*\]\r?\n(.*)$/s', $feedback, $matches)) {
+        return trim($matches[1]);
+    }
+    return $feedback;
+}
+
 // Load the signed-in staff member and their assigned station.
 $displayName = '';
 $staffStationId = 0;
@@ -377,6 +386,7 @@ $showReplySuccess = isset($_GET['reply_sent']) && $_GET['reply_sent'] === '1';
                 <?php if (empty($staffReplies)): ?>
                     <div class="col-12"><div class="dashboard-card text-center text-white-50 py-5">You have not sent any replies yet.</div></div>
                 <?php else: foreach ($staffReplies as $reply): ?>
+                    <?php $originalFeedback = staff_feedback_comment_only($reply['feedback'] ?? null); ?>
                     <div class="col-12"><article class="dashboard-card feedback-card">
                         <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-2">
                             <div>
@@ -386,7 +396,7 @@ $showReplySuccess = isset($_GET['reply_sent']) && $_GET['reply_sent'] === '1';
                             <span class="feedback-status read"><span class="dot"></span> Sent</span>
                         </div>
                         <p class="text-white mb-2 small"><?= nl2br(htmlspecialchars($reply['reply_text'])) ?></p>
-                        <div class="reply-preview"><strong>Original customer feedback:</strong> <?= htmlspecialchars($reply['feedback']) ?></div>
+                        <div class="reply-preview"><strong>Original customer feedback:</strong> <?= nl2br(htmlspecialchars($originalFeedback, ENT_QUOTES, 'UTF-8')) ?></div>
                     </article></div>
                 <?php endforeach; endif; ?>
             <?php elseif (empty($recentFeedback)): ?>
@@ -396,19 +406,19 @@ $showReplySuccess = isset($_GET['reply_sent']) && $_GET['reply_sent'] === '1';
                     <?php
                         $isUsageFeedback = !empty($fb['usage_id']);
                         $feedbackTitle = $isUsageFeedback ? 'Fuel fill feedback' : 'General feedback';
-                        $feedbackMeta = $isUsageFeedback ? ('Usage #' . (int)$fb['usage_id'] . (!empty($fb['qr_refrence_code']) ? ' / ' . $fb['qr_refrence_code'] : '')) : 'General feedback';
                         $isUnread = empty($fb['staff_read_at']);
+                        $feedbackComment = staff_feedback_comment_only($fb['feedback'] ?? null);
                     ?>
                     <div class="col-12">
                         <article class="dashboard-card feedback-card <?= $isUnread ? 'is-unread' : '' ?>">
                             <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
                                 <div>
                                     <h5 class="mb-1 text-white fw-semibold"><?= htmlspecialchars($feedbackTitle) ?></h5>
-                                    <div class="feedback-meta"><span>Customer UID <strong>#<?= (int)$fb['user_id'] ?></strong></span><span>Type: <?= $isUsageFeedback ? 'Fuel fill feedback' : 'General feedback' ?></span><span><?= htmlspecialchars($feedbackMeta) ?></span><span><?= htmlspecialchars((new DateTime($fb['created_at']))->format('M j, Y \\a\\t H:i')) ?></span></div>
+                                    <div class="feedback-meta"><span>Customer UID <strong>#<?= (int)$fb['user_id'] ?></strong></span><span><?= htmlspecialchars((new DateTime($fb['created_at']))->format('M j, Y \\a\\t H:i')) ?></span></div>
                                 </div>
                                 <div class="d-flex align-items-center gap-2"><span class="feedback-status <?= $isUnread ? 'unread' : 'read' ?>"><span class="dot"></span><?= $isUnread ? 'Unread' : 'Read' ?></span><span class="badge <?= $isUnread ? 'badge-pending' : 'badge-resolved' ?> px-3 py-2 rounded-pill small fw-medium"><?= !empty($fb['rating']) ? ((int)$fb['rating'] . '/5') : 'Feedback' ?></span></div>
                             </div>
-                            <p class="text-white-70 mb-4 small" style="opacity: 0.85;"><?= nl2br(htmlspecialchars(substr($fb['feedback'], 0, 240))) ?><?= strlen($fb['feedback']) > 240 ? '…' : '' ?></p>
+                            <p class="text-white-70 mb-4 small" style="opacity: 0.85;"><?= nl2br(htmlspecialchars(substr($feedbackComment, 0, 240), ENT_QUOTES, 'UTF-8')) ?><?= strlen($feedbackComment) > 240 ? '…' : '' ?></p>
                             <?php if ((int)$fb['reply_count'] > 0): ?><div class="reply-preview"><i class="bi bi-reply-fill me-1"></i><?= (int)$fb['reply_count'] ?> staff repl<?= (int)$fb['reply_count'] === 1 ? 'y' : 'ies' ?> recorded for this feedback.</div><?php endif; ?>
                             <div class="d-flex justify-content-end gap-2 flex-wrap">
                                 <?php if ($isUnread): ?><form action="feedback_process.php" method="POST"><input type="hidden" name="csrf_token" value="<?= htmlspecialchars($staffCsrfToken, ENT_QUOTES, 'UTF-8') ?>"><input type="hidden" name="action" value="mark_read"><input type="hidden" name="feedback_id" value="<?= (int)$fb['feedback_id'] ?>"><input type="hidden" name="return_tab" value="<?= htmlspecialchars($activeTab) ?>"><button class="btn btn-outline-light px-4" type="submit"><i class="bi bi-check2 me-1"></i> Mark read</button></form><?php endif; ?>
@@ -527,7 +537,8 @@ $showReplySuccess = isset($_GET['reply_sent']) && $_GET['reply_sent'] === '1';
                                 <select id="attachFeedbackSelect" name="attach_feedback_id" class="form-select report-modal-control">
                                     <option value="">-- None --</option>
                                     <?php foreach ($recentFeedback as $fbOpt): ?>
-                                        <option value="<?= (int)$fbOpt['feedback_id'] ?>"><?= htmlspecialchars(substr($fbOpt['feedback'], 0, 80)) ?><?= strlen($fbOpt['feedback']) > 80 ? '…' : '' ?> — Customer UID #<?= (int)$fbOpt['user_id'] ?></option>
+                                        <?php $feedbackOptionText = staff_feedback_comment_only($fbOpt['feedback'] ?? null); ?>
+                                        <option value="<?= (int)$fbOpt['feedback_id'] ?>"><?= htmlspecialchars(substr($feedbackOptionText, 0, 80), ENT_QUOTES, 'UTF-8') ?><?= strlen($feedbackOptionText) > 80 ? '…' : '' ?> — Customer UID #<?= (int)$fbOpt['user_id'] ?></option>
                                     <?php endforeach; ?>
                                 </select>
                             </div>

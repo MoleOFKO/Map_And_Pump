@@ -286,7 +286,79 @@ $profileFallbackUrl = map_pump_profile_initial_svg((string) ($_SESSION['user_nam
 include 'share_header.php';
 ?>
 
-<div class="row g-4">
+<style>
+/* ===== Profile UI refinements (presentation only) ===== */
+.profile-hero { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 20px; padding: 22px 24px; border-radius: 18px; position: relative; overflow: hidden; }
+.profile-hero::before { content: ''; position: absolute; top: 0; bottom: 0; left: 0; width: 3px; background: linear-gradient(180deg, #00f4ff, #0d6efd); }
+.profile-hero-main { display: flex; align-items: center; gap: 16px; min-width: 0; }
+.profile-hero-avatar { width: 56px; height: 56px; border-radius: 16px; object-fit: cover; border: 1px solid rgba(125, 211, 252, .25); background: rgba(13, 110, 253, .08); flex: 0 0 56px; }
+.profile-eyebrow { color: #7dd3fc; font-size: 10px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; margin-bottom: 2px; }
+.profile-hero-name { color: #fff; font-size: 1.25rem; font-weight: 700; margin: 0; letter-spacing: -.01em; overflow-wrap: anywhere; }
+.profile-hero-email { color: #9aa8b8; font-size: 13px; overflow-wrap: anywhere; }
+.profile-hero-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; flex: 1 1 360px; max-width: 560px; }
+.profile-stat { padding: 11px 13px; border-radius: 14px; background: rgba(255, 255, 255, .03); border: 1px solid rgba(255, 255, 255, .08); min-width: 0; }
+.profile-stat-label { display: block; color: #8b9ab0; font-size: 11px; margin-bottom: 3px; }
+.profile-stat-value { display: block; color: #fff; font-size: 14px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.profile-grid > [class*="col-"] > .dashboard-panel-card { border-radius: 18px; }
+.profile-grid .dashboard-panel-card h3 { font-size: 1.1rem; letter-spacing: -.01em; }
+.profile-section-icon { flex: 0 0 44px; width: 44px; height: 44px; display: inline-flex; align-items: center; justify-content: center; border-radius: 14px; background: linear-gradient(135deg, rgba(13, 110, 253, .28), rgba(0, 244, 255, .08)); border: 1px solid rgba(125, 211, 252, .22); }
+.profile-section-icon i { font-size: 19px; }
+.profile-field-label { display: block; margin-bottom: 6px; font-size: 11px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; }
+.profile-readonly { min-height: 46px; display: flex; align-items: center; border-radius: 12px; overflow-wrap: anywhere; }
+.profile-avatar { width: 84px; height: 84px; object-fit: cover; background: rgba(13, 110, 253, .08); border: 2px solid rgba(0, 244, 255, .35); box-shadow: 0 10px 26px rgba(0, 244, 255, .14); }
+.profile-hint { max-width: 340px; font-size: 12px; line-height: 1.5; }
+.profile-upload-btn { font-size: 12px; cursor: pointer; border-radius: 12px !important; }
+.profile-action-btn { padding: 10px 18px; border-radius: 14px; font-family: 'Space Grotesk', sans-serif; font-size: 13px; font-weight: 700; }
+.profile-small-btn { font-size: 12px; border-radius: 10px !important; }
+.profile-active-car { background: rgba(10, 22, 44, .55); border: 1px solid rgba(13, 110, 253, .18); }
+.profile-modal { border-radius: 18px; }
+.profile-modal .modal-header, .profile-modal .modal-footer { padding: 18px 22px; }
+.profile-modal .modal-body { padding: 22px; }
+.profile-modal .modal-title { font-size: 1.05rem; font-weight: 700; }
+.profile-modal .custom-form-field { min-height: 46px; border-radius: 12px; }
+.profile-modal .modal-footer .btn { padding: 9px 18px; }
+body.customer-light-mode .profile-hero-name,
+body.customer-light-mode .profile-stat-value { color: #102033; }
+body.customer-light-mode .profile-hero-email,
+body.customer-light-mode .profile-stat-label { color: #526174; }
+body.customer-light-mode .profile-eyebrow { color: #0b5ed7; }
+body.customer-light-mode .profile-stat { background: rgba(255, 255, 255, .7); border-color: rgba(15, 23, 42, .1); }
+body.customer-light-mode .profile-section-icon { color: #0b5ed7; background: linear-gradient(135deg, rgba(11, 94, 215, .14), rgba(0, 168, 255, .06)); border-color: rgba(11, 94, 215, .2); }
+body.customer-light-mode .profile-active-car { background: rgba(255, 255, 255, .7); border-color: rgba(11, 94, 215, .18); }
+@media (max-width: 575.98px) {
+    .profile-hero { padding: 18px; }
+    .profile-hero-stats { grid-template-columns: 1fr; }
+    .profile-action-btn { width: 100%; }
+    .profile-hero-avatar { width: 48px; height: 48px; flex-basis: 48px; }
+}
+</style>
+
+<header class="profile-hero dashboard-panel-card mb-4">
+    <div class="profile-hero-main">
+        <img class="profile-hero-avatar" src="<?php echo htmlspecialchars(map_pump_profile_avatar_url($profileImage, $profileFallbackUrl), ENT_QUOTES, 'UTF-8'); ?>" alt="">
+        <div class="min-w-0">
+            <div class="profile-eyebrow">Your account</div>
+            <h2 class="profile-hero-name"><?php echo htmlspecialchars((string) ($_SESSION['user_name'] ?? ''), ENT_QUOTES, 'UTF-8'); ?></h2>
+            <div class="profile-hero-email"><?php echo htmlspecialchars((string) ($_SESSION['user_email'] ?? ''), ENT_QUOTES, 'UTF-8'); ?></div>
+        </div>
+    </div>
+    <div class="profile-hero-stats">
+        <div class="profile-stat">
+            <span class="profile-stat-label">Cars on file</span>
+            <strong class="profile-stat-value"><?php echo (int) count($profileCars); ?></strong>
+        </div>
+        <div class="profile-stat">
+            <span class="profile-stat-label">Active car</span>
+            <strong class="profile-stat-value"><?php echo $activeCar ? htmlspecialchars((string) $activeCar['car_plate_number'], ENT_QUOTES, 'UTF-8') : 'None'; ?></strong>
+        </div>
+        <div class="profile-stat">
+            <span class="profile-stat-label">Business link</span>
+            <strong class="profile-stat-value"><?php echo $linkedBusinessRoleName !== '' ? htmlspecialchars($linkedBusinessRoleName, ENT_QUOTES, 'UTF-8') : 'Not linked'; ?></strong>
+        </div>
+    </div>
+</header>
+
+<div class="row g-4 profile-grid">
     <div class="col-lg-6">
         <div class="dashboard-panel-card h-100">
             <h3 class="text-white mb-1">Profile Configurations</h3>
@@ -302,32 +374,32 @@ include 'share_header.php';
                 <input type="hidden" name="action" value="update_profile">
                 <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($profileCsrfToken, ENT_QUOTES, 'UTF-8'); ?>">
                 <div class="mb-3 text-center">
-                    <label class="form-label text-secondary" style="font-size:11px; font-weight:600;">PROFILE IMAGE</label>
+                    <label class="profile-field-label text-secondary">PROFILE IMAGE</label>
                     <div class="d-flex flex-column align-items-center gap-3">
-                        <img id="profileImagePreview" src="<?php echo htmlspecialchars(map_pump_profile_avatar_url($profileImage, $profileFallbackUrl), ENT_QUOTES, 'UTF-8'); ?>" alt="Profile image preview" class="rounded-circle" style="width:76px;height:76px;object-fit:cover;background:rgba(13,110,253,.08);border:1px solid rgba(13,110,253,.22);">
+                        <img id="profileImagePreview" src="<?php echo htmlspecialchars(map_pump_profile_avatar_url($profileImage, $profileFallbackUrl), ENT_QUOTES, 'UTF-8'); ?>" alt="Profile image preview" class="rounded-circle profile-avatar">
                         <div class="w-100">
-                            <label for="profileImageInput" class="btn btn-outline-info btn-sm px-3 rounded-3 fw-bold mb-0" style="font-size:12px;cursor:pointer;">Change Profile Image</label>
+                            <label for="profileImageInput" class="btn btn-outline-info btn-sm px-3 rounded-3 fw-bold mb-0 profile-upload-btn">Change Profile Image</label>
                             <input type="file" name="profile_image" id="profileImageInput" class="d-none" accept="image/jpeg,image/png,image/webp">
                             <input type="hidden" name="profile_image_data" id="profileImageData">
-                            <small id="profileImageHelp" class="text-secondary d-block mt-2 mx-auto" style="max-width:320px;">Upload an image, or copy an image from anywhere and paste it while this page is open.</small>
+                            <small id="profileImageHelp" class="text-secondary d-block mt-2 mx-auto profile-hint">Upload an image, or copy an image from anywhere and paste it while this page is open.</small>
                         </div>
                     </div>
                 </div>
                 <div class="mb-3">
-                    <label class="form-label text-secondary" style="font-size:11px; font-weight:600;">DISPLAY FULL NAME</label>
-                    <div class="form-control custom-form-field text-secondary">
+                    <label class="profile-field-label text-secondary">DISPLAY FULL NAME</label>
+                    <div class="form-control custom-form-field profile-readonly text-secondary">
                         <?php echo htmlspecialchars($_SESSION['user_name']); ?>
                     </div>
                 </div>
                 <div class="mb-4">
-                    <label class="form-label text-secondary" style="font-size:11px; font-weight:600;">REGISTERED SYSTEM EMAIL</label>
-                    <div class="form-control custom-form-field text-secondary">
+                    <label class="profile-field-label text-secondary">REGISTERED SYSTEM EMAIL</label>
+                    <div class="form-control custom-form-field profile-readonly text-secondary">
                         <?php echo htmlspecialchars($_SESSION['user_email']); ?>
                     </div>
                 </div>
                 <div class="d-flex gap-2 flex-wrap">
-                    <button type="button" class="btn btn-outline-info px-4 py-2.5 fw-bold rounded-4" data-bs-toggle="modal" data-bs-target="#changeProfileModal" style="font-size:12px; font-family:'Space Grotesk';">Change Profile</button>
-                    <button type="button" class="btn btn-outline-info px-4 py-2.5 fw-bold rounded-4" data-bs-toggle="modal" data-bs-target="#changePasswordModal" style="font-size:12px; font-family:'Space Grotesk';">Change Password</button>
+                    <button type="button" class="btn btn-outline-info profile-action-btn" data-bs-toggle="modal" data-bs-target="#changeProfileModal">Change Profile</button>
+                    <button type="button" class="btn btn-outline-info profile-action-btn" data-bs-toggle="modal" data-bs-target="#changePasswordModal">Change Password</button>
                 </div>
             </form>
         </div>
@@ -339,7 +411,7 @@ include 'share_header.php';
             <div class="dashboard-panel-card">
                 <div class="d-flex align-items-start justify-content-between gap-3 mb-3">
                     <div class="d-flex align-items-start gap-3">
-                        <div class="bg-primary bg-opacity-10 p-2.5 rounded-3 text-sky-400">
+                        <div class="profile-section-icon text-sky-400">
                             <i class="bi bi-arrow-left-right fs-4"></i>
                         </div>
                         <div>
@@ -351,7 +423,7 @@ include 'share_header.php';
                 <?php if ($linkedBusinessRoleName !== ''): ?>
                     <form action="../account_switch.php" method="POST" class="m-0">
                         <input type="hidden" name="mode" value="business">
-                        <button type="submit" class="btn btn-outline-info btn-sm px-3 rounded-3 fw-bold" style="font-size:12px;">
+                        <button type="submit" class="btn btn-outline-info btn-sm px-3 rounded-3 fw-bold profile-small-btn">
                             <i class="bi bi-briefcase-fill me-1"></i>Switch to <?php echo htmlspecialchars($linkedBusinessRoleName); ?> Profile
                         </button>
                     </form>
@@ -363,7 +435,7 @@ include 'share_header.php';
             <div class="dashboard-panel-card">
                 <div class="d-flex align-items-start justify-content-between gap-3 mb-3">
                     <div class="d-flex align-items-start gap-3">
-                        <div class="bg-primary bg-opacity-10 p-2.5 rounded-3 text-sky-400">
+                        <div class="profile-section-icon text-sky-400">
                             <i class="bi bi-person-vcard fs-4"></i>
                         </div>
                         <div>
@@ -371,14 +443,14 @@ include 'share_header.php';
                             <p class="text-secondary mb-0" style="font-size:13px;">Keep the driver's license details for this user up to date.</p>
                         </div>
                     </div>
-                    <a href="license.php" class="btn btn-outline-info btn-sm px-3 rounded-3 fw-bold" style="font-size:12px;">Edit</a>
+                    <a href="license.php" class="btn btn-outline-info btn-sm px-3 rounded-3 fw-bold profile-small-btn">Edit</a>
                 </div>
             </div>
 
             <div class="dashboard-panel-card flex-grow-1">
                 <div class="d-flex align-items-start justify-content-between gap-3 mb-3 flex-wrap">
                     <div class="d-flex align-items-start gap-3">
-                        <div class="bg-primary bg-opacity-10 p-2.5 rounded-3 text-sky-400">
+                        <div class="profile-section-icon text-sky-400">
                             <i class="bi bi-car-front-fill fs-4"></i>
                         </div>
                         <div>
@@ -387,21 +459,21 @@ include 'share_header.php';
                         </div>
                     </div>
                     <?php if ($activeCar): ?>
-                        <a href="car_license.php?update=1&car_id=<?php echo (int) $activeCar['car_license_id']; ?>" class="btn btn-outline-info btn-sm px-3 rounded-3 fw-bold" style="font-size:12px;">Edit</a>
+                        <a href="car_license.php?update=1&car_id=<?php echo (int) $activeCar['car_license_id']; ?>" class="btn btn-outline-info btn-sm px-3 rounded-3 fw-bold profile-small-btn">Edit</a>
                     <?php else: ?>
-                        <a href="car_license.php?add=1" class="btn btn-info btn-sm px-3 rounded-3 fw-bold" style="font-size:12px;">Add</a>
+                        <a href="car_license.php?add=1" class="btn btn-info btn-sm px-3 rounded-3 fw-bold profile-small-btn">Add</a>
                     <?php endif; ?>
                 </div>
 
                 <?php if ($activeCar): ?>
-                    <div class="rounded-3 px-3 py-3 mb-3" style="background:rgba(10,22,44,.55);border:1px solid rgba(13,110,253,.18);">
+                    <div class="profile-active-car rounded-3 px-3 py-3 mb-3">
                         <div class="d-flex align-items-center justify-content-between gap-3 flex-wrap">
                             <div>
                                 <span class="status-pill active mb-2" style="font-size:10px;"><i class="bi bi-check-circle-fill"></i> Active Car</span>
                                 <div class="text-white fw-semibold"><?php echo htmlspecialchars((string) $activeCar['car_plate_number']); ?></div>
                                 <div class="text-secondary" style="font-size:12px;"><?php echo htmlspecialchars(trim((string) ($activeCar['vehicle_name'] ?? '') . ' / ' . (string) ($activeCar['vehicle_type'] ?? ''))); ?></div>
                             </div>
-                            <a href="car_license.php?add=1" class="btn btn-outline-info btn-sm px-3 rounded-3 fw-bold" style="font-size:12px;"><i class="bi bi-plus-lg me-1"></i>Add Car</a>
+                            <a href="car_license.php?add=1" class="btn btn-outline-info btn-sm px-3 rounded-3 fw-bold profile-small-btn"><i class="bi bi-plus-lg me-1"></i>Add Car</a>
                         </div>
                     </div>
                     <?php if (count($profileCars) > 1): ?>
@@ -515,7 +587,7 @@ include 'share_header.php';
 <!-- Change Profile Modal -->
 <div class="modal fade" id="changeProfileModal" tabindex="-1" aria-labelledby="changeProfileModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content dashboard-panel-card">
+        <div class="modal-content dashboard-panel-card profile-modal">
             <div class="modal-header border-secondary border-opacity-25">
                 <h5 class="modal-title text-white" id="changeProfileModalLabel">Change Profile</h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
@@ -545,7 +617,7 @@ include 'share_header.php';
 <!-- Change Password Modal -->
 <div class="modal fade" id="changePasswordModal" tabindex="-1" aria-labelledby="changePasswordModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content dashboard-panel-card">
+        <div class="modal-content dashboard-panel-card profile-modal">
             <div class="modal-header border-secondary border-opacity-25">
                 <h5 class="modal-title text-white" id="changePasswordModalLabel">Change Password</h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>

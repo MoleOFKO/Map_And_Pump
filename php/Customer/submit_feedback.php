@@ -73,18 +73,6 @@ try {
         customer_feedback_redirect('feedback_error=not_filled');
     }
 
-    $context = sprintf(
-        '[Usage #%d | Booking %s | Station %s | Fuel %s | Liters %s | Filled %s%s]',
-        (int)$usage['usage_id'],
-        (string)($usage['qr_refrence_code'] ?? 'N/A'),
-        (string)($usage['station_name'] ?? ('Station #' . (int)$usage['station_id'])),
-        (string)($usage['oil_name'] ?? 'Fuel'),
-        rtrim(rtrim(number_format((float)($usage['filled_liters'] ?? 0), 1, '.', ''), '0'), '.'),
-        (string)($usage['filled_at'] ?? 'N/A'),
-        $rating > 0 ? (' | Rating ' . $rating . '/5') : ''
-    );
-    $feedbackText = $message !== '' ? ($context . "\n" . $message) : ($context . "\nCustomer submitted a rating without a written comment.");
-
     $insert = $pdo->prepare(
         'INSERT INTO feedback (user_id, usage_id, station_id, rating, feedback, created_at)
          VALUES (:user_id, :usage_id, :station_id, :rating, :feedback, NOW())'
@@ -94,7 +82,7 @@ try {
         ':usage_id' => $usageId,
         ':station_id' => !empty($usage['station_id']) ? (int)$usage['station_id'] : null,
         ':rating' => $rating > 0 ? $rating : null,
-        ':feedback' => $feedbackText,
+        ':feedback' => $message,
     ]);
 
     customer_feedback_redirect('feedback_sent=1');

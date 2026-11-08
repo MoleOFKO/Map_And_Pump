@@ -21,8 +21,57 @@ $passwordResetCsrf = (string) $_SESSION['password_reset_csrf'];
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Prata&family=Poppins:wght@400;500&display=swap" rel="stylesheet">
   <link rel="icon" type="image/png" href="/images/Logo.png">
   <link rel="stylesheet" href="../../css/Login.css" />
+  <style>
+  /* ===== Auth pages UI refinements (presentation only) =====
+     Layered over ../../css/Login.css. Only visual properties are set here.
+     display / visibility are never changed, because the page JS toggles
+     .active, .show, .visible, .valid and inline display on these elements. */
+  .main-card { border: 1px solid rgba(255, 255, 255, .08); border-radius: 24px; box-shadow: 0 30px 80px rgba(0, 0, 0, .45); }
+  .title { letter-spacing: .14em; font-weight: 800; }
+  .input-group label { font-size: 12px; font-weight: 600; letter-spacing: .04em; }
+  .input-wrapper { transition: box-shadow .18s ease, border-color .18s ease; }
+  .input-wrapper input { transition: color .15s ease, border-color .15s ease; }
+  .input-wrapper:focus-within { box-shadow: 0 0 0 3px rgba(14, 165, 233, .22); }
+  .input-wrapper input::placeholder { opacity: .55; }
+  .eye-btn { border-radius: 8px; transition: background .15s ease, color .15s ease; }
+  .eye-btn:hover { background: rgba(255, 255, 255, .06); }
+  .eye-btn:focus-visible, .back-nav-link:focus-visible, .forgot-link:focus-visible,
+  .register-link:focus-visible, .resend-link:focus-visible, .social-btn:focus-visible,
+  .submit-btn:focus-visible, .checkbox-container input:focus-visible, .close-btn:focus-visible,
+  .otp-digit:focus-visible {
+    outline: 2px solid #38bdf8;
+    outline-offset: 2px;
+  }
+  .submit-btn { min-height: 48px; transition: transform .15s ease, box-shadow .18s ease, filter .15s ease; box-shadow: 0 10px 26px rgba(14, 165, 233, .25); }
+  .submit-btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 14px 32px rgba(14, 165, 233, .35); }
+  .submit-btn:active:not(:disabled) { transform: translateY(0) scale(.99); }
+  .submit-btn:disabled, .submit-btn.is-loading { cursor: wait; }
+  .social-btn { transition: background .15s ease, border-color .15s ease, transform .15s ease; }
+  .social-btn:hover { border-color: rgba(255, 255, 255, .28); transform: translateY(-1px); }
+  .forgot-link, .register-link, .resend-link { text-underline-offset: 3px; }
+  .forgot-link:hover, .register-link:hover, .resend-link:hover { text-decoration: underline; }
+  .back-nav-link { transition: opacity .15s ease, color .15s ease; }
+  .back-nav-link:hover { opacity: .85; }
+  .checkbox-container { cursor: pointer; }
+  .otp-digit { font-weight: 700; text-align: center; transition: border-color .15s ease, box-shadow .15s ease; }
+  .otp-digit:focus { border-color: #38bdf8; box-shadow: 0 0 0 3px rgba(56, 189, 248, .22); }
+  .pbar { height: 4px; border-radius: 99px; overflow: hidden; transition: background-color .25s ease; }
+  .mini-popup { box-shadow: 0 16px 40px rgba(0, 0, 0, .45); border-radius: 14px; }
+  .step-icon-badge { box-shadow: 0 0 0 6px rgba(14, 165, 233, .08); }
+  .success-badge { box-shadow: 0 0 0 6px rgba(34, 197, 94, .1); }
+  .pw-popover, .strength-label { letter-spacing: .02em; }
+  @media (max-width: 480px) {
+    .main-card { border-radius: 18px; }
+    .title { letter-spacing: .1em; }
+    .submit-btn { min-height: 46px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .submit-btn, .social-btn, .input-wrapper, .input-wrapper input, .otp-digit, .eye-btn, .back-nav-link { transition: none !important; }
+    .submit-btn:hover:not(:disabled), .social-btn:hover { transform: none; }
+  }
+  </style>
 </head>
-<body>
+<body class="auth-refined">
 
   <!-- Background Decorative Blurs -->
   <div class="bg-blur bg-blur-1"></div>

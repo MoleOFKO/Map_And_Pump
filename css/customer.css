@@ -644,6 +644,25 @@ body:has(.customer-dashboard) { overflow-y: hidden; }
 }
 
 /* ---------- Accent colors & buttons ---------- */
+button,
+.btn {
+    transition: filter 0.16s ease, box-shadow 0.16s ease, transform 0.16s ease;
+}
+button:not(:disabled):hover,
+.btn:not(:disabled):hover {
+    filter: brightness(1.08);
+    transform: translateY(-1px);
+}
+button:not(:disabled):active,
+.btn:not(:disabled):active {
+    filter: brightness(0.96);
+    transform: translateY(0);
+}
+button:focus-visible,
+.btn:focus-visible {
+    outline: 2px solid var(--customer-neon-cyan);
+    outline-offset: 3px;
+}
 .text-sky-400,
 .txt-neon-cyan { color: var(--customer-neon-cyan) !important; }
 .txt-neon-blue { color: var(--customer-neon-blue) !important; }

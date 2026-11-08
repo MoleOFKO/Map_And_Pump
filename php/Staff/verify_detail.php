@@ -38,13 +38,13 @@ $fillableLiters = $weeklyLimitLiters;
 if ($bookingId > 0) {
     $stmt = $pdo->prepare(
         'SELECT b.booking_id, b.user_id, b.station_id, b.oil_type_id, b.qr_code, b.qr_refrence_code,
-                r.requested_liters, po.offered_liters, po.status AS partial_offer_status,
+            r.requested_liters,
                 b.status, b.filled_gas, b.time_of_filled, b.expire_at, b.created_at,
-                s.branch_name AS station_name, o.oil_name, u.user_name, b.car_license_id,
-                c.filled_gas AS weekly_filled_gas, c.updated_at AS car_license_updated_at
+            s.branch_name AS station_name, o.oil_name, u.user_name, u.email, b.car_license_id,
+            c.car_plate_number, c.vehicle_name, c.vehicle_type, c.model_year,
+            c.filled_gas AS weekly_filled_gas, c.updated_at AS car_license_updated_at
          FROM booking b
          LEFT JOIN booking_reservations r ON r.booking_id = b.booking_id
-         LEFT JOIN booking_partial_offers po ON po.booking_id = b.booking_id
          LEFT JOIN branches s ON s.branch_id = b.station_id
          LEFT JOIN oil_types o ON o.oil_type_id = b.oil_type_id
          LEFT JOIN users u ON u.user_id = b.user_id
@@ -79,6 +79,11 @@ $bookingCode = $booking['qr_refrence_code'] ?? '';
 $isFilled = isset($booking['status']) && in_array(strtolower((string)$booking['status']), ['filled', 'completed', 'cancelled', 'expired', 'station_unable_to_fulfill'], true);
 $maxFillLiters = $booking ? min($fillableLiters, (float)($booking['requested_liters'] ?? 0)) : 0.0;
 $customerName = $booking['user_name'] ?? 'Customer';
+$customerInitial = strtoupper(substr(trim((string)$customerName), 0, 1)) ?: 'C';
+$customerEmail = $booking['email'] ?? '';
+$customerPlate = $booking['car_plate_number'] ?? '';
+$customerVehicle = trim((string)($booking['vehicle_name'] ?? '') . ' ' . (string)($booking['vehicle_type'] ?? ''));
+$customerModelYear = $booking['model_year'] ?? '';
 $weeklyFilledDisplay = rtrim(rtrim(number_format($weeklyFilledLiters, 1, '.', ''), '0'), '.');
 $fillableDisplay = rtrim(rtrim(number_format($fillableLiters, 1, '.', ''), '0'), '.');
 
@@ -126,6 +131,19 @@ if (!empty($booking['user_id'])) {
         .dashboard-card { background: rgba(5, 11, 20, 0.92); border: 1px solid rgba(255,255,255,0.08); }
         .glass-input { background: rgba(255,255,255,0.05); color: #fff !important; }
         .glass-input::placeholder { color: rgba(255,255,255,0.65) !important; }
+        .booked-customer { display:flex; align-items:center; gap:16px; padding:18px; border:1px solid rgba(56,189,248,.2); border-radius:14px; background:linear-gradient(135deg,rgba(56,189,248,.1),rgba(255,255,255,.025)); }
+        .booked-customer { width:100%; min-height:92px; }
+        .booking-summary-grid > [class*="col-"] { min-width:0; }
+        .booking-summary-grid > [class*="col-"] > .booking-info-tile { width:100%; height:100%; min-height:116px; display:flex; flex-direction:column; justify-content:center; padding:18px !important; border:1px solid rgba(255,255,255,.08); border-radius:14px !important; background:rgba(255,255,255,.04); }
+        .booking-info-tile .detail-value { overflow-wrap:anywhere; }
+        .booked-customer-avatar { display:grid; place-items:center; flex:0 0 52px; width:52px; height:52px; border-radius:50%; color:#06111b; background:#38bdf8; font-size:21px; font-weight:800; }
+        .booked-customer-label { color:#7dd3fc; font-size:10px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; }
+        .booked-customer-name { margin:2px 0 3px; color:#fff; font-size:19px; font-weight:800; }
+        .booked-customer-contact { color:rgba(255,255,255,.68); font-size:12px; overflow-wrap:anywhere; }
+        .booked-vehicle { margin-left:auto; min-width:190px; padding:10px 12px; border-radius:10px; background:rgba(0,0,0,.2); }
+        .booked-vehicle-label { color:rgba(255,255,255,.58); font-size:10px; font-weight:700; text-transform:uppercase; }
+        .booked-vehicle-value { color:#fff; font-size:13px; font-weight:700; }
+        @media(max-width:575px) { .booked-customer { align-items:flex-start; flex-wrap:wrap; } .booked-vehicle { width:100%; margin-left:68px; } }
     </style>
 </head>
 <body class="background_color" id="background_color">
@@ -192,53 +210,55 @@ if (!empty($booking['user_id'])) {
                     <?php if (!empty($errorMessage)): ?>
                         <div class="alert alert-warning border-0"><?php echo htmlspecialchars($errorMessage, ENT_QUOTES, 'UTF-8'); ?></div>
                     <?php else: ?>
-                        <div class="row g-3 mb-4">
-                            <div class="col-12 col-md-6">
-                                <div class="p-3 rounded-4" style="background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);">
-                                    <div class="detail-label mb-2">Customer UID</div>
-                                    <div class="detail-value"><?php echo htmlspecialchars($customerUid, ENT_QUOTES, 'UTF-8'); ?></div>
-                                </div>
+                        <div class="row g-3 mb-4 booking-summary-grid">
+                            <div class="col-12">
+                                <section class="booked-customer" aria-label="Booked customer details">
+                                    <div class="booked-customer-avatar" aria-hidden="true"><?php echo htmlspecialchars($customerInitial, ENT_QUOTES, 'UTF-8'); ?></div>
+                                    <div class="min-w-0">
+                                        <div class="booked-customer-label">Booked customer</div>
+                                        <h3 class="booked-customer-name"><?php echo htmlspecialchars($customerName, ENT_QUOTES, 'UTF-8'); ?></h3>
+                                        <div class="booked-customer-contact"><?php echo htmlspecialchars($customerEmail, ENT_QUOTES, 'UTF-8'); ?> · Customer UID <?php echo htmlspecialchars((string)$customerUid, ENT_QUOTES, 'UTF-8'); ?></div>
+                                    </div>
+                                    <div class="booked-vehicle">
+                                        <div class="booked-vehicle-label"><i class="bi bi-car-front-fill me-1"></i>Booked vehicle</div>
+                                        <div class="booked-vehicle-value"><?php echo htmlspecialchars($customerPlate !== '' ? $customerPlate : 'Plate not available', ENT_QUOTES, 'UTF-8'); ?></div>
+                                        <div class="booked-customer-contact"><?php echo htmlspecialchars(trim($customerVehicle . ($customerModelYear !== '' ? ' · ' . $customerModelYear : '')) ?: 'Vehicle details not available', ENT_QUOTES, 'UTF-8'); ?></div>
+                                    </div>
+                                </section>
                             </div>
                             <div class="col-12 col-md-6">
-                                <div class="p-3 rounded-4" style="background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);">
+                                <div class="booking-info-tile">
                                     <div class="detail-label mb-2">Oil Type</div>
                                     <div class="detail-value"><?php echo htmlspecialchars($oilType, ENT_QUOTES, 'UTF-8'); ?></div>
                                 </div>
                             </div>
                             <div class="col-12 col-md-6">
-                                <div class="p-3 rounded-4" style="background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);">
+                                <div class="booking-info-tile">
                                     <div class="detail-label mb-2">Station</div>
                                     <div class="detail-value"><?php echo htmlspecialchars($stationName, ENT_QUOTES, 'UTF-8'); ?></div>
                                 </div>
                             </div>
                             <div class="col-12 col-md-6">
-                                <div class="p-3 rounded-4" style="background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);">
+                                <div class="booking-info-tile">
                                     <div class="detail-label mb-2">Booking Code</div>
                                     <div class="detail-value"><?php echo htmlspecialchars($bookingCode, ENT_QUOTES, 'UTF-8'); ?></div>
                                     <div class="text-white-50 small mt-2">Reserved: <?php echo htmlspecialchars(rtrim(rtrim(number_format((float)($booking['requested_liters'] ?? 0), 2, '.', ''), '0'), '.') . ' L', ENT_QUOTES, 'UTF-8'); ?></div>
-                                    <?php if (($booking['partial_offer_status'] ?? '') === 'pending'): ?><div class="text-warning small mt-2">Waiting for driver to accept <?php echo htmlspecialchars((string)$booking['offered_liters']); ?> L.</div><?php endif; ?>
-                                </div>
-                            </div>
-                            <div class="col-12">
-                                <div class="p-3 rounded-4" style="background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);">
-                                    <div class="detail-label mb-2">Customer Name</div>
-                                    <div class="detail-value"><?php echo htmlspecialchars($customerName, ENT_QUOTES, 'UTF-8'); ?></div>
                                 </div>
                             </div>
                             <div class="col-12 col-md-6">
-                                <div class="p-3 rounded-4" style="background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);">
+                                <div class="booking-info-tile">
                                     <div class="detail-label mb-2">Filled This Week</div>
                                     <div class="detail-value"><?php echo htmlspecialchars($weeklyFilledDisplay, ENT_QUOTES, 'UTF-8'); ?> / <?php echo htmlspecialchars(rtrim(rtrim(number_format($weeklyLimitLiters, 1, '.', ''), '0'), '.'), ENT_QUOTES, 'UTF-8'); ?> L</div>
                                 </div>
                             </div>
                             <div class="col-12 col-md-6">
-                                <div class="p-3 rounded-4" style="background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);">
+                                <div class="booking-info-tile">
                                     <div class="detail-label mb-2">Can Fill</div>
                                     <div class="detail-value"><?php echo htmlspecialchars($fillableDisplay, ENT_QUOTES, 'UTF-8'); ?> L left</div>
                                 </div>
                             </div>
                             <div class="col-12 col-md-6">
-                                <div class="p-3 rounded-4" style="background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);">
+                                <div class="booking-info-tile">
                                     <div class="detail-label mb-2">Loyalty Balance</div>
                                     <div class="detail-value text-warning"><?php echo (int) $loyaltyBalance; ?> pts</div>
                                     <?php if (!empty($loyaltyWillBeInternal)): ?>
@@ -247,7 +267,7 @@ if (!empty($booking['user_id'])) {
                                 </div>
                             </div>
                             <div class="col-12 col-md-6">
-                                <div class="p-3 rounded-4" style="background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);">
+                                <div class="booking-info-tile">
                                     <div class="detail-label mb-2">Points to Redeem (this booking)</div>
                                     <div class="detail-value">
                                         <?php if (!empty($loyaltyWillBeInternal)): ?>
@@ -273,8 +293,8 @@ if (!empty($booking['user_id'])) {
 
                             <div class="mb-4">
                                 <label for="amountLiters" class="form-label text-white-50">Amount (Liters)</label>
-                                <input type="number" step="0.1" min="0.1" max="<?php echo htmlspecialchars((string)$maxFillLiters, ENT_QUOTES, 'UTF-8'); ?>" class="form-control glass-input border-0 px-3 py-3 text-white" id="amountLiters" name="amount_liters" placeholder="Enter actual dispensed liters" <?php echo ($isFilled || $maxFillLiters <= 0 || (($booking['partial_offer_status'] ?? '') === 'pending')) ? 'disabled' : 'required'; ?> <?php echo $isFilled ? 'value="0"' : ''; ?> style="color:#fff;" />
-                                <div class="form-text text-white-50">Maximum: <?php echo htmlspecialchars(rtrim(rtrim(number_format($maxFillLiters, 2, '.', ''), '0'), '.'), ENT_QUOTES, 'UTF-8'); ?> L. A smaller amount requires the driver's acceptance first.</div>
+                                <input type="number" step="0.1" min="0.1" max="<?php echo htmlspecialchars((string)$maxFillLiters, ENT_QUOTES, 'UTF-8'); ?>" class="form-control glass-input border-0 px-3 py-3 text-white" id="amountLiters" name="amount_liters" placeholder="Enter actual dispensed liters" <?php echo ($isFilled || $maxFillLiters <= 0) ? 'disabled' : 'required'; ?> <?php echo $isFilled ? 'value="0"' : ''; ?> style="color:#fff;" />
+                                <div class="form-text text-white-50">Enter the actual amount dispensed. Maximum: <?php echo htmlspecialchars(rtrim(rtrim(number_format($maxFillLiters, 2, '.', ''), '0'), '.'), ENT_QUOTES, 'UTF-8'); ?> L.</div>
                             </div>
 
                             <button type="submit" class="btn btn-neon w-100 py-2 rounded-pill" <?php echo ($isFilled || $fillableLiters <= 0) ? 'disabled' : ''; ?> >
@@ -287,24 +307,6 @@ if (!empty($booking['user_id'])) {
                                 <p class="text-warning small mt-3">This customer has reached the weekly fuel limit.</p>
                             <?php endif; ?>
                         </form>
-                        <?php if (!$isFilled && !in_array(strtolower((string)($booking['partial_offer_status'] ?? '')), ['accepted'], true)): ?>
-                            <form action="verify_process.php" method="POST" class="text-start mt-3">
-                                <input type="hidden" name="action" value="offer_partial">
-                                <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($staffVerifyCsrfToken, ENT_QUOTES, 'UTF-8'); ?>">
-                                <input type="hidden" name="booking_id" value="<?php echo htmlspecialchars((string)$bookingId, ENT_QUOTES, 'UTF-8'); ?>">
-                                <label for="offerLiters" class="form-label text-white-50">Offer a smaller amount (driver must accept)</label>
-                                <input type="number" step="0.1" min="0.1" max="<?php echo htmlspecialchars((string)max(0.1, (float)($booking['requested_liters'] ?? 0) - 0.1), ENT_QUOTES, 'UTF-8'); ?>" class="form-control glass-input border-0 px-3 py-3 text-white mb-2" id="offerLiters" name="amount_liters" required>
-                                <button type="submit" class="btn btn-outline-warning w-100 py-2 rounded-pill">Send partial-fill offer to driver</button>
-                            </form>
-                        <?php endif; ?>
-                        <?php if (!$isFilled): ?>
-                            <form action="verify_process.php" method="POST" class="mt-2" onsubmit="return confirm('Close this reservation as unfulfillable and issue a full-value station coupon?');">
-                                <input type="hidden" name="action" value="unable_to_fulfill">
-                                <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($staffVerifyCsrfToken, ENT_QUOTES, 'UTF-8'); ?>">
-                                <input type="hidden" name="booking_id" value="<?php echo htmlspecialchars((string)$bookingId, ENT_QUOTES, 'UTF-8'); ?>">
-                                <button type="submit" class="btn btn-outline-danger w-100 py-2 rounded-pill">Unable to fulfill — issue full-value coupon</button>
-                            </form>
-                        <?php endif; ?>
                     <?php endif; ?>
                 </div>
             </div>

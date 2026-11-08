@@ -142,7 +142,8 @@ try {
             $reviewPlaceholders = implode(',', array_fill(0, count($stationsById), '?'));
             $reviewStmt = $pdo->prepare(
                 "SELECT f.station_id, f.rating,
-                        CASE WHEN LOCATE(CHAR(10), f.feedback) > 0
+                            CASE WHEN LEFT(f.feedback, 8) = '[Usage #'
+                                    AND LOCATE(CHAR(10), f.feedback) > 0
                              THEN TRIM(SUBSTRING(f.feedback, LOCATE(CHAR(10), f.feedback) + 1))
                              ELSE TRIM(f.feedback) END AS review_text,
                         u.user_name AS customer_name, f.created_at
@@ -364,10 +365,13 @@ $bookingCsrfToken = (string) $_SESSION['booking_csrf_token'];
 <section id="station-launch-card" class="dashboard-panel-card customer-map-launch-card<?php echo $hasActiveBooking ? ' d-none' : ''; ?>">
     <div class="d-flex align-items-center justify-content-between flex-wrap gap-3">
         <div>
-            <h3 class="text-white mb-1">Find a station and book your fuel</h3>
-            <p class="text-secondary mb-0" style="font-size:13px;">Choose a nearby station to create your booking pass.</p>
+            <span class="cmp-icon"><i class="bi bi-geo-alt"></i></span>
+            <div>
+                <h3 class="text-white mb-1">Find a station and book your fuel</h3>
+                <p class="cmp-subtitle">Choose a nearby station to create your booking pass.</p>
+            </div>
         </div>
-        <button id="locate-btn" class="btn btn-info px-4 py-3 fw-bold rounded-4" type="button" onclick="openMapExperience()" style="font-size:13px; font-family:'Space Grotesk';">
+        <button id="locate-btn" class="btn btn-info cmp-cta fw-bold" type="button" onclick="openMapExperience()" style="font-size:13px; font-family:'Space Grotesk';">
             Choose a station on the map <i class="bi bi-arrow-right ms-2"></i>
         </button>
     </div>
@@ -376,10 +380,13 @@ $bookingCsrfToken = (string) $_SESSION['booking_csrf_token'];
 <section id="quick-mapping-card" class="dashboard-panel-card customer-map-launch-card mt-3<?php echo $hasActiveBooking ? ' d-none' : ''; ?>">
     <div class="d-flex align-items-center justify-content-between flex-wrap gap-3">
         <div>
-            <h3 class="text-white mb-1">Quick Mapping</h3>
-            <p class="text-secondary mb-0" style="font-size:13px;">Automatically choose nearest station on the map</p>
+            <span class="cmp-icon"><i class="bi bi-lightning-charge"></i></span>
+            <div>
+                <h3 class="text-white mb-1">Quick Mapping</h3>
+                <p class="cmp-subtitle">Automatically choose nearest station on the map</p>
+            </div>
         </div>
-        <button id="auto-connect-btn" class="btn btn-info px-4 py-3 fw-bold rounded-4" type="button" onclick="autoConnectNearestStation()" style="font-size:13px; font-family:'Space Grotesk';">
+        <button id="auto-connect-btn" class="btn btn-info cmp-cta fw-bold" type="button" onclick="autoConnectNearestStation()" style="font-size:13px; font-family:'Space Grotesk';">
             Auto connect <i class="bi bi-geo-alt-fill ms-2"></i>
         </button>
     </div>
@@ -671,6 +678,402 @@ body.customer-light-mode .customer-map-recenter-btn:hover {
     .customer-map-back-btn { top: 12px; right: 12px; }
     .customer-map-recenter-btn { right: 12px; bottom: 12px; }
 }
+/* ===== Booking UI refinements ===== */
+/* ==========================================================================
+   Booking UI refinements
+   Layered on top of the rules above. Only visual properties are changed;
+   ids, classes used by the scripts, and positioning are left as they were.
+   ========================================================================== */
+
+/* ---- Shared launch cards (station search, quick map, booking status) ---- */
+.customer-map-launch-card {
+    position: relative;
+    overflow: hidden;
+    padding: 20px 22px;
+    border-radius: 18px;
+    transition: border-color .2s ease, box-shadow .2s ease;
+}
+.customer-map-launch-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 3px;
+    background: linear-gradient(180deg, #00f4ff, #0d6efd);
+    opacity: .85;
+}
+.customer-map-launch-card:hover {
+    box-shadow: 0 14px 34px rgba(13, 110, 253, .12);
+}
+.customer-map-launch-card h3 {
+    font-size: 1.1rem;
+    letter-spacing: -.01em;
+}
+.customer-map-launch-card > .d-flex {
+    gap: 16px !important;
+}
+.customer-map-launch-card > .d-flex > div:first-child {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    min-width: 0;
+    flex: 1 1 260px;
+}
+.customer-map-launch-card > .d-flex > div:first-child > div {
+    min-width: 0;
+}
+.cmp-icon {
+    flex: 0 0 44px;
+    width: 44px;
+    height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 14px;
+    font-size: 19px;
+    color: #7dd3fc;
+    background: linear-gradient(135deg, rgba(13, 110, 253, .28), rgba(0, 244, 255, .08));
+    border: 1px solid rgba(125, 211, 252, .22);
+}
+.cmp-cta {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 12px 20px !important;
+    border-radius: 14px !important;
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 14px !important;
+    letter-spacing: .01em;
+    white-space: nowrap;
+    box-shadow: 0 8px 22px rgba(0, 244, 255, .16);
+    transition: transform .15s ease, box-shadow .15s ease, filter .15s ease;
+}
+.cmp-cta:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 12px 26px rgba(0, 244, 255, .24);
+    filter: brightness(1.05);
+}
+.cmp-cta:focus-visible {
+    outline: 2px solid #0dcaf0;
+    outline-offset: 3px;
+}
+.cmp-subtitle {
+    color: #9aa8b8;
+    font-size: 13px;
+    line-height: 1.45;
+    margin: 0;
+}
+body.customer-light-mode .cmp-subtitle {
+    color: #526174;
+}
+body.customer-light-mode .cmp-icon {
+    color: #0b5ed7;
+    background: linear-gradient(135deg, rgba(11, 94, 215, .14), rgba(0, 168, 255, .06));
+    border-color: rgba(11, 94, 215, .2);
+}
+
+/* Current booking: green accent instead of blue */
+#current-booking-card::before {
+    background: linear-gradient(180deg, #34d399, #10b981);
+}
+#current-booking-card .token-no {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    letter-spacing: .06em;
+    font-weight: 700;
+}
+#current-booking-card .btn {
+    border-radius: 12px;
+}
+
+/* ---- Top 5 nearest stations ---- */
+.top5-stations-panel h3 {
+    margin-bottom: 4px !important;
+}
+.top5-stations-panel .top5-stations-list {
+    margin-top: 10px;
+    gap: 6px;
+}
+.top5-station-row {
+    padding: 11px 12px;
+    border: 1px solid transparent;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, .025);
+    gap: 12px;
+}
+.top5-station-row + .top5-station-row {
+    margin-top: 0;
+}
+.top5-station-row:last-child {
+    padding-bottom: 11px;
+}
+.top5-station-row:first-of-type {
+    padding-top: 11px;
+}
+.top5-station-row:hover,
+.top5-station-row:focus-visible {
+    background: rgba(0, 244, 255, .06);
+    border-color: rgba(0, 244, 255, .18);
+    outline: none;
+}
+.top5-station-row .row-rank {
+    flex: 0 0 26px;
+    width: 26px;
+    height: 26px;
+    font-size: 12px;
+    color: #0b1b2b;
+    background: linear-gradient(135deg, #00f4ff, #0d6efd);
+    box-shadow: 0 4px 10px rgba(0, 244, 255, .2);
+}
+.top5-station-row:nth-of-type(n+2) .row-rank {
+    color: #7dd3fc;
+    background: rgba(13, 110, 253, .16);
+    box-shadow: none;
+}
+.top5-station-row img {
+    flex: 0 0 32px;
+    width: 32px;
+    height: 32px;
+    border-radius: 10px;
+}
+.top5-station-row .row-name {
+    font-size: 14px;
+}
+.top5-station-row .row-address {
+    font-size: 12px;
+    margin-top: 1px;
+}
+.top5-station-row .row-dist {
+    padding: 4px 9px;
+    border-radius: 999px;
+    font-size: 11px;
+    background: rgba(0, 168, 255, .12);
+    border: 1px solid rgba(0, 168, 255, .2);
+}
+.top5-station-row:hover .row-dist {
+    background: rgba(0, 168, 255, .2);
+}
+.top5-empty-state {
+    padding: 14px;
+    border-radius: 12px;
+    text-align: center;
+    border: 1px dashed rgba(255, 255, 255, .15);
+    font-size: 13px;
+}
+body.customer-light-mode .top5-station-row {
+    background: rgba(255, 255, 255, .6);
+}
+body.customer-light-mode .top5-station-row:hover,
+body.customer-light-mode .top5-station-row:focus-visible {
+    background: rgba(11, 94, 215, .06);
+    border-color: rgba(11, 94, 215, .2);
+}
+body.customer-light-mode .top5-station-row:nth-of-type(n+2) .row-rank {
+    color: #0b5ed7;
+    background: rgba(11, 94, 215, .1);
+}
+body.customer-light-mode .top5-station-row .row-dist {
+    background: rgba(11, 94, 215, .08);
+    border-color: rgba(11, 94, 215, .18);
+}
+
+/* ---- Station detail card (bottom sheet on map) ---- */
+.customer-map-station-card {
+    border-radius: 20px !important;
+    border: 1px solid rgba(255, 255, 255, .1);
+    box-shadow: 0 -12px 40px rgba(0, 0, 0, .35);
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+}
+#station-detail-card h4,
+#station-booking-form h4 {
+    font-size: 1.15rem;
+    letter-spacing: -.01em;
+}
+#station-detail-card .rounded-3,
+#station-booking-form .rounded-3 {
+    border-radius: 14px !important;
+}
+.booking-field-label {
+    display: block;
+    margin-bottom: 6px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .07em;
+    text-transform: uppercase;
+}
+.booking-hint {
+    display: block;
+    margin-top: 6px;
+    font-size: 12px;
+    line-height: 1.45;
+}
+.custom-form-field.form-select,
+.custom-form-field.form-control {
+    min-height: 46px;
+    border-radius: 12px;
+}
+.customer-detail-fuel-item {
+    display: block;
+    width: 100%;
+    padding: 14px;
+    text-align: left;
+    border: 1px solid rgba(255, 255, 255, .1);
+    border-radius: 14px;
+    background: rgba(255, 255, 255, .03);
+    color: inherit;
+    transition: border-color .15s ease, background .15s ease, transform .15s ease, box-shadow .15s ease;
+}
+.customer-detail-fuel-item--active {
+    cursor: pointer;
+}
+.customer-detail-fuel-item--active:hover {
+    border-color: rgba(0, 244, 255, .4);
+    background: rgba(0, 244, 255, .05);
+    transform: translateY(-1px);
+}
+.customer-detail-fuel-item--inactive {
+    cursor: not-allowed;
+    opacity: .55;
+}
+.customer-detail-fuel-item--selected,
+.customer-detail-fuel-item--selected:hover {
+    border-color: #00f4ff;
+    background: rgba(0, 244, 255, .09);
+    box-shadow: 0 0 0 1px rgba(0, 244, 255, .35), 0 8px 22px rgba(0, 244, 255, .12);
+}
+.customer-detail-fuel-item:focus-visible {
+    outline: 2px solid #0dcaf0;
+    outline-offset: 2px;
+}
+.customer-fuel-status {
+    padding: 3px 9px;
+    border-radius: 999px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: .05em;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+.customer-fuel-status--active {
+    color: #6ee7b7;
+    background: rgba(16, 185, 129, .14);
+    border: 1px solid rgba(16, 185, 129, .3);
+}
+.customer-fuel-status--inactive {
+    color: #9aa8b8;
+    background: rgba(148, 163, 184, .12);
+    border: 1px solid rgba(148, 163, 184, .25);
+}
+body.customer-light-mode .customer-fuel-status--active {
+    color: #047857;
+}
+#station-booking-trigger,
+#confirm-booking-btn,
+#station-book-trigger {
+    box-shadow: 0 10px 26px rgba(0, 244, 255, .16);
+}
+#station-booking-status:empty {
+    display: none;
+}
+#station-booking-status:not(:empty) {
+    padding: 8px 10px;
+    border-radius: 10px;
+    background: rgba(245, 158, 11, .1);
+    color: #fbbf24 !important;
+}
+#station-reviews-toggle {
+    border-radius: 12px;
+}
+
+/* ---- Booking pass ---- */
+#booking-pass {
+    padding: 8px 4px 4px;
+}
+#booking-pass .customer-map-qr img,
+#booking-pass img#qr-image {
+    background: #fff;
+    padding: 12px;
+    border-radius: 18px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, .25);
+}
+#qr-token-code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-weight: 700;
+}
+
+/* ---- Cancellation dialog ---- */
+.booking-cancellation-dialog {
+    border-radius: 18px;
+    box-shadow: 0 30px 80px rgba(0, 0, 0, .55);
+}
+.booking-cancellation-dialog::backdrop {
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+}
+.cancellation-reasons label {
+    border-radius: 12px;
+    padding: 10px 11px;
+    background: rgba(255, 255, 255, .02);
+    transition: border-color .15s ease, background .15s ease;
+}
+.cancellation-reasons label:hover {
+    border-color: rgba(255, 255, 255, .25);
+}
+.cancellation-reasons label:has(input:checked) {
+    border-radius: 12px;
+}
+.cancellation-reasons label:has(input:focus-visible) {
+    outline: 2px solid #0dcaf0;
+    outline-offset: 2px;
+}
+#booking-cancellation-dialog textarea.custom-form-field {
+    border-radius: 12px;
+}
+#booking-cancellation-dialog #cancellation-selection-count {
+    font-variant-numeric: tabular-nums;
+}
+
+/* ---- Review panel ---- */
+.station-review-summary {
+    border-radius: 14px;
+}
+.customer-review-card {
+    border-radius: 14px;
+}
+.station-review-filter {
+    border-radius: 999px;
+    padding: 5px 11px;
+    font-weight: 600;
+    transition: background .15s ease, border-color .15s ease;
+}
+.station-review-filter:hover:not(.active) {
+    border-color: rgba(251, 191, 36, .45);
+}
+
+/* ---- Mobile ---- */
+@media (max-width: 575.98px) {
+    .customer-map-launch-card {
+        padding: 16px;
+    }
+    .cmp-cta {
+        width: 100%;
+    }
+    .customer-map-launch-card > .d-flex > div:first-child {
+        flex-basis: 100%;
+    }
+    .cmp-icon {
+        flex-basis: 40px;
+        width: 40px;
+        height: 40px;
+        font-size: 17px;
+    }
+    .customer-map-station-card {
+        border-radius: 18px 18px 0 0 !important;
+    }
+}
+
 </style>
 
 
@@ -736,7 +1139,7 @@ body.customer-light-mode .customer-map-recenter-btn:hover {
             </div>
 
             <div class="mb-3">
-                <label class="form-label text-secondary" for="booking-car-select" style="font-size:10px; font-weight:600;">CAR FOR THIS BOOKING</label>
+                <label class="booking-field-label text-secondary" for="booking-car-select">CAR FOR THIS BOOKING</label>
                 <select id="booking-car-select" class="form-select custom-form-field" <?php echo empty($customerCarsData) ? 'disabled' : ''; ?>>
                     <?php foreach ($customerCarsData as $car): ?>
                         <option value="<?php echo (int)$car['id']; ?>" data-quota="<?php echo htmlspecialchars((string)$car['quota'], ENT_QUOTES, 'UTF-8'); ?>" <?php echo $car['selected'] ? 'selected' : ''; ?>>
@@ -751,7 +1154,7 @@ body.customer-light-mode .customer-map-recenter-btn:hover {
             </div>
 
             <div class="mb-3">
-                <label class="form-label text-secondary" for="station-fuel-select" style="font-size:10px; font-weight:600;">FUEL TYPE</label>
+                <label class="booking-field-label text-secondary" for="station-fuel-select">FUEL TYPE</label>
                 <select id="station-fuel-select" class="form-select custom-form-field"></select>
             </div>
             <div class="row g-2 mb-3" aria-live="polite">
@@ -759,12 +1162,12 @@ body.customer-light-mode .customer-map-recenter-btn:hover {
                 <div class="col-6"><div class="p-2 rounded-3 h-100 border border-secondary border-opacity-25"><small class="text-secondary d-block">Fuel left</small><strong id="station-fuel-stock" class="text-white">Choose fuel</strong></div></div>
             </div>
             <div class="mb-3">
-                <label class="form-label text-secondary" for="station-volume-input" style="font-size:10px; font-weight:600;">AMOUNT (LITERS)</label>
+                <label class="booking-field-label text-secondary" for="station-volume-input">AMOUNT (LITERS)</label>
                 <input id="station-volume-input" type="number" min="0.1" step="0.1" value="20" class="form-control custom-form-field">
-                <small class="text-secondary d-block mt-2">Maximum for this fuel and car: <strong id="station-quota" class="text-sky-400"></strong></small>
+                <small class="booking-hint text-secondary d-block mt-2">Maximum for this fuel and car: <strong id="station-quota" class="text-sky-400"></strong></small>
             </div>
             <div class="mb-3">
-                <label class="form-label text-secondary" for="loyalty-points-select" style="font-size:10px; font-weight:600;">LOYALTY POINTS TO USE (PER FILL)</label>
+                <label class="booking-field-label text-secondary" for="loyalty-points-select">LOYALTY POINTS TO USE (PER FILL)</label>
                 <select id="loyalty-points-select" class="form-select custom-form-field">
                     <option value="0" selected>Don't use points — no discount</option>
                     <?php foreach ($loyaltyRedemptionOptions as $points => $discount): ?>
@@ -773,7 +1176,7 @@ body.customer-light-mode .customer-map-recenter-btn:hover {
                         </option>
                     <?php endforeach; ?>
                 </select>
-                <small class="text-secondary d-block mt-2">
+                <small class="booking-hint text-secondary d-block mt-2">
                     Balance: <strong class="text-warning"><?php echo (int) $loyaltyBalance; ?></strong> pts
                     · <?php echo htmlspecialchars($loyaltyTierLabel, ENT_QUOTES, 'UTF-8'); ?> tier
                     · cap: <strong><?php echo number_format($loyaltyTierStatus['points_cap']); ?></strong> pts
