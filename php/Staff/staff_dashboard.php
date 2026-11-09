@@ -36,7 +36,9 @@ if (!$allowDisabledPopup && !empty($_SESSION['staff_status_popup_type'])) {
     $allowDisabledPopup = strtolower(trim((string) $_SESSION['staff_status_popup_type'])) === 'disabled';
 }
 if (!$allowDisabledPopup) {
-    map_pump_require_active_staff_session($pdo, false);
+    $staffRecord = map_pump_require_active_staff_session($pdo, false);
+} else {
+    $staffRecord = null;
 }
 
 function redirect_to_login(string $message = 'Please sign in to continue.')
@@ -59,26 +61,12 @@ $headquarterName = 'Not assigned yet';
 $branchName = 'Not assigned yet';
 $branchCode = 'N/A';
 $headquarterLogo = '';
-try {
-    if (isset($pdo)) {
-        $stmt = $pdo->prepare('SELECT u.user_name, h.company_name AS headquarter_name, h.company_logo AS headquarter_logo, b.branch_name, b.branch_code
-            FROM users u
-            LEFT JOIN staff st ON st.user_id = u.user_id
-            LEFT JOIN branches b ON b.branch_id = st.branch_id
-            LEFT JOIN business_account_scope bas ON bas.user_id = u.user_id
-            LEFT JOIN station_business_scope sbs ON sbs.station_id = st.branch_id
-            LEFT JOIN headquarter h ON h.headquarter_id = COALESCE(bas.headquarter_id, sbs.headquarter_id)
-            WHERE u.user_id = ? LIMIT 1');
-        $stmt->execute([(int)$_SESSION['user_id']]);
-        $row = $stmt->fetch(PDO::FETCH_ASSOC);
-        $displayName = trim((string)($row['user_name'] ?? ''));
-        $headquarterName = trim((string)($row['headquarter_name'] ?? '')) ?: 'Not assigned yet';
-        $headquarterLogo = trim((string)($row['headquarter_logo'] ?? ''));
-        $branchName = trim((string)($row['branch_name'] ?? '')) ?: 'Not assigned yet';
-        $branchCode = trim((string)($row['branch_code'] ?? '')) ?: 'N/A';
-    }
-} catch (Throwable $e) {
-    // ignore
+if (is_array($staffRecord)) {
+    $displayName = trim((string) ($staffRecord['user_name'] ?? $staffRecord['full_name'] ?? ''));
+    $headquarterName = trim((string) ($staffRecord['headquarter_name'] ?? '')) ?: 'Not assigned yet';
+    $headquarterLogo = trim((string) ($staffRecord['headquarter_logo'] ?? ''));
+    $branchName = trim((string) ($staffRecord['branch_name'] ?? '')) ?: 'Not assigned yet';
+    $branchCode = trim((string) ($staffRecord['branch_code'] ?? '')) ?: 'N/A';
 }
 
 if ($headquarterLogo !== '') {
@@ -170,7 +158,6 @@ if ($staffStatusPopupType !== null) {
             <nav class="staff-nav" aria-label="Main navigation">
                 <a class="staff-nav-link is-active" href="staff_dashboard.php" aria-current="page"><i class="bi bi-grid"></i><span>Overview</span><span class="nav-indicator"></span></a>
                 <a class="staff-nav-link" href="verify_qr.php"><i class="bi bi-upc-scan"></i><span>Verify booking QR</span></a>
-                <a class="staff-nav-link" href="/php/payment_center.php"><i class="bi bi-cash-coin"></i><span>Fuel payment confirmations</span></a>
                 <a class="staff-nav-link" href="feedback_manage.php"><i class="bi bi-chat-square"></i><span>Feedback</span></a>
                 <a class="staff-nav-link" href="staff_account.php"><i class="bi bi-person"></i><span>My account</span></a>
             </nav>
@@ -269,7 +256,6 @@ if ($staffStatusPopupType !== null) {
             <nav class="staff-nav" aria-label="Mobile main navigation">
                 <a class="staff-nav-link is-active" href="staff_dashboard.php" aria-current="page"><i class="bi bi-grid"></i><span>Overview</span><span class="nav-indicator"></span></a>
                 <a class="staff-nav-link" href="verify_qr.php"><i class="bi bi-upc-scan"></i><span>Verify booking QR</span></a>
-                <a class="staff-nav-link" href="/php/payment_center.php"><i class="bi bi-cash-coin"></i><span>Fuel payment confirmations</span></a>
                 <a class="staff-nav-link" href="feedback_manage.php"><i class="bi bi-chat-square"></i><span>Feedback</span></a>
                 <a class="staff-nav-link" href="staff_account.php"><i class="bi bi-person"></i><span>My account</span></a>
             </nav>

@@ -39,7 +39,7 @@ try {
     map_pump_cleanup_due_account_deletions($pdo);
 
     $staffLoginStmt = $pdo->prepare(
-        'SELECT staff_id, branch_id, full_name, email, staff_password, contact, staff_code, is_active
+        'SELECT staff_id, user_id, branch_id, full_name, email, staff_password, contact, staff_code, is_active
          FROM staff
          WHERE LOWER(TRIM(COALESCE(email, ""))) = LOWER(TRIM(?))
          LIMIT 1'
@@ -93,6 +93,10 @@ try {
         if ($standaloneStaffActive && $staffPasswordHash !== '' && password_verify($password, $staffPasswordHash)) {
             $allowedStaffLogin = true;
         }
+    }
+
+    if ($allowedStaffLogin) {
+        $user = null;
     }
 
     if (!$user && !$allowedStaffLogin) {
@@ -198,6 +202,7 @@ try {
         }
 
         $_SESSION['is_logged_in'] = true;
+        unset($_SESSION['standalone_staff_id'], $_SESSION['staff_id']);
         $_SESSION['user_id'] = (int) $user['user_id'];
         $_SESSION['user_public_id'] = (string) ($user['user_public_id'] ?? '');
         $_SESSION['user_name'] = (string) $user['user_name'];
@@ -252,8 +257,15 @@ try {
     }
 
     $_SESSION['is_logged_in'] = true;
-    $_SESSION['user_id'] = (int) ($standaloneStaff['staff_id'] ?? 0);
-    $_SESSION['staff_id'] = (int) ($standaloneStaff['staff_id'] ?? 0);
+    $staffId = (int) ($standaloneStaff['staff_id'] ?? 0);
+    $linkedUserId = (int) ($standaloneStaff['user_id'] ?? 0);
+    $_SESSION['user_id'] = $linkedUserId > 0 ? $linkedUserId : $staffId;
+    $_SESSION['staff_id'] = $staffId;
+    if ($linkedUserId <= 0) {
+        $_SESSION['standalone_staff_id'] = $staffId;
+    } else {
+        unset($_SESSION['standalone_staff_id']);
+    }
     $_SESSION['user_public_id'] = '';
     $_SESSION['user_name'] = (string) ($standaloneStaff['full_name'] ?? '');
     $_SESSION['user_email'] = (string) ($standaloneStaff['email'] ?? '');
@@ -262,7 +274,7 @@ try {
     $_SESSION['user_status'] = 'active';
     $_SESSION['role_id'] = 5;
     $_SESSION['role_name'] = 'Staff';
-    $_SESSION['business_role_id'] = 0;
+    $_SESSION['business_role_id'] = $linkedUserId > 0 ? 5 : 0;
     $_SESSION['business_role_name'] = 'Staff';
     $_SESSION['headquarter_id'] = 0;
     $_SESSION['branch_id'] = (int) ($standaloneStaff['branch_id'] ?? 0);

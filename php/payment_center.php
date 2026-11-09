@@ -92,7 +92,8 @@ if ($paymentReady) {
          LEFT JOIN branches b ON b.branch_id = pt.station_id
          LEFT JOIN usage_history uh ON uh.usage_id = pt.usage_id AND pt.payment_type = \'fuel_purchase\'
          LEFT JOIN users staff ON staff.user_id = uh.staff_user_id
-         WHERE (' . implode(' OR ', $conditions) . ')
+                 WHERE pt.payment_type <> \'fuel_purchase\'
+                     AND (' . implode(' OR ', $conditions) . ')
          ORDER BY (pt.status IN (\'pending_payment\', \'payer_reported_paid\')) DESC, pt.created_at DESC, pt.payment_transfer_id DESC
          LIMIT 200'
     );

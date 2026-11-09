@@ -7,16 +7,11 @@ require_once __DIR__ . '/../conn.php';
 require_once __DIR__ . '/../usage_history_schema.php';
 require_once __DIR__ . '/../feedback_schema.php';
 require_once __DIR__ . '/../loyalty_points.php';
-require_once __DIR__ . '/../payment_transfers.php';
 
 $userId = (int) ($_SESSION['user_id'] ?? 0);
-if (empty($_SESSION['payment_transfer_csrf'])) {
-    $_SESSION['payment_transfer_csrf'] = bin2hex(random_bytes(32));
-}
 $usageRows = [];
 $usageHistoryReady = map_pump_usage_history_schema_ready($pdo);
 $feedbackReady = map_pump_feedback_schema_ready($pdo);
-$paymentReady = payment_transfer_schema_ready($pdo);
 // Best-effort: add points_earned / points_redeemed / discount_mmk if missing.
 loyalty_schema_ready($pdo);
 
@@ -85,23 +80,6 @@ if ($userId > 0 && $usageHistoryReady) {
         }
     }
 
-$paymentByUsage = [];
-if ($paymentReady && $usageRows !== []) {
-    $usageIds = array_values(array_unique(array_map(static fn (array $row): int => (int) $row['usage_id'], $usageRows)));
-    $placeholders = implode(',', array_fill(0, count($usageIds), '?'));
-    $paymentStmt = $pdo->prepare(
-        "SELECT usage_id, status, payment_transfer_id FROM payment_transfers
-         WHERE payment_type = 'fuel_purchase' AND usage_id IN ({$placeholders})
-         ORDER BY created_at DESC, payment_transfer_id DESC"
-    );
-    $paymentStmt->execute($usageIds);
-    foreach ($paymentStmt->fetchAll(PDO::FETCH_ASSOC) as $paymentRow) {
-        $key = (int) $paymentRow['usage_id'];
-        if (!isset($paymentByUsage[$key])) {
-            $paymentByUsage[$key] = $paymentRow;
-        }
-    }
-}
 }
 
 function customer_usage_fuel_class(?string $oilName): string
@@ -144,8 +122,6 @@ include 'share_header.php';
             <h3 class="text-white mb-1">Usage Log Reports</h3>
             <p class="text-secondary mb-0" style="font-size:13px;">Review historical system usage, transaction rates, and verified delivery logs.</p>
         </div>
-        <a class="btn btn-outline-info btn-sm" href="/php/payment_center.php"><i class="bi bi-cash-coin me-1"></i>Payment status</a>
-
         <div class="usage-date-picker">
             <label class="text-secondary d-block mb-1" style="font-size:10px; font-weight:700; letter-spacing:.06em; text-transform:uppercase;">Filter by date range</label>
             <div class="d-flex align-items-center gap-2 flex-wrap">
@@ -191,15 +167,14 @@ include 'share_header.php';
                     <th scope="col">Fuel</th>
                     <th scope="col">Loyalty</th>
                     <th scope="col">Status</th>
-                    <th scope="col">Payment</th>
                     <th scope="col" class="text-end">Feedback</th>
                 </tr>
             </thead>
             <tbody id="usage-log-body" class="text-white">
                 <?php if (!$usageHistoryReady): ?>
-                    <tr><td colspan="9" class="py-4 text-center text-secondary">Usage history table is not available yet.</td></tr>
+                    <tr><td colspan="8" class="py-4 text-center text-secondary">Usage history table is not available yet.</td></tr>
                 <?php elseif (!$usageRows): ?>
-                    <tr><td colspan="9" class="py-4 text-center text-secondary">No filled usage history yet.</td></tr>
+                    <tr><td colspan="8" class="py-4 text-center text-secondary">No filled usage history yet.</td></tr>
                 <?php else: ?>
                     <?php foreach ($usageRows as $usage): ?>
                         <?php
@@ -217,8 +192,6 @@ include 'share_header.php';
                             $feedbackCount = (int) ($usage['feedback_count'] ?? 0);
                             $latestRating = (int) ($usage['latest_rating'] ?? 0);
                             $feedbackModalId = 'feedbackModal' . (int) $usage['usage_id'];
-                            $paymentRecord = $paymentByUsage[(int) $usage['usage_id']] ?? null;
-                            $paymentStatus = (string) ($paymentRecord['status'] ?? '');
                             $ptsEarned = (int) ($usage['points_earned'] ?? 0);
                             $ptsRedeemed = (int) ($usage['points_redeemed'] ?? 0);
                             $discountMmk = (float) ($usage['discount_mmk'] ?? 0);
@@ -273,31 +246,6 @@ include 'share_header.php';
                             </td>
                             <td>
                                 <span class="status-pill active"><?php echo htmlspecialchars($statusLabel, ENT_QUOTES, 'UTF-8'); ?></span>
-                            </td>
-                            <td class="usage-payment-cell">
-                                <?php if ($paymentStatus === 'pending_payment'): ?>
-                                    <div class="small text-warning">Payment request awaiting your payment</div>
-                                <?php elseif ($paymentStatus === 'payer_reported_paid'): ?>
-                                    <div class="small text-warning">Payment reported · awaiting HQ</div>
-                                <?php elseif ($paymentStatus === 'received'): ?>
-                                    <div class="small text-success">HQ recorded receipt</div>
-                                <?php elseif ($paymentStatus === 'rejected'): ?>
-                                    <div class="small text-warning">HQ did not confirm receipt</div>
-                                <?php elseif ($paymentStatus === 'cancelled'): ?>
-                                    <div class="small text-secondary">Payment notice cancelled</div>
-                                <?php endif; ?>
-                                <?php if ($paymentReady && empty($usage['is_internal']) && (float) ($usage['total_cost'] ?? 0) > 0 && !in_array($paymentStatus, ['pending_payment', 'payer_reported_paid', 'received'], true)): ?>
-                                    <form method="post" action="/php/Payment/action.php" class="mt-1" onsubmit="return confirm('Create a payment request for this filled bill? The amount is based on the recorded net bill, and the staff member who recorded the fill will verify receipt.')">
-                                        <input type="hidden" name="csrf_token" value="<?= htmlspecialchars((string) ($_SESSION['payment_transfer_csrf'] ?? ''), ENT_QUOTES, 'UTF-8') ?>">
-                                        <input type="hidden" name="action" value="create_fuel_payment">
-                                        <input type="hidden" name="usage_id" value="<?= (int) $usage['usage_id'] ?>">
-                                        <button type="submit" class="btn btn-outline-warning btn-sm">Create payment request · <?= number_format((float) $usage['total_cost'], 0) ?> MMK</button>
-                                    </form>
-                                <?php elseif (empty($usage['is_internal']) && (float) ($usage['total_cost'] ?? 0) <= 0): ?>
-                                    <span class="usage-sub">No amount due</span>
-                                <?php elseif (!empty($usage['is_internal'])): ?>
-                                    <span class="usage-sub">Internal fill</span>
-                                <?php endif; ?>
                             </td>
                             <td class="text-end">
                                 <?php if (!empty($usage['staff_user_id'])): ?>
@@ -674,9 +622,6 @@ include 'share_header.php';
     font-size: 11px;
     color: #8b97ad;
     margin-left: 2px;
-}
-.usage-payment-cell {
-    min-width: 180px;
 }
 .loyalty-chip {
     display: inline-block;

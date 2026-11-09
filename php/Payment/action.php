@@ -110,56 +110,7 @@ try {
         header('Location: ' . $redirect);
         exit;
     } elseif ($action === 'create_fuel_payment') {
-        $usageId = (int) ($_POST['usage_id'] ?? 0);
-        $pdo->beginTransaction();
-        $stmt = $pdo->prepare(
-            "SELECT uh.usage_id, uh.user_id, uh.station_id, uh.total_cost, uh.is_internal,
-                    uh.staff_user_id, b.branch_name, sbs.headquarter_id, u.email
-             FROM usage_history uh
-             INNER JOIN users u ON u.user_id = uh.user_id
-             INNER JOIN branches b ON b.branch_id = uh.station_id
-             INNER JOIN station_business_scope sbs ON sbs.station_id = uh.station_id
-             WHERE uh.usage_id = ? AND uh.user_id = ? AND LOWER(uh.status) = 'filled'
-             LIMIT 1 FOR UPDATE"
-        );
-        $stmt->execute([$usageId, $userId]);
-        $usage = $stmt->fetch(PDO::FETCH_ASSOC);
-        if (!$usage || (int) $usage['is_internal'] === 1) {
-            throw new RuntimeException('This filled usage record cannot create an external fuel payment notice.');
-        }
-        if ((int) ($usage['staff_user_id'] ?? 0) <= 0) {
-            throw new RuntimeException('No staff account is recorded for this fill, so a payment confirmation request cannot be routed.');
-        }
-        $amount = max(0.0, round((float) ($usage['total_cost'] ?? 0), 2));
-        if ($amount <= 0) {
-            throw new RuntimeException('No MMK payment is due for this fill.');
-        }
-        $existing = $pdo->prepare(
-            "SELECT status FROM payment_transfers
-             WHERE usage_id = ? AND status IN ('pending_payment', 'payer_reported_paid', 'received')
-             ORDER BY payment_transfer_id DESC LIMIT 1"
-        );
-        $existing->execute([$usageId]);
-        if ($existing->fetchColumn()) {
-            throw new RuntimeException('A payment status is already recorded for this fill.');
-        }
-
-        $transferId = payment_transfer_create($pdo, [
-            'payment_type' => 'fuel_purchase',
-            'amount_mmk' => $amount,
-            'description' => 'Fuel purchase at ' . trim((string) $usage['branch_name']),
-            'payer_user_id' => $userId,
-            'payer_email' => (string) $usage['email'],
-            'recipient_role' => BILLING_CUSTOMER_FUEL_RECEIVER_ROLE,
-            'recipient_headquarter_id' => (int) $usage['headquarter_id'],
-            'usage_id' => $usageId,
-            'station_id' => (int) $usage['station_id'],
-            'payment_method' => null,
-        ]);
-        $pdo->commit();
-        payment_transfer_send_notices($pdo, $transferId, 'recipient', 'pending_payment');
-        payment_transfer_send_notices($pdo, $transferId, 'payer', 'pending_payment');
-        $redirect = '/php/Customer/usage_history.php?payment=pending';
+        throw new RuntimeException('Fuel payment requests are no longer supported.');
     } elseif ($action === 'create_extra_station') {
         $hqStmt = $pdo->prepare('SELECT headquarter_id, email FROM users WHERE user_id = ? LIMIT 1');
         $hqStmt->execute([$userId]);
@@ -291,6 +242,9 @@ try {
         $transfer = $transferStmt->fetch(PDO::FETCH_ASSOC);
         if (!$transfer) {
             throw new RuntimeException('Payment record not found.');
+        }
+        if ((string) ($transfer['payment_type'] ?? '') === 'fuel_purchase') {
+            throw new RuntimeException('Fuel payment confirmations are no longer supported.');
         }
         $isPayer = ($userId > 0 && (int) ($transfer['payer_user_id'] ?? 0) === $userId)
             || ($currentUserEmail !== '' && $currentUserEmail === strtolower((string) ($transfer['payer_email'] ?? '')))
