@@ -70,8 +70,15 @@
 
 /* 4. Actions / status ----------------------------------------------------- */
 .registration-actions { display: flex; justify-content: center; padding-top: 1.25rem; }
-.registration-form-status { color: #fbbf24; margin: 1rem auto 0; max-width: 38rem; text-align: center; }
-.registration-form-status.is-success { color: #6ee7b7; }
+.registration-form-status {
+    clip: rect(0, 0, 0, 0);
+    clip-path: inset(50%);
+    height: 1px;
+    overflow: hidden;
+    position: absolute;
+    white-space: nowrap;
+    width: 1px;
+}
 
 /* 5. Payment modal shell -------------------------------------------------- */
 .payment-modal-open { overflow: hidden; }
@@ -88,6 +95,86 @@
 .payment-modal::-webkit-scrollbar-thumb { background: rgba(148, 163, 184, .3); border-radius: 9px; }
 .payment-modal::-webkit-scrollbar-track { background: transparent; }
 .payment-modal-backdrop { backdrop-filter: blur(3px); background: rgba(2, 6, 23, .78); inset: 0; position: fixed; }
+.registration-message-modal[hidden] { display: none; }
+.registration-message-modal {
+    align-items: center;
+    display: flex;
+    inset: 0;
+    justify-content: center;
+    padding: 1rem;
+    position: fixed;
+    z-index: 1070;
+}
+.registration-message-backdrop {
+    backdrop-filter: blur(4px);
+    background: rgba(2, 6, 23, .78);
+    border: 0;
+    inset: 0;
+    position: absolute;
+    width: 100%;
+}
+.registration-message-card {
+    animation: payment-card-in .2s ease-out;
+    background: linear-gradient(145deg, #111c33, #0f172a);
+    border: 1px solid rgba(103, 232, 249, .28);
+    border-radius: 18px;
+    box-shadow: 0 24px 70px rgba(0, 0, 0, .5);
+    max-width: 27rem;
+    padding: 2rem;
+    position: relative;
+    text-align: center;
+    width: 100%;
+}
+.registration-message-icon {
+    align-items: center;
+    background: rgba(34, 211, 238, .12);
+    border: 1px solid rgba(103, 232, 249, .2);
+    border-radius: 16px;
+    color: #67e8f9;
+    display: inline-flex;
+    font-size: 1.65rem;
+    height: 3.75rem;
+    justify-content: center;
+    margin-bottom: 1rem;
+    width: 3.75rem;
+}
+.registration-message-modal.is-error .registration-message-icon {
+    background: rgba(248, 113, 113, .1);
+    border-color: rgba(248, 113, 113, .24);
+    color: #fca5a5;
+}
+.registration-message-modal.is-success .registration-message-icon {
+    background: rgba(52, 211, 153, .1);
+    border-color: rgba(52, 211, 153, .24);
+    color: #6ee7b7;
+}
+.registration-message-card h2 {
+    color: #f8fafc;
+    font: 700 1.35rem/1.3 'Sora', sans-serif;
+    margin: 0 0 .65rem;
+}
+.registration-message-body {
+    color: #cbd5e1;
+    font-size: .9rem;
+    line-height: 1.7;
+    overflow-wrap: anywhere;
+}
+.registration-message-body a {
+    color: #67e8f9;
+    display: inline-block;
+    font-weight: 700;
+    margin-top: .5rem;
+    text-decoration: underline;
+}
+.registration-message-close {
+    border-radius: 10px;
+    margin-top: 1.4rem;
+    min-width: 7rem;
+}
+.registration-message-modal.is-error .registration-message-close {
+    background: #b91c1c;
+    border-color: #b91c1c;
+}
 .payment-card {
     animation: payment-card-in .22s ease-out;
     background: #0f172a;
