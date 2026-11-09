@@ -12,14 +12,19 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 
 $email = strtolower(trim((string)($_POST['email'] ?? '')));
 $role = strtolower(trim((string)($_POST['role'] ?? '')));
+$accountType = strtolower(trim((string)($_POST['account_type'] ?? 'existing')));
 $password = (string) ($_POST['password'] ?? '');
+$confirmPassword = (string) ($_POST['confirm_password'] ?? '');
 $stationValue = trim((string)($_POST['station_id'] ?? ''));
 $stationNotAssigned = $stationValue === '' || $stationValue === 'none';
 $stationId = $stationNotAssigned ? null : filter_var($stationValue, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
 $hqId = map_pump_current_hq_id($pdo);
 $roleId = $role === 'manager' ? 4 : ($role === 'staff' ? 5 : 0);
 
-if ($hqId <= 0 || !filter_var($email, FILTER_VALIDATE_EMAIL) || $roleId <= 0 || (!$stationNotAssigned && !$stationId) || ($roleId === 5 && !$stationId)) {
+if ($hqId <= 0 || !filter_var($email, FILTER_VALIDATE_EMAIL) || $roleId <= 0
+    || !in_array($accountType, ['new', 'existing'], true)
+    || ($roleId === 5 && $accountType !== 'existing')
+    || (!$stationNotAssigned && !$stationId) || ($roleId === 5 && !$stationId)) {
     $_SESSION['hq_account_message'] = ['type' => 'danger', 'text' => 'Please provide a valid email and role. Staff invitations require a station assignment.'];
     header('Location: account.php');
     exit;
@@ -63,16 +68,13 @@ try {
     $userStmt->execute([$email]);
     $invitee = $userStmt->fetch(PDO::FETCH_ASSOC);
     $createdAccount = false;
-    if ($invitee) {
-        $isCustomer = strtolower(trim((string) ($invitee['primary_role_name'] ?? ''))) === 'customer'
-            || strtolower(trim((string) ($invitee['active_role_name'] ?? ''))) === 'customer';
-        if (!$isCustomer) {
-            throw new RuntimeException('This email belongs to an account that cannot be invited as a branch manager or staff member.');
+    if ($accountType === 'new') {
+        if ($roleId !== 4) {
+            throw new RuntimeException('Only branch manager invitations can create a new customer account.');
         }
-        if ($roleId === 4 && in_array(strtolower((string) ($invitee['status'] ?? '')), ['disabled', 'banned', 'suspended', 'removed'], true)) {
-            throw new RuntimeException('This customer account is disabled and cannot be added as a branch manager.');
+        if ($invitee) {
+            throw new RuntimeException('An account already exists for this email. Choose Existing Customer Account.');
         }
-    } elseif ($roleId === 4) {
         $localPart = strstr($email, '@', true);
         $userName = trim(str_replace(['.', '_', '-'], ' ', (string) $localPart));
         if ($userName === '') {
@@ -84,18 +86,32 @@ try {
             'hashed_password' => null,
         ];
         $createdAccount = true;
+    } elseif ($invitee) {
+        $isCustomer = strtolower(trim((string) ($invitee['primary_role_name'] ?? ''))) === 'customer'
+            || strtolower(trim((string) ($invitee['active_role_name'] ?? ''))) === 'customer';
+        if (!$isCustomer) {
+            throw new RuntimeException('This email belongs to an account that cannot be invited as a branch manager or staff member.');
+        }
+        if ($roleId === 4 && in_array(strtolower((string) ($invitee['status'] ?? '')), ['disabled', 'banned', 'suspended', 'removed'], true)) {
+            throw new RuntimeException('This customer account is disabled and cannot be added as a branch manager.');
+        }
     } else {
-        throw new RuntimeException('No customer account is registered with that email address.');
+        throw new RuntimeException('No customer account is registered with that email address. Choose New Customer Account for a new branch manager.');
     }
 
-    if ($roleId === 4 && $createdAccount && (strlen($password) < 8 || strlen($password) > 15
-        || !preg_match('/[a-z]/', $password)
-        || !preg_match('/[A-Z]/', $password)
-        || !preg_match('/\d/', $password)
-        || !preg_match('/[^a-zA-Z0-9]/', $password))) {
-        throw new RuntimeException(
-            'For a new branch manager account, the password must be 8–15 characters and include uppercase and lowercase letters, a number, and a symbol.'
-        );
+    if ($roleId === 4 && $createdAccount) {
+        if ($password !== $confirmPassword) {
+            throw new RuntimeException('The password and confirmation do not match.');
+        }
+        if (strlen($password) < 8 || strlen($password) > 15
+            || !preg_match('/[a-z]/', $password)
+            || !preg_match('/[A-Z]/', $password)
+            || !preg_match('/\d/', $password)
+            || !preg_match('/[^a-zA-Z0-9]/', $password)) {
+            throw new RuntimeException(
+                'For a new branch manager account, the password must be 8–15 characters and include uppercase and lowercase letters, a number, and a symbol.'
+            );
+        }
     }
 
     if ($roleId === 4 && !$createdAccount && (int) $invitee['user_id'] > 0) {
