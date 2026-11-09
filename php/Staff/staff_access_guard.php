@@ -19,22 +19,31 @@ function map_pump_staff_record_for_user(PDO $pdo, int $userId): ?array
         );
         $staffRoleId = (int) ($roleStmt ? $roleStmt->fetchColumn() : 0);
 
+        $isStaffIdSession = !empty($_SESSION['staff_id']) || !empty($_SESSION['standalone_staff_id']);
+        $staffIdentityCondition = $isStaffIdSession
+            ? 's.staff_id = :staff_id'
+            : 's.user_id = :user_id';
         $stmt = $pdo->prepare(
-                "SELECT s.staff_id, s.branch_id, s.is_active, s.full_name, s.staff_code, s.email, s.staff_password,
+                "SELECT s.staff_id, s.branch_id, s.is_active, s.full_name, s.staff_code, s.email, s.staff_password, s.created_at,
                     u.user_id, u.user_name, u.email AS user_email, u.status, u.role_id, u.business_role_id, u.current_role_id,
                     COALESCE(bas.headquarter_id, sbs.headquarter_id) AS headquarter_id,
+                    h.company_name AS headquarter_name, h.company_logo AS headquarter_logo,
+                    b.branch_name, b.branch_code,
                     r.role_name AS current_role_name,
                     br.role_name AS business_role_name
              FROM staff s
              LEFT JOIN users u ON u.user_id = s.user_id
+             LEFT JOIN branches b ON b.branch_id = s.branch_id
              LEFT JOIN business_account_scope bas ON bas.user_id = u.user_id
              LEFT JOIN station_business_scope sbs ON sbs.station_id = s.branch_id
+             LEFT JOIN headquarter h ON h.headquarter_id = COALESCE(bas.headquarter_id, sbs.headquarter_id)
              LEFT JOIN roles r ON r.role_id = u.current_role_id
              LEFT JOIN roles br ON br.role_id = u.business_role_id
-             WHERE s.staff_id = :user_id OR s.user_id = :user_id_lookup
+             WHERE {$staffIdentityCondition}
              LIMIT 1"
         );
-        $stmt->execute([':user_id' => $userId, ':user_id_lookup' => $userId]);
+        $staffId = (int) ($_SESSION['standalone_staff_id'] ?? $_SESSION['staff_id'] ?? 0);
+        $stmt->execute($isStaffIdSession ? [':staff_id' => $staffId] : [':user_id' => $userId]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
         if (!$row) {
             return null;
@@ -98,6 +107,7 @@ function map_pump_require_active_staff_session(PDO $pdo, bool $forAjax = false):
     $_SESSION['business_role_id'] = (int) ($row['business_role_id'] ?? 0);
     $_SESSION['business_role_name'] = (string) ($row['business_role_name'] ?? 'Staff');
     $_SESSION['headquarter_id'] = (int) ($row['headquarter_id'] ?? 0);
+    $_SESSION['branch_id'] = (int) ($row['branch_id'] ?? 0);
     $_SESSION['active_profile_mode'] = 'business';
 
     return $row;

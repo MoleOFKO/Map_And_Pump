@@ -455,6 +455,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $password = (string)($_POST['password'] ?? '');
             $confirmPassword = (string)($_POST['confirm_password'] ?? '');
 
+            if (!in_array($accountType, ['standalone', 'customer'], true)) {
+              json_out(['ok' => false, 'error' => 'Choose an existing customer account or create a new staff account.']);
+            }
+
             if ($email === '') {
                 json_out(['ok' => false, 'error' => 'Email address is required.']);
             }
@@ -474,6 +478,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
                 if (!preg_match('/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,15}$/', $password)) {
                     json_out(['ok' => false, 'error' => 'Use 8-15 characters with upper and lower case letters, a number, and a symbol.']);
+                }
+                $existingUser = $pdo->prepare('SELECT user_id FROM users WHERE LOWER(TRIM(email)) = LOWER(TRIM(?)) LIMIT 1');
+                $existingUser->execute([$email]);
+                if ($existingUser->fetchColumn()) {
+                  json_out(['ok' => false, 'error' => 'This email already has an account. Choose Link Existing Account instead.']);
                 }
                 if (staff_email_in_use($pdo, $email)) {
                     json_out(['ok' => false, 'error' => 'This email is already in use by another staff account.']);
@@ -1822,14 +1831,14 @@ try {
         <input type="email" id="staff-email-input" name="email" class="form-control-custom" placeholder="e.g. aungkolatt@mappump.mm">
       </div>
       <div id="staff-info-panel" class="staff-info-panel" role="note">
-        <p><strong>New Customer Account:</strong> Select this when the email entered above does not already have a customer account. The password you set will be used to create that account and sign in with that email.</p>
-        <p><strong>Existing Customer Account:</strong> Select this when the email already belongs to a customer. Their current password is kept and is not changed.</p>
+        <p><strong>Create New Staff Account:</strong> Use an email that is not already registered. Set a staff password for the new account.</p>
+        <p><strong>Link Existing Account:</strong> Invite an existing customer by email. After they accept, their account is linked to this branch; their customer password is unchanged.</p>
       </div>
       <div id="staff-account-fields">
         <div class="form-group">
           <div class="account-type-group">
-            <label class="account-type-option"><input type="radio" name="account_type" value="standalone" id="account-type-standalone"> Create with Standalone Account</label>
-            <label class="account-type-option"><input type="radio" name="account_type" value="customer" id="account-type-customer" checked> Invite with Customer Account</label>
+            <label class="account-type-option"><input type="radio" name="account_type" value="standalone" id="account-type-standalone"> Create New Staff Account</label>
+            <label class="account-type-option"><input type="radio" name="account_type" value="customer" id="account-type-customer" checked> Link Existing Account</label>
           </div>
         </div>
         <div id="staff-password-fields" class="staff-password-fields hidden">

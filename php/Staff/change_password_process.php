@@ -29,12 +29,13 @@ if ($staffCsrfToken === '' || !hash_equals($staffCsrfToken, (string)($_POST['csr
 }
 
 $userId = (int) $_SESSION['user_id'];
+$isStaffIdSession = !empty($_SESSION['staff_id']);
 $currentPassword = (string) ($_POST['current_password'] ?? '');
 $newPassword = (string) ($_POST['new_password'] ?? '');
 $confirmPassword = (string) ($_POST['confirm_password'] ?? '');
 
-if ($currentPassword === '' || $newPassword === '' || $confirmPassword === '') {
-    $_SESSION['flash_message'] = 'Please fill in every password field.';
+if ($newPassword === '' || $confirmPassword === '') {
+    $_SESSION['flash_message'] = 'Please enter and confirm your new password.';
     $_SESSION['flash_type'] = 'error';
     header('Location: staff_account.php');
     exit;
@@ -55,12 +56,12 @@ if ($newPassword !== $confirmPassword) {
 }
 
 try {
-    $stmt = $pdo->prepare('SELECT s.staff_id, s.staff_password, s.email, s.is_active, s.user_id, u.hashed_password
+    $staffIdentityCondition = $isStaffIdSession ? 's.staff_id = ?' : 's.user_id = ?';
+    $stmt = $pdo->prepare("SELECT s.staff_id, s.staff_password, s.email, s.is_active, s.user_id
         FROM staff s
-        LEFT JOIN users u ON u.user_id = s.user_id
-        WHERE s.staff_id = ? OR s.user_id = ?
-        LIMIT 1');
-    $stmt->execute([$userId, $userId]);
+        WHERE {$staffIdentityCondition}
+        LIMIT 1");
+    $stmt->execute([$userId]);
     $account = $stmt->fetch(PDO::FETCH_ASSOC);
 
     if (!$account) {
@@ -70,43 +71,18 @@ try {
         exit;
     }
 
-    $standaloneHash = (string) ($account['staff_password'] ?? '');
-    $userHash = (string) ($account['hashed_password'] ?? '');
-    $hasStandalonePassword = $standaloneHash !== '';
-    $hasUserPassword = $userHash !== '';
-
-    $isStandaloneStaff = $hasStandalonePassword && ($account['user_id'] === null || (int) $account['user_id'] === 0 || (string) ($account['email'] ?? '') !== '');
-
-    if ($isStandaloneStaff) {
-        if (!password_verify($currentPassword, $standaloneHash)) {
-            $_SESSION['flash_message'] = 'The current password is incorrect.';
-            $_SESSION['flash_type'] = 'error';
-            header('Location: staff_account.php');
-            exit;
-        }
-
-        $newHash = password_hash($newPassword, PASSWORD_DEFAULT);
-        $update = $pdo->prepare('UPDATE staff SET staff_password = ?, updated_at = NOW() WHERE staff_id = ?');
-        $update->execute([$newHash, $userId]);
-        map_pump_log_action($pdo, $userId, 'Updated standalone staff account password', 5);
-    } elseif ($hasUserPassword) {
-        if (!password_verify($currentPassword, $userHash)) {
-            $_SESSION['flash_message'] = 'The current password is incorrect.';
-            $_SESSION['flash_type'] = 'error';
-            header('Location: staff_account.php');
-            exit;
-        }
-
-        $newHash = password_hash($newPassword, PASSWORD_DEFAULT);
-        $update = $pdo->prepare('UPDATE users SET hashed_password = ?, updated_at = NOW() WHERE user_id = ?');
-        $update->execute([$newHash, (int) $account['user_id']]);
-        map_pump_log_action($pdo, $userId, 'Updated staff account password', 5);
-    } else {
-        $_SESSION['flash_message'] = 'Your account password could not be verified.';
+    $staffPasswordHash = (string) ($account['staff_password'] ?? '');
+    if ($staffPasswordHash !== '' && !password_verify($currentPassword, $staffPasswordHash)) {
+        $_SESSION['flash_message'] = 'The current password is incorrect.';
         $_SESSION['flash_type'] = 'error';
         header('Location: staff_account.php');
         exit;
     }
+
+    $newHash = password_hash($newPassword, PASSWORD_DEFAULT);
+    $update = $pdo->prepare('UPDATE staff SET staff_password = ?, updated_at = NOW() WHERE staff_id = ?');
+    $update->execute([$newHash, (int) $account['staff_id']]);
+    map_pump_log_action($pdo, $userId, 'Updated staff-specific password', 5);
 
     $_SESSION['flash_message'] = 'Your password was updated successfully.';
     $_SESSION['flash_type'] = 'success';

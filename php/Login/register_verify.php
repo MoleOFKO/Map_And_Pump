@@ -106,6 +106,97 @@ try {
         verify_json(false, 'That email is already registered. Please log in instead.');
     }
 
+    $pendingStaffLink = $_SESSION['pending_staff_link'] ?? null;
+    if (is_array($pendingStaffLink)) {
+        if ((int) ($pendingStaffLink['user_id'] ?? 0) !== $userId) {
+            verify_json(false, 'The staff account link does not match this registration. Please restart the process.');
+        }
+
+        $pdo->beginTransaction();
+        $staffStmt = $pdo->prepare('SELECT staff_id, branch_id FROM staff WHERE staff_id = ? AND user_id IS NULL AND is_active = 1 LIMIT 1 FOR UPDATE');
+        $staffStmt->execute([(int) ($pendingStaffLink['staff_id'] ?? 0)]);
+        $staffRecord = $staffStmt->fetch(PDO::FETCH_ASSOC);
+        if (!$staffRecord || (int) $staffRecord['branch_id'] !== (int) ($pendingStaffLink['branch_id'] ?? 0)) {
+            throw new RuntimeException('The standalone staff assignment is no longer available.');
+        }
+
+        $branchId = (int) $staffRecord['branch_id'];
+        $hqStmt = $pdo->prepare('SELECT headquarter_id FROM station_business_scope WHERE station_id = ? LIMIT 1');
+        $hqStmt->execute([$branchId]);
+        $headquarterId = (int) ($hqStmt->fetchColumn() ?: 0);
+        if ($headquarterId <= 0) {
+            throw new RuntimeException('The staff branch is not linked to a Headquarter.');
+        }
+
+        $staffRoleStmt = $pdo->query("SELECT role_id FROM roles WHERE LOWER(TRIM(role_name)) IN ('staff', 'pump attendant', 'pumpattendant') ORDER BY role_id ASC LIMIT 1");
+        $staffRoleId = (int) ($staffRoleStmt ? $staffRoleStmt->fetchColumn() : 0);
+        if ($staffRoleId <= 0) {
+            throw new RuntimeException('The Staff role is not configured.');
+        }
+
+        $customerRoleId = customer_role_id($pdo);
+        $userUpdateSql = 'UPDATE users SET role_id = ?, business_role_id = ?, status = ?, updated_at = NOW() WHERE user_id = ?';
+        $userUpdateParams = [$customerRoleId, $staffRoleId, 'active', $userId];
+        if ($hasCurrentRole) {
+            $userUpdateSql = 'UPDATE users SET role_id = ?, current_role_id = ?, business_role_id = ?, status = ?, updated_at = NOW() WHERE user_id = ?';
+            $userUpdateParams = [$customerRoleId, $staffRoleId, $staffRoleId, 'active', $userId];
+        }
+        $pdo->prepare($userUpdateSql)->execute($userUpdateParams);
+
+        $scope = $pdo->prepare(
+            "INSERT INTO business_account_scope
+                (user_id, business_role_id, headquarter_id, branch_manager_user_id, station_id, status)
+             VALUES (?, ?, ?, NULL, ?, 'active')
+             ON DUPLICATE KEY UPDATE business_role_id = VALUES(business_role_id), headquarter_id = VALUES(headquarter_id), station_id = VALUES(station_id), status = 'active'"
+        );
+        $scope->execute([$userId, $staffRoleId, $headquarterId, $branchId]);
+
+        $linkStaff = $pdo->prepare('UPDATE staff SET user_id = ?, email = ?, is_active = 1, updated_at = NOW() WHERE staff_id = ? AND user_id IS NULL');
+        $linkStaff->execute([$userId, $email, (int) $staffRecord['staff_id']]);
+        if ($linkStaff->rowCount() !== 1) {
+            throw new RuntimeException('The staff account could not be linked.');
+        }
+
+        $lastLoginUpdate = $pdo->prepare('UPDATE users SET last_login_at = NOW(), updated_at = NOW() WHERE user_id = ?');
+        $lastLoginUpdate->execute([$userId]);
+        $pdo->commit();
+
+        mail_send_account_notice($email, [
+            'kind' => 'account',
+            'action' => 'created',
+            'account_label' => (string) ($user['user_name'] ?? ''),
+            'effect' => 'Your account was verified and linked to your staff assignment. Customer license details are not copied and can be submitted separately if you use the Customer profile.',
+        ]);
+
+        unset($_SESSION['pending_registration'], $_SESSION['pending_staff_link']);
+        session_regenerate_id(true);
+        $_SESSION['is_logged_in'] = true;
+        $_SESSION['user_id'] = $userId;
+        $_SESSION['staff_id'] = (int) $staffRecord['staff_id'];
+        unset($_SESSION['standalone_staff_id']);
+        $_SESSION['user_public_id'] = (string) ($user['user_public_id'] ?? '');
+        $_SESSION['user_name'] = (string) $user['user_name'];
+        $_SESSION['user_email'] = (string) $email;
+        $_SESSION['user_status'] = 'active';
+        $_SESSION['role_id'] = $staffRoleId;
+        $_SESSION['role_name'] = 'Staff';
+        $_SESSION['current_role_id'] = $staffRoleId;
+        $_SESSION['current_role_name'] = 'Staff';
+        $_SESSION['business_role_id'] = $staffRoleId;
+        $_SESSION['business_role_name'] = 'Staff';
+        $_SESSION['headquarter_id'] = $headquarterId;
+        $_SESSION['branch_id'] = $branchId;
+        $_SESSION['license_id'] = 0;
+        $_SESSION['has_business'] = true;
+        $_SESSION['active_profile_mode'] = 'business';
+        $_SESSION['remember_me'] = false;
+        $_SESSION['last_login_at'] = date('Y-m-d H:i:s');
+        map_pump_set_current_role($pdo, $userId, $staffRoleId);
+        verify_json(true, 'Account verified and linked to your staff assignment.', [
+            'redirect' => '../Staff/staff_dashboard.php',
+        ]);
+    }
+
     $roleId = customer_role_id($pdo);
     $updateSql = $hasCurrentRole
         ? 'UPDATE users SET role_id = ?, current_role_id = ?, status = ?, updated_at = NOW() WHERE user_id = ?'
@@ -156,6 +247,9 @@ try {
         'redirect' => '../Customer/license.php',
     ]);
 } catch (Throwable $e) {
+    if ($pdo->inTransaction()) {
+        $pdo->rollBack();
+    }
     error_log('Registration verify failed: ' . $e->getMessage());
     verify_json(false, 'Could not create your account. Please try again.');
 }

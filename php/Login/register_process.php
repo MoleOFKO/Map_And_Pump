@@ -140,6 +140,25 @@ if (empty($_SESSION['registration_csrf']) || !hash_equals((string) $_SESSION['re
     register_json(false, 'Your registration session expired. Please refresh the page and try again.');
 }
 
+$staffLinkContext = null;
+if ((string) ($_POST['staff_link'] ?? '') === '1') {
+    $standaloneStaffId = (int) ($_SESSION['standalone_staff_id'] ?? 0);
+    if ($standaloneStaffId <= 0 || strtolower((string) ($_SESSION['role_name'] ?? '')) !== 'staff') {
+        register_json(false, 'Sign in to your standalone staff account before creating a linked account.');
+    }
+
+    $staffLinkStmt = $pdo->prepare('SELECT staff_id, branch_id FROM staff WHERE staff_id = ? AND user_id IS NULL AND is_active = 1 LIMIT 1');
+    $staffLinkStmt->execute([$standaloneStaffId]);
+    $staffLinkRecord = $staffLinkStmt->fetch(PDO::FETCH_ASSOC);
+    if (!$staffLinkRecord) {
+        register_json(false, 'This standalone staff account is no longer available to link.');
+    }
+    $staffLinkContext = [
+        'staff_id' => (int) $staffLinkRecord['staff_id'],
+        'branch_id' => (int) $staffLinkRecord['branch_id'],
+    ];
+}
+
 $username = trim((string) ($_POST['username'] ?? ''));
 $email = strtolower(trim((string) ($_POST['email'] ?? '')));
 $password = (string) ($_POST['password'] ?? '');
@@ -203,6 +222,23 @@ try {
     $stmt->execute([$email]);
     $existingUser = $stmt->fetch(PDO::FETCH_ASSOC);
 
+    if ($staffLinkContext !== null) {
+        $staffEmailStmt = $pdo->prepare('SELECT staff_id FROM staff WHERE LOWER(TRIM(email)) = LOWER(TRIM(?)) LIMIT 1');
+        $staffEmailStmt->execute([$email]);
+        $existingStaff = $staffEmailStmt->fetchColumn();
+        if ($existingStaff) {
+            register_json(false, 'This email is already assigned to a staff account. Use another email for the new customer account.');
+        }
+
+        $pendingLink = $_SESSION['pending_staff_link'] ?? null;
+        $canResumePending = is_array($pendingLink)
+            && (int) ($pendingLink['staff_id'] ?? 0) === $staffLinkContext['staff_id']
+            && (int) ($pendingLink['user_id'] ?? 0) === (int) ($existingUser['user_id'] ?? 0);
+        if ($existingUser && (strtolower((string) ($existingUser['status'] ?? '')) !== 'pending_verification' || !$canResumePending)) {
+            register_json(false, 'That email is already registered. Choose the existing-account tab instead.');
+        }
+    }
+
     if ($existingUser && strtolower((string) ($existingUser['status'] ?? '')) !== 'pending_verification') {
         register_json(false, 'That email is already registered. Please log in instead.');
     }
@@ -248,6 +284,12 @@ try {
         'attempts' => 0,
         'last_sent_at' => time(),
     ];
+    if ($staffLinkContext !== null) {
+        $_SESSION['pending_staff_link'] = $staffLinkContext + [
+            'user_id' => $userId,
+            'email' => $email,
+        ];
+    }
 
     try {
         send_registration_code($email, $code);
