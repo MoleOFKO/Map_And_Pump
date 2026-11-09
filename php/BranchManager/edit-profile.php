@@ -706,9 +706,60 @@ $has_unread   = $unread_count > 0;
     .account-modal .account-otp-preview-note{font-size:11px; line-height:1.6; margin:0 0 18px; color:var(--slate-400);}
     .account-modal #link-otp-code{text-align:center; font-size:21px; letter-spacing:.45em; padding-left:calc(14px + .45em); font-variant-numeric:tabular-nums;}
     .account-modal .account-otp-help{font-size:12px; margin:7px 0 0; line-height:1.6; color:var(--slate-300);}
+
+    body.branch-manager-theme {
+      --navy-950:#070b14; --navy-900:#0b1220; --navy-800:#101a30; --navy-700:#16213f; --navy-600:#1a2438;
+      --blue-700:#1d4ed8; --blue-500:#2f6feb; --sky-400:#38bdf8; --amber-400:#fbbf24; --amber-300:#fcd34d; --mint-400:#34d399; --red-400:#f87171;
+      --slate-50:#f8fafc; --slate-300:#c9d2e3; --slate-400:#8b96ad;
+      background: var(--navy-950); color: var(--slate-50);
+    }
+    body.branch-manager-theme.light-mode {
+      --navy-950:#f3f6fb; --navy-900:#ffffff; --navy-800:#f7f9fc; --navy-700:#edf3fb; --navy-600:#e5edf8;
+      --blue-700:#286be0; --blue-500:#3c82ff; --sky-400:#3f8cf5; --amber-400:#d98400; --amber-300:#e2a72d; --mint-400:#128e6b; --red-400:#cf3d3d;
+      --slate-50:#172337; --slate-300:#3c4d68; --slate-400:#58677e; background: var(--navy-950); color: var(--slate-50);
+    }
+    body.branch-manager-theme.light-mode .sidebar,
+    body.branch-manager-theme.light-mode .topbar,
+    body.branch-manager-theme.light-mode .panel,
+    body.branch-manager-theme.light-mode .notif-popup,
+    body.branch-manager-theme.light-mode .bell,
+    body.branch-manager-theme.light-mode .side-branch,
+    body.branch-manager-theme.light-mode .avatar-chip,
+    body.branch-manager-theme.light-mode .form-control-custom,
+    body.branch-manager-theme.light-mode .modal-card-custom,
+    body.branch-manager-theme.light-mode .account-management .panel,
+    body.branch-manager-theme.light-mode .account-sidecard,
+    body.branch-manager-theme.light-mode .account-modal .modal-card-custom {
+      background: var(--navy-900); border-color: rgba(17,24,39,0.12); color: var(--slate-50);
+    }
+    body.branch-manager-theme.light-mode .side-link,
+    body.branch-manager-theme.light-mode .topbar .date,
+    body.branch-manager-theme.light-mode .side-branch span,
+    body.branch-manager-theme.light-mode .notif-item .text span,
+    body.branch-manager-theme.light-mode .account-management .form-group label,
+    body.branch-manager-theme.light-mode .account-password-hint,
+    body.branch-manager-theme.light-mode .account-feedback,
+    body.branch-manager-theme.light-mode .account-modal p,
+    body.branch-manager-theme.light-mode .account-modal .account-modal-header h3 {
+      color: var(--slate-300);
+    }
+    body.branch-manager-theme.light-mode .side-link.active,
+    body.branch-manager-theme.light-mode .side-link:hover,
+    body.branch-manager-theme.light-mode .avatar-chip:hover,
+    body.branch-manager-theme.light-mode .bell:hover {
+      background: rgba(63, 140, 245, 0.10);
+      color: var(--slate-50);
+    }
+    .staff-theme-control {
+      position: relative; display: grid; width: 28px; height: 32px; place-items: center; margin: 0; color: var(--slate-300); cursor: pointer;
+    }
+    .staff-theme-control input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+    .staff-theme-control span { font-size: 1.05rem; }
+    .staff-theme-control:focus-within span { outline: 2px solid var(--sky-400); outline-offset: 4px; border-radius: 3px; }
+    body.branch-manager-theme.light-mode .staff-theme-control { color: var(--slate-400); }
   </style>
 </head>
-<body>
+<body class="branch-manager-theme">
 
 <div class="app-shell">
   <aside class="sidebar">
@@ -752,6 +803,10 @@ $has_unread   = $unread_count > 0;
         <div class="date" id="live-clock">--</div>
       </div>
       <div class="topbar-right">
+        <label class="staff-theme-control" title="Toggle light mode">
+          <input class="js-theme-toggle" type="checkbox" aria-label="Toggle light mode">
+          <span><i class="fa-solid fa-sun"></i></span>
+        </label>
         <div class="bell" id="notif-bell"><i class="fa-regular fa-bell"></i><?php if ($has_unread): ?><span class="ping" id="notif-ping"></span><?php endif; ?></div>
         <div class="notif-popup" id="notif-popup">
           <div class="notif-header">
@@ -1244,6 +1299,34 @@ $has_unread   = $unread_count > 0;
       showAccountFeedback(document.getElementById('account-delete-feedback'), 'Frontend preview only. Your account has not been deleted and you have not been signed out.');
     });
   });
+</script>
+<script>
+  (function () {
+    const root = document.body;
+    const storedTheme = localStorage.getItem('map_pump_branch_manager_theme');
+    const toggle = document.querySelector('.js-theme-toggle');
+    const icon = document.querySelector('.staff-theme-control span i');
+
+    function applyTheme(isLight) {
+      root.classList.toggle('light-mode', isLight);
+      if (toggle) toggle.checked = isLight;
+      if (icon) {
+        icon.className = isLight ? 'fa-solid fa-moon' : 'fa-solid fa-sun';
+      }
+      const control = document.querySelector('.staff-theme-control');
+      if (control) control.title = isLight ? 'Toggle dark mode' : 'Toggle light mode';
+      localStorage.setItem('map_pump_branch_manager_theme', isLight ? 'light' : 'dark');
+    }
+
+    root.classList.add('branch-manager-theme');
+    applyTheme(storedTheme === 'light');
+
+    if (toggle) {
+      toggle.addEventListener('change', function () {
+        applyTheme(this.checked);
+      });
+    }
+  })();
 </script>
 </body>
 </html>

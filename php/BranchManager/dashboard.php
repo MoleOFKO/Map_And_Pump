@@ -117,7 +117,7 @@ function map_pump_format_compact_mmk(float $value): string {
 $revenue_stmt = $pdo->prepare("
     SELECT
         COALESCE(SUM(CASE WHEN DATE(uh.filled_at) = CURDATE() THEN COALESCE(uh.total_cost, 0) ELSE 0 END), 0) AS today_mmk,
-        COALESCE(SUM(CASE WHEN YEARWEEK(uh.filled_at, 1) = YEARWEEK(CURDATE(), 1) THEN COALESCE(uh.total_cost, 0) ELSE 0 END), 0) AS week_mmk,
+        COALESCE(SUM(CASE WHEN DATE(uh.filled_at) BETWEEN DATE_SUB(CURDATE(), INTERVAL 6 DAY) AND CURDATE() THEN COALESCE(uh.total_cost, 0) ELSE 0 END), 0) AS week_mmk,
         COALESCE(SUM(CASE WHEN DATE_FORMAT(uh.filled_at, '%Y-%m') = DATE_FORMAT(CURDATE(), '%Y-%m') THEN COALESCE(uh.total_cost, 0) ELSE 0 END), 0) AS month_mmk,
         COALESCE(SUM(CASE WHEN YEAR(uh.filled_at) = YEAR(CURDATE()) THEN COALESCE(uh.total_cost, 0) ELSE 0 END), 0) AS annual_mmk,
         COALESCE(SUM(CASE WHEN uh.filled_at >= DATE_SUB(CURDATE(), INTERVAL 29 DAY) THEN COALESCE(uh.total_cost, 0) ELSE 0 END), 0) AS rolling_30d_mmk
@@ -290,6 +290,65 @@ sort($sales_fuel_names, SORT_STRING);
     --red-400:#f87171;
     --slate-50:#f8fafc; --slate-300:#c9d2e3; --slate-400:#8b96ad;
   }
+  body.branch-manager-theme {
+    --navy-950:#070b14; --navy-900:#0b1220; --navy-800:#101a30; --navy-700:#16213f; --navy-600:#1a2438;
+    --blue-700:#1d4ed8; --blue-500:#2f6feb; --sky-400:#38bdf8;
+    --amber-400:#fbbf24; --amber-300:#fcd34d; --mint-400:#34d399; --red-400:#f87171;
+    --slate-50:#f8fafc; --slate-300:#c9d2e3; --slate-400:#8b96ad;
+    background: var(--navy-950); color: var(--slate-50);
+  }
+  body.branch-manager-theme.light-mode {
+    --navy-950:#f3f6fb; --navy-900:#ffffff; --navy-800:#f7f9fc; --navy-700:#edf3fb; --navy-600:#e5edf8;
+    --blue-700:#286be0; --blue-500:#3c82ff; --sky-400:#3f8cf5; --amber-400:#d98400; --amber-300:#e2a72d; --mint-400:#128e6b; --red-400:#cf3d3d;
+    --slate-50:#172337; --slate-300:#3c4d68; --slate-400:#58677e; background: var(--navy-950); color: var(--slate-50);
+  }
+  body.branch-manager-theme.light-mode .sidebar,
+  body.branch-manager-theme.light-mode .topbar,
+  body.branch-manager-theme.light-mode .panel,
+  body.branch-manager-theme.light-mode .stat-card,
+  body.branch-manager-theme.light-mode .module-card,
+  body.branch-manager-theme.light-mode .notif-popup,
+  body.branch-manager-theme.light-mode .bell,
+  body.branch-manager-theme.light-mode .side-branch,
+  body.branch-manager-theme.light-mode .avatar-chip,
+  body.branch-manager-theme.light-mode .color-modal,
+  body.branch-manager-theme.light-mode .sales-panel,
+  body.branch-manager-theme.light-mode .fuel-color-table tbody tr,
+  body.branch-manager-theme.light-mode .form-control-custom,
+  body.branch-manager-theme.light-mode .modal-card-custom,
+  body.branch-manager-theme.light-mode .account-profile-card,
+  body.branch-manager-theme.light-mode .account-sidecard {
+    background: var(--navy-900); border-color: rgba(17,24,39,0.12); color: var(--slate-50);
+  }
+  body.branch-manager-theme.light-mode .side-link,
+  body.branch-manager-theme.light-mode .side-branch span,
+  body.branch-manager-theme.light-mode .topbar .date,
+  body.branch-manager-theme.light-mode .notif-item-body span,
+  body.branch-manager-theme.light-mode .alert-row span,
+  body.branch-manager-theme.light-mode .queue-row .pump,
+  body.branch-manager-theme.light-mode .module-card p,
+  body.branch-manager-theme.light-mode .stat-card .lbl,
+  body.branch-manager-theme.light-mode .panel h3,
+  body.branch-manager-theme.light-mode .report-row p,
+  body.branch-manager-theme.light-mode .field label,
+  body.branch-manager-theme.light-mode .account-password-hint {
+    color: var(--slate-300);
+  }
+  body.branch-manager-theme.light-mode .side-link.active,
+  body.branch-manager-theme.light-mode .side-link:hover,
+  body.branch-manager-theme.light-mode .avatar-chip:hover,
+  body.branch-manager-theme.light-mode .bell:hover {
+    background: rgba(63, 140, 245, 0.10);
+    color: var(--slate-50);
+  }
+  .staff-theme-control {
+    position: relative; display: grid; width: 28px; height: 32px; place-items: center; margin: 0; color: var(--slate-300); cursor: pointer;
+  }
+  .staff-theme-control input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+  .staff-theme-control span { font-size: 1.05rem; }
+  .staff-theme-control:focus-within span { outline: 2px solid var(--sky-400); outline-offset: 4px; border-radius: 3px; }
+  body.branch-manager-theme.light-mode .staff-theme-control { color: var(--slate-400); }
+
   *{box-sizing:border-box; margin:0; padding:0;}
   
   /* Reset all elements to default cursor */
@@ -738,6 +797,11 @@ sort($sales_fuel_names, SORT_STRING);
             <?php endforeach; endif; ?>
           </div>
         </div>
+
+        <label class="staff-theme-control" title="Toggle light mode">
+          <input class="js-theme-toggle" type="checkbox" aria-label="Toggle light mode">
+          <span><i class="fa-solid fa-sun"></i></span>
+        </label>
 
         <div class="avatar-chip">
           <div class="avatar-circle"><a href="edit-profile.php"><?= h(mb_substr($initials,0,1)) ?></a></div>
@@ -1208,6 +1272,33 @@ sort($sales_fuel_names, SORT_STRING);
     }
   });
 </script>
-<?php require_once __DIR__ . '/../moderator_hire_popup.php'; ?>
+<script>
+  (function () {
+    const root = document.body;
+    const storedTheme = localStorage.getItem('map_pump_branch_manager_theme');
+    const toggle = document.querySelector('.js-theme-toggle');
+    const icon = document.querySelector('.staff-theme-control span i');
+
+    function applyTheme(isLight) {
+      root.classList.toggle('light-mode', isLight);
+      if (toggle) toggle.checked = isLight;
+      if (icon) {
+        icon.className = isLight ? 'fa-solid fa-moon' : 'fa-solid fa-sun';
+      }
+      const control = document.querySelector('.staff-theme-control');
+      if (control) control.title = isLight ? 'Toggle dark mode' : 'Toggle light mode';
+      localStorage.setItem('map_pump_branch_manager_theme', isLight ? 'light' : 'dark');
+    }
+
+    root.classList.add('branch-manager-theme');
+    applyTheme(storedTheme === 'light');
+
+    if (toggle) {
+      toggle.addEventListener('change', function () {
+        applyTheme(this.checked);
+      });
+    }
+  })();
+</script>
 </body>
 </html>

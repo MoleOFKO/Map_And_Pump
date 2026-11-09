@@ -5,6 +5,7 @@
  */
 require_once __DIR__ . '/_helpers.php';
 require_once __DIR__ . '/../conn.php';
+require_once __DIR__ . '/../profile_avatar.php';
 require_branch_manager();
 
 function map_pump_table_exists(PDO $pdo, string $tableName): bool {
@@ -23,7 +24,58 @@ $ctx    = current_context($pdo);
 $user   = $ctx['user'];
 $branch = $ctx['branch'];
 $initials = initials($user['full_name']);
+$profileAvatarUrl = map_pump_profile_avatar_url((string) ($user['avatar_url'] ?? ''), '');
 $pumpsTableExists = map_pump_table_exists($pdo, 'pumps');
+
+function map_pump_branch_profile_report_data(array $manager, array $branch, array $changes): array {
+    $managerName = trim((string) ($manager['full_name'] ?? $manager['user_name'] ?? 'Branch Manager'));
+    $branchName = trim((string) ($branch['branch_name'] ?? 'Branch'));
+    $branchCode = trim((string) ($branch['branch_code'] ?? ''));
+
+    $summaryParts = [];
+    foreach ($changes as $change) {
+        $label = (string) ($change['label'] ?? 'Branch detail');
+        $summaryParts[] = $label;
+    }
+
+    $summary = 'Branch profile updated';
+    if (!empty($summaryParts)) {
+        $summary = 'Updated branch profile: ' . implode(', ', array_slice($summaryParts, 0, 3));
+        if (count($summaryParts) > 3) {
+            $summary .= ' + more';
+        }
+    }
+
+    $detailParts = [];
+    foreach ($changes as $change) {
+        $label = (string) ($change['label'] ?? 'Branch detail');
+        $oldValue = $change['old'] ?? '—';
+        $newValue = $change['new'] ?? '—';
+        $detailParts[] = sprintf('%s: %s → %s', $label, $oldValue, $newValue);
+    }
+
+    $details = empty($detailParts)
+        ? 'No specific field changes were recorded.'
+        : implode('; ', $detailParts);
+
+    $message = sprintf(
+        'Branch manager %s updated the branch profile for %s%s. %s',
+        $managerName,
+        $branchName,
+        $branchCode !== '' ? ' (' . $branchCode . ')' : '',
+        $details
+    );
+
+    if (mb_strlen($message, 'UTF-8') > 255) {
+        $message = mb_substr($message, 0, 252, 'UTF-8') . '...';
+    }
+
+    return [
+        'importance' => 'medium',
+        'short_summery' => $summary,
+        'message' => $message,
+    ];
+}
 
 // ------------------ POST: update branch profile ------------------
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -52,6 +104,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect_with('danger', 'Branch name and city are required.');
     }
 
+    $changeList = [];
+    $fieldChecks = [
+        'Branch Name' => [$branch['branch_name'] ?? '', $branch_name],
+        'City' => [$branch['city'] ?? '', $city],
+        'Township' => [$branch['township'] ?? '', $township],
+        'Address' => [$branch['address'] ?? '', $address],
+        'Phone' => [$branch['phone'] ?? '', $phone],
+        'Email' => [$branch['email'] ?? '', $email],
+        'Opening Time' => [($branch['opening_time'] ?? '06:00:00'), $opening . ':00'],
+        'Closing Time' => [($branch['closing_time'] ?? '22:00:00'), $closing . ':00'],
+        '24 Hours Mode' => [(string)($branch['is_24hr'] ?? 0), (string)$is_24hr],
+        'Pump Count' => [(string)($branch['pump_count'] ?? 0), (string)$pump_count],
+        'Tank Count' => [(string)($branch['tank_count'] ?? 0), (string)$tank_count],
+        'HQ Region' => [$branch['hq_region'] ?? '', $hq_region],
+        'Status' => [$branch['status'] ?? 'active', $status],
+    ];
+
+    foreach ($fieldChecks as $label => [$oldValue, $newValue]) {
+        if ((string)$oldValue !== (string)$newValue) {
+            $changeList[] = [
+                'label' => $label,
+                'old' => (string)$oldValue,
+                'new' => (string)$newValue,
+            ];
+        }
+    }
+
     try {
         $stmt = $pdo->prepare("
             UPDATE branches SET
@@ -70,6 +149,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ':hq' => $hq_region, ':st' => $status,
             ':bid' => $branch['branch_id'],
         ]);
+
+        if (!empty($changeList)) {
+            $reportData = map_pump_branch_profile_report_data($user, $branch, $changeList);
+            $insertReport = $pdo->prepare(
+                "INSERT INTO report (user_id, role_id, importance, short_summery, message, created_at)
+                 VALUES (:user_id, 4, :importance, :short_summery, :message, NOW())"
+            );
+            $insertReport->execute([
+                ':user_id' => $user['user_id'],
+                ':importance' => $reportData['importance'],
+                ':short_summery' => $reportData['short_summery'],
+                ':message' => $reportData['message'],
+            ]);
+        }
+
         log_activity($pdo, $branch['branch_id'], 'user', $user['user_id'], $user['full_name'],
                      'Updated branch profile');
         redirect_with('success', 'Branch profile updated successfully.');
@@ -149,7 +243,7 @@ $has_unread   = $unread_count > 0;
 <link rel="icon" type="image/png" href="/images/Logo.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Noto+Sans+Myanmar:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&family=Noto+Sans+Myanmar:wght@400;500;600;700&display=swap" rel="stylesheet">
 
 <style>
   :root{
@@ -295,7 +389,38 @@ $has_unread   = $unread_count > 0;
     padding:12px 20px; border-radius:11px; border:none; cursor:pointer; display:inline-flex; align-items:center; gap:8px;
     box-shadow:0 10px 24px -10px rgba(56,189,248,0.55); transition: transform 0.2s, box-shadow 0.2s;
   }
-  .btn-save:hover{transform:translateY(-2px); box-shadow:0 12px 28px -8px rgba(56,189,248,0.7);}
+  .btn-save:hover:not(:disabled){transform:translateY(-2px); box-shadow:0 12px 28px -8px rgba(56,189,248,0.7);}
+  .btn-save{transition: transform 0.2s, box-shadow 0.2s, opacity 0.2s, filter 0.2s;}
+  .btn-save:disabled{opacity:0.4; filter:grayscale(35%); cursor:not-allowed; pointer-events:none; box-shadow:none;}
+
+  /* ---------- redesign: overview grid, details panel header, edit mode ---------- */
+  .top-overview-grid{display:grid; grid-template-columns:1.6fr 0.85fr; gap:18px; margin-bottom:22px; align-items:stretch;}
+  @media (max-width:980px){.top-overview-grid{grid-template-columns:1fr;}}
+  .top-overview-grid .branch-hero{margin-bottom:0; padding:24px 26px;}
+  .branch-hero h4{display:flex; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:6px;}
+  .branch-hero h4 .status-badge{margin-left:0; padding:4px 12px;}
+  .branch-hero .sub{font-size:13px; display:flex; align-items:center; flex-wrap:wrap; gap:10px;}
+  .kpi-stack{display:flex; flex-direction:column; gap:14px;}
+  .kpi-stack .kpi{flex:1; padding:16px 20px; display:flex; flex-direction:column; justify-content:center;}
+  .kpi-stack .kpi .val{font-size:24px;}
+
+  .panel-header{display:flex; align-items:center; justify-content:space-between; margin-bottom:20px;}
+  .panel-header h3{font-size:16px; margin:0;}
+  .btn-edit-mode{
+    display:inline-flex; align-items:center; gap:8px; background:rgba(255,255,255,0.05);
+    border:1px solid rgba(255,255,255,0.14); color:var(--slate-50); font-size:13.5px; font-weight:600;
+    padding:8px 14px; border-radius:10px; cursor:pointer;
+    transition: background 0.2s, border-color 0.2s, color 0.2s;
+  }
+  .btn-edit-mode:hover{background:rgba(56,189,248,0.12); border-color:var(--sky-400); color:var(--sky-400);}
+  .btn-edit-mode.is-editing{background:rgba(56,189,248,0.16); border-color:var(--sky-400); color:var(--sky-400);}
+  .form-control-custom:disabled{color:var(--slate-300);}
+  .checkbox-row input:disabled, .checkbox-row input:disabled + label{cursor:not-allowed !important;}
+  .details-form{margin-bottom:20px;}
+  .info-list .row{flex-wrap:nowrap; margin:0; --bs-gutter-x:0;}
+  .info-list .row > *{width:auto; max-width:none; padding:0; margin-top:0;}
+  .layout-2col.equal{grid-template-columns:1fr 1fr;}
+  @media (max-width:1080px){.layout-2col.equal{grid-template-columns:1fr;}}
 
   /* right column: tanks summary + branch quick info */
   .tank-mini{
@@ -450,7 +575,11 @@ $has_unread   = $unread_count > 0;
           </div>
         </div>
         <div class="avatar-chip">
-          <div class="avatar-circle"><a href="edit-profile.php"><?= h(mb_substr($initials,0,1)) ?></a></div>
+          <?php if ($profileAvatarUrl !== ''): ?>
+            <img src="<?= h($profileAvatarUrl) ?>" alt="Profile Picture" style="width:36px;height:36px;border-radius:50%;object-fit:cover;border:1px solid rgba(255,255,255,0.12);">
+          <?php else: ?>
+            <div class="avatar-circle"><a href="edit-profile.php"><?= h(mb_substr($initials,0,1)) ?></a></div>
+          <?php endif; ?>
           <div><b><a href="edit-profile.php"><?= h(explode(' ', $user['full_name'])[0]) ?></a></b></div>
         </div>
       </div>
@@ -469,56 +598,51 @@ $has_unread   = $unread_count > 0;
         </div>
       <?php endif; ?>
 
-      <!-- ===== Hero card ===== -->
-      <div class="branch-hero">
-        <div class="branch-logo"><?= h(substr($branch['branch_code'], 0, 2)) ?></div>
-        <div style="flex:1;">
-          <h4>
-            <?= h($branch['branch_name']) ?>
-            <span class="status-badge <?= h($branch['status']) ?>"><span class="d"></span> <?= h(ucfirst($branch['status'])) ?></span>
-          </h4>
-          <div class="sub">
-            <i class="fa-solid fa-location-dot"></i> <?= h($branch['address'] ?: 'No address on file') ?>
-            &nbsp;·&nbsp;
-            <i class="fa-solid fa-hashtag"></i> <?= h($branch['branch_code']) ?>
-            &nbsp;·&nbsp;
-            <i class="fa-solid fa-map"></i> HQ Region: <?= h($branch['hq_region'] ?: '—') ?>
+      <!-- ===== Hero card + stacked KPIs ===== -->
+      <div class="top-overview-grid">
+        <div class="branch-hero">
+          <div class="branch-logo"><?= h(substr($branch['branch_code'], 0, 2)) ?></div>
+          <div style="flex:1;">
+            <h4>
+              <?= h($branch['branch_name']) ?>
+              <span class="status-badge <?= h($branch['status']) ?>"><span class="d"></span> <?= h(ucfirst($branch['status'])) ?></span>
+            </h4>
+            <div class="sub">
+              <span><i class="fa-solid fa-location-dot"></i> <?= h($branch['address'] ?: 'No address on file') ?></span>
+              <span>·</span>
+              <span><i class="fa-solid fa-hashtag"></i> <?= h($branch['branch_code']) ?></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="kpi-stack">
+          <div class="kpi">
+            <div class="lbl">Active Staff</div>
+            <div class="val"><?= $active_staff ?></div>
+          </div>
+          <div class="kpi">
+            <div class="lbl">Total Customers</div>
+            <div class="val"><?= number_format($customer_total) ?></div>
           </div>
         </div>
       </div>
 
-      <!-- ===== KPI strip ===== -->
-      <div class="kpi-strip">
-        <div class="kpi">
-          <div class="lbl">Active Pumps</div>
-          <div class="val"><?= $pump_active ?><small>/ <?= $pump_total ?></small></div>
+      <!-- ===== Branch details (edit mode toggle) ===== -->
+      <div class="panel details-form">
+        <div class="panel-header">
+          <h3>Branch Details</h3>
+          <button type="button" class="btn-edit-mode" id="toggleEditBtn">
+            <i class="fa-regular fa-pen-to-square"></i>
+            <span id="toggleEditText">Edit</span>
+          </button>
         </div>
-        <div class="kpi">
-          <div class="lbl">Active Staff</div>
-          <div class="val"><?= $active_staff ?></div>
-        </div>
-        <div class="kpi">
-          <div class="lbl">Total Customers</div>
-          <div class="val"><?= number_format($customer_total) ?></div>
-        </div>
-        <div class="kpi">
-          <div class="lbl">Avg Fuel Stock</div>
-          <div class="val"><?= $stock_pct ?>%</div>
-        </div>
-      </div>
-
-      <!-- ===== 2-column layout ===== -->
-      <div class="layout-2col">
-        <!-- LEFT: editable branch details form -->
-        <div class="panel">
-          <h3>Edit Branch Details</h3>
-          <form method="POST" action="branchprofile.php">
+        <form method="POST" action="branchprofile.php" id="branchForm">
             <input type="hidden" name="csrf" value="<?= h(csrf_token()) ?>">
 
             <div class="form-row">
               <div class="form-group">
                 <label for="branch_name">Branch Name</label>
-                <input type="text" id="branch_name" name="branch_name" class="form-control-custom" value="<?= h($branch['branch_name']) ?>" required>
+                <input type="text" id="branch_name" name="branch_name" class="form-control-custom editable-field" disabled value="<?= h($branch['branch_name']) ?>" required>
               </div>
               <div class="form-group">
                 <label for="branch_code">Branch Code</label>
@@ -529,143 +653,58 @@ $has_unread   = $unread_count > 0;
             <div class="form-row">
               <div class="form-group">
                 <label for="city">City</label>
-                <input type="text" id="city" name="city" class="form-control-custom" value="<?= h($branch['city']) ?>" required>
+                <input type="text" id="city" name="city" class="form-control-custom editable-field" disabled value="<?= h($branch['city']) ?>" required>
               </div>
               <div class="form-group">
                 <label for="township">Township</label>
-                <input type="text" id="township" name="township" class="form-control-custom" value="<?= h($branch['township']) ?>">
+                <input type="text" id="township" name="township" class="form-control-custom editable-field" disabled value="<?= h($branch['township']) ?>">
               </div>
             </div>
 
             <div class="form-group">
               <label for="address">Full Address</label>
-              <input type="text" id="address" name="address" class="form-control-custom" value="<?= h($branch['address']) ?>">
+              <input type="text" id="address" name="address" class="form-control-custom editable-field" disabled value="<?= h($branch['address']) ?>">
             </div>
 
             <div class="form-row">
               <div class="form-group">
                 <label for="branch_phone">Branch Phone</label>
-                <input type="text" id="branch_phone" name="branch_phone" class="form-control-custom" value="<?= h($branch['phone']) ?>">
+                <input type="text" id="branch_phone" name="branch_phone" class="form-control-custom editable-field" disabled value="<?= h($branch['phone']) ?>">
               </div>
               <div class="form-group">
                 <label for="branch_email">Branch Email</label>
-                <input type="email" id="branch_email" name="branch_email" class="form-control-custom" value="<?= h($branch['email']) ?>">
+                <input type="email" id="branch_email" name="branch_email" class="form-control-custom editable-field" disabled value="<?= h($branch['email']) ?>">
               </div>
             </div>
 
             <div class="form-row-3">
               <div class="form-group">
                 <label for="opening_time">Opening Time</label>
-                <input type="time" id="opening_time" name="opening_time" class="form-control-custom" value="<?= h(substr($branch['opening_time'] ?? '06:00:00', 0, 5)) ?>">
+                <input type="time" id="opening_time" name="opening_time" class="form-control-custom editable-field" disabled value="<?= h(substr($branch['opening_time'] ?? '06:00:00', 0, 5)) ?>">
               </div>
               <div class="form-group">
                 <label for="closing_time">Closing Time</label>
-                <input type="time" id="closing_time" name="closing_time" class="form-control-custom" value="<?= h(substr($branch['closing_time'] ?? '22:00:00', 0, 5)) ?>">
+                <input type="time" id="closing_time" name="closing_time" class="form-control-custom editable-field" disabled value="<?= h(substr($branch['closing_time'] ?? '22:00:00', 0, 5)) ?>">
               </div>
               <div class="form-group">
                 <label>24 Hours?</label>
                 <div class="checkbox-row">
-                  <input type="checkbox" id="is_24hr" name="is_24hr" <?= $branch['is_24hr'] ? 'checked' : '' ?>>
+                  <input type="checkbox" id="is_24hr" class="editable-field" disabled name="is_24hr" <?= $branch['is_24hr'] ? 'checked' : '' ?>>
                   <label for="is_24hr" style="margin:0; color:var(--slate-50); font-weight:400; cursor:pointer;">Open 24 / 7</label>
                 </div>
               </div>
             </div>
 
-            <div class="form-row-3">
-              <div class="form-group">
-                <label for="pump_count">Total Pumps</label>
-                <input type="number" id="pump_count" name="pump_count" class="form-control-custom" min="1" max="20" value="<?= h($branch['pump_count']) ?>">
-              </div>
-              <div class="form-group">
-                <label for="tank_count">Total Tanks</label>
-                <input type="number" id="tank_count" name="tank_count" class="form-control-custom" min="1" max="20" value="<?= h($branch['tank_count']) ?>">
-              </div>
-              <div class="form-group">
-                <label for="status">Branch Status</label>
-                <select id="status" name="status" class="form-control-custom">
-                  <?php foreach (['active'=>'Active','maintenance'=>'Under Maintenance','closed'=>'Closed'] as $k=>$v): ?>
-                    <option value="<?= $k ?>" <?= $branch['status']===$k?'selected':'' ?>><?= $v ?></option>
-                  <?php endforeach; ?>
-                </select>
-              </div>
-            </div>
+            <!-- Not shown in UI; kept so saving does not reset these stored values -->
+            <input type="hidden" name="pump_count" value="<?= h($branch['pump_count']) ?>">
+            <input type="hidden" name="tank_count" value="<?= h($branch['tank_count']) ?>">
+            <input type="hidden" name="status" value="<?= h($branch['status']) ?>">
+            <input type="hidden" name="hq_region" value="<?= h($branch['hq_region']) ?>">
 
-            <div class="form-group">
-              <label for="hq_region">HQ Region Assignment</label>
-              <input type="text" id="hq_region" name="hq_region" class="form-control-custom" value="<?= h($branch['hq_region']) ?>" placeholder="e.g. Yangon Central">
-            </div>
-
-            <button type="submit" class="btn-save"><i class="fa-solid fa-check"></i> Save Branch Profile</button>
+            <button type="submit" class="btn-save" id="saveBtn" disabled><i class="fa-solid fa-check"></i> Send Report &amp; Save Changes</button>
           </form>
         </div>
 
-        <!-- RIGHT: quick info + tanks -->
-        <div style="display:flex; flex-direction:column; gap:20px; min-width:0;">
-          <div class="panel">
-            <h3>Branch Quick Info</h3>
-            <div class="info-list">
-              <div class="row"><span class="lbl">Established</span><span class="val"><?= h(fmt_date($branch['established_at'])) ?></span></div>
-              <div class="row"><span class="lbl">Operating Hours</span>
-                <span class="val">
-                  <?= $branch['is_24hr'] ? '24 / 7' : (fmt_time($branch['opening_time']) . ' – ' . fmt_time($branch['closing_time'])) ?>
-                </span>
-              </div>
-              <div class="row"><span class="lbl">Total Pumps</span><span class="val"><?= (int)$branch['pump_count'] ?></span></div>
-              <div class="row"><span class="lbl">Total Tanks</span><span class="val"><?= (int)$branch['tank_count'] ?></span></div>
-              <div class="row"><span class="lbl">Branch Phone</span><span class="val"><?= h($branch['phone'] ?: '—') ?></span></div>
-              <div class="row"><span class="lbl">Branch Email</span><span class="val"><?= h($branch['email'] ?: '—') ?></span></div>
-            </div>
-          </div>
-
-          <div class="panel">
-            <div class="tank-panel-head">
-              <h3>Fuel Tanks Overview</h3>
-              <?php if ($tanks && count($tanks) > 1): ?>
-                <div class="tank-carousel-controls">
-                  <button type="button" class="tank-carousel-nav tank-carousel-prev" id="tank-prev" aria-label="Previous tank"><i class="fa-solid fa-arrow-left"></i></button>
-                  <span class="tank-counter" id="tank-counter">1 / <?= count($tanks) ?></span>
-                  <button type="button" class="tank-carousel-nav tank-carousel-next" id="tank-next" aria-label="Next tank"><i class="fa-solid fa-arrow-right"></i></button>
-                </div>
-              <?php endif; ?>
-            </div>
-            <?php if (!$tanks): ?>
-              <div style="color:var(--slate-400); font-size:12.5px;">No tanks registered yet.</div>
-            <?php else: ?>
-              <div class="tank-carousel-container">
-
-                <div class="tank-slider-track" id="tank-slider-track">
-                  <?php foreach ($tanks as $index => $t):
-                    $pct = $t['capacity_l'] > 0 ? round(($t['current_l'] / $t['capacity_l']) * 100) : 0;
-                    $color = $pct <= $t['alert_pct'] ? 'var(--red-400)' : ($pct < 60 ? 'var(--amber-400)' : 'var(--mint-400)');
-                  ?>
-                    <div class="tank-slide" data-index="<?= $index ?>">
-                      <div class="tank-mini">
-                        <div class="tank-mini-top">
-                          <b><?= h($t['fuel_name']) ?></b>
-                          <span class="pct" style="color:<?= $color ?>"><?= $pct ?>%</span>
-                        </div>
-                        <div class="gauge-mini"><i style="width:<?= $pct ?>%; background:<?= $color ?>;"></i></div>
-                        <div class="tank-mini-meta">
-                          <span><?= number_format((float)$t['current_l'], 2) ?> L used of <?= number_format((float)$t['capacity_l']) ?> L</span>
-                          <span class="tank-status <?= $t['is_enabled'] ? 'on' : '' ?>"><?= $t['is_enabled'] ? 'Enabled' : 'Disabled' ?></span>
-                        </div>
-                      </div>
-                    </div>
-                  <?php endforeach; ?>
-                </div>
-
-                <?php if (count($tanks) > 1): ?>
-                  <div class="tank-carousel-dots" id="tank-carousel-dots" aria-hidden="true">
-                    <?php foreach ($tanks as $index => $t): ?>
-                      <span class="tank-dot <?= $index === 0 ? 'active' : '' ?>"></span>
-                    <?php endforeach; ?>
-                  </div>
-                <?php endif; ?>
-              </div>
-            <?php endif; ?>
-          </div>
-        </div>
-      </div>
 
       <div class="page-foot">© 2026 MAP & PUMP | All Right Reserved</div>
     </div>
@@ -735,6 +774,32 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!notifList) return;
     notifList.innerHTML = '<div class="notif-empty" style="text-align:center; padding:12px 0; color:var(--slate-400); font-size:12px;">No new notifications</div>';
     if (notifPing) notifPing.remove();
+  }
+
+  // Edit mode toggle: fields + save button stay disabled until Edit is pressed
+  const toggleEditBtn = document.getElementById('toggleEditBtn');
+  const toggleEditText = document.getElementById('toggleEditText');
+  const saveBtn = document.getElementById('saveBtn');
+  const branchForm = document.getElementById('branchForm');
+  const editableFields = document.querySelectorAll('#branchForm .editable-field');
+  let isEditMode = false;
+
+  function setEditMode(enabled) {
+    isEditMode = enabled;
+    editableFields.forEach(field => { field.disabled = !isEditMode; });
+    if (saveBtn) saveBtn.disabled = !isEditMode;
+    if (toggleEditBtn) toggleEditBtn.classList.toggle('is-editing', isEditMode);
+    if (toggleEditText) toggleEditText.textContent = isEditMode ? 'Cancel' : 'Edit';
+  }
+
+  if (toggleEditBtn && branchForm) {
+    toggleEditBtn.addEventListener('click', () => {
+      if (isEditMode) branchForm.reset(); // Cancel discards unsaved edits
+      setEditMode(!isEditMode);
+    });
+    branchForm.addEventListener('submit', (e) => {
+      if (!isEditMode) e.preventDefault();
+    });
   }
 
   if (bell && notifPopup) {

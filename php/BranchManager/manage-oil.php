@@ -457,6 +457,14 @@ body[unresolved] {opacity: 0; display: block; overflow: hidden; position: relati
   }
   .bell .ping{position:absolute; top:6px; right:7px; width:7px; height:7px; border-radius:50%; background:var(--amber-400); box-shadow:0 0 0 2px var(--navy-800);}
   
+  label.staff-theme-control {
+    position: relative; display: grid; width: 28px; height: 32px; place-items: center; margin: 0; color: var(--slate-300); cursor: pointer;
+  }
+  label.staff-theme-control input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+  label.staff-theme-control span { font-size: 1.05rem; }
+  label.staff-theme-control:focus-within span { outline: 2px solid var(--sky-400); outline-offset: 4px; border-radius: 3px; }
+  body.branch-manager-theme.light-mode .staff-theme-control { color: var(--slate-400); }
+
   .avatar-chip{display:flex; align-items:center; gap:10px; font-size:13px; cursor: pointer; padding: 4px 8px; border-radius: 99px; transition: background 0.2s;}
   .avatar-chip:hover{background: rgba(255,255,255,0.05);}
   .avatar-circle{width:36px; height:36px; border-radius:50%; background:linear-gradient(135deg,var(--sky-400),var(--blue-700)); display:flex; align-items:center; justify-content:center; font-weight:700; font-size:13px; font-family:'Space Grotesk';}
@@ -941,6 +949,66 @@ body[unresolved] {opacity: 0; display: block; overflow: hidden; position: relati
   /* All Fuel Types pagination: blue like the Add Fuel Type button */
   #tank-grid-pg-controls .pg-btn.active,
   #tank-grid-pg-controls .pg-btn.active:hover:not(:disabled) { background:linear-gradient(135deg, #3b8dff, #1d4ed8); border-color:#2f6feb; color:#fff; box-shadow:0 8px 18px -10px rgba(59,141,255,0.75); }
+
+  body.branch-manager-theme {
+    --navy-950:#070b14; --navy-900:#0b1220; --navy-800:#101a30; --navy-700:#16213f; --navy-600:#1a2438;
+    --blue-700:#1d4ed8; --blue-500:#2f6feb; --sky-400:#38bdf8;
+    --amber-400:#fbbf24; --amber-300:#fcd34d; --mint-400:#34d399; --red-400:#f87171;
+    --slate-50:#f8fafc; --slate-300:#c9d2e3; --slate-400:#8b96ad;
+    background: var(--navy-950); color: var(--slate-50);
+  }
+  body.branch-manager-theme.light-mode {
+    --navy-950:#f3f6fb; --navy-900:#ffffff; --navy-800:#f7f9fc; --navy-700:#edf3fb; --navy-600:#e5edf8;
+    --blue-700:#286be0; --blue-500:#3c82ff; --sky-400:#3f8cf5; --amber-400:#d98400; --amber-300:#e2a72d; --mint-400:#128e6b; --red-400:#cf3d3d;
+    --slate-50:#172337; --slate-300:#3c4d68; --slate-400:#58677e;
+    background: var(--navy-950); color: var(--slate-50);
+  }
+  body.branch-manager-theme.light-mode .sidebar,
+  body.branch-manager-theme.light-mode .topbar,
+  body.branch-manager-theme.light-mode .panel,
+  body.branch-manager-theme.light-mode .stat-card,
+  body.branch-manager-theme.light-mode .module-card,
+  body.branch-manager-theme.light-mode .notif-popup,
+  body.branch-manager-theme.light-mode .bell,
+  body.branch-manager-theme.light-mode .side-branch,
+  body.branch-manager-theme.light-mode .avatar-chip,
+  body.branch-manager-theme.light-mode .color-modal,
+  body.branch-manager-theme.light-mode .sales-panel,
+  body.branch-manager-theme.light-mode .fuel-color-table tbody tr,
+  body.branch-manager-theme.light-mode .form-control-custom,
+  body.branch-manager-theme.light-mode .modal-card-custom,
+  body.branch-manager-theme.light-mode .account-profile-card,
+  body.branch-manager-theme.light-mode .account-sidecard {
+    background: var(--navy-900); border-color: rgba(17,24,39,0.12); color: var(--slate-50);
+  }
+  body.branch-manager-theme.light-mode .side-link,
+  body.branch-manager-theme.light-mode .side-branch span,
+  body.branch-manager-theme.light-mode .topbar .date,
+  body.branch-manager-theme.light-mode .notif-item-body span,
+  body.branch-manager-theme.light-mode .alert-row span,
+  body.branch-manager-theme.light-mode .queue-row .pump,
+  body.branch-manager-theme.light-mode .module-card p,
+  body.branch-manager-theme.light-mode .stat-card .lbl,
+  body.branch-manager-theme.light-mode .panel h3,
+  body.branch-manager-theme.light-mode .report-row p,
+  body.branch-manager-theme.light-mode .field label,
+  body.branch-manager-theme.light-mode .account-password-hint {
+    color: var(--slate-300);
+  }
+  body.branch-manager-theme.light-mode .side-link.active,
+  body.branch-manager-theme.light-mode .side-link:hover,
+  body.branch-manager-theme.light-mode .avatar-chip:hover,
+  body.branch-manager-theme.light-mode .bell:hover {
+    background: rgba(63, 140, 245, 0.10);
+    color: var(--slate-50);
+  }
+  .staff-theme-control {
+    position: relative; display: grid; width: 28px; height: 32px; place-items: center; margin: 0; color: var(--slate-300); cursor: pointer;
+  }
+  .staff-theme-control input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+  .staff-theme-control span { font-size: 1.05rem; }
+  .staff-theme-control:focus-within span { outline: 2px solid var(--sky-400); outline-offset: 4px; border-radius: 3px; }
+  body.branch-manager-theme.light-mode .staff-theme-control { color: var(--slate-400); }
 </style>
 </head>
 <body>
@@ -1034,6 +1102,11 @@ body[unresolved] {opacity: 0; display: block; overflow: hidden; position: relati
                            </div>
                       </div>
         </div>
+
+        <label class="staff-theme-control" title="Toggle light mode">
+          <input class="js-theme-toggle" type="checkbox" aria-label="Toggle light mode">
+          <span><i class="fa-solid fa-sun"></i></span>
+        </label>
 
         <div class="avatar-chip">
           <div class="avatar-circle"><a href="edit-profile.php"><?= htmlspecialchars(substr((string)($user['full_name'] ?? 'Manager'), 0, 1)) ?></a></div>
@@ -1337,7 +1410,7 @@ body[unresolved] {opacity: 0; display: block; overflow: hidden; position: relati
     </div>
     <div class="modal-actions">
       <button type="button" class="btn-secondary-custom" id="delete-cancel-btn">Cancel</button>
-      <button type="button" id="delete-confirm-btn" style="background:linear-gradient(135deg,#f87171,#b91c1b); color:#fff; font-weight: 700; font-size:13px; padding:10px 18px; border-radius:10px; border:none; cursor:pointer;">Delete Permanently</button>
+      <button type="button" id="delete-confirm-btn" style="background:linear-gradient(135deg,#f87171,#b91c1c); color:#fff; font-weight: 700; font-size:13px; padding:10px 18px; border-radius:10px; border:none; cursor:pointer;">Delete Permanently</button>
     </div>
   </div>
 </div>
@@ -1873,5 +1946,34 @@ body[unresolved] {opacity: 0; display: block; overflow: hidden; position: relati
   <div class="toast-msg"></div>
   <button type="button" class="toast-close" aria-label="Close">×</button>
 </div>
+
+<script>
+  (function () {
+    const root = document.body;
+    const storedTheme = localStorage.getItem('map_pump_branch_manager_theme');
+    const toggle = document.querySelector('.js-theme-toggle');
+    const icon = document.querySelector('.staff-theme-control span i');
+
+    function applyTheme(isLight) {
+      root.classList.toggle('light-mode', isLight);
+      if (toggle) toggle.checked = isLight;
+      if (icon) {
+        icon.className = isLight ? 'fa-solid fa-moon' : 'fa-solid fa-sun';
+      }
+      const control = document.querySelector('.staff-theme-control');
+      if (control) control.title = isLight ? 'Toggle dark mode' : 'Toggle light mode';
+      localStorage.setItem('map_pump_branch_manager_theme', isLight ? 'light' : 'dark');
+    }
+
+    root.classList.add('branch-manager-theme');
+    applyTheme(storedTheme === 'light');
+
+    if (toggle) {
+      toggle.addEventListener('change', function () {
+        applyTheme(this.checked);
+      });
+    }
+  })();
+</script>
 
 </body></html>
