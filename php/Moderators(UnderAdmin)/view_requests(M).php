@@ -10,19 +10,9 @@ if (empty($_SESSION['payment_transfer_csrf'])) {
 }
 $search = trim((string) ($_GET['search'] ?? ''));
 $requestType = strtolower(trim((string) ($_GET['type'] ?? '')));
-$status = strtolower(trim((string) ($_GET['status'] ?? '')));
+$status = 'pending';
 
 // Filter keywords from live system_requests (+ account bucket + core fallbacks).
-$allowedStatuses = function_exists('admin_filter_request_statuses')
-    ? admin_filter_request_statuses()
-    : ['pending', 'approved', 'rejected', 'flagged'];
-foreach (['pending', 'approved', 'rejected', 'flagged'] as $fallbackStatus) {
-    if (!in_array($fallbackStatus, $allowedStatuses, true)) {
-        $allowedStatuses[] = $fallbackStatus;
-    }
-}
-sort($allowedStatuses);
-
 $dbTypes = function_exists('admin_filter_request_types') ? admin_filter_request_types() : [];
 $allowedTypes = $dbTypes;
 foreach (['account', 'payment', 'hq_registration', 'station', 'new_station', 'new_station_registration', 'license', 'license_modification', 'deactivation', 'account_deactivation'] as $fallbackType) {
@@ -47,7 +37,6 @@ $requestTypeOptions = function_exists('admin_request_type_filter_options')
     }, $allowedTypes)));
 
 $requestType = ($requestType !== '' && in_array($requestType, $allowedTypes, true)) ? $requestType : '';
-$status = ($status !== '' && in_array($status, $allowedStatuses, true)) ? $status : '';
 $requestTypeOption = function_exists('admin_request_type_filter_value')
     ? admin_request_type_filter_value($requestType)
     : match ($requestType) {
@@ -69,8 +58,6 @@ if (($requestType === '' || $requestType === 'account') && ($status === '' || $s
 }
 
 $summary = moderator_request_summary();
-$summary['pending'] += count($accountRows) + count($carLicenseRows);
-$summary['pending'] += count(array_filter($paymentRows, static fn (array $row): bool => ($row['status'] ?? '') === 'payer_reported_paid'));
 $dbError = $summary['error'] ?? (hq_db_available() ? null : 'The request database is temporarily unavailable.');
 $flashType = (string) ($flash['type'] ?? '');
 ?>
@@ -214,7 +201,7 @@ $flashType = (string) ($flash['type'] ?? '');
 
     <div class="row g-3 mb-4">
         <div class="col-12 col-sm-4"><div class="request-indicator-card"><div><p class="text-white-50 mb-1 small fw-semibold" style="text-transform:uppercase;letter-spacing:.06em;font-size:.72rem;">Pending Verification</p><h4 class="fw-bold text-warning mb-0" style="font-size:1.8rem;letter-spacing:-.04em;"><?= (int) $summary['pending'] ?></h4></div><span class="fs-3 text-warning"><i class="bi bi-hourglass-split"></i></span></div></div>
-        <div class="col-12 col-sm-4"><div class="request-indicator-card"><div><p class="text-white-50 mb-1 small fw-semibold" style="text-transform:uppercase;letter-spacing:.06em;font-size:.72rem;">Approved Today</p><h4 class="fw-bold mb-0" data-live-request-count="approved_today" style="font-size:1.8rem;letter-spacing:-.04em;color:#1be494;"><?= (int) $summary['approved_today'] ?></h4></div><span class="fs-3" style="color:#1be494;"><i class="bi bi-patch-check-fill"></i></span></div></div>
+        <div class="col-12 col-sm-4"><div class="request-indicator-card"><div><p class="text-white-50 mb-1 small fw-semibold" style="text-transform:uppercase;letter-spacing:.06em;font-size:.72rem;">Approved</p><h4 class="fw-bold mb-0" data-live-request-count="approved" style="font-size:1.8rem;letter-spacing:-.04em;color:#1be494;"><?= (int) $summary['approved'] ?></h4></div><span class="fs-3" style="color:#1be494;"><i class="bi bi-patch-check-fill"></i></span></div></div>
         <div class="col-12 col-sm-4"><div class="request-indicator-card"><div><p class="text-white-50 mb-1 small fw-semibold" style="text-transform:uppercase;letter-spacing:.06em;font-size:.72rem;">Declined / Flagged</p><h4 class="fw-bold mb-0" data-live-request-count="declined_flagged" style="font-size:1.8rem;letter-spacing:-.04em;color:#ff4d6a;"><?= (int) $summary['declined_flagged'] ?></h4></div><span class="fs-3" style="color:#ff4d6a;"><i class="bi bi-shield-x"></i></span></div></div>
     </div>
 
@@ -223,7 +210,7 @@ $flashType = (string) ($flash['type'] ?? '');
         <form class="row g-3 align-items-center" method="GET" action="view_requests(M).php">
             <div class="col-12 col-md-5"><div class="input-group"><span class="input-group-text bg-transparent border-end-0" style="border-color:var(--glass-border);color:var(--neon-cyan);border-radius:12px 0 0 12px;"><i class="bi bi-funnel-fill"></i></span><input type="text" class="form-control glass-input border-start-0" placeholder="Filter by company, sender name, email, or reference ID..." name="search" value="<?= moderator_escape($search) ?>"></div></div>
             <div class="col-12 col-md-3"><select class="form-select glass-select" name="type"><option value="">All Request Types</option><?php foreach ($requestTypeOptions as $option): ?><option value="<?= moderator_escape($option) ?>" <?= $requestTypeOption === $option ? 'selected' : '' ?>><?= $option === 'account' ? 'Account Verification' : moderator_escape(function_exists('admin_filter_label') ? admin_filter_label($option) : (function_exists('request_type_label') ? request_type_label($option) : $option)) ?></option><?php endforeach; ?></select></div>
-            <div class="col-12 col-md-2"><select class="form-select glass-select" name="status"><option value="">All Statuses</option><?php foreach ($allowedStatuses as $option): ?><option value="<?= moderator_escape($option) ?>" <?= $status === $option ? 'selected' : '' ?>><?= moderator_escape(function_exists('admin_filter_label') ? admin_filter_label($option) : request_status_label($option)) ?></option><?php endforeach; ?></select></div>
+            <div class="col-12 col-md-2"><select class="form-select glass-select" aria-label="Status filter fixed to Pending" disabled><option value="pending" selected>Pending</option></select><input type="hidden" name="status" value="pending"></div>
             <div class="col-12 col-md-2 d-flex gap-2"><button type="button" class="btn btn-neon flex-grow-1 js-clear-filters" title="Clear filters">Clear</button></div>
         </form>
     </div></div>
@@ -243,7 +230,7 @@ $flashType = (string) ($flash['type'] ?? '');
                 <td><div class="fw-semibold text-white"><?= moderator_escape($sender) ?></div><div class="text-white-50 small"><?= moderator_escape((string) ($row['email'] ?? 'No email')) ?></div></td>
                 <td><span class="badge rounded-pill bg-info bg-opacity-10 text-info border border-info border-opacity-25 px-2 py-1">Account Verification</span><?php if ((int) ($row['license_conflict_count'] ?? 0) > 0): ?><span class="badge bg-warning text-dark ms-1">Duplicate license</span><?php endif; ?></td>
                 <td class="text-white-50"><?= moderator_escape(moderator_format_date((string) $row['created_at'])) ?></td>
-                <td><span class="request-status request-status-pending">Pending Verification</span></td>
+                <td><span class="request-status request-status-pending">Pending</span></td>
                 <td class="text-end"><div class="d-flex gap-2 justify-content-end">
                     <button type="button" class="btn-action js-view-account-request" title="View Account Details" aria-label="View account ACCT-<?= (int) $row['user_id'] ?> details" data-user-id="<?= (int) $row['user_id'] ?>" data-role-name="<?= moderator_escape($roleName) ?>"><i class="bi bi-eye-fill"></i></button>
                 </div></td>
@@ -256,7 +243,7 @@ $flashType = (string) ($flash['type'] ?? '');
                 <td><div class="fw-semibold text-white"><?= moderator_escape($carSender) ?></div><div class="text-white-50 small"><?= moderator_escape((string) ($row['car_plate_number'] ?? '')) ?><?= !empty($row['email']) ? ' · ' . moderator_escape((string) $row['email']) : '' ?></div></td>
                 <td><span class="badge rounded-pill bg-info bg-opacity-10 text-info border border-info border-opacity-25 px-2 py-1">Car License Review</span><?php if ((int) $row['conflict_count'] > 0): ?><span class="badge bg-warning text-dark ms-1">Duplicate plate</span><?php endif; ?></td>
                 <td class="text-white-50"><?= moderator_escape(moderator_format_date((string) $row['created_at'])) ?></td>
-                <td><span class="request-status request-status-pending">Pending Review</span></td>
+                <td><span class="request-status request-status-pending">Pending</span></td>
                 <td class="text-end"><div class="d-flex gap-2 justify-content-end">
                     <button type="button" class="btn-action js-view-car-license" title="Compare car license" aria-label="Review car license #<?= (int) $row['car_license_id'] ?>" data-car-license-id="<?= (int) $row['car_license_id'] ?>"><i class="bi bi-eye-fill"></i></button>
                 </div></td>
@@ -289,13 +276,13 @@ $flashType = (string) ($flash['type'] ?? '');
             </tr>
         <?php endforeach; ?>
         <?php foreach ($paymentRows as $paymentRow): ?>
-            <?php $paymentId = (int) $paymentRow['payment_transfer_id']; $paymentState = (string) $paymentRow['status']; $paymentStatus = $paymentState === 'payer_reported_paid' ? 'pending' : ($paymentState === 'received' ? 'approved' : 'rejected'); $isPayer = ((int) ($paymentRow['payer_user_id'] ?? 0) === (int) ($_SESSION['user_id'] ?? 0)) || (strtolower((string) ($_SESSION['user_email'] ?? '')) !== '' && strtolower((string) ($_SESSION['user_email'] ?? '')) === strtolower((string) ($paymentRow['payer_email'] ?? ''))); ?>
+            <?php $paymentId = (int) $paymentRow['payment_transfer_id']; $paymentState = (string) $paymentRow['status']; $paymentStatus = in_array($paymentState, ['pending_payment', 'payer_reported_paid'], true) ? 'pending' : ($paymentState === 'received' ? 'approved' : 'rejected'); $isPayer = ((int) ($paymentRow['payer_user_id'] ?? 0) === (int) ($_SESSION['user_id'] ?? 0)) || (strtolower((string) ($_SESSION['user_email'] ?? '')) !== '' && strtolower((string) ($_SESSION['user_email'] ?? '')) === strtolower((string) ($paymentRow['payer_email'] ?? ''))); ?>
             <tr>
                 <td class="fw-bold txt-neon-cyan">#PAY-<?= $paymentId ?></td>
                 <td><div class="fw-semibold text-white"><?= moderator_escape((string) ($paymentRow['payer_hq_name'] ?: $paymentRow['payer_name'] ?: 'HQ payer')) ?></div><div class="text-white-50 small"><?= moderator_escape((string) ($paymentRow['description'] ?? '')) ?></div><div class="text-white-50 small"><?= number_format((float) $paymentRow['amount_mmk'], 2) ?> MMK · <?= moderator_escape((string) ($paymentRow['payer_email'] ?? '')) ?></div></td>
                 <td><span class="badge rounded-pill bg-info bg-opacity-10 text-info border border-info border-opacity-25 px-2 py-1">Payment Verification</span><div class="text-white-50 small mt-1"><?= moderator_escape(match ((string) $paymentRow['payment_type']) { 'hq_station_package' => 'HQ Station Package', default => 'HQ Service Extension' }) ?></div></td>
                 <td class="text-white-50"><?= moderator_escape(moderator_format_date((string) $paymentRow['created_at'])) ?></td>
-                <td><span class="request-status <?= moderator_escape(request_status_class($paymentStatus)) ?>"><?= moderator_escape($paymentStatus === 'pending' ? 'Payer reported paid' : request_status_label($paymentStatus)) ?></span></td>
+                <td><span class="request-status <?= moderator_escape(request_status_class($paymentStatus)) ?>"><?= moderator_escape(request_status_label($paymentStatus)) ?></span></td>
                 <td class="text-end"><div class="d-flex gap-2 justify-content-end align-items-center">
                     <button type="button" class="btn-action js-view-payment" title="View payment verification details" aria-label="View payment verification #PAY-<?= $paymentId ?> details"
                         data-payment-id="<?= $paymentId ?>" data-payment-type="HQ Service Extension"
