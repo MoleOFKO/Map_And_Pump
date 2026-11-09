@@ -145,6 +145,23 @@ try {
         echo json_encode(['success' => false, 'message' => 'Please sign in again before booking.']);
         exit;
     }
+    $dailyBookingCount = $pdo->prepare(
+        'SELECT COUNT(*)
+         FROM booking
+         WHERE user_id = ?
+           AND created_at >= CURDATE()
+           AND created_at < DATE_ADD(CURDATE(), INTERVAL 1 DAY)'
+    );
+    $dailyBookingCount->execute([$userId]);
+    if ((int)$dailyBookingCount->fetchColumn() >= 3) {
+        $pdo->rollBack();
+        http_response_code(429);
+        echo json_encode([
+            'success' => false,
+            'message' => 'You can make up to 3 bookings per day. Cancelled bookings count toward this limit. Please try again tomorrow.'
+        ]);
+        exit;
+    }
     if (!customer_license_valid_for_booking($pdo, $userId, true)) {
         $pdo->rollBack();
         http_response_code(403);
