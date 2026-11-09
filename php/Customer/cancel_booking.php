@@ -131,11 +131,16 @@ try {
     if ($cancel->rowCount() !== 1) {
         throw new RuntimeException('Booking status changed while cancellation was being processed.');
     }
-    $freePump = $pdo->prepare("UPDATE pumps SET status = 'idle', current_token = NULL
-        WHERE branch_id = :station_id AND current_token = :booking_code AND status = 'active'");
-    $freePump->execute([':station_id' => (int)$booking['station_id'], ':booking_code' => (string)$booking['qr_refrence_code']]);
-
     $pdo->commit();
+
+    try {
+        $freePump = $pdo->prepare("UPDATE pumps SET status = 'idle', current_token = NULL
+            WHERE branch_id = :station_id AND current_token = :booking_code AND status = 'active'");
+        $freePump->execute([':station_id' => (int)$booking['station_id'], ':booking_code' => (string)$booking['qr_refrence_code']]);
+    } catch (Throwable $cleanupError) {
+        error_log('Customer booking pump cleanup failed: ' . $cleanupError->getMessage());
+    }
+
     echo json_encode(['success' => true, 'message' => 'Booking cancelled.']);
 } catch (Throwable $e) {
     if ($pdo->inTransaction()) {
