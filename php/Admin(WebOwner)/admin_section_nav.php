@@ -79,8 +79,8 @@ $adminMenuClass = static fn (string $key): string => $adminSection === $key ? 'm
     <div class="offcanvas-body pt-3">
         <ul class="list-unstyled d-flex flex-column gap-2">
             <li><a href="admin_dashboard.php" class="<?= $adminMenuClass('home') ?>"><i class="bi bi-house me-3 txt-neon-cyan"></i> Home</a></li>
-            <li><a href="view_hq_and_user_account.php" class="<?= $adminMenuClass('view_hq') ?>"><i class="bi bi-building-gear me-3 txt-neon-cyan"></i> View/Manage HQ</a></li>
-            <li><a href="view_users.php" class="<?= $adminMenuClass('view_users') ?>"><i class="bi bi-people me-3 txt-neon-cyan"></i> View/Manage Users</a></li>
+            <li><a href="view_hq_and_user_account.php" class="<?= $adminMenuClass('view_hq') ?>"><i class="bi bi-building-gear me-3 txt-neon-cyan"></i> View/Manage Companies</a></li>
+            <li><a href="view_users.php" class="<?= $adminMenuClass('view_users') ?>"><i class="bi bi-people me-3 txt-neon-cyan"></i> View/Manage Drivers</a></li>
             <li><a href="view_requests.php" class="<?= $adminMenuClass('requests') ?>"><i class="bi bi-file-earmark-check me-3 txt-neon-cyan"></i> View Requests</a></li>
             <li><a href="view_report.php" class="<?= $adminMenuClass('report') ?>"><i class="bi bi-graph-up-arrow me-3 txt-neon-cyan"></i> View Report</a></li>
             <li><a href="loyalty_management.php" class="<?= $adminMenuClass('loyalty') ?>"><i class="bi bi-stars me-3 txt-neon-cyan"></i> Loyalty &amp; Billing</a></li>

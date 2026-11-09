@@ -303,7 +303,7 @@ $redemptionValues = array_values($redemptions ?? []);
     <header class="loyalty-page-header mb-4">
         <span class="loyalty-eyebrow"><i class="bi bi-gift" aria-hidden="true"></i> Loyalty &amp; Billing</span>
         <h1 class="h3 mb-1">Loyalty &amp; Billing Management</h1>
-        <p class="loyalty-muted mb-0">Manage customer rewards, monthly budgets, and company payouts.</p>
+        <p class="loyalty-muted mb-0">Manage driver rewards, monthly budgets, and company payouts.</p>
     </header>
     <?php if ($message !== ''): ?><div class="alert alert-success"><?= hq_escape($message) ?></div><?php endif; ?>
     <?php if ($error !== ''): ?><div class="alert alert-danger" role="alert"><?= hq_escape($error) ?></div><?php endif; ?>
@@ -316,7 +316,7 @@ $redemptionValues = array_values($redemptions ?? []);
     </section>
 
     <section class="analytics-card mb-4">
-        <div class="loyalty-section-heading"><span class="loyalty-section-icon"><i class="bi bi-sliders" aria-hidden="true"></i></span><div><h2 class="h5 mb-1">Customer rewards, tiers, and billing</h2><p class="loyalty-muted mb-0">Configure earning rates, fees, and reward limits.</p></div></div>
+        <div class="loyalty-section-heading"><span class="loyalty-section-icon"><i class="bi bi-sliders" aria-hidden="true"></i></span><div><h2 class="h5 mb-1">Driver rewards, tiers, and billing</h2><p class="loyalty-muted mb-0">Configure earning rates, fees, and reward limits.</p></div></div>
         <form method="post">
             <input type="hidden" name="csrf_token" value="<?= hq_escape((string) $_SESSION['admin_loyalty_csrf']) ?>">
             <input type="hidden" name="action" value="save_settings">
@@ -326,7 +326,7 @@ $redemptionValues = array_values($redemptions ?? []);
                     <input class="form-control" id="points-per-liter" name="points_per_liter" type="number" min="0" max="1000" step="0.01" value="<?= hq_escape($pointsRate) ?>" required>
                 </div>
                 <div class="col-md-6">
-                    <label class="form-label" for="registration-fee">HQ registration fee (MMK)</label>
+                    <label class="form-label" for="registration-fee">Company registration fee (MMK)</label>
                     <input class="form-control" id="registration-fee" name="registration_fee_mmk" type="number" min="0" step="1" value="<?= (int) $registrationFee ?>" required>
                 </div>
                 <div class="col-md-6">
@@ -381,7 +381,7 @@ $redemptionValues = array_values($redemptions ?? []);
         <div class="loyalty-section-heading"><span class="loyalty-section-icon"><i class="bi bi-wallet2" aria-hidden="true"></i></span><div><h2 class="h5 mb-1">Company Total Discounted Amount and payouts</h2><p class="loyalty-muted mb-0">Review available balances and record monthly company payouts.</p></div></div>
         <div class="table-responsive mb-4">
             <table class="table loyalty-table align-middle">
-                <thead><tr><th>Company</th><th>HQ ID</th><th class="text-end">Available balance</th></tr></thead>
+                <thead><tr><th>Company</th><th>Company ID</th><th class="text-end">Available balance</th></tr></thead>
                 <tbody>
                 <?php foreach ($companyAccounts as $account): ?>
                     <tr>

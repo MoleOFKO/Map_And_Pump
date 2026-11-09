@@ -88,7 +88,7 @@ function request_payment_review_map(array $requestRows): array
 function request_type_label(?string $type): string
 {
     return match (strtolower(trim((string) $type))) {
-        'hq_registration' => 'HQ Registration',
+        'hq_registration' => 'Company Registration',
         'station', 'new_station', 'new_station_registration' => 'New Station Registration',
         'license', 'license_modification' => 'License Modification',
         'deactivation', 'account_deactivation' => 'Account Deactivation',
@@ -99,12 +99,27 @@ function request_type_label(?string $type): string
 function request_type_short_label(?string $type): string
 {
     return match (strtolower(trim((string) $type))) {
-        'hq_registration' => 'HQ Registration',
+        'hq_registration' => 'Company Registration',
         'station', 'new_station', 'new_station_registration' => 'New Station Reg',
         'license', 'license_modification' => 'License Mod',
         'deactivation', 'account_deactivation' => 'Account Deactivation',
         default => request_type_label($type),
     };
+}
+
+/** Payment types that are visible to each review role. */
+function request_payment_types_for_reviewer(string $reviewerRole, bool $includeRegistration = false): array
+{
+    $reviewerRole = strtolower(trim($reviewerRole));
+    if ($reviewerRole === 'moderator') {
+        return ['hq_period_extension', 'hq_station_package', 'hq_registration'];
+    }
+
+    $types = ['hq_period_extension', 'hq_station_package', 'hq_extra_station', 'hq_station_operating_quote'];
+    if ($includeRegistration) {
+        $types[] = 'hq_registration';
+    }
+    return $types;
 }
 
 /** Payment confirmations shown in the shared request queue. */
@@ -115,12 +130,8 @@ function request_payment_verification_rows(string $reviewerRole, string $search,
         return [];
     }
     $reviewerRole = strtolower(trim($reviewerRole));
-    $types = $reviewerRole === 'moderator'
-        ? ['hq_period_extension', 'hq_station_package', 'hq_registration']
-        : ['hq_period_extension', 'hq_station_package', 'hq_extra_station', 'hq_station_operating_quote'];
-    if ($reviewerRole !== 'moderator' && $includeRegistration) {
-        $types[] = 'hq_registration';
-    }
+    $status = strtolower(trim($status));
+    $types = request_payment_types_for_reviewer($reviewerRole, $includeRegistration);
     $statusMap = [
         'pending' => ['pending_payment', 'payer_reported_paid'],
         'approved' => ['received'],
@@ -141,9 +152,13 @@ function request_payment_verification_rows(string $reviewerRole, string $search,
             FROM payment_transfers pt
             LEFT JOIN headquarter h ON h.headquarter_id = pt.payer_headquarter_id
             LEFT JOIN users payer_user ON payer_user.user_id = h.headquarters_owner_id
-            LEFT JOIN payment_transfer_receipts receipt ON receipt.payment_transfer_id = pt.payment_transfer_id
+            LEFT JOIN (
+                SELECT payment_transfer_id, MAX(file_name) AS file_name, MAX(mime_type) AS mime_type
+                FROM payment_transfer_receipts
+                GROUP BY payment_transfer_id
+            ) receipt ON receipt.payment_transfer_id = pt.payment_transfer_id
             WHERE pt.payment_type IN ({$typeMarks})
-              AND pt.status IN ({$statusMarks})";
+              AND LOWER(TRIM(pt.status)) IN ({$statusMarks})";
     $params = array_merge($types, $paymentStatuses);
     if ($search !== '') {
         $sql .= " AND (CAST(pt.payment_transfer_id AS CHAR) LIKE ? OR LOWER(pt.reference_code) LIKE ?
@@ -259,13 +274,13 @@ function request_schema_ready(): bool
 }
 
 /**
- * Current request status totals, including separately recorded account reviews.
+ * Current request status totals, including system, account, and payment reviews.
  *
  * @return array{pending:int,approved:int,approved_today:int,declined_flagged:int,error:?string}
  */
-function request_live_status_summary(): array
+function request_live_status_summary(string $reviewerRole = 'admin'): array
 {
-    global $conn;
+    global $conn, $pdo;
 
     $summary = [
         'pending' => 0,
@@ -317,6 +332,34 @@ function request_live_status_summary(): array
     $summary['approved'] += (int) ($accountReviewCounts['approved'] ?? 0);
     $summary['approved_today'] += (int) ($accountReviewCounts['approved_today'] ?? 0);
     $summary['declined_flagged'] += (int) ($accountReviewCounts['rejected'] ?? 0);
+
+    // Include completed payment reviews in the same all-time totals used by
+    // the request cards. Pending payment rows are added by the queue summary.
+    if (isset($pdo) && $pdo instanceof PDO && payment_transfer_schema_ready($pdo)) {
+        $paymentTypes = request_payment_types_for_reviewer($reviewerRole, true);
+        $typeMarks = implode(',', array_fill(0, count($paymentTypes), '?'));
+        try {
+            $paymentQuery = $pdo->prepare(
+                "SELECT LOWER(TRIM(status)) AS status, COUNT(*) AS total
+                 FROM payment_transfers
+                 WHERE payment_type IN ({$typeMarks})
+                   AND LOWER(TRIM(status)) IN ('received', 'rejected')
+                 GROUP BY LOWER(TRIM(status))"
+            );
+            $paymentQuery->execute($paymentTypes);
+            foreach ($paymentQuery->fetchAll(PDO::FETCH_ASSOC) as $paymentCount) {
+                $paymentStatus = strtolower(trim((string) ($paymentCount['status'] ?? '')));
+                if ($paymentStatus === 'received') {
+                    $summary['approved'] += (int) ($paymentCount['total'] ?? 0);
+                } elseif ($paymentStatus === 'rejected') {
+                    $summary['declined_flagged'] += (int) ($paymentCount['total'] ?? 0);
+                }
+            }
+        } catch (Throwable $e) {
+            error_log('[Request registry] Payment review totals query failed: ' . $e->getMessage());
+            $summary['error'] = 'Payment review totals could not be loaded.';
+        }
+    }
 
     return $summary;
 }

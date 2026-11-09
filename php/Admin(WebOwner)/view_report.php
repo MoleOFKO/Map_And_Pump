@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/admin_common.php';
+require_once __DIR__ . '/request_common.php';
 require_once __DIR__ . '/user_account_common.php';
 
 admin_require_admin();
@@ -30,8 +31,7 @@ $dbError = null;
 if (hq_db_available()) {
     $queries = [
         'hqs' => 'SELECT COUNT(*) AS total FROM headquarter',
-        'stations' => 'SELECT COUNT(*) AS total FROM branches',
-        'requests' => 'SELECT COUNT(*) AS total FROM system_requests',
+        'stations' => "SELECT COUNT(*) AS total FROM branches WHERE LOWER(TRIM(status)) = 'active'",
     ];
     foreach ($queries as $key => $sql) {
         $query = $conn->query($sql);
@@ -39,9 +39,12 @@ if (hq_db_available()) {
             $metrics[$key] = (int) (($query->fetch_assoc()['total'] ?? 0));
         }
     }
-    // The review queue combines system_requests with accounts awaiting
-    // verification, which are stored as users rather than request rows.
-    $metrics['requests'] += pending_account_count();
+    // Keep this card aligned with the shared, all-type pending review queue.
+    $requestSummary = request_review_queue_summary('admin');
+    $metrics['requests'] = (int) $requestSummary['pending'];
+    if (!empty($requestSummary['error'])) {
+        $dbError = (string) $requestSummary['error'];
+    }
     $reportMetric = $conn->query("SELECT COUNT(*) AS total, COALESCE(SUM(DATE(created_at) = CURDATE()), 0) AS today FROM report");
     if ($reportMetric) {
         $metricRow = $reportMetric->fetch_assoc() ?: [];
@@ -129,10 +132,10 @@ $flashType = (string) ($flash['type'] ?? '');
         <?php if ($flash && $flashType !== ''): ?><div class="alert report-flash alert-<?= hq_escape($flashType) ?> alert-dismissible fade show" role="alert"><i class="bi <?= $flashType === 'success' ? 'bi-check-circle-fill text-success' : 'bi-exclamation-triangle-fill text-danger' ?> me-2"></i><?= hq_escape((string) ($flash['message'] ?? '')) ?><button type="button" class="btn-close btn-close-white" data-bs-dismiss="alert" aria-label="Close"></button></div><?php endif; ?>
         <?php if ($dbError): ?><div class="alert alert-danger border-0" role="alert"><?= hq_escape($dbError) ?></div><?php endif; ?>
 
-        <div class="row g-4 mb-4"><div class="col-12 col-sm-6 col-md-3"><div class="dashboard-card metric-card"><p class="mb-1 metric-label">Total HQs Registered</p><h4 class="fw-bold text-white mb-0"><?= (int) $metrics['hqs'] ?></h4></div></div><div class="col-12 col-sm-6 col-md-3"><div class="dashboard-card metric-card"><p class="mb-1 metric-label">Active Stations</p><h4 class="fw-bold text-white mb-0"><?= (int) $metrics['stations'] ?></h4></div></div><div class="col-12 col-sm-6 col-md-3"><div class="dashboard-card metric-card"><p class="mb-1 metric-label">Requests in Queue</p><h4 class="fw-bold text-white mb-0"><?= (int) $metrics['requests'] ?></h4></div></div><div class="col-12 col-sm-6 col-md-3"><div class="dashboard-card metric-card"><p class="mb-1 metric-label">Reports Generated</p><h4 class="fw-bold text-white mb-0"><?= (int) $metrics['reports'] ?></h4><small class="text-success"><?= (int) $metrics['reports_today'] ?> created today</small></div></div></div>
+        <div class="row g-4 mb-4"><div class="col-12 col-sm-6 col-md-3"><div class="dashboard-card metric-card"><p class="mb-1 metric-label">Total Companies Registered</p><h4 class="fw-bold text-white mb-0"><?= (int) $metrics['hqs'] ?></h4></div></div><div class="col-12 col-sm-6 col-md-3"><div class="dashboard-card metric-card"><p class="mb-1 metric-label">Active Stations</p><h4 class="fw-bold text-white mb-0"><?= (int) $metrics['stations'] ?></h4></div></div><div class="col-12 col-sm-6 col-md-3"><div class="dashboard-card metric-card"><p class="mb-1 metric-label">Pending Requests</p><h4 class="fw-bold text-white mb-0"><?= (int) $metrics['requests'] ?></h4></div></div><div class="col-12 col-sm-6 col-md-3"><div class="dashboard-card metric-card"><p class="mb-1 metric-label">Reports Generated</p><h4 class="fw-bold text-white mb-0"><?= (int) $metrics['reports'] ?></h4><small class="text-success"><?= (int) $metrics['reports_today'] ?> created today</small></div></div></div>
 
         <div class="d-flex flex-wrap gap-2 mb-4">
-            <span class="stat-chip report-scope-chip"><i class="bi bi-building me-1"></i>HQ <?= (int) ($scopeCounts['hq_performance'] ?? 0) ?></span>
+            <span class="stat-chip report-scope-chip"><i class="bi bi-building me-1"></i>Companies <?= (int) ($scopeCounts['hq_performance'] ?? 0) ?></span>
             <span class="stat-chip report-scope-chip"><i class="bi bi-fuel-pump me-1"></i>Stations <?= (int) ($scopeCounts['stations'] ?? 0) ?></span>
             <span class="stat-chip report-scope-chip"><i class="bi bi-inbox me-1"></i>Requests <?= (int) ($scopeCounts['requests'] ?? 0) ?></span>
             <span class="stat-chip report-scope-chip"><i class="bi bi-shield-lock me-1"></i>System <?= (int) (($scopeCounts['system'] ?? 0) + ($scopeCounts['audit_logs'] ?? 0)) ?></span>
@@ -154,7 +157,7 @@ $flashType = (string) ($flash['type'] ?? '');
         const title = document.getElementById('reportDetailsModalLabel');
         const escapeHtml = (value) => String(value ?? '').replace(/[&<>'"]/g, (character) => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#039;','"':'&quot;'}[character]));
         const formatDate = (value) => value ? new Date(String(value).replace(' ', 'T')).toLocaleString() : 'Not available';
-        const scopeLabel = (scope) => ({hq_performance:'HQ Performance',stations:'Stations',requests:'Requests',audit_logs:'Audit Logs',system:'System'}[String(scope || '').toLowerCase()] || 'System');
+        const scopeLabel = (scope) => ({hq_performance:'Company Performance',stations:'Stations',requests:'Requests',audit_logs:'Audit Logs',system:'System'}[String(scope || '').toLowerCase()] || 'System');
         const formatLabel = (format) => ({pdf:'Print / PDF',csv:'CSV',record:'Database Record'}[String(format || '').toLowerCase()] || 'Database Record');
         const card = (label, value) => '<div class="report-detail-card"><div class="report-detail-label mb-1">' + escapeHtml(label) + '</div><div class="report-detail-value">' + value + '</div></div>';
 

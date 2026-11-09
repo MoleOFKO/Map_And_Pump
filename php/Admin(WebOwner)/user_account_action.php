@@ -47,7 +47,7 @@ global $conn;
 
 $customerRoleId = customer_role_id();
 
-// Match the same pure-customer filter the list uses (base role customer; no elevated business/current role).
+// Match the driver registry scope while protecting elevated admin/moderator accounts.
 $targetQuery = $conn->prepare(
     "SELECT u.user_id, u.user_name, u.email, u.status, u.role_id, u.business_role_id, u.current_role_id,
             COALESCE(cr.role_name, br.role_name, r.role_name) AS role_name
@@ -56,10 +56,7 @@ $targetQuery = $conn->prepare(
      LEFT JOIN roles br ON br.role_id = u.business_role_id
      LEFT JOIN roles cr ON cr.role_id = u.current_role_id
      WHERE u.user_id = ?
-       AND u.role_id = ?
-       AND LOWER(TRIM(r.role_name)) = 'customer'
-       AND (u.business_role_id IS NULL OR u.business_role_id = ?)
-       AND (u.current_role_id IS NULL OR u.current_role_id = ?)
+       AND " . customer_account_management_guard_sql($customerRoleId) . "
      LIMIT 1"
 );
 
@@ -68,7 +65,7 @@ if (!$targetQuery) {
     hq_redirect($redirect);
 }
 
-$targetQuery->bind_param('iiii', $userId, $customerRoleId, $customerRoleId, $customerRoleId);
+$targetQuery->bind_param('i', $userId);
 $targetQuery->execute();
 $target = $targetQuery->get_result()?->fetch_assoc();
 $targetQuery->close();
@@ -172,7 +169,7 @@ try {
     try {
         admin_record_log(
             (int) $actingUser['user_id'],
-            'Marked user #' . $userId . ' as ' . $newStatus . '.'
+            'Marked driver #' . $userId . ' as ' . $newStatus . '.'
         );
     } catch (Throwable $logError) {
         error_log('[Customer registry] Action log skipped: ' . $logError->getMessage());

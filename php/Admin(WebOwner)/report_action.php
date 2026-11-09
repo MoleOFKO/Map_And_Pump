@@ -136,7 +136,7 @@ if ($action === 'generate') {
                                                         AND LOWER(u.status) IN (0x617070726f766564,0x616374697665))), 0) AS active
                         FROM headquarter h");
         $summaryRow = $summaryQuery?->fetch_assoc() ?: ['total' => 0, 'active' => 0];
-        $summary = 'HQ records: ' . (int) $summaryRow['total'] . '; active linked accounts: ' . (int) $summaryRow['active'];
+        $summary = 'Company records: ' . (int) $summaryRow['total'] . '; active linked accounts: ' . (int) $summaryRow['active'];
     } elseif ($scope === 'stations') {
         // Always count from `branches` (not a legacy stations view).
         $summaryQuery = $conn->query(

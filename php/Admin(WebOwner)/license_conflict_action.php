@@ -179,7 +179,7 @@ try {
             }
             $updateUser->bind_param('si', $newStatus, $record['user_id']);
             if (!$updateUser->execute()) {
-                throw new RuntimeException('Could not save the customer account decision.');
+                throw new RuntimeException('Could not save the driver account decision.');
             }
             $owners = [[
                 'user_id' => (int) $record['user_id'],

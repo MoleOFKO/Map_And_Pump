@@ -11,7 +11,7 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
 
 $reviewer = admin_require_staff();
 if (!payment_transfer_ensure_hq_service_expiry_schema($pdo)) {
-    request_flash('danger', 'HQ service-period storage is unavailable.');
+    request_flash('danger', 'Company service-period storage is unavailable.');
     request_redirect();
 }
 
@@ -85,7 +85,7 @@ try {
         if (is_array($registrationDetails) && array_key_exists('registration_amount_mmk', $registrationDetails)) {
             $expectedRegistrationAmount = filter_var($registrationDetails['registration_amount_mmk'], FILTER_VALIDATE_FLOAT);
             if ($expectedRegistrationAmount === false || $expectedRegistrationAmount < 0) {
-                throw new RuntimeException('The recorded HQ registration amount is invalid.');
+                throw new RuntimeException('The recorded company registration amount is invalid.');
             }
             $paymentRequired = $expectedRegistrationAmount > 0;
         }
@@ -103,12 +103,12 @@ try {
                  ORDER BY payment_transfer_id DESC LIMIT 1 FOR UPDATE"
             );
             if (!$paymentCheck) {
-                throw new RuntimeException('Payment status is unavailable. The HQ registration cannot be approved yet.');
+                throw new RuntimeException('Payment status is unavailable. The company registration cannot be approved yet.');
             }
             $paymentCheck->bind_param('i', $requestId);
             if (!$paymentCheck->execute()) {
                 $paymentCheck->close();
-                throw new RuntimeException('Could not verify the HQ registration payment status.');
+                throw new RuntimeException('Could not verify the company registration payment status.');
             }
             $paymentRow = $paymentCheck->get_result()?->fetch_assoc();
             $paymentCheck->close();
@@ -119,7 +119,7 @@ try {
                 || (int) ($paymentRow['term_months'] ?? 0) !== $requestedMonths
                 || ($expectedRegistrationAmount !== null
                     && abs((float) $paymentRow['amount_mmk'] - $expectedRegistrationAmount) > 0.01)) {
-                throw new RuntimeException('The HQ payment request does not match the requested amount, station count, or service term.');
+            throw new RuntimeException('The company payment request does not match the requested amount, station count, or service term.');
             }
         }
     }
@@ -146,11 +146,11 @@ try {
             throw new RuntimeException('The submitted license number or expiry date is invalid.');
         }
         if (empty($target['headquarter_id'])) {
-            throw new RuntimeException('The license renewal is not linked to an HQ account.');
+            throw new RuntimeException('The license renewal is not linked to a company account.');
         }
         $currentExpiryDate = substr(trim((string) ($target['current_hq_expire_at'] ?? '')), 0, 10);
         if ($currentExpiryDate !== '' && $renewalExpiryDate <= $currentExpiryDate) {
-            throw new RuntimeException('The new license expiry date must extend the current HQ deadline.');
+            throw new RuntimeException('The new license expiry date must extend the current company deadline.');
         }
         if ($action === 'approve') {
             $expiryTimestamp = $renewalExpiryDate . ' 23:59:59';
@@ -160,7 +160,7 @@ try {
                  WHERE headquarter_id = ?'
             );
             if (!$hqLicenseUpdate) {
-                throw new RuntimeException('License extension approve failed: could not prepare the HQ license update.');
+                throw new RuntimeException('License extension approval failed: could not prepare the company license update.');
             }
             $headquarterId = (int) $target['headquarter_id'];
             $hqLicenseUpdate->bind_param('sssi', $renewalLicense, $renewalExpiryDate, $expiryTimestamp, $headquarterId);
@@ -185,7 +185,7 @@ try {
         $licenseExpiryRaw = trim((string) ($target['headquarter_expire_at'] ?? ''));
         $licenseExpiryDate = $licenseExpiryRaw !== '' ? substr($licenseExpiryRaw, 0, 10) : '';
         if ($licenseExpiryDate === '' || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $licenseExpiryDate)) {
-            throw new RuntimeException('The HQ registration is missing a valid license expiry date.');
+            throw new RuntimeException('The company registration is missing a valid license expiry date.');
         }
         $licenseExpiryTs = $licenseExpiryDate . ' 23:59:59';
         $requestedStationCount = max(
@@ -331,14 +331,14 @@ try {
         // company email when no owner email was supplied.
         $hqRoleId = hq_hq_role_id();
         if ($hqRoleId !== 3) {
-            throw new RuntimeException('The HQ account role must use role ID 3.');
+            throw new RuntimeException('The company account role must use role ID 3.');
         }
         $ownerEmail = strtolower(trim((string) ($target['headquarter_owner_email'] ?? '')));
         if ($ownerEmail === '') {
             $ownerEmail = strtolower(trim((string) ($target['headquarter_email'] ?? '')));
         }
         if (!filter_var($ownerEmail, FILTER_VALIDATE_EMAIL)) {
-            throw new RuntimeException('The approved HQ has no valid owner or company email address.');
+            throw new RuntimeException('The approved company has no valid owner or company email address.');
         }
         $ownerName = trim((string) ($target['sender_name'] ?: $target['sender_entity']));
         $ownerName = $ownerName !== '' ? $ownerName : $companyName;
@@ -349,7 +349,7 @@ try {
              FROM users u WHERE LOWER(TRIM(u.email)) = LOWER(?) LIMIT 1 FOR UPDATE'
         );
         if (!$ownerLookup) {
-            throw new RuntimeException('Could not look up the HQ owner account.');
+            throw new RuntimeException('Could not look up the company owner account.');
         }
         $ownerLookup->bind_param('s', $ownerEmail);
         $ownerLookup->execute();
@@ -363,7 +363,7 @@ try {
                 || (int) ($existingOwner['has_hq_scope'] ?? 0) === 1
                 || (int) ($existingOwner['owns_hq'] ?? 0) === 1
                 || ($registrantUserId > 0 && $registrantUserId !== $createdOwnerUserId)) {
-                throw new RuntimeException('The selected owner account is no longer eligible for HQ linking.');
+                throw new RuntimeException('The selected owner account is no longer eligible for company linking.');
             }
             $ownerUpdate = $conn->prepare(
                      'UPDATE users SET business_role_id = ?, updated_at = NOW()
@@ -373,16 +373,16 @@ try {
                          AND NOT EXISTS (SELECT 1 FROM headquarter owned_hq WHERE owned_hq.headquarters_owner_id = users.user_id)'
             );
             if (!$ownerUpdate) {
-                throw new RuntimeException('Could not prepare the Customer-to-HQ account link.');
+                throw new RuntimeException('Could not prepare the Driver-to-Company account link.');
             }
             $ownerUpdate->bind_param('ii', $hqRoleId, $createdOwnerUserId);
             if (!$ownerUpdate->execute() || $ownerUpdate->affected_rows !== 1) {
-                throw new RuntimeException('Could not link the customer account to the approved HQ.');
+                throw new RuntimeException('Could not link the driver account to the approved company.');
             }
             $ownerUpdate->close();
         } else {
             if ($registrantUserId > 0) {
-                throw new RuntimeException('The HQ owner account email no longer matches the registration account.');
+            throw new RuntimeException('The company owner account email no longer matches the registration account.');
             }
             $ownerUserName = hq_unique_username($ownerName, $ownerEmail);
             $ownerInsert = $conn->prepare(
@@ -390,11 +390,11 @@ try {
                  VALUES (?, ?, NULL, ?, ?, ?, 'active', NOW(), NOW())"
             );
             if (!$ownerInsert) {
-                throw new RuntimeException('Could not prepare the HQ owner account.');
+                throw new RuntimeException('Could not prepare the company owner account.');
             }
             $ownerInsert->bind_param('ssiii', $ownerUserName, $ownerEmail, $hqRoleId, $hqRoleId, $hqRoleId);
             if (!$ownerInsert->execute()) {
-                throw new RuntimeException('Could not create the HQ owner account.');
+                throw new RuntimeException('Could not create the company owner account.');
             }
             $createdOwnerUserId = (int) $ownerInsert->insert_id;
             $ownerInsert->close();
@@ -405,11 +405,11 @@ try {
 
         $hqOwnerUpdate = $conn->prepare('UPDATE headquarter SET headquarters_owner_id = ? WHERE headquarter_id = ?');
         if (!$hqOwnerUpdate) {
-            throw new RuntimeException('Could not link the HQ owner.');
+            throw new RuntimeException('Could not link the company owner.');
         }
         $hqOwnerUpdate->bind_param('ii', $createdOwnerUserId, $createdHeadquarterId);
         if (!$hqOwnerUpdate->execute()) {
-            throw new RuntimeException('Could not link the HQ owner.');
+            throw new RuntimeException('Could not link the company owner.');
         }
         $hqOwnerUpdate->close();
 
@@ -425,11 +425,11 @@ try {
                  status = 'pending'"
         );
         if (!$ownerScope) {
-            throw new RuntimeException('Could not prepare the HQ owner business-role link.');
+            throw new RuntimeException('Could not prepare the company owner business-role link.');
         }
         $ownerScope->bind_param('iii', $createdOwnerUserId, $hqRoleId, $createdHeadquarterId);
         if (!$ownerScope->execute()) {
-            throw new RuntimeException('Could not save the HQ owner business-role link.');
+            throw new RuntimeException('Could not save the company owner business-role link.');
         }
         $ownerScope->close();
 
@@ -481,11 +481,11 @@ try {
     if ($requestType === 'hq_registration' && $action === 'reject' && $createdHeadquarterId !== null) {
         $headquarterReject = $conn->prepare("UPDATE headquarter SET status = 'rejected' WHERE headquarter_id = ?");
         if (!$headquarterReject) {
-            throw new RuntimeException('Could not prepare the HQ registration rejection.');
+            throw new RuntimeException('Could not prepare the company registration rejection.');
         }
         $headquarterReject->bind_param('i', $createdHeadquarterId);
         if (!$headquarterReject->execute()) {
-            throw new RuntimeException('Could not reject the HQ registration.');
+            throw new RuntimeException('Could not reject the company registration.');
         }
         $headquarterReject->close();
     } elseif ($recipientUserId !== null && $requestType === 'license_modification') {
@@ -520,7 +520,7 @@ try {
             'company_name' => (string) $target['sender_entity'],
             'request_reference' => (string) $target['reference_code'],
             'payment_reference' => (string) ($paymentRow['reference_code'] ?? ''),
-            'description' => (string) ($paymentRow['description'] ?? 'HQ registration payment'),
+            'description' => (string) ($paymentRow['description'] ?? 'Company registration payment'),
             'payment_method' => (string) ($paymentRow['payment_method'] ?? ''),
             'payment_status' => $paymentStatus,
             'amount_mmk' => (float) ($paymentRow['amount_mmk'] ?? $registrationDetails['registration_amount_mmk'] ?? 0),
@@ -529,10 +529,10 @@ try {
         if ($createdOwnerSetupUrl !== null) {
             $mailContexts[] = [
                 'notification_type' => 'hq_password_setup',
-                'message' => 'Set up the password for your approved HQ account.',
+                'message' => 'Set up the password for your approved Company account.',
                 'context' => [
                     'kind' => 'account_password_setup',
-                    'account_label' => 'HQ',
+                    'account_label' => 'Company',
                     'account_name' => (string) $target['sender_entity'],
                     'setup_url' => $createdOwnerSetupUrl,
                     'reference_code' => (string) $target['reference_code'],
@@ -541,7 +541,7 @@ try {
         }
         $mailContexts[] = [
             'notification_type' => 'hq_registration_receipt',
-            'message' => 'Your HQ registration payment record is available in this email.',
+            'message' => 'Your Company registration payment record is available in this email.',
             'context' => $receiptContext,
         ];
         $mailContexts[] = [
@@ -669,7 +669,7 @@ try {
         request_flash(
             'success',
             sprintf(
-                'License extension request %s was approved by %s. HQ license expiry is now %s.',
+                'License extension request %s was approved by %s. Company license expiry is now %s.',
                 $target['reference_code'],
                 $reviewerLabel,
                 $appliedExpiry !== '' ? $appliedExpiry : 'updated'

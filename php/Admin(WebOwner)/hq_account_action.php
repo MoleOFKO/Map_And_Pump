@@ -36,7 +36,7 @@ $historyReady = hq_action_table_ready();
 global $conn;
 $hqRoleId = hq_hq_role_id();
 if ($hqRoleId <= 0) {
-    hq_flash('danger', 'The HQ role could not be identified. The account status was not changed.');
+    hq_flash('danger', 'The company role could not be identified. The account status was not changed.');
     hq_redirect('view_hq_and_user_account.php');
 }
 
@@ -68,11 +68,11 @@ $target = $targetQuery->get_result()?->fetch_assoc();
 $targetQuery->close();
 
 if (!$target) {
-    hq_flash('danger', 'That HQ account could not be found.');
+    hq_flash('danger', 'That company could not be found.');
     hq_redirect('view_hq_and_user_account.php');
 }
 if ($actionType === 'activate' && strtolower(trim((string) $target['hq_status'])) !== 'pending') {
-    hq_flash('danger', 'Only a pending HQ can be activated.');
+    hq_flash('danger', 'Only a pending company can be activated.');
     hq_redirect('view_hq_and_user_account.php');
 }
 
@@ -106,12 +106,12 @@ try {
            AND (role_id = ? OR business_role_id = ? OR current_role_id = ?)'
     );
     if (!$statusUpdate) {
-        throw new RuntimeException('Could not prepare the HQ status update: ' . $conn->error);
+        throw new RuntimeException('Could not prepare the company status update: ' . $conn->error);
     }
 
     $statusUpdate->bind_param('siiii', $newStatus, $headquarterId, $hqRoleId, $hqRoleId, $hqRoleId);
     if (!$statusUpdate->execute()) {
-        throw new RuntimeException('Could not update the HQ account status: ' . $statusUpdate->error);
+        throw new RuntimeException('Could not update the company account status: ' . $statusUpdate->error);
     }
     $affected = $statusUpdate->affected_rows;
     $statusUpdate->close();
@@ -119,18 +119,18 @@ try {
     // No matching HQ-role users means the UI status badge cannot change.
     if ($affected <= 0 && empty($target['user_id'])) {
         throw new RuntimeException(
-            'No HQ-role user is linked to this headquarters, so the account status could not be changed.'
+            'No company-role account is linked to this company, so its status could not be changed.'
         );
     }
 
     $hqStatusUpdate = $conn->prepare('UPDATE headquarter SET status = ? WHERE headquarter_id = ?');
     if (!$hqStatusUpdate) {
-        throw new RuntimeException('Could not prepare the HQ status update: ' . $conn->error);
+        throw new RuntimeException('Could not prepare the company status update: ' . $conn->error);
     }
     $newHqStatus = $hqStatusMap[$actionType] ?? 'suspended';
     $hqStatusUpdate->bind_param('si', $newHqStatus, $headquarterId);
     if (!$hqStatusUpdate->execute()) {
-        throw new RuntimeException('Could not update the HQ status: ' . $hqStatusUpdate->error);
+        throw new RuntimeException('Could not update the company status: ' . $hqStatusUpdate->error);
     }
     $hqStatusUpdate->close();
 
@@ -138,11 +138,11 @@ try {
         'UPDATE business_account_scope SET status = ? WHERE headquarter_id = ? AND business_role_id = ?'
     );
     if (!$scopeUpdate) {
-        throw new RuntimeException('Could not prepare the HQ business-scope update: ' . $conn->error);
+        throw new RuntimeException('Could not prepare the company business-scope update: ' . $conn->error);
     }
     $scopeUpdate->bind_param('sii', $newStatus, $headquarterId, $hqRoleId);
     if (!$scopeUpdate->execute()) {
-        throw new RuntimeException('Could not update the HQ business scope: ' . $scopeUpdate->error);
+        throw new RuntimeException('Could not update the company business scope: ' . $scopeUpdate->error);
     }
     $scopeUpdate->close();
 
@@ -157,7 +157,7 @@ try {
              VALUES (?, ?, ?, ?, ?)'
         );
         if (!$actionInsert) {
-            throw new RuntimeException('Could not prepare the HQ action history insert: ' . $conn->error);
+            throw new RuntimeException('Could not prepare the company action history insert: ' . $conn->error);
         }
         $actionInsert->bind_param(
             'issss',
@@ -168,7 +168,7 @@ try {
             $notificationNote
         );
         if (!$actionInsert->execute()) {
-            throw new RuntimeException('Could not record the HQ action history: ' . $actionInsert->error);
+            throw new RuntimeException('Could not record the company action history: ' . $actionInsert->error);
         }
         $actionId = (int) $conn->insert_id;
         $actionInsert->close();
@@ -187,7 +187,7 @@ try {
             : [
                 'sent' => false,
                 'status' => 'skipped',
-                'note' => 'No HQ email address is available; the reason was recorded in the HQ action history.',
+                'note' => 'No company email address is available; the reason was recorded in the company action history.',
             ];
     } catch (Throwable $mailError) {
         error_log('[HQ registry] Account notice failed: ' . $mailError->getMessage());
@@ -216,17 +216,17 @@ try {
 
     admin_record_log(
         (int) $actingUser['user_id'],
-        ucfirst($actionType) . ' HQ #' . $headquarterId . ' (' . $target['company_name'] . ').'
+        ucfirst($actionType) . ' Company #' . $headquarterId . ' (' . $target['company_name'] . ').'
     );
 
     $message = match ($actionType) {
-        'activate' => 'The HQ account was activated.',
-        'remove' => 'The HQ account was marked as removed.',
-        'restore' => 'The HQ account was restored to approved status.',
-        default => 'The HQ account was suspended.',
+        'activate' => 'The company account was activated.',
+        'remove' => 'The company account was marked as removed.',
+        'restore' => 'The company account was restored to approved status.',
+        default => 'The company account was suspended.',
     };
     if ($affected <= 0) {
-        $message .= ' (No linked HQ-role user rows matched; history may still be recorded.)';
+        $message .= ' (No linked company-role account rows matched; history may still be recorded.)';
     }
     if (!$historyReady) {
         $message .= ' Action history table was unavailable, so only the status was updated.';
@@ -235,7 +235,7 @@ try {
 } catch (Throwable $exception) {
     $conn->rollback();
     error_log('[HQ registry] Account action failed: ' . $exception->getMessage());
-    hq_flash('danger', 'The HQ action could not be completed. The account status was not changed.');
+    hq_flash('danger', 'The company action could not be completed. The account status was not changed.');
 }
 
 hq_redirect('view_hq_and_user_account.php');

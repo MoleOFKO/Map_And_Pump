@@ -26,8 +26,8 @@ $flashType = (string) ($flash['type'] ?? '');
 <html lang="en">
 <head>
     <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="View and manage non-HQ accounts in the Map &amp; Pump admin portal.">
-    <title>View/Manage Users — Map &amp; Pump</title>
+    <meta name="description" content="View and manage driver accounts in the Map &amp; Pump admin portal.">
+    <title>View/Manage Drivers — Map &amp; Pump</title>
     <link rel="icon" type="image/png" href="/images/Logo.png"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&amp;display=swap" rel="stylesheet"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"><link rel="stylesheet" href="/css/Admin.css"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
 <style>
@@ -55,14 +55,14 @@ $flashType = (string) ($flash['type'] ?? '');
     <?php if ($flash && $flashType): ?><div class="alert hq-flash alert-<?= hq_escape($flashType) ?> alert-dismissible fade show mb-4" role="alert"><i class="bi <?= $flashType === 'success' ? 'bi-check-circle-fill text-success' : 'bi-exclamation-triangle-fill text-danger' ?> me-2"></i><?= hq_escape((string) ($flash['message'] ?? '')) ?><button type="button" class="btn-close btn-close-white" data-bs-dismiss="alert"></button></div><?php endif; ?>
     <?php if ($dbError): ?><div class="alert hq-flash alert-danger mb-4"><i class="bi bi-database-exclamation me-2"></i><?= hq_escape($dbError) ?></div><?php endif; ?>
     <?php if (function_exists('expiry_render_page_banners')) { expiry_render_page_banners('admin', true); } ?>
-    <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3"><div><span class="stat-chip mb-2"><i class="bi bi-person-vcard-fill txt-neon-cyan"></i> User Administration</span><h1 class="fw-bold m-0 h4 text-white mt-2">View/Manage Users</h1></div></div>
+    <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3"><div><span class="stat-chip mb-2"><i class="bi bi-person-vcard-fill txt-neon-cyan"></i> Driver Administration</span><h1 class="fw-bold m-0 h4 text-white mt-2">View/Manage Drivers</h1></div></div>
     <div class="dashboard-card py-3 px-4 mb-4">
         <form class="row g-3 align-items-end" method="GET" action="view_users.php">
             <div class="col-12 col-md-4">
                 <label class="form-label text-white-50 small mb-1" for="userSearch">Search</label>
                 <div class="input-group">
                     <span class="input-group-text bg-transparent border-end-0" style="border-color:var(--glass-border);color:var(--neon-cyan);border-radius:12px 0 0 12px"><i class="bi bi-search"></i></span>
-                    <input id="userSearch" type="search" class="form-control glass-input border-start-0" placeholder="Search by user name, email, or HQ..." name="search" value="<?= hq_escape($search) ?>">
+                    <input id="userSearch" type="search" class="form-control glass-input border-start-0" placeholder="Search by driver name, email, or company..." name="search" value="<?= hq_escape($search) ?>">
                 </div>
             </div>
             <div class="col-6 col-md-2">
@@ -82,15 +82,15 @@ $flashType = (string) ($flash['type'] ?? '');
             </div>
         </form>
     </div>
-    <div class="analytics-card"><div class="table-responsive user-table-scroll"><table class="table table-dark-custom align-middle m-0"><thead><tr><th>User Account</th><th>Email</th><th>HQ</th><th>Role</th><th>Status</th><th class="text-end">Command</th></tr></thead><tbody>
-    <?php if (!$userRows): ?><tr><td colspan="6" class="text-center text-white-50 py-5"><i class="bi bi-person-x fs-3 d-block mb-2"></i>No user accounts match the current filter.</td></tr><?php endif; ?>
-    <?php foreach ($userRows as $row): $userStatus = (string) ($row['status'] ?? 'pending'); ?><tr><td><div class="d-flex align-items-center gap-3"><div class="rounded-3 d-flex align-items-center justify-content-center fw-bold" style="width:44px;height:44px;background:rgba(0,244,255,.1);border:1px solid rgba(0,244,255,.28);color:var(--neon-cyan)"><?= hq_escape(hq_initials((string) ($row['user_name'] ?? 'User'))) ?></div><div><div class="fw-semibold text-white"><?= hq_escape((string) ($row['user_name'] ?? 'Unnamed User')) ?></div><div class="text-white-50 small">User ID: <?= hq_escape(trim((string) ($row['user_public_id'] ?? '')) ?: 'N/A') ?></div></div></div></td><td class="text-white-50"><?= hq_escape((string) ($row['email'] ?? 'No email')) ?></td><td class="text-white-50"><?= hq_escape((string) ($row['headquarter_name'] ?? 'No HQ linked')) ?></td><td class="text-white-50">#<?= (int) $row['role_id'] ?> · <?= hq_escape(ucwords((string) ($row['role_name'] ?? 'Customer'))) ?></td><td><span class="hq-status <?= hq_escape(hq_status_class($userStatus)) ?>"><?= hq_escape(hq_status_label($userStatus)) ?></span><?php if (function_exists("expiry_badge_html")): ?><div class="mt-1"><?= expiry_badge_html(isset($row["license_last_valid_date"]) ? (string) $row["license_last_valid_date"] : null) ?></div><?php endif; ?></td><td class="text-end"><div class="d-flex gap-2 justify-content-end"><a href="#" class="btn-action js-view-user" title="View User Details" data-user-id="<?= (int) $row['user_id'] ?>"><i class="bi bi-eye-fill"></i></a><?php if ($userStatus === 'pending_verification'): ?><a href="view_requests.php?search=<?= rawurlencode((string) ($row['email'] ?? '')) ?>" class="btn-action" title="Open account verification request"><i class="bi bi-arrow-up-right-circle-fill"></i></a><?php else: ?><button type="button" class="btn-action btn-action-danger js-user-action" title="Suspend / Remove / Restore User" data-user-id="<?= (int) $row['user_id'] ?>" data-user-name="<?= hq_escape((string) $row['user_name']) ?>"><i class="bi bi-gear-fill"></i></button><?php endif; ?></div></td></tr><?php endforeach; ?>
+    <div class="analytics-card"><div class="table-responsive user-table-scroll"><table class="table table-dark-custom align-middle m-0"><thead><tr><th>Driver Account</th><th>Email</th><th>Company</th><th>Account Type</th><th>Status</th><th class="text-end">Command</th></tr></thead><tbody>
+    <?php if (!$userRows): ?><tr><td colspan="6" class="text-center text-white-50 py-5"><i class="bi bi-person-x fs-3 d-block mb-2"></i>No driver accounts match the current filter.</td></tr><?php endif; ?>
+    <?php foreach ($userRows as $row): $userStatus = (string) ($row['status'] ?? 'pending'); ?><tr><td><div class="d-flex align-items-center gap-3"><div class="rounded-3 d-flex align-items-center justify-content-center fw-bold" style="width:44px;height:44px;background:rgba(0,244,255,.1);border:1px solid rgba(0,244,255,.28);color:var(--neon-cyan)"><?= hq_escape(hq_initials((string) ($row['user_name'] ?? 'Driver'))) ?></div><div><div class="fw-semibold text-white"><?= hq_escape((string) ($row['user_name'] ?? 'Unnamed Driver')) ?></div><div class="text-white-50 small">Driver ID: <?= hq_escape(trim((string) ($row['user_public_id'] ?? '')) ?: 'N/A') ?></div></div></div></td><td class="text-white-50"><?= hq_escape((string) ($row['email'] ?? 'No email')) ?></td><td class="text-white-50"><?= hq_escape((string) ($row['headquarter_name'] ?? 'No company linked')) ?></td><td class="text-white-50">Driver</td><td><span class="hq-status <?= hq_escape(hq_status_class($userStatus)) ?>"><?= hq_escape(hq_status_label($userStatus)) ?></span><?php if (function_exists("expiry_badge_html")): ?><div class="mt-1"><?= expiry_badge_html(isset($row["license_last_valid_date"]) ? (string) $row["license_last_valid_date"] : null) ?></div><?php endif; ?></td><td class="text-end"><div class="d-flex gap-2 justify-content-end"><a href="#" class="btn-action js-view-user" title="View Driver Details" data-user-id="<?= (int) $row['user_id'] ?>"><i class="bi bi-eye-fill"></i></a><?php if ($userStatus === 'pending_verification'): ?><a href="view_requests.php?search=<?= rawurlencode((string) ($row['email'] ?? '')) ?>" class="btn-action" title="Open account verification request"><i class="bi bi-arrow-up-right-circle-fill"></i></a><?php elseif (!empty($row['staff_access_protected'])): ?><span class="badge rounded-pill bg-secondary bg-opacity-25 text-white-50" title="Admin or moderator access is protected">Staff access protected</span><?php else: ?><button type="button" class="btn-action btn-action-danger js-user-action" title="Suspend / Remove / Restore Driver" data-user-id="<?= (int) $row['user_id'] ?>" data-user-name="<?= hq_escape((string) $row['user_name']) ?>"><i class="bi bi-gear-fill"></i></button><?php endif; ?></div></td></tr><?php endforeach; ?>
     </tbody></table></div></div>
 </main>
-<div class="modal fade glass-modal" id="userActionModal" tabindex="-1" aria-labelledby="userActionLabel" aria-hidden="true"><div class="modal-dialog modal-dialog-centered modal-dialog-scrollable"><div class="modal-content"><div class="modal-header"><h5 class="modal-title fw-bold" id="userActionLabel"><i class="bi bi-shield-exclamation text-danger me-2"></i> Suspend / Remove / Restore User</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div><form action="user_account_action.php" method="POST"><div class="modal-body d-flex flex-column gap-3"><input type="hidden" name="user_id" id="userActionId"><input type="hidden" name="return_to" value="view_users.php"><div class="small text-white-50">Target user: <span class="txt-neon-cyan fw-semibold" id="userActionName">Selected User</span></div><div><label class="form-label text-white-50 small" for="userActionType">Account action</label><select class="form-select glass-select account-action-select" name="action_type" id="userActionType" required><option value="suspend">Suspend account</option><option value="remove">Remove account</option><option value="restore">Restore (approve again)</option></select></div><div><label class="form-label text-white-50 small" for="userActionReason">Reason <span class="text-danger">*</span></label><textarea class="form-control glass-input" name="reason" id="userActionReason" rows="5" maxlength="2000" required></textarea></div></div><div class="modal-footer"><button type="button" class="btn btn-outline-secondary rounded-3 text-white-50" data-bs-dismiss="modal">Cancel</button><button type="submit" class="btn btn-danger">Save Action</button></div></form></div></div></div>
+<div class="modal fade glass-modal" id="userActionModal" tabindex="-1" aria-labelledby="userActionLabel" aria-hidden="true"><div class="modal-dialog modal-dialog-centered modal-dialog-scrollable"><div class="modal-content"><div class="modal-header"><h5 class="modal-title fw-bold" id="userActionLabel"><i class="bi bi-shield-exclamation text-danger me-2"></i> Suspend / Remove / Restore Driver</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div><form action="user_account_action.php" method="POST"><div class="modal-body d-flex flex-column gap-3"><input type="hidden" name="user_id" id="userActionId"><input type="hidden" name="return_to" value="view_users.php"><div class="small text-white-50">Target driver: <span class="txt-neon-cyan fw-semibold" id="userActionName">Selected Driver</span></div><div><label class="form-label text-white-50 small" for="userActionType">Account action</label><select class="form-select glass-select account-action-select" name="action_type" id="userActionType" required><option value="suspend">Suspend account</option><option value="remove">Remove account</option><option value="restore">Restore (approve again)</option></select></div><div><label class="form-label text-white-50 small" for="userActionReason">Reason <span class="text-danger">*</span></label><textarea class="form-control glass-input" name="reason" id="userActionReason" rows="5" maxlength="2000" required></textarea></div></div><div class="modal-footer"><button type="button" class="btn btn-outline-secondary rounded-3 text-white-50" data-bs-dismiss="modal">Cancel</button><button type="submit" class="btn btn-danger">Save Action</button></div></form></div></div></div>
 
 <!-- User details modal (loaded via AJAX) -->
-<div class="modal fade glass-modal" id="userDetailsModal" tabindex="-1" aria-hidden="true"><div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-lg"><div class="modal-content"><div class="modal-header"><h5 class="modal-title fw-bold"><i class="bi bi-person-check txt-neon-cyan me-2"></i> User Details</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div><div class="modal-body" id="userDetailsBody"><div class="text-center text-white-50 py-5"><span class="spinner-border spinner-border-sm me-2"></span>Loading user details...</div></div></div></div></div>
+<div class="modal fade glass-modal" id="userDetailsModal" tabindex="-1" aria-hidden="true"><div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-lg"><div class="modal-content"><div class="modal-header"><h5 class="modal-title fw-bold"><i class="bi bi-person-check txt-neon-cyan me-2"></i> Driver Details</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div><div class="modal-body" id="userDetailsBody"><div class="text-center text-white-50 py-5"><span class="spinner-border spinner-border-sm me-2"></span>Loading driver details...</div></div></div></div></div>
 
 <footer class="text-white-50 text-center py-4 mt-5 small">&copy; 2026 Map &amp; Pump | All Rights Reserved</footer>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
@@ -114,7 +114,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const button = event.target.closest('.js-user-action');
         if (!button) return;
         document.getElementById('userActionId').value = button.dataset.userId || '';
-        document.getElementById('userActionName').textContent = button.dataset.userName || 'Selected User';
+        document.getElementById('userActionName').textContent = button.dataset.userName || 'Selected Driver';
         document.getElementById('userActionReason').value = '';
         if (actionTypeEl) actionTypeEl.value = 'suspend';
         syncUserActionSubmit();
@@ -142,12 +142,12 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!button) return;
         event.preventDefault();
         if (!detailsModal) return;
-        detailsBody.innerHTML = '<div class="text-center text-white-50 py-5"><span class="spinner-border spinner-border-sm me-2"></span>Loading user details...</div>';
+        detailsBody.innerHTML = '<div class="text-center text-white-50 py-5"><span class="spinner-border spinner-border-sm me-2"></span>Loading driver details...</div>';
         detailsModal.show();
         try {
             const response = await fetch('user_details.php?id=' + encodeURIComponent(button.dataset.userId), { headers: { Accept: 'application/json' }, cache: 'no-store' });
             const payload = await response.json();
-            if (!response.ok || !payload.success) throw new Error(payload.message || 'Unable to load user details.');
+            if (!response.ok || !payload.success) throw new Error(payload.message || 'Unable to load driver details.');
             const u = payload.user || {};
             const license = payload.license || null;
             const hq = payload.headquarter || null;
@@ -157,14 +157,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 '<div class="d-flex align-items-center gap-3 mb-4 pb-3 border-bottom border-white border-opacity-10">' +
                 '<div class="rounded-3 d-flex align-items-center justify-content-center fw-bold" style="width:52px;height:52px;background:rgba(0,244,255,.1);border:1px solid rgba(0,244,255,.28);color:var(--neon-cyan);font-size:1.1rem;">' +
                 esc(String(u.user_name || 'U').slice(0, 2).toUpperCase()) +
-                '</div><div><div class="fw-semibold text-white fs-5">' + esc(u.user_name || 'Unnamed user') + '</div>' +
-                '<div class="text-white-50 small">User ID ' + esc(u.user_public_id || 'N/A') + ' · <span class="hq-status ' + statusClass(u.status) + '">' + esc(statusLabel(u.status)) + '</span></div></div></div>';
+                '</div><div><div class="fw-semibold text-white fs-5">' + esc(u.user_name || 'Unnamed driver') + '</div>' +
+                '<div class="text-white-50 small">Driver ID ' + esc(u.user_public_id || 'N/A') + ' · <span class="hq-status ' + statusClass(u.status) + '">' + esc(statusLabel(u.status)) + '</span></div></div></div>';
 
             const accountGrid =
                 '<div class="row g-3 mb-4">' +
                 '<div class="col-12 col-sm-6 col-lg-4">' + card('Email', esc(u.email || '—')) + '</div>' +
-                '<div class="col-12 col-sm-6 col-lg-4">' + card('Role', '#' + esc(u.role_id || '—') + ' · ' + esc((u.role_name || 'Customer').replace(/\b\w/g, c => c.toUpperCase()))) + '</div>' +
-                '<div class="col-12 col-sm-6 col-lg-4">' + card('Headquarter', esc(u.headquarter_name || 'No HQ linked')) + '</div>' +
+                '<div class="col-12 col-sm-6 col-lg-4">' + card('Account type', 'Driver') + '</div>' +
+                '<div class="col-12 col-sm-6 col-lg-4">' + card('Company', esc(u.headquarter_name || 'No company linked')) + '</div>' +
                 '<div class="col-6 col-sm-4 col-lg-4">' + card('Created', esc(date(u.created_at))) + '</div>' +
                 '<div class="col-6 col-sm-4 col-lg-4">' + card('Updated', esc(date(u.updated_at))) + '</div>' +
                 '<div class="col-12 col-sm-4 col-lg-4">' + card('Last login', esc(date(u.last_login_at))) + '</div>' +
@@ -189,11 +189,11 @@ document.addEventListener('DOMContentLoaded', () => {
             let hqBlock = '';
             if (hq) {
                 hqBlock =
-                    '<div class="d-flex align-items-center justify-content-between mb-2"><h6 class="text-white fw-semibold mb-0"><i class="bi bi-building txt-neon-cyan me-2"></i>Linked HQ</h6></div>' +
+                    '<div class="d-flex align-items-center justify-content-between mb-2"><h6 class="text-white fw-semibold mb-0"><i class="bi bi-building txt-neon-cyan me-2"></i>Linked Company</h6></div>' +
                     '<div class="row g-3 mb-4">' +
                     '<div class="col-12 col-sm-6 col-lg-3">' + card('Company', esc(hq.company_name || '—')) + '</div>' +
                     '<div class="col-12 col-sm-6 col-lg-3">' + card('Location', esc(hq.location || '—')) + '</div>' +
-                    '<div class="col-12 col-sm-6 col-lg-3">' + card('HQ email', esc(hq.headquarter_email || '—')) + '</div>' +
+                    '<div class="col-12 col-sm-6 col-lg-3">' + card('Company email', esc(hq.headquarter_email || '—')) + '</div>' +
                     '<div class="col-12 col-sm-6 col-lg-3">' + card('Contact', esc(hq.contact_number || '—')) + '</div>' +
                     '</div>';
             }

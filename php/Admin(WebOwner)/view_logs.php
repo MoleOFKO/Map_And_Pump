@@ -52,18 +52,6 @@ $actorSql = match ($actor) {
 };
 
 if (hq_db_available()) {
-    $metricSql = "SELECT COUNT(*) AS total, MAX(l.created_at) AS last
-         FROM log l
-         LEFT JOIN users u ON u.user_id = l.user_id
-         LEFT JOIN roles r ON r.role_id = COALESCE(u.current_role_id, u.business_role_id, u.role_id)
-         WHERE {$actorSql}";
-    $metricQuery = $conn->query($metricSql);
-    if ($metricQuery) {
-        $metricRow = $metricQuery->fetch_assoc() ?: [];
-        $metrics['total'] = (int) ($metricRow['total'] ?? 0);
-        $metrics['last'] = $metricRow['last'] ?? null;
-    }
-
     $where = [$actorSql];
     $params = [];
     $types = '';
@@ -85,13 +73,66 @@ if (hq_db_available()) {
         $types .= 's';
     }
 
+    $actionValueSql = "LOWER(COALESCE(l.action, ''))";
+    $securityPattern = 'security|auth|login|password|permission|suspend|remove|approve|reject';
+    $errorPattern = 'error|failed|exception|fatal';
+    $warnPattern = 'warn|warning|latency|expired';
+    $securityLevelSql = "{$actionValueSql} REGEXP '{$securityPattern}'";
+    $errorLevelSql = "{$actionValueSql} REGEXP '{$errorPattern}'";
+    $warnLevelSql = "{$actionValueSql} REGEXP '{$warnPattern}'";
+    $levelSql = match ($level) {
+        'security' => $securityLevelSql,
+        'error' => "NOT ({$securityLevelSql}) AND ({$errorLevelSql})",
+        'warn' => "NOT ({$securityLevelSql}) AND NOT ({$errorLevelSql}) AND ({$warnLevelSql})",
+        'info' => "NOT ({$securityLevelSql}) AND NOT ({$errorLevelSql}) AND NOT ({$warnLevelSql})",
+        default => '',
+    };
+    if ($levelSql !== '') {
+        $where[] = '(' . $levelSql . ')';
+    }
+
+    // Keep every summary card in the same actor, search, date, and level
+    // scope as the log rows. Severity totals are calculated across the full
+    // match set, independently of the 500-row display window.
+    $whereSql = implode(' AND ', $where);
+    $metricSql = "SELECT COUNT(*) AS total, MAX(l.created_at) AS last,
+            COALESCE(SUM(CASE WHEN LOWER(COALESCE(l.action, '')) REGEXP 'security|auth|login|password|permission|suspend|remove|approve|reject' THEN 1 ELSE 0 END), 0) AS security,
+            COALESCE(SUM(CASE WHEN LOWER(COALESCE(l.action, '')) REGEXP 'security|auth|login|password|permission|suspend|remove|approve|reject' THEN 0
+                              WHEN LOWER(COALESCE(l.action, '')) REGEXP 'error|failed|exception|fatal' THEN 1 ELSE 0 END), 0) AS error,
+            COALESCE(SUM(CASE WHEN LOWER(COALESCE(l.action, '')) REGEXP 'security|auth|login|password|permission|suspend|remove|approve|reject|error|failed|exception|fatal' THEN 0
+                              WHEN LOWER(COALESCE(l.action, '')) REGEXP 'warn|warning|latency|expired' THEN 1 ELSE 0 END), 0) AS warn,
+            COALESCE(SUM(CASE WHEN LOWER(COALESCE(l.action, '')) REGEXP 'security|auth|login|password|permission|suspend|remove|approve|reject|error|failed|exception|fatal|warn|warning|latency|expired' THEN 0 ELSE 1 END), 0) AS info
+         FROM log l
+         LEFT JOIN users u ON u.user_id = l.user_id
+         LEFT JOIN roles r ON r.role_id = COALESCE(u.current_role_id, u.business_role_id, u.role_id)
+         WHERE {$whereSql}";
+    $metricQuery = $conn->prepare($metricSql);
+    if ($metricQuery) {
+        if ($types !== '') {
+            $bound = array_values($params);
+            hq_bind($metricQuery, $types, $bound);
+        }
+        if ($metricQuery->execute()) {
+            $metricRow = $metricQuery->get_result()?->fetch_assoc() ?: [];
+            foreach (['total', 'security', 'warn', 'error', 'info'] as $key) {
+                $metrics[$key] = (int) ($metricRow[$key] ?? 0);
+            }
+            $metrics['last'] = $metricRow['last'] ?? null;
+        } else {
+            $dbError = 'The audit summary could not be loaded.';
+        }
+        $metricQuery->close();
+    } else {
+        $dbError = 'The audit summary could not be prepared.';
+    }
+
     $sql = 'SELECT l.log_id, l.user_id, l.role_id AS log_role_id, l.action, l.created_at,
                    u.user_name, u.email,
                    COALESCE(r.role_name, \'\') AS actor_role
             FROM log l
             LEFT JOIN users u ON u.user_id = l.user_id
             LEFT JOIN roles r ON r.role_id = COALESCE(u.current_role_id, u.business_role_id, u.role_id)
-            WHERE ' . implode(' AND ', $where) . '
+            WHERE ' . $whereSql . '
             ORDER BY l.created_at DESC, l.log_id DESC
             LIMIT ' . (int) $displayLimit;
 
@@ -105,7 +146,6 @@ if (hq_db_available()) {
             $result = $query->get_result();
             while ($result && ($row = $result->fetch_assoc())) {
                 $row['level'] = admin_log_level((string) $row['action']);
-                $metrics[$row['level']] = ($metrics[$row['level']] ?? 0) + 1;
                 if ($level === 'all' || $row['level'] === $level) {
                     $logs[] = $row;
                 }

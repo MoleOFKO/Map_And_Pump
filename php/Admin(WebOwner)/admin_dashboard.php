@@ -42,7 +42,6 @@ if ($dbOnline) {
         'stations' => 'SELECT COUNT(*) AS value FROM branches',
         'reports' => 'SELECT COUNT(*) AS value FROM report',
         'reports_today' => 'SELECT COUNT(*) AS value FROM report WHERE DATE(created_at) = CURDATE()',
-        'open_requests' => "SELECT COUNT(*) AS value FROM system_requests WHERE LOWER(TRIM(status)) IN ('pending', 'flagged')",
     ];
     foreach ($scalarQueries as $key => $sql) {
         $query = $conn->query($sql);
@@ -60,9 +59,7 @@ if ($dbOnline) {
     $pendingAccounts = $requestSummary['pending_accounts'];
     $pendingCarLicenseReviewCount = $requestSummary['pending_car_licenses'];
     $pendingPaymentReviewCount = $requestSummary['pending_payment_rows'];
-    $metrics['open_requests'] += $pendingAccounts
-        + $pendingCarLicenseReviewCount
-        + $requestSummary['pending_payment_verifications'];
+    $metrics['open_requests'] = $requestSummary['pending'];
     $metrics['pending_requests'] = $requestSummary['pending'];
 
     $reportQuery = $conn->query(
@@ -149,7 +146,7 @@ if ($reportTotal > 0) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Map &amp; Pump Admin Dashboard — Live database overview for requests, reports, Headquarter, drivers, and system health.">
+    <meta name="description" content="Map &amp; Pump Admin Dashboard — Live database overview for requests, reports, companies, drivers, and system health.">
     <title>Admin Dashboard — Map &amp; Pump</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
@@ -210,18 +207,18 @@ if ($reportTotal > 0) {
         'bi-car-front'
     );
     $addPriorityTask('Payment confirmations to verify', $pendingPaymentReviewCount, 'Awaiting verification', 'view_requests.php?type=payment&status=pending', 'bi-cash-coin');
-    $addPriorityTask('HQ licenses expiring soon', (int) ($expiryPayload['warning_hq'] ?? 0), 'Due within 10 days', 'view_hq_and_user_account.php?expiry=warning', 'bi-building');
+    $addPriorityTask('Company licenses expiring soon', (int) ($expiryPayload['warning_hq'] ?? 0), 'Due within 10 days', 'view_hq_and_user_account.php?expiry=warning', 'bi-building');
     $addPriorityTask('Driver licenses expiring soon', (int) ($expiryPayload['warning_users'] ?? 0), 'Due within 10 days', 'view_users.php?expiry=warning', 'bi-person-vcard');
-    $addPriorityTask('Expired HQ licenses', (int) ($expiryPayload['expired_hq'] ?? 0), 'Renewal follow-up', 'view_hq_and_user_account.php?expiry=expired', 'bi-building-exclamation');
+    $addPriorityTask('Expired company licenses', (int) ($expiryPayload['expired_hq'] ?? 0), 'Renewal follow-up', 'view_hq_and_user_account.php?expiry=expired', 'bi-building-exclamation');
     $addPriorityTask('Expired driver licenses', (int) ($expiryPayload['expired_users'] ?? 0), 'Renewal follow-up', 'view_users.php?expiry=expired', 'bi-person-x');
     ?>
     <div class="row g-3 mb-3">
         <div class="col-12 col-sm-6 col-xl-3">
-            <a href="view_hq_and_user_account.php?expiry=warning" class="metric-card-link" title="View HQ licenses expiring soon">
+            <a href="view_hq_and_user_account.php?expiry=warning" class="metric-card-link" title="View company licenses expiring soon">
                 <div class="analytics-card metric-card py-3">
                     <div class="d-flex align-items-center justify-content-between gap-3">
                         <div>
-                            <p class="mb-0 metric-label text-warning">HQ Licenses Expiring Soon</p>
+                            <p class="mb-0 metric-label text-warning">Company Licenses Expiring Soon</p>
                             <h3 class="metric-value text-white mb-0"><?= (int) ($expiryPayload['warning_hq'] ?? 0) ?></h3>
                         </div>
                         <span class="text-warning fs-3"><i class="bi bi-building"></i></span>
@@ -245,16 +242,16 @@ if ($reportTotal > 0) {
             </a>
         </div>
         <div class="col-12 col-sm-6 col-xl-3">
-            <a href="view_hq_and_user_account.php?expiry=expired" class="metric-card-link" title="View HQ accounts with expired licenses">
+            <a href="view_hq_and_user_account.php?expiry=expired" class="metric-card-link" title="View companies with expired licenses">
                 <div class="analytics-card metric-card py-3">
                     <div class="d-flex align-items-center justify-content-between gap-3">
                         <div>
-                            <p class="mb-0 metric-label text-danger">Expired HQ Licenses</p>
+                            <p class="mb-0 metric-label text-danger">Expired Company Licenses</p>
                             <h3 class="metric-value text-white mb-0"><?= (int) ($expiryPayload['expired_hq'] ?? 0) ?></h3>
                         </div>
                         <span class="text-danger fs-3"><i class="bi bi-building-exclamation"></i></span>
                     </div>
-                    <p class="text-white-50 small mb-0 mt-2">HQ business licenses past their expiry date</p>
+                    <p class="text-white-50 small mb-0 mt-2">Company business licenses past their expiry date</p>
                 </div>
             </a>
         </div>
@@ -276,11 +273,11 @@ if ($reportTotal > 0) {
 
     <div class="row g-3 mb-4">
         <div class="col-12 col-sm-6 col-xl-3">
-            <a href="view_hq_and_user_account.php" class="metric-card-link" title="Open View/Manage Headquarter" aria-label="Open View/Manage Headquarter">
+            <a href="view_hq_and_user_account.php" class="metric-card-link" title="Open View/Manage Companies" aria-label="Open View/Manage Companies">
                 <div class="analytics-card metric-card">
                     <div class="d-flex align-items-center justify-content-between gap-3">
                         <div>
-                            <p class="mb-0 metric-label">Total Headquarter</p>
+                            <p class="mb-0 metric-label">Total Companies</p>
                             <h3 class="metric-value text-white mb-0"><?= (int) $metrics['hqs'] ?></h3>
                         </div>
                         <span class="txt-neon-cyan fs-2"><i class="bi bi-building"></i></span>
@@ -361,7 +358,7 @@ if ($reportTotal > 0) {
                             <div class="pie-panel-text">
                                 <h3 class="h6 fw-semibold text-white mb-3">Report Scopes</h3>
                                 <ul class="chart-legend list-unstyled m-0">
-                                    <li><span class="legend-dot bg-info"></span><span>Headquarter Performance</span><strong><?= $reportHqCount ?></strong></li>
+                                    <li><span class="legend-dot bg-info"></span><span>Company Performance</span><strong><?= $reportHqCount ?></strong></li>
                                     <li><span class="legend-dot bg-primary"></span><span>Station Logs</span><strong><?= $reportStationCount ?></strong></li>
                                     <li><span class="legend-dot" style="background:#1be494;"></span><span>Requests/System</span><strong><?= $reportOtherCount ?></strong></li>
                                 </ul>
@@ -402,7 +399,7 @@ if ($reportTotal > 0) {
                                 <span class="summary-arrow"><i class="bi bi-arrow-right"></i></span>
                             </div>
                             <div class="summary-stat-grid">
-                                <div><span class="txt-neon-cyan"><?= $reportHqCount ?></span><small>Headquarter Reports</small></div>
+                                <div><span class="txt-neon-cyan"><?= $reportHqCount ?></span><small>Company Reports</small></div>
                                 <div><span class="txt-neon-blue"><?= $reportStationCount ?></span><small>Station Logs</small></div>
                                 <div><span style="color:#1be494;"><?= $reportOtherCount ?></span><small>Audit Files</small></div>
                             </div>

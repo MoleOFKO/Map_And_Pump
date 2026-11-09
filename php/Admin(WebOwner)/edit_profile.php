@@ -155,10 +155,10 @@ if ($hasCustomerProfile) {
                 </div>
             </div>
 
-            <!-- Compact linked customer profile beside Security & Password -->
+            <!-- Compact linked driver profile beside Security & Password -->
             <div class="col-12 col-lg-5">
                 <div class="dashboard-card p-4 h-100" style="border-color:rgba(0,244,255,.18);background:rgba(0,244,255,.025)!important;">
-                    <h6 class="fw-bold text-white mb-3"><i class="bi bi-fuel-pump txt-neon-cyan me-2"></i>Customer Gas Profile</h6>
+                    <h6 class="fw-bold text-white mb-3"><i class="bi bi-fuel-pump txt-neon-cyan me-2"></i>Driver Gas Profile</h6>
                     <?php if ($hasCustomerProfile): ?>
                         <div class="small text-white-50 mb-2">
                             <span class="text-white fw-semibold"><?= hq_escape((string) $user['user_name']) ?></span>
@@ -179,15 +179,15 @@ if ($hasCustomerProfile) {
                         <?php elseif ($customerVehicleLoadError): ?>
                             <p class="small text-warning mb-3">Vehicle details are temporarily unavailable.</p>
                         <?php else: ?>
-                            <p class="small text-white-50 mb-3">No vehicle is linked to this customer profile yet.</p>
+                            <p class="small text-white-50 mb-3">No vehicle is linked to this driver profile yet.</p>
                         <?php endif; ?>
                     <?php else: ?>
-                        <p class="small text-white-50 mb-3">No customer profile is linked to this account.</p>
+                        <p class="small text-white-50 mb-3">No driver profile is linked to this account.</p>
                     <?php endif; ?>
                     <form action="../account_switch.php" method="POST" class="m-0">
                         <input type="hidden" name="mode" value="customer">
                         <button type="submit" class="btn btn-outline-info btn-sm rounded-3 w-100 fw-bold">
-                            <i class="bi bi-arrow-left-right me-1"></i>Switch to Customer Profile
+                            <i class="bi bi-arrow-left-right me-1"></i>Switch to Driver Profile
                         </button>
                     </form>
                 </div>
