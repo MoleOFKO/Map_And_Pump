@@ -40,8 +40,8 @@ $roleId = $role === 'manager' ? 4 : ($role === 'staff' ? 5 : 0);
 
 if ($hqId <= 0 || !filter_var($email, FILTER_VALIDATE_EMAIL) || $roleId <= 0
     || !in_array($accountType, ['new', 'existing'], true)
-    || (!$stationNotAssigned && !$stationId) || ($roleId === 5 && !$stationId)) {
-    $respond(false, 'Please provide a valid email, account type, and role. Staff invitations require a station assignment.', 422);
+    || (!$stationNotAssigned && !$stationId)) {
+    $respond(false, 'Please provide a valid email, account type, role, and station assignment.', 422);
 }
 
 try {
@@ -62,6 +62,71 @@ try {
         if (!$station) {
             throw new RuntimeException('That station is not related to your HQ.');
         }
+    }
+
+    if ($roleId === 5) {
+        $fullName = trim((string) ($_POST['full_name'] ?? ''));
+        if ($fullName === '' || $password !== $confirmPassword) {
+            throw new RuntimeException($fullName === ''
+                ? 'Full name is required for a staff account.'
+                : 'The password and confirmation do not match.');
+        }
+        if (strlen($password) < 8 || strlen($password) > 15
+            || !preg_match('/[a-z]/', $password)
+            || !preg_match('/[A-Z]/', $password)
+            || !preg_match('/\d/', $password)
+            || !preg_match('/[^a-zA-Z0-9]/', $password)) {
+            throw new RuntimeException('Use 8-15 characters with uppercase and lowercase letters, a number, and a symbol.');
+        }
+
+        $staffEmailStmt = $pdo->prepare('SELECT staff_id FROM staff WHERE LOWER(TRIM(email)) = LOWER(TRIM(?)) LIMIT 1');
+        $staffEmailStmt->execute([$email]);
+        if ($staffEmailStmt->fetchColumn()) {
+            throw new RuntimeException('A staff account already exists for this email.');
+        }
+        $userEmailStmt = $pdo->prepare('SELECT user_id FROM users WHERE LOWER(TRIM(email)) = LOWER(TRIM(?)) LIMIT 1');
+        $userEmailStmt->execute([$email]);
+        if ($userEmailStmt->fetchColumn()) {
+            throw new RuntimeException('This email already belongs to a user account. Use a different email for the standalone staff account.');
+        }
+
+        do {
+            $staffCode = 'ST-' . strtoupper(bin2hex(random_bytes(6)));
+            $staffCodeStmt = $pdo->prepare('SELECT 1 FROM staff WHERE staff_code = ? LIMIT 1');
+            $staffCodeStmt->execute([$staffCode]);
+        } while ($staffCodeStmt->fetchColumn());
+
+        $pdo->beginTransaction();
+        $insertStaff = $pdo->prepare(
+            "INSERT INTO staff
+                (user_id, branch_id, staff_code, full_name, email, staff_password, is_active, hired_at, created_at, updated_at)
+             VALUES (NULL, ?, ?, ?, ?, ?, 1, CURDATE(), NOW(), NOW())"
+        );
+        $insertStaff->execute([
+            $stationId ?: null,
+            $staffCode,
+            $fullName,
+            $email,
+            password_hash($password, PASSWORD_DEFAULT),
+        ]);
+        $staffId = (int) $pdo->lastInsertId();
+        $pdo->commit();
+
+        $hqStmt = $pdo->prepare('SELECT company_name FROM headquarter WHERE headquarter_id = ? LIMIT 1');
+        $hqStmt->execute([$hqId]);
+        $companyName = (string) ($hqStmt->fetchColumn() ?: 'Map & Pump HQ');
+        $emailNotice = mail_send_account_notice($email, [
+            'kind' => 'hq_invitation',
+            'company_name' => $companyName,
+            'role_name' => 'Staff',
+            'station_name' => (string) ($station['station_name'] ?? ''),
+            'account_active' => true,
+        ]);
+        $deliveryStatus = (string) ($emailNotice['status'] ?? 'failed');
+        $respond(true, 'Staff account created and stored in the staff roster. Login instructions email status: ' . $deliveryStatus . '.', 200, [
+            'email_status' => $deliveryStatus,
+            'staff_id' => $staffId,
+        ]);
     }
 
     $userStmt = $pdo->prepare(

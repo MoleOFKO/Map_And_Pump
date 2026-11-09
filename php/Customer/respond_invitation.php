@@ -79,8 +79,6 @@ try {
             if (!$branchStmt->fetchColumn()) {
                 throw new RuntimeException('This invitation is not linked to a valid branch under its HQ.');
             }
-        } elseif ($roleId === 5) {
-            throw new RuntimeException('A staff invitation needs a station assignment before it can be accepted.');
         }
 
         $userUpdateSql = "UPDATE users SET business_role_id = ?, status = 'active', updated_at = NOW()";
@@ -139,9 +137,9 @@ try {
                 $staffUpdate->execute($staffUpdateParams);
             } else {
                 $hasEmail = column_exists($pdo, 'staff', 'email');
-                $legacySql = 'SELECT staff_id FROM staff WHERE user_id IS NULL AND branch_id = ? AND full_name = ? LIMIT 1';
+                $legacySql = 'SELECT staff_id FROM staff WHERE user_id IS NULL AND branch_id <=> ? AND full_name = ? LIMIT 1';
                 if ($hasEmail) {
-                    $legacySql = 'SELECT staff_id FROM staff WHERE user_id IS NULL AND branch_id = ? AND (full_name = ? OR email = ?) LIMIT 1';
+                    $legacySql = 'SELECT staff_id FROM staff WHERE user_id IS NULL AND branch_id <=> ? AND (full_name = ? OR email = ?) LIMIT 1';
                 }
                 $legacyLookup = $pdo->prepare($legacySql);
                 $legacyParams = $hasEmail
@@ -163,7 +161,7 @@ try {
                         $codeStmt = $pdo->prepare(
                             "SELECT COALESCE(MAX(CAST(SUBSTRING(staff_code, 4) AS UNSIGNED)), 2090)
                              FROM staff
-                             WHERE branch_id = ?
+                             WHERE branch_id <=> ?
                                AND staff_code REGEXP '^ST-[0-9]+$'"
                         );
                         $codeStmt->execute([$branchId]);
