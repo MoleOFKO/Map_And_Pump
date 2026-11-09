@@ -2,6 +2,7 @@
 include 'share_header.php';
 require_once __DIR__ . '/../business_scope.php';
 require_once __DIR__ . '/../booking_rules.php';
+map_pump_booking_configure_timezone($pdo);
 require_once __DIR__ . '/../booking_reservations.php';
 require_once __DIR__ . '/../loyalty_points.php';
 require_once __DIR__ . '/../feedback_schema.php';
