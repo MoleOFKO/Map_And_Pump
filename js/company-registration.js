@@ -17,6 +17,10 @@ document.querySelectorAll('.upload-field input[type="file"]').forEach((input) =>
 const registrationForm = document.getElementById('company-registration-form');
 const formStatus = document.getElementById('registration-form-status');
 const paymentModal = document.getElementById('payment-modal');
+const registrationMessageModal = document.getElementById('registration-message-modal');
+const registrationMessageTitle = document.getElementById('registration-message-title');
+const registrationMessageBody = document.getElementById('registration-message-body');
+const registrationMessageIcon = document.getElementById('registration-message-icon');
 const paymentConfirm = document.getElementById('payment-confirm');
 const ownerEmailInput = document.getElementById('owner-email');
 const companyEmailInput = document.getElementById('company-email');
@@ -67,12 +71,76 @@ const paymentSteps = document.getElementById('payment-steps');
 
 let activeIndex = -1;
 let previouslyFocusedElement;
+let messageModalPreviousFocus;
 
 /* ---------- helpers ---------- */
+const closeRegistrationMessage = () => {
+    if (!registrationMessageModal || registrationMessageModal.hidden) return;
+    registrationMessageModal.hidden = true;
+    registrationMessageModal.classList.remove('is-error', 'is-success');
+    if (!paymentModal || paymentModal.hidden) {
+        document.body.classList.remove('payment-modal-open');
+    }
+    messageModalPreviousFocus?.focus();
+};
+
+const showRegistrationMessage = (message, isError = false, showAccountLink = false) => {
+    if (!registrationMessageModal || !registrationMessageBody) return;
+
+    registrationMessageModal.classList.toggle('is-error', isError);
+    registrationMessageModal.classList.toggle('is-success', !isError);
+    registrationMessageTitle.textContent = isError ? 'Please check your registration' : 'Registration update';
+    registrationMessageIcon.innerHTML = isError
+        ? '<i class="fa-solid fa-circle-exclamation"></i>'
+        : '<i class="fa-solid fa-circle-info"></i>';
+    registrationMessageBody.replaceChildren(document.createTextNode(message));
+
+    if (showAccountLink) {
+        const link = document.createElement('a');
+        link.href = '/php/Login/register.php';
+        link.textContent = 'Create an account';
+        registrationMessageBody.append(document.createElement('br'), link);
+    }
+
+    messageModalPreviousFocus = document.activeElement;
+    registrationMessageModal.hidden = false;
+    document.body.classList.add('payment-modal-open');
+    registrationMessageModal.querySelector('.registration-message-close')?.focus();
+};
+
+registrationMessageModal?.querySelectorAll('[data-registration-message-close]').forEach((element) => {
+    element.addEventListener('click', closeRegistrationMessage);
+});
+
+registrationMessageModal?.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+        event.preventDefault();
+        closeRegistrationMessage();
+        return;
+    }
+    if (event.key !== 'Tab') return;
+
+    const focusable = Array.from(registrationMessageModal.querySelectorAll('button:not([disabled]), a[href]'));
+    if (!focusable.length) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+    }
+});
+
 const showError = (target, message) => {
     if (!target) return;
-    target.innerHTML = `<i class="fa-solid fa-circle-exclamation"></i>${message}`;
+    target.replaceChildren();
+    const icon = document.createElement('i');
+    icon.className = 'fa-solid fa-circle-exclamation';
+    target.append(icon, document.createTextNode(message));
     target.hidden = false;
+    showRegistrationMessage(message, true);
 };
 
 const clearError = () => {
@@ -259,11 +327,7 @@ const submitRegistration = async (requiresPayment) => {
         if (!response.ok || !result.success) throw new Error(result.message || 'Registration could not be submitted.');
 
         closePaymentModal();
-        if (formStatus) {
-            formStatus.classList.remove('is-error');
-            formStatus.classList.add('is-success');
-            formStatus.textContent = result.message;
-        }
+        setRegistrationStatus(result.message);
         registrationForm.reset();
         updateRegistrationAmount();
     } catch (error) {
@@ -380,16 +444,12 @@ const closePaymentModal = () => {
 };
 
 const setRegistrationStatus = (message, isError = false, showAccountLink = false) => {
-    if (!formStatus) return;
-    formStatus.classList.toggle('is-error', isError);
-    formStatus.classList.toggle('is-success', !isError);
-    formStatus.textContent = message;
-    if (showAccountLink) {
-        const link = document.createElement('a');
-        link.href = '/php/Login/register.php';
-        link.textContent = ' Create an account';
-        formStatus.append(link);
+    if (formStatus) {
+        formStatus.classList.toggle('is-error', isError);
+        formStatus.classList.toggle('is-success', !isError);
+        formStatus.textContent = message;
     }
+    if (message) showRegistrationMessage(message, isError, showAccountLink);
 };
 
 registrationForm?.addEventListener('submit', async (event) => {

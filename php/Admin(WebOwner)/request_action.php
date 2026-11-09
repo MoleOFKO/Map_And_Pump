@@ -42,6 +42,7 @@ if (!hq_db_available() || !request_schema_ready()) {
 }
 
 global $conn;
+$postCommitMailJobs = [];
 
 try {
     $conn->begin_transaction();
@@ -95,7 +96,9 @@ try {
         }
         if ($paymentRequired) {
             $paymentCheck = $conn->prepare(
-                "SELECT status, amount_mmk, quantity, term_months, service_start_month, payment_transfer_id FROM payment_transfers
+                "SELECT status, amount_mmk, quantity, term_months, service_start_month, payment_transfer_id,
+                        reference_code, description, payment_method
+                 FROM payment_transfers
                  WHERE request_id = ? AND payment_type = 'hq_registration'
                  ORDER BY payment_transfer_id DESC LIMIT 1 FOR UPDATE"
             );
@@ -507,15 +510,94 @@ try {
     $message = $action === 'approve'
         ? sprintf('Your request %s for %s has been approved.', $target['reference_code'], $target['sender_entity'])
         : sprintf("Your request %s for %s was rejected.\n\nReason:\n%s", $target['reference_code'], $target['sender_entity'], $reason);
-    $notificationContext = $requestType === 'hq_registration' && $action === 'approve' && $createdOwnerSetupUrl !== null
-        ? [
-            'kind' => 'account_password_setup',
-            'account_label' => 'HQ',
-            'account_name' => (string) $target['sender_entity'],
-            'setup_url' => $createdOwnerSetupUrl,
-            'reference_code' => (string) $target['reference_code'],
-        ]
-        : [
+    $isHqRegistrationApproval = $requestType === 'hq_registration' && $action === 'approve';
+    if ($isHqRegistrationApproval) {
+        $registrationDetails = json_decode((string) ($target['request_details'] ?? ''), true);
+        $registrationDetails = is_array($registrationDetails) ? $registrationDetails : [];
+        $paymentStatus = strtolower(trim((string) ($paymentRow['status'] ?? 'not_required')));
+        $receiptContext = [
+            'kind' => 'hq_registration_receipt',
+            'company_name' => (string) $target['sender_entity'],
+            'request_reference' => (string) $target['reference_code'],
+            'payment_reference' => (string) ($paymentRow['reference_code'] ?? ''),
+            'description' => (string) ($paymentRow['description'] ?? 'HQ registration payment'),
+            'payment_method' => (string) ($paymentRow['payment_method'] ?? ''),
+            'payment_status' => $paymentStatus,
+            'amount_mmk' => (float) ($paymentRow['amount_mmk'] ?? $registrationDetails['registration_amount_mmk'] ?? 0),
+        ];
+        $mailContexts = [];
+        if ($createdOwnerSetupUrl !== null) {
+            $mailContexts[] = [
+                'notification_type' => 'hq_password_setup',
+                'message' => 'Set up the password for your approved HQ account.',
+                'context' => [
+                    'kind' => 'account_password_setup',
+                    'account_label' => 'HQ',
+                    'account_name' => (string) $target['sender_entity'],
+                    'setup_url' => $createdOwnerSetupUrl,
+                    'reference_code' => (string) $target['reference_code'],
+                ],
+            ];
+        }
+        $mailContexts[] = [
+            'notification_type' => 'hq_registration_receipt',
+            'message' => 'Your HQ registration payment record is available in this email.',
+            'context' => $receiptContext,
+        ];
+        $mailContexts[] = [
+            'notification_type' => 'hq_registration_approved',
+            'message' => sprintf(
+                'Your company registration for %s was approved by a Map & Pump %s.',
+                (string) $target['sender_entity'],
+                $reviewerLabel
+            ),
+            'context' => [
+                'kind' => 'hq_registration_approved',
+                'company_name' => (string) $target['sender_entity'],
+                'reviewer_label' => $reviewerLabel,
+                'reference_code' => (string) $target['reference_code'],
+                'login_url' => payment_transfer_absolute_url('/php/Login/login.php'),
+            ],
+        ];
+
+        foreach ($mailContexts as $mailJob) {
+            $mailSubject = (string) mail_build_account_notice($mailJob['context'])['subject'];
+            $notificationType = (string) $mailJob['notification_type'];
+            $notificationMessage = (string) $mailJob['message'];
+            $pendingStatus = 'pending';
+            $pendingNote = 'Email will be sent after the approval transaction commits.';
+            $notificationInsert = $conn->prepare(
+                'INSERT INTO notifications
+                    (request_id, recipient_user_id, recipient_email, notification_type, subject, message, delivery_status, delivery_note)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+            );
+            if (!$notificationInsert) {
+                throw new RuntimeException('Could not prepare the registration email notification.');
+            }
+            $notificationInsert->bind_param(
+                'iissssss',
+                $requestId,
+                $recipientUserId,
+                $recipientEmail,
+                $notificationType,
+                $mailSubject,
+                $notificationMessage,
+                $pendingStatus,
+                $pendingNote
+            );
+            if (!$notificationInsert->execute()) {
+                $notificationInsert->close();
+                throw new RuntimeException('Could not record a registration email notification.');
+            }
+            $postCommitMailJobs[] = [
+                'notification_id' => (int) $notificationInsert->insert_id,
+                'subject' => $mailSubject,
+                'context' => $mailJob['context'],
+            ];
+            $notificationInsert->close();
+        }
+    } else {
+        $notificationContext = [
             'kind' => 'request',
             'action' => $action === 'approve' ? 'approve' : 'reject',
             'reason' => $action === 'approve' ? '' : $reason,
@@ -524,35 +606,60 @@ try {
                 : 'Your request was not approved. Sign in to review the request details.',
             'reference_code' => (string) $target['reference_code'],
         ];
-    $notification = request_send_notification($recipientEmail, '', '', $notificationContext);
-    $subject = (string) ($notification['subject'] ?? sprintf('Map & Pump request %s: %s', $target['reference_code'], ucfirst($newStatus)));
+        $notification = request_send_notification($recipientEmail, '', '', $notificationContext);
+        $subject = (string) ($notification['subject'] ?? sprintf('Map & Pump request %s: %s', $target['reference_code'], ucfirst($newStatus)));
 
-    $notificationInsert = $conn->prepare(
-        'INSERT INTO notifications
-            (request_id, recipient_user_id, recipient_email, notification_type, subject, message, delivery_status, delivery_note)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
-    );
-    if (!$notificationInsert) {
-        throw new RuntimeException('Could not prepare the notification record.');
+        $notificationInsert = $conn->prepare(
+            'INSERT INTO notifications
+                (request_id, recipient_user_id, recipient_email, notification_type, subject, message, delivery_status, delivery_note)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+        );
+        if (!$notificationInsert) {
+            throw new RuntimeException('Could not prepare the notification record.');
+        }
+        $notificationType = 'request_' . $newStatus;
+        $notificationInsert->bind_param(
+            'iissssss',
+            $requestId,
+            $recipientUserId,
+            $recipientEmail,
+            $notificationType,
+            $subject,
+            $message,
+            $notification['status'],
+            $notification['note']
+        );
+        if (!$notificationInsert->execute()) {
+            throw new RuntimeException('Could not record the notification.');
+        }
+        $notificationInsert->close();
     }
-    $notificationType = 'request_' . $newStatus;
-    $notificationInsert->bind_param(
-        'iissssss',
-        $requestId,
-        $recipientUserId,
-        $recipientEmail,
-        $notificationType,
-        $subject,
-        $message,
-        $notification['status'],
-        $notification['note']
-    );
-    if (!$notificationInsert->execute()) {
-        throw new RuntimeException('Could not record the notification.');
-    }
-    $notificationInsert->close();
 
     $conn->commit();
+    foreach ($postCommitMailJobs as $mailJob) {
+        try {
+            $emailResult = mail_send_account_notice($recipientEmail, $mailJob['context']);
+            $deliveryStatus = (string) ($emailResult['status'] ?? 'failed');
+            $deliveryNote = substr((string) ($emailResult['note'] ?? 'Email delivery failed.'), 0, 255);
+            $emailSubject = (string) ($emailResult['subject'] ?? $mailJob['subject']);
+            $notificationId = (int) $mailJob['notification_id'];
+            $deliveryUpdate = $conn->prepare(
+                'UPDATE notifications
+                 SET subject = ?, delivery_status = ?, delivery_note = ?
+                 WHERE notification_id = ?'
+            );
+            if (!$deliveryUpdate) {
+                throw new RuntimeException('Could not prepare email delivery status update.');
+            }
+            $deliveryUpdate->bind_param('sssi', $emailSubject, $deliveryStatus, $deliveryNote, $notificationId);
+            if (!$deliveryUpdate->execute()) {
+                throw new RuntimeException('Could not save email delivery status.');
+            }
+            $deliveryUpdate->close();
+        } catch (Throwable $mailError) {
+            error_log('[Request registry] HQ registration email failed after approval: ' . $mailError->getMessage());
+        }
+    }
     admin_record_log(
         (int) $reviewer['user_id'],
         ucfirst($action) . ' request #' . $requestId . ' (' . $target['reference_code'] . ') as ' . $reviewerLabel . '.'

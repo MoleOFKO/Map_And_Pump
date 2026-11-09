@@ -179,6 +179,76 @@ function mail_build_account_notice(array $context): array
         return ['subject' => $subject, 'html' => $html, 'text' => $text];
     }
 
+    if ($kind === 'hq_registration_approved') {
+        $companyName = trim((string) ($context['company_name'] ?? 'your company'));
+        $reviewerLabel = trim((string) ($context['reviewer_label'] ?? 'Administrator'));
+        $referenceCode = trim((string) ($context['reference_code'] ?? ''));
+        $loginUrl = trim((string) ($context['login_url'] ?? ''));
+        $subject = 'Your Map & Pump company registration was approved';
+        $text = "Your company registration for {$companyName} has been approved by a Map & Pump {$reviewerLabel}.\n\n"
+            . ($referenceCode !== '' ? "Registration reference: {$referenceCode}\n" : '')
+            . "Your HQ account is ready. Sign in to Map & Pump to continue.\n"
+            . ($loginUrl !== '' ? "Sign in: {$loginUrl}\n" : '')
+            . "If you received a separate password setup email, use its one-time link to set your HQ account password.\n\n"
+            . $footer['text'];
+        $html = '<div style="font-family:Arial,Helvetica,sans-serif;line-height:1.55;color:#111827;max-width:560px">'
+            . '<p style="margin:0 0 12px;font-size:14px;color:#374151">Map &amp; Pump company registration</p>'
+            . '<h2 style="margin:0 0 16px;font-size:20px;color:#111827">Registration approved</h2>'
+            . '<p>Your company registration for <strong>' . mail_h($companyName) . '</strong> has been approved by a Map &amp; Pump '
+            . mail_h($reviewerLabel) . '.</p>'
+            . ($referenceCode !== '' ? '<p><strong>Registration reference:</strong> ' . mail_h($referenceCode) . '</p>' : '')
+            . '<p>Your HQ account is ready. Sign in to Map &amp; Pump to continue. If you received a separate password setup email, use its one-time link to set your HQ account password.</p>'
+            . ($loginUrl !== '' ? '<p><a href="' . mail_h($loginUrl) . '" style="display:inline-block;padding:10px 16px;background:#0b6bcb;color:#fff;text-decoration:none;border-radius:6px">Sign in</a></p>' : '')
+            . $footer['html'] . '</div>';
+        return ['subject' => $subject, 'html' => $html, 'text' => $text];
+    }
+
+    if ($kind === 'hq_registration_receipt') {
+        $companyName = trim((string) ($context['company_name'] ?? ''));
+        $requestReference = trim((string) ($context['request_reference'] ?? ''));
+        $paymentReference = trim((string) ($context['payment_reference'] ?? ''));
+        $description = trim((string) ($context['description'] ?? 'HQ registration payment'));
+        $paymentMethod = trim((string) ($context['payment_method'] ?? ''));
+        $paymentStatus = strtolower(trim((string) ($context['payment_status'] ?? 'not_required')));
+        $amount = number_format((float) ($context['amount_mmk'] ?? 0), 2) . ' MMK';
+        $received = $paymentStatus === 'received';
+        $statusLabel = match ($paymentStatus) {
+            'received' => 'Payment received and recorded',
+            'payer_reported_paid' => 'Payment reported by the payer; awaiting recipient confirmation',
+            'not_required' => 'No payment was required',
+            'rejected' => 'Payment was not confirmed',
+            default => ucfirst(str_replace('_', ' ', $paymentStatus)),
+        };
+        $subject = $received
+            ? 'Payment receipt for ' . ($companyName !== '' ? $companyName : 'your HQ registration')
+            : 'HQ registration payment record';
+        $text = "Map & Pump HQ registration payment record\n\n"
+            . ($companyName !== '' ? "Company: {$companyName}\n" : '')
+            . "Description: {$description}\nAmount: {$amount}\nStatus: {$statusLabel}\n"
+            . ($paymentMethod !== '' ? "Payment method: {$paymentMethod}\n" : '')
+            . ($paymentReference !== '' ? "Payment reference: {$paymentReference}\n" : '')
+            . ($requestReference !== '' ? "Registration reference: {$requestReference}\n" : '')
+            . ($received
+                ? "\nThe payment is recorded as received by the designated recipient."
+                : "\nThis email records the current payment status. It is not confirmation from a bank or wallet provider.")
+            . "\n\n" . $footer['text'];
+        $html = '<div style="font-family:Arial,Helvetica,sans-serif;line-height:1.55;color:#111827;max-width:560px">'
+            . '<p style="margin:0 0 12px;font-size:14px;color:#374151">Map &amp; Pump HQ registration</p>'
+            . '<h2 style="margin:0 0 16px;font-size:20px;color:#111827">' . mail_h($received ? 'Payment receipt' : 'Payment record') . '</h2>'
+            . ($companyName !== '' ? '<p><strong>Company:</strong> ' . mail_h($companyName) . '</p>' : '')
+            . '<p><strong>Description:</strong> ' . mail_h($description) . '<br><strong>Amount:</strong> ' . mail_h($amount)
+            . '<br><strong>Status:</strong> ' . mail_h($statusLabel)
+            . ($paymentMethod !== '' ? '<br><strong>Payment method:</strong> ' . mail_h($paymentMethod) : '')
+            . '</p>'
+            . ($paymentReference !== '' ? '<p><strong>Payment reference:</strong> ' . mail_h($paymentReference) . '</p>' : '')
+            . ($requestReference !== '' ? '<p><strong>Registration reference:</strong> ' . mail_h($requestReference) . '</p>' : '')
+            . ($received
+                ? '<p>The payment is recorded as received by the designated recipient.</p>'
+                : '<p>This email records the current payment status. It is not confirmation from a bank or wallet provider.</p>')
+            . $footer['html'] . '</div>';
+        return ['subject' => $subject, 'html' => $html, 'text' => $text];
+    }
+
     if ($kind === 'hq_invitation') {
         $companyName = trim((string) ($context['company_name'] ?? 'Map & Pump HQ'));
         $roleName = trim((string) ($context['role_name'] ?? 'business account'));

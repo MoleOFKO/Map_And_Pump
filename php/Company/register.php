@@ -680,5 +680,17 @@ require __DIR__ . '/../partials/nav.php';
     </div>
 </div>
 
+<div class="registration-message-modal" id="registration-message-modal" role="dialog" aria-modal="true" aria-labelledby="registration-message-title" aria-describedby="registration-message-body" hidden>
+    <button class="registration-message-backdrop" type="button" data-registration-message-close aria-label="Close message"></button>
+    <section class="registration-message-card" role="document">
+        <div class="registration-message-icon" id="registration-message-icon" aria-hidden="true">
+            <i class="fa-solid fa-circle-info"></i>
+        </div>
+        <h2 id="registration-message-title">Registration update</h2>
+        <div class="registration-message-body" id="registration-message-body"></div>
+        <button type="button" class="btn btn-primary registration-message-close" data-registration-message-close>OK</button>
+    </section>
+</div>
+
 <?php require __DIR__ . '/../partials/footer.php'; ?>
 <script src="/js/company-registration.js"></script>
