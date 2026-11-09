@@ -14,7 +14,8 @@ if (!$user || !admin_user_has_role($user, ['admin', 'moderator']) || !in_array($
     exit;
 }
 
-$summary = request_live_status_summary();
+$reviewerRole = strtolower(trim((string) ($user['role_name'] ?? ''))) === 'moderator' ? 'moderator' : 'admin';
+$summary = request_review_queue_summary($reviewerRole);
 if ($summary['error'] !== null) {
     http_response_code(503);
     echo json_encode(['error' => $summary['error']]);
@@ -22,7 +23,7 @@ if ($summary['error'] !== null) {
 }
 
 echo json_encode([
-    'pending' => $summary['pending'] + pending_account_count(),
+    'pending' => $summary['pending'],
     'approved' => $summary['approved'],
     'approved_today' => $summary['approved_today'],
     'declined' => $summary['declined_flagged'],

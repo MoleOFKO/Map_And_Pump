@@ -42,8 +42,7 @@ if ($dbOnline) {
         'stations' => 'SELECT COUNT(*) AS value FROM branches',
         'reports' => 'SELECT COUNT(*) AS value FROM report',
         'reports_today' => 'SELECT COUNT(*) AS value FROM report WHERE DATE(created_at) = CURDATE()',
-        'open_requests' => "SELECT COUNT(*) AS value FROM system_requests WHERE LOWER(status) IN ('pending', 'flagged')",
-        'pending_requests' => "SELECT COUNT(*) AS value FROM system_requests WHERE LOWER(status) = 'pending'",
+        'open_requests' => "SELECT COUNT(*) AS value FROM system_requests WHERE LOWER(TRIM(status)) IN ('pending', 'flagged')",
     ];
     foreach ($scalarQueries as $key => $sql) {
         $query = $conn->query($sql);
@@ -52,27 +51,19 @@ if ($dbOnline) {
         }
     }
 
-    $requestSummary = request_live_status_summary();
-    $requestCounts['pending'] += $requestSummary['pending'];
-    $requestCounts['approved'] += $requestSummary['approved'];
-    $requestCounts['declined'] += $requestSummary['declined_flagged'];
+    $requestSummary = request_review_queue_summary('admin');
+    $requestCounts['pending'] = $requestSummary['pending'];
+    $requestCounts['approved'] = $requestSummary['approved'];
+    $requestCounts['declined'] = $requestSummary['declined_flagged'];
     $requestSummaryError = $requestSummary['error'];
 
-    $pendingAccounts = pending_account_count();
-    $metrics['open_requests'] += $pendingAccounts;
-    $metrics['pending_requests'] += $pendingAccounts;
-    $requestCounts['pending'] += $pendingAccounts;
-    $pendingCarLicenseReviewCount = pending_car_license_count();
-    $pendingPaymentReviewCount = count(request_payment_verification_rows('admin', '', 'pending', true));
-
-    $pendingPaymentRows = request_payment_verification_rows('admin', '', 'pending', true);
-    $pendingPaymentVerifications = count(array_filter(
-        $pendingPaymentRows,
-        static fn (array $row): bool => ($row['status'] ?? '') === 'payer_reported_paid'
-    ));
-    $metrics['open_requests'] += $pendingPaymentVerifications;
-    $metrics['pending_requests'] += $pendingPaymentVerifications;
-    $requestCounts['pending'] += $pendingPaymentVerifications;
+    $pendingAccounts = $requestSummary['pending_accounts'];
+    $pendingCarLicenseReviewCount = $requestSummary['pending_car_licenses'];
+    $pendingPaymentReviewCount = $requestSummary['pending_payment_rows'];
+    $metrics['open_requests'] += $pendingAccounts
+        + $pendingCarLicenseReviewCount
+        + $requestSummary['pending_payment_verifications'];
+    $metrics['pending_requests'] = $requestSummary['pending'];
 
     $reportQuery = $conn->query(
         'SELECT r.message, r.short_summery, r.role_id, roles.role_name

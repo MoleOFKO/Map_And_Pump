@@ -194,10 +194,10 @@ function moderator_request_rows(string $search, string $requestType, string $sta
     $params = [];
     $types = '';
     if ($search !== '') {
-        $where[] = '(LOWER(r.reference_code) LIKE ? OR LOWER(r.sender_entity) LIKE ? OR LOWER(r.sender_name) LIKE ?)';
+        $where[] = '(LOWER(r.reference_code) LIKE ? OR LOWER(r.sender_entity) LIKE ? OR LOWER(r.sender_name) LIKE ? OR LOWER(COALESCE(r.sender_email, \'\')) LIKE ?)';
         $like = '%' . strtolower($search) . '%';
-        array_push($params, $like, $like, $like);
-        $types .= 'sss';
+        array_push($params, $like, $like, $like, $like);
+        $types .= 'ssss';
     }
     if ($requestType !== '') {
         $aliases = [
@@ -212,7 +212,7 @@ function moderator_request_rows(string $search, string $requestType, string $sta
         }
     }
     if ($status !== '') {
-        $where[] = 'LOWER(r.status) = ?';
+        $where[] = 'LOWER(TRIM(r.status)) = ?';
         $params[] = $status;
         $types .= 's';
     }
@@ -246,11 +246,5 @@ function moderator_request_rows(string $search, string $requestType, string $sta
 
 function moderator_request_summary(): array
 {
-    $summary = request_live_status_summary();
-    return [
-        'pending' => $summary['pending'],
-        'approved_today' => $summary['approved_today'],
-        'declined_flagged' => $summary['declined_flagged'],
-        'error' => $summary['error'],
-    ];
+    return request_review_queue_summary('moderator');
 }

@@ -29,8 +29,7 @@ if ($dbOnline) {
         'stations' => 'SELECT COUNT(*) AS value FROM branches',
         'reports' => 'SELECT COUNT(*) AS value FROM report',
         'reports_today' => 'SELECT COUNT(*) AS value FROM report WHERE DATE(created_at) = CURDATE()',
-        'open_requests' => "SELECT COUNT(*) AS value FROM system_requests WHERE LOWER(status) IN ('pending', 'flagged')",
-        'pending_requests' => "SELECT COUNT(*) AS value FROM system_requests WHERE LOWER(status) = 'pending'",
+        'open_requests' => "SELECT COUNT(*) AS value FROM system_requests WHERE LOWER(TRIM(status)) IN ('pending', 'flagged')",
     ];
     foreach ($scalarQueries as $key => $sql) {
         $query = $conn->query($sql);
@@ -39,16 +38,16 @@ if ($dbOnline) {
         }
     }
 
-    $requestSummary = request_live_status_summary();
-    $requestCounts['pending'] += $requestSummary['pending'];
-    $requestCounts['approved'] += $requestSummary['approved'];
-    $requestCounts['declined'] += $requestSummary['declined_flagged'];
+    $requestSummary = moderator_request_summary();
+    $requestCounts['pending'] = $requestSummary['pending'];
+    $requestCounts['approved'] = $requestSummary['approved'];
+    $requestCounts['declined'] = $requestSummary['declined_flagged'];
     $requestSummaryError = $requestSummary['error'];
 
-    $pendingAccounts = pending_account_count();
-    $metrics['open_requests'] += $pendingAccounts;
-    $metrics['pending_requests'] += $pendingAccounts;
-    $requestCounts['pending'] += $pendingAccounts;
+    $metrics['open_requests'] += $requestSummary['pending_accounts']
+        + $requestSummary['pending_car_licenses']
+        + $requestSummary['pending_payment_verifications'];
+    $metrics['pending_requests'] = $requestSummary['pending'];
 
     $reportQuery = $conn->query(
         'SELECT r.message, r.short_summery, r.role_id, roles.role_name

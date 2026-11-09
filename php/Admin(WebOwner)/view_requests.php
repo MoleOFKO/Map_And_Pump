@@ -22,24 +22,7 @@ if (!is_array($accountReviewSuccess) || !in_array($accountReviewSuccess['action'
 }
 $search = trim((string) ($_GET['search'] ?? ''));
 $requestType = strtolower(trim((string) ($_GET['type'] ?? '')));
-$status = strtolower(trim((string) ($_GET['status'] ?? '')));
-if (in_array($status, ['rejected', 'flagged'], true)) {
-    $status = 'reject';
-}
-// Keywords from system_requests (live).
-$allowedStatuses = admin_filter_request_statuses();
-foreach (['pending', 'approved', 'rejected', 'flagged'] as $fallbackStatus) {
-    if (!in_array($fallbackStatus, $allowedStatuses, true)) {
-        $allowedStatuses[] = $fallbackStatus;
-    }
-}
-sort($allowedStatuses);
-$statusOptions = array_values(array_diff($allowedStatuses, ['rejected', 'flagged', 'reject']));
-$statusOptions[] = 'reject';
-sort($statusOptions);
-$requestStatusLabel = static fn (string $value): string => in_array(strtolower($value), ['rejected', 'flagged'], true)
-    ? 'Reject'
-    : request_status_label($value);
+$status = 'pending';
 
 $dbTypes = admin_filter_request_types();
 $allowedTypes = $dbTypes;
@@ -55,13 +38,9 @@ $requestTypeOptions = admin_request_type_filter_options($allowedTypes);
 if ($requestType !== '' && !in_array($requestType, $allowedTypes, true)) {
     $requestType = '';
 }
-if ($status !== '' && !in_array($status, $statusOptions, true)) {
-    $status = '';
-}
-
 $summary = [
     'pending' => 0,
-    'approved_today' => 0,
+    'approved' => 0,
     'declined_flagged' => 0,
 ];
 $requestRows = [];
@@ -70,7 +49,7 @@ $carLicenseRows = [];
 $dbError = null;
 
 if (hq_db_available() && request_schema_ready()) {
-    $summary = request_live_status_summary();
+    $summary = request_review_queue_summary('admin');
     $dbError = $summary['error'];
 
     $where = [];
@@ -78,10 +57,10 @@ if (hq_db_available() && request_schema_ready()) {
     $types = '';
 
     if ($search !== '') {
-        $where[] = '(LOWER(r.reference_code) LIKE ? OR LOWER(r.sender_entity) LIKE ? OR LOWER(r.sender_name) LIKE ?)';
+        $where[] = '(LOWER(r.reference_code) LIKE ? OR LOWER(r.sender_entity) LIKE ? OR LOWER(r.sender_name) LIKE ? OR LOWER(COALESCE(r.sender_email, \'\')) LIKE ?)';
         $searchLike = '%' . strtolower($search) . '%';
-        array_push($params, $searchLike, $searchLike, $searchLike);
-        $types .= 'sss';
+        array_push($params, $searchLike, $searchLike, $searchLike, $searchLike);
+        $types .= 'ssss';
     }
 
     if ($requestType !== '' && $requestType !== 'payment') {
@@ -103,7 +82,7 @@ if (hq_db_available() && request_schema_ready()) {
     if ($status === 'reject') {
         $where[] = "LOWER(r.status) IN ('rejected', 'flagged')";
     } elseif ($status !== '') {
-        $where[] = 'LOWER(r.status) = ?';
+        $where[] = 'LOWER(TRIM(r.status)) = ?';
         $params[] = $status;
         $types .= 's';
     }
@@ -157,7 +136,7 @@ SQL;
 }
 
 $paymentRows = in_array($requestType, ['', 'payment'], true)
-    ? request_payment_verification_rows('admin', $search, $status, $requestType === 'payment')
+    ? request_payment_verification_rows('admin', $search, $status, true)
     : [];
 
 // Account verification is stored on users rather than system_requests. Keep it
@@ -165,10 +144,8 @@ $paymentRows = in_array($requestType, ['', 'payment'], true)
 if (hq_db_available() && ($requestType === '' || $requestType === 'account') && ($status === '' || $status === 'pending')) {
     $accountRows = pending_account_rows($search);
     $carLicenseRows = pending_car_license_rows($search);
-    $summary['pending'] = (int) $summary['pending'] + count($accountRows) + count($carLicenseRows);
 }
 $paymentReviewByRequest = request_payment_review_map($requestRows);
-$summary['pending'] += count(array_filter($paymentRows, static fn (array $row): bool => ($row['status'] ?? '') === 'payer_reported_paid'));
 
 $flashType = $flash['type'] ?? '';
 ?>
@@ -395,15 +372,15 @@ $flashType = $flash['type'] ?? '';
 
         <div class="row g-3 mb-4">
             <div class="col-12 col-sm-4"><div class="request-indicator-card"><div><p class="text-white-50 mb-1 small fw-semibold" style="text-transform:uppercase;letter-spacing:.06em;font-size:.72rem;">Pending Verification</p><h4 class="fw-bold text-warning mb-0" style="font-size:1.8rem;letter-spacing:-.04em;"><?= (int) $summary['pending'] ?></h4></div><span class="fs-3 text-warning"><i class="bi bi-hourglass-split"></i></span></div></div>
-            <div class="col-12 col-sm-4"><div class="request-indicator-card"><div><p class="text-white-50 mb-1 small fw-semibold" style="text-transform:uppercase;letter-spacing:.06em;font-size:.72rem;">Approved Today</p><h4 class="fw-bold mb-0" data-live-request-count="approved_today" style="font-size:1.8rem;letter-spacing:-.04em;color:#1be494;"><?= (int) $summary['approved_today'] ?></h4></div><span class="fs-3" style="color:#1be494;"><i class="bi bi-patch-check-fill"></i></span></div></div>
+            <div class="col-12 col-sm-4"><div class="request-indicator-card"><div><p class="text-white-50 mb-1 small fw-semibold" style="text-transform:uppercase;letter-spacing:.06em;font-size:.72rem;">Approved</p><h4 class="fw-bold mb-0" data-live-request-count="approved" style="font-size:1.8rem;letter-spacing:-.04em;color:#1be494;"><?= (int) $summary['approved'] ?></h4></div><span class="fs-3" style="color:#1be494;"><i class="bi bi-patch-check-fill"></i></span></div></div>
             <div class="col-12 col-sm-4"><div class="request-indicator-card"><div><p class="text-white-50 mb-1 small fw-semibold" style="text-transform:uppercase;letter-spacing:.06em;font-size:.72rem;">Reject</p><h4 class="fw-bold mb-0" data-live-request-count="declined_flagged" style="font-size:1.8rem;letter-spacing:-.04em;color:#ff4d6a;"><?= (int) $summary['declined_flagged'] ?></h4></div><span class="fs-3" style="color:#ff4d6a;"><i class="bi bi-shield-x"></i></span></div></div>
         </div>
 
         <div class="row g-4">
             <div class="col-12"><div class="dashboard-card py-3 px-4"><form class="row g-3 align-items-center" method="GET" action="view_requests.php">
-                <div class="col-12 col-md-5"><div class="input-group"><span class="input-group-text bg-transparent border-end-0" style="border-color:var(--glass-border);color:var(--neon-cyan);border-radius:12px 0 0 12px;"><i class="bi bi-funnel-fill"></i></span><input type="text" class="form-control glass-input border-start-0" placeholder="Filter by company, sender name, or reference ID..." name="search" value="<?= hq_escape($search) ?>"></div></div>
+                <div class="col-12 col-md-5"><div class="input-group"><span class="input-group-text bg-transparent border-end-0" style="border-color:var(--glass-border);color:var(--neon-cyan);border-radius:12px 0 0 12px;"><i class="bi bi-funnel-fill"></i></span><input type="text" class="form-control glass-input border-start-0" placeholder="Filter by company, sender name, email, or reference ID..." name="search" value="<?= hq_escape($search) ?>"></div></div>
                 <div class="col-12 col-md-3"><select class="form-select glass-select" name="type"><option value="" <?= $requestType === '' ? 'selected' : '' ?>>All Request Types</option><?php foreach ($requestTypeOptions as $option): ?><option value="<?= hq_escape($option) ?>" <?= admin_request_type_filter_value($requestType) === $option ? 'selected' : '' ?>><?= hq_escape(admin_filter_label($option)) ?></option><?php endforeach; ?></select></div>
-                <div class="col-12 col-md-2"><select class="form-select glass-select" name="status"><option value="" <?= $status === '' ? 'selected' : '' ?>>All Status</option><?php foreach ($statusOptions as $option): ?><option value="<?= hq_escape($option) ?>" <?= $status === $option ? 'selected' : '' ?>><?= hq_escape($option === 'reject' ? 'Reject' : admin_filter_label($option)) ?></option><?php endforeach; ?></select></div>
+                <div class="col-12 col-md-2"><select class="form-select glass-select" aria-label="Status filter fixed to Pending" disabled><option value="pending" selected>Pending</option></select><input type="hidden" name="status" value="pending"></div>
                 <div class="col-12 col-md-2 d-flex gap-2">
                     <button type="button" class="btn btn-neon flex-grow-1 js-clear-filters" title="Clear filters">Clear</button>
                 </div>
@@ -422,7 +399,7 @@ $flashType = $flash['type'] ?? '';
                         <td><div class="fw-semibold text-white"><?= hq_escape($sender) ?></div><div class="text-white-50 small" style="font-size:.8rem;"><?= hq_escape((string) ($row['email'] ?? 'No email')) ?></div></td>
                         <td><span class="badge rounded-pill bg-info bg-opacity-10 text-info border border-info border-opacity-25 px-2 py-1">Account Verification</span><?php if ((int) ($row['license_conflict_count'] ?? 0) > 0): ?><span class="badge bg-warning text-dark ms-1">Duplicate license</span><?php endif; ?></td>
                         <td class="text-white-50"><?= hq_escape(request_date($row['created_at'])) ?></td>
-                        <td><span class="request-status request-status-pending">Pending Verification</span></td>
+                        <td><span class="request-status request-status-pending">Pending</span></td>
                         <td class="text-end"><div class="d-flex gap-2 justify-content-end">
                             <button type="button" class="btn-action js-view-account-request" title="View Account Details" aria-label="View account ACCT-<?= (int) $row['user_id'] ?> details" data-user-id="<?= (int) $row['user_id'] ?>" data-role-name="<?= hq_escape($roleName) ?>"><i class="bi bi-eye-fill"></i></button>
                         </div></td>
@@ -435,7 +412,7 @@ $flashType = $flash['type'] ?? '';
                         <td><div class="fw-semibold text-white"><?= hq_escape($carSender) ?></div><div class="text-white-50 small"><?= hq_escape((string) ($row['car_plate_number'] ?? '')) ?><?= !empty($row['email']) ? ' · ' . hq_escape((string) $row['email']) : '' ?></div></td>
                         <td><span class="badge rounded-pill bg-info bg-opacity-10 text-info border border-info border-opacity-25 px-2 py-1">Car License Review</span><?php if ((int) $row['conflict_count'] > 0): ?><span class="badge bg-warning text-dark ms-1">Duplicate plate</span><?php endif; ?></td>
                         <td class="text-white-50"><?= hq_escape(request_date($row['created_at'])) ?></td>
-                        <td><span class="request-status request-status-pending">Pending Review</span></td>
+                        <td><span class="request-status request-status-pending">Pending</span></td>
                         <td class="text-end"><div class="d-flex gap-2 justify-content-end">
                             <button type="button" class="btn-action js-view-car-license" title="Compare car license" aria-label="Review car license #<?= (int) $row['car_license_id'] ?>" data-car-license-id="<?= (int) $row['car_license_id'] ?>"><i class="bi bi-eye-fill"></i></button>
                         </div></td>
@@ -459,16 +436,8 @@ $flashType = $flash['type'] ?? '';
                     <?php
                     $paymentId = (int) $paymentRow['payment_transfer_id'];
                     $paymentState = (string) $paymentRow['status'];
-                    $paymentStatus = in_array($paymentState, ['pending_payment', 'payer_reported_paid'], true)
-                        ? 'pending'
-                        : ($paymentState === 'received' ? 'approved' : 'rejected');
-                    $paymentStatusLabel = match ($paymentState) {
-                        'pending_payment' => 'Awaiting payer payment',
-                        'payer_reported_paid' => 'Payer reported paid',
-                        'received' => 'Payment received',
-                        'rejected' => 'Payment not received',
-                        default => ucfirst($paymentStatus),
-                    };
+                    $paymentStatus = 'pending';
+                    $paymentStatusLabel = 'Pending';
                     $paymentTypeLabel = match ((string) $paymentRow['payment_type']) { 'hq_registration' => 'HQ Registration Payment', 'hq_period_extension' => 'HQ Service Extension', 'hq_station_package' => 'HQ Station Package', 'hq_extra_station' => 'Extra Stations (legacy)', 'hq_station_operating_quote' => 'Station Operating Fee (legacy)', default => 'Payment' };
                     $isPayer = ((int) ($paymentRow['payer_user_id'] ?? 0) === (int) ($_SESSION['user_id'] ?? 0)) || (strtolower((string) ($_SESSION['user_email'] ?? '')) !== '' && strtolower((string) ($_SESSION['user_email'] ?? '')) === strtolower((string) ($paymentRow['payer_email'] ?? '')));
                     ?>

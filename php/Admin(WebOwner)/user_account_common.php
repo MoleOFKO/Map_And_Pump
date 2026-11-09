@@ -144,6 +144,8 @@ function user_account_column_exists(string $table, string $column): bool
     $allowedColumns = [
         'users' => ['current_role_id', 'user_public_id', 'last_login_at'],
         'user_license' => ['status', 'face_image'],
+        'car_license' => ['car_license_id'],
+        'user_car' => ['car_id', 'user_id'],
     ];
     if (!isset($allowedColumns[$table]) || !in_array($column, $allowedColumns[$table], true)) {
         return false;
@@ -468,6 +470,49 @@ function pending_account_count(): int
     );
 
     return $query ? (int) ($query->fetch_assoc()['total'] ?? 0) : 0;
+}
+
+/**
+ * Shared live totals for the items that need review in View Requests.
+ *
+ * System requests, pending user and vehicle-license reviews, and payment
+ * confirmations reported as paid are actionable pending work. Payments still
+ * waiting for the payer are listed separately and do not need moderator review.
+ * Approved and declined totals keep the status-summary semantics; approved
+ * today is exposed separately by request_live_status_summary().
+ *
+ * @return array{pending:int,approved:int,approved_today:int,declined_flagged:int,error:?string,pending_accounts:int,pending_car_licenses:int,pending_payment_verifications:int,pending_payment_rows:int}
+ */
+function request_review_queue_summary(string $reviewerRole = 'admin'): array
+{
+    $summary = function_exists('request_live_status_summary')
+        ? request_live_status_summary()
+        : ['pending' => 0, 'approved' => 0, 'approved_today' => 0, 'declined_flagged' => 0, 'error' => null];
+
+    $summary['pending_accounts'] = pending_account_count();
+    $summary['pending_car_licenses'] = pending_car_license_count();
+    $summary['pending_payment_verifications'] = 0;
+    $summary['pending_payment_rows'] = 0;
+
+    if (function_exists('request_payment_verification_rows')) {
+        $paymentRows = request_payment_verification_rows(
+            $reviewerRole,
+            '',
+            'pending',
+            strtolower(trim($reviewerRole)) !== 'moderator'
+        );
+        $summary['pending_payment_rows'] = count($paymentRows);
+        $summary['pending_payment_verifications'] = count(array_filter(
+            $paymentRows,
+            static fn (array $row): bool => strtolower(trim((string) ($row['status'] ?? ''))) === 'payer_reported_paid'
+        ));
+    }
+
+    $summary['pending'] += $summary['pending_accounts']
+        + $summary['pending_car_licenses']
+        + $summary['pending_payment_verifications'];
+
+    return $summary;
 }
 
 function user_action_table_ready(): bool

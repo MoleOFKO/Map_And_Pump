@@ -236,7 +236,7 @@ function request_schema_ready(): bool
 {
     global $conn;
 
-    if (!hq_registry_schema_ready()) {
+    if (!hq_db_available()) {
         return false;
     }
 
