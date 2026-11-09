@@ -5,6 +5,23 @@ require_once __DIR__ . '/../business_scope.php';
 require_once __DIR__ . '/../invitations_schema.php';
 require_once __DIR__ . '/../Login/mail_templates.php';
 
+$isAjaxRequest = strtolower((string) ($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '')) === 'xmlhttprequest';
+$respond = static function (bool $success, string $message, int $statusCode = 200, array $extra = []) use ($isAjaxRequest): void {
+    if ($isAjaxRequest) {
+        http_response_code($statusCode);
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode(array_merge(['success' => $success, 'message' => $message], $extra));
+        exit;
+    }
+
+    $_SESSION['hq_account_message'] = [
+        'type' => $success ? 'success' : 'danger',
+        'text' => $message,
+    ];
+    header('Location: account.php');
+    exit;
+};
+
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     header('Location: account.php');
     exit;
@@ -12,7 +29,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 
 $email = strtolower(trim((string)($_POST['email'] ?? '')));
 $role = strtolower(trim((string)($_POST['role'] ?? '')));
-$accountType = strtolower(trim((string)($_POST['account_type'] ?? 'existing')));
+$accountType = strtolower(trim((string)($_POST['invitee_account_type'] ?? 'existing')));
 $password = (string) ($_POST['password'] ?? '');
 $confirmPassword = (string) ($_POST['confirm_password'] ?? '');
 $stationValue = trim((string)($_POST['station_id'] ?? ''));
@@ -23,11 +40,8 @@ $roleId = $role === 'manager' ? 4 : ($role === 'staff' ? 5 : 0);
 
 if ($hqId <= 0 || !filter_var($email, FILTER_VALIDATE_EMAIL) || $roleId <= 0
     || !in_array($accountType, ['new', 'existing'], true)
-    || ($roleId === 5 && $accountType !== 'existing')
     || (!$stationNotAssigned && !$stationId) || ($roleId === 5 && !$stationId)) {
-    $_SESSION['hq_account_message'] = ['type' => 'danger', 'text' => 'Please provide a valid email and role. Staff invitations require a station assignment.'];
-    header('Location: account.php');
-    exit;
+    $respond(false, 'Please provide a valid email, account type, and role. Staff invitations require a station assignment.', 422);
 }
 
 try {
@@ -69,11 +83,8 @@ try {
     $invitee = $userStmt->fetch(PDO::FETCH_ASSOC);
     $createdAccount = false;
     if ($accountType === 'new') {
-        if ($roleId !== 4) {
-            throw new RuntimeException('Only branch manager invitations can create a new customer account.');
-        }
         if ($invitee) {
-            throw new RuntimeException('An account already exists for this email. Choose Existing Customer Account.');
+            throw new RuntimeException('An account already exists for this email. Choose Invite with Customer Account.');
         }
         $localPart = strstr($email, '@', true);
         $userName = trim(str_replace(['.', '_', '-'], ' ', (string) $localPart));
@@ -96,10 +107,10 @@ try {
             throw new RuntimeException('This customer account is disabled and cannot be added as a branch manager.');
         }
     } else {
-        throw new RuntimeException('No customer account is registered with that email address. Choose New Customer Account for a new branch manager.');
+        throw new RuntimeException('No account is registered with this email. Choose Create with Standalone Account.');
     }
 
-    if ($roleId === 4 && $createdAccount) {
+    if ($createdAccount) {
         if ($password !== $confirmPassword) {
             throw new RuntimeException('The password and confirmation do not match.');
         }
@@ -109,7 +120,7 @@ try {
             || !preg_match('/\d/', $password)
             || !preg_match('/[^a-zA-Z0-9]/', $password)) {
             throw new RuntimeException(
-                'For a new branch manager account, the password must be 8–15 characters and include uppercase and lowercase letters, a number, and a symbol.'
+                'For a new account, the password must be 8–15 characters and include uppercase and lowercase letters, a number, and a symbol.'
             );
         }
     }
@@ -152,13 +163,15 @@ try {
     );
 
     $notificationId = null;
-    $passwordHash = null;
+    $passwordHash = $createdAccount ? password_hash($password, PASSWORD_DEFAULT) : null;
     if ($roleId === 4) {
         $existingPasswordHash = trim((string) ($invitee['hashed_password'] ?? ''));
         $existingBranchPasswordHash = trim((string) ($invitee['branch_password'] ?? ''));
-        $passwordHash = $createdAccount
-            ? password_hash($password, PASSWORD_DEFAULT)
-            : ($existingPasswordHash !== '' ? $existingPasswordHash : ($existingBranchPasswordHash !== '' ? $existingBranchPasswordHash : null));
+        if (!$createdAccount) {
+            $passwordHash = $existingPasswordHash !== ''
+                ? $existingPasswordHash
+                : ($existingBranchPasswordHash !== '' ? $existingBranchPasswordHash : null);
+        }
     }
     $pdo->beginTransaction();
     if ($roleId === 4) {
@@ -241,6 +254,16 @@ try {
         $notificationId = (int) $pdo->lastInsertId();
 
     } else {
+        if ($createdAccount) {
+            $createAccount = $pdo->prepare(
+                "INSERT INTO users
+                    (user_name, email, hashed_password, role_id, business_role_id, current_role_id, status, created_at, updated_at)
+                 VALUES (?, ?, ?, 6, NULL, 6, 'active', NOW(), NOW())"
+            );
+            $createAccount->execute([$invitee['user_name'], $email, $passwordHash]);
+            $invitee['user_id'] = (int) $pdo->lastInsertId();
+        }
+
         $insert = $pdo->prepare(
             "INSERT INTO invitations
              (headquarter_id, invited_user_id, invited_email, business_role_id, station_id, status)
@@ -262,6 +285,10 @@ try {
     }
     $pdo->commit();
 
+    if ($isAjaxRequest && session_status() === PHP_SESSION_ACTIVE) {
+        session_write_close();
+    }
+
     $emailNotice = mail_send_account_notice($email, [
         'kind' => 'hq_invitation',
         'company_name' => $companyName,
@@ -275,17 +302,12 @@ try {
         $pdo->prepare('UPDATE notifications SET delivery_status = ?, delivery_note = ? WHERE notification_id = ?')
             ->execute([$deliveryStatus, substr($deliveryNote, 0, 255), $notificationId]);
     }
-    $_SESSION['hq_account_message'] = [
-        'type' => $deliveryStatus === 'sent' ? 'success' : 'danger',
-        'text' => ($roleId === 4 ? 'Branch manager added. ' : 'Staff invitation created. ')
-            . 'Invitation email status: ' . $deliveryStatus . '.',
-    ];
+    $resultMessage = ($roleId === 4 ? 'Branch manager account added. ' : 'Staff invitation created. ')
+        . 'Invitation email status: ' . $deliveryStatus . '.';
+    $respond(true, $resultMessage, 200, ['email_status' => $deliveryStatus]);
 } catch (Throwable $error) {
     if ($pdo->inTransaction()) {
         $pdo->rollBack();
     }
-    $_SESSION['hq_account_message'] = ['type' => 'danger', 'text' => $error->getMessage()];
+    $respond(false, $error->getMessage(), 400);
 }
-
-header('Location: account.php');
-exit;
