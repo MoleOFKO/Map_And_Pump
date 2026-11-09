@@ -9,7 +9,7 @@ header('Cache-Control: no-store, no-cache, must-revalidate');
 $headquarterId = filter_var($_GET['id'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
 if (!$headquarterId) {
     http_response_code(400);
-    echo json_encode(['success' => false, 'message' => 'A valid HQ id is required.']);
+    echo json_encode(['success' => false, 'message' => 'A valid company id is required.']);
     exit;
 }
 if (!hq_db_available() || !hq_registry_schema_ready()) {
@@ -22,7 +22,7 @@ global $conn;
 $hqRoleId = hq_hq_role_id();
 if ($hqRoleId <= 0) {
     http_response_code(503);
-    echo json_encode(['success' => false, 'message' => 'The HQ role is unavailable.']);
+    echo json_encode(['success' => false, 'message' => 'The company role is unavailable.']);
     exit;
 }
 
@@ -45,7 +45,7 @@ try {
          LIMIT 1'
     );
     if (!$hqQuery) {
-        throw new RuntimeException('The HQ details query could not be prepared.');
+        throw new RuntimeException('The company details query could not be prepared.');
     }
     $hqQuery->bind_param('iii', $hqRoleId, $hqRoleId, $headquarterId);
     $hqQuery->execute();
@@ -54,7 +54,7 @@ try {
 
     if (!$hq) {
         http_response_code(404);
-        echo json_encode(['success' => false, 'message' => 'HQ account not found.']);
+        echo json_encode(['success' => false, 'message' => 'Company not found.']);
         exit;
     }
 
@@ -198,5 +198,5 @@ try {
 } catch (Throwable $exception) {
     error_log('[HQ details] ' . $exception->getMessage());
     http_response_code(500);
-    echo json_encode(['success' => false, 'message' => 'The selected HQ details could not be loaded.']);
+    echo json_encode(['success' => false, 'message' => 'The selected company details could not be loaded.']);
 }

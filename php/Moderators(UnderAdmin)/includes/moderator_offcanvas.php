@@ -46,8 +46,8 @@ $modMenuClass = static function (string $key) use ($moderatorActiveNav): string 
     <div class="offcanvas-body pt-3">
         <ul class="list-unstyled d-flex flex-column gap-2 mb-0">
             <li><a href="moderator_dashboard.php" class="<?= $modMenuClass('home') ?>"><i class="bi bi-house me-3 txt-neon-cyan"></i> Home</a></li>
-            <li><a href="view_hq_and_user_account(M).php" class="<?= $modMenuClass('view_hq') ?>"><i class="bi bi-building-gear me-3 txt-neon-cyan"></i> View/Manage HQ</a></li>
-            <li><a href="view_users(M).php" class="<?= $modMenuClass('view_users') ?>"><i class="bi bi-people me-3 txt-neon-cyan"></i> View/Manage Users</a></li>
+            <li><a href="view_hq_and_user_account(M).php" class="<?= $modMenuClass('view_hq') ?>"><i class="bi bi-building-gear me-3 txt-neon-cyan"></i> View/Manage Companies</a></li>
+            <li><a href="view_users(M).php" class="<?= $modMenuClass('view_users') ?>"><i class="bi bi-people me-3 txt-neon-cyan"></i> View/Manage Drivers</a></li>
             <li><a href="view_requests(M).php" class="<?= $modMenuClass('requests') ?>"><i class="bi bi-file-earmark-check me-3 txt-neon-cyan"></i> View Requests</a></li>
             <li><a href="view_report(M).php" class="<?= $modMenuClass('report') ?>"><i class="bi bi-graph-up-arrow me-3 txt-neon-cyan"></i> View Report</a></li>
             <li><a href="edit_profile(M).php" class="<?= $modMenuClass('profile') ?>"><i class="bi bi-person-bounding-box me-3 txt-neon-blue"></i> Edit Profile</a></li>

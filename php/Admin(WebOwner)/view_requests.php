@@ -27,7 +27,7 @@ $status = 'pending';
 $dbTypes = admin_filter_request_types();
 $allowedTypes = $dbTypes;
 // Ensure common type keywords remain selectable even if table is empty.
-foreach (['account', 'payment', 'hq_registration', 'station', 'new_station', 'new_station_registration', 'license', 'license_modification', 'deactivation', 'account_deactivation'] as $fallbackType) {
+foreach (['account', 'car_license', 'payment', 'hq_registration', 'station', 'new_station', 'new_station_registration', 'license', 'license_modification', 'deactivation', 'account_deactivation'] as $fallbackType) {
     if (!in_array($fallbackType, $allowedTypes, true)) {
         $allowedTypes[] = $fallbackType;
     }
@@ -104,7 +104,7 @@ FROM system_requests r
 LEFT JOIN users u ON u.user_id = r.submitter_user_id
 SQL;
 
-    if (in_array($requestType, ['account', 'payment'], true)) {
+    if (in_array($requestType, ['account', 'car_license', 'payment'], true)) {
         $requestRows = [];
     } else {
     if ($where) {
@@ -143,9 +143,26 @@ $paymentRows = in_array($requestType, ['', 'payment'], true)
 // available even when the separate system-request registry is unavailable.
 if (hq_db_available() && ($requestType === '' || $requestType === 'account') && ($status === '' || $status === 'pending')) {
     $accountRows = pending_account_rows($search);
+}
+if (hq_db_available() && ($requestType === '' || $requestType === 'car_license') && ($status === '' || $status === 'pending')) {
     $carLicenseRows = pending_car_license_rows($search);
 }
 $paymentReviewByRequest = request_payment_review_map($requestRows);
+
+// The page summary and the unfiltered all-types list must describe the same
+// pending queue. Surface a clear warning and leave a server-side breadcrumb
+// if any row query fails after the aggregate counters succeeded.
+if ($dbError === null && $requestType === '' && $search === '') {
+    $listedPendingRows = count($accountRows) + count($carLicenseRows) + count($requestRows) + count($paymentRows);
+    if ($listedPendingRows !== (int) ($summary['pending'] ?? 0)) {
+        error_log(sprintf(
+            '[Request registry] Pending list mismatch: summary=%d rows=%d',
+            (int) ($summary['pending'] ?? 0),
+            $listedPendingRows
+        ));
+        $dbError = 'Some pending requests could not be loaded. Refresh the page or check the server log for the affected request type.';
+    }
+}
 
 $flashType = $flash['type'] ?? '';
 ?>
@@ -390,14 +407,16 @@ $flashType = $flash['type'] ?? '';
                 <?php if (!$accountRows && !$carLicenseRows && !$requestRows && !$paymentRows): ?><tr><td colspan="6" class="text-center text-white-50 py-5"><i class="bi bi-inbox fs-3 d-block mb-2"></i>No requests match the current filter.</td></tr><?php endif; ?>
                 <?php foreach ($accountRows as $row): ?>
                     <?php
-                    $roleName = (string) ($row['role_name'] ?? 'User');
-                    $isHq = in_array(strtolower(trim($roleName)), ['hq', 'headquarter', 'headquarters'], true);
-                    $sender = $isHq ? (string) ($row['headquarter_name'] ?: $row['user_name']) : (string) ($row['user_name'] ?: 'Unknown user');
+                    $roleName = (string) ($row['role_name'] ?? '');
+                    $normalizedRoleName = strtolower(trim($roleName));
+                    $isCompany = in_array($normalizedRoleName, ['hq', 'headquarter', 'headquarters', 'company'], true);
+                    $entityLabel = $isCompany ? 'Company' : (in_array($normalizedRoleName, ['customer', 'driver'], true) ? 'Driver' : 'Account');
+                    $sender = $isCompany ? (string) ($row['headquarter_name'] ?: $row['user_name']) : (string) ($row['user_name'] ?: 'Unknown account');
                     ?>
                     <tr>
                         <td class="fw-bold txt-neon-cyan">#ACCT-<?= (int) $row['user_id'] ?></td>
                         <td><div class="fw-semibold text-white"><?= hq_escape($sender) ?></div><div class="text-white-50 small" style="font-size:.8rem;"><?= hq_escape((string) ($row['email'] ?? 'No email')) ?></div></td>
-                        <td><span class="badge rounded-pill bg-info bg-opacity-10 text-info border border-info border-opacity-25 px-2 py-1">Account Verification</span><?php if ((int) ($row['license_conflict_count'] ?? 0) > 0): ?><span class="badge bg-warning text-dark ms-1">Duplicate license</span><?php endif; ?></td>
+                        <td><span class="badge rounded-pill bg-info bg-opacity-10 text-info border border-info border-opacity-25 px-2 py-1"><?= hq_escape($entityLabel) ?> Verification</span><?php if ((int) ($row['license_conflict_count'] ?? 0) > 0): ?><span class="badge bg-warning text-dark ms-1">Duplicate license</span><?php endif; ?></td>
                         <td class="text-white-50"><?= hq_escape(request_date($row['created_at'])) ?></td>
                         <td><span class="request-status request-status-pending">Pending</span></td>
                         <td class="text-end"><div class="d-flex gap-2 justify-content-end">
@@ -428,7 +447,7 @@ $flashType = $flash['type'] ?? '';
                         <td><span class="request-status <?= request_status_class($rowStatus) ?>"><?= hq_escape($requestStatusLabel($rowStatus)) ?></span><?php if (strtolower((string) $row['request_type']) === 'hq_registration'): ?><div class="mt-1"><span class="badge rounded-pill <?= $paymentState === 'received' ? 'bg-success' : ($paymentState === 'payer_reported_paid' ? 'bg-warning text-dark' : 'bg-secondary') ?>"><?= hq_escape(match ($paymentState) { 'received' => 'Payment received', 'payer_reported_paid' => 'Payment needs verification', 'rejected' => 'Payment not received', 'cancelled' => 'Payment cancelled', 'pending_payment' => 'Awaiting payer', default => 'Payment record missing' }) ?></span></div><?php endif; ?></td>
                         <td class="text-end"><div class="d-flex gap-2 justify-content-end">
                             <button type="button" class="btn-action js-view-request" title="View Request Details" aria-label="View request <?= hq_escape($row['reference_code']) ?> details" data-request-id="<?= (int) $row['request_id'] ?>"><i class="bi bi-eye-fill"></i></button>
-                            <?php if (strtolower($rowStatus) === 'pending'): ?><a href="#" class="btn-action btn-action-success js-request-approve" title="<?= $requiresRegistrationPayment ? 'Approve HQ; verify payment afterward' : 'Approve request' ?>" aria-label="Approve request <?= hq_escape($row['reference_code']) ?>" data-request-id="<?= (int) $row['request_id'] ?>" data-reference="<?= hq_escape($row['reference_code']) ?>"><i class="bi bi-check-lg"></i></a><a href="#" class="btn-action btn-action-danger js-request-reject" title="Reject" aria-label="Reject request <?= hq_escape($row['reference_code']) ?>" data-request-id="<?= (int) $row['request_id'] ?>" data-reference="<?= hq_escape($row['reference_code']) ?>" data-sender="<?= hq_escape($sender) ?>"><i class="bi bi-x-lg"></i></a><?php endif; ?>
+                            <?php if (strtolower($rowStatus) === 'pending'): ?><a href="#" class="btn-action btn-action-success js-request-approve" title="<?= $requiresRegistrationPayment ? 'Approve company; verify payment afterward' : 'Approve request' ?>" aria-label="Approve request <?= hq_escape($row['reference_code']) ?>" data-request-id="<?= (int) $row['request_id'] ?>" data-reference="<?= hq_escape($row['reference_code']) ?>"><i class="bi bi-check-lg"></i></a><a href="#" class="btn-action btn-action-danger js-request-reject" title="Reject" aria-label="Reject request <?= hq_escape($row['reference_code']) ?>" data-request-id="<?= (int) $row['request_id'] ?>" data-reference="<?= hq_escape($row['reference_code']) ?>" data-sender="<?= hq_escape($sender) ?>"><i class="bi bi-x-lg"></i></a><?php endif; ?>
                         </div></td>
                     </tr>
                 <?php endforeach; ?>
@@ -438,19 +457,19 @@ $flashType = $flash['type'] ?? '';
                     $paymentState = (string) $paymentRow['status'];
                     $paymentStatus = 'pending';
                     $paymentStatusLabel = 'Pending';
-                    $paymentTypeLabel = match ((string) $paymentRow['payment_type']) { 'hq_registration' => 'HQ Registration Payment', 'hq_period_extension' => 'HQ Service Extension', 'hq_station_package' => 'HQ Station Package', 'hq_extra_station' => 'Extra Stations (legacy)', 'hq_station_operating_quote' => 'Station Operating Fee (legacy)', default => 'Payment' };
+                    $paymentTypeLabel = match ((string) $paymentRow['payment_type']) { 'hq_registration' => 'Company Registration Payment', 'hq_period_extension' => 'Company Service Extension', 'hq_station_package' => 'Company Station Package', 'hq_extra_station' => 'Extra Stations (legacy)', 'hq_station_operating_quote' => 'Station Operating Fee (legacy)', default => 'Payment' };
                     $isPayer = ((int) ($paymentRow['payer_user_id'] ?? 0) === (int) ($_SESSION['user_id'] ?? 0)) || (strtolower((string) ($_SESSION['user_email'] ?? '')) !== '' && strtolower((string) ($_SESSION['user_email'] ?? '')) === strtolower((string) ($paymentRow['payer_email'] ?? '')));
                     ?>
                     <tr>
                         <td class="fw-bold txt-neon-cyan">#PAY-<?= $paymentId ?></td>
-                        <td><div class="fw-semibold text-white"><?= hq_escape((string) ($paymentRow['payer_hq_name'] ?: $paymentRow['payer_name'] ?: 'HQ payer')) ?></div><div class="text-white-50 small"><?= hq_escape((string) ($paymentRow['description'] ?? '')) ?></div><div class="text-white-50 small"><?= number_format((float) $paymentRow['amount_mmk'], 2) ?> MMK · <?= hq_escape((string) ($paymentRow['payer_email'] ?? '')) ?></div></td>
+                        <td><div class="fw-semibold text-white"><?= hq_escape((string) ($paymentRow['payer_hq_name'] ?: $paymentRow['payer_name'] ?: 'Company payer')) ?></div><div class="text-white-50 small"><?= hq_escape((string) ($paymentRow['description'] ?? '')) ?></div><div class="text-white-50 small"><?= number_format((float) $paymentRow['amount_mmk'], 2) ?> MMK · <?= hq_escape((string) ($paymentRow['payer_email'] ?? '')) ?></div></td>
                         <td><span class="badge rounded-pill bg-info bg-opacity-10 text-info border border-info border-opacity-25 px-2 py-1">Payment Verification</span><div class="text-white-50 small mt-1"><?= hq_escape($paymentTypeLabel) ?></div></td>
                         <td class="text-white-50"><?= hq_escape(request_date((string) $paymentRow['created_at'])) ?></td>
                         <td><span class="request-status <?= request_status_class($paymentStatus) ?>"><?= hq_escape($paymentStatusLabel) ?></span></td>
                         <td class="text-end"><div class="d-flex gap-2 justify-content-end align-items-center">
                             <button type="button" class="btn-action js-view-payment" title="View payment verification details" aria-label="View payment verification #PAY-<?= $paymentId ?> details"
                                 data-payment-id="<?= $paymentId ?>" data-payment-type="<?= hq_escape($paymentTypeLabel) ?>"
-                                data-payment-status="<?= hq_escape($paymentState) ?>" data-payment-name="<?= hq_escape((string) ($paymentRow['payer_hq_name'] ?: $paymentRow['payer_name'] ?: 'HQ payer')) ?>"
+                                data-payment-status="<?= hq_escape($paymentState) ?>" data-payment-name="<?= hq_escape((string) ($paymentRow['payer_hq_name'] ?: $paymentRow['payer_name'] ?: 'Company payer')) ?>"
                                 data-payment-email="<?= hq_escape((string) ($paymentRow['payer_email'] ?? '')) ?>" data-payment-description="<?= hq_escape((string) ($paymentRow['description'] ?? '')) ?>"
                                 data-payment-amount="<?= hq_escape(number_format((float) $paymentRow['amount_mmk'], 2)) ?>" data-payment-date="<?= hq_escape(request_date((string) $paymentRow['created_at'])) ?>"
                                 data-payment-method="<?= hq_escape((string) ($paymentRow['payment_method'] ?? 'Not provided')) ?>" data-receipt-name="<?= hq_escape((string) ($paymentRow['receipt_name'] ?? '')) ?>"
@@ -522,9 +541,9 @@ $flashType = $flash['type'] ?? '';
             };
             const licenseConflictMarkup = (current, conflicts) => {
                 if (!current || !Array.isArray(conflicts) || !conflicts.length) return '';
-                const recordCard = (title, record, currentRecord = false) => '<div class="col-12 col-lg-6"><section class="acct-section h-100"><div class="acct-section-title">' + escapeHtml(title) + '</div>' + fieldRow('bi-person', 'Customer', escapeHtml(record.user_name || 'Unknown')) + fieldRow('bi-envelope', 'Email', escapeHtml(record.email || 'Not provided')) + fieldRow('bi-hash', 'License number', escapeHtml(record.license_number || 'Not provided')) + fieldRow('bi-card-checklist', 'Decision status', escapeHtml(currentRecord ? (record.status || 'pending') : (record.license_status || 'pending'))) + '<div class="request-detail-label mb-2">License and face images</div><div class="acct-doc-grid">' + docCard(record.license_image, 'License image', 'bi-card-image') + docCard(record.face_image, 'Face image', 'bi-person-bounding-box') + '</div></section></div>';
+                const recordCard = (title, record, currentRecord = false) => '<div class="col-12 col-lg-6"><section class="acct-section h-100"><div class="acct-section-title">' + escapeHtml(title) + '</div>' + fieldRow('bi-person', 'Driver', escapeHtml(record.user_name || 'Unknown')) + fieldRow('bi-envelope', 'Email', escapeHtml(record.email || 'Not provided')) + fieldRow('bi-hash', 'License number', escapeHtml(record.license_number || 'Not provided')) + fieldRow('bi-card-checklist', 'Decision status', escapeHtml(currentRecord ? (record.status || 'pending') : (record.license_status || 'pending'))) + '<div class="request-detail-label mb-2">License and face images</div><div class="acct-doc-grid">' + docCard(record.license_image, 'License image', 'bi-card-image') + docCard(record.face_image, 'Face image', 'bi-person-bounding-box') + '</div></section></div>';
                 const comparisons = conflicts.map((record) => recordCard('Matching record · ACCT-' + record.user_id, record)).join('');
-                const decisions = '<form action="license_conflict_action.php" method="POST" class="acct-section mt-3" data-license-conflict-form><input type="hidden" name="license_type" value="driver"><input type="hidden" name="record_id" value="' + escapeHtml(current.license_id) + '"><label class="form-label text-white-50 small" for="driver-license-decision">Decision for matching licenses</label><select class="form-select glass-select" id="driver-license-decision" name="decision" data-conflict-decision><option value="allow_all">Allow all matching licenses</option><option value="block_current">Block this license; allow the other matches</option><option value="block_all">Block all matching licenses</option></select><div class="mt-3" data-conflict-reason hidden><label class="form-label text-white-50 small" for="driver-license-reason">Reason required for blocking</label><textarea class="form-control glass-input" id="driver-license-reason" name="reason" rows="3" maxlength="2000" placeholder="Explain why the duplicate license record(s) are blocked."></textarea></div><button type="submit" class="btn btn-warning mt-3">Confirm license decision and notify users</button></form>';
+                const decisions = '<form action="license_conflict_action.php" method="POST" class="acct-section mt-3" data-license-conflict-form><input type="hidden" name="license_type" value="driver"><input type="hidden" name="record_id" value="' + escapeHtml(current.license_id) + '"><label class="form-label text-white-50 small" for="driver-license-decision">Decision for matching licenses</label><select class="form-select glass-select" id="driver-license-decision" name="decision" data-conflict-decision><option value="allow_all">Allow all matching licenses</option><option value="block_current">Block this license; allow the other matches</option><option value="block_all">Block all matching licenses</option></select><div class="mt-3" data-conflict-reason hidden><label class="form-label text-white-50 small" for="driver-license-reason">Reason required for blocking</label><textarea class="form-control glass-input" id="driver-license-reason" name="reason" rows="3" maxlength="2000" placeholder="Explain why the duplicate license record(s) are blocked."></textarea></div><button type="submit" class="btn btn-warning mt-3">Confirm license decision and notify affected drivers</button></form>';
                 return '<div class="alert alert-warning d-flex align-items-center justify-content-between gap-3 flex-wrap"><span><i class="bi bi-exclamation-triangle-fill me-2"></i>Same driver-license number found on ' + conflicts.length + ' other record(s). You can decide each matching set independently.</span><button type="button" class="btn btn-sm btn-outline-warning" data-license-compare-toggle aria-expanded="false"><i class="bi bi-layout-split me-1"></i>Compare</button></div><div data-license-comparison hidden><div class="row g-3">' + recordCard('Current · ACCT-' + current.user_id, current, true) + comparisons + '</div>' + decisions + '</div>';
             };
             const markUnavailableDocImages = (root) => root.querySelectorAll('img.acct-doc-thumb').forEach((image) => {
@@ -623,7 +642,7 @@ $flashType = $flash['type'] ?? '';
                 const button = event.target.closest('.js-view-account-request');
                 if (!button) return;
                     event.preventDefault();
-                    detailsTitle.innerHTML = '<i class="bi bi-person-check txt-neon-cyan me-2"></i> Account Verification';
+                    detailsTitle.innerHTML = '<i class="bi bi-person-check txt-neon-cyan me-2"></i> User Account Verification';
                     detailsBody.innerHTML = '<div class="text-center text-white-50 py-5"><div class="spinner-border spinner-border-sm txt-neon-cyan mb-2" role="status"></div><div>Loading account details…</div></div>';
                     setFooter();
                     detailsModal.show();
@@ -642,7 +661,9 @@ $flashType = $flash['type'] ?? '';
                             : '';
                         const label = 'ACCT-' + escapeHtml(u.user_id || button.dataset.userId);
                         detailsTitle.innerHTML = '<i class="bi bi-person-check txt-neon-cyan me-2"></i> Account ' + label;
-                        const roleName = escapeHtml(u.role_name || 'User');
+                        const roleNameSource = String(u.role_name || '');
+                        const normalizedRoleName = roleNameSource.trim().toLowerCase();
+                        const roleName = escapeHtml(['customer', 'driver'].includes(normalizedRoleName) ? 'Driver' : (['hq', 'headquarter', 'headquarters', 'company'].includes(normalizedRoleName) ? 'Company' : (roleNameSource || 'Account')));
                         const isPending = String((u.status || 'pending')).toLowerCase() !== 'approved';
                         const profileHeader = '<div class="acct-profile-header"><div class="acct-avatar">' + escapeHtml(initialsOf(u.user_name || u.email || 'U')) + '</div><div class="acct-profile-meta"><div class="acct-profile-name">' + escapeHtml(u.user_name || 'Unnamed account') + '</div><div class="acct-profile-sub"><i class="bi bi-envelope me-1"></i>' + escapeHtml(u.email || 'No email on file') + '</div><div class="d-flex gap-2 flex-wrap mt-2"><span class="acct-badge acct-badge-role"><i class="bi bi-person-badge"></i>' + roleName + '</span>' + (isPending ? '<span class="acct-badge acct-badge-pending"><i class="bi bi-hourglass-split"></i>Pending Verification</span>' : '') + '</div></div></div>';
 
@@ -650,7 +671,7 @@ $flashType = $flash['type'] ?? '';
 
                         const verificationSection = '<div class="acct-section"><div class="acct-section-title"><i class="bi bi-patch-check"></i>Verification Status</div>' + fieldRow('bi-person-check', 'Account Status', '<span class="request-status request-status-pending">Pending Verification</span>') + fieldRow('bi-card-checklist', 'License Status', '<span class="request-status ' + statusClass((l && l.status) || 'pending') + '">' + escapeHtml(statusLabel((l && l.status) || 'pending')) + '</span>') + '</div>';
 
-                        const licenseBlock = l ? '<div class="acct-section"><div class="acct-section-title"><i class="bi bi-card-heading"></i>Customer License Details</div><div class="row g-3">' +
+                        const licenseBlock = l ? '<div class="acct-section"><div class="acct-section-title"><i class="bi bi-card-heading"></i>Driver License Details</div><div class="row g-3">' +
                             '<div class="col-12 col-md-6">' + fieldRow('bi-hash', 'License Number', escapeHtml(l.license_number || 'Not provided')) + '</div>' +
                             '<div class="col-12 col-md-6">' + fieldRow('bi-person-lines-fill', 'License Name', escapeHtml(l.license_name || 'Not provided')) + '</div>' +
                             '<div class="col-12 col-md-6">' + fieldRow('bi-telephone', 'Phone', escapeHtml(l.phone_number || 'Not provided')) + '</div>' +
@@ -663,7 +684,7 @@ $flashType = $flash['type'] ?? '';
 
                         const companyBlock = h ? '<div class="acct-section"><div class="acct-section-title"><i class="bi bi-building"></i>Company Details</div><div class="row g-3">' +
                             '<div class="col-12 col-md-6">' + fieldRow('bi-building', 'Company', escapeHtml(h.company_name || u.headquarter_name || 'Not provided')) + '</div>' +
-                            '<div class="col-12 col-md-6">' + fieldRow('bi-envelope', 'HQ Email', escapeHtml(h.headquarter_email || 'Not provided')) + '</div>' +
+                            '<div class="col-12 col-md-6">' + fieldRow('bi-envelope', 'Company email', escapeHtml(h.headquarter_email || 'Not provided')) + '</div>' +
                             '<div class="col-12 col-md-6">' + fieldRow('bi-telephone-outbound', 'Contact', escapeHtml(h.contact_number || 'Not provided')) + '</div>' +
                             '<div class="col-12 col-md-6">' + fieldRow('bi-geo-alt', 'Location', escapeHtml(h.location || u.headquarter_location || 'Not provided')) + '</div>' +
                             '<div class="col-12 col-md-6">' + fieldRow('bi-file-earmark-ruled', 'Business License', escapeHtml(h.business_license || 'Not provided')) + '</div>' +
@@ -714,13 +735,13 @@ $flashType = $flash['type'] ?? '';
                     if (!response.ok || !payload.success) throw new Error(payload.message || 'Could not load car-license details.');
                     const car = payload.car || {};
                     const conflicts = payload.conflicts || [];
-                    const owners = (items) => (items || []).map((owner) => escapeHtml(owner.user_name || 'Unknown') + ' (' + escapeHtml(owner.email || 'No email') + ')').join('<br>') || '<span class="text-white-50">No linked customer</span>';
-                    const card = (title, record, ownerList = []) => '<div class="col-12 col-lg-6"><section class="acct-section h-100"><div class="acct-section-title">' + escapeHtml(title) + '</div>' + fieldRow('bi-person', 'Customer account(s)', owners(ownerList)) + fieldRow('bi-person-vcard', 'Registered owner', escapeHtml(record.car_owner_name || 'Not provided')) + fieldRow('bi-hash', 'Plate number', escapeHtml(record.car_plate_number || 'Not provided')) + fieldRow('bi-car-front', 'Vehicle', escapeHtml([record.vehicle_name, record.vehicle_type].filter(Boolean).join(' · ') || 'Not provided')) + fieldRow('bi-upc-scan', 'Chassis number', escapeHtml(record.chassis_number || 'Not provided')) + fieldRow('bi-card-checklist', 'Status', escapeHtml(record.status || 'pending')) + '<div class="request-detail-label mb-2">License images</div><div class="acct-doc-grid">' + docCard(record.front_image, 'Front image', 'bi-card-image') + docCard(record.back_image, 'Back image', 'bi-card-image') + '</div></section></div>';
-                    const decisionForm = '<form action="license_conflict_action.php" method="POST" class="acct-section mt-3" data-conflict-decision-form><input type="hidden" name="license_type" value="car"><input type="hidden" name="record_id" value="' + escapeHtml(car.car_license_id) + '"><label class="form-label text-white-50 small" for="car-license-decision">Decision for matching plates</label><select class="form-select glass-select" id="car-license-decision" name="decision" data-conflict-decision><option value="allow_all">Allow all matching plates</option><option value="block_current">Block this plate; allow the other matches</option><option value="block_all">Block all matching plates</option></select><div class="mt-3" data-conflict-reason hidden><label class="form-label text-white-50 small" for="car-license-reason">Reason required for blocking</label><textarea class="form-control glass-input" id="car-license-reason" name="reason" rows="3" maxlength="2000" placeholder="Explain why the duplicate car-license record(s) are blocked."></textarea></div><button type="submit" class="btn btn-warning mt-3">Confirm license decision and notify users</button></form>';
+                    const owners = (items) => (items || []).map((owner) => escapeHtml(owner.user_name || 'Unknown') + ' (' + escapeHtml(owner.email || 'No email') + ')').join('<br>') || '<span class="text-white-50">No linked driver</span>';
+                    const card = (title, record, ownerList = []) => '<div class="col-12 col-lg-6"><section class="acct-section h-100"><div class="acct-section-title">' + escapeHtml(title) + '</div>' + fieldRow('bi-person', 'Driver account(s)', owners(ownerList)) + fieldRow('bi-person-vcard', 'Registered owner', escapeHtml(record.car_owner_name || 'Not provided')) + fieldRow('bi-hash', 'Plate number', escapeHtml(record.car_plate_number || 'Not provided')) + fieldRow('bi-car-front', 'Vehicle', escapeHtml([record.vehicle_name, record.vehicle_type].filter(Boolean).join(' · ') || 'Not provided')) + fieldRow('bi-upc-scan', 'Chassis number', escapeHtml(record.chassis_number || 'Not provided')) + fieldRow('bi-card-checklist', 'Status', escapeHtml(record.status || 'pending')) + '<div class="request-detail-label mb-2">License images</div><div class="acct-doc-grid">' + docCard(record.front_image, 'Front image', 'bi-card-image') + docCard(record.back_image, 'Back image', 'bi-card-image') + '</div></section></div>';
+                    const decisionForm = '<form action="license_conflict_action.php" method="POST" class="acct-section mt-3" data-conflict-decision-form><input type="hidden" name="license_type" value="car"><input type="hidden" name="record_id" value="' + escapeHtml(car.car_license_id) + '"><label class="form-label text-white-50 small" for="car-license-decision">Decision for matching plates</label><select class="form-select glass-select" id="car-license-decision" name="decision" data-conflict-decision><option value="allow_all">Allow all matching plates</option><option value="block_current">Block this plate; allow the other matches</option><option value="block_all">Block all matching plates</option></select><div class="mt-3" data-conflict-reason hidden><label class="form-label text-white-50 small" for="car-license-reason">Reason required for blocking</label><textarea class="form-control glass-input" id="car-license-reason" name="reason" rows="3" maxlength="2000" placeholder="Explain why the duplicate car-license record(s) are blocked."></textarea></div><button type="submit" class="btn btn-warning mt-3">Confirm license decision and notify affected drivers</button></form>';
                     const conflictMarkup = conflicts.length
                         ? '<div class="alert alert-warning d-flex align-items-center justify-content-between gap-3 flex-wrap"><span><i class="bi bi-exclamation-triangle-fill me-2"></i>Same normalized plate found on ' + conflicts.length + ' other record(s).</span><button type="button" class="btn btn-sm btn-outline-warning" data-car-compare-toggle aria-expanded="false"><i class="bi bi-layout-split me-1"></i>Compare</button></div><div data-car-comparison hidden><div class="row g-3">' + card('Current · CAR-' + car.car_license_id, car, car.owners) + conflicts.map((match) => card('Matching record · CAR-' + match.car_license_id, match, match.user_id ? [{ user_id: match.user_id, user_name: match.user_name, email: match.email }] : [])).join('') + '</div>' + decisionForm + '</div>'
                         : '<div class="alert alert-success">No matching plate records found.</div>';
-                    detailsBody.innerHTML = '<div class="acct-section">' + fieldRow('bi-hash', 'Plate number', escapeHtml(car.car_plate_number || '')) + fieldRow('bi-person', 'Customer account(s)', owners(car.owners)) + fieldRow('bi-calendar', 'Submitted', escapeHtml(formatDate(car.created_at))) + '</div>' + conflictMarkup;
+                    detailsBody.innerHTML = '<div class="acct-section">' + fieldRow('bi-hash', 'Plate number', escapeHtml(car.car_plate_number || '')) + fieldRow('bi-person', 'Driver account(s)', owners(car.owners)) + fieldRow('bi-calendar', 'Submitted', escapeHtml(formatDate(car.created_at))) + '</div>' + conflictMarkup;
                     detailsBody.querySelector('[data-car-compare-toggle]')?.addEventListener('click', (compareEvent) => {
                         const compareButton = compareEvent.currentTarget;
                         const comparison = detailsBody.querySelector('[data-car-comparison]');
@@ -783,7 +804,7 @@ $flashType = $flash['type'] ?? '';
                     : (data.paymentStatus === 'payer_reported_paid'
                         ? 'Payer reported paid · Awaiting independent verification'
                         : (data.paymentStatus === 'received' ? 'Payment received' : 'Payment not received'));
-                body.innerHTML = '<div class="row g-4"><div class="col-12 col-lg-5"><h6 class="fw-semibold text-white mb-3" style="letter-spacing:.5px;font-size:.78rem;text-transform:uppercase">Payment Information</h6><div class="mb-3"><div class="request-detail-label">Payer / HQ</div><div class="request-detail-value">' + escape(data.paymentName) + '</div></div><div class="mb-3"><div class="request-detail-label">Email</div><div class="request-detail-value">' + escape(data.paymentEmail || 'Not provided') + '</div></div><div class="mb-3"><div class="request-detail-label">Payment Type</div><div class="request-detail-value">' + escape(data.paymentType) + '</div></div><div class="mb-3"><div class="request-detail-label">Amount</div><div class="request-detail-value">' + escape(data.paymentAmount) + ' MMK</div></div><div class="mb-3"><div class="request-detail-label">Payment Method</div><div class="request-detail-value">' + escape(data.paymentMethod || 'Not provided') + '</div></div><div class="mb-3"><div class="request-detail-label">Submitted</div><div class="request-detail-value">' + escape(data.paymentDate) + '</div></div><div class="mb-3"><div class="request-detail-label">Status</div><div class="request-detail-value">' + escape(statusLabel) + '</div></div><div class="mb-3"><div class="request-detail-label">Description</div><div class="request-detail-value">' + escape(data.paymentDescription || 'No additional details provided.') + '</div></div></div><div class="col-12 col-lg-7"><h6 class="fw-semibold text-white mb-3" style="letter-spacing:.5px;font-size:.78rem;text-transform:uppercase">Payment Evidence</h6><div class="request-detail-value p-3 rounded-3" style="background:rgba(0,244,255,.04);border:1px solid var(--glass-border);min-height:220px">' + evidence + '</div><div class="small text-white-50 mt-2">A payer declaration or screenshot is evidence for review, not proof of received money.</div></div></div>';
+                body.innerHTML = '<div class="row g-4"><div class="col-12 col-lg-5"><h6 class="fw-semibold text-white mb-3" style="letter-spacing:.5px;font-size:.78rem;text-transform:uppercase">Payment Information</h6><div class="mb-3"><div class="request-detail-label">Payer / Company</div><div class="request-detail-value">' + escape(data.paymentName) + '</div></div><div class="mb-3"><div class="request-detail-label">Email</div><div class="request-detail-value">' + escape(data.paymentEmail || 'Not provided') + '</div></div><div class="mb-3"><div class="request-detail-label">Payment Type</div><div class="request-detail-value">' + escape(data.paymentType) + '</div></div><div class="mb-3"><div class="request-detail-label">Amount</div><div class="request-detail-value">' + escape(data.paymentAmount) + ' MMK</div></div><div class="mb-3"><div class="request-detail-label">Payment Method</div><div class="request-detail-value">' + escape(data.paymentMethod || 'Not provided') + '</div></div><div class="mb-3"><div class="request-detail-label">Submitted</div><div class="request-detail-value">' + escape(data.paymentDate) + '</div></div><div class="mb-3"><div class="request-detail-label">Status</div><div class="request-detail-value">' + escape(statusLabel) + '</div></div><div class="mb-3"><div class="request-detail-label">Description</div><div class="request-detail-value">' + escape(data.paymentDescription || 'No additional details provided.') + '</div></div></div><div class="col-12 col-lg-7"><h6 class="fw-semibold text-white mb-3" style="letter-spacing:.5px;font-size:.78rem;text-transform:uppercase">Payment Evidence</h6><div class="request-detail-value p-3 rounded-3" style="background:rgba(0,244,255,.04);border:1px solid var(--glass-border);min-height:220px">' + evidence + '</div><div class="small text-white-50 mt-2">A payer declaration or screenshot is evidence for review, not proof of received money.</div></div></div>';
                 const actions = document.getElementById('paymentActions' + data.paymentId);
                 footer.innerHTML = (actions ? actions.innerHTML : (data.paymentStatus === 'payer_reported_paid' && data.isPayer === 'yes' ? '<div class="small text-warning me-auto">You submitted this payment. Another Admin must review it.</div>' : '')) + '<button type="button" class="btn btn-outline-secondary rounded-3 text-white-50 border-secondary border-opacity-20" data-bs-dismiss="modal">Close</button>';
                 modal.show();

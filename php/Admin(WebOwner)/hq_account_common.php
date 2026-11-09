@@ -17,10 +17,10 @@ function hq_db_error_message(): string
     global $conn;
 
     if (!$conn instanceof mysqli || $conn->connect_errno) {
-        return 'The HQ registry is temporarily unavailable because the database connection could not be established.';
+        return 'The company registry is temporarily unavailable because the database connection could not be established.';
     }
 
-    return 'The requested HQ operation could not be completed.';
+    return 'The requested company operation could not be completed.';
 }
 
 function hq_escape(?string $value): string
@@ -150,7 +150,7 @@ function hq_initials(string $name): string
         $initials .= strtoupper(substr($part, 0, 1));
     }
 
-    return $initials ?: 'HQ';
+    return $initials ?: 'CO';
 }
 
 function hq_bind(mysqli_stmt $statement, string $types, array &$params): bool

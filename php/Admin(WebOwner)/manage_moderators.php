@@ -347,7 +347,7 @@ $flashType = (string) ($flash['type'] ?? '');
                     $roleName = (string) ($row['role_name'] ?? '');
                     ?>
                     <tr>
-                        <td><div class="d-flex align-items-center gap-3"><div class="rounded-circle d-flex align-items-center justify-content-center text-white" style="width:42px;height:42px;background:rgba(0,244,255,.1);border:1px solid rgba(0,244,255,.3);flex-shrink:0;"><i class="bi bi-person-badge txt-neon-cyan"></i></div><div><div class="fw-semibold text-white"><?= hq_escape((string) $row['user_name']) ?></div><div class="text-white-50 small">User ID <?= (int) $row['user_id'] ?></div></div></div></td>
+                        <td><div class="d-flex align-items-center gap-3"><div class="rounded-circle d-flex align-items-center justify-content-center text-white" style="width:42px;height:42px;background:rgba(0,244,255,.1);border:1px solid rgba(0,244,255,.3);flex-shrink:0;"><i class="bi bi-person-badge txt-neon-cyan"></i></div><div><div class="fw-semibold text-white"><?= hq_escape((string) $row['user_name']) ?></div><div class="text-white-50 small">Account ID <?= (int) $row['user_id'] ?></div></div></div></td>
                         <td class="text-white-50"><?= hq_escape((string) $row['email']) ?></td>
                         <td><span class="moderator-role <?= hq_escape(moderator_role_class($roleName)) ?>"><?= hq_escape(moderator_role_label($roleName)) ?></span></td>
                         <td class="text-white-50"><?= hq_escape(hq_date((string) ($row['updated_at'] ?? ''))) ?></td>
@@ -419,7 +419,7 @@ $flashType = (string) ($flash['type'] ?? '');
                                 <label class="form-label text-white-50 small" for="hireAccountSearch">Search by name or email <span class="text-danger">*</span></label>
                                 <input id="hireAccountSearch" type="search" class="form-control glass-input" placeholder="Search accounts by name or email…" autocomplete="off" aria-controls="hireSearchResults">
                                 <div id="hireSearchResults" class="moderator-search-results">
-                                    <div class="table-responsive"><table class="table table-dark-custom align-middle m-0"><thead><tr><th>User Account</th><th>Email</th><th>HQ</th><th>Role</th></tr></thead><tbody id="hireAccountsBody"><tr><td colspan="4" class="text-center text-white-50 py-4">Loading accounts…</td></tr></tbody></table></div>
+                                    <div class="table-responsive"><table class="table table-dark-custom align-middle m-0"><thead><tr><th>Account</th><th>Email</th><th>Company</th><th>Role</th></tr></thead><tbody id="hireAccountsBody"><tr><td colspan="4" class="text-center text-white-50 py-4">Loading accounts…</td></tr></tbody></table></div>
                                 </div>
                                 <div id="hireSelectedChip" class="moderator-selected-chip" aria-live="polite">
                                     <i class="bi bi-person-check txt-neon-cyan"></i>
@@ -518,10 +518,17 @@ $flashType = (string) ($flash['type'] ?? '');
                 if (!user || !targetInput) return;
                 targetInput.value = String(user.user_id || '');
                 if (selectedLabel) {
-                    selectedLabel.textContent = `${user.user_name || 'User'} · ${user.email || ''} (${user.role_name || 'role'})`;
+                    selectedLabel.textContent = `${user.user_name || 'Account'} · ${user.email || ''} (${displayAccountRole(user.role_name)})`;
                 }
                 selectedChip?.classList.add('show');
                 resultsBox?.querySelectorAll('tbody tr').forEach((row) => row.classList.toggle('is-selected', row.dataset.userId === String(user.user_id)));
+            }
+
+            function displayAccountRole(roleName) {
+                const normalizedRoleName = String(roleName || '').trim().toLowerCase();
+                if (['customer', 'driver'].includes(normalizedRoleName)) return 'Driver';
+                if (['hq', 'headquarter', 'headquarters', 'company'].includes(normalizedRoleName)) return 'Company';
+                return roleName || 'Account';
             }
 
             function renderAccounts() {
@@ -537,7 +544,8 @@ $flashType = (string) ($flash['type'] ?? '');
                     const tr = document.createElement('tr');
                     tr.dataset.userId = String(row.user_id || '');
                     if (targetInput?.value === String(row.user_id)) tr.classList.add('is-selected');
-                    tr.innerHTML = `<td><div class="d-flex align-items-center gap-3"><div class="rounded-3 d-flex align-items-center justify-content-center fw-bold" style="width:44px;height:44px;background:rgba(0,244,255,.1);border:1px solid rgba(0,244,255,.28);color:var(--neon-cyan)">${escapeHtml(row.initials || 'U')}</div><div><div class="fw-semibold text-white">${escapeHtml(row.user_name || 'Unnamed User')}</div><div class="text-white-50 small">User ID: ${escapeHtml(row.user_id || '')}</div></div></div></td><td class="text-white-50">${escapeHtml(row.email || 'No email')}</td><td class="text-white-50">${escapeHtml(row.hq_name || 'No HQ linked')}</td><td class="text-white-50">${escapeHtml(row.role_name || 'Customer')}</td>`;
+                    const displayRole = displayAccountRole(row.role_name);
+                    tr.innerHTML = `<td><div class="d-flex align-items-center gap-3"><div class="rounded-3 d-flex align-items-center justify-content-center fw-bold" style="width:44px;height:44px;background:rgba(0,244,255,.1);border:1px solid rgba(0,244,255,.28);color:var(--neon-cyan)">${escapeHtml(row.initials || 'A')}</div><div><div class="fw-semibold text-white">${escapeHtml(row.user_name || 'Unnamed account')}</div><div class="text-white-50 small">Account ID: ${escapeHtml(row.user_id || '')}</div></div></div></td><td class="text-white-50">${escapeHtml(row.email || 'No email')}</td><td class="text-white-50">${escapeHtml(row.hq_name || 'No company linked')}</td><td class="text-white-50">${escapeHtml(displayRole)}</td>`;
                     tr.addEventListener('click', () => selectHireTarget(row));
                     accountsBody.appendChild(tr);
                 });

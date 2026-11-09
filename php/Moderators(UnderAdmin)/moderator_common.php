@@ -13,10 +13,9 @@ function moderator_require_user(): array
     }
 
     $user = admin_current_user(false);
-    $role = strtolower(trim((string) ($user['role_name'] ?? '')));
     $status = strtolower(trim((string) ($user['status'] ?? '')));
 
-    if (!$user || $role !== 'moderator' || !in_array($status, ['approved', 'active'], true)) {
+    if (!$user || !admin_user_has_role($user, ['moderator']) || !in_array($status, ['approved', 'active'], true)) {
         header('Location: ../Login/login.php');
         exit;
     }
@@ -92,10 +91,10 @@ function moderator_hq_rows(string $search, string $region, string $status, strin
         return $rows;
     }
 
-    // Do not hide historic HQ records solely because their owner was not linked.
-    // Keep unlinked HQ records visible and classify them as pending below.
+    // HQ entities are listed independently from an owner's role/status. Keep
+    // historic and custom-status records visible unless a status filter is set.
     $hqStateSql = "COALESCE(NULLIF(h.status, ''), COALESCE(owner.status, 'pending'))";
-    $where = ['(owner.user_id IS NULL OR ' . hq_manageable_status_sql($hqStateSql) . ')'];
+    $where = [];
     $params = [];
     $types = '';
     if ($search !== '') {
@@ -129,10 +128,9 @@ function moderator_hq_rows(string $search, string $region, string $status, strin
         }
     }
 
-    $hqRoleId = hq_hq_role_id();
-    if ($hqRoleId <= 0) {
-        return $rows;
-    }
+    // HQ entities remain listable when a legacy deployment lacks the HQ role
+    // row; in that case owner lookup falls back to headquarters_owner_id.
+    $hqRoleId = max(0, hq_hq_role_id());
 
     // Station totals from `branches` via station_business_scope (never dummy `stations` view).
     $sql = "SELECT h.headquarter_id, h.company_name, h.company_logo, h.location, h.headquarter_email,

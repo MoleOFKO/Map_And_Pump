@@ -349,7 +349,7 @@ function admin_scope_label(string $scope): string
 {
     $scope = admin_normalize_report_scope($scope);
     return match ($scope) {
-        'hq_performance' => 'HQ Performance',
+        'hq_performance' => 'Company Performance',
         'stations' => 'Station Logs',
         'requests' => 'Request Audit Logs',
         'audit_logs' => 'System Audit Logs',
@@ -524,7 +524,8 @@ function admin_filter_label(string $value): string
         'yangon' => 'Yangon',
         'mandalay' => 'Mandalay',
         'naypyidaw' => 'Naypyidaw',
-        'account' => 'Account verification',
+        'account' => 'Users',
+        'car_license' => 'Car license review',
         'payment' => 'Payment Verification',
         'station' => 'New station registration',
         'new_station' => 'New station registration',

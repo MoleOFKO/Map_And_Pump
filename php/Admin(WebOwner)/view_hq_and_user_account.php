@@ -43,11 +43,14 @@ $hqRows = [];
 $dbError = null;
 
 if (hq_db_available() && hq_registry_schema_ready()) {
-   $hqRoleId = hq_hq_role_id();
-   if ($hqRoleId > 0) {
+       // The HQ entity table is authoritative; role metadata only helps find
+       // a fallback owner for legacy rows without headquarters_owner_id.
+       $hqRoleId = max(0, hq_hq_role_id());
        // Keep unlinked HQ records visible and classify them as pending below.
        $hqStateSql = "COALESCE(NULLIF(h.status, ''), COALESCE(owner.status, 'pending'))";
-       $where = ['(owner.user_id IS NULL OR ' . hq_manageable_status_sql($hqStateSql) . ')'];
+       // Show every HQ entity by default, including legacy/custom statuses.
+       // The status selector below still applies an explicit user filter.
+       $where = [];
        $params = [];
        $types = '';
 
@@ -141,7 +144,6 @@ if (hq_db_available() && hq_registry_schema_ready()) {
 
            $statement->close();
        }
-   }
 } else {
     $dbError = hq_db_error_message();
 }
@@ -158,8 +160,8 @@ $flashContext = $flash['context'] ?? [];
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Map &amp; Pump Admin — View and manage role 3 HQ accounts and their HQ details.">
-    <title>View/Manage HQ — Map &amp; Pump</title>
+    <meta name="description" content="Map &amp; Pump Admin — View and manage company accounts and their company details.">
+    <title>View/Manage Companies — Map &amp; Pump</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&amp;display=swap" rel="stylesheet">
@@ -230,8 +232,8 @@ $flashContext = $flash['context'] ?? [];
         <?php if (function_exists('expiry_render_page_banners')) { expiry_render_page_banners('admin', true); } ?>
         <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3">
             <div>
-                <span class="stat-chip mb-2"><i class="bi bi-building-fill txt-neon-cyan"></i> HQ Administration</span>
-                <h1 class="fw-bold m-0 h4 text-white mt-2">View/Manage HQ</h1>
+                <span class="stat-chip mb-2"><i class="bi bi-building-fill txt-neon-cyan"></i> Company Administration</span>
+                <h1 class="fw-bold m-0 h4 text-white mt-2">View/Manage Companies</h1>
 
             </div>
         </div>
@@ -250,7 +252,7 @@ $flashContext = $flash['context'] ?? [];
                             <label class="form-label text-white-50 small mb-1" for="hqSearch">Search</label>
                             <div class="input-group">
                                 <span class="input-group-text bg-transparent border-end-0" style="border-color: var(--glass-border); color: var(--neon-cyan); border-radius: 12px 0 0 12px;"><i class="bi bi-search"></i></span>
-                                <input id="hqSearch" type="search" class="form-control glass-input border-start-0" placeholder="Search by HQ or owner name..." name="search" value="<?= hq_escape($search) ?>">
+                                <input id="hqSearch" type="search" class="form-control glass-input border-start-0" placeholder="Search by company or owner name..." name="search" value="<?= hq_escape($search) ?>">
                             </div>
                         </div>
                         <div class="col-6 col-md-4 col-xl-2">
@@ -286,15 +288,15 @@ $flashContext = $flash['context'] ?? [];
                     <div class="table-responsive hq-table-scroll">
                         <table class="table table-dark-custom align-middle m-0">
                             <thead>
-                                <tr><th>HQ Entity &amp; Owner</th><th>Role</th><th>Headquarters Location</th><th>Stations</th><th>Owner Account Status</th><th class="text-end">Command</th></tr>
+                                <tr><th>Company &amp; Owner</th><th>Role</th><th>Company Location</th><th>Stations</th><th>Owner Account Status</th><th class="text-end">Command</th></tr>
                             </thead>
                             <tbody>
                                 <?php if (!$hqRows): ?>
-                                    <tr><td colspan="6" class="text-center text-white-50 py-5"><i class="bi bi-building-x fs-3 d-block mb-2"></i>No HQ accounts match the current filter.</td></tr>
+                                    <tr><td colspan="6" class="text-center text-white-50 py-5"><i class="bi bi-building-x fs-3 d-block mb-2"></i>No companies match the current filter.</td></tr>
                                 <?php endif; ?>
                                 <?php foreach ($hqRows as $row): ?>
                                     <?php
-                                    $companyName = (string) ($row['company_name'] ?? 'Unnamed HQ');
+                                    $companyName = (string) ($row['company_name'] ?? 'Unnamed Company');
                                     $ownerName = (string) ($row['owner_name'] ?? 'No owner account');
                                     $ownerEmail = (string) ($row['owner_email'] ?? 'No email available');
                                     $rowStatus = (string) ($row['account_status'] ?? 'pending');
@@ -315,7 +317,7 @@ $flashContext = $flash['context'] ?? [];
                                                 </div>
                                             </div>
                                         </td>
-                                        <td class="text-white-50">#3 &middot; HQ</td>
+                                        <td class="text-white-50">#3 &middot; Company</td>
                                         <td><div class="text-white"><?= hq_escape($locationRegion) ?></div><?php if ($locationAddress !== ''): ?><div class="text-white-50 small" style="font-size:.8rem;"><?= hq_escape($locationAddress) ?></div><?php endif; ?></td>
                                         <td class="text-white-50"><span class="stat-chip" style="font-size:.75rem;"><i class="bi bi-fuel-pump me-1 txt-neon-cyan"></i><?= $stationCount ?></span></td>
                                         <td>
@@ -326,8 +328,8 @@ $flashContext = $flash['context'] ?? [];
                                         </td>
                                         <td class="text-end">
                                             <div class="d-flex gap-2 justify-content-end">
-                                                <a href="#" class="btn-action js-view-hq" title="View Stations &amp; Users" aria-label="View <?= hq_escape($companyName) ?> details" data-hq-id="<?= (int) $row['headquarter_id'] ?>"><i class="bi bi-eye-fill"></i></a>
-                                                <a href="#" class="btn-action btn-action-danger js-account-action" title="Activate / Suspend / Remove HQ" aria-label="Change status for <?= hq_escape($companyName) ?>" data-hq-id="<?= (int) $row['headquarter_id'] ?>" data-hq-name="<?= hq_escape($companyName) ?>" data-hq-status="<?= hq_escape($rowStatus) ?>"><i class="bi bi-gear-fill"></i></a>
+                                                <a href="#" class="btn-action js-view-hq" title="View Stations &amp; Accounts" aria-label="View <?= hq_escape($companyName) ?> details" data-hq-id="<?= (int) $row['headquarter_id'] ?>"><i class="bi bi-eye-fill"></i></a>
+                                                <a href="#" class="btn-action btn-action-danger js-account-action" title="Activate / Suspend / Remove Company" aria-label="Change status for <?= hq_escape($companyName) ?>" data-hq-id="<?= (int) $row['headquarter_id'] ?>" data-hq-name="<?= hq_escape($companyName) ?>" data-hq-status="<?= hq_escape($rowStatus) ?>"><i class="bi bi-gear-fill"></i></a>
                                             </div>
                                         </td>
                                     </tr>
@@ -343,13 +345,13 @@ $flashContext = $flash['context'] ?? [];
     <div class="modal fade glass-modal" id="accountActionModal" tabindex="-1" aria-labelledby="accountActionModalLabel" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
             <div class="modal-content">
-                <div class="modal-header"><h5 class="modal-title fw-bold" id="accountActionModalLabel"><i class="bi bi-shield-exclamation text-danger me-2"></i> HQ Account Review</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button></div>
+                <div class="modal-header"><h5 class="modal-title fw-bold" id="accountActionModalLabel"><i class="bi bi-shield-exclamation text-danger me-2"></i> Company Account Review</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button></div>
                 <form action="hq_account_action.php" method="POST">
                     <div class="modal-body d-flex flex-column gap-3">
                         <input type="hidden" name="headquarter_id" id="actionHQId"><input type="hidden" name="return_to" value="view_hq_and_user_account.php">
-                        <div class="small text-white-50">Target HQ: <span class="txt-neon-cyan fw-semibold" id="actionHQName">—</span></div>
-                        <div><label class="form-label text-white-50 small" for="actionType">Account action</label><select class="form-select glass-select account-action-select" name="action_type" id="actionType" required><option value="activate">Activate pending HQ</option><option value="suspend">Suspend account</option><option value="remove">Remove account</option><option value="restore">Restore (approve again)</option></select></div>
-                        <div><label class="form-label text-white-50 small" for="actionReason">Reason to record and notify</label><textarea class="form-control glass-input" name="reason" id="actionReason" rows="5" maxlength="2000" placeholder="Explain why this HQ account is being suspended, removed, or restored..." required style="resize:none;"></textarea></div>
+                        <div class="small text-white-50">Target Company: <span class="txt-neon-cyan fw-semibold" id="actionHQName">—</span></div>
+                        <div><label class="form-label text-white-50 small" for="actionType">Account action</label><select class="form-select glass-select account-action-select" name="action_type" id="actionType" required><option value="activate">Activate pending company</option><option value="suspend">Suspend account</option><option value="remove">Remove account</option><option value="restore">Restore (approve again)</option></select></div>
+                        <div><label class="form-label text-white-50 small" for="actionReason">Reason to record and notify</label><textarea class="form-control glass-input" name="reason" id="actionReason" rows="5" maxlength="2000" placeholder="Explain why this company account is being suspended, removed, or restored..." required style="resize:none;"></textarea></div>
 
                     </div>
                     <div class="modal-footer"><button type="button" class="btn btn-outline-secondary rounded-3 text-white-50 border-secondary border-opacity-20" data-bs-dismiss="modal">Cancel</button><button type="submit" class="btn btn-danger" id="actionSubmit">Confirm Suspend</button></div>
@@ -361,8 +363,8 @@ $flashContext = $flash['context'] ?? [];
     <div class="modal fade glass-modal" id="hqDetailsModal" tabindex="-1" aria-labelledby="hqDetailsModalLabel" aria-hidden="true">
         <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
             <div class="modal-content">
-                <div class="modal-header"><h5 class="modal-title fw-bold" id="hqDetailsModalLabel"><i class="bi bi-building txt-neon-cyan me-2"></i> HQ Details</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button></div>
-                <div class="modal-body" id="hqDetailsBody"><div class="text-center text-white-50 py-5"><div class="spinner-border spinner-border-sm txt-neon-cyan mb-2" role="status"></div><div>Loading HQ details…</div></div></div>
+                <div class="modal-header"><h5 class="modal-title fw-bold" id="hqDetailsModalLabel"><i class="bi bi-building txt-neon-cyan me-2"></i> Company Details</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button></div>
+                <div class="modal-body" id="hqDetailsBody"><div class="text-center text-white-50 py-5"><div class="spinner-border spinner-border-sm txt-neon-cyan mb-2" role="status"></div><div>Loading company details…</div></div></div>
             </div>
         </div>
     </div>
@@ -401,7 +403,7 @@ $flashContext = $flash['context'] ?? [];
                 if (!button) return;
                 event.preventDefault();
                 actionId.value = button.dataset.hqId || '';
-                actionName.textContent = button.dataset.hqName || 'Selected HQ';
+                actionName.textContent = button.dataset.hqName || 'Selected Company';
                 actionType.value = button.dataset.hqStatus === 'pending' ? 'activate' : 'suspend';
                 updateActionButton();
                 document.getElementById('actionReason').value = '';
@@ -423,7 +425,7 @@ $flashContext = $flash['context'] ?? [];
                 const accounts = payload.accounts || [];
                 const stations = payload.stations || [];
                 const actions = payload.actions || [];
-                detailsTitle.innerHTML = '<i class="bi bi-building txt-neon-cyan me-2"></i>' + escapeHtml(hq.company_name || 'HQ Details');
+                detailsTitle.innerHTML = '<i class="bi bi-building txt-neon-cyan me-2"></i>' + escapeHtml(hq.company_name || 'Company Details');
 
                 const registeredDay = String(hq.created_at || '').slice(0, 10);
                 const expiryDay = String(hq.expire_at || '').slice(0, 10);
@@ -431,11 +433,11 @@ $flashContext = $flash['context'] ?? [];
                 const today = [currentDate.getFullYear(), String(currentDate.getMonth() + 1).padStart(2, '0'), String(currentDate.getDate()).padStart(2, '0')].join('-');
                 const licenseDateWarning = registeredDay && expiryDay && expiryDay <= registeredDay
                     ? '<div class="alert alert-warning py-2 mb-3" role="status"><i class="bi bi-exclamation-triangle-fill me-2"></i>License expiry must be after registration. Verify the current business license before changing account status.</div>'
-                    : (typeof expiryDetailAlert === 'function' ? expiryDetailAlert(expiryDay, 'hq') : (expiryDay && expiryDay < today ? '<div class="alert alert-danger py-2 mb-3" role="alert"><i class="bi bi-x-circle-fill me-2"></i>This business license has expired. HQ access is limited to the profile until the business license is renewed.</div>' : ''));
+                    : (typeof expiryDetailAlert === 'function' ? expiryDetailAlert(expiryDay, 'hq') : (expiryDay && expiryDay < today ? '<div class="alert alert-danger py-2 mb-3" role="alert"><i class="bi bi-x-circle-fill me-2"></i>This business license has expired. Company access is limited to the profile until the business license is renewed.</div>' : ''));
 
                 const metaCards =
                     '<div class="row g-3 mb-4">' +
-                    '<div class="col-12 col-md-6"><div class="p-3 rounded-3" style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);"><div class="hq-detail-label">HQ location</div><div class="hq-detail-value mt-1">' + escapeHtml(hq.location || 'Not available') + '</div></div></div>' +
+                    '<div class="col-12 col-md-6"><div class="p-3 rounded-3" style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);"><div class="hq-detail-label">Company location</div><div class="hq-detail-value mt-1">' + escapeHtml(hq.location || 'Not available') + '</div></div></div>' +
                     '<div class="col-6 col-md-3"><div class="p-3 rounded-3 h-100" style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);"><div class="hq-detail-label">Contact</div><div class="hq-detail-value mt-1">' + escapeHtml(hq.contact_number || '—') + '</div></div></div>' +
                     '<div class="col-6 col-md-3"><div class="p-3 rounded-3 h-100" style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);"><div class="hq-detail-label">Email</div><div class="hq-detail-value mt-1 text-break">' + escapeHtml(hq.headquarter_email || '—') + '</div></div></div>' +
                     '<div class="col-6 col-md-3"><div class="p-3 rounded-3 h-100" style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);"><div class="hq-detail-label">Owner</div><div class="hq-detail-value mt-1">' + escapeHtml(hq.owner_name || '—') + '</div></div></div>' +
@@ -444,16 +446,17 @@ $flashContext = $flash['context'] ?? [];
                     '<div class="col-6 col-md-3"><div class="p-3 rounded-3 h-100" style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);"><div class="hq-detail-label">Business license</div><div class="hq-detail-value mt-1 text-break">' + escapeHtml(hq.business_license || '—') + '</div></div></div>' +
                     '</div>';
 
+                const roleLabel = role => ({hq: 'Company', headquarter: 'Company', headquarters: 'Company', customer: 'Driver'}[String(role || '').trim().toLowerCase()] || (role || '—'));
                 const accountRows = accounts.length
                     ? accounts.map((account) =>
                         '<tr>' +
                         '<td><div class="fw-semibold text-white">' + escapeHtml(account.username || '—') + '</div><div class="text-white-50 small">ID ' + escapeHtml(account.user_id || '') + '</div></td>' +
                         '<td class="text-white-50 text-break">' + escapeHtml(account.email || '—') + '</td>' +
-                        '<td class="text-white-50"><div>' + escapeHtml(account.role_name || '—') + '</div><div class="small text-white-50">Base #' + escapeHtml(account.role_id ?? '—') + ' · Business #' + escapeHtml(account.business_role_id ?? '—') + '</div></td>' +
+                        '<td class="text-white-50"><div>' + escapeHtml(roleLabel(account.role_name)) + '</div><div class="small text-white-50">Base #' + escapeHtml(account.role_id ?? '—') + ' · Business #' + escapeHtml(account.business_role_id ?? '—') + '</div></td>' +
                         '<td><span class="hq-status ' + statusClass(account.status) + '">' + escapeHtml(statusLabel(account.status)) + '</span></td>' +
                         '<td class="text-white-50 small">' + escapeHtml(formatDate(account.created_at)) + '</td>' +
                         '</tr>').join('')
-                    : emptyRow(5, 'No user accounts are linked to this HQ.');
+                    : emptyRow(5, 'No accounts are linked to this company.');
 
                 const stationRows = stations.length
                     ? stations.map((station) =>
@@ -464,7 +467,7 @@ $flashContext = $flash['context'] ?? [];
                         '<td><span class="hq-status ' + statusClass(station.status) + '">' + escapeHtml(stationStatusLabel(station.status)) + '</span></td>' +
                         '<td class="text-white-50 small">' + escapeHtml(formatDate(station.created_at)) + '</td>' +
                         '</tr>').join('')
-                    : emptyRow(5, 'No stations are linked to this HQ.');
+                    : emptyRow(5, 'No stations are linked to this company.');
 
                 const actionRows = actions.length
                     ? actions.map((action) =>
@@ -477,8 +480,8 @@ $flashContext = $flash['context'] ?? [];
 
                 detailsBody.innerHTML =
                     licenseDateWarning + metaCards +
-                    sectionTitle('bi-people-fill', 'Linked user accounts', accounts.length) +
-                    '<div class="table-responsive mb-4"><table class="table hq-modal-table align-middle mb-0"><thead><tr><th>User</th><th>Email</th><th>Role</th><th>Status</th><th>Created</th></tr></thead><tbody>' + accountRows + '</tbody></table></div>' +
+                    sectionTitle('bi-people-fill', 'Linked accounts', accounts.length) +
+                    '<div class="table-responsive mb-4"><table class="table hq-modal-table align-middle mb-0"><thead><tr><th>Account</th><th>Email</th><th>Role</th><th>Status</th><th>Created</th></tr></thead><tbody>' + accountRows + '</tbody></table></div>' +
                     sectionTitle('bi-fuel-pump-fill', 'Linked stations', stations.length) +
                     '<div class="table-responsive mb-4"><table class="table hq-modal-table align-middle mb-0"><thead><tr><th>Station</th><th>Location</th><th>Manager</th><th>Status</th><th>Created</th></tr></thead><tbody>' + stationRows + '</tbody></table></div>' +
                     sectionTitle('bi-clock-history', 'Account action history', actions.length) +
@@ -489,13 +492,13 @@ $flashContext = $flash['context'] ?? [];
                 const button = event.target.closest('.js-view-hq');
                 if (!button) return;
                 event.preventDefault();
-                detailsTitle.innerHTML = '<i class="bi bi-building txt-neon-cyan me-2"></i> Stations &amp; Users';
-                detailsBody.innerHTML = '<div class="text-center text-white-50 py-5"><div class="spinner-border spinner-border-sm txt-neon-cyan mb-2" role="status"></div><div>Loading stations &amp; users…</div></div>';
+                detailsTitle.innerHTML = '<i class="bi bi-building txt-neon-cyan me-2"></i> Stations &amp; Accounts';
+                detailsBody.innerHTML = '<div class="text-center text-white-50 py-5"><div class="spinner-border spinner-border-sm txt-neon-cyan mb-2" role="status"></div><div>Loading stations &amp; accounts…</div></div>';
                 detailsModal.show();
                 try {
                     const response = await fetch('hq_details.php?id=' + encodeURIComponent(button.dataset.hqId), {headers: {Accept: 'application/json'}, cache: 'no-store'});
                     const payload = await response.json();
-                    if (!response.ok || !payload.success) throw new Error(payload.message || 'Could not load HQ details.');
+                    if (!response.ok || !payload.success) throw new Error(payload.message || 'Could not load company details.');
                     renderDetails(payload);
                 } catch (error) {
                     detailsBody.innerHTML = '<div class="alert hq-flash alert-danger"><i class="bi bi-exclamation-triangle me-2"></i>' + escapeHtml(error.message) + '</div>';

@@ -36,12 +36,11 @@ $licenseStatusSelect = user_account_column_exists('user_license', 'status')
 $licenseFaceImageSelect = user_account_column_exists('user_license', 'face_image')
     ? 'l.face_image'
     : 'NULL AS face_image';
+$customerRoleId = customer_role_id();
+$roleIdSql = $requestContext ? $roleIdSql : (string) $customerRoleId;
 $scopeCondition = $requestContext
     ? "AND LOWER(TRIM(u.status)) = 'pending_verification'"
-    : "AND u.role_id = 6
-       AND (u.business_role_id IS NULL OR u.business_role_id = 6)
-       AND ({$roleIdSql} = 6)
-       AND LOWER(TRIM(r.role_name)) = 'customer'";
+    : 'AND ' . customer_account_role_guard_sql($customerRoleId);
 $statement = $conn->prepare(
     "SELECT u.user_id, {$publicIdSelect}, u.user_name, u.email, u.status, u.created_at, u.updated_at, {$lastLoginSelect},
             u.license_id, bas.headquarter_id,
@@ -55,7 +54,12 @@ $statement = $conn->prepare(
             l.license_image, {$licenseFaceImageSelect}
      FROM users u
      LEFT JOIN roles r ON r.role_id = {$roleIdSql}
-    LEFT JOIN business_account_scope bas ON bas.user_id = u.user_id
+    LEFT JOIN (
+        SELECT user_id, MIN(headquarter_id) AS headquarter_id
+        FROM business_account_scope
+        WHERE headquarter_id IS NOT NULL
+        GROUP BY user_id
+    ) bas ON bas.user_id = u.user_id
     LEFT JOIN headquarter h ON h.headquarter_id = bas.headquarter_id
      LEFT JOIN user_license l ON l.license_id = u.license_id
      WHERE u.user_id = ? {$scopeCondition}
@@ -75,7 +79,7 @@ $statement->close();
 
 if (!$user) {
     http_response_code(404);
-    echo json_encode(['success' => false, 'message' => 'User not found.']);
+    echo json_encode(['success' => false, 'message' => 'Account not found.']);
     exit;
 }
 

@@ -13,12 +13,12 @@ $userName = trim((string) ($_POST['user_name'] ?? ''));
 $email = strtolower(trim((string) ($_POST['email'] ?? '')));
 
 if (!$userId || !$headquarterId || $userName === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
-    hq_flash('danger', 'Please provide a valid user name and email address.');
+    hq_flash('danger', 'Please provide a valid account name and email address.');
     hq_redirect('manage_hq(M).php');
 }
 
 if (mb_strlen($userName) > 225 || mb_strlen($email) > 255) {
-    hq_flash('danger', 'The user name or email address is longer than the database allows.');
+    hq_flash('danger', 'The account name or email address is longer than the database allows.');
     hq_redirect('manage_hq(M).php');
 }
 
@@ -40,7 +40,7 @@ $targetQuery = $conn->prepare(
      LIMIT 1'
 );
 if (!$targetQuery) {
-    hq_flash('danger', 'The selected HQ user could not be loaded.');
+    hq_flash('danger', 'The selected company account could not be loaded.');
     hq_redirect('manage_hq(M).php');
 }
 $targetQuery->bind_param('ii', $userId, $headquarterId);
@@ -48,12 +48,12 @@ $targetQuery->execute();
 $target = $targetQuery->get_result()?->fetch_assoc();
 $targetQuery->close();
 if (!$target) {
-    hq_flash('danger', 'That user does not belong to the selected HQ.');
+    hq_flash('danger', 'That account is not linked to the selected company.');
     hq_redirect('manage_hq(M).php');
 }
 
 if ((int) $target['owner_user_id'] === (int) $userId && mb_strlen($email) > 225) {
-    hq_flash('danger', 'The HQ owner email must be 225 characters or fewer because it is also stored on the HQ record.');
+    hq_flash('danger', 'The company owner email must be 225 characters or fewer because it is also stored on the company record.');
     hq_redirect('manage_hq(M).php');
 }
 
@@ -65,7 +65,7 @@ $duplicateQuery = $conn->prepare(
 );
 
 if (!$duplicateQuery) {
-    hq_flash('danger', 'The user email could not be checked.');
+    hq_flash('danger', 'The account email could not be checked.');
     hq_redirect('manage_hq(M).php');
 }
 
@@ -75,7 +75,7 @@ $duplicate = $duplicateQuery->get_result()?->fetch_assoc();
 $duplicateQuery->close();
 
 if ($duplicate) {
-    hq_flash('danger', 'That email address is already registered to another account or HQ.');
+    hq_flash('danger', 'That email address is already registered to another account or company.');
     hq_redirect('manage_hq(M).php');
 }
 
@@ -95,17 +95,17 @@ try {
     if ((int) $target['owner_user_id'] === (int) $userId) {
         $hqEmailUpdate = $conn->prepare('UPDATE headquarter SET headquarter_email = ? WHERE headquarter_id = ?');
         if (!$hqEmailUpdate) {
-            throw new RuntimeException('Could not prepare the HQ email synchronization.');
+            throw new RuntimeException('Could not prepare the company email synchronization.');
         }
         $hqEmailUpdate->bind_param('si', $email, $headquarterId);
         if (!$hqEmailUpdate->execute()) {
-            throw new RuntimeException('Could not synchronize the HQ email.');
+            throw new RuntimeException('Could not synchronize the company email.');
         }
         $hqEmailUpdate->close();
 
     }
 
-    admin_record_log((int) $moderatorUser['user_id'], 'Updated user #' . $userId . ' in HQ #' . $headquarterId . ' (' . $target['company_name'] . ').');
+    admin_record_log((int) $moderatorUser['user_id'], 'Updated company account #' . $userId . ' in Company #' . $headquarterId . ' (' . $target['company_name'] . ').');
     $conn->commit();
 
     $oldEmail = (string) ($target['user_email'] ?? '');
@@ -121,11 +121,11 @@ try {
     $noticeSuffix = $notice === null ? '' : (!empty($notice['sent'])
         ? ' A notice was sent to the previous account email.'
         : ' The profile was saved, but an email notice could not be delivered to the previous address.');
-    hq_flash('success', 'The user account was updated and synchronized with the HQ record.' . $noticeSuffix);
+    hq_flash('success', 'The company account was updated and synchronized with the company record.' . $noticeSuffix);
 } catch (Throwable $exception) {
     $conn->rollback();
     error_log('[Moderator HQ user] Update failed: ' . $exception->getMessage());
-    hq_flash('danger', 'The user account could not be updated. No partial changes were saved.');
+    hq_flash('danger', 'The company account could not be updated. No partial changes were saved.');
 }
 
 hq_redirect('manage_hq(M).php');

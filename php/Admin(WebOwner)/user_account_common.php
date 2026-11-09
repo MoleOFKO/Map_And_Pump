@@ -38,6 +38,44 @@ function customer_role_id(): int
     return $roleId;
 }
 
+/**
+ * SQL visibility rule for the driver registry and its detail endpoint.
+ * A Customer role in either active or business role slot identifies the
+ * driver account even when the other role slot differs.
+ */
+function customer_account_role_guard_sql(int $customerRoleId, string $userAlias = 'u'): string
+{
+    $customerRoleChecks = ["{$userAlias}.business_role_id = {$customerRoleId}"];
+    if (user_account_column_exists('users', 'current_role_id')) {
+        $customerRoleChecks[] = "{$userAlias}.current_role_id = {$customerRoleId}";
+    }
+
+    return '(' . implode(' OR ', $customerRoleChecks) . ')';
+}
+
+/** SQL predicate for accounts with any elevated staff role. */
+function customer_account_has_staff_role_sql(string $userAlias = 'u'): string
+{
+    $roleSlots = ["{$userAlias}.role_id", "{$userAlias}.business_role_id"];
+    if (user_account_column_exists('users', 'current_role_id')) {
+        $roleSlots[] = "{$userAlias}.current_role_id";
+    }
+
+    return "EXISTS (
+            SELECT 1
+            FROM roles registry_privileged_role
+            WHERE registry_privileged_role.role_id IN (" . implode(', ', $roleSlots) . ")
+              AND LOWER(TRIM(registry_privileged_role.role_name)) IN ('admin', 'moderator')
+        )";
+}
+
+/** SQL predicate for management actions that could affect staff access. */
+function customer_account_management_guard_sql(int $customerRoleId, string $userAlias = 'u'): string
+{
+    return customer_account_role_guard_sql($customerRoleId, $userAlias)
+        . ' AND NOT (' . customer_account_has_staff_role_sql($userAlias) . ')';
+}
+
 function customer_account_rows(string $search = '', string $status = '', string $expiryFilter = ''): array
 {
     global $conn;
@@ -48,13 +86,7 @@ function customer_account_rows(string $search = '', string $status = '', string 
     }
 
     $customerRoleId = customer_role_id();
-    $where = [
-        "u.role_id = {$customerRoleId}",
-        "LOWER(TRIM(base_role.role_name)) = 'customer'",
-        "(u.business_role_id IS NULL OR u.business_role_id = {$customerRoleId})",
-        "(u.current_role_id IS NULL OR u.current_role_id = {$customerRoleId})",
-        '(' . hq_manageable_status_sql('u.status') . " OR LOWER(TRIM(u.status)) = 'pending_verification')",
-    ];
+    $where = [customer_account_role_guard_sql($customerRoleId)];
     $params = [];
     $types = '';
 
@@ -79,39 +111,69 @@ function customer_account_rows(string $search = '', string $status = '', string 
     }
 
     $expiryFilter = strtolower(trim($expiryFilter));
-    if ($expiryFilter !== '' && function_exists('expiry_user_filter_sql')) {
+    $hasLicenseExpiry = user_account_column_exists('user_license', 'license_id')
+        && user_account_column_exists('user_license', 'license_last_valid_date');
+    if ($expiryFilter !== '' && $hasLicenseExpiry && function_exists('expiry_user_filter_sql')) {
         $expirySql = expiry_user_filter_sql($expiryFilter, 'l.license_last_valid_date');
         if ($expirySql !== '') {
             $where[] = $expirySql;
         }
     }
 
-    $sql = <<<'SQL'
-SELECT u.user_id, u.user_public_id, u.user_name, u.email, u.status, u.created_at, u.updated_at,
-    bas.headquarter_id, u.role_id, base_role.role_name,
+    $publicIdSelect = user_account_column_exists('users', 'user_public_id')
+        ? 'u.user_public_id'
+        : 'NULL AS user_public_id';
+    $licenseExpirySelect = $hasLicenseExpiry
+        ? 'l.license_last_valid_date'
+        : 'NULL AS license_last_valid_date';
+    $licenseJoin = $hasLicenseExpiry
+        ? 'LEFT JOIN user_license l ON l.license_id = u.license_id'
+        : '';
+    $staffRoleSql = customer_account_has_staff_role_sql();
+    $sql = <<<SQL
+SELECT u.user_id, {$publicIdSelect}, u.user_name, u.email, u.status, u.created_at, u.updated_at,
+    CASE WHEN {$staffRoleSql} THEN 1 ELSE 0 END AS staff_access_protected,
+    bas.headquarter_id, {$customerRoleId} AS role_id, customer_role.role_name,
     h.company_name AS headquarter_name, h.location AS headquarter_location,
-       l.license_last_valid_date
+    {$licenseExpirySelect}
 FROM users u
-INNER JOIN roles base_role ON base_role.role_id = u.role_id
-LEFT JOIN business_account_scope bas ON bas.user_id = u.user_id
+INNER JOIN roles customer_role ON customer_role.role_id = {$customerRoleId}
+LEFT JOIN (
+    SELECT user_id, MIN(headquarter_id) AS headquarter_id
+    FROM business_account_scope
+    WHERE headquarter_id IS NOT NULL
+    GROUP BY user_id
+) bas ON bas.user_id = u.user_id
 LEFT JOIN headquarter h ON h.headquarter_id = bas.headquarter_id
-LEFT JOIN user_license l ON l.license_id = u.license_id
+{$licenseJoin}
 SQL;
     $sql .= ' WHERE ' . implode(' AND ', $where) . ' ORDER BY u.updated_at DESC, u.user_id DESC';
 
     $statement = $conn->prepare($sql);
     if (!$statement) {
+        error_log('[Account review] Pending account rows could not be prepared: ' . $conn->error);
         return $rows;
     }
 
     if ($types !== '') {
         $bound = array_values($params);
-        hq_bind($statement, $types, $bound);
+        if (!hq_bind($statement, $types, $bound)) {
+            error_log('[Account review] Pending account row filters could not be bound: ' . $statement->error);
+            $statement->close();
+            return $rows;
+        }
     }
 
-    if ($statement->execute()) {
-        $result = $statement->get_result();
-        while ($result && ($row = $result->fetch_assoc())) {
+    if (!$statement->execute()) {
+        error_log('[Account review] Pending account rows could not be loaded: ' . $statement->error);
+        $statement->close();
+        return $rows;
+    }
+    $result = $statement->get_result();
+    if (!$result) {
+        error_log('[Account review] Pending account rows returned no result set: ' . $statement->error);
+    } else {
+        while ($row = $result->fetch_assoc()) {
             $rows[] = $row;
         }
     }
@@ -143,8 +205,12 @@ function user_account_column_exists(string $table, string $column): bool
 
     $allowedColumns = [
         'users' => ['current_role_id', 'user_public_id', 'last_login_at'],
-        'user_license' => ['status', 'face_image'],
-        'car_license' => ['car_license_id'],
+        'user_license' => ['license_id', 'license_last_valid_date', 'status', 'face_image'],
+        'car_license' => [
+            'car_license_id', 'status', 'car_plate_number', 'car_owner_name',
+            'vehicle_name', 'vehicle_type', 'chassis_number', 'location',
+            'created_at', 'car_license_front_image', 'car_license_back_image',
+        ],
         'user_car' => ['car_id', 'user_id'],
     ];
     if (!isset($allowedColumns[$table]) || !in_array($column, $allowedColumns[$table], true)) {
@@ -335,50 +401,105 @@ function pending_car_license_rows(string $search = ''): array
 
     if (!hq_db_available()
         || !user_account_column_exists('car_license', 'car_license_id')
-        || !user_account_column_exists('user_car', 'car_id')
-        || !user_account_column_exists('user_car', 'user_id')) {
+        || !user_account_column_exists('car_license', 'status')) {
         return $rows;
     }
 
-    $sql = "SELECT c.car_license_id, c.car_plate_number, c.car_owner_name,
-                   c.vehicle_name, c.vehicle_type, c.chassis_number, c.location,
-                   c.status, c.created_at, c.car_license_front_image, c.car_license_back_image,
-                   owner.user_id, owner.user_name, owner.email,
-                   (SELECT COUNT(*) FROM car_license duplicate
-                    WHERE UPPER(REPLACE(REPLACE(REPLACE(TRIM(duplicate.car_plate_number), '/', ''), ' ', ''), '-', '')) =
-                          UPPER(REPLACE(REPLACE(REPLACE(TRIM(c.car_plate_number), '/', ''), ' ', ''), '-', ''))
-                      AND duplicate.car_license_id <> c.car_license_id) AS conflict_count
-            FROM car_license c
-            LEFT JOIN (
+    $carFields = [
+        'car_plate_number', 'car_owner_name', 'vehicle_name', 'vehicle_type',
+        'chassis_number', 'location', 'created_at',
+        'car_license_front_image', 'car_license_back_image',
+    ];
+    $selectFields = [];
+    foreach ($carFields as $field) {
+        $selectFields[] = user_account_column_exists('car_license', $field)
+            ? "c.{$field} AS {$field}"
+            : "NULL AS {$field}";
+    }
+
+    $hasPlateNumber = user_account_column_exists('car_license', 'car_plate_number');
+    $conflictSelect = $hasPlateNumber
+        ? "(SELECT COUNT(*) FROM car_license duplicate
+             WHERE UPPER(REPLACE(REPLACE(REPLACE(TRIM(duplicate.car_plate_number), '/', ''), ' ', ''), '-', '')) =
+                   UPPER(REPLACE(REPLACE(REPLACE(TRIM(c.car_plate_number), '/', ''), ' ', ''), '-', ''))
+               AND duplicate.car_license_id <> c.car_license_id) AS conflict_count"
+        : '0 AS conflict_count';
+
+    // Car ownership is helpful detail, but it is not required to list or
+    // review the license itself. Older deployments may not have user_car yet.
+    $ownerSelect = 'NULL AS user_id, NULL AS user_name, NULL AS email';
+    $ownerJoin = '';
+    if (user_account_column_exists('user_car', 'car_id')
+        && user_account_column_exists('user_car', 'user_id')
+        && user_account_schema_ready()) {
+        $ownerSelect = 'owner.user_id, owner.user_name, owner.email';
+        $ownerJoin = "LEFT JOIN (
                 SELECT uc.car_id, MIN(u.user_id) AS user_id
                 FROM user_car uc INNER JOIN users u ON u.user_id = uc.user_id
                 GROUP BY uc.car_id
             ) owner_link ON owner_link.car_id = c.car_license_id
-            LEFT JOIN users owner ON owner.user_id = owner_link.user_id
+            LEFT JOIN users owner ON owner.user_id = owner_link.user_id";
+    }
+
+    $orderSql = user_account_column_exists('car_license', 'created_at')
+        ? 'c.created_at DESC, c.car_license_id DESC'
+        : 'c.car_license_id DESC';
+    $sql = 'SELECT c.car_license_id, ' . implode(', ', $selectFields) . ', c.status,
+                   ' . $ownerSelect . ', ' . $conflictSelect . '
+            FROM car_license c ' . $ownerJoin . "
             WHERE LOWER(TRIM(c.status)) IN ('pending', 'pending_verification')";
     $params = [];
     $types = '';
     if ($search !== '') {
-        $sql .= " AND (LOWER(c.car_plate_number) LIKE ? OR LOWER(COALESCE(c.car_owner_name, '')) LIKE ?
-                       OR LOWER(COALESCE(c.vehicle_name, '')) LIKE ? OR LOWER(COALESCE(owner.user_name, '')) LIKE ?
-                       OR LOWER(COALESCE(owner.email, '')) LIKE ?)";
+        $searchableFields = [];
+        foreach (['car_plate_number', 'car_owner_name', 'vehicle_name'] as $field) {
+            if (user_account_column_exists('car_license', $field)) {
+                $searchableFields[] = "c.{$field}";
+            }
+        }
+        if ($ownerJoin !== '') {
+            $searchableFields[] = 'owner.user_name';
+            $searchableFields[] = 'owner.email';
+        }
         $like = '%' . strtolower($search) . '%';
-        array_push($params, $like, $like, $like, $like, $like);
-        $types = 'sssss';
+        if ($searchableFields) {
+            $sql .= ' AND (' . implode(' OR ', array_map(
+                static fn (string $field): string => "LOWER(COALESCE({$field}, '')) LIKE ?",
+                $searchableFields
+            )) . ')';
+            foreach ($searchableFields as $_) {
+                $params[] = $like;
+                $types .= 's';
+            }
+        } else {
+            $sql .= ' AND 1 = 0';
+        }
     }
-    $sql .= ' ORDER BY c.created_at DESC, c.car_license_id DESC';
+    $sql .= ' ORDER BY ' . $orderSql;
 
     $statement = $conn->prepare($sql);
     if (!$statement) {
+        error_log('[Account review] Pending car-license rows could not be prepared: ' . $conn->error);
         return $rows;
     }
     if ($types !== '') {
         $bound = array_values($params);
-        hq_bind($statement, $types, $bound);
+        if (!hq_bind($statement, $types, $bound)) {
+            error_log('[Account review] Pending car-license row filters could not be bound: ' . $statement->error);
+            $statement->close();
+            return $rows;
+        }
     }
-    if ($statement->execute()) {
-        $result = $statement->get_result();
-        while ($result && ($row = $result->fetch_assoc())) {
+    if (!$statement->execute()) {
+        error_log('[Account review] Pending car-license rows could not be loaded: ' . $statement->error);
+        $statement->close();
+        return $rows;
+    }
+    $result = $statement->get_result();
+    if (!$result) {
+        error_log('[Account review] Pending car-license rows returned no result set: ' . $statement->error);
+    } else {
+        while ($row = $result->fetch_assoc()) {
             $rows[] = $row;
         }
     }
@@ -386,40 +507,47 @@ function pending_car_license_rows(string $search = ''): array
     return $rows;
 }
 
-function pending_car_license_count(): int
+/**
+ * All-time car-license review outcomes used by the admin request counters.
+ *
+ * @return array{pending:int,approved:int,rejected:int}
+ */
+function car_license_review_status_summary(): array
 {
     global $conn;
+    $summary = ['pending' => 0, 'approved' => 0, 'rejected' => 0];
 
     if (!hq_db_available()) {
-        return 0;
+        return $summary;
     }
 
-    $schemaQuery = $conn->query(
-        "SELECT COUNT(*) AS total
-         FROM information_schema.COLUMNS
-         WHERE TABLE_SCHEMA = DATABASE()
-           AND TABLE_NAME = 'car_license'
-           AND COLUMN_NAME IN ('car_license_id', 'status')"
-    );
-    if (!$schemaQuery) {
-        error_log('[Account review] Car-license schema check failed: ' . $conn->error);
-        return 0;
-    }
-    if ((int) ($schemaQuery->fetch_assoc()['total'] ?? 0) !== 2) {
-        return 0;
+    if (!user_account_column_exists('car_license', 'car_license_id')
+        || !user_account_column_exists('car_license', 'status')) {
+        return $summary;
     }
 
     $countQuery = $conn->query(
-        "SELECT COUNT(*) AS total
-         FROM car_license
-         WHERE LOWER(TRIM(status)) IN ('pending', 'pending_verification')"
+        "SELECT
+            COALESCE(SUM(CASE WHEN LOWER(TRIM(status)) IN ('pending', 'pending_verification') THEN 1 ELSE 0 END), 0) AS pending,
+            COALESCE(SUM(CASE WHEN LOWER(TRIM(status)) IN ('approved', 'active') THEN 1 ELSE 0 END), 0) AS approved,
+            COALESCE(SUM(CASE WHEN LOWER(TRIM(status)) IN ('rejected', 'flagged') THEN 1 ELSE 0 END), 0) AS rejected
+         FROM car_license"
     );
     if (!$countQuery) {
-        error_log('[Account review] Pending car-license count failed: ' . $conn->error);
-        return 0;
+        error_log('[Account review] Car-license status summary failed: ' . $conn->error);
+        return $summary;
     }
 
-    return (int) ($countQuery->fetch_assoc()['total'] ?? 0);
+    $counts = $countQuery->fetch_assoc() ?: [];
+    foreach (['pending', 'approved', 'rejected'] as $status) {
+        $summary[$status] = (int) ($counts[$status] ?? 0);
+    }
+    return $summary;
+}
+
+function pending_car_license_count(): int
+{
+    return car_license_review_status_summary()['pending'];
 }
 
 function duplicate_license_record_count(string $licenseType, int $recordId): int
@@ -475,22 +603,26 @@ function pending_account_count(): int
 /**
  * Shared live totals for the items that need review in View Requests.
  *
- * System requests, pending user and vehicle-license reviews, and payment
- * confirmations reported as paid are actionable pending work. Payments still
- * waiting for the payer are listed separately and do not need moderator review.
- * Approved and declined totals keep the status-summary semantics; approved
- * today is exposed separately by request_live_status_summary().
+ * System requests, pending user and vehicle-license reviews, and pending
+ * payment transfers all contribute to Pending. Completed vehicle-license and
+ * payment reviews contribute to the all-time Approved and Rejected totals.
+ * Approved today remains available separately in request_live_status_summary().
  *
  * @return array{pending:int,approved:int,approved_today:int,declined_flagged:int,error:?string,pending_accounts:int,pending_car_licenses:int,pending_payment_verifications:int,pending_payment_rows:int}
  */
 function request_review_queue_summary(string $reviewerRole = 'admin'): array
 {
+    global $pdo;
+
     $summary = function_exists('request_live_status_summary')
-        ? request_live_status_summary()
+        ? request_live_status_summary($reviewerRole)
         : ['pending' => 0, 'approved' => 0, 'approved_today' => 0, 'declined_flagged' => 0, 'error' => null];
 
     $summary['pending_accounts'] = pending_account_count();
-    $summary['pending_car_licenses'] = pending_car_license_count();
+    $carLicenseSummary = car_license_review_status_summary();
+    $summary['pending_car_licenses'] = $carLicenseSummary['pending'];
+    $summary['approved'] += $carLicenseSummary['approved'];
+    $summary['declined_flagged'] += $carLicenseSummary['rejected'];
     $summary['pending_payment_verifications'] = 0;
     $summary['pending_payment_rows'] = 0;
 
@@ -501,11 +633,47 @@ function request_review_queue_summary(string $reviewerRole = 'admin'): array
             'pending',
             strtolower(trim($reviewerRole)) !== 'moderator'
         );
-        $summary['pending_payment_rows'] = count($paymentRows);
-        $summary['pending_payment_verifications'] = count(array_filter(
-            $paymentRows,
-            static fn (array $row): bool => strtolower(trim((string) ($row['status'] ?? ''))) === 'payer_reported_paid'
-        ));
+        $uniquePendingPaymentRows = [];
+        foreach ($paymentRows as $paymentRow) {
+            $paymentId = (int) ($paymentRow['payment_transfer_id'] ?? 0);
+            if ($paymentId > 0) {
+                $uniquePendingPaymentRows[$paymentId] = $paymentRow;
+            }
+        }
+        $summary['pending_payment_rows'] = count($uniquePendingPaymentRows);
+        $summary['pending_payment_verifications'] = count($uniquePendingPaymentRows);
+
+        if (isset($pdo) && $pdo instanceof PDO && function_exists('request_payment_types_for_reviewer')
+            && payment_transfer_schema_ready($pdo)) {
+            $paymentTypes = request_payment_types_for_reviewer(
+                $reviewerRole,
+                strtolower(trim($reviewerRole)) !== 'moderator'
+            );
+            $typeMarks = implode(',', array_fill(0, count($paymentTypes), '?'));
+            try {
+                $paymentCountQuery = $pdo->prepare(
+                    "SELECT COUNT(*)
+                     FROM payment_transfers
+                     WHERE payment_type IN ({$typeMarks})
+                       AND LOWER(TRIM(status)) IN ('pending_payment', 'payer_reported_paid')"
+                );
+                $paymentCountQuery->execute($paymentTypes);
+                $databasePaymentCount = (int) $paymentCountQuery->fetchColumn();
+                $summary['pending_payment_rows'] = $databasePaymentCount;
+                $summary['pending_payment_verifications'] = $databasePaymentCount;
+                if ($databasePaymentCount !== count($uniquePendingPaymentRows)) {
+                    error_log(sprintf(
+                        '[Request registry] Pending payment row mismatch: database=%d rows=%d',
+                        $databasePaymentCount,
+                        count($uniquePendingPaymentRows)
+                    ));
+                    $summary['error'] ??= 'Some pending payment reviews could not be loaded.';
+                }
+            } catch (Throwable $e) {
+                error_log('[Request registry] Pending payment count query failed: ' . $e->getMessage());
+                $summary['error'] ??= 'Pending payment totals could not be loaded.';
+            }
+        }
     }
 
     $summary['pending'] += $summary['pending_accounts']
