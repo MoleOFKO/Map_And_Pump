@@ -505,6 +505,33 @@ function loyalty_countermeasures_schema_ready(PDO $pdo): bool
     }
 }
 
+/**
+ * Ensure payout rows support pending → company-confirmed verification.
+ */
+function loyalty_ensure_payout_verification_schema(PDO $pdo): void
+{
+    static $ready = false;
+    if ($ready) {
+        return;
+    }
+    $columns = [
+        'status' => "VARCHAR(16) NOT NULL DEFAULT 'pending' AFTER note",
+        'confirmed_by_user_id' => 'INT NULL DEFAULT NULL AFTER processed_by_user_id',
+        'confirmed_at' => 'TIMESTAMP NULL DEFAULT NULL AFTER confirmed_by_user_id',
+    ];
+    foreach ($columns as $columnName => $columnDefinition) {
+        $columnCheck = $pdo->prepare(
+            'SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+             WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?'
+        );
+        $columnCheck->execute(['loyalty_discount_payouts', $columnName]);
+        if ((int) $columnCheck->fetchColumn() === 0) {
+            $pdo->exec("ALTER TABLE loyalty_discount_payouts ADD COLUMN `{$columnName}` {$columnDefinition}");
+        }
+    }
+    $ready = true;
+}
+
 // ---------------------------------------------------------------------------
 // Internal-fill detection (strict)
 // ---------------------------------------------------------------------------
@@ -628,6 +655,51 @@ function loyalty_station_hq_id(PDO $pdo, int $stationId): int
         error_log('loyalty_station_hq_id: ' . $e->getMessage());
         return 0;
     }
+}
+
+// ---------------------------------------------------------------------------
+// Point valuation helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Average MMK value of one loyalty point from configured redemption options.
+ * Uses the cheapest option's rate when rules exist; otherwise 0.
+ */
+function loyalty_discount_mmk_per_point(PDO $pdo): float
+{
+    $options = loyalty_redemption_options($pdo);
+    if ($options === []) {
+        return 0.0;
+    }
+    $bestRate = 0.0;
+    foreach ($options as $points => $discountMmk) {
+        $points = (int) $points;
+        if ($points <= 0) {
+            continue;
+        }
+        $rate = (float) $discountMmk / $points;
+        if ($bestRate <= 0.0 || $rate < $bestRate) {
+            $bestRate = $rate;
+        }
+    }
+    return $bestRate;
+}
+
+/**
+ * MMK liability of outstanding (unredeemed) customer points.
+ * Optional $yearMonth is accepted for call-site compatibility; current
+ * balances are used because points are not month-scoped in users.had_point.
+ */
+function loyalty_unredeemed_points_value(PDO $pdo, ?string $yearMonth = null): float
+{
+    $pointValue = loyalty_discount_mmk_per_point($pdo);
+    if ($pointValue <= 0.0) {
+        return 0.0;
+    }
+    $totalPoints = (int) $pdo->query(
+        'SELECT COALESCE(SUM(GREATEST(0, had_point)), 0) FROM users'
+    )->fetchColumn();
+    return round($totalPoints * $pointValue, 2);
 }
 
 // ---------------------------------------------------------------------------
@@ -1027,7 +1099,7 @@ function loyalty_apply_on_fill(
     $pointsToRedeem = (int) $discount['points'];
     $discountMmk = (float) $discount['discount_mmk'];
     if ($pointsToRedeem > 0) {
-        $allocated = loyalty_try_consume_pool($pdo, $progress['tier_code'], $discountMmk);
+        $allocated = loyalty_try_consume_pool($pdo, $progress['tier_code'], $discountMmk, null, $pointsToRedeem);
         if ($allocated + 0.0001 < $discountMmk) {
             $pointsToRedeem = 0;
             $discountMmk = 0.0;
@@ -1112,6 +1184,24 @@ function loyalty_apply_on_fill(
         $progress['points_cap']
     );
     $earnPoints = $fillEarnings['points_earned'];
+    $budgetLimitedEarn = false;
+    $pointValue = loyalty_discount_mmk_per_point($pdo);
+    if ($earnPoints > 0 && $pointValue > 0) {
+        $spentNowStmt = $pdo->prepare(
+            'SELECT COALESCE(SUM(spent_mmk), 0)
+             FROM loyalty_tier_pool
+             WHERE `year_month` = ?'
+        );
+        $spentNowStmt->execute([loyalty_current_year_month()]);
+        $spentNow = (float) $spentNowStmt->fetchColumn();
+        $room = loyalty_monthly_pool_budget($pdo) - $spentNow - loyalty_unredeemed_points_value($pdo);
+        $maxPoints = (int) floor(max(0.0, $room) / $pointValue + 0.0000001);
+        if ($earnPoints > $maxPoints) {
+            $earnPoints = max(0, $maxPoints);
+            $budgetLimitedEarn = true;
+            $result['pool_limited'] = true;
+        }
+    }
     if ($earnPoints > 0) {
         $credit = $pdo->prepare('UPDATE users SET had_point = had_point + ? WHERE user_id = ?');
         $credit->execute([$earnPoints, $userId]);
@@ -1130,7 +1220,7 @@ function loyalty_apply_on_fill(
             'staff_user_id' => $staffUserId,
             'is_internal' => 0,
         ]);
-    } elseif ($fillEarnings['exp_eligible']) {
+    } elseif ($fillEarnings['exp_eligible'] && !$budgetLimitedEarn) {
         $awardExp = $pdo->prepare(
             'UPDATE loyalty_user_tier_progress SET exp = exp + 1 WHERE user_id = ?'
         );

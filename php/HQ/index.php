@@ -9,7 +9,7 @@ require_once __DIR__ . '/../profile_avatar.php';
 
 $loggedUserId = isset($_SESSION['user_id']) ? (int) $_SESSION['user_id'] : '';
 $loggedUserEmail = isset($_SESSION['user_email']) ? trim((string) $_SESSION['user_email']) : '';
-$extensionReturnPages = ['dashboard.php', 'brand.php', 'station.php', 'pricing.php', 'report_from_manager.php', 'report_to_admin.php', 'account.php', 'profile.php'];
+$extensionReturnPages = ['dashboard.php', 'brand.php', 'station.php', 'pricing.php', 'loyalty_payouts.php', 'report_from_manager.php', 'report_to_admin.php', 'account.php', 'profile.php'];
 $extensionReturnTo = basename((string) ($_GET['return_to'] ?? ''));
 $extensionPaymentSubmitted = in_array((string) ($_GET['extension_payment'] ?? ''), ['submitted', 'cancelled'], true)
     && in_array($extensionReturnTo, $extensionReturnPages, true);
@@ -211,6 +211,7 @@ echo $brand_title; ?></span>
                     <li><button type="button" onclick="routeTo('extend_period.php')"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2 M16 2l3 3 M8 2 5 5"/></svg>Extend Service Period</button></li>
                     <?php endif; ?>
                     <?php if (!$hqAccessRestricted): ?>
+                    <li><button type="button" onclick="routeTo('loyalty_payouts.php')"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1v22 M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>Discount payments</button></li>
                     <li><button type="button" onclick="routeTo('pricing.php')"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18 M17 7H9a3 3 0 000 6h6a3 3 0 010 6H6"/></svg>Oil Types & Pricing</button></li>
                     <li><button type="button" onclick="routeTo('station.php')"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 21V4h10v17 M3 21h12 M6 7h6v5H6z M14 10h3l3 3v5a2 2 0 01-4 0v-4"/></svg>Manage Stations</button></li>
                     <li><button type="button" onclick="routeTo('report_from_manager.php')"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3h14v18H5z M8 7h8 M8 11h8 M8 15h5"/></svg>Manager Reports</button></li>
@@ -331,7 +332,7 @@ echo $user_email_display; ?></p>
         const targetPage = path;
         if (path === 'extend_period.php') {
             const previousPage = new URL(document.getElementById('viewport').src, window.location.href).pathname.split('/').pop();
-            const allowedReturnPages = ['dashboard.php', 'brand.php', 'station.php', 'pricing.php', 'report_from_manager.php', 'report_to_admin.php', 'account.php', 'profile.php'];
+            const allowedReturnPages = ['dashboard.php', 'brand.php', 'station.php', 'pricing.php', 'loyalty_payouts.php', 'report_from_manager.php', 'report_to_admin.php', 'account.php', 'profile.php'];
             const returnTo = allowedReturnPages.includes(previousPage) ? previousPage : 'dashboard.php';
             path += '?return_to=' + encodeURIComponent(returnTo);
         }

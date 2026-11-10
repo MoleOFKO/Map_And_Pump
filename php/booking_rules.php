@@ -22,12 +22,61 @@ if (!defined('MAP_PUMP_FUEL_QUOTA_LITERS')) {
     define('MAP_PUMP_FUEL_QUOTA_LITERS', 35.0);
 }
 
+/** platform_settings key for the admin-managed weekly fuel quota (liters per vehicle). */
+if (!defined('MAP_PUMP_FUEL_QUOTA_SETTING_KEY')) {
+    define('MAP_PUMP_FUEL_QUOTA_SETTING_KEY', 'fuel_weekly_quota_liters');
+}
+
 if (!defined('MAP_PUMP_FUEL_QUOTA_PERIOD')) {
     define('MAP_PUMP_FUEL_QUOTA_PERIOD', 'weekly');
 }
 
 if (!defined('MAP_PUMP_BOOKING_EXPIRY_HOURS')) {
     define('MAP_PUMP_BOOKING_EXPIRY_HOURS', 1);
+}
+
+if (!function_exists('map_pump_fuel_quota_liters')) {
+    /**
+     * Live weekly fuel quota in liters (per vehicle).
+     * Reads platform_settings; falls back to MAP_PUMP_FUEL_QUOTA_LITERS.
+     */
+    function map_pump_fuel_quota_liters(PDO $pdo): float
+    {
+        try {
+            $stmt = $pdo->prepare(
+                'SELECT setting_value FROM platform_settings WHERE setting_key = ? LIMIT 1'
+            );
+            $stmt->execute([MAP_PUMP_FUEL_QUOTA_SETTING_KEY]);
+            $value = $stmt->fetchColumn();
+            if ($value !== false && is_numeric($value) && is_finite((float) $value)) {
+                $liters = round((float) $value, 2);
+                if ($liters > 0 && $liters <= 500) {
+                    return $liters;
+                }
+            }
+        } catch (Throwable $e) {
+            error_log('map_pump_fuel_quota_liters: ' . $e->getMessage());
+        }
+        return (float) MAP_PUMP_FUEL_QUOTA_LITERS;
+    }
+}
+
+if (!function_exists('map_pump_save_fuel_quota_liters')) {
+    /** Persist weekly fuel quota (liters). Throws RuntimeException on invalid input. */
+    function map_pump_save_fuel_quota_liters(PDO $pdo, float $liters): float
+    {
+        if (!is_finite($liters) || $liters <= 0 || $liters > 500) {
+            throw new RuntimeException('Weekly fuel limit must be greater than 0 and at most 500 liters.');
+        }
+        $liters = round($liters, 2);
+        $stmt = $pdo->prepare(
+            'INSERT INTO platform_settings (setting_key, setting_value)
+             VALUES (?, ?)
+             ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)'
+        );
+        $stmt->execute([MAP_PUMP_FUEL_QUOTA_SETTING_KEY, number_format($liters, 2, '.', '')]);
+        return $liters;
+    }
 }
 
 if (!function_exists('map_pump_booking_configure_timezone')) {
@@ -85,7 +134,7 @@ if (!function_exists('map_pump_booking_rules_summary')) {
             'marketplace' => 'Shared marketplace for drivers and participating fuel companies.',
             'one_active_booking_per_user' => true,
             'max_active_bookings_per_user' => MAP_PUMP_MAX_ACTIVE_PER_USER,
-            'quota_liters' => MAP_PUMP_FUEL_QUOTA_LITERS,
+            'quota_liters' => MAP_PUMP_FUEL_QUOTA_LITERS, // default; live value via map_pump_fuel_quota_liters($pdo)
             'quota_period' => 'weekly',
             'quota_timezone' => 'Asia/Yangon',
             'quota_reset' => 'Sunday 00:00 Asia/Yangon',

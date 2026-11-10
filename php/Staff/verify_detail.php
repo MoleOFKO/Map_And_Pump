@@ -32,7 +32,9 @@ unset($_SESSION['verify_flash']);
 
 $bookingId = isset($_GET['booking_id']) ? (int)$_GET['booking_id'] : 0;
 $booking = null;
-$weeklyLimitLiters = MAP_PUMP_FUEL_QUOTA_LITERS;
+$weeklyLimitLiters = function_exists('map_pump_fuel_quota_liters')
+    ? map_pump_fuel_quota_liters($pdo)
+    : (float) MAP_PUMP_FUEL_QUOTA_LITERS;
 $weeklyFilledLiters = 0.0;
 $fillableLiters = $weeklyLimitLiters;
 if ($bookingId > 0) {

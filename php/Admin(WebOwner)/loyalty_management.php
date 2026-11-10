@@ -2,6 +2,7 @@
 require_once __DIR__ . '/admin_common.php';
 require_once __DIR__ . '/../loyalty_points.php';
 require_once __DIR__ . '/../billing_config.php';
+require_once __DIR__ . '/../booking_rules.php';
 
 admin_require_admin();
 if (session_status() !== PHP_SESSION_ACTIVE) {
@@ -14,8 +15,14 @@ $companyAccounts = [];
 $payouts = [];
 $companyTotalBalance = 0.0;
 $unallocatedBalance = 0.0;
+$spentThisMonth = 0.0;
+$reservedPointsValue = 0.0;
+$committedThisMonth = 0.0;
+$availableBudget = 0.0;
 $selectedHeadquarterId = 0;
+$selectedHeadquarterAvailable = 0.0;
 $monthlyBudget = 0.0;
+$fuelWeeklyQuotaLiters = (float) MAP_PUMP_FUEL_QUOTA_LITERS;
 if (empty($_SESSION['admin_loyalty_csrf'])) {
     $_SESSION['admin_loyalty_csrf'] = bin2hex(random_bytes(32));
 }
@@ -84,14 +91,8 @@ try {
 
             $pdo->beginTransaction();
             $currentMonthlyBudget = loyalty_lock_monthly_pool_budget($pdo);
-            $existingTierRules = loyalty_get_tier_rules($pdo, true);
-            $tierBudgetWeights = [];
-            foreach ($existingTierRules as $code => $rule) {
-                $tierBudgetWeights[$code] = $rule['monthly_budget_mmk'];
-            }
-            $allocatedTierBudgets = loyalty_distribute_monthly_pool_budget((float) $monthlyBudgetInput, $tierBudgetWeights);
-            foreach ($allocatedTierBudgets as $code => $allocatedBudget) {
-                $tierInputs[$code]['monthly_budget_mmk'] = $allocatedBudget;
+            foreach (array_keys($tierInputs) as $code) {
+                $tierInputs[$code]['monthly_budget_mmk'] = (float) $monthlyBudgetInput;
             }
             $currentYearMonth = loyalty_current_year_month();
             $spentThisMonthStmt = $pdo->prepare(
@@ -105,11 +106,11 @@ try {
             while (($spentValue = $spentThisMonthStmt->fetchColumn()) !== false) {
                 $spentThisMonth += (float) $spentValue;
             }
-            if ((float) $monthlyBudgetInput + 0.0001 < $spentThisMonth
+            $committedThisMonth = $spentThisMonth + loyalty_unredeemed_points_value($pdo, $currentYearMonth);
+            if ((float) $monthlyBudgetInput + 0.0001 < $committedThisMonth
                 && (float) $monthlyBudgetInput + 0.0001 < $currentMonthlyBudget) {
                 throw new RuntimeException(
-                    'The monthly budget cannot be reduced below discounts already granted this month (' .
-                    number_format($spentThisMonth, 2) . ' MMK).'
+                    'Budget is below ' . number_format($committedThisMonth, 2) . ' MMK already committed this month.'
                 );
             }
 
@@ -179,13 +180,16 @@ try {
             $month = trim((string) ($_POST['payout_month'] ?? ''));
             $note = trim((string) ($_POST['payout_note'] ?? ''));
             if ($amount === false || $amount <= 0 || !preg_match('/^\d{4}-(0[1-9]|1[0-2])$/', $month) || strlen($note) > 500) {
-                throw new RuntimeException('Enter a positive payout amount, valid month, and note up to 500 characters.');
+                throw new RuntimeException('Enter a positive amount, valid month, and optional reference up to 500 characters.');
             }
+            $amount = round((float) $amount, 2);
             $headquarterId = filter_var($_POST['headquarter_id'] ?? null, FILTER_VALIDATE_INT);
             $adminId = (int) ($_SESSION['user_id'] ?? 0);
             if ($headquarterId === false || $headquarterId <= 0 || $adminId <= 0) {
                 throw new RuntimeException('Choose a company and verify the signed-in Admin account.');
             }
+
+            loyalty_ensure_payout_verification_schema($pdo);
 
             $pdo->beginTransaction();
             $accountLock = $pdo->prepare(
@@ -197,29 +201,58 @@ try {
             );
             $accountLock->execute([$headquarterId]);
             $balance = $accountLock->fetchColumn();
-            if ($balance === false || (float) $balance < (float) $amount) {
-                throw new RuntimeException('The payout exceeds this company’s available Total Discounted Amount balance.');
+            if ($balance === false) {
+                throw new RuntimeException('This company has no discounted amount to pay.');
             }
-            $debit = $pdo->prepare(
-                'UPDATE loyalty_company_discount_accounts
-                 SET balance_mmk = balance_mmk - ?
-                 WHERE headquarter_id = ? AND balance_mmk >= ?'
+            $pendingStmt = $pdo->prepare(
+                "SELECT COALESCE(SUM(amount_mmk), 0)
+                 FROM loyalty_discount_payouts
+                 WHERE headquarter_id = ? AND status = 'pending'
+                 FOR UPDATE"
             );
-            $debit->execute([$amount, $headquarterId, $amount]);
-            if ($debit->rowCount() !== 1) {
-                throw new RuntimeException('The company balance changed before the payout could be recorded.');
+            $pendingStmt->execute([$headquarterId]);
+            $pendingTotal = (float) $pendingStmt->fetchColumn();
+            $available = (float) $balance - $pendingTotal;
+            if ($available + 0.0001 < $amount) {
+                throw new RuntimeException(
+                    'Amount exceeds what is still available to request ('
+                    . number_format(max(0.0, $available), 2) . ' MMK after pending requests).'
+                );
             }
+            // Do not debit yet — company must confirm the payment first.
             $payout = $pdo->prepare(
                 'INSERT INTO loyalty_discount_payouts
-                    (headquarter_id, payout_month, amount_mmk, note, processed_by_user_id)
-                 VALUES (?, ?, ?, ?, ?)'
+                    (headquarter_id, payout_month, amount_mmk, note, status, processed_by_user_id)
+                 VALUES (?, ?, ?, ?, \'pending\', ?)'
             );
             $payout->execute([$headquarterId, $month, $amount, $note !== '' ? $note : null, $adminId]);
             $pdo->commit();
-            $message = 'Company payout recorded and deducted from its available balance.';
+            $message = 'Payment verification sent to the company. The amount due decreases only after they confirm.';
+        } elseif (($_POST['action'] ?? '') === 'save_fuel_quota') {
+            $quotaInput = filter_var($_POST['fuel_weekly_quota_liters'] ?? null, FILTER_VALIDATE_FLOAT);
+            if ($quotaInput === false) {
+                throw new RuntimeException('Enter a valid weekly fuel limit in liters.');
+            }
+            $savedQuota = map_pump_save_fuel_quota_liters($pdo, (float) $quotaInput);
+            $fuelWeeklyQuotaLiters = $savedQuota;
+            $message = 'Weekly fuel limit saved: ' . number_format($savedQuota, 2) . ' liters per vehicle.';
         } else {
             throw new RuntimeException('Choose a valid loyalty-management action.');
         }
+    }
+} catch (Throwable $e) {
+    if (isset($pdo) && $pdo instanceof PDO && $pdo->inTransaction()) {
+        $pdo->rollBack();
+    }
+    error_log('loyalty_management save: ' . $e->getMessage());
+    $error = $e instanceof RuntimeException
+        ? $e->getMessage()
+        : 'That change could not be saved. Please try again.';
+}
+
+try {
+    if (!isset($pdo) || !$pdo instanceof PDO) {
+        throw new RuntimeException('Database is unavailable.');
     }
 
     $pointsRateStmt = $pdo->prepare('SELECT setting_value FROM platform_settings WHERE setting_key = ?');
@@ -229,22 +262,55 @@ try {
     $packageRate = billing_admin_setting($pdo, 'hq_package_mmk_per_station_month', BILLING_HQ_PACKAGE_MMK_PER_STATION_MONTHLY);
     $tierRules = loyalty_get_tier_rules($pdo);
     $monthlyBudget = loyalty_monthly_pool_budget($pdo);
+    $fuelWeeklyQuotaLiters = map_pump_fuel_quota_liters($pdo);
+    $spentThisMonthStmt = $pdo->prepare(
+        'SELECT COALESCE(SUM(spent_mmk), 0)
+         FROM loyalty_tier_pool
+         WHERE `year_month` = ?'
+    );
+    $spentThisMonthStmt->execute([loyalty_current_year_month()]);
+    $spentThisMonth = (float) $spentThisMonthStmt->fetchColumn();
+    $reservedPointsValue = loyalty_unredeemed_points_value($pdo);
+    $committedThisMonth = $spentThisMonth + $reservedPointsValue;
+    $availableBudget = max(0.0, $monthlyBudget - $committedThisMonth);
     $redemptions = loyalty_redemption_options($pdo);
     if (count($redemptions) !== 3) {
         throw new RuntimeException('Exactly three redemption options must be configured.');
     }
+    loyalty_ensure_payout_verification_schema($pdo);
     $companyAccountsStmt = $pdo->query(
-        'SELECT h.headquarter_id, h.company_name, COALESCE(a.balance_mmk, 0) AS balance_mmk
+        "SELECT h.headquarter_id, h.company_name,
+                COALESCE(a.balance_mmk, 0) AS balance_mmk,
+                COALESCE(p.pending_mmk, 0) AS pending_mmk
          FROM headquarter h
          LEFT JOIN loyalty_company_discount_accounts a ON a.headquarter_id = h.headquarter_id
+         LEFT JOIN (
+             SELECT headquarter_id, SUM(amount_mmk) AS pending_mmk
+             FROM loyalty_discount_payouts
+             WHERE status = 'pending'
+             GROUP BY headquarter_id
+         ) p ON p.headquarter_id = h.headquarter_id
          UNION ALL
-         SELECT a.headquarter_id, CONCAT(\'Removed company #\', a.headquarter_id) AS company_name, a.balance_mmk
+         SELECT a.headquarter_id, CONCAT('Removed company #', a.headquarter_id) AS company_name,
+                a.balance_mmk, COALESCE(p.pending_mmk, 0) AS pending_mmk
          FROM loyalty_company_discount_accounts a
          LEFT JOIN headquarter h ON h.headquarter_id = a.headquarter_id
+         LEFT JOIN (
+             SELECT headquarter_id, SUM(amount_mmk) AS pending_mmk
+             FROM loyalty_discount_payouts
+             WHERE status = 'pending'
+             GROUP BY headquarter_id
+         ) p ON p.headquarter_id = a.headquarter_id
          WHERE h.headquarter_id IS NULL
-         ORDER BY company_name, headquarter_id'
+         ORDER BY company_name, headquarter_id"
     );
     $companyAccounts = $companyAccountsStmt->fetchAll(PDO::FETCH_ASSOC);
+    foreach ($companyAccounts as &$accountRow) {
+        $balance = (float) $accountRow['balance_mmk'];
+        $pending = (float) $accountRow['pending_mmk'];
+        $accountRow['available_mmk'] = max(0.0, $balance - $pending);
+    }
+    unset($accountRow);
     $companyTotalBalance = array_sum(array_map(
         static fn (array $account): float => (float) $account['balance_mmk'],
         $companyAccounts
@@ -260,15 +326,17 @@ try {
         $selectedHeadquarterId = (int) ($companyAccounts[0]['headquarter_id'] ?? 0);
     }
     $selectedHeadquarterBalance = 0.0;
+    $selectedHeadquarterAvailable = 0.0;
     foreach ($companyAccounts as $account) {
         if ((int) $account['headquarter_id'] === $selectedHeadquarterId) {
             $selectedHeadquarterBalance = (float) $account['balance_mmk'];
+            $selectedHeadquarterAvailable = (float) $account['available_mmk'];
             break;
         }
     }
     $payoutStmt = $pdo->query(
         'SELECT p.payout_id, p.headquarter_id, h.company_name,
-                p.payout_month, p.amount_mmk, p.note, p.processed_at, u.user_name
+                p.payout_month, p.amount_mmk, p.note, p.status, p.processed_at, u.user_name
          FROM loyalty_discount_payouts p
          LEFT JOIN headquarter h ON h.headquarter_id = p.headquarter_id
          LEFT JOIN users u ON u.user_id = p.processed_by_user_id
@@ -277,11 +345,13 @@ try {
     );
     $payouts = $payoutStmt->fetchAll(PDO::FETCH_ASSOC);
 } catch (Throwable $e) {
-    if ($pdo->inTransaction()) {
+    if (isset($pdo) && $pdo instanceof PDO && $pdo->inTransaction()) {
         $pdo->rollBack();
     }
     error_log('loyalty_management: ' . $e->getMessage());
-    $error = 'Loyalty and billing information could not be loaded. Please try again later.';
+    if ($error === '') {
+        $error = 'Loyalty and billing information could not be loaded. Please try again later.';
+    }
 }
 
 $tierLabels = loyalty_tier_labels();
@@ -301,134 +371,169 @@ $redemptionValues = array_values($redemptions ?? []);
 <?php $adminSection = 'loyalty'; include __DIR__ . '/admin_section_nav.php'; ?>
 <main class="container my-5 loyalty-billing-page">
     <header class="loyalty-page-header mb-4">
-        <span class="loyalty-eyebrow"><i class="bi bi-gift" aria-hidden="true"></i> Loyalty &amp; Billing</span>
-        <h1 class="h3 mb-1">Loyalty &amp; Billing Management</h1>
-        <p class="loyalty-muted mb-0">Manage driver rewards, monthly budgets, and company payouts.</p>
+        <h1 class="h3 mb-0">Loyalty &amp; Billing</h1>
     </header>
     <?php if ($message !== ''): ?><div class="alert alert-success"><?= hq_escape($message) ?></div><?php endif; ?>
     <?php if ($error !== ''): ?><div class="alert alert-danger" role="alert"><?= hq_escape($error) ?></div><?php endif; ?>
 
     <?php if (isset($tierRules, $redemptions, $pointsRate)): ?>
     <section class="row g-3 loyalty-summary mb-4" aria-label="Loyalty and billing summary">
-        <div class="col-md-4"><article class="loyalty-metric-card"><div><span>Available company balance</span><strong><?= number_format($companyTotalBalance, 2) ?><small>MMK</small></strong><p>Total available across <?= count($companyAccounts) ?> companies</p></div><i class="bi bi-wallet2" aria-hidden="true"></i></article></div>
-        <div class="col-md-4"><article class="loyalty-metric-card"><div><span>Monthly loyalty budget</span><strong><?= number_format($monthlyBudget, 2) ?><small>MMK</small></strong><p>Combined monthly limit for driver discounts</p></div><i class="bi bi-calendar2-check" aria-hidden="true"></i></article></div>
-        <div class="col-md-4"><article class="loyalty-metric-card"><div><span>Unallocated legacy balance</span><strong><?= number_format($unallocatedBalance, 2) ?><small>MMK</small></strong><p>Historical discounts awaiting company attribution</p></div><i class="bi bi-clock-history" aria-hidden="true"></i></article></div>
+        <div class="col-md-4"><article class="loyalty-metric-card"><div><span>Budget this month</span><strong><?= number_format($monthlyBudget, 2) ?><small>MMK</small></strong></div><i class="bi bi-calendar2-check" aria-hidden="true"></i></article></div>
+        <div class="col-md-4"><article class="loyalty-metric-card"><div><span>Discounts given</span><strong><?= number_format($spentThisMonth, 2) ?><small>MMK</small></strong></div><i class="bi bi-receipt" aria-hidden="true"></i></article></div>
+        <div class="col-md-4"><article class="loyalty-metric-card"><div><span>Owed to companies</span><strong><?= number_format($companyTotalBalance, 2) ?><small>MMK</small></strong></div><i class="bi bi-wallet2" aria-hidden="true"></i></article></div>
     </section>
 
     <section class="analytics-card mb-4">
-        <div class="loyalty-section-heading"><span class="loyalty-section-icon"><i class="bi bi-sliders" aria-hidden="true"></i></span><div><h2 class="h5 mb-1">Driver rewards, tiers, and billing</h2><p class="loyalty-muted mb-0">Configure earning rates, fees, and reward limits.</p></div></div>
+        <div class="loyalty-section-heading"><span class="loyalty-section-icon"><i class="bi bi-sliders" aria-hidden="true"></i></span><div><h2 class="h5 mb-0">Monthly budget</h2></div></div>
         <form method="post">
             <input type="hidden" name="csrf_token" value="<?= hq_escape((string) $_SESSION['admin_loyalty_csrf']) ?>">
             <input type="hidden" name="action" value="save_settings">
-            <div class="row g-3">
-                <div class="col-md-6">
-                    <label class="form-label" for="points-per-liter">Points earned per external-fill liter</label>
-                    <input class="form-control" id="points-per-liter" name="points_per_liter" type="number" min="0" max="1000" step="0.01" value="<?= hq_escape($pointsRate) ?>" required>
+            <div class="loyalty-budget-control">
+                <div class="loyalty-budget-input">
+                    <label class="form-label" for="monthly-budget">Monthly limit (MMK)</label>
+                    <input class="form-control" id="monthly-budget" name="monthly_budget_mmk" type="number" min="<?= number_format($committedThisMonth, 2, '.', '') ?>" max="999999999999.99" step="0.01" value="<?= number_format($monthlyBudget, 2, '.', '') ?>" required data-used="<?= number_format($spentThisMonth, 2, '.', '') ?>" data-held="<?= number_format($reservedPointsValue, 2, '.', '') ?>">
                 </div>
-                <div class="col-md-6">
-                    <label class="form-label" for="registration-fee">Company registration fee (MMK)</label>
-                    <input class="form-control" id="registration-fee" name="registration_fee_mmk" type="number" min="0" step="1" value="<?= (int) $registrationFee ?>" required>
+                <div class="loyalty-budget-status" aria-live="polite">
+                    <span>Used</span><strong id="loyalty-budget-used"><?= number_format($spentThisMonth, 2) ?> MMK</strong>
+                    <span>Held for open points</span><strong id="loyalty-budget-held"><?= number_format($reservedPointsValue, 2) ?> MMK</strong>
+                    <span>Available</span><strong id="loyalty-budget-remaining"><?= number_format($availableBudget, 2) ?> MMK</strong>
                 </div>
-                <div class="col-md-6">
-                    <label class="form-label" for="package-rate">All-in-one station package (MMK / station / month)</label>
-                    <input class="form-control" id="package-rate" name="package_mmk_per_station_month" type="number" min="0" step="1" value="<?= (int) $packageRate ?>" required>
-                </div>
-                <div class="col-md-6">
-                    <label class="form-label" for="monthly-budget">Total monthly loyalty budget (MMK)</label>
-                    <input class="form-control" id="monthly-budget" name="monthly_budget_mmk" type="number" min="0" max="999999999999.99" step="0.01" value="<?= number_format($monthlyBudget, 2, '.', '') ?>" required>
-                    <div class="form-text">Funds driver discounts and resulting company payouts. Combined tier discounts cannot exceed this amount per calendar month.</div>
-                </div>
+                <button class="btn btn-primary loyalty-budget-save" type="submit"><i class="bi bi-check2 me-1" aria-hidden="true"></i>Save</button>
             </div>
 
-            <h3 class="h6 mt-4">Fixed redemption options</h3>
-            <div class="table-responsive">
-                <table class="table loyalty-table align-middle">
-                    <thead><tr><th>Option</th><th>Points</th><th>Discount (MMK)</th></tr></thead>
-                    <tbody>
-                    <?php for ($index = 0; $index < 3; $index++): $rewardId = $index + 1; ?>
-                        <tr>
-                            <th>Option <?= $rewardId ?></th>
-                            <td><input class="form-control" name="reward_points[<?= $rewardId ?>]" type="number" min="1" step="1" value="<?= (int) array_keys($redemptions)[$index] ?>" required></td>
-                            <td><input class="form-control" name="reward_discount[<?= $rewardId ?>]" type="number" min="0.01" step="0.01" value="<?= number_format($redemptionValues[$index], 2, '.', '') ?>" required></td>
-                        </tr>
-                    <?php endfor; ?>
-                    </tbody>
-                </table>
-            </div>
+            <details class="loyalty-advanced-settings">
+                <summary>Rewards and tiers</summary>
+                <div class="loyalty-advanced-content">
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            <label class="form-label" for="points-per-liter">Points per liter</label>
+                            <input class="form-control" id="points-per-liter" name="points_per_liter" type="number" min="0" max="1000" step="0.01" value="<?= hq_escape($pointsRate) ?>" required>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label" for="registration-fee">Registration fee (MMK)</label>
+                            <input class="form-control" id="registration-fee" name="registration_fee_mmk" type="number" min="0" step="1" value="<?= (int) $registrationFee ?>" required>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label" for="package-rate">Station fee (MMK)</label>
+                            <input class="form-control" id="package-rate" name="package_mmk_per_station_month" type="number" min="0" step="1" value="<?= (int) $packageRate ?>" required>
+                        </div>
+                    </div>
 
-            <h3 class="h6 mt-4">Tier point caps, editable EXP requirements, and calculated monthly pools</h3>
-            <div class="loyalty-info-banner mb-3">EXP alone determines tier. Bronze starts at 0 EXP; each higher tier needs a larger threshold. A successful external fill awards 1 EXP instead of points when the driver has reached their current tier's point cap. The monthly budget is divided proportionally using current tier-pool shares, and redemptions are capped by those shared pools.</div>
-            <div class="table-responsive">
-                <table class="table loyalty-table align-middle">
-                    <thead><tr><th>Tier</th><th>Point cap</th><th>Total EXP required</th><th>Calculated pool (MMK / month)</th></tr></thead>
-                    <tbody>
-                    <?php foreach ($tierLabels as $code => $label): ?>
-                        <tr>
-                            <th><?= hq_escape($label) ?></th>
-                            <td><input class="form-control" name="tier_caps[<?= hq_escape($code) ?>]" type="number" min="1" step="1" value="<?= $tierRules[$code]['points_cap'] ?>" required></td>
-                            <td><input class="form-control" name="tier_exp[<?= hq_escape($code) ?>]" type="number" min="0" step="1" value="<?= $tierRules[$code]['exp_threshold'] ?>" required></td>
-                            <td><?= number_format($tierRules[$code]['monthly_budget_mmk'], 2) ?> MMK</td>
-                        </tr>
-                    <?php endforeach; ?>
-                    </tbody>
-                </table>
-            </div>
-            <div class="loyalty-form-actions"><button class="btn btn-primary" type="submit"><i class="bi bi-check2 me-1" aria-hidden="true"></i>Save settings</button><span>Applies to rewards, billing, and the current monthly pool.</span></div>
+                    <h3 class="h6 mt-4">Rewards</h3>
+                    <div class="table-responsive">
+                        <table class="table loyalty-table align-middle">
+                            <thead><tr><th>Option</th><th>Points</th><th>Discount (MMK)</th></tr></thead>
+                            <tbody>
+                            <?php for ($index = 0; $index < 3; $index++): $rewardId = $index + 1; ?>
+                                <tr>
+                                    <th><?= $rewardId ?></th>
+                                    <td><input class="form-control" name="reward_points[<?= $rewardId ?>]" type="number" min="1" step="1" value="<?= (int) array_keys($redemptions)[$index] ?>" required></td>
+                                    <td><input class="form-control" name="reward_discount[<?= $rewardId ?>]" type="number" min="0.01" step="0.01" value="<?= number_format($redemptionValues[$index], 2, '.', '') ?>" required></td>
+                                </tr>
+                            <?php endfor; ?>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <h3 class="h6 mt-4">Tiers</h3>
+                    <div class="table-responsive">
+                        <table class="table loyalty-table align-middle">
+                            <thead><tr><th>Tier</th><th>Point cap</th><th>EXP required</th></tr></thead>
+                            <tbody>
+                            <?php foreach ($tierLabels as $code => $label): ?>
+                                <tr>
+                                    <th><?= hq_escape($label) ?></th>
+                                    <td><input class="form-control" name="tier_caps[<?= hq_escape($code) ?>]" type="number" min="1" step="1" value="<?= $tierRules[$code]['points_cap'] ?>" required></td>
+                                    <td><input class="form-control" name="tier_exp[<?= hq_escape($code) ?>]" type="number" min="0" step="1" value="<?= $tierRules[$code]['exp_threshold'] ?>" required></td>
+                                </tr>
+                            <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="loyalty-form-actions"><button class="btn btn-primary" type="submit"><i class="bi bi-check2 me-1" aria-hidden="true"></i>Save</button></div>
+                </div>
+            </details>
         </form>
     </section>
 
     <section class="analytics-card mb-4">
-        <div class="loyalty-section-heading"><span class="loyalty-section-icon"><i class="bi bi-wallet2" aria-hidden="true"></i></span><div><h2 class="h5 mb-1">Company Total Discounted Amount and payouts</h2><p class="loyalty-muted mb-0">Review available balances and record monthly company payouts.</p></div></div>
+        <div class="loyalty-section-heading"><span class="loyalty-section-icon"><i class="bi bi-fuel-pump" aria-hidden="true"></i></span><div><h2 class="h5 mb-0">Weekly fuel limit</h2></div></div>
+        <form method="post" class="loyalty-budget-control">
+            <input type="hidden" name="csrf_token" value="<?= hq_escape((string) $_SESSION['admin_loyalty_csrf']) ?>">
+            <input type="hidden" name="action" value="save_fuel_quota">
+            <div class="loyalty-budget-input">
+                <label class="form-label" for="fuel-weekly-quota">Liters per vehicle</label>
+                <input class="form-control" id="fuel-weekly-quota" name="fuel_weekly_quota_liters" type="number" min="0.01" max="500" step="0.01" value="<?= number_format((float) $fuelWeeklyQuotaLiters, 2, '.', '') ?>" required>
+            </div>
+            <div class="loyalty-budget-status" aria-live="polite">
+                <span>Period</span><strong>Weekly</strong>
+                <span>Resets</span><strong>Sun 00:00 Yangon</strong>
+            </div>
+            <button class="btn btn-primary loyalty-budget-save" type="submit"><i class="bi bi-check2 me-1" aria-hidden="true"></i>Save</button>
+        </form>
+    </section>
+
+    <section class="analytics-card mb-4">
+        <div class="loyalty-section-heading"><span class="loyalty-section-icon"><i class="bi bi-wallet2" aria-hidden="true"></i></span><div><h2 class="h5 mb-0">Amounts due</h2></div></div>
         <div class="table-responsive mb-4">
             <table class="table loyalty-table align-middle">
-                <thead><tr><th>Company</th><th>Company ID</th><th class="text-end">Available balance</th></tr></thead>
+                <thead><tr><th>Company</th><th class="text-end">Discounted</th></tr></thead>
                 <tbody>
                 <?php foreach ($companyAccounts as $account): ?>
                     <tr>
                         <th><?= hq_escape((string) ($account['company_name'] ?: 'Company')) ?></th>
-                        <td><?= (int) $account['headquarter_id'] ?></td>
-                        <td class="text-end"><?= number_format((float) $account['balance_mmk'], 2) ?> MMK</td>
+                        <td class="text-end loyalty-company-balance"><?= number_format((float) $account['balance_mmk'], 2) ?> MMK</td>
                     </tr>
                 <?php endforeach; ?>
-                <?php if ($companyAccounts === []): ?><tr><td colspan="3" class="loyalty-muted">No companies are available for payout.</td></tr><?php endif; ?>
+                <?php if ($companyAccounts === []): ?><tr><td colspan="2" class="loyalty-muted">None</td></tr><?php endif; ?>
                 </tbody>
             </table>
         </div>
-        <h3 class="h6 loyalty-subsection-title">Record a company payout</h3>
+        <?php if ($unallocatedBalance > 0): ?>
+            <p class="loyalty-unallocated-note">Unassigned: <strong><?= number_format($unallocatedBalance, 2) ?> MMK</strong></p>
+        <?php endif; ?>
+        <h3 class="h6 loyalty-subsection-title">Pay company</h3>
+        <p class="loyalty-muted loyalty-payout-instructions">Sends a verification request to the company. Amount due drops only after they confirm payment.</p>
         <form method="post" class="row g-3 align-items-end loyalty-payout-form">
             <input type="hidden" name="csrf_token" value="<?= hq_escape((string) $_SESSION['admin_loyalty_csrf']) ?>">
             <input type="hidden" name="action" value="process_payout">
-            <div class="col-md-3">
+            <div class="col-md-4">
                 <label class="form-label" for="payout-company">Company</label>
                 <select class="form-select" id="payout-company" name="headquarter_id" required>
                     <?php foreach ($companyAccounts as $account): ?>
-                        <option value="<?= (int) $account['headquarter_id'] ?>" data-balance="<?= number_format((float) $account['balance_mmk'], 2, '.', '') ?>" <?= (int) $account['headquarter_id'] === $selectedHeadquarterId ? 'selected' : '' ?>>
-                            <?= hq_escape((string) ($account['company_name'] ?: 'Company')) ?> (#<?= (int) $account['headquarter_id'] ?>) — <?= number_format((float) $account['balance_mmk'], 2) ?> MMK
+                        <option value="<?= (int) $account['headquarter_id'] ?>"
+                            data-balance="<?= number_format((float) $account['balance_mmk'], 2, '.', '') ?>"
+                            data-available="<?= number_format((float) $account['available_mmk'], 2, '.', '') ?>"
+                            data-pending="<?= number_format((float) $account['pending_mmk'], 2, '.', '') ?>"
+                            <?= (int) $account['headquarter_id'] === $selectedHeadquarterId ? 'selected' : '' ?>>
+                            <?= hq_escape((string) ($account['company_name'] ?: 'Company')) ?>
                         </option>
                     <?php endforeach; ?>
                 </select>
             </div>
-            <div class="col-md-3"><label class="form-label" for="payout-month">Payout month</label><input class="form-control" id="payout-month" name="payout_month" type="month" value="<?= date('Y-m') ?>" required></div>
-            <div class="col-md-3"><label class="form-label" for="payout-amount">Amount (MMK)</label><input class="form-control" id="payout-amount" name="payout_amount" type="number" min="0.01" step="0.01" max="<?= number_format($selectedHeadquarterBalance, 2, '.', '') ?>" required></div>
-            <div class="col-md-3"><label class="form-label" for="payout-note">Note</label><input class="form-control" id="payout-note" name="payout_note" maxlength="500"></div>
-            <div class="col-md-12 d-flex flex-wrap align-items-center gap-3"><button class="btn btn-success" type="submit" <?= $companyTotalBalance <= 0 ? 'disabled' : '' ?>><i class="bi bi-check-circle me-1" aria-hidden="true"></i>Record company payout</button><span class="loyalty-payout-balance">Selected company balance: <strong id="selected-company-balance"><?= number_format($selectedHeadquarterBalance, 2) ?> MMK</strong></span></div>
+            <div class="col-md-4"><label class="form-label" for="payout-month">Month</label><input class="form-control" id="payout-month" name="payout_month" type="month" value="<?= hq_escape(loyalty_current_year_month()) ?>" required></div>
+            <div class="col-md-4"><label class="form-label" for="payout-amount">Amount (MMK)</label><input class="form-control" id="payout-amount" name="payout_amount" type="number" min="0.01" step="0.01" value="<?= number_format($selectedHeadquarterAvailable, 2, '.', '') ?>" max="<?= number_format($selectedHeadquarterAvailable, 2, '.', '') ?>" required></div>
+            <div class="col-md-8"><label class="form-label" for="payout-note">Reference <span class="loyalty-optional">Optional</span></label><input class="form-control" id="payout-note" name="payout_note" maxlength="500"></div>
+            <div class="col-md-4 d-flex align-items-end"><button class="btn btn-success w-100" type="submit" <?= $selectedHeadquarterAvailable <= 0 ? 'disabled' : '' ?>><i class="bi bi-send me-1" aria-hidden="true"></i>Send for confirm</button></div>
+            <div class="col-md-12"><span class="loyalty-payout-balance">Due: <strong id="selected-company-balance"><?= number_format($selectedHeadquarterBalance, 2) ?> MMK</strong> · Available to request: <strong id="selected-company-available"><?= number_format($selectedHeadquarterAvailable, 2) ?> MMK</strong></span></div>
         </form>
-        <div class="loyalty-history-heading mt-4"><h3 class="h6 mb-0">Recent payout history</h3><span>Latest 50 records</span></div>
+        <div class="loyalty-history-heading mt-4"><h3 class="h6 mb-0">Payment requests</h3></div>
         <div class="table-responsive mt-3">
             <table class="table loyalty-table align-middle">
-                <thead><tr><th>Company</th><th>Month</th><th>Amount</th><th>Processed by</th><th>Processed at</th><th>Note</th></tr></thead>
+                <thead><tr><th>Company</th><th>Month</th><th>Amount</th><th>Status</th><th>Requested</th><th>Reference</th></tr></thead>
                 <tbody>
                 <?php foreach ($payouts as $payout): ?>
+                    <?php $status = strtolower((string) ($payout['status'] ?? 'pending')); ?>
                     <tr>
                         <td><?= hq_escape((string) ($payout['company_name'] ?? ($payout['headquarter_id'] === null ? 'Unallocated legacy' : 'Removed company #' . (int) $payout['headquarter_id']))) ?></td>
                         <td><?= hq_escape((string) $payout['payout_month']) ?></td>
                         <td><?= number_format((float) $payout['amount_mmk'], 2) ?> MMK</td>
-                        <td><?= hq_escape((string) ($payout['user_name'] ?? 'Admin')) ?></td>
+                        <td><span class="loyalty-status loyalty-status-<?= hq_escape($status) ?>"><?= hq_escape(ucfirst($status)) ?></span></td>
                         <td><?= hq_escape((string) $payout['processed_at']) ?></td>
                         <td><?= hq_escape((string) ($payout['note'] ?? '')) ?></td>
                     </tr>
                 <?php endforeach; ?>
-                <?php if ($payouts === []): ?><tr><td colspan="6" class="loyalty-muted">No payouts recorded yet.</td></tr><?php endif; ?>
+                <?php if ($payouts === []): ?><tr><td colspan="6" class="loyalty-muted">None</td></tr><?php endif; ?>
                 </tbody>
             </table>
         </div>
@@ -439,17 +544,44 @@ $redemptionValues = array_values($redemptions ?? []);
 <script src="/js/Admin.js"></script>
 <script>
 (() => {
+    const budget = document.getElementById('monthly-budget');
+    const budgetRemaining = document.getElementById('loyalty-budget-remaining');
+    if (budget && budgetRemaining) {
+        const used = Number(budget.dataset.used || 0);
+        const held = Number(budget.dataset.held || 0);
+        const fmt = (n) => n.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+        budget.addEventListener('input', () => {
+            const remaining = Math.max(0, Number(budget.value || 0) - used - held);
+            budgetRemaining.textContent = `${fmt(remaining)} MMK`;
+        });
+    }
+
     const company = document.getElementById('payout-company');
     const amount = document.getElementById('payout-amount');
     const balanceLabel = document.getElementById('selected-company-balance');
+    const availableLabel = document.getElementById('selected-company-available');
     if (!company || !amount || !balanceLabel) return;
+    const fmt = (n) => n.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
     const updateCompanyBalance = () => {
-        const balance = Number(company.selectedOptions[0]?.dataset.balance || 0);
-        amount.max = balance.toFixed(2);
-        balanceLabel.textContent = `${balance.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})} MMK`;
+        const opt = company.selectedOptions[0];
+        const balance = Number(opt?.dataset.balance || 0);
+        const available = Number(opt?.dataset.available || 0);
+        amount.max = available.toFixed(2);
+        amount.value = available > 0 ? available.toFixed(2) : '';
+        balanceLabel.textContent = `${fmt(balance)} MMK`;
+        if (availableLabel) availableLabel.textContent = `${fmt(available)} MMK`;
     };
     company.addEventListener('change', updateCompanyBalance);
     updateCompanyBalance();
+
+    company.form?.addEventListener('submit', (event) => {
+        const companyName = company.selectedOptions[0]?.textContent?.trim() || 'this company';
+        const paidAmount = Number(amount.value || 0);
+        const formattedAmount = paidAmount.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+        if (!window.confirm(`Send ${formattedAmount} MMK payment verification to ${companyName}?`)) {
+            event.preventDefault();
+        }
+    });
 })();
 </script>
 </body>
