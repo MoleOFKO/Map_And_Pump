@@ -317,9 +317,9 @@ $flashType = (string) ($flash['type'] ?? '');
 <?php include __DIR__ . '/includes/moderator_footer_scripts.php'; ?>
 <script>
 document.addEventListener('DOMContentLoaded', () => {
-    const details = new bootstrap.Modal(document.getElementById('viewReqModal'));
+    const details = window.createAdminModalController(document.getElementById('viewReqModal'));
     const detailsTitle = document.getElementById('viewReqTitle');
-    const reject = new bootstrap.Modal(document.getElementById('rejectReqModal'));
+    const reject = window.createAdminModalController(document.getElementById('rejectReqModal'));
     const body = document.getElementById('requestDetailsBody');
     const footer = document.getElementById('requestDetailsFooter');
     const rejectForm = document.getElementById('rejectReqForm');
@@ -376,6 +376,29 @@ document.addEventListener('DOMContentLoaded', () => {
         rejectReason.value = '';
         reject.show();
     };
+    document.addEventListener('click', event => {
+        const target = event.target instanceof Element ? event.target : null;
+        if (!target) return;
+
+        const approveButton = target.closest('.js-request-approve');
+        if (approveButton) {
+            event.preventDefault();
+            approveId.value = approveButton.dataset.requestId || '';
+            document.getElementById('approveRequestForm')?.requestSubmit();
+            return;
+        }
+
+        const rejectButton = target.closest('.js-request-reject');
+        if (rejectButton) {
+            event.preventDefault();
+            rejectTarget(
+                'request',
+                rejectButton.dataset.requestId || '',
+                rejectButton.dataset.reference || 'Selected request',
+                rejectButton.dataset.sender || 'Unknown sender'
+            );
+        }
+    });
     document.addEventListener('click', async event => {
         const button = event.target.closest('.js-view-request');
         if (!button) return;
@@ -518,7 +541,7 @@ document.addEventListener('DOMContentLoaded', () => {
 </script>
 <script>
 (() => {
-    const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('paymentDetailsModal'));
+    const modal = window.createAdminModalController(document.getElementById('paymentDetailsModal'));
     const body = document.getElementById('paymentDetailsBody');
     const footer = document.getElementById('paymentDetailsFooter');
     const escape = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));

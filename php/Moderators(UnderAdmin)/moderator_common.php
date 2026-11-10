@@ -216,7 +216,7 @@ function moderator_request_rows(string $search, string $requestType, string $sta
     }
 
     $sql = 'SELECT r.request_id, r.reference_code, r.request_type, r.status, r.sender_entity,
-                   r.sender_name, r.sender_email, r.location, r.created_at, r.review_reason
+                   r.sender_name, r.sender_email, r.location, r.request_details, r.created_at, r.review_reason
             FROM system_requests r';
     if ($where) {
         $sql .= ' WHERE ' . implode(' AND ', $where);
