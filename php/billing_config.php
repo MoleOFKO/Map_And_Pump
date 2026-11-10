@@ -25,21 +25,23 @@ if (!defined('BILLING_HQ_EXTENSION_TERM_DISCOUNTS')) {
         ['min_months' => 1, 'label' => 'Under 12 months', 'percent' => 0],
     ]);
 }
-function billing_admin_setting(PDO $pdo, string $key, int $default): int
-{
-    $stmt = $pdo->prepare('SELECT setting_value FROM platform_settings WHERE setting_key = ? LIMIT 1');
-    $stmt->execute([$key]);
-    $value = $stmt->fetchColumn();
-    if ($value === false) {
-        return $default;
-    }
+if (!function_exists('billing_admin_setting')) {
+    function billing_admin_setting(PDO $pdo, string $key, int $default): int
+    {
+        $stmt = $pdo->prepare('SELECT setting_value FROM platform_settings WHERE setting_key = ? LIMIT 1');
+        $stmt->execute([$key]);
+        $value = $stmt->fetchColumn();
+        if ($value === false) {
+            return $default;
+        }
 
-    $parsed = filter_var($value, FILTER_VALIDATE_INT);
-    if ($parsed === false || $parsed < 0) {
-        throw new RuntimeException('The configured billing amount is invalid.');
-    }
+        $parsed = filter_var($value, FILTER_VALIDATE_INT);
+        if ($parsed === false || $parsed < 0) {
+            throw new RuntimeException('The configured billing amount is invalid.');
+        }
 
-    return $parsed;
+        return $parsed;
+    }
 }
 
 if (!defined('BILLING_HQ_VOLUME_DISCOUNTS')) {

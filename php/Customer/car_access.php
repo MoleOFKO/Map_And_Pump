@@ -103,7 +103,7 @@ function customer_set_active_car(PDO $pdo, int $userId, int $carId): bool
 
 function customer_fuel_quota(PDO $pdo, int $userId): array
 {
-    $limit = MAP_PUMP_FUEL_QUOTA_LITERS;
+    $limit = map_pump_fuel_quota_liters($pdo);
     $quota = [
         'limit' => $limit,
         'used' => 0.0,
@@ -137,7 +137,7 @@ function customer_fuel_quota(PDO $pdo, int $userId): array
 function customer_fuel_quota_for_car(PDO $pdo, int $userId, int $carId): array
 {
     map_pump_booking_configure_timezone($pdo);
-    $limit = MAP_PUMP_FUEL_QUOTA_LITERS;
+    $limit = map_pump_fuel_quota_liters($pdo);
     $quota = [
         'limit' => $limit,
         'used' => 0.0,
