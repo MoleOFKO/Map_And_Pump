@@ -281,7 +281,7 @@ try {
         $pdo->rollBack();
     }
     error_log('loyalty_management: ' . $e->getMessage());
-    $error = $e->getMessage();
+    $error = 'Loyalty and billing information could not be loaded. Please try again later.';
 }
 
 $tierLabels = loyalty_tier_labels();

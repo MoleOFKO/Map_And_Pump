@@ -276,7 +276,7 @@ try {
         $conn->rollback();
     }
     error_log('[Duplicate license review] Decision failed: ' . $error->getMessage());
-    request_flash('danger', $error->getMessage());
+    request_flash('danger', 'The duplicate-license decision could not be saved. Please try again.');
 }
 
 request_redirect($returnTo);
