@@ -1,4 +1,75 @@
 /**
+ * Request review pages still need working dialogs when Bootstrap's CDN script
+ * is unavailable. Use Bootstrap when present and a small local fallback when it
+ * is not, so a missing external script cannot stop the review-page handlers.
+ */
+(function () {
+    const fallbackControllers = new WeakMap();
+
+    window.createAdminModalController = function (element) {
+        const Modal = window.bootstrap && window.bootstrap.Modal;
+        if (Modal) return Modal.getOrCreateInstance(element);
+        if (fallbackControllers.has(element)) return fallbackControllers.get(element);
+
+        let backdrop = null;
+        const controller = {
+            show() {
+                if (backdrop) backdrop.remove();
+                element.style.display = 'block';
+                element.style.position = 'fixed';
+                element.style.inset = '0';
+                element.style.zIndex = '1055';
+                element.style.overflowY = 'auto';
+                element.style.backgroundColor = 'rgba(0, 0, 0, .32)';
+                element.classList.add('show');
+                element.setAttribute('aria-modal', 'true');
+                element.setAttribute('role', 'dialog');
+                element.removeAttribute('aria-hidden');
+                document.body.classList.add('modal-open');
+
+                backdrop = document.createElement('div');
+                backdrop.className = 'modal-backdrop fade show';
+                backdrop.style.cssText = 'position:fixed;inset:0;z-index:1040;background:rgba(0,0,0,.56)';
+                backdrop.addEventListener('click', () => controller.hide(), { once: true });
+                document.body.appendChild(backdrop);
+            },
+            hide() {
+                element.classList.remove('show');
+                element.style.display = 'none';
+                element.setAttribute('aria-hidden', 'true');
+                element.removeAttribute('aria-modal');
+                element.removeAttribute('role');
+                if (backdrop) {
+                    backdrop.remove();
+                    backdrop = null;
+                }
+                if (!document.querySelector('.modal.show')) {
+                    document.body.classList.remove('modal-open');
+                }
+            },
+        };
+
+        fallbackControllers.set(element, controller);
+        return controller;
+    };
+
+    document.addEventListener('click', (event) => {
+        if (window.bootstrap && window.bootstrap.Modal) return;
+        const target = event.target instanceof Element ? event.target : null;
+        const closeButton = target && target.closest('[data-bs-dismiss="modal"]');
+        const modal = closeButton && closeButton.closest('.modal');
+        if (modal) fallbackControllers.get(modal)?.hide();
+    });
+
+    document.addEventListener('keydown', (event) => {
+        if (event.key !== 'Escape' || (window.bootstrap && window.bootstrap.Modal)) return;
+        const openModals = document.querySelectorAll('.modal.show');
+        const modal = openModals[openModals.length - 1];
+        if (modal) fallbackControllers.get(modal)?.hide();
+    });
+})();
+
+/**
  * Admin navbar — Facebook-style auto hide/show on scroll.
  * Hides when scrolling down; reappears on any upward scroll.
  */

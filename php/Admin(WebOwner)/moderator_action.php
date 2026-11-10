@@ -257,7 +257,7 @@ if ($action === 'hire_existing') {
         $error = $notify->error;
         $notify->close();
         error_log('[Moderator hire] notifications insert failed: ' . $error);
-        moderator_flash('danger', 'Hire failed: the invite could not be saved in notifications. (' . $error . ')');
+        moderator_flash('danger', 'Hire failed: the invite could not be saved. Please try again.');
         moderator_redirect();
     }
     $notificationId = (int) $notify->insert_id;

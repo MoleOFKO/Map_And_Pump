@@ -686,7 +686,7 @@ try {
 } catch (Throwable $exception) {
     $conn->rollback();
     error_log('[Request registry] Review failed: ' . $exception->getMessage());
-    request_flash('danger', 'The request could not be updated: ' . $exception->getMessage());
+    request_flash('danger', 'The request could not be updated. Please try again.');
 }
 
 request_redirect();

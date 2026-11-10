@@ -1,6 +1,6 @@
 <?php
-require_once __DIR__ . '/request_common.php';
 require_once __DIR__ . '/admin_common.php';
+require_once __DIR__ . '/request_common.php';
 require_once __DIR__ . '/user_account_common.php';
 
 admin_require_admin();
@@ -97,6 +97,7 @@ SELECT
     r.sender_name,
     r.sender_email,
     r.location,
+    r.request_details,
     r.created_at,
     r.submitter_user_id,
     r.headquarter_id
@@ -444,7 +445,7 @@ $flashType = $flash['type'] ?? '';
                         <td><div class="fw-semibold text-white"><?= hq_escape($sender) ?></div><div class="text-white-50 small" style="font-size:.8rem;"><?= hq_escape($location) ?></div></td>
                         <td><span class="badge rounded-pill bg-info bg-opacity-10 text-info border border-info border-opacity-25 px-2 py-1"><?= hq_escape(request_type_short_label($row['request_type'])) ?></span></td>
                         <td class="text-white-50"><?= hq_escape(request_date($row['created_at'])) ?></td>
-                        <td><span class="request-status <?= request_status_class($rowStatus) ?>"><?= hq_escape($requestStatusLabel($rowStatus)) ?></span><?php if (strtolower((string) $row['request_type']) === 'hq_registration'): ?><div class="mt-1"><span class="badge rounded-pill <?= $paymentState === 'received' ? 'bg-success' : ($paymentState === 'payer_reported_paid' ? 'bg-warning text-dark' : 'bg-secondary') ?>"><?= hq_escape(match ($paymentState) { 'received' => 'Payment received', 'payer_reported_paid' => 'Payment needs verification', 'rejected' => 'Payment not received', 'cancelled' => 'Payment cancelled', 'pending_payment' => 'Awaiting payer', default => 'Payment record missing' }) ?></span></div><?php endif; ?></td>
+                        <td><span class="request-status <?= request_status_class($rowStatus) ?>"><?= hq_escape(request_status_label($rowStatus)) ?></span><?php if (strtolower((string) $row['request_type']) === 'hq_registration'): ?><div class="mt-1"><span class="badge rounded-pill <?= $paymentState === 'received' ? 'bg-success' : ($paymentState === 'payer_reported_paid' ? 'bg-warning text-dark' : 'bg-secondary') ?>"><?= hq_escape(match ($paymentState) { 'received' => 'Payment received', 'payer_reported_paid' => 'Payment needs verification', 'rejected' => 'Payment not received', 'cancelled' => 'Payment cancelled', 'pending_payment' => 'Awaiting payer', default => 'Payment record missing' }) ?></span></div><?php endif; ?></td>
                         <td class="text-end"><div class="d-flex gap-2 justify-content-end">
                             <button type="button" class="btn-action js-view-request" title="View Request Details" aria-label="View request <?= hq_escape($row['reference_code']) ?> details" data-request-id="<?= (int) $row['request_id'] ?>"><i class="bi bi-eye-fill"></i></button>
                             <?php if (strtolower($rowStatus) === 'pending'): ?><a href="#" class="btn-action btn-action-success js-request-approve" title="<?= $requiresRegistrationPayment ? 'Approve company; verify payment afterward' : 'Approve request' ?>" aria-label="Approve request <?= hq_escape($row['reference_code']) ?>" data-request-id="<?= (int) $row['request_id'] ?>" data-reference="<?= hq_escape($row['reference_code']) ?>"><i class="bi bi-check-lg"></i></a><a href="#" class="btn-action btn-action-danger js-request-reject" title="Reject" aria-label="Reject request <?= hq_escape($row['reference_code']) ?>" data-request-id="<?= (int) $row['request_id'] ?>" data-reference="<?= hq_escape($row['reference_code']) ?>" data-sender="<?= hq_escape($sender) ?>"><i class="bi bi-x-lg"></i></a><?php endif; ?>
@@ -487,7 +488,7 @@ $flashType = $flash['type'] ?? '';
 
     <div class="modal fade glass-modal request-detail-modal" id="paymentDetailsModal" tabindex="-1" aria-labelledby="paymentDetailsTitle" aria-hidden="true"><div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-xl"><div class="modal-content"><div class="modal-header"><h5 class="modal-title fw-bold" id="paymentDetailsTitle"><i class="bi bi-receipt-cutoff txt-neon-cyan me-2"></i> Payment Verification Details</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button></div><div class="modal-body" id="paymentDetailsBody"></div><div class="modal-footer request-action-row" id="paymentDetailsFooter"><button type="button" class="btn btn-outline-secondary rounded-3 text-white-50 border-secondary border-opacity-20" data-bs-dismiss="modal">Close</button></div></div></div></div>
 
-    <form action="request_action.php" method="POST" id="approveRequestForm" class="d-none"><input type="hidden" name="request_id" id="approveRequestId"><input type="hidden" name="action" value="approve"></form>
+    <form action="request_action.php" method="POST" id="approveRequestForm" class="d-none"><input type="hidden" name="request_id" id="approveRequestId"><input type="hidden" name="action" value="approve"><input type="hidden" name="return_to" value="view_requests.php"></form>
 
     <div class="modal fade glass-modal request-detail-modal" id="viewReqModal" tabindex="-1" aria-labelledby="viewReqModalLabel" aria-hidden="true"><div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-xl"><div class="modal-content"><div class="modal-header"><h5 class="modal-title fw-bold" id="viewReqModalLabel"><i class="bi bi-file-earmark-text txt-neon-cyan me-2"></i> Request Details</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button></div><div class="modal-body" id="requestDetailsBody"><div class="text-center text-white-50 py-5"><div class="spinner-border spinner-border-sm txt-neon-cyan mb-2" role="status"></div><div>Loading request details…</div></div></div><div class="modal-footer request-action-row" id="requestDetailsFooter"><button type="button" class="btn btn-outline-secondary rounded-3 text-white-50 border-secondary border-opacity-20" data-bs-dismiss="modal">Close</button></div></div></div></div>
 
@@ -503,8 +504,8 @@ $flashType = $flash['type'] ?? '';
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script><script src="/js/Admin.js"></script>
     <script>
         (() => {
-            const detailsModal = bootstrap.Modal.getOrCreateInstance(document.getElementById('viewReqModal'));
-            const rejectModal = bootstrap.Modal.getOrCreateInstance(document.getElementById('rejectReqModal'));
+            const detailsModal = window.createAdminModalController(document.getElementById('viewReqModal'));
+            const rejectModal = window.createAdminModalController(document.getElementById('rejectReqModal'));
             const detailsTitle = document.getElementById('viewReqModalLabel');
             const detailsBody = document.getElementById('requestDetailsBody');
             const detailsFooter = document.getElementById('requestDetailsFooter');
@@ -774,7 +775,7 @@ $flashType = $flash['type'] ?? '';
             (() => {
                 const successModal = document.getElementById('accountReviewSuccessModal');
                 if (successModal) {
-                    bootstrap.Modal.getOrCreateInstance(successModal).show();
+                    window.createAdminModalController(successModal).show();
                 }
             })();
         </script>
@@ -782,7 +783,7 @@ $flashType = $flash['type'] ?? '';
     <script>
         (() => {
             const modalElement = document.getElementById('paymentDetailsModal');
-            const modal = bootstrap.Modal.getOrCreateInstance(modalElement);
+            const modal = window.createAdminModalController(modalElement);
             const body = document.getElementById('paymentDetailsBody');
             const footer = document.getElementById('paymentDetailsFooter');
             const escape = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
