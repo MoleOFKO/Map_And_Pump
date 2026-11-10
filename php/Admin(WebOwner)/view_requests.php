@@ -22,7 +22,10 @@ if (!is_array($accountReviewSuccess) || !in_array($accountReviewSuccess['action'
 }
 $search = trim((string) ($_GET['search'] ?? ''));
 $requestType = strtolower(trim((string) ($_GET['type'] ?? '')));
-$status = 'pending';
+$status = strtolower(trim((string) ($_GET['status'] ?? 'pending')));
+if (!in_array($status, ['pending', 'approved', 'reject'], true)) {
+    $status = 'pending';
+}
 
 $dbTypes = admin_filter_request_types();
 $allowedTypes = $dbTypes;
@@ -142,18 +145,18 @@ $paymentRows = in_array($requestType, ['', 'payment'], true)
 
 // Account verification is stored on users rather than system_requests. Keep it
 // available even when the separate system-request registry is unavailable.
-if (hq_db_available() && ($requestType === '' || $requestType === 'account') && ($status === '' || $status === 'pending')) {
-    $accountRows = pending_account_rows($search);
+if (hq_db_available() && ($requestType === '' || $requestType === 'account')) {
+    $accountRows = pending_account_rows($search, $status);
 }
-if (hq_db_available() && ($requestType === '' || $requestType === 'car_license') && ($status === '' || $status === 'pending')) {
-    $carLicenseRows = pending_car_license_rows($search);
+if (hq_db_available() && ($requestType === '' || $requestType === 'car_license')) {
+    $carLicenseRows = pending_car_license_rows($search, $status);
 }
 $paymentReviewByRequest = request_payment_review_map($requestRows);
 
 // The page summary and the unfiltered all-types list must describe the same
 // pending queue. Surface a clear warning and leave a server-side breadcrumb
 // if any row query fails after the aggregate counters succeeded.
-if ($dbError === null && $requestType === '' && $search === '') {
+if ($dbError === null && $requestType === '' && $search === '' && $status === 'pending') {
     $listedPendingRows = count($accountRows) + count($carLicenseRows) + count($requestRows) + count($paymentRows);
     if ($listedPendingRows !== (int) ($summary['pending'] ?? 0)) {
         error_log(sprintf(
@@ -388,19 +391,19 @@ $flashType = $flash['type'] ?? '';
 
         <?php if ($dbError): ?><div class="alert request-flash alert-danger mb-4" role="alert"><i class="bi bi-database-exclamation me-2"></i><?= hq_escape($dbError) ?></div><?php endif; ?>
 
-        <div class="row g-3 mb-4">
-            <div class="col-12 col-sm-4"><div class="request-indicator-card"><div><p class="text-white-50 mb-1 small fw-semibold" style="text-transform:uppercase;letter-spacing:.06em;font-size:.72rem;">Pending Verification</p><h4 class="fw-bold text-warning mb-0" style="font-size:1.8rem;letter-spacing:-.04em;"><?= (int) $summary['pending'] ?></h4></div><span class="fs-3 text-warning"><i class="bi bi-hourglass-split"></i></span></div></div>
-            <div class="col-12 col-sm-4"><div class="request-indicator-card"><div><p class="text-white-50 mb-1 small fw-semibold" style="text-transform:uppercase;letter-spacing:.06em;font-size:.72rem;">Approved</p><h4 class="fw-bold mb-0" data-live-request-count="approved" style="font-size:1.8rem;letter-spacing:-.04em;color:#1be494;"><?= (int) $summary['approved'] ?></h4></div><span class="fs-3" style="color:#1be494;"><i class="bi bi-patch-check-fill"></i></span></div></div>
-            <div class="col-12 col-sm-4"><div class="request-indicator-card"><div><p class="text-white-50 mb-1 small fw-semibold" style="text-transform:uppercase;letter-spacing:.06em;font-size:.72rem;">Reject</p><h4 class="fw-bold mb-0" data-live-request-count="declined_flagged" style="font-size:1.8rem;letter-spacing:-.04em;color:#ff4d6a;"><?= (int) $summary['declined_flagged'] ?></h4></div><span class="fs-3" style="color:#ff4d6a;"><i class="bi bi-shield-x"></i></span></div></div>
+        <div class="request-indicator-grid">
+            <div class="request-indicator-card"><div><p class="text-white-50 mb-1 small fw-semibold" style="text-transform:uppercase;letter-spacing:.06em;font-size:.72rem;">Pending Verification</p><h4 class="fw-bold text-warning mb-0" style="font-size:1.8rem;letter-spacing:-.04em;"><?= (int) $summary['pending'] ?></h4></div><span class="fs-3 text-warning"><i class="bi bi-hourglass-split"></i></span></div>
+            <div class="request-indicator-card"><div><p class="text-white-50 mb-1 small fw-semibold" style="text-transform:uppercase;letter-spacing:.06em;font-size:.72rem;">Approved</p><h4 class="fw-bold mb-0" data-live-request-count="approved" style="font-size:1.8rem;letter-spacing:-.04em;color:#1be494;"><?= (int) $summary['approved'] ?></h4></div><span class="fs-3" style="color:#1be494;"><i class="bi bi-patch-check-fill"></i></span></div>
+            <div class="request-indicator-card"><div><p class="text-white-50 mb-1 small fw-semibold" style="text-transform:uppercase;letter-spacing:.06em;font-size:.72rem;">Reject</p><h4 class="fw-bold mb-0" data-live-request-count="declined_flagged" style="font-size:1.8rem;letter-spacing:-.04em;color:#ff4d6a;"><?= (int) $summary['declined_flagged'] ?></h4></div><span class="fs-3" style="color:#ff4d6a;"><i class="bi bi-shield-x"></i></span></div>
         </div>
 
         <div class="row g-4">
-            <div class="col-12"><div class="dashboard-card py-3 px-4"><form class="row g-3 align-items-center" method="GET" action="view_requests.php">
-                <div class="col-12 col-md-5"><div class="input-group"><span class="input-group-text bg-transparent border-end-0" style="border-color:var(--glass-border);color:var(--neon-cyan);border-radius:12px 0 0 12px;"><i class="bi bi-funnel-fill"></i></span><input type="text" class="form-control glass-input border-start-0" placeholder="Filter by company, sender name, email, or reference ID..." name="search" value="<?= hq_escape($search) ?>"></div></div>
-                <div class="col-12 col-md-3"><select class="form-select glass-select" name="type"><option value="" <?= $requestType === '' ? 'selected' : '' ?>>All Request Types</option><?php foreach ($requestTypeOptions as $option): ?><option value="<?= hq_escape($option) ?>" <?= admin_request_type_filter_value($requestType) === $option ? 'selected' : '' ?>><?= hq_escape(admin_filter_label($option)) ?></option><?php endforeach; ?></select></div>
-                <div class="col-12 col-md-2"><select class="form-select glass-select" aria-label="Status filter fixed to Pending" disabled><option value="pending" selected>Pending</option></select><input type="hidden" name="status" value="pending"></div>
-                <div class="col-12 col-md-2 d-flex gap-2">
-                    <button type="button" class="btn btn-neon flex-grow-1 js-clear-filters" title="Clear filters">Clear</button>
+            <div class="col-12"><div class="dashboard-card admin-filter-card"><form class="admin-filter-form" method="GET" action="view_requests.php">
+                <div class="filter-group filter-group--search"><label class="filter-label" for="requestSearch">Search</label><div class="filter-search"><i class="bi bi-search filter-search-icon" aria-hidden="true"></i><input id="requestSearch" type="text" class="form-control filter-control filter-input" placeholder="Company, sender, email, or reference ID..." name="search" value="<?= hq_escape($search) ?>"></div></div>
+                <div class="filter-group"><label class="filter-label" for="requestType">Request type</label><div class="filter-select-wrap"><select id="requestType" class="form-select filter-control filter-select" name="type"><option value="" <?= $requestType === '' ? 'selected' : '' ?>>All Request Types</option><?php foreach ($requestTypeOptions as $option): ?><option value="<?= hq_escape($option) ?>" <?= admin_request_type_filter_value($requestType) === $option ? 'selected' : '' ?>><?= hq_escape(admin_filter_label($option)) ?></option><?php endforeach; ?></select></div></div>
+                <div class="filter-group"><label class="filter-label" for="requestStatus">Status</label><div class="filter-select-wrap"><select id="requestStatus" class="form-select filter-control filter-select" name="status" aria-label="Filter by request status"><?php foreach (['pending' => 'Pending', 'approved' => 'Approved', 'reject' => 'Reject'] as $statusValue => $statusLabel): ?><option value="<?= hq_escape($statusValue) ?>" <?= $status === $statusValue ? 'selected' : '' ?>><?= hq_escape($statusLabel) ?></option><?php endforeach; ?></select></div></div>
+                <div class="filter-actions">
+                    <button type="button" class="btn-clear-filters js-clear-filters" title="Clear filters">Clear</button>
                 </div>
             </form></div></div>
 
@@ -419,20 +422,20 @@ $flashType = $flash['type'] ?? '';
                         <td><div class="fw-semibold text-white"><?= hq_escape($sender) ?></div><div class="text-white-50 small" style="font-size:.8rem;"><?= hq_escape((string) ($row['email'] ?? 'No email')) ?></div></td>
                         <td><span class="badge rounded-pill bg-info bg-opacity-10 text-info border border-info border-opacity-25 px-2 py-1"><?= hq_escape($entityLabel) ?> Verification</span><?php if ((int) ($row['license_conflict_count'] ?? 0) > 0): ?><span class="badge bg-warning text-dark ms-1">Duplicate license</span><?php endif; ?></td>
                         <td class="text-white-50"><?= hq_escape(request_date($row['created_at'])) ?></td>
-                        <td><span class="request-status request-status-pending">Pending</span></td>
+                        <td><span class="request-status <?= request_status_class((string) $row['status']) ?>"><?= hq_escape(request_status_label((string) $row['status'])) ?></span></td>
                         <td class="text-end"><div class="d-flex gap-2 justify-content-end">
                             <button type="button" class="btn-action js-view-account-request" title="View Account Details" aria-label="View account ACCT-<?= (int) $row['user_id'] ?> details" data-user-id="<?= (int) $row['user_id'] ?>" data-role-name="<?= hq_escape($roleName) ?>"><i class="bi bi-eye-fill"></i></button>
                         </div></td>
                     </tr>
                 <?php endforeach; ?>
                 <?php foreach ($carLicenseRows as $row): ?>
-                    <?php $carSender = (string) ($row['user_name'] ?: $row['car_owner_name'] ?: 'Unknown owner'); ?>
+                    <?php $carSender = (string) ($row['user_name'] ?: $row['car_owner_name'] ?: 'Unknown owner'); $carStatus = (string) ($row['status'] ?? 'pending'); ?>
                     <tr>
                         <td class="fw-bold txt-neon-cyan">#CAR-<?= (int) $row['car_license_id'] ?></td>
                         <td><div class="fw-semibold text-white"><?= hq_escape($carSender) ?></div><div class="text-white-50 small"><?= hq_escape((string) ($row['car_plate_number'] ?? '')) ?><?= !empty($row['email']) ? ' · ' . hq_escape((string) $row['email']) : '' ?></div></td>
                         <td><span class="badge rounded-pill bg-info bg-opacity-10 text-info border border-info border-opacity-25 px-2 py-1">Car License Review</span><?php if ((int) $row['conflict_count'] > 0): ?><span class="badge bg-warning text-dark ms-1">Duplicate plate</span><?php endif; ?></td>
                         <td class="text-white-50"><?= hq_escape(request_date($row['created_at'])) ?></td>
-                        <td><span class="request-status request-status-pending">Pending</span></td>
+                        <td><span class="request-status <?= request_status_class($carStatus) ?>"><?= hq_escape(request_status_label($carStatus)) ?></span></td>
                         <td class="text-end"><div class="d-flex gap-2 justify-content-end">
                             <button type="button" class="btn-action js-view-car-license" title="Compare car license" aria-label="Review car license #<?= (int) $row['car_license_id'] ?>" data-car-license-id="<?= (int) $row['car_license_id'] ?>"><i class="bi bi-eye-fill"></i></button>
                         </div></td>
@@ -456,8 +459,16 @@ $flashType = $flash['type'] ?? '';
                     <?php
                     $paymentId = (int) $paymentRow['payment_transfer_id'];
                     $paymentState = (string) $paymentRow['status'];
-                    $paymentStatus = 'pending';
-                    $paymentStatusLabel = 'Pending';
+                    $paymentStatus = match (strtolower($paymentState)) {
+                        'received' => 'approved',
+                        'rejected' => 'rejected',
+                        default => 'pending',
+                    };
+                    $paymentStatusLabel = match ($paymentStatus) {
+                        'approved' => 'Received',
+                        'rejected' => 'Rejected',
+                        default => 'Pending',
+                    };
                     $paymentTypeLabel = match ((string) $paymentRow['payment_type']) { 'hq_registration' => 'Company Registration Payment', 'hq_period_extension' => 'Company Service Extension', 'hq_station_package' => 'Company Station Package', 'hq_extra_station' => 'Extra Stations (legacy)', 'hq_station_operating_quote' => 'Station Operating Fee (legacy)', default => 'Payment' };
                     $isPayer = ((int) ($paymentRow['payer_user_id'] ?? 0) === (int) ($_SESSION['user_id'] ?? 0)) || (strtolower((string) ($_SESSION['user_email'] ?? '')) !== '' && strtolower((string) ($_SESSION['user_email'] ?? '')) === strtolower((string) ($paymentRow['payer_email'] ?? '')));
                     ?>
@@ -761,7 +772,8 @@ $flashType = $flash['type'] ?? '';
                     });
                     markUnavailableDocImages(detailsBody);
                     const carId = escapeHtml(car.car_license_id);
-                    setFooter(conflicts.length
+                    const isPendingCar = ['pending', 'pending_verification'].includes(String(car.status || '').toLowerCase());
+                    setFooter(conflicts.length || !isPendingCar
                         ? '<button type="button" class="btn btn-outline-secondary w-100" data-bs-dismiss="modal">Close</button>'
                         : '<form action="car_license_review_action.php" method="POST" class="m-0"><input type="hidden" name="car_license_id" value="' + carId + '"><input type="hidden" name="action" value="approve"><input type="hidden" name="return_to" value="view_requests.php"><button type="submit" class="request-action-btn request-action-btn--approve">Approve</button></form><form action="car_license_review_action.php" method="POST" class="m-0"><input type="hidden" name="car_license_id" value="' + carId + '"><input type="hidden" name="action" value="reject"><input type="hidden" name="return_to" value="view_requests.php"><button type="submit" class="request-action-btn request-action-btn--reject">Reject</button></form>');
                 } catch (error) {

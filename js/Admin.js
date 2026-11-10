@@ -634,3 +634,136 @@
         }
     });
 })();
+
+(function () {
+    let activeRequest = null;
+    let requestSequence = 0;
+
+    async function loadActivityPage(url, updateHistory) {
+        const card = document.querySelector('.activity-log-card');
+        if (!card) return;
+
+        if (activeRequest) activeRequest.abort();
+        activeRequest = new AbortController();
+        const controller = activeRequest;
+        const sequence = ++requestSequence;
+        card.setAttribute('aria-busy', 'true');
+        card.querySelector('.activity-pagination-status')?.remove();
+
+        try {
+            const response = await fetch(url.href, {
+                credentials: 'same-origin',
+                headers: { 'X-Requested-With': 'XMLHttpRequest', Accept: 'text/html' },
+                signal: controller.signal,
+                cache: 'no-store',
+            });
+            if (sequence !== requestSequence) return;
+            if (!response.ok) throw new Error(`Activity log page request failed (${response.status}).`);
+
+            const html = await response.text();
+            if (sequence !== requestSequence) return;
+            const doc = new DOMParser().parseFromString(html, 'text/html');
+            const nextCard = doc.querySelector('.activity-log-card');
+            const currentBody = card.querySelector('.activity-log-table tbody');
+            const nextBody = nextCard?.querySelector('.activity-log-table tbody');
+            const currentSubtitle = card.querySelector('.activity-log-subtitle');
+            const nextSubtitle = nextCard?.querySelector('.activity-log-subtitle');
+            const currentRows = card.querySelector('.activity-log-rows');
+            const nextRows = nextCard?.querySelector('.activity-log-rows');
+            const currentPagination = card.querySelector('.activity-pagination');
+            const nextPagination = nextCard?.querySelector('.activity-pagination');
+            if (!nextCard || !currentBody || !nextBody || !currentSubtitle || !nextSubtitle
+                || !currentRows || !nextRows || !currentPagination || !nextPagination) {
+                throw new Error('Activity log response did not contain the expected table and pagination.');
+            }
+
+            currentBody.replaceWith(nextBody.cloneNode(true));
+            currentSubtitle.textContent = nextSubtitle.textContent;
+            currentRows.textContent = nextRows.textContent;
+            currentPagination.replaceWith(nextPagination.cloneNode(true));
+            if (updateHistory) {
+                window.history.replaceState(null, '', url.pathname + url.search + url.hash);
+            }
+        } catch (error) {
+            if (error && error.name === 'AbortError') return;
+            if (sequence !== requestSequence) return;
+            console.error('Activity log page could not be loaded.', error);
+            const status = document.createElement('p');
+            status.className = 'activity-pagination-status';
+            status.setAttribute('role', 'status');
+            status.textContent = 'Could not load this activity log page. Please try again.';
+            card.querySelector('.activity-log-footer')?.prepend(status);
+        } finally {
+            if (sequence === requestSequence) {
+                card.removeAttribute('aria-busy');
+                activeRequest = null;
+            }
+        }
+    }
+
+    document.addEventListener('click', (event) => {
+        if (!(event.target instanceof Element)) return;
+        const link = event.target.closest('.activity-log-card .activity-page-link:not(.is-disabled)');
+        if (!link || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+
+        const url = new URL(link.href, window.location.href);
+        if (url.origin !== window.location.origin || url.pathname !== window.location.pathname) return;
+        event.preventDefault();
+        loadActivityPage(url, true);
+    });
+
+    window.addEventListener('popstate', () => {
+        if (!document.querySelector('.activity-log-card')) return;
+        const url = new URL(window.location.href);
+        loadActivityPage(url, false);
+    });
+})();
+
+(function () {
+    async function copyText(text) {
+        if (navigator.clipboard && window.isSecureContext) {
+            try {
+                await navigator.clipboard.writeText(text);
+                return;
+            } catch (error) {
+                console.warn('Clipboard API copy failed; trying the compatibility fallback.', error);
+            }
+        }
+
+        const field = document.createElement('textarea');
+        field.value = text;
+        field.setAttribute('readonly', '');
+        field.style.position = 'fixed';
+        field.style.opacity = '0';
+        document.body.appendChild(field);
+        field.select();
+        let copied = false;
+        try {
+            copied = document.execCommand('copy');
+        } finally {
+            field.remove();
+        }
+        if (!copied) throw new Error('Clipboard copy was not available.');
+    }
+
+    document.addEventListener('click', async (event) => {
+        if (!(event.target instanceof Element)) return;
+        const button = event.target.closest('.activity-copy-btn');
+        if (!button) return;
+
+        const originalText = button.textContent || 'Copy';
+        button.disabled = true;
+        try {
+            await copyText(button.dataset.copyText || '');
+            button.textContent = 'Copied';
+        } catch (error) {
+            console.warn('Activity target could not be copied.', error);
+            button.textContent = 'Copy failed';
+        } finally {
+            window.setTimeout(() => {
+                button.textContent = originalText;
+                button.disabled = false;
+            }, 1400);
+        }
+    });
+})();

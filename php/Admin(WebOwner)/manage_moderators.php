@@ -303,35 +303,35 @@ $flashType = (string) ($flash['type'] ?? '');
 
         <div class="row g-4">
             <div class="col-12">
-                <div class="dashboard-card py-3 px-4">
-                    <form class="row g-3 align-items-end" method="GET" action="manage_moderators.php">
-                        <div class="col-12 col-md-4">
-                            <label class="form-label text-white-50 small mb-1" for="moderatorSearch">Search</label>
-                            <div class="input-group">
-                                <span class="input-group-text bg-transparent border-end-0" style="border-color:var(--glass-border);color:var(--neon-cyan);border-radius:12px 0 0 12px;"><i class="bi bi-search"></i></span>
-                                <input id="moderatorSearch" type="search" class="form-control glass-input border-start-0" placeholder="Username or email…" name="search" value="<?= hq_escape($search) ?>">
+                <div class="dashboard-card admin-filter-card">
+                    <form class="admin-filter-form" method="GET" action="manage_moderators.php">
+                        <div class="filter-group filter-group--search">
+                            <label class="filter-label" for="moderatorSearch">Search</label>
+                            <div class="filter-search">
+                                <i class="bi bi-search filter-search-icon" aria-hidden="true"></i>
+                                <input id="moderatorSearch" type="search" class="form-control filter-control filter-input" placeholder="Username or email…" name="search" value="<?= hq_escape($search) ?>">
                             </div>
                         </div>
-                        <div class="col-12 col-md-3">
-                            <label class="form-label text-white-50 small mb-1" for="moderatorRoleFilter">Role</label>
-                            <select id="moderatorRoleFilter" class="form-select glass-select" name="role_id">
+                        <div class="filter-group">
+                            <label class="filter-label" for="moderatorRoleFilter">Role</label>
+                            <div class="filter-select-wrap"><select id="moderatorRoleFilter" class="form-select filter-control filter-select" name="role_id">
                                 <option value="0">All Roles</option>
                                 <?php foreach ($roles as $role): ?>
                                     <option value="<?= (int) $role['role_id'] ?>" <?= $roleFilter === (int) $role['role_id'] ? 'selected' : '' ?>><?= hq_escape(moderator_role_label($role['role_name'])) ?></option>
                                 <?php endforeach; ?>
-                            </select>
+                            </select></div>
                         </div>
-                        <div class="col-12 col-md-2">
-                            <label class="form-label text-white-50 small mb-1" for="moderatorStatusFilter">Status</label>
-                            <select id="moderatorStatusFilter" class="form-select glass-select" name="status">
+                        <div class="filter-group">
+                            <label class="filter-label" for="moderatorStatusFilter">Status</label>
+                            <div class="filter-select-wrap"><select id="moderatorStatusFilter" class="form-select filter-control filter-select" name="status">
                                 <option value="">All Statuses</option>
                                 <?php foreach ($statusOptions as $option): ?>
                                     <option value="<?= hq_escape($option) ?>" <?= $statusFilter === $option ? 'selected' : '' ?>><?= hq_escape(moderator_status_label($option)) ?></option>
                                 <?php endforeach; ?>
-                            </select>
+                            </select></div>
                         </div>
-                        <div class="col-12 col-md-3 d-flex gap-2">
-                            <button type="button" class="btn btn-neon flex-grow-1 js-clear-filters" title="Clear filters">Clear</button>
+                        <div class="filter-actions">
+                            <button type="button" class="btn-clear-filters js-clear-filters" title="Clear filters">Clear</button>
                         </div>
                     </form>
                 </div>

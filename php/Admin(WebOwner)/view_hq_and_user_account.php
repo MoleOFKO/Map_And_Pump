@@ -246,38 +246,38 @@ $flashContext = $flash['context'] ?? [];
 
         <div class="row g-4">
             <div class="col-12">
-                <div class="dashboard-card py-3 px-4">
-                    <form class="row g-3 align-items-end" method="GET" action="view_hq_and_user_account.php">
-                        <div class="col-12 col-md-4 col-xl-3">
-                            <label class="form-label text-white-50 small mb-1" for="hqSearch">Search</label>
-                            <div class="input-group">
-                                <span class="input-group-text bg-transparent border-end-0" style="border-color: var(--glass-border); color: var(--neon-cyan); border-radius: 12px 0 0 12px;"><i class="bi bi-search"></i></span>
-                                <input id="hqSearch" type="search" class="form-control glass-input border-start-0" placeholder="Search by company or owner name..." name="search" value="<?= hq_escape($search) ?>">
+                <div class="dashboard-card admin-filter-card">
+                    <form class="admin-filter-form" method="GET" action="view_hq_and_user_account.php">
+                        <div class="filter-group filter-group--search">
+                            <label class="filter-label" for="hqSearch">Search</label>
+                            <div class="filter-search">
+                                <i class="bi bi-search filter-search-icon" aria-hidden="true"></i>
+                                <input id="hqSearch" type="search" class="form-control filter-control filter-input" placeholder="Search by company" name="search" value="<?= hq_escape($search) ?>">
                             </div>
                         </div>
-                        <div class="col-6 col-md-4 col-xl-2">
-                            <label class="form-label text-white-50 small mb-1" for="hqRegion">Region</label>
-                            <select id="hqRegion" class="form-select glass-select" name="region">
+                        <div class="filter-group">
+                            <label class="filter-label" for="hqRegion">Region</label>
+                            <div class="filter-select-wrap"><select id="hqRegion" class="form-select filter-control filter-select" name="region">
                                 <option value="" <?= $region === '' ? 'selected' : '' ?>>All Regions</option>
                                 <?php foreach ($allowedRegions as $option): ?>
                                     <option value="<?= $option ?>" <?= $region === $option ? 'selected' : '' ?>><?= hq_escape($regionLabel($option)) ?></option>
                                 <?php endforeach; ?>
-                            </select>
+                            </select></div>
                         </div>
-                        <div class="col-6 col-md-4 col-xl-2">
-                            <label class="form-label text-white-50 small mb-1" for="hqStatus">Owner status</label>
-                            <select id="hqStatus" class="form-select glass-select" name="status">
+                        <div class="filter-group">
+                            <label class="filter-label" for="hqStatus">Owner status</label>
+                            <div class="filter-select-wrap"><select id="hqStatus" class="form-select filter-control filter-select" name="status">
                                 <option value="" <?= $status === '' ? 'selected' : '' ?>>All Status</option>
                                 <?php foreach ($allowedStatuses as $option): ?>
                                     <option value="<?= hq_escape($option) ?>" <?= $status === $option ? 'selected' : '' ?>><?= hq_escape(hq_status_label($option)) ?></option>
                                 <?php endforeach; ?>
-                            </select>
+                            </select></div>
                         </div>
-                        <div class="col-12 col-md-6 col-xl-3">
+                        <div class="filter-group">
                             <?= function_exists('expiry_filter_select_html') ? expiry_filter_select_html($expiryFilter, 'hqExpiryFilter', 'hq_escape') : '' ?>
                         </div>
-                        <div class="col-12 col-md-6 col-xl-2 d-flex gap-2">
-                            <button type="button" class="btn btn-neon flex-grow-1 js-clear-filters" title="Clear filters">Clear</button>
+                        <div class="filter-actions">
+                            <button type="button" class="btn-clear-filters js-clear-filters" title="Clear filters">Clear</button>
                         </div>
                     </form>
                 </div>

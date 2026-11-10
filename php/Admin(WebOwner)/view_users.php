@@ -56,29 +56,29 @@ $flashType = (string) ($flash['type'] ?? '');
     <?php if ($dbError): ?><div class="alert hq-flash alert-danger mb-4"><i class="bi bi-database-exclamation me-2"></i><?= hq_escape($dbError) ?></div><?php endif; ?>
     <?php if (function_exists('expiry_render_page_banners')) { expiry_render_page_banners('admin', true); } ?>
     <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3"><div><span class="stat-chip mb-2"><i class="bi bi-person-vcard-fill txt-neon-cyan"></i> Driver Administration</span><h1 class="fw-bold m-0 h4 text-white mt-2">View/Manage Drivers</h1></div></div>
-    <div class="dashboard-card py-3 px-4 mb-4">
-        <form class="row g-3 align-items-end" method="GET" action="view_users.php">
-            <div class="col-12 col-md-4">
-                <label class="form-label text-white-50 small mb-1" for="userSearch">Search</label>
-                <div class="input-group">
-                    <span class="input-group-text bg-transparent border-end-0" style="border-color:var(--glass-border);color:var(--neon-cyan);border-radius:12px 0 0 12px"><i class="bi bi-search"></i></span>
-                    <input id="userSearch" type="search" class="form-control glass-input border-start-0" placeholder="Search by driver name, email, or company..." name="search" value="<?= hq_escape($search) ?>">
+    <div class="dashboard-card admin-filter-card mb-4">
+        <form class="admin-filter-form" method="GET" action="view_users.php">
+            <div class="filter-group filter-group--search">
+                <label class="filter-label" for="userSearch">Search</label>
+                <div class="filter-search">
+                    <i class="bi bi-search filter-search-icon" aria-hidden="true"></i>
+                    <input id="userSearch" type="search" class="form-control filter-control filter-input" placeholder="Search by driver name, email, or company..." name="search" value="<?= hq_escape($search) ?>">
                 </div>
             </div>
-            <div class="col-6 col-md-2">
-                <label class="form-label text-white-50 small mb-1" for="userStatus">Status</label>
-                <select id="userStatus" class="form-select glass-select" name="status">
+            <div class="filter-group">
+                <label class="filter-label" for="userStatus">Status</label>
+                <div class="filter-select-wrap"><select id="userStatus" class="form-select filter-control filter-select" name="status">
                     <option value="">All Status</option>
                     <?php foreach ($allowedStatuses as $option): ?>
                         <option value="<?= $option ?>" <?= $status === $option ? 'selected' : '' ?>><?= hq_escape(admin_filter_label($option)) ?></option>
                     <?php endforeach; ?>
-                </select>
+                </select></div>
             </div>
-            <div class="col-6 col-md-3">
+            <div class="filter-group">
                 <?= function_exists('expiry_filter_select_html') ? expiry_filter_select_html($expiryFilter, 'userExpiryFilter', 'hq_escape') : '' ?>
             </div>
-            <div class="col-12 col-md-3 d-flex gap-2">
-                <button type="button" class="btn btn-neon flex-grow-1 js-clear-filters" title="Clear filters">Clear</button>
+            <div class="filter-actions">
+                <button type="button" class="btn-clear-filters js-clear-filters" title="Clear filters">Clear</button>
             </div>
         </form>
     </div>
