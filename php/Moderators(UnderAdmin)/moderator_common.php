@@ -15,7 +15,7 @@ function moderator_require_user(): array
     $user = admin_current_user(false);
     $status = strtolower(trim((string) ($user['status'] ?? '')));
 
-    if (!$user || !admin_user_has_role($user, ['moderator']) || !in_array($status, ['approved', 'active'], true)) {
+    if (!$user || !admin_user_has_role($user, ['moderator']) || !in_array($status, admin_portal_allowed_statuses(), true)) {
         header('Location: ../Login/login.php');
         exit;
     }

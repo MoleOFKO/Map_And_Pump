@@ -90,6 +90,15 @@ function admin_is_admin(?array $user = null): bool
 }
 
 /**
+ * Account statuses allowed into Admin and Moderator portals.
+ * Matches login "allowed for everyone" except pending (and still excludes blocked statuses).
+ */
+function admin_portal_allowed_statuses(): array
+{
+    return ['active', 'approved', 'enabled', 'ready'];
+}
+
+/**
  * Require a signed-in admin. Moderators and anonymous users are redirected.
  */
 function admin_require_admin(string $redirect = '../Login/login.php'): array
@@ -100,7 +109,7 @@ function admin_require_admin(string $redirect = '../Login/login.php'): array
 
     $user = admin_current_user(false);
     $status = strtolower(trim((string) ($user['status'] ?? '')));
-    if (!$user || !admin_is_admin($user) || !in_array($status, ['approved', 'active'], true)) {
+    if (!$user || !admin_is_admin($user) || !in_array($status, admin_portal_allowed_statuses(), true)) {
         header('Location: ' . $redirect);
         exit;
     }
@@ -136,7 +145,7 @@ function admin_require_staff(string $redirect = '../Login/login.php'): array
 
     $user = admin_current_user(false);
     $status = strtolower(trim((string) ($user['status'] ?? '')));
-    if (!$user || !admin_user_has_role($user, ['admin', 'moderator']) || !in_array($status, ['approved', 'active'], true)) {
+    if (!$user || !admin_user_has_role($user, ['admin', 'moderator']) || !in_array($status, admin_portal_allowed_statuses(), true)) {
         header('Location: ' . $redirect);
         exit;
     }
@@ -194,7 +203,7 @@ SQL;
 
         $statement = $pdo->query(
             $baseSql . " WHERE bas.headquarter_id IS NULL AND owned_hq.headquarter_id IS NULL AND {$roleFilter}
-             ORDER BY CASE WHEN LOWER(u.status) IN ('approved', 'active') THEN 0 ELSE 1 END,
+             ORDER BY CASE WHEN LOWER(u.status) IN ('approved', 'active', 'enabled', 'ready') THEN 0 ELSE 1 END,
                       u.user_id ASC LIMIT 1"
         );
         return $statement ? ($statement->fetch(PDO::FETCH_ASSOC) ?: null) : null;
@@ -220,7 +229,7 @@ SQL;
     $result = $conn->query(
         $baseSql . " WHERE bas.headquarter_id IS NULL AND owned_hq.headquarter_id IS NULL
          AND (LOWER(TRIM(primary_role.role_name)) IN ('admin', 'moderator') OR LOWER(TRIM(business_role.role_name)) IN ('admin', 'moderator') OR LOWER(TRIM(active_role.role_name)) IN ('admin', 'moderator'))
-         ORDER BY CASE WHEN LOWER(u.status) IN ('approved', 'active') THEN 0 ELSE 1 END,
+         ORDER BY CASE WHEN LOWER(u.status) IN ('approved', 'active', 'enabled', 'ready') THEN 0 ELSE 1 END,
                   u.user_id ASC LIMIT 1"
     );
     return $result ? ($result->fetch_assoc() ?: null) : null;
