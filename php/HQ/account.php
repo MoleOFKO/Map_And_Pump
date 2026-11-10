@@ -455,7 +455,7 @@ endif; ?>
                         <div id="inviteAccountHelp" class="invite-help-panel small p-3 mb-3" hidden>
                             <p class="mb-2"><strong>New Customer Account:</strong> Select this when the email entered above does not already have a customer account. The password you set will be used to create that account and sign in with that email.</p>
                             <p class="mb-2"><strong>Existing Customer Account:</strong> Select this when the email already belongs to a customer. Their current password is kept and is not changed.</p>
-                            <p class="mb-0"><strong>Staff:</strong> You can create a new account or invite an existing customer. Staff invitations require a station and must be accepted before staff access is activated.</p>
+                            <p class="mb-0"><strong>Role records:</strong> Branch manager accounts use the existing account process. Staff accounts are stored directly in <code>staff</code> and can be created with or without a station assignment.</p>
                         </div>
 
                         <div class="row g-3 align-items-end mb-3">
@@ -469,12 +469,19 @@ endif; ?>
                             </div>
                         </div>
 
+                        <div class="row g-3 mb-3" id="inviteStaffNameWrap" hidden>
+                            <div class="col-md-6">
+                                <label class="form-label" for="inviteStaffFullName">Staff Full Name</label>
+                                <input class="form-control" type="text" id="inviteStaffFullName" name="full_name" maxlength="120" autocomplete="name">
+                            </div>
+                        </div>
+
                         <fieldset id="inviteAccountTypeOptions" class="border-0 p-0 m-0">
-                            <legend class="visually-hidden">Customer account type</legend>
+                            <legend class="visually-hidden">Account type</legend>
                             <div class="invite-account-type">
                                 <div class="form-check">
                                     <input class="form-check-input" type="radio" name="invitee_account_type" id="inviteNewCustomerAccount" value="new">
-                                    <label class="form-check-label" for="inviteNewCustomerAccount">New Customer Account</label>
+                                    <label class="form-check-label" for="inviteNewCustomerAccount">New Account</label>
                                 </div>
                                 <div class="form-check">
                                     <input class="form-check-input" type="radio" name="invitee_account_type" id="inviteExistingCustomerAccount" value="existing" checked>
@@ -502,12 +509,12 @@ endif; ?>
                         </div>
 
                         <div class="d-flex align-items-center justify-content-between gap-2 mb-2">
-                            <label class="form-label mb-0" for="inviteStation">Assign To Station <span id="inviteStationRequirement" class="text-white-50">(optional for branch managers)</span></label>
+                            <label class="form-label mb-0" for="inviteStation">Assign To Station <span id="inviteStationRequirement" class="text-white-50">(optional)</span></label>
                             <button type="button" class="btn btn-sm btn-outline-info" data-bs-toggle="modal" data-bs-target="#quickStationModal" data-reopen-source="inviteAccountModal">+ Add Station</button>
                         </div>
                         <select class="form-select" id="inviteStation" name="station_id"><option value="">Select a station</option><option value="none">Do not assign a station</option><?php foreach ($stations as $station): ?><option value="<?= (int)$station['station_id'] ?>"><?= htmlspecialchars((string)$station['station_name'] . ' — ' . (string)$station['location']) ?></option><?php endforeach; ?></select>
                         <?php if (empty($stations)): ?>
-                            <div class="alert alert-info mt-2 mb-0" role="alert">A station is optional for branch managers. Add a station before inviting staff.</div>
+                            <div class="alert alert-info mt-2 mb-0" role="alert">Station assignment is optional. Staff accounts are saved directly in the staff roster.</div>
                         <?php endif; ?>
                     </div>
                     <div class="modal-footer border-0"><button type="button" class="btn btn-outline-secondary text-white" data-bs-dismiss="modal">Cancel</button><button type="submit" class="btn btn-primary">Send Invitation</button></div>
@@ -802,11 +809,12 @@ endif; ?>
             const managerPasswordWrap = document.getElementById('inviteManagerPasswordWrap');
             const managerPassword = document.getElementById('inviteManagerPassword');
             const managerPasswordConfirm = document.getElementById('inviteManagerPasswordConfirm');
+            const staffNameWrap = document.getElementById('inviteStaffNameWrap');
+            const staffFullName = document.getElementById('inviteStaffFullName');
             const inviteSubmitButton = inviteAccountForm.querySelector('button[type="submit"]');
             const inviteModal = document.getElementById('inviteAccountModal');
             const inviteStation = document.getElementById('inviteStation');
             const stationRequirement = document.getElementById('inviteStationRequirement');
-            const unassignedStationOption = inviteStation.querySelector('option[value="none"]');
             const helpButton = document.getElementById('inviteAccountHelpButton');
             const helpPanel = document.getElementById('inviteAccountHelp');
 
@@ -835,15 +843,16 @@ endif; ?>
             const syncManagerPasswordField = function () {
                 const isManager = inviteRole.value === 'manager';
                 const isNewAccount = newCustomerAccount.checked;
-                accountTypeOptions.hidden = false;
-                managerPasswordWrap.hidden = !isNewAccount;
-                managerPassword.required = isNewAccount;
-                managerPasswordConfirm.required = isNewAccount;
-                managerPassword.disabled = !isNewAccount;
-                managerPasswordConfirm.disabled = !isNewAccount;
-                inviteStation.required = !isManager;
-                unassignedStationOption.disabled = !isManager;
-                stationRequirement.textContent = isManager ? '(optional for branch managers)' : '(required for staff)';
+                accountTypeOptions.hidden = !isManager;
+                staffNameWrap.hidden = isManager;
+                staffFullName.required = !isManager;
+                managerPasswordWrap.hidden = isManager && !isNewAccount;
+                managerPassword.required = !isManager || isNewAccount;
+                managerPasswordConfirm.required = !isManager || isNewAccount;
+                managerPassword.disabled = isManager && !isNewAccount;
+                managerPasswordConfirm.disabled = isManager && !isNewAccount;
+                inviteStation.required = false;
+                stationRequirement.textContent = '(optional)';
                 if (!isNewAccount) {
                     managerPassword.value = '';
                     managerPasswordConfirm.value = '';
@@ -859,11 +868,6 @@ endif; ?>
                         icon.classList.add('fa-eye');
                         icon.classList.remove('fa-eye-slash');
                     });
-                }
-                if (!isManager) {
-                    if (inviteStation.value === 'none') {
-                        inviteStation.value = '';
-                    }
                 }
             };
 
