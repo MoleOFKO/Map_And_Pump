@@ -577,13 +577,13 @@ function expiry_filter_select_html(string $selected = '', string $id = 'expiryFi
         'expired' => 'Expired',
         'any' => 'Expiring or expired',
     ];
-    $html = '<label class="form-label text-white-50 small mb-1" for="' . $esc($id) . '">License expiry</label>';
-    $html .= '<select id="' . $esc($id) . '" class="form-select glass-select" name="expiry" aria-label="License expiry filter">';
+    $html = '<label class="form-label small mb-1 filter-label" for="' . $esc($id) . '">License expiry</label>';
+    $html .= '<div class="filter-select-wrap"><select id="' . $esc($id) . '" class="form-select filter-control filter-select" name="expiry" aria-label="License expiry filter">';
     foreach ($opts as $value => $label) {
         $sel = ($selected === $value) ? ' selected' : '';
         $html .= '<option value="' . $esc((string) $value) . '"' . $sel . '>' . $esc($label) . '</option>';
     }
-    $html .= '</select>';
+    $html .= '</select></div>';
     return $html;
 }
 

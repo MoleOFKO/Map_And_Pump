@@ -39,7 +39,12 @@ if ($dateFrom !== '' && $dateTo !== '' && $dateFrom > $dateTo) {
 $logs = [];
 $metrics = ['total' => 0, 'security' => 0, 'warn' => 0, 'error' => 0, 'info' => 0, 'last' => null];
 $dbError = null;
-$displayLimit = 500;
+$pageSize = 12;
+$page = max(1, (int) ($_GET['page'] ?? 1));
+$totalEntries = 0;
+$totalPages = 1;
+$startRow = 0;
+$endRow = 0;
 
 // Actor scopes for Admin audit trail: Admin + Moderator only (never Branch Manager / HQ / Customer).
 $adminActorSql = '(l.role_id = 1 OR (l.role_id IS NULL AND (COALESCE(u.current_role_id, u.business_role_id, u.role_id) = 1 OR LOWER(TRIM(COALESCE(r.role_name, \'\'))) = \'admin\')))';
@@ -91,9 +96,8 @@ if (hq_db_available()) {
         $where[] = '(' . $levelSql . ')';
     }
 
-    // Keep every summary card in the same actor, search, date, and level
-    // scope as the log rows. Severity totals are calculated across the full
-    // match set, independently of the 500-row display window.
+    // Keep every summary card in the same actor, search, date, and level scope
+    // as the log rows; the count is independent of the current page.
     $whereSql = implode(' AND ', $where);
     $metricSql = "SELECT COUNT(*) AS total, MAX(l.created_at) AS last,
             COALESCE(SUM(CASE WHEN LOWER(COALESCE(l.action, '')) REGEXP 'security|auth|login|password|permission|suspend|remove|approve|reject' THEN 1 ELSE 0 END), 0) AS security,
@@ -126,6 +130,13 @@ if (hq_db_available()) {
         $dbError = 'The audit summary could not be prepared.';
     }
 
+    $totalEntries = (int) $metrics['total'];
+    $totalPages = max(1, (int) ceil($totalEntries / $pageSize));
+    $page = min($page, $totalPages);
+    $offset = ($page - 1) * $pageSize;
+    $startRow = $totalEntries > 0 ? $offset + 1 : 0;
+    $endRow = min($offset + $pageSize, $totalEntries);
+
     $sql = 'SELECT l.log_id, l.user_id, l.role_id AS log_role_id, l.action, l.created_at,
                    u.user_name, u.email,
                    COALESCE(r.role_name, \'\') AS actor_role
@@ -134,7 +145,7 @@ if (hq_db_available()) {
             LEFT JOIN roles r ON r.role_id = COALESCE(u.current_role_id, u.business_role_id, u.role_id)
             WHERE ' . $whereSql . '
             ORDER BY l.created_at DESC, l.log_id DESC
-            LIMIT ' . (int) $displayLimit;
+            LIMIT ' . (int) $pageSize . ' OFFSET ' . (int) $offset;
 
     $query = $conn->prepare($sql);
     if ($query) {
@@ -146,9 +157,7 @@ if (hq_db_available()) {
             $result = $query->get_result();
             while ($result && ($row = $result->fetch_assoc())) {
                 $row['level'] = admin_log_level((string) $row['action']);
-                if ($level === 'all' || $row['level'] === $level) {
-                    $logs[] = $row;
-                }
+                $logs[] = $row;
             }
         } else {
             $dbError = 'The audit log could not be loaded.';
@@ -170,6 +179,76 @@ $exportQuery = http_build_query([
     'date_from' => $dateFrom,
     'date_to' => $dateTo,
 ]);
+$pageUrl = static function (int $targetPage) use ($search, $level, $actor, $dateFrom, $dateTo): string {
+    return 'view_logs.php?' . http_build_query([
+        'search' => $search,
+        'log_level' => $level,
+        'actor' => $actor,
+        'date_from' => $dateFrom,
+        'date_to' => $dateTo,
+        'page' => $targetPage,
+    ]);
+};
+$paginationPages = [];
+if ($totalPages <= 5) {
+    $paginationPages = range(1, $totalPages);
+} else {
+    $paginationPages[] = 1;
+    $windowStart = max(2, $page - 1);
+    $windowEnd = min($totalPages - 1, $page + 1);
+    if ($windowStart > 2) {
+        $paginationPages[] = 'ellipsis';
+    }
+    for ($number = $windowStart; $number <= $windowEnd; $number++) {
+        $paginationPages[] = $number;
+    }
+    if ($windowEnd < $totalPages - 1) {
+        $paginationPages[] = 'ellipsis';
+    }
+    $paginationPages[] = $totalPages;
+}
+$formatLogEntry = static function (array $log): array {
+    $action = trim((string) ($log['action'] ?? ''));
+    $actorName = trim((string) ($log['user_name'] ?? ''));
+    if ($actorName !== '' && stripos($action, $actorName . ' ') === 0) {
+        $action = substr($action, strlen($actorName) + 1);
+    }
+
+    $targets = [];
+    if (preg_match_all('/#(\d+)(?:\s*\(([^)]*)\))?/u', $action, $matches, PREG_SET_ORDER)) {
+        foreach ($matches as $match) {
+            $target = '#' . $match[1];
+            if (!empty($match[2])) {
+                $target .= ' · ' . trim($match[2]);
+            }
+            $targets[] = $target;
+        }
+        $action = preg_replace('/\s*#\d+(?:\s*\([^)]*\))?/u', '', $action) ?? $action;
+    }
+    $action = preg_replace('/\s+as\s+[^.]+\.?$/i', '', $action) ?? $action;
+    $action = preg_replace('/\s+for record\s*\.?$/i', '', $action) ?? $action;
+    $action = trim($action, " \t\n\r\0\x0B.");
+
+    $timestamp = strtotime((string) ($log['created_at'] ?? ''));
+    $roleId = (int) ($log['log_role_id'] ?? 0);
+    $role = match ($roleId) {
+        1 => 'Admin',
+        2 => 'Moderator',
+        default => trim((string) ($log['actor_role'] ?? '')),
+    };
+    if ($role !== '' && $roleId !== 1 && $roleId !== 2) {
+        $role = ucwords(strtolower($role));
+    }
+
+    return [
+        'action' => $action !== '' ? $action : 'Activity recorded',
+        'target' => $targets ? implode(' · ', $targets) : '',
+        'date' => $timestamp !== false ? date('M j, Y', $timestamp) : 'Unknown date',
+        'time' => $timestamp !== false ? date('g:i A', $timestamp) : '',
+        'actor' => $actorName !== '' ? '@' . $actorName : '@Unknown actor',
+        'role' => $role !== '' ? $role : 'Staff',
+    ];
+};
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -186,9 +265,6 @@ $exportQuery = http_build_query([
     <style>
         .log-flash { border-radius:14px; background:rgba(10,22,44,.82); border:1px solid var(--glass-border); color:var(--text-primary); }
         body.background_color.light-mode .log-flash { background:rgba(255,255,255,.92); }
-        .terminal-panel {
-            max-height: min(62vh, 560px);
-        }
     </style>
 </head>
 <body class="background_color" id="background_color">
@@ -213,9 +289,6 @@ $exportQuery = http_build_query([
                     <i class="bi bi-trash3-fill"></i> Clear Filtered Logs
                 </button>
             </form>
-            <a class="btn btn-neon log-header-action d-flex align-items-center gap-2 js-export-logs" href="log_action.php?<?= hq_escape($exportQuery) ?>">
-                <i class="bi bi-cloud-arrow-down-fill"></i> Export CSV
-            </a>
         </div>
     </div>
 
@@ -256,71 +329,99 @@ $exportQuery = http_build_query([
         </div>
     </div>
 
-    <div class="dashboard-card py-3 px-4 mb-4">
-        <form class="row g-3 align-items-end" method="GET" action="view_logs.php">
-            <div class="col-12 col-sm-6 col-xl-2">
-                <label class="form-label text-white-50 small mb-1" for="logSearch">Search</label>
-                <div class="input-group">
-                    <span class="input-group-text bg-transparent border-end-0" style="border-color:var(--glass-border);color:var(--neon-cyan);border-radius:12px 0 0 12px;"><i class="bi bi-terminal"></i></span>
-                    <input id="logSearch" type="search" class="form-control glass-input border-start-0" placeholder="Action, username, or email…" name="search" value="<?= hq_escape($search) ?>">
+    <div class="dashboard-card admin-filter-card mb-4">
+        <form class="activity-log-filter-form" method="GET" action="view_logs.php">
+            <div class="activity-search-row">
+                <label class="filter-label" for="logSearch">Search</label>
+                <div class="filter-search">
+                    <i class="bi bi-search filter-search-icon" aria-hidden="true"></i>
+                    <input id="logSearch" type="search" class="form-control filter-control filter-input" placeholder="Search action, username, or email" name="search" value="<?= hq_escape($search) ?>">
                 </div>
             </div>
-            <div class="col-6 col-xl-2">
-                <label class="form-label text-white-50 small mb-1" for="logActor">Actor</label>
-                <select id="logActor" class="form-select glass-select" name="actor">
-                    <option value="all" <?= $actor === 'all' ? 'selected' : '' ?>>Admin &amp; Moderator</option>
-                    <option value="admin" <?= $actor === 'admin' ? 'selected' : '' ?>>Admin only</option>
-                    <option value="moderator" <?= $actor === 'moderator' ? 'selected' : '' ?>>Moderator only</option>
-                </select>
-            </div>
-            <div class="col-6 col-xl-2">
-                <label class="form-label text-white-50 small mb-1" for="logLevel">Level</label>
-                <select id="logLevel" class="form-select glass-select" name="log_level">
-                    <option value="all" <?= $level === 'all' ? 'selected' : '' ?>>All levels</option>
-                    <?php foreach (['info' => 'INFO', 'warn' => 'WARN', 'error' => 'ERROR', 'security' => 'SECURITY'] as $value => $label): ?>
-                        <option value="<?= $value ?>" <?= $level === $value ? 'selected' : '' ?>><?= $label ?></option>
-                    <?php endforeach; ?>
-                </select>
-            </div>
-            <div class="col-6 col-xl-2">
-                <label class="form-label text-white-50 small mb-1" for="logDateFrom">From</label>
-                <input id="logDateFrom" type="date" class="form-control glass-input" name="date_from" value="<?= hq_escape($dateFrom) ?>">
-            </div>
-            <div class="col-6 col-xl-2">
-                <label class="form-label text-white-50 small mb-1" for="logDateTo">To</label>
-                <input id="logDateTo" type="date" class="form-control glass-input" name="date_to" value="<?= hq_escape($dateTo) ?>">
-            </div>
-            <div class="col-12 col-xl-2 d-flex">
-                <button type="button" class="btn btn-neon flex-grow-1 js-clear-filters" title="Clear filters">Clear</button>
+            <div class="activity-log-filter-row">
+                <div class="filter-group">
+                    <label class="filter-label" for="logActor">Actor</label>
+                    <div class="filter-select-wrap"><select id="logActor" class="form-select filter-control filter-select" name="actor">
+                        <option value="all" <?= $actor === 'all' ? 'selected' : '' ?>>Admin &amp; Moderator</option>
+                        <option value="admin" <?= $actor === 'admin' ? 'selected' : '' ?>>Admin only</option>
+                        <option value="moderator" <?= $actor === 'moderator' ? 'selected' : '' ?>>Moderator only</option>
+                    </select></div>
+                </div>
+                <div class="filter-group">
+                    <label class="filter-label" for="logLevel">Level</label>
+                    <div class="filter-select-wrap"><select id="logLevel" class="form-select filter-control filter-select" name="log_level">
+                        <option value="all" <?= $level === 'all' ? 'selected' : '' ?>>All levels</option>
+                        <?php foreach (['info' => 'INFO', 'warn' => 'WARN', 'error' => 'ERROR', 'security' => 'SECURITY'] as $value => $label): ?>
+                            <option value="<?= $value ?>" <?= $level === $value ? 'selected' : '' ?>><?= $label ?></option>
+                        <?php endforeach; ?>
+                    </select></div>
+                </div>
+                <div class="filter-group">
+                    <label class="filter-label" for="logDateFrom">From</label>
+                    <input id="logDateFrom" type="date" class="form-control filter-control filter-input" name="date_from" value="<?= hq_escape($dateFrom) ?>">
+                </div>
+                <div class="filter-group">
+                    <label class="filter-label" for="logDateTo">To</label>
+                    <input id="logDateTo" type="date" class="form-control filter-control filter-input" name="date_to" value="<?= hq_escape($dateTo) ?>">
+                </div>
+                <button type="button" class="btn-clear-filters js-clear-filters" title="Clear filters">✕ Clear filters</button>
             </div>
         </form>
     </div>
 
-    <div class="analytics-card p-1">
-        <div class="terminal-panel">
-            <?php if (!$logs): ?>
-                <div><span class="log-warn">[INFO]</span> No log entries match the current filters.</div>
-            <?php else: ?>
-                <?php foreach ($logs as $log): ?>
-                    <?php
-                    $logClass = $log['level'] === 'security' ? 'log-sec' : 'log-' . $log['level'];
-                    $actorName = (string) ($log['user_name'] ?? '');
-                    $actorRole = (string) ($log['actor_role'] ?? '');
-                    ?>
-                    <div>
-                        <span class="log-time">[<?= hq_escape(admin_date((string) $log['created_at'])) ?>]</span>
-                        <span class="<?= hq_escape($logClass) ?>">[<?= strtoupper(hq_escape((string) $log['level'])) ?>]</span>
-                        &nbsp;&nbsp;<?= hq_escape((string) $log['action']) ?>
-                        <?php if ($actorName !== ''): ?>
-                            <span class="txt-neon-cyan">(@<?= hq_escape($actorName) ?><?= $actorRole !== '' ? ' · ' . hq_escape($actorRole) : '' ?>)</span>
-                        <?php endif; ?>
-                    </div>
-                <?php endforeach; ?>
-            <?php endif; ?>
-            <div class="mt-2">
-                <span class="txt-neon-cyan">&gt; Showing up to <?= (int) $displayLimit ?> newest matching rows. Scroll for more within this window.</span>
-                <span class="term-cursor"></span>
+    <div class="analytics-card activity-log-card">
+        <div class="activity-log-header">
+            <div>
+                <h2 class="activity-log-title">Activity log</h2>
+                <p class="activity-log-subtitle">Showing <?= (int) $startRow ?>–<?= (int) $endRow ?> of <?= (int) $totalEntries ?> entries</p>
             </div>
+            <a class="btn activity-export-btn js-export-logs" href="log_action.php?<?= hq_escape($exportQuery) ?>"><i class="bi bi-download me-1" aria-hidden="true"></i>Export CSV</a>
+        </div>
+        <div class="table-responsive activity-log-table-wrap">
+            <table class="table table-dark-custom activity-log-table align-middle m-0">
+                <thead><tr><th scope="col">Time</th><th scope="col">Level</th><th scope="col">Action</th><th scope="col">Target</th><th scope="col">Actor</th></tr></thead>
+                <tbody>
+                <?php if (!$logs): ?>
+                    <tr><td class="activity-log-empty" colspan="5">No log entries match the current filters.</td></tr>
+                <?php else: ?>
+                    <?php foreach ($logs as $log): ?>
+                        <?php
+                        $entry = $formatLogEntry($log);
+                        $levelName = (string) $log['level'];
+                        $levelClass = in_array($levelName, ['security', 'info', 'warn', 'error'], true) ? $levelName : 'info';
+                        ?>
+                        <tr>
+                            <td><span class="activity-log-date"><?= hq_escape($entry['date']) ?></span><span class="activity-log-time"><?= hq_escape($entry['time']) ?></span></td>
+                            <td><span class="activity-level-badge activity-level-<?= hq_escape($levelClass) ?>"><span class="activity-level-dot" aria-hidden="true"></span><?= hq_escape(ucfirst($levelName)) ?></span></td>
+                            <td class="activity-log-action"><?= hq_escape($entry['action']) ?></td>
+                            <td>
+                                <?php if ($entry['target'] !== ''): ?>
+                                    <span class="activity-log-target"><code><?= hq_escape($entry['target']) ?></code><button type="button" class="activity-copy-btn" data-copy-text="<?= hq_escape($entry['target']) ?>" aria-label="Copy target <?= hq_escape($entry['target']) ?>">Copy</button></span>
+                                <?php else: ?>
+                                    <span class="activity-log-no-target">—</span>
+                                <?php endif; ?>
+                            </td>
+                            <td><span class="activity-log-actor"><?= hq_escape($entry['actor']) ?></span><span class="activity-log-role"><?= hq_escape($entry['role']) ?></span></td>
+                        </tr>
+                    <?php endforeach; ?>
+                <?php endif; ?>
+                </tbody>
+            </table>
+        </div>
+        <div class="activity-log-footer">
+            <span class="activity-log-rows">Rows <?= (int) $startRow ?>–<?= (int) $endRow ?></span>
+            <nav class="activity-pagination" aria-label="Activity log pages">
+                <a class="activity-page-link<?= $page <= 1 ? ' is-disabled' : '' ?>" href="<?= hq_escape($pageUrl(max(1, $page - 1))) ?>"<?= $page <= 1 ? ' aria-disabled="true" tabindex="-1"' : '' ?>>&lt; Prev</a>
+                <?php foreach ($paginationPages as $paginationPage): ?>
+                    <?php if ($paginationPage === 'ellipsis'): ?>
+                        <span class="activity-page-ellipsis" aria-hidden="true">…</span>
+                    <?php else: ?>
+                        <?php $pageNumber = (int) $paginationPage; ?>
+                        <a class="activity-page-link<?= $pageNumber === $page ? ' is-current' : '' ?>" href="<?= hq_escape($pageUrl($pageNumber)) ?>"<?= $pageNumber === $page ? ' aria-current="page"' : '' ?>><?= $pageNumber ?></a>
+                    <?php endif; ?>
+                <?php endforeach; ?>
+                <a class="activity-page-link<?= $page >= $totalPages ? ' is-disabled' : '' ?>" href="<?= hq_escape($pageUrl(min($totalPages, $page + 1))) ?>"<?= $page >= $totalPages ? ' aria-disabled="true" tabindex="-1"' : '' ?>>Next &gt;</a>
+            </nav>
         </div>
     </div>
 </main>

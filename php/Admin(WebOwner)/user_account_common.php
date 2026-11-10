@@ -322,7 +322,7 @@ function user_account_review_schema_ready(): bool
     return $ready = true;
 }
 
-function pending_account_rows(string $search = ''): array
+function pending_account_rows(string $search = '', string $status = 'pending'): array
 {
     global $conn;
     $rows = [];
@@ -331,11 +331,15 @@ function pending_account_rows(string $search = ''): array
         return $rows;
     }
 
-    // Account Verification is reserved for accounts awaiting the explicit verification state.
-    // Legacy generic "pending" accounts must not be shown or actioned from this review queue.
-    $where = ["LOWER(TRIM(u.status)) = 'pending_verification'"];
-    $params = [];
-    $types = '';
+    $status = strtolower(trim($status));
+    $statusValues = match ($status) {
+        'approved' => ['approved', 'active'],
+        'reject' => ['rejected'],
+        default => ['pending_verification'],
+    };
+    $where = ['LOWER(TRIM(u.status)) IN (' . implode(',', array_fill(0, count($statusValues), '?')) . ')'];
+    $params = $statusValues;
+    $types = str_repeat('s', count($statusValues));
 
     if ($search !== '') {
         $where[] = '(LOWER(u.user_name) LIKE ? OR LOWER(u.email) LIKE ? OR LOWER(COALESCE(h.company_name, \'\')) LIKE ? OR LOWER(COALESCE(l.license_number, \'\')) LIKE ? OR LOWER(COALESCE(l.license_name, \'\')) LIKE ?)';
@@ -394,7 +398,7 @@ SQL;
     return $rows;
 }
 
-function pending_car_license_rows(string $search = ''): array
+function pending_car_license_rows(string $search = '', string $status = 'pending'): array
 {
     global $conn;
     $rows = [];
@@ -444,12 +448,18 @@ function pending_car_license_rows(string $search = ''): array
     $orderSql = user_account_column_exists('car_license', 'created_at')
         ? 'c.created_at DESC, c.car_license_id DESC'
         : 'c.car_license_id DESC';
+    $status = strtolower(trim($status));
+    $statusValues = match ($status) {
+        'approved' => ['approved'],
+        'reject' => ['rejected'],
+        default => ['pending', 'pending_verification'],
+    };
     $sql = 'SELECT c.car_license_id, ' . implode(', ', $selectFields) . ', c.status,
                    ' . $ownerSelect . ', ' . $conflictSelect . '
             FROM car_license c ' . $ownerJoin . "
-            WHERE LOWER(TRIM(c.status)) IN ('pending', 'pending_verification')";
-    $params = [];
-    $types = '';
+            WHERE LOWER(TRIM(c.status)) IN (" . implode(',', array_fill(0, count($statusValues), '?')) . ')';
+    $params = $statusValues;
+    $types = str_repeat('s', count($statusValues));
     if ($search !== '') {
         $searchableFields = [];
         foreach (['car_plate_number', 'car_owner_name', 'vehicle_name'] as $field) {
