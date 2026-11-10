@@ -82,15 +82,14 @@ if (!function_exists('map_pump_public_pdo')) {
 if (!function_exists('map_pump_load_latest_station_prices')) {
     function map_pump_load_latest_station_prices(PDO $pdo): array
     {
-        $latestInventorySql = map_pump_latest_station_inventory_sql();
-        $hqOwnerJoinSql = map_pump_public_hq_owner_join_sql();
         $stmt = $pdo->query(
                 "SELECT s.branch_id AS station_id, s.branch_name AS station_name,
                     s.address AS station_address,
                     s.hq_region AS station_region,
                     h.headquarter_id, h.company_name,
-                    ot.oil_type_id, ot.oil_name, li.price_per_litre, li.is_active, li.updated_at,
-                    t.fuel_code,
+                    ot.oil_type_id, ot.oil_name,
+                    CAST(NULLIF(t.fuel_price, '') AS DECIMAL(12,2)) AS price_per_litre,
+                    COALESCE(t.is_enabled, 1) AS is_active, t.updated_at,
                     GREATEST(0, t.current_l - COALESCE((
                         SELECT SUM(r.requested_liters)
                         FROM booking_reservations r
@@ -103,19 +102,15 @@ if (!function_exists('map_pump_load_latest_station_prices')) {
              FROM branches s
              INNER JOIN station_business_scope sbs ON sbs.station_id = s.branch_id
              INNER JOIN headquarter h ON h.headquarter_id = sbs.headquarter_id
-             {$hqOwnerJoinSql}
-             INNER JOIN ({$latestInventorySql}) li ON li.station_id = s.branch_id
-             INNER JOIN oil_types ot ON ot.oil_type_id = li.oil_type_id
-             LEFT JOIN tanks t ON t.branch_id = s.branch_id
-                AND (
-                    (t.fuel_code = 'p92' AND LOWER(REPLACE(ot.oil_name, ' ', '')) = 'octane92')
-                    OR (t.fuel_code = 'p95' AND LOWER(REPLACE(ot.oil_name, ' ', '')) = 'octane95')
-                    OR (t.fuel_code = 'dsl' AND LOWER(REPLACE(ot.oil_name, ' ', '')) IN ('disel', 'diesel'))
-                    OR (t.fuel_code = 'pdsl' AND LOWER(REPLACE(ot.oil_name, ' ', '')) IN ('premiumdisel', 'premiumdiesel'))
-                )
+                         INNER JOIN tanks t ON t.branch_id = s.branch_id
+                         INNER JOIN oil_types ot ON ot.oil_type_id = t.oil_type_id
              WHERE LOWER(COALESCE(s.status, 'active')) IN ('active', 'approved')
-               AND LOWER(COALESCE(hq_owner.status, 'approved')) IN ('active', 'approved')
-               AND li.price_per_litre > 0"
+                             AND (h.service_expires_at IS NULL OR h.service_expires_at >= NOW())
+                             AND (
+                                        NULLIF(TRIM(h.business_license_expire_date), '') IS NULL
+                                        OR STR_TO_DATE(h.business_license_expire_date, '%Y-%m-%d') >= CURDATE()
+                             )
+                             AND CAST(NULLIF(t.fuel_price, '') AS DECIMAL(12,2)) > 0"
         );
 
         $rows = [];
@@ -217,7 +212,12 @@ if (!function_exists('map_pump_build_public_market_data')) {
             }
 
             $data['source'] = 'database';
-            $prevWeek = map_pump_load_previous_week_prices($pdo);
+            try {
+                $prevWeek = map_pump_load_previous_week_prices($pdo);
+            } catch (Throwable $e) {
+                error_log('Previous-week fuel prices are unavailable: ' . $e->getMessage());
+                $prevWeek = [];
+            }
 
             $gradeTotals = [];
             $gradeUpdated = [];
