@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 /**
  * dashboard.php  —  Branch Manager landing page.
  * Loads: KPIs, live queue, alerts, recent notifications.
@@ -10,8 +10,11 @@ require_branch_manager();
 $ctx      = current_context($pdo);
 $user     = $ctx['user'];
 $branch   = $ctx['branch'];
-$initials = initials($user['full_name']);
-$bid      = (int)$branch['branch_id'];
+$managerName = getFullDisplayName($user);
+$initials = initials($managerName);
+$bid      = (int)($branch['branch_id'] ?? 0);
+$managerDisplayName = $managerName;
+$managerAvatarUrl   = map_pump_user_avatar_url($user['avatar_url'] ?? ($_SESSION['user_avatar_url'] ?? ''), '');
 
 // ---- KPI: Tokens issued today ----
 $stmt = $pdo->prepare("
@@ -298,9 +301,13 @@ sort($sales_fuel_names, SORT_STRING);
     background: var(--navy-950); color: var(--slate-50);
   }
   body.branch-manager-theme.light-mode {
-    --navy-950:#f3f6fb; --navy-900:#ffffff; --navy-800:#f7f9fc; --navy-700:#edf3fb; --navy-600:#e5edf8;
-    --blue-700:#286be0; --blue-500:#3c82ff; --sky-400:#3f8cf5; --amber-400:#d98400; --amber-300:#e2a72d; --mint-400:#128e6b; --red-400:#cf3d3d;
-    --slate-50:#172337; --slate-300:#3c4d68; --slate-400:#58677e; background: var(--navy-950); color: var(--slate-50);
+    --navy-950:#f1f5fa; --navy-900:#ffffff; --navy-800:#f8fafc; --navy-700:#eef3f9; --navy-600:#e4ebf4;
+    --blue-700:#2563eb; --blue-500:#3b82f6; --sky-400:#0284c7; --amber-400:#d97706; --amber-300:#a16207; --mint-400:#047857; --red-400:#dc2626;
+    --slate-50:#0f172a; --slate-200:#1e293b; --slate-300:#334155; --slate-400:#5b6b82; background: var(--navy-950); color: var(--slate-50);
+    --lm-border:rgba(15,23,42,0.09); --lm-border-strong:rgba(15,23,42,0.16); --lm-hover:rgba(15,23,42,0.045);
+    --lm-shadow:0 1px 2px rgba(15,23,42,0.04), 0 8px 20px -12px rgba(15,23,42,0.12);
+    --lm-shadow-hover:0 14px 28px -14px rgba(15,23,42,0.22);
+    color-scheme: light;
   }
   body.branch-manager-theme.light-mode .sidebar,
   body.branch-manager-theme.light-mode .topbar,
@@ -318,7 +325,7 @@ sort($sales_fuel_names, SORT_STRING);
   body.branch-manager-theme.light-mode .modal-card-custom,
   body.branch-manager-theme.light-mode .account-profile-card,
   body.branch-manager-theme.light-mode .account-sidecard {
-    background: var(--navy-900); border-color: rgba(17,24,39,0.12); color: var(--slate-50);
+    background: var(--navy-900); border-color: var(--lm-border); color: var(--slate-50);
   }
   body.branch-manager-theme.light-mode .side-link,
   body.branch-manager-theme.light-mode .side-branch span,
@@ -348,6 +355,82 @@ sort($sales_fuel_names, SORT_STRING);
   .staff-theme-control span { font-size: 1.05rem; }
   .staff-theme-control:focus-within span { outline: 2px solid var(--sky-400); outline-offset: 4px; border-radius: 3px; }
   body.branch-manager-theme.light-mode .staff-theme-control { color: var(--slate-400); }
+
+  /* ---------- Light mode refinements ---------- */
+  body.branch-manager-theme.light-mode .sidebar { border-right-color: var(--lm-border); }
+  body.branch-manager-theme.light-mode .sidebar .disp { color: var(--slate-50) !important; }
+  body.branch-manager-theme.light-mode .side-branch { background: var(--navy-800); }
+  body.branch-manager-theme.light-mode .side-branch:hover { background: var(--navy-700); }
+  body.branch-manager-theme.light-mode .side-link:hover { background: var(--lm-hover); color: var(--slate-50); }
+  body.branch-manager-theme.light-mode .side-logout { border-top-color: var(--lm-border); }
+  body.branch-manager-theme.light-mode .side-logout:hover { background: rgba(220,38,38,0.08); }
+  body.branch-manager-theme.light-mode .topbar { background: rgba(255,255,255,0.86); border-bottom-color: var(--lm-border); box-shadow: 0 1px 0 rgba(15,23,42,0.02); }
+  body.branch-manager-theme.light-mode .bell:hover { background: var(--navy-700); }
+  body.branch-manager-theme.light-mode .bell .ping { box-shadow: 0 0 0 2px #ffffff; }
+  body.branch-manager-theme.light-mode .avatar-circle,
+  body.branch-manager-theme.light-mode .avatar-circle a,
+  body.branch-manager-theme.light-mode .mini-avatar { color: #ffffff; }
+  body.branch-manager-theme.light-mode .avatar-chip img { border-color: var(--lm-border-strong) !important; }
+  body.branch-manager-theme.light-mode .staff-theme-control:hover { color: var(--slate-50); }
+  body.branch-manager-theme.light-mode .notif-popup { border-color: var(--lm-border-strong); box-shadow: 0 18px 40px -14px rgba(15,23,42,0.28); }
+  body.branch-manager-theme.light-mode .notif-header { border-bottom-color: var(--lm-border); }
+  body.branch-manager-theme.light-mode .notif-item:hover { background-color: var(--lm-hover); }
+  body.branch-manager-theme.light-mode .notif-item.unread { border-color: rgba(2,132,199,0.28); }
+  body.branch-manager-theme.light-mode .page-foot { border-top-color: var(--lm-border); }
+
+  body.branch-manager-theme.light-mode .stat-card,
+  body.branch-manager-theme.light-mode .module-card,
+  body.branch-manager-theme.light-mode .panel { box-shadow: var(--lm-shadow); }
+  body.branch-manager-theme.light-mode .stat-card:hover,
+  body.branch-manager-theme.light-mode .module-card:hover { border-color: rgba(2,132,199,0.35); box-shadow: var(--lm-shadow-hover); }
+  body.branch-manager-theme.light-mode .stat-sub { border-top-color: var(--lm-border); }
+  body.branch-manager-theme.light-mode .module-card.staff .ic-badge { background: rgba(4,120,87,0.10); color: var(--mint-400); }
+  body.branch-manager-theme.light-mode .module-card.oil .ic-badge { background: rgba(217,119,6,0.12); color: #b45309; }
+  body.branch-manager-theme.light-mode .module-card.slot .ic-badge { background: rgba(2,132,199,0.10); color: var(--sky-400); }
+  body.branch-manager-theme.light-mode .module-card.profile .ic-badge { background: rgba(79,70,229,0.10); color: #4f46e5; }
+  body.branch-manager-theme.light-mode .queue-row { border-bottom-color: var(--lm-border); }
+  body.branch-manager-theme.light-mode .status-pill.serving { background: rgba(4,120,87,0.10); }
+  body.branch-manager-theme.light-mode .status-pill.waiting { background: rgba(2,132,199,0.10); }
+  body.branch-manager-theme.light-mode .alert-row { border-bottom-color: var(--lm-border); }
+  body.branch-manager-theme.light-mode .alert-row:hover { background-color: var(--lm-hover); }
+  body.branch-manager-theme.light-mode .tank { background: linear-gradient(180deg, #ffffff, #f4f8fc); border-color: rgba(2,132,199,0.32); box-shadow: 0 10px 20px -16px rgba(2,132,199,0.45); }
+  body.branch-manager-theme.light-mode .tank .tank-body { background: #e6edf6; border-color: var(--lm-border); }
+  body.branch-manager-theme.light-mode .tank-status.ok { background: rgba(4,120,87,0.10); border-color: rgba(4,120,87,0.20); }
+  body.branch-manager-theme.light-mode .tank-status.low { background: rgba(220,38,38,0.08); border-color: rgba(220,38,38,0.20); }
+  body.branch-manager-theme.light-mode .pg-btn { background: #ffffff; border-color: var(--lm-border-strong); color: var(--slate-300); }
+  body.branch-manager-theme.light-mode .pg-btn:hover:not(:disabled) { background: #f1f5f9; color: var(--slate-50); }
+  body.branch-manager-theme.light-mode .pg-btn.active,
+  body.branch-manager-theme.light-mode .pg-btn.active:hover:not(:disabled) { color: #ffffff; }
+  body.branch-manager-theme.light-mode .edit-color-btn { background: #ffffff; border-color: var(--lm-border-strong); color: var(--slate-50); }
+  body.branch-manager-theme.light-mode .edit-color-btn:hover { background: rgba(2,132,199,0.08); border-color: rgba(2,132,199,0.40); color: var(--sky-400); }
+  body.branch-manager-theme.light-mode .color-modal-backdrop { background: rgba(15,23,42,0.45); }
+  body.branch-manager-theme.light-mode .color-modal { border-color: var(--lm-border-strong); box-shadow: 0 24px 60px -20px rgba(15,23,42,0.35); }
+  body.branch-manager-theme.light-mode .color-modal-close { background: #f1f5f9; border-color: var(--lm-border); }
+  body.branch-manager-theme.light-mode .color-modal-close:hover { background: #e2e8f0; }
+  body.branch-manager-theme.light-mode .fuel-color-table th,
+  body.branch-manager-theme.light-mode .fuel-color-table td { border-bottom-color: var(--lm-border); }
+  body.branch-manager-theme.light-mode .fuel-color-table tbody tr:hover { background: var(--navy-800); }
+  body.branch-manager-theme.light-mode .fuel-swatch,
+  body.branch-manager-theme.light-mode .color-preview-chip { border-color: rgba(15,23,42,0.18); }
+  body.branch-manager-theme.light-mode .color-preview { background: var(--navy-800); border-color: var(--lm-border); }
+  body.branch-manager-theme.light-mode .rng-btn { background: #ffffff; border-color: var(--lm-border-strong); color: var(--slate-300); }
+  body.branch-manager-theme.light-mode .rng-btn:hover { background: #f1f5f9; color: var(--slate-50); }
+  body.branch-manager-theme.light-mode .rng-btn.active,
+  body.branch-manager-theme.light-mode .rng-btn.active:hover { color: #000000; }
+  body.branch-manager-theme.light-mode .fuel-select { background: #ffffff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5l5 5 5-5' fill='none' stroke='%23334155' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat right 14px center; border-color: var(--lm-border-strong); color: var(--slate-50); }
+  body.branch-manager-theme.light-mode .fuel-select:hover { border-color: rgba(15,23,42,0.30); }
+  body.branch-manager-theme.light-mode .fuel-select:focus { border-color: var(--blue-700); box-shadow: 0 0 0 3px rgba(37,99,235,0.18); }
+  body.branch-manager-theme.light-mode .sc-grid { stroke: rgba(15,23,42,0.08); }
+  body.branch-manager-theme.light-mode .sc-axis { stroke: rgba(15,23,42,0.22); }
+  body.branch-manager-theme.light-mode .sc-cross { stroke: rgba(51,65,85,0.45); }
+  body.branch-manager-theme.light-mode .sc-ball { filter: drop-shadow(0 0 5px rgba(2,132,199,0.45)); }
+  body.branch-manager-theme.light-mode .sc-tip { background: rgba(255,255,255,0.98); border-color: var(--lm-border-strong); box-shadow: 0 18px 36px -14px rgba(15,23,42,0.30); }
+  body.branch-manager-theme.light-mode .sc-tip .t-date,
+  body.branch-manager-theme.light-mode .sc-tip .t-sum { border-bottom-color: var(--lm-border); }
+  body.branch-manager-theme.light-mode .sc-tip .t-amt,
+  body.branch-manager-theme.light-mode .sc-tip .t-lit,
+  body.branch-manager-theme.light-mode .sc-tip .t-row b { color: var(--slate-50); }
+  body.branch-manager-theme.light-mode .sc-tip .t-row i { box-shadow: inset 0 0 0 1px rgba(15,23,42,0.12); }
 
   *{box-sizing:border-box; margin:0; padding:0;}
   
@@ -432,14 +515,11 @@ sort($sales_fuel_names, SORT_STRING);
   
   .bell{
     width:36px; height:36px; border-radius:50%; background:var(--navy-800); display:flex; align-items:center; 
-    justify-content:center; border:1px solid rgba(255,255,255,0.08); position:relative; font-size:15px; color:var(--slate-300);
+    justify-content:center; border:1px solid rgba(255,255,255,0.08); position:relative; font-size:15px; cursor:pointer;
     transition: transform 0.2s, background-color 0.2s;
   }
-  .bell:hover{
-    background: var(--navy-700);
-    transform: scale(1.05);
-  }
-  .bell .ping{position:absolute; top:6px; right:7px; width:7px; height:7px; border-radius:50%; background:var(--amber-400); box-shadow:0 0 0 2px var(--navy-800);}
+  .bell:hover{ background: var(--navy-700); transform: scale(1.05); }
+  .bell .ping{position:absolute; top:4px; right:4px; width:10px; height:10px; border-radius:50%; background:#ef4444; box-shadow:0 0 0 2px var(--navy-800);}
   
   /* ---------- Notifications Dropdown ---------- */
   .notif-popup {
@@ -447,67 +527,52 @@ sort($sales_fuel_names, SORT_STRING);
     top: 48px;
     right: 60px;
     width: 320px;
+    max-height: 420px;
+    overflow: hidden;
     background: var(--navy-800);
     border: 1px solid rgba(255, 255, 255, 0.12);
     border-radius: 14px;
     box-shadow: 0 16px 32px rgba(0, 0, 0, 0.4);
-    padding: 16px;
+    padding: 12px;
     z-index: 100;
     display: none;
     animation: fadeInDown 0.25s cubic-bezier(0.16, 1, 0.3, 1);
   }
-  .notif-popup.show {
-    display: block;
+  .notif-popup.show { display: block; }
+  .notif-header { display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom:10px; margin-bottom:10px; }
+  .notif-header h4 { font-size: 14px; font-weight:700; margin:0; }
+  .notif-list {
+    max-height: 330px;
+    overflow-y: auto;
+    overflow-x: auto;
+    padding-right: 4px;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(56,189,248,0.35) transparent;
   }
-  .notif-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-    padding-bottom: 10px;
-    margin-bottom: 10px;
-  }
-  .notif-header h4 {
-    font-size: 14px;
-    font-weight: 700;
-    margin: 0;
-  }
-  .notif-header span {
-    font-size: 11px;
-    color: var(--sky-400);
-  }
+  .notif-list::-webkit-scrollbar { width: 8px; height: 8px; }
+  .notif-list::-webkit-scrollbar-track { background: transparent; }
+  .notif-list::-webkit-scrollbar-thumb { background: rgba(56,189,248,0.35); border-radius: 999px; }
+  .notif-list::-webkit-scrollbar-thumb:hover { background: rgba(56,189,248,0.55); }
   .notif-item {
-    padding: 10px;
-    border-radius: 8px;
-    font-size: 12.5px;
-    transition: background-color 0.2s;
-    display: flex;
-    gap: 10px;
+    padding: 10px 8px; border-radius: 10px; display: flex; gap: 10px; align-items: flex-start; transition: background-color 0.2s; border: 1px solid transparent;
   }
-  .notif-item:hover {
-    background-color: rgba(255, 255, 255, 0.04);
+  .notif-item:hover { background-color: rgba(255,255,255,0.04); }
+  .notif-item.unread { border-color: rgba(56,189,248,0.2); }
+  .notif-item-warning .icon,
+  .notif-item.error .icon,
+  .notif-item.warn .icon,
+  .notif-item .icon {
+    display: none;
   }
-  .notif-item .ic {
-    font-size: 14px;
-    margin-top: 2px;
+  .notif-item-body {
+    min-width: 0;
+    flex: 1;
   }
-  .notif-item-body b {
-    display: block;
-    font-size: 13px;
-  }
-  .notif-item-body span {
-    color: var(--slate-400);
-    font-size: 11.5px;
-  }
-  .notif-time {
-    font-size: 10px;
-    color: var(--slate-400);
-    margin-top: 4px;
-  }
-  @keyframes fadeInDown {
-    from { opacity: 0; transform: translateY(-8px); }
-    to { opacity: 1; transform: translateY(0); }
-  }
+  .notif-item-body b { display:block; font-size:12.5px; color:var(--slate-50); margin-bottom:2px; }
+  .notif-item-body span { color:var(--slate-400); font-size:11.5px; display:block; white-space:normal; line-height:1.5; }
+  .notif-item-body .notif-time { font-size:10px; color:var(--slate-400); margin-top:4px; }
+  .notif-empty { text-align:center; padding:12px 0; color:var(--slate-400); font-size:12px; }
+  @keyframes fadeInDown { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
 
   .avatar-chip{display:flex; align-items:center; gap:10px; font-size:13px; padding: 4px 8px; border-radius: 99px; transition: background 0.2s;}
   .avatar-chip:hover{background: rgba(255,255,255,0.05);}
@@ -658,8 +723,8 @@ sort($sales_fuel_names, SORT_STRING);
   .pg-controls { display:flex; align-items:center; justify-content:center; gap:6px; margin-top:18px; flex-wrap:wrap; }
   .pg-btn { background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.10); color:var(--slate-300); border-radius:8px; padding:6px 13px; font-size:12.5px; font-weight:600; cursor:pointer; transition:background 0.18s, color 0.18s, border-color 0.18s; min-width:34px; text-align:center; }
   .pg-btn:hover:not(:disabled) { background:rgba(255,255,255,0.10); color:var(--slate-50); }
-  .pg-btn.active { background:linear-gradient(135deg, #3b8dff, #1d4ed8); border-color:#2f6feb; color:#fff; box-shadow:0 8px 18px -10px rgba(59,141,255,0.75); }
-  .pg-btn.active:hover:not(:disabled) { background:linear-gradient(135deg, #3b8dff, #1d4ed8); border-color:#2f6feb; color:#fff; box-shadow:0 8px 18px -10px rgba(59,141,255,0.75); }
+  .pg-btn.active { background:linear-gradient(135deg, #3b8dff, #1d4ed8); border-color:#2f6feb; color:#000; box-shadow:0 8px 18px -10px rgba(59,141,255,0.75); }
+  .pg-btn.active:hover:not(:disabled) { background:linear-gradient(135deg, #3b8dff, #1d4ed8); border-color:#2f6feb; color:#000; box-shadow:0 8px 18px -10px rgba(59,141,255,0.75); }
   .pg-btn:disabled { opacity:0.35; cursor:default; }
 
   /* Color Editor Modal Styles */
@@ -695,7 +760,7 @@ sort($sales_fuel_names, SORT_STRING);
   .sales-controls{display:flex; align-items:center; gap:8px; flex-wrap:wrap;}
   .rng-btn{background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.10); color:var(--slate-300); border-radius:12px; padding:8px 18px; font-size:13px; font-weight:600; font-family:inherit; transition:background .18s, color .18s, border-color .18s, box-shadow .18s;}
   .rng-btn:hover{background:rgba(255,255,255,0.10); color:var(--slate-50);}
-  .rng-btn.active, .rng-btn.active:hover{background:linear-gradient(135deg,#3b8dff,#1d4ed8); border-color:#2f6feb; color:#fff; box-shadow:0 8px 18px -10px rgba(59,141,255,0.75);}
+  .rng-btn.active, .rng-btn.active:hover{background:linear-gradient(135deg,#3b8dff,#1d4ed8); border-color:#2f6feb; color:#000; box-shadow:0 8px 18px -10px rgba(59,141,255,0.75);}
   .fuel-select{appearance:none; -webkit-appearance:none; background:rgba(255,255,255,0.04) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5l5 5 5-5' fill='none' stroke='%23c9d2e3' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat right 14px center; border:1px solid rgba(255,255,255,0.14); color:var(--slate-50); border-radius:12px; padding:8px 38px 8px 14px; min-width:150px; font-size:13px; font-weight:600; font-family:inherit; outline:none; transition:border-color .18s, box-shadow .18s;}
   .fuel-select:hover{border-color:rgba(255,255,255,0.28);}
   .fuel-select:focus{border-color:#fff; box-shadow:0 0 0 2px rgba(255,255,255,0.18);}
@@ -766,28 +831,23 @@ sort($sales_fuel_names, SORT_STRING);
         <div class="date" id="live-clock">Wednesday · July 9, 2026</div>
       </div>
       <div class="topbar-right">
-        <div class="bell" id="notif-bell"><i class="fa-regular fa-bell"></i><?php if ($has_unread): ?><span class="ping"></span><?php endif; ?></div>
+        <div class="bell" id="notif-bell"><i class="fa-regular fa-bell"></i><?php if ($has_unread): ?><span class="ping" id="notif-ping"></span><?php endif; ?></div>
         
         <!-- Notification Dropdown Menu -->
         <div class="notif-popup" id="notif-popup">
           <div class="notif-header">
             <h4>Notifications</h4>
-            <span id="mark-all-read">Clear All</span>
           </div>
-          <div id="notif-list">
+          <div class="notif-list" id="notif-list">
             <?php if (!$alerts): ?>
-              <div class="notif-empty" style="text-align:center; padding:14px 0; color:var(--slate-400); font-size:12px;">No new notifications</div>
+              <div class="notif-empty">No new notifications</div>
             <?php else:
-              $icon_map = [
-                'warn' => 'fa-triangle-exclamation text-warning',
-                'err'  => 'fa-circle-exclamation text-danger',
-                'ok'   => 'fa-truck-ramp-box text-success',
-                'info' => 'fa-circle-info text-info',
-              ];
               foreach ($alerts as $a):
-                $ic = $icon_map[$a['kind']] ?? $icon_map['info']; ?>
-              <div class="notif-item" data-notif-id="<?= (int)$a['notif_id'] ?>">
-                <i class="fa-solid <?= h($ic) ?> ic"></i>
+                $meta = notif_ui_meta($a['type'], $a['title']);
+                $icon = $meta['icon'];
+                $tone = $meta['tone'];
+            ?>
+              <div class="notif-item <?= h($tone) ?>" data-notif-id="<?= (int)$a['notif_id'] ?>" data-link="<?= h($a['link'] ?? 'dashboard.php') ?>" data-kind="<?= h($tone) ?>">
                 <div class="notif-item-body">
                   <b><?= h($a['title']) ?></b>
                   <span><?= h($a['body']) ?></span>
@@ -804,8 +864,12 @@ sort($sales_fuel_names, SORT_STRING);
         </label>
 
         <div class="avatar-chip">
-          <div class="avatar-circle"><a href="edit-profile.php"><?= h(mb_substr($initials,0,1)) ?></a></div>
-          <div><b><a href="edit-profile.php"><?= h(explode(' ', $user['full_name'])[0]) ?></a></b></div>
+          <?php if ($managerAvatarUrl !== ''): ?>
+            <img src="<?= h($managerAvatarUrl) ?>" alt="Profile Picture" style="width:36px;height:36px;border-radius:50%;object-fit:cover;border:1px solid rgba(255,255,255,0.12);">
+          <?php else: ?>
+            <div class="avatar-circle"><a href="edit-profile.php"><?= h(mb_substr($initials,0,1)) ?></a></div>
+          <?php endif; ?>
+          <div><b><a href="edit-profile.php"><?= h($managerDisplayName) ?></a></b></div>
         </div>
       </div>
     </div>
@@ -868,6 +932,14 @@ sort($sales_fuel_names, SORT_STRING);
                 $fuelKey = $fuelLabel === 'Octane 92' || $fuelLabel === 'Octane 95' || $fuelLabel === 'Octane 98' ? $fuelLabel : $fuelLabel;
                 $pct = $t['capacity_l'] > 0 ? (int) round(($t['current_l'] / $t['capacity_l']) * 100) : 0;
                 $status_class = $pct < (int)$t['alert_pct'] ? 'low' : 'ok';
+                $defaultTankColors = [
+                  'Octane 92'      => '#38bdf8',
+                  'Octane 95'      => '#2563eb',
+                  'Octane 98'      => '#3b82f6',
+                  'Diesel'         => '#34d399',
+                  'Premium Diesel' => '#fbbf24',
+                  'Petrol'         => '#38bdf8',
+                ];
                 $tankColor = $defaultTankColors[$fuelLabel] ?? $defaultTankColors[$fuelName] ?? '#38bdf8';
                 ?>
                 <div class="tank" data-fuel-name="<?= h($fuelLabel) ?>" data-tank-color="<?= h($tankColor) ?>">
@@ -953,322 +1025,144 @@ sort($sales_fuel_names, SORT_STRING);
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script>
   document.addEventListener('DOMContentLoaded', () => {
-    const defaultTankColors = {
-      'Octane 92': '#38bdf8',
-      'Octane 95': '#2563eb',
-      'Diesel': '#34d399',
-      'Premium Diesel': '#fbbf24',
-      'Super Diesel': '#f59e0b'
-    };
+    const bellBtn = document.getElementById('notif-bell');
+    const notifPopup = document.getElementById('notif-popup');
+    const notifPing = document.getElementById('notif-ping');
+    const notifList = document.getElementById('notif-list');
 
-    const fuelColorKey = 'mapPumpTankColors';
-    let savedColors = {};
-    try {
-      savedColors = JSON.parse(localStorage.getItem(fuelColorKey) || '{}');
-    } catch (_) {}
+    function postDismiss(payload) {
+      return fetch('api_dismiss_notification.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      }).then((r) => r.json()).catch(() => ({ ok: false }));
+    }
 
-    const normalizeFuelName = (fuelName) => fuelName ? String(fuelName).replace(/^Petrol\s+/i, 'Octane ') : fuelName;
-    const getFuelColor = (fuelName, fallback) => savedColors[normalizeFuelName(fuelName)] || defaultTankColors[normalizeFuelName(fuelName)] || fallback || '#38bdf8';
+    if (bellBtn && notifPopup) {
+      bellBtn.addEventListener('click', (event) => {
+        event.stopPropagation();
+        const ping = bellBtn.querySelector('.ping');
+        if (ping) {
+          ping.style.transform = 'scale(0)';
+          setTimeout(() => ping.remove(), 180);
+        }
+        notifPopup.classList.toggle('show');
+      });
 
-    function applyTankColors() {
-      document.querySelectorAll('.tank').forEach((tankEl) => {
-        const fuelName = normalizeFuelName(tankEl.dataset.fuelName || '');
-        const color = getFuelColor(fuelName, tankEl.dataset.tankColor || '#38bdf8');
-        const fill = tankEl.querySelector('.tank-fill');
-        if (fill) fill.style.background = `linear-gradient(180deg, ${color}, rgba(255,255,255,0.28))`;
-        tankEl.dataset.tankColor = color;
+      document.addEventListener('click', (event) => {
+        const clickedBell = bellBtn.contains(event.target);
+        const clickedPopup = notifPopup.contains(event.target);
+        if (!clickedBell && !clickedPopup) {
+          notifPopup.classList.remove('show');
+        }
       });
     }
 
-    function buildFuelColorRows() {
-      const rows = [...document.querySelectorAll('.tank')].map((tankEl) => {
-        const fuelName = normalizeFuelName(tankEl.dataset.fuelName || '');
-        return { fuelName, color: getFuelColor(fuelName, tankEl.dataset.tankColor || '#38bdf8') };
-      });
-      const uniqueRows = Array.from(new Map(rows.map((row) => [row.fuelName, row])).values());
-      const tbody = document.getElementById('fuelColorTableBody');
-      if (!tbody) return;
-      tbody.innerHTML = uniqueRows.map((row) => `
-        <tr data-fuel-name="${row.fuelName}">
-          <td><div class="fuel-color-row"><span class="fuel-swatch" style="background:${row.color};"></span><span>${row.fuelName}</span></div></td>
-          <td><div class="color-picker-cell"><label class="color-preview" for="color-${row.fuelName.replace(/\s+/g, '-')}"><span class="color-preview-chip" style="background:${row.color};"></span><span class="color-preview-text">${row.color.toUpperCase()}</span></label><input class="color-picker-input" id="color-${row.fuelName.replace(/\s+/g, '-')}" type="color" value="${row.color}" data-fuel-name="${row.fuelName}"></div></td>
-        </tr>
-      `).join('');
+    const editColorBtn = document.getElementById('editColorBtn');
+    const fuelColorModal = document.getElementById('fuelColorModal');
+    const closeFuelColorModal = document.getElementById('closeFuelColorModal');
+    const fuelColorTableBody = document.getElementById('fuelColorTableBody');
+    const saveFuelColorsBtn = document.getElementById('saveFuelColorsBtn');
+    const LS_KEY = 'map_pump_tank_colors';
 
-      tbody.querySelectorAll('tr').forEach((rowEl) => {
-        rowEl.addEventListener('click', (event) => {
-          if (event.target.closest('input')) return;
-          const input = rowEl.querySelector('input[type="color"]');
-          if (input) input.click();
-        });
-      });
+    function getTankEls() {
+      return Array.from(document.querySelectorAll('#tank-visualizer .tank'));
+    }
 
-      tbody.querySelectorAll('input[type="color"]').forEach((picker) => {
-        picker.addEventListener('input', (event) => {
-          const fuelName = event.target.dataset.fuelName;
-          const newColor = event.target.value;
-          savedColors[fuelName] = newColor;
-          localStorage.setItem(fuelColorKey, JSON.stringify(savedColors));
-          const preview = event.target.closest('.color-picker-cell');
-          if (preview) {
-            preview.querySelector('.color-preview-chip').style.background = newColor;
-            preview.querySelector('.color-preview-text').textContent = newColor.toUpperCase();
-          }
-          const targetTank = document.querySelector(`.tank[data-fuel-name="${CSS.escape(fuelName)}"]`);
-          if (targetTank) {
-            const fill = targetTank.querySelector('.tank-fill');
-            if (fill) fill.style.background = `linear-gradient(180deg, ${newColor}, rgba(255,255,255,0.28))`;
-            targetTank.dataset.tankColor = newColor;
-          }
-        });
+    function loadSavedColors() {
+      try { return JSON.parse(localStorage.getItem(LS_KEY) || '{}'); } catch(e) { return {}; }
+    }
+
+    function applyColorsToTanks(colorMap) {
+      getTankEls().forEach((tank) => {
+        const name = tank.dataset.fuelName || '';
+        const color = colorMap[name] || tank.dataset.tankColor || '#38bdf8';
+        const fill = tank.querySelector('.tank-fill');
+        if (fill) fill.style.background = 'linear-gradient(180deg, ' + color + ', rgba(255,255,255,0.28))';
       });
     }
 
-    applyTankColors();
-    buildFuelColorRows();
-
-    const modal = document.getElementById('fuelColorModal');
-    document.getElementById('editColorBtn')?.addEventListener('click', () => {
-      buildFuelColorRows();
-      modal?.classList.add('show');
-    });
-    document.getElementById('closeFuelColorModal')?.addEventListener('click', () => modal?.classList.remove('show'));
-
-    (function () {
-      const wrap = document.getElementById('tank-visualizer');
-      const controls = document.getElementById('tank-visualizer-pg-controls');
-      if (!wrap || !controls) return;
-      const tankEls = Array.from(wrap.querySelectorAll(':scope > .tank'));
-      const perPage = 4;
-      let currentPage = 1;
-      function render() {
-        const totalPages = Math.max(1, Math.ceil(tankEls.length / perPage));
-        if (currentPage > totalPages) currentPage = totalPages;
-        const start = (currentPage - 1) * perPage;
-        tankEls.forEach((el, idx) => el.style.display = (idx >= start && idx < start + perPage) ? '' : 'none');
-        controls.innerHTML = '';
-        if (totalPages <= 1) return;
-        for (let p = 1; p <= totalPages; p++) {
-          const btn = document.createElement('button');
-          btn.type = 'button';
-          btn.className = 'pg-btn' + (p === currentPage ? ' active' : '');
-          btn.textContent = String(p);
-          btn.addEventListener('click', () => {
-            currentPage = p;
-            render();
-          });
-          controls.appendChild(btn);
-        }
-      }
-      render();
-    })();
-
-    const chartEl = document.getElementById('salesChart');
-    const chartSvg = document.getElementById('salesSvg');
-    const chartTip = document.getElementById('salesTip');
-    const fuelSel = document.getElementById('salesFuel');
-
-    if (chartEl && chartSvg && chartTip && fuelSel) {
-      const salesChartData = <?php echo json_encode($sales_chart_data, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT); ?>;
-      const state = { range: 'week', fuel: 'all' };
-      const FUELS = [...fuelSel.options].map((o) => o.value).filter((value) => value !== 'all');
-      let data = null;
-      let geo = null;
-      let hoverIdx = -1;
-      const NS = 'http://www.w3.org/2000/svg';
-      const svgEl = (tag, attrs = {}) => {
-        const node = document.createElementNS(NS, tag);
-        Object.entries(attrs).forEach(([key, value]) => node.setAttribute(key, String(value)));
-        return node;
-      };
-      const esc = (s) => String(s).replace(/[&<>\"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;', "'": '&#39;' }[c]));
-      const num = (v) => Math.round(Number(v || 0)).toLocaleString('en-US');
-      const trim = (v) => String(parseFloat(v.toFixed(2)));
-      const fmtAxis = (v) => {
-        if (v >= 1e9) return trim(v / 1e9) + 'B';
-        if (v >= 1e6) return trim(v / 1e6) + 'M';
-        if (v >= 1e3) return trim(v / 1e3) + 'K';
-        return trim(v);
-      };
-      const niceScale = (max) => {
-        if (!(max > 0)) return { top: 1, ticks: [0, 0.2, 0.4, 0.6, 0.8, 1] };
-        const rough = max / 5;
-        const pow = Math.pow(10, Math.floor(Math.log10(rough)));
-        const f = rough / pow;
-        const step = (f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10) * pow;
-        const top = Math.ceil(max / step - 1e-9) * step;
-        const ticks = [];
-        for (let v = 0; v <= top + step / 1000; v += step) ticks.push(v);
-        return { top, ticks };
-      };
-
-      function getSalesData(range, fuel) {
-        const set = salesChartData[range] || salesChartData.week || { labels: [], dates: [], rows: [] };
-        const rows = (set.rows || []).map((row) => {
-
-          const fuels = {};
-          let total = 0;
-          let litres = 0;
-          Object.entries(row.fuels || {}).forEach(([fuelName, values]) => {
-            if (fuel !== 'all' && fuelName !== fuel) return;
-            const sales = Number(values.sales || 0);
-            const fuelLitres = Number(values.litres || 0);
-            fuels[fuelName] = { sales, litres: fuelLitres };
-            total += sales;
-            litres += fuelLitres;
-          });
-          if (fuel !== 'all' && !Object.prototype.hasOwnProperty.call(fuels, fuel)) {
-            return { total: 0, litres: 0, fuels: {} };
-          }
-          return { total, litres, fuels };
+    function populateColorModal() {
+      if (!fuelColorTableBody) return;
+      fuelColorTableBody.innerHTML = '';
+      const saved = loadSavedColors();
+      getTankEls().forEach((tank) => {
+        const name = tank.dataset.fuelName || '';
+        if (!name) return;
+        const defaultColor = tank.dataset.tankColor || '#38bdf8';
+        const currentColor = saved[name] || defaultColor;
+        const tr = document.createElement('tr');
+        tr.innerHTML =
+          '<td style="display:flex;align-items:center;gap:10px;">' +
+            '<span class="color-preview-chip" style="width:28px;height:28px;border-radius:8px;border:2px solid rgba(0,0,0,0.12);background:' + currentColor + ';display:inline-block;flex-shrink:0;"></span>' +
+            '<span style="font-weight:600;">' + name + '</span>' +
+          '</td>' +
+          '<td>' +
+            '<label style="display:flex;align-items:center;gap:10px;cursor:pointer;">' +
+              '<input type="color" value="' + currentColor + '" data-fuel="' + name + '" style="width:28px;height:28px;border:none;border-radius:8px;padding:0;cursor:pointer;background:none;">' +
+              '<span class="hex-label" style="font-size:12px;font-weight:700;">' + currentColor.toUpperCase() + '</span>' +
+            '</label>' +
+          '</td>';
+        const input = tr.querySelector('input[type=color]');
+        const chip = tr.querySelector('.color-preview-chip');
+        const hexLabel = tr.querySelector('.hex-label');
+        input.addEventListener('input', () => {
+          chip.style.background = input.value;
+          hexLabel.textContent = input.value.toUpperCase();
         });
-        return {
-          xTitle: set.xTitle || (range === 'year' ? 'Months' : 'Days'),
-          labels: set.labels || [],
-          dates: set.dates || [],
-          rows,
-        };
-      }
-
-      function render() {
-        data = getSalesData(state.range, state.fuel);
-        chartSvg.innerHTML = '';
-        const svg = chartSvg;
-        const W = chartEl.clientWidth || 760;
-        const H = chartEl.clientHeight || 360;
-        const n = data.rows.length || 1;
-        const maxV = Math.max(...data.rows.map((row) => Number(row.total || 0)), 0);
-        const sc = niceScale(maxV);
-        const L = 76, R = 26, T = 14, B = 54;
-        const pw = W - L - R, ph = H - T - B;
-        const xAt = (i) => n === 1 ? L + pw / 2 : L + (i * pw) / (n - 1);
-        const yAt = (v) => T + ph - (v / sc.top) * ph;
-        geo = { L, R, T, B, W, H, pw, ph, n, xAt, yAt };
-
-        const defs = svgEl('defs');
-        defs.innerHTML = '<linearGradient id="scArea" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#38bdf8" stop-opacity="0.38"/><stop offset="1" stop-color="#38bdf8" stop-opacity="0.03"/></linearGradient>';
-        svg.appendChild(defs);
-
-        sc.ticks.forEach((v) => {
-          const y = yAt(v);
-          svg.appendChild(svgEl('line', { class: v === 0 ? 'sc-axis' : 'sc-grid', x1: L, x2: L + pw, y1: y, y2: y }));
-          const label = svgEl('text', { class: 'sc-tick', x: L - 10, y: y + 4, 'text-anchor': 'end' });
-          label.textContent = fmtAxis(v);
-          svg.appendChild(label);
-        });
-
-        const spacing = n > 1 ? pw / (n - 1) : pw;
-        const every = Math.max(1, Math.ceil(40 / spacing));
-        data.labels.forEach((labelText, i) => {
-          if (i % every !== 0 && i !== data.labels.length - 1) return;
-          const t = svgEl('text', { class: 'sc-tick', x: xAt(i), y: T + ph + 20, 'text-anchor': 'middle' });
-          t.textContent = labelText;
-          svg.appendChild(t);
-        });
-
-        const xt = svgEl('text', { class: 'sc-title', x: L + pw / 2, y: H - 8, 'text-anchor': 'middle' });
-        xt.textContent = data.xTitle;
-        svg.appendChild(xt);
-        const yt = svgEl('text', { class: 'sc-title', transform: `translate(14 ${T + ph / 2}) rotate(-90)`, 'text-anchor': 'middle' });
-        yt.textContent = 'Sales Amount (MMK)';
-        svg.appendChild(yt);
-
-        const pts = data.rows.map((row, i) => [xAt(i), yAt(Number(row.total || 0))]);
-        if (pts.length === 0) {
-          const msg = svgEl('text', { class: 'sc-tick', x: L + pw / 2, y: T + ph / 2, 'text-anchor': 'middle' });
-          msg.textContent = 'No sales data';
-          svg.appendChild(msg);
-          return;
-        }
-
-        const line = pts.map((p, i) => (i ? 'L' : 'M') + p[0].toFixed(1) + ' ' + p[1].toFixed(1)).join(' ');
-        svg.appendChild(svgEl('path', { d: `${line} L${pts[pts.length - 1][0].toFixed(1)} ${T + ph} L${pts[0][0].toFixed(1)} ${T + ph} Z`, fill: 'url(#scArea)' }));
-        svg.appendChild(svgEl('path', { class: 'sc-line', d: line }));
-        const r = n > 14 ? 2.6 : 4;
-        pts.forEach((p) => svg.appendChild(svgEl('circle', { class: 'sc-dot', cx: p[0], cy: p[1], r })));
-
-        geo.cross = svgEl('line', { class: 'sc-cross', y1: T, y2: T + ph, x1: 0, x2: 0, visibility: 'hidden' });
-        geo.ball = svgEl('circle', { class: 'sc-ball', r: 7, cx: 0, cy: 0, visibility: 'hidden' });
-        svg.appendChild(geo.cross);
-        svg.appendChild(geo.ball);
-
-        const hit = svgEl('rect', { x: L - 12, y: 0, width: pw + 24, height: H - B + 20, fill: 'transparent' });
-        svg.appendChild(hit);
-        hit.addEventListener('pointermove', onMove);
-        hit.addEventListener('pointerdown', onMove);
-        hit.addEventListener('pointerleave', hideTip);
-        hit.addEventListener('pointercancel', hideTip);
-      }
-
-      function onMove(e) {
-        if (!geo) return;
-        const box = chartSvg.getBoundingClientRect();
-        const x = e.clientX - box.left;
-        const i = Math.max(0, Math.min(geo.n - 1, Math.round(geo.n === 1 ? 0 : ((x - geo.L) / geo.pw) * (geo.n - 1))));
-        showTip(i);
-      }
-
-      function showTip(i) {
-        const row = data.rows[i] || { total: 0, fuels: {} };
-        const px = geo.xAt(i);
-        const py = geo.yAt(Number(row.total || 0));
-        geo.cross.setAttribute('x1', px);
-        geo.cross.setAttribute('x2', px);
-        geo.cross.setAttribute('visibility', 'visible');
-        geo.ball.setAttribute('cx', px);
-        geo.ball.setAttribute('cy', py);
-        geo.ball.setAttribute('visibility', 'visible');
-
-        if (i !== hoverIdx) {
-          hoverIdx = i;
-          const entries = Object.entries(row.fuels || {});
-          chartTip.innerHTML =
-            `<div class="t-date">${esc(data.dates[i] || '')}</div>` +
-            `<div class="t-sum"><span class="t-amt">${num(row.total)}<small>MMK</small></span><span class="t-lit">${num(row.litres || 0)} L</span></div>` +
-            (entries.length ? entries.map(([fuelName, values]) => `<div class="t-row"><span><i></i>${esc(fuelName)}</span><b>${num(values.litres || 0)} L</b></div>`).join('') : '<div class="t-row"><span><i></i>No data</span><b>0 L</b></div>');
-        }
-
-        const tw = chartTip.offsetWidth, th = chartTip.offsetHeight, gap = 16;
-        let tx = px + gap;
-        if (tx + tw > geo.W - 4) tx = px - gap - tw;
-        tx = Math.max(4, tx);
-        const ty = Math.max(4, Math.min(geo.H - th - 4, py - th * 0.4));
-        chartTip.style.transform = `translate(${tx}px, ${ty}px)`;
-        chartTip.classList.add('show');
-      }
-
-      function hideTip() {
-        hoverIdx = -1;
-        chartTip.classList.remove('show');
-        if (geo && geo.cross) {
-          geo.cross.setAttribute('visibility', 'hidden');
-          geo.ball.setAttribute('visibility', 'hidden');
-        }
-      }
-
-      document.querySelectorAll('.rng-btn').forEach((btn) => {
-        btn.addEventListener('click', () => {
-          document.querySelectorAll('.rng-btn').forEach((x) => x.classList.toggle('active', x === btn));
-          state.range = btn.dataset.range;
-          render();
-        });
+        fuelColorTableBody.appendChild(tr);
       });
+    }
 
-      fuelSel.addEventListener('change', () => {
-        state.fuel = fuelSel.value;
-        render();
+    // Apply saved colors on page load
+    applyColorsToTanks(loadSavedColors());
+
+    if (editColorBtn && fuelColorModal) {
+      editColorBtn.addEventListener('click', () => {
+        populateColorModal();
+        fuelColorModal.classList.add('show');
+        fuelColorModal.setAttribute('aria-hidden', 'false');
       });
+    }
+    if (closeFuelColorModal && fuelColorModal) {
+      closeFuelColorModal.addEventListener('click', () => {
+        fuelColorModal.classList.remove('show');
+        fuelColorModal.setAttribute('aria-hidden', 'true');
+      });
+    }
+    if (saveFuelColorsBtn && fuelColorModal) {
+      saveFuelColorsBtn.addEventListener('click', () => {
+        const saved = loadSavedColors();
+        fuelColorTableBody.querySelectorAll('input[type=color]').forEach((input) => {
+          saved[input.dataset.fuel] = input.value;
+        });
+        localStorage.setItem(LS_KEY, JSON.stringify(saved));
+        applyColorsToTanks(saved);
+        fuelColorModal.classList.remove('show');
+        fuelColorModal.setAttribute('aria-hidden', 'true');
+      });
+    }
 
-      let lastW = 0;
-      new ResizeObserver(() => {
-        const w = chartEl.clientWidth;
-        if (w !== lastW) {
-          lastW = w;
-          render();
+    if (notifList) {
+      notifList.addEventListener('click', (event) => {
+        const item = event.target.closest('.notif-item');
+        if (!item) return;
+
+        const id = Number(item.dataset.notifId || 0);
+        const link = item.dataset.link || 'dashboard.php';
+
+        if (id > 0) {
+          postDismiss({ notif_id: id }).then((res) => {
+            if (res.ok && notifPing && Number(res.unread || 0) <= 0) {
+              notifPing.remove();
+            }
+          });
         }
-      }).observe(chartEl);
 
-      render();
+        if (link) {
+          window.location.href = link;
+        }
+      });
     }
   });
 </script>
@@ -1295,9 +1189,169 @@ sort($sales_fuel_names, SORT_STRING);
 
     if (toggle) {
       toggle.addEventListener('change', function () {
+
         applyTheme(this.checked);
       });
     }
+  })();
+</script>
+<script>
+  (() => {
+    const chartData = <?= json_encode($sales_chart_data, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>;
+    const svg = document.getElementById('salesSvg');
+    const tip = document.getElementById('salesTip');
+    const rangeButtons = Array.from(document.querySelectorAll('.rng-btn'));
+    const fuelSelect = document.getElementById('salesFuel');
+    const chartWrap = document.getElementById('salesChart');
+
+    if (!svg || !tip || !chartWrap || !chartData) return;
+
+    const defaultFuelColors = {
+      'Octane 92': '#38bdf8',
+      'Octane 95': '#60a5fa',
+      'Octane 98': '#3b82f6',
+      'Diesel': '#fbbf24',
+      'Premium Diesel': '#f59e0b',
+      'Petrol': '#38bdf8'
+    };
+
+    function compactCurrency(value) {
+      const num = Number(value || 0);
+      if (num >= 1000000) return (num / 1000000).toFixed(num >= 10000000 ? 1 : 2).replace(/\.0$/, '') + 'M';
+      if (num >= 1000) return (num / 1000).toFixed(num >= 10000 ? 1 : 2).replace(/\.0$/, '') + 'K';
+      return Math.round(num).toString();
+    }
+
+    function escapeHtml(str) {
+      return String(str ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+
+    function getFuelColor(fuelName) {
+      return defaultFuelColors[fuelName] || '#38bdf8';
+    }
+
+    function getSeries(range, fuel) {
+      const dataset = chartData[range] || { labels: [], rows: [] };
+      const labels = dataset.labels || [];
+      const rows = dataset.rows || [];
+      const values = [];
+      const detail = [];
+
+      rows.forEach((row, idx) => {
+        const fuelMap = row && row.fuels ? row.fuels : {};
+        let total = Number(row && row.total ? row.total : 0);
+        if (fuel && fuel !== 'all') {
+          const entry = fuelMap[fuel] || { sales: 0, litres: 0 };
+          total = Number(entry.sales || 0);
+        }
+        values.push(total);
+        detail.push({
+          label: labels[idx] || '',
+          date: (dataset.dates && dataset.dates[idx]) || '',
+          value: total,
+          litres: fuel && fuel !== 'all' ? (fuelMap[fuel] && Number(fuelMap[fuel].litres || 0)) || 0 : (row && row.litres ? Number(row.litres) : 0),
+          fuelName: fuel && fuel !== 'all' ? fuel : 'All Fuels'
+        });
+      });
+
+      return { labels, detail, values };
+    }
+
+    function renderSalesChart() {
+      const range = document.querySelector('.rng-btn.active')?.dataset.range || 'week';
+      const fuel = fuelSelect ? fuelSelect.value : 'all';
+      const series = getSeries(range, fuel);
+      const values = series.values.length ? series.values : [0];
+      const maxValue = Math.max(...values, 1);
+      const width = chartWrap.clientWidth || 800;
+      const height = chartWrap.clientHeight || 360;
+      const pad = { top: 20, right: 18, bottom: 32, left: 48 };
+      const innerWidth = width - pad.left - pad.right;
+      const innerHeight = height - pad.top - pad.bottom;
+
+      const points = values.map((value, idx) => {
+        const x = pad.left + (values.length > 1 ? (idx / (values.length - 1)) * innerWidth : innerWidth / 2);
+        const y = pad.top + innerHeight - ((value / maxValue) * innerHeight || 0);
+        return { x, y, value, label: series.labels[idx] || '', detail: series.detail[idx] };
+      });
+
+      const linePath = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
+
+      const grid = Array.from({ length: 5 }, (_, i) => {
+        const y = pad.top + (innerHeight / 4) * i;
+        const v = maxValue - ((maxValue / 4) * i);
+        return `
+          <line class="sc-cross" x1="${pad.left}" y1="${y}" x2="${width - pad.right}" y2="${y}"/>
+          <text class="sc-tick" x="10" y="${y + 4}" text-anchor="start">${compactCurrency(v)}</text>
+        `;
+      }).join('');
+
+      const xLabels = points.map((p, i) => `
+        <text class="sc-tick" x="${p.x}" y="${height - 10}" text-anchor="middle">${escapeHtml(p.label)}</text>
+      `).join('');
+
+      const circles = points.map((p) => `
+        <circle class="sc-ball" cx="${p.x}" cy="${p.y}" r="4.4" data-value="${p.value}" data-date="${escapeHtml(p.detail.date)}" data-label="${escapeHtml(p.detail.label)}" data-litres="${p.detail.litres}" />
+      `).join('');
+
+      svg.innerHTML = `
+        <g>
+          ${grid}
+          <line class="sc-axis" x1="${pad.left}" y1="${pad.top + innerHeight}" x2="${width - pad.right}" y2="${pad.top + innerHeight}"/>
+          <path class="sc-line" d="${linePath}"/>
+          ${circles}
+          ${xLabels}
+        </g>
+      `;
+
+      const xRange = values.length > 1 ? points : [{ x: width / 2, y: pad.top + innerHeight }];
+      xRange.forEach((pt) => {
+        pt.__shown = false;
+      });
+
+      svg.querySelectorAll('.sc-ball').forEach((ball) => {
+        ball.addEventListener('mouseenter', (event) => {
+          const value = Number(ball.dataset.value || 0);
+          const litres = Number(ball.dataset.litres || 0);
+          const label = ball.dataset.label || '';
+          const date = ball.dataset.date || '';
+          const rect = chartWrap.getBoundingClientRect();
+          tip.innerHTML = `
+            <div class="t-date">${escapeHtml(date || label)}</div>
+            <div class="t-sum"><span class="t-amt">${compactCurrency(value)}<small>MMK</small></span></div>
+            <div class="t-row"><span><i style="background:${getFuelColor(fuel && fuel !== 'all' ? fuel : 'Octane 92')};"></i> ${escapeHtml(fuel && fuel !== 'all' ? fuel : 'All Fuels')}</span><b>${Number(litres).toLocaleString()}L</b></div>
+          `;
+          const x = event.clientX - rect.left + 14;
+          const y = event.clientY - rect.top - 8;
+          tip.style.left = `${Math.min(Math.max(x, 14), rect.width - 242)}px`;
+          tip.style.top = `${Math.max(y, 12)}px`;
+          tip.classList.add('show');
+        });
+
+        ball.addEventListener('mouseleave', () => {
+          tip.classList.remove('show');
+        });
+      });
+    }
+
+    rangeButtons.forEach((button) => {
+      button.addEventListener('click', () => {
+        rangeButtons.forEach((btn) => btn.classList.toggle('active', btn === button));
+        renderSalesChart();
+      });
+    });
+
+    if (fuelSelect) {
+      fuelSelect.addEventListener('change', renderSalesChart);
+    }
+
+    window.addEventListener('resize', renderSalesChart);
+    renderSalesChart();
   })();
 </script>
 </body>

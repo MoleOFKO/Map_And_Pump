@@ -1,4 +1,5 @@
-<?php
+﻿<?php
+ob_start();
 /**
  * edit-profile.php — User's personal profile (branch manager account).
  * Handles POST submit to update the branch manager account name/email with CSRF protection.
@@ -268,12 +269,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && in_array
 
 $message = '';
 $message_type = '';
-$accountDeletionFlash = (string) ($_SESSION['account_deletion_flash'] ?? '');
-unset($_SESSION['account_deletion_flash']);
 
 // ------- Avatar upload endpoint (multipart) --------
 // Handled separately so we can respond as JSON to the client-side uploader.
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'upload_avatar') {
+    ob_clean();
     header('Content-Type: application/json; charset=utf-8');
     if (!csrf_check($_POST['csrf'] ?? null)) {
         echo json_encode(['ok' => false, 'error' => 'Invalid CSRF token']);
@@ -285,69 +285,118 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'uploa
     }
 
     $file = $_FILES['avatar'];
-    // Size cap: 3 MB
     if ($file['size'] > 3 * 1024 * 1024) {
         echo json_encode(['ok' => false, 'error' => 'File too large (max 3MB)']);
         exit;
     }
-    // Verify actual mime type
+
     $finfo = finfo_open(FILEINFO_MIME_TYPE);
-    $mime  = finfo_file($finfo, $file['tmp_name']);
-    finfo_close($finfo);
+    $mime  = $finfo ? finfo_file($finfo, $file['tmp_name']) : false;
+    if ($finfo) {
+        finfo_close($finfo);
+    }
     $allowedMime = ['image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp', 'image/gif' => 'gif'];
-    if (!isset($allowedMime[$mime])) {
+    if (!$mime || !isset($allowedMime[$mime])) {
         echo json_encode(['ok' => false, 'error' => 'Only JPG, PNG, WebP, or GIF images are allowed']);
         exit;
     }
     $ext = $allowedMime[$mime];
 
-    $uid      = (int)$_SESSION['user_id'];
+    $uid      = (int) $_SESSION['user_id'];
     $filename = 'branchmgr-' . $uid . '-' . bin2hex(random_bytes(6)) . '.' . $ext;
     $publicUrl = 'BranchManager/uploads/' . $filename;
     $destPath = null;
-    if (map_pump_imgbb_enabled()) {
-      $imageBytes = @file_get_contents((string) $file['tmp_name']);
-      try {
-        if (!is_string($imageBytes)) {
-          throw new RuntimeException('Could not read the uploaded profile image.');
-        }
-        $publicUrl = map_pump_imgbb_upload($imageBytes, $filename, $mime);
-      } catch (Throwable $e) {
-        error_log('Branch manager avatar ImgBB upload failed: ' . $e->getMessage());
-        echo json_encode(['ok' => false, 'error' => 'Could not upload the profile image']);
-        exit;
-      }
-    } else {
-      $uploadDir = __DIR__ . '/uploads';
-      if (!is_dir($uploadDir)) { @mkdir($uploadDir, 0775, true); }
-      if (!is_writable($uploadDir)) {
-        echo json_encode(['ok' => false, 'error' => 'Upload folder is not writable']);
-        exit;
-      }
-      $destPath = $uploadDir . '/' . $filename;
-      if (!move_uploaded_file($file['tmp_name'], $destPath)) {
-        echo json_encode(['ok' => false, 'error' => 'Could not save the uploaded file']);
-        exit;
-      }
-    }
-
     try {
-        // Reuse oauth_avatar_url column since the app already uses it for local avatars.
+        if (map_pump_imgbb_enabled()) {
+            $imageBytes = @file_get_contents((string) $file['tmp_name']);
+            if (!is_string($imageBytes)) {
+                throw new RuntimeException('Could not read the uploaded profile image.');
+            }
+            $publicUrl = map_pump_imgbb_upload($imageBytes, $filename, $mime);
+        } else {
+            $uploadDir = __DIR__ . '/uploads';
+            if (!is_dir($uploadDir)) {
+                @mkdir($uploadDir, 0775, true);
+            }
+            if (!is_writable($uploadDir)) {
+                throw new RuntimeException('Upload folder is not writable');
+            }
+            $destPath = $uploadDir . '/' . $filename;
+            if (!move_uploaded_file($file['tmp_name'], $destPath)) {
+                throw new RuntimeException('Could not save the uploaded file');
+            }
+        }
+
         $stmt = $pdo->prepare("UPDATE users SET oauth_avatar_url = :u, updated_at = NOW() WHERE user_id = :uid");
         $stmt->execute([':u' => $publicUrl, ':uid' => $uid]);
         $_SESSION['user_avatar_url'] = $publicUrl;
 
-        // Best-effort log
-        try { log_activity($pdo, 0, 'user', $uid, $_SESSION['user_name'] ?? '', 'Updated branch manager profile avatar'); } catch (Throwable $e) {}
-
         echo json_encode(['ok' => true, 'url' => '/' . ltrim($publicUrl, '/')]);
-    } catch (PDOException $e) {
-      if ($destPath !== null) {
-        @unlink($destPath);
-      }
-        echo json_encode(['ok' => false, 'error' => 'Database error saving avatar']);
+        exit;
+    } catch (Throwable $e) {
+        if ($destPath !== null && file_exists($destPath)) {
+            @unlink($destPath);
+        }
+        error_log('Branch manager avatar upload failed: ' . $e->getMessage());
+        echo json_encode(['ok' => false, 'error' => 'Could not upload the profile image']);
+        exit;
     }
-    exit;
+}
+
+// Handle Password Change
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && (($_POST['action'] ?? '') === 'change_password')) {
+    header('Content-Type: application/json; charset=utf-8');
+    
+    if (!csrf_check($_POST['csrf'] ?? null)) {
+        echo json_encode(['ok' => false, 'message' => 'Invalid CSRF token. Please refresh and try again.']);
+        exit;
+    }
+
+    $currentPassword = $_POST['current_password'] ?? '';
+    $newPassword     = $_POST['new_password'] ?? '';
+    $confirmPassword = $_POST['confirm_password'] ?? '';
+    $userId          = (int) $_SESSION['user_id'];
+
+    if ($newPassword !== $confirmPassword) {
+        echo json_encode(['ok' => false, 'message' => 'New passwords do not match.']);
+        exit;
+    }
+
+    // Validate password policy (8-15 chars, upper/lowercase, number, symbol)
+    if (strlen($newPassword) < 8 || strlen($newPassword) > 15 || 
+        !preg_match('/[a-z]/', $newPassword) || 
+        !preg_match('/[A-Z]/', $newPassword) || 
+        !preg_match('/\d/', $newPassword) || 
+        !preg_match('/[^a-zA-Z0-9]/', $newPassword)) {
+        echo json_encode(['ok' => false, 'message' => 'Password must be 8 to 15 characters and include upper/lowercase letters, a number, and a symbol.']);
+        exit;
+    }
+
+    try {
+        // Fetch existing hashed password from database
+        $stmt = $pdo->prepare("SELECT hashed_password FROM users WHERE user_id = :uid");
+        $stmt->execute([':uid' => $userId]);
+        $dbPasswordHash = $stmt->fetchColumn();
+
+        if (!$dbPasswordHash || !password_verify($currentPassword, $dbPasswordHash)) {
+            echo json_encode(['ok' => false, 'message' => 'The current password you entered is incorrect.']);
+            exit;
+        }
+
+        // Hash the new password securely
+        $newHash = password_hash($newPassword, PASSWORD_DEFAULT);
+
+        // Update database
+        $update = $pdo->prepare("UPDATE users SET hashed_password = :hp, updated_at = NOW() WHERE user_id = :uid");
+        $update->execute([':hp' => $newHash, ':uid' => $userId]);
+
+        echo json_encode(['ok' => true, 'message' => 'Password changed successfully!']);
+        exit;
+    } catch (Throwable $e) {
+        error_log('Password change failed: ' . $e->getMessage());
+        echo json_encode(['ok' => false, 'message' => 'An internal error occurred. Could not update password.']);
+        exit;
+    }
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -377,6 +426,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $_SESSION['user_name']  = $full_name;
                 $_SESSION['user_email'] = $email;
 
+                $user['full_name'] = $full_name;
+                $managerDisplayName = getFullDisplayName($user);
+
                 $message = 'Profile updated successfully.';
                 $message_type = 'success';
             } catch (PDOException $e) {
@@ -396,7 +448,7 @@ $ctx      = current_context($pdo);
 $user     = $ctx['user'];
 $branch   = $ctx['branch'];
 
-$managerDisplayName = !empty($user['full_name']) ? $user['full_name'] : 'Manager';
+$managerDisplayName = getFullDisplayName($user);
 $initials           = function_exists('map_pump_profile_initial') 
                       ? map_pump_profile_initial($managerDisplayName, 'M') 
                       : initials($managerDisplayName);
@@ -499,7 +551,7 @@ $has_unread   = $unread_count > 0;
     }
     .topbar h1{font-size:18px; font-weight:700;}
     .topbar .date{font-size:12.5px; color:var(--slate-400); margin-top:2px; font-variant-numeric: tabular-nums;}
-    .topbar-right{display:flex; align-items:center; gap:16px;}
+    .topbar-right{display:flex; align-items:center; gap:16px; position:relative;}
     .bell{
       width:36px; height:36px; border-radius:50%; background:var(--navy-800); display:flex; align-items:center;
       justify-content:center; border:1px solid rgba(255,255,255,0.08); position:relative; font-size:15px; cursor:pointer;
@@ -562,18 +614,6 @@ $has_unread   = $unread_count > 0;
     }
     .btn-save:hover{ transform: translateY(-2px); box-shadow:0 12px 28px -8px rgba(56,189,248,0.7); }
 
-    .danger-zone{
-      margin-top:22px; padding:18px 20px; border-radius:14px; border:1px solid rgba(248,113,113,0.28);
-      background:rgba(248,113,113,0.06);
-    }
-    .danger-zone h4{font-size:13.5px; font-weight:700; color:var(--red-400); margin-bottom:6px;}
-    .danger-zone p{font-size:12.5px; color:var(--slate-300); line-height:1.6; margin-bottom:14px;}
-    .btn-danger-outline{
-      background:transparent; border:1px solid rgba(248,113,113,0.4); color:var(--red-400); font-weight:700; font-size:13px;
-      padding:10px 16px; border-radius:10px; cursor:pointer; display:inline-flex; align-items:center; gap:8px; transition: all 0.2s;
-    }
-    .btn-danger-outline:hover{background:rgba(248,113,113,0.12);}
-
     /* Modal */
     .modal-overlay {
       position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(7, 11, 20, 0.85);
@@ -608,18 +648,30 @@ $has_unread   = $unread_count > 0;
     .btn-confirm-danger:hover{filter:brightness(1.08);}
 
     .notif-popup {
-      position: absolute; top: 48px; right: 60px; width: 320px; max-height: 420px; overflow-y: auto;
+      position: absolute; top: 48px; right: 60px; width: 320px; max-height: 420px; overflow: hidden;
       background: var(--navy-800); border: 1px solid rgba(255,255,255,0.12); border-radius: 14px;
-      box-shadow: 0 16px 32px rgba(0,0,0,0.4); padding: 14px 12px; z-index: 100; display: none;
+      box-shadow: 0 16px 32px rgba(0,0,0,0.4); padding: 12px; z-index: 100; display: none;
       animation: fadeInDown 0.25s cubic-bezier(0.16, 1, 0.3, 1);
     }
     .notif-popup.show { display: block; }
     .notif-header { display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid rgba(255,255,255,0.08); padding-bottom:10px; margin-bottom:10px; }
     .notif-header h4 { font-size:14px; font-weight:700; margin:0; }
     .notif-header button { background: transparent; border: none; color: var(--sky-400); font-size: 11px; cursor: pointer; }
-    .notif-item { padding:9px 8px; border-radius:10px; display:flex; gap:10px; align-items:flex-start; transition:background-color 0.2s; border:1px solid transparent; }
+    .notif-list {
+      max-height: 330px;
+      overflow-y: auto;
+      overflow-x: auto;
+      padding-right: 4px;
+      scrollbar-width: thin;
+      scrollbar-color: rgba(56,189,248,0.35) transparent;
+    }
+    .notif-list::-webkit-scrollbar { width: 8px; height: 8px; }
+    .notif-list::-webkit-scrollbar-track { background: transparent; }
+    .notif-list::-webkit-scrollbar-thumb { background: rgba(56,189,248,0.35); border-radius: 999px; }
+    .notif-list::-webkit-scrollbar-thumb:hover { background: rgba(56,189,248,0.55); }
+    .notif-item { padding:10px 8px; border-radius:10px; display:flex; gap:10px; align-items:flex-start; transition:background-color 0.2s; border:1px solid transparent; }
     .notif-item:hover { background-color: rgba(255,255,255,0.04); }
-    .notif-item .icon { width:32px; height:32px; border-radius:10px; display:flex; align-items:center; justify-content:center; font-size:12px; flex-shrink:0; background:rgba(148,163,184,0.12); color:var(--slate-200); }
+    .notif-item .icon { width:32px; height:32px; border-radius:10px; display:none; align-items:center; justify-content:center; font-size:12px; flex-shrink:0; background:rgba(148,163,184,0.12); color:var(--slate-200); }
     .notif-item.unread { border-color: rgba(56,189,248,0.2); }
     .notif-item.warning .icon { background: rgba(251,191,36,0.16); color: var(--amber-300); }
     .notif-item.error .icon { background: rgba(248,113,113,0.16); color: var(--red-400); }
@@ -628,6 +680,14 @@ $has_unread   = $unread_count > 0;
     .notif-item .text b { display:block; font-size:12.5px; color:var(--slate-50); margin-bottom:2px; }
     .notif-item .text span { color:var(--slate-400); font-size:11.5px; display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
     .notif-item .time { font-size:10px; color:var(--slate-400); margin-top:4px; }
+    .notif-item-body {
+      min-width: 0;
+      flex: 1;
+    }
+    .notif-item-body b { display:block; font-size:12.5px; color:var(--slate-50); margin-bottom:2px; }
+    .notif-item-body span { color:var(--slate-400); font-size:11.5px; display:block; white-space:normal; line-height:1.5; }
+    .notif-item-body .notif-time { font-size:10px; color:var(--slate-400); margin-top:4px; }
+    .notif-empty { text-align:center; padding:12px 0; color:var(--slate-400); font-size:12px; }
     @keyframes fadeInDown { from { opacity:0; transform: translateY(-8px); } to { opacity:1; transform: translateY(0); } }
 
     /* Account Management redesign: page content only. */
@@ -657,13 +717,6 @@ $has_unread   = $unread_count > 0;
     .account-sidecard{text-align:center;}
     .account-sidecard p{font-size:13px; line-height:1.8; color:var(--slate-300); margin:0 0 22px;}
     .account-management .account-sidecard h3{margin-bottom:16px;}
-    .account-management .account-delete-panel{margin-top:26px; border-color:rgba(248,113,113,.35); background:linear-gradient(125deg,rgba(127,29,29,.16),var(--navy-900));}
-    .account-management .account-delete-panel h3{margin-bottom:10px;}
-    .account-delete-panel p{font-size:13px; line-height:1.7; color:var(--slate-300); margin-bottom:20px;}
-    .account-delete-panel label{display:block; font-size:13px; font-weight:600; color:var(--slate-300); margin-bottom:9px;}
-    .account-delete-phrase{display:inline-block; max-width:100%; overflow-wrap:anywhere; padding:8px 11px; border:1px solid rgba(248,113,113,.35); border-radius:8px; color:#fff; background:rgba(127,29,29,.25); font-size:12px; margin-bottom:10px;}
-    .account-delete-panel .form-control-custom{display:block; max-width:540px;}
-    .account-delete-actions{display:flex; justify-content:flex-end; margin-top:16px;}
     .account-feedback{font-size:12px; line-height:1.6; color:var(--slate-300); margin-top:12px;}
     .account-modal{visibility:hidden; padding:20px; overflow-y:auto;}
     .account-modal.active{visibility:visible;}
@@ -682,7 +735,7 @@ $has_unread   = $unread_count > 0;
     .account-modal-actions .account-btn:last-child{flex:1;}
     .account-modal [hidden],.account-management [hidden]{display:none!important;}
     @media(max-width:1050px){.account-management .layout-2col{grid-template-columns:minmax(0,1fr);} .account-sidecards{display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:20px;}}
-    @media(max-width:600px){.account-sidecards{grid-template-columns:1fr;} .account-management .panel{padding:20px;} .account-modal{padding:12px;} .account-modal .modal-card-custom{padding:22px; max-height:calc(100dvh - 24px);} .account-modal .account-modal-header h3{font-size:20px;} .account-delete-actions .account-btn{width:100%;}}
+    @media(max-width:600px){.account-sidecards{grid-template-columns:1fr;} .account-management .panel{padding:20px;} .account-modal{padding:12px;} .account-modal .modal-card-custom{padding:22px; max-height:calc(100dvh - 24px);} .account-modal .account-modal-header h3{font-size:20px;}}
 
     /* Requested password, OTP, scrollbar and deletion-button refinements. */
     .account-modal,.account-modal .modal-card-custom{color-scheme:dark; scrollbar-width:thin; scrollbar-color:rgba(148,163,184,.42) transparent;}
@@ -700,8 +753,6 @@ $has_unread   = $unread_count > 0;
     .account-password-toggle .eye-slash{display:none;}
     .account-password-toggle[aria-pressed="true"] .eye-slash{display:block;}
     .account-modal .account-password-hint{font-size:11px; line-height:1.6; color:var(--slate-400); margin:7px 0 0;}
-    .account-delete-actions .account-btn{background:#dc2626; border-color:#dc2626;}
-    .account-delete-actions .account-btn:hover{background:#b91c1c; border-color:#b91c1c;}
     .account-otp-success{background:#d1e7dd; border:1px solid #a3cfbb; color:#0f5132; border-radius:8px; padding:12px 14px; font-size:13px; line-height:1.6; margin-bottom:10px;}
     .account-modal .account-otp-preview-note{font-size:11px; line-height:1.6; margin:0 0 18px; color:var(--slate-400);}
     .account-modal #link-otp-code{text-align:center; font-size:21px; letter-spacing:.45em; padding-left:calc(14px + .45em); font-variant-numeric:tabular-nums;}
@@ -757,6 +808,110 @@ $has_unread   = $unread_count > 0;
     .staff-theme-control span { font-size: 1.05rem; }
     .staff-theme-control:focus-within span { outline: 2px solid var(--sky-400); outline-offset: 4px; border-radius: 3px; }
     body.branch-manager-theme.light-mode .staff-theme-control { color: var(--slate-400); }
+    /* Light-mode refinements only; layout and account behavior are unchanged. */
+    body.branch-manager-theme.light-mode {
+      color-scheme:light;
+      --sky-400:#2563eb; --amber-400:#a16207; --amber-300:#a16207;
+      --mint-400:#047857; --red-400:#b91c1c;
+    }
+    body.branch-manager-theme.light-mode .sidebar { border-right-color:#dce4ef; }
+    body.branch-manager-theme.light-mode .sidebar .disp { color:var(--slate-50) !important; }
+    body.branch-manager-theme.light-mode .topbar { background:rgba(255,255,255,0.94); border-bottom-color:#dce4ef; }
+    body.branch-manager-theme.light-mode .side-branch { background:#f7f9fc; }
+    body.branch-manager-theme.light-mode .side-branch:hover { background:#edf3fb; border-color:#c6d9f5; }
+    body.branch-manager-theme.light-mode .side-branch .hq-logo { background:#f3f6fb; border-color:#dce4ef; }
+    body.branch-manager-theme.light-mode .side-link.active {
+      background:#eaf2ff; color:#1d4ed8; box-shadow:inset 0 0 0 1px #c6d9f5;
+    }
+    body.branch-manager-theme.light-mode .side-logout { border-top-color:#dce4ef; }
+    body.branch-manager-theme.light-mode .side-logout:hover { background:#fef2f2; }
+    body.branch-manager-theme.light-mode .page-foot { border-top-color:#dce4ef; }
+    body.branch-manager-theme.light-mode .panel,
+    body.branch-manager-theme.light-mode .account-management .panel {
+      background:#fff; border-color:#dce4ef; box-shadow:0 4px 16px rgba(23,35,55,0.04);
+    }
+    body.branch-manager-theme.light-mode .avatar-circle,
+    body.branch-manager-theme.light-mode .avatar-big { color:#fff; }
+    body.branch-manager-theme.light-mode .account-management .avatar-big {
+      border-color:#e2eaf5; background:linear-gradient(135deg,#2563eb,#1d4ed8);
+    }
+    body.branch-manager-theme.light-mode .account-management .avatar-edit-btn {
+      background:#f8fafc; border-color:#cbd5e1; color:#3c4d68;
+    }
+    body.branch-manager-theme.light-mode .account-management .avatar-edit-btn:hover { background:#edf3fb; color:#1d4ed8; }
+    body.branch-manager-theme.light-mode .form-control-custom,
+    body.branch-manager-theme.light-mode .account-management .form-control-custom,
+    body.branch-manager-theme.light-mode .account-modal .form-control-custom {
+      background:#fff; border-color:#cbd5e1; color:var(--slate-50); box-shadow:none;
+    }
+    body.branch-manager-theme.light-mode .form-control-custom::placeholder { color:#64748b; opacity:1; }
+    body.branch-manager-theme.light-mode .form-control-custom:disabled {
+      background:#f1f5f9; border-color:#dce4ef; color:#58677e; opacity:1;
+      -webkit-text-fill-color:#58677e;
+    }
+    body.branch-manager-theme.light-mode .form-control-custom:focus,
+    body.branch-manager-theme.light-mode .account-management .form-control-custom:focus,
+    body.branch-manager-theme.light-mode .account-modal .form-control-custom:focus {
+      border-color:#2563eb; box-shadow:0 0 0 3px rgba(37,99,235,0.12);
+    }
+    body.branch-manager-theme.light-mode .account-btn { background:#1d4ed8; color:#fff; }
+    body.branch-manager-theme.light-mode .account-btn:hover { background:#1e40af; }
+    body.branch-manager-theme.light-mode .account-btn.outline { background:#fff; color:#1d4ed8; border-color:#2563eb; }
+    body.branch-manager-theme.light-mode .account-btn.outline:hover { background:#eaf2ff; }
+    body.branch-manager-theme.light-mode .account-btn.secondary,
+    body.branch-manager-theme.light-mode .btn-secondary-custom { background:#f8fafc; color:#3c4d68; border-color:#cbd5e1; }
+    body.branch-manager-theme.light-mode .account-btn.secondary:hover,
+    body.branch-manager-theme.light-mode .btn-secondary-custom:hover { background:#edf3fb; color:var(--slate-50); }
+    body.branch-manager-theme.light-mode .modal-overlay { background:rgba(23,35,55,0.42); }
+    body.branch-manager-theme.light-mode .modal-card-custom,
+    body.branch-manager-theme.light-mode .account-modal .modal-card-custom {
+      background:#fff; border-color:#dce4ef; box-shadow:0 24px 64px rgba(23,35,55,0.18);
+    }
+    body.branch-manager-theme.light-mode .account-modal .account-modal-header h3 { color:var(--slate-50); }
+    body.branch-manager-theme.light-mode .account-modal,
+    body.branch-manager-theme.light-mode .account-modal .modal-card-custom {
+      color-scheme:light; scrollbar-color:#94a3b8 transparent;
+    }
+    body.branch-manager-theme.light-mode .account-modal::-webkit-scrollbar-thumb,
+    body.branch-manager-theme.light-mode .account-modal .modal-card-custom::-webkit-scrollbar-thumb { background:#94a3b8; }
+    body.branch-manager-theme.light-mode .account-modal::-webkit-scrollbar-thumb:hover,
+    body.branch-manager-theme.light-mode .account-modal .modal-card-custom::-webkit-scrollbar-thumb:hover { background:#64748b; }
+    body.branch-manager-theme.light-mode .account-password-toggle:hover { background:#edf3fb; color:#1d4ed8; }
+    body.branch-manager-theme.light-mode .account-modal-close:hover { color:#1d4ed8; }
+    body.branch-manager-theme.light-mode .account-modal .account-password-hint,
+    body.branch-manager-theme.light-mode .account-modal .account-otp-preview-note { color:var(--slate-400); }
+    body.branch-manager-theme.light-mode .notif-popup { border-color:#dce4ef; box-shadow:0 16px 32px rgba(23,35,55,0.14); }
+    body.branch-manager-theme.light-mode .notif-header { border-bottom-color:#dce4ef; }
+    body.branch-manager-theme.light-mode .notif-item:hover { background:#f1f5f9; }
+    body.branch-manager-theme.light-mode .notif-item.unread { background:#f0f6ff; border-color:#c6d9f5; }
+    body.branch-manager-theme.light-mode .notif-item-body b { color:var(--slate-50); }
+    body.branch-manager-theme.light-mode .notif-item-body > span,
+    body.branch-manager-theme.light-mode .notif-time,
+    body.branch-manager-theme.light-mode .notif-empty { color:var(--slate-400); }
+    body.branch-manager-theme.light-mode .account-management .alert { color:var(--slate-50) !important; border-color:#dce4ef !important; }
+    body.branch-manager-theme.light-mode .account-management .alert-success { background:#ecfdf5 !important; color:#047857 !important; border-color:#a7e4c5 !important; }
+    body.branch-manager-theme.light-mode .account-management .alert-danger { background:#fef2f2 !important; color:#b91c1c !important; border-color:#fecaca !important; }
+    body.branch-manager-theme.light-mode .btn-close-white { filter:none; opacity:0.65; }
+    /* Profile-save success notification only. */
+    .account-management .alert.profile-success-toast {
+      position:relative; width:100%; margin:0 0 20px;
+      padding:16px 48px 16px 18px; border-radius:12px;
+      background:#103329 !important; color:#6ee7b7 !important;
+      border:1px solid #276749 !important;
+      box-shadow:0 6px 18px rgba(0,0,0,0.16);
+      font-size:13px; line-height:1.6;
+    }
+    body.branch-manager-theme.light-mode .account-management .alert.profile-success-toast {
+      background:#ecfdf5 !important; color:#047857 !important;
+      border-color:#a7e4c5 !important;
+      box-shadow:0 6px 18px rgba(4,120,87,0.08);
+    }
+    .account-management .profile-success-toast .btn-close {
+      filter:invert(1); opacity:0.65;
+    }
+    body.branch-manager-theme.light-mode .account-management .profile-success-toast .btn-close {
+      filter:none;
+    }
   </style>
 </head>
 <body class="branch-manager-theme">
@@ -811,31 +966,33 @@ $has_unread   = $unread_count > 0;
         <div class="notif-popup" id="notif-popup">
           <div class="notif-header">
             <h4>Notifications</h4>
-            <button id="clear-notifs-btn" type="button">Mark all read</button>
           </div>
           <div class="notif-list" id="notif-list">
             <?php if (!$alerts): ?>
-              <div class="notif-empty" style="text-align:center; padding:12px 0; color:var(--slate-400); font-size:12px;">No new notifications</div>
+              <div class="notif-empty">No new notifications</div>
             <?php else:
               foreach ($alerts as $a):
                 $meta = notif_ui_meta($a['type'], $a['title']);
                 $icon = $meta['icon'];
                 $tone = $meta['tone'];
             ?>
-              <div class="notif-item <?= h($tone) ?>" data-notif-id="<?= (int)$a['notif_id'] ?>" data-link="<?= h($a['link'] ?? 'dashboard.php') ?>">
-                <div class="icon"><i class="fa-solid <?= h($icon) ?>"></i></div>
-                <div class="text">
+              <div class="notif-item <?= h($tone) ?>" data-notif-id="<?= (int)$a['notif_id'] ?>" data-link="<?= h($a['link'] ?? 'dashboard.php') ?>" data-kind="<?= h($tone) ?>">
+                <div class="notif-item-body">
                   <b><?= h($a['title']) ?></b>
                   <span><?= h($a['body']) ?></span>
-                  <div class="time"><?= h($a['time_ago']) ?></div>
+                  <div class="notif-time"><?= h($a['time_ago']) ?></div>
                 </div>
               </div>
             <?php endforeach; endif; ?>
           </div>
         </div>
         <div class="avatar-chip">
-          <div class="avatar-circle"><a href="edit-profile.php"><?= htmlspecialchars(mb_substr($initials,0,1), ENT_QUOTES, 'UTF-8') ?></a></div>
-          <div><b><a href="edit-profile.php"><?= htmlspecialchars(explode(' ', $user['full_name'] ?? 'Manager')[0]) ?></a></b></div>
+          <?php if ($avatarUrl !== ''): ?>
+            <img src="<?= htmlspecialchars($avatarUrl, ENT_QUOTES) ?>" alt="Profile Picture" style="width:36px;height:36px;border-radius:50%;object-fit:cover;border:1px solid rgba(255,255,255,0.12)">
+          <?php else: ?>
+            <div class="avatar-circle"><a href="edit-profile.php"><?= htmlspecialchars(mb_substr($initials,0,1), ENT_QUOTES, 'UTF-8') ?></a></div>
+          <?php endif; ?>
+          <div><b><a href="edit-profile.php"><?= htmlspecialchars(getFullDisplayName($user)) ?></a></b></div>
         </div>
       </div>
     </div>
@@ -846,13 +1003,19 @@ $has_unread   = $unread_count > 0;
         <p>Update your account credentials, settings, or switch between interfaces.</p>
       </div>
 
-      <?php if (!empty($message)): ?>
+      <?php if (!empty($message) && $message_type !== 'success'): ?>
         <div class="alert alert-<?= $message_type ?> alert-dismissible fade show" role="alert" style="border-radius:12px; background:var(--navy-800); color:#fff; border-color:rgba(255,255,255,0.1);">
           <?= htmlspecialchars($message) ?>
           <button type="button" class="btn-close btn-close-white" data-bs-dismiss="alert" aria-label="Close"></button>
         </div>
       <?php endif; ?>
-      <?php if ($accountDeletionFlash !== ''): ?><div class="alert alert-danger" role="alert" style="border-radius:12px; background:var(--navy-800); color:#fff; border-color:rgba(248,113,113,.35);"><?= htmlspecialchars($accountDeletionFlash) ?></div><?php endif; ?>
+
+      <?php if (!empty($message) && $message_type === 'success'): ?>
+        <div class="alert alert-success alert-dismissible fade show profile-success-toast" role="alert">
+          <?= htmlspecialchars($message) ?>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+      <?php endif; ?>
 
       <div class="layout-2col">
         <section class="panel account-profile-card" aria-labelledby="account-profile-title">
@@ -897,17 +1060,6 @@ $has_unread   = $unread_count > 0;
           </section>
         </div>
       </div>
-      <section class="panel account-delete-panel" aria-labelledby="delete-account-title">
-        <h3 id="delete-account-title">Delete Branch Manager account</h3>
-        <p>This Deletes your Branch Manager account and signs you out.</p>
-        <form id="account-delete-form" data-frontend-only="true">
-          <label for="account-delete-confirmation">Type this exact text to continue</label>
-          <code class="account-delete-phrase" id="account-delete-phrase"><?= htmlspecialchars(($user['full_name'] ?? $managerDisplayName) . '_delete_account', ENT_QUOTES, 'UTF-8') ?></code>
-          <input type="text" class="form-control-custom" id="account-delete-confirmation" autocomplete="off" spellcheck="false" aria-describedby="account-delete-phrase" required>
-          <div class="account-delete-actions"><button type="submit" class="account-btn">Delete Account</button></div>
-          <div class="account-feedback" id="account-delete-feedback" role="status" hidden></div>
-        </form>
-      </section>
 
       <div class="page-foot">© 2026 MAP & PUMP | All Right Reserved</div>
     </div>
@@ -931,8 +1083,8 @@ $has_unread   = $unread_count > 0;
       <div class="form-group"><label for="link-new-email">Email</label><input class="form-control-custom" id="link-new-email" type="email" autocomplete="email" required></div>
       <div class="form-group"><label for="link-new-password">Password</label><div class="account-password-wrap"><input class="form-control-custom" id="link-new-password" type="password" minlength="8" maxlength="15" autocomplete="new-password" required aria-describedby="link-new-password-hint"><button type="button" class="account-password-toggle" data-password-toggle="link-new-password" aria-label="Show password" aria-controls="link-new-password" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"></path><circle cx="12" cy="12" r="3"></circle><path class="eye-slash" d="M3 3l18 18"></path></svg></button></div><p class="account-password-hint" id="link-new-password-hint">Use 8-15 characters with uppercase and lowercase letters, a number, and a symbol.</p></div>
       <div class="form-group"><label for="link-confirm-password">Confirm password</label><div class="account-password-wrap"><input class="form-control-custom" id="link-confirm-password" type="password" minlength="8" maxlength="15" autocomplete="new-password" required><button type="button" class="account-password-toggle" data-password-toggle="link-confirm-password" aria-label="Show password" aria-controls="link-confirm-password" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"></path><circle cx="12" cy="12" r="3"></circle><path class="eye-slash" d="M3 3l18 18"></path></svg></button></div></div>
-      <label class="account-demo-consent"><input type="checkbox" id="link-demo-consent" required><span>I understand this is a school demo. I will use an accessible email for verification and fictional information for other fields.</span></label>
-      <div class="account-modal-actions"><button type="button" class="account-btn secondary" data-link-back>Back</button><button type="submit" class="account-btn">Send verification code</button></div>
+      <label class="account-demo-consent" for="link-demo-consent"><input type="checkbox" id="link-demo-consent" required><span>I understand this is a demo and will use test data only, not real personal information.</span></label>
+           <div class="account-modal-actions"><button type="button" class="account-btn secondary" data-link-back>Back</button><button type="submit" class="account-btn">Send verification code</button></div>
     </form>
     <form id="link-existing-step" data-frontend-only="true" hidden>
       <div class="form-group"><label for="link-existing-email">Customer account email</label><input class="form-control-custom" id="link-existing-email" type="email" autocomplete="email" required></div>
@@ -955,11 +1107,12 @@ $has_unread   = $unread_count > 0;
   <div class="modal-card-custom" role="dialog" aria-modal="true" aria-labelledby="password-modal-title" tabindex="-1">
     <div class="account-modal-header"><h3 id="password-modal-title">Change Password</h3><button type="button" class="account-modal-close" data-close-account-modal aria-label="Close">&times;</button></div>
     <p>Update your account password securely.</p>
-    <form id="password-preview-form" data-frontend-only="true">
-      <div class="form-group"><label for="password-current">Current password</label><div class="account-password-wrap"><input class="form-control-custom" id="password-current" type="password" autocomplete="current-password" required><button type="button" class="account-password-toggle" data-password-toggle="password-current" aria-label="Show password" aria-controls="password-current" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"></path><circle cx="12" cy="12" r="3"></circle><path class="eye-slash" d="M3 3l18 18"></path></svg></button></div></div>
-      <div class="form-group"><label for="password-new">New password</label><div class="account-password-wrap"><input class="form-control-custom" id="password-new" type="password" autocomplete="new-password" required aria-describedby="password-new-hint"><button type="button" class="account-password-toggle" data-password-toggle="password-new" aria-label="Show password" aria-controls="password-new" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"></path><circle cx="12" cy="12" r="3"></circle><path class="eye-slash" d="M3 3l18 18"></path></svg></button></div><p class="account-password-hint" id="password-new-hint">Use 8-15 characters with uppercase and lowercase letters, a number, and a symbol.</p></div>
-      <div class="form-group"><label for="password-confirm">Confirm new password</label><div class="account-password-wrap"><input class="form-control-custom" id="password-confirm" type="password" autocomplete="new-password" required><button type="button" class="account-password-toggle" data-password-toggle="password-confirm" aria-label="Show password" aria-controls="password-confirm" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"></path><circle cx="12" cy="12" r="3"></circle><path class="eye-slash" d="M3 3l18 18"></path></svg></button></div></div>
-      <div class="account-modal-actions"><button type="button" class="account-btn secondary" data-close-account-modal>Cancel</button><button type="submit" class="account-btn">Change Password</button></div>
+    <form id="password-preview-form">
+      <input type="hidden" name="csrf" value="<?= htmlspecialchars(csrf_token(), ENT_QUOTES, 'UTF-8') ?>">
+      <div class="form-group"><label for="password-current">Current password</label><div class="account-password-wrap"><input class="form-control-custom" id="password-current" name="current_password" type="password" autocomplete="current-password" required><button type="button" class="account-password-toggle" data-password-toggle="password-current" aria-label="Show password" aria-controls="password-current" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"></path><circle cx="12" cy="12" r="3"></circle><path class="eye-slash" d="M3 3l18 18"></path></svg></button></div></div>
+      <div class="form-group"><label for="password-new">New password</label><div class="account-password-wrap"><input class="form-control-custom" id="password-new" name="new_password" type="password" autocomplete="new-password" required aria-describedby="password-new-hint"><button type="button" class="account-password-toggle" data-password-toggle="password-new" aria-label="Show password" aria-controls="password-new" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"></path><circle cx="12" cy="12" r="3"></circle><path class="eye-slash" d="M3 3l18 18"></path></svg></button></div><p class="account-password-hint" id="password-new-hint">Use 8-15 characters with uppercase and lowercase letters, a number, and a symbol.</p></div>
+      <div class="form-group"><label for="password-confirm">Confirm new password</label><div class="account-password-wrap"><input class="form-control-custom" id="password-confirm" name="confirm_password" type="password" autocomplete="new-password" required><button type="button" class="account-password-toggle" data-password-toggle="password-confirm" aria-label="Show password" aria-controls="password-confirm" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"></path><circle cx="12" cy="12" r="3"></circle><path class="eye-slash" d="M3 3l18 18"></path></svg></button></div></div>
+           <div class="account-modal-actions"><button type="button" class="account-btn secondary" data-close-account-modal>Cancel</button><button type="submit" class="account-btn">Change Password</button></div>
       <div class="account-feedback" id="password-feedback" role="status" hidden></div>
     </form>
   </div>
@@ -982,35 +1135,50 @@ $has_unread   = $unread_count > 0;
     const bellBtn = document.getElementById('notif-bell');
     const notifPopup = document.getElementById('notif-popup');
     const notifPing = document.getElementById('notif-ping');
-    const clearNotifsBtn = document.getElementById('clear-notifs-btn');
     const notifList = document.getElementById('notif-list');
 
-    bellBtn.addEventListener('click', () => {
-      const isOpen = notifPopup.classList.toggle('show');
-      if (isOpen) {
-        notifPing.style.display = 'none';
-        fetch('notif_read_all.php', { method: 'POST', credentials: 'same-origin' });
-      }
-    });
-    clearNotifsBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      fetch('notif_read_all.php', { method: 'POST', credentials: 'same-origin' })
-        .then(() => {
-          notifList.querySelectorAll('.notif-item.unread').forEach((item) => {
-            item.classList.remove('unread');
-            const ping = item.querySelector('.ping');
-            if (ping) {
-              ping.parentNode.removeChild(ping);
+    function postDismiss(payload) {
+      return fetch('api_dismiss_notification.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        credentials: 'same-origin'
+      }).then(r => r.json()).catch(() => ({ ok: false }));
+    }
+
+    if (bellBtn && notifPopup) {
+      bellBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+
+        notifPopup.classList.toggle('show');
+        if (notifPing) notifPing.style.display = 'none';
+      });
+
+      document.addEventListener('click', (e) => {
+        if (!notifPopup.contains(e.target) && !bellBtn.contains(e.target)) {
+          notifPopup.classList.remove('show');
+        }
+      });
+    }
+
+    if (notifList) {
+      notifList.addEventListener('click', (e) => {
+        const item = e.target.closest('.notif-item');
+        if (!item) return;
+        const id = Number(item.dataset.notifId || 0);
+        const link = item.dataset.link || 'dashboard.php';
+        if (id > 0) {
+          postDismiss({ notif_id: id }).then((res) => {
+            if (res.ok && notifPing && Number(res.unread || 0) <= 0) {
+              notifPing.remove();
             }
           });
-          const emptyNotice = document.createElement('div');
-          emptyNotice.className = 'notif-empty';
-          emptyNotice.textContent = 'No new notifications';
-          emptyNotice.style.cssText = 'text-align:center; padding:12px 0; color:var(--slate-400); font-size:12px;';
-          notifList.innerHTML = '';
-          notifList.appendChild(emptyNotice);
-        });
-    });
+        }
+        if (link) {
+          window.location.href = link;
+        }
+      });
+    }
 
     // Profile avatar upload
     const avatarFileInput = document.getElementById('avatar-file-input');
@@ -1044,6 +1212,7 @@ $has_unread   = $unread_count > 0;
           throw new Error(result.error || 'Failed to upload avatar.');
         }
         avatarImg.src = result.url;
+        avatarImg.style.display = 'block';
         avatarInitials.style.display = 'none';
         avatarStatus.textContent = 'Upload successful!';
         avatarStatus.style.color = 'var(--mint-400)';
@@ -1215,6 +1384,8 @@ $has_unread   = $unread_count > 0;
     const newAccountForm = document.getElementById('link-create-step');
     const existingAccountForm = document.getElementById('link-existing-step');
     const otpForm = document.getElementById('link-otp-step');
+    const passwordForm = document.getElementById('password-preview-form');
+    const passwordFeedback = document.getElementById('password-feedback');
 
     newAccountForm?.addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -1273,6 +1444,42 @@ $has_unread   = $unread_count > 0;
       }
     });
 
+    passwordForm?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      passwordFeedback.hidden = true;
+
+      const formData = new FormData(passwordForm);
+      formData.append('action', 'change_password');
+      const csrfInput = passwordForm.querySelector('input[name="csrf"]');
+      if (csrfInput) {
+        formData.set('csrf', csrfInput.value);
+      }
+
+      try {
+        const response = await fetch('edit-profile.php', {
+          method: 'POST',
+          body: formData,
+          credentials: 'same-origin'
+        });
+        const result = await response.json();
+
+        passwordFeedback.textContent = result.message;
+        passwordFeedback.className = 'account-feedback ' + (result.ok ? 'text-success' : 'text-danger');
+        passwordFeedback.hidden = false;
+
+        if (result.ok) {
+          setTimeout(() => {
+            passwordForm.reset();
+            closeAccountModal();
+          }, 1200);
+        }
+      } catch (err) {
+        passwordFeedback.textContent = 'A network error occurred. Please try again.';
+        passwordFeedback.className = 'account-feedback text-danger';
+        passwordFeedback.hidden = false;
+      }
+    });
+
     document.querySelectorAll('[data-password-toggle]').forEach((button) => {
       button.addEventListener('click', () => {
         const input = document.getElementById(button.dataset.passwordToggle);
@@ -1282,21 +1489,6 @@ $has_unread   = $unread_count > 0;
         button.setAttribute('aria-pressed', String(visible));
         button.setAttribute('aria-label', visible ? 'Hide password' : 'Show password');
       });
-    });
-
-    const deleteConfirmation = document.getElementById('account-delete-confirmation');
-    const deletePhrase = document.getElementById('account-delete-phrase')?.textContent || '';
-    deleteConfirmation?.addEventListener('input', () => {
-      deleteConfirmation.setCustomValidity(deleteConfirmation.value === deletePhrase ? '' : 'Type the exact confirmation text shown above.');
-    });
-    document.getElementById('account-delete-form')?.addEventListener('submit', (e) => {
-      e.preventDefault();
-      if (!deleteConfirmation || deleteConfirmation.value !== deletePhrase) {
-        deleteConfirmation?.setCustomValidity('Type the exact confirmation text shown above.');
-        deleteConfirmation?.reportValidity();
-        return;
-      }
-      showAccountFeedback(document.getElementById('account-delete-feedback'), 'Frontend preview only. Your account has not been deleted and you have not been signed out.');
     });
   });
 </script>
@@ -1328,5 +1520,3 @@ $has_unread   = $unread_count > 0;
     }
   })();
 </script>
-</body>
-</html>

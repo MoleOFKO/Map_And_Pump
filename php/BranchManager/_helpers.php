@@ -9,7 +9,7 @@ if (session_status() === PHP_SESSION_NONE) {
 }
 
 require_once __DIR__ . '/../conn.php';   // provides $pdo and $conn
-
+require_once __DIR__ . '/../profile_avatar.php';
 
 // -------- Auth guard --------
 // Redirects to login if the current visitor is not signed in as a branch manager.
@@ -134,6 +134,21 @@ function hq_logo_src(?string $logo): ?string {
 }
 
 // -------- View helpers --------
+
+/** Return the single source-of-truth Branch Manager display name. */
+function getFullDisplayName(?array $user = null): string {
+    $candidate = '';
+
+    if (is_array($user)) {
+        $candidate = trim((string)($user['full_name'] ?? ''));
+    }
+
+    if ($candidate === '') {
+        $candidate = trim((string)($_SESSION['user_name'] ?? ''));
+    }
+
+    return $candidate !== '' ? $candidate : 'Manager';
+}
 
 /** Two-letter initials from a name, e.g. "Felix Aung" -> "FA" */
 function initials(string $name): string {
@@ -696,4 +711,43 @@ function staff_status_latest_event(array $events): ?array {
     }
 
     return $latest;
+}
+
+function notif_mark_read(PDO $db, int $user_id, int $notif_id): int {
+    if ($notif_id <= 0) {
+        return 0;
+    }
+
+    if (notif_has_read_column($db)) {
+        $stmt = $db->prepare(
+            "UPDATE notifications
+             SET read_at = NOW()
+             WHERE notification_id = :nid
+               AND recipient_user_id = :uid
+               AND read_at IS NULL"
+        );
+        $stmt->execute([':nid' => $notif_id, ':uid' => $user_id]);
+        return $stmt->rowCount();
+    }
+
+    return 0;
+}
+
+function notif_mark_all_read(PDO $db, int $user_id): int {
+    if ($user_id <= 0) {
+        return 0;
+    }
+
+    if (notif_has_read_column($db)) {
+        $stmt = $db->prepare(
+            "UPDATE notifications
+             SET read_at = NOW()
+             WHERE recipient_user_id = :uid
+               AND read_at IS NULL"
+        );
+        $stmt->execute([':uid' => $user_id]);
+        return $stmt->rowCount();
+    }
+
+    return 0;
 }

@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 /**
  * view-customers.php  —  Read-only customer directory + feedback for this branch.
  * Optional GET params: ?q=  (server-side search too, in addition to client-side filter)
@@ -17,8 +17,9 @@ $branch   = $ctx['branch'];
 $initials = initials($user['full_name']);
 $bid      = (int)$branch['branch_id'];
 
-$managerDisplayName = trim((string) ($_SESSION['user_name'] ?? $user['full_name'] ?? 'Manager'));
+$managerDisplayName = map_pump_user_display_name($user['full_name'] ?? ($_SESSION['user_name'] ?? ''), '');
 $managerInitial     = map_pump_profile_initial($managerDisplayName, $initials ?: 'M');
+$managerAvatarUrl   = map_pump_user_avatar_url($user['avatar_url'] ?? '', '');
 
 $q = trim($_GET['q'] ?? '');
 
@@ -105,6 +106,7 @@ $stmt = $pdo->prepare("
     INNER JOIN station_business_scope sbs ON sbs.station_id = f.station_id
     WHERE f.station_id = :branch_id
       AND sbs.branch_manager_user_id = :manager_id
+    GROUP BY f.feedback_id, f.user_id, f.station_id, f.rating, f.feedback, f.created_at, u.user_name
     ORDER BY f.created_at DESC
 ");
 $stmt->execute([':manager_id' => $user['user_id'], ':branch_id' => $bid]);
@@ -230,12 +232,12 @@ if (!empty($feedbackIds)) {
     right: 60px;
     width: 320px;
     max-height: 420px;
-    overflow-y: auto;
+    overflow: hidden;
     background: var(--navy-800);
     border: 1px solid rgba(255, 255, 255, 0.12);
     border-radius: 14px;
     box-shadow: 0 16px 32px rgba(0, 0, 0, 0.4);
-    padding: 14px 12px;
+    padding: 12px;
     z-index: 100;
     display: none;
     animation: fadeInDown 0.25s cubic-bezier(0.16, 1, 0.3, 1);
@@ -244,12 +246,24 @@ if (!empty($feedbackIds)) {
   .notif-header { display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom:10px; margin-bottom:10px; }
   .notif-header h4 { font-size: 14px; font-weight:700; margin:0; }
   .notif-header button { background: transparent; border: none; color: var(--sky-400); font-size: 11px; cursor: pointer; }
+  .notif-list {
+    max-height: 330px;
+    overflow-y: auto;
+    overflow-x: auto;
+    padding-right: 4px;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(56,189,248,0.35) transparent;
+  }
+  .notif-list::-webkit-scrollbar { width: 8px; height: 8px; }
+  .notif-list::-webkit-scrollbar-track { background: transparent; }
+  .notif-list::-webkit-scrollbar-thumb { background: rgba(56,189,248,0.35); border-radius: 999px; }
+  .notif-list::-webkit-scrollbar-thumb:hover { background: rgba(56,189,248,0.55); }
   .notif-item {
-    padding: 9px 8px; border-radius: 10px; display: flex; gap: 10px; align-items: flex-start; transition: background-color 0.2s; border: 1px solid transparent;
+    padding: 10px 8px; border-radius: 10px; display: flex; gap: 10px; align-items: flex-start; transition: background-color 0.2s; border: 1px solid transparent;
   }
   .notif-item:hover { background-color: rgba(255,255,255,0.04); }
   .notif-item .icon {
-    width: 32px; height: 32px; border-radius: 10px; display:flex; align-items:center; justify-content:center; font-size:12px; flex-shrink:0;
+    width: 32px; height: 32px; border-radius: 10px; display:none; align-items:center; justify-content:center; font-size:12px; flex-shrink:0;
     background: rgba(148,163,184,0.12); color: var(--slate-200);
   }
   .notif-item.unread { border-color: rgba(56,189,248,0.2); }
@@ -261,6 +275,14 @@ if (!empty($feedbackIds)) {
   .notif-item .text b { display:block; font-size:12.5px; color:var(--slate-50); margin-bottom:2px; }
   .notif-item .text span { color:var(--slate-400); font-size:11.5px; display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .notif-item .time { font-size:10px; color:var(--slate-400); margin-top:4px; }
+  .notif-item-body {
+    min-width: 0;
+    flex: 1;
+  }
+  .notif-item-body b { display:block; font-size:12.5px; color:var(--slate-50); margin-bottom:2px; }
+  .notif-item-body span { color:var(--slate-400); font-size:11.5px; display:block; white-space:normal; line-height:1.5; }
+  .notif-item-body .notif-time { font-size:10px; color:var(--slate-400); margin-top:4px; }
+  .notif-empty { text-align:center; padding:12px 0; color:var(--slate-400); font-size:12px; }
   @keyframes fadeInDown { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
 
   .avatar-chip{display:flex; align-items:center; gap:10px; font-size:13px; cursor: pointer; padding: 4px 8px; border-radius: 99px; transition: background 0.2s;}
@@ -422,6 +444,7 @@ if (!empty($feedbackIds)) {
   .feedback-modal-meta{display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:14px;}
   .feedback-modal-tier{display:inline-block; margin-bottom:18px;}
   .feedback-modal-text{background:rgba(255,255,255,0.015); border:1px solid rgba(255,255,255,0.06); border-radius:13px; padding:18px; font-size:14px; color:var(--slate-50); line-height:1.7; white-space:pre-wrap; overflow-wrap:anywhere;}
+  #feedback-modal .feedback-modal-text{border-left:3px solid #fbbf24;}
   .feedback-reply-section{border-top:1px solid rgba(255,255,255,0.08); margin-top:24px; padding-top:18px;}
   .feedback-reply-label{display:block; font-size:14px; font-weight:700; margin-bottom:10px;}
   .feedback-reply-label i{color:var(--sky-400); margin-right:7px;}
@@ -469,52 +492,123 @@ if (!empty($feedbackIds)) {
     --slate-50:#f8fafc; --slate-300:#c9d2e3; --slate-400:#8b96ad;
     background: var(--navy-950); color: var(--slate-50);
   }
+  /* ================= Light mode (refined) ================= */
   body.branch-manager-theme.light-mode {
-    --navy-950:#f3f6fb; --navy-900:#ffffff; --navy-800:#f7f9fc; --navy-700:#edf3fb; --navy-600:#e5edf8;
-    --blue-700:#286be0; --blue-500:#3c82ff; --sky-400:#3f8cf5; --amber-400:#d98400; --amber-300:#e2a72d; --mint-400:#128e6b; --red-400:#cf3d3d;
-    --slate-50:#172337; --slate-300:#3c4d68; --slate-400:#58677e; background: var(--navy-950); color: var(--slate-50);
+    --navy-950:#eef2f8; --navy-900:#ffffff; --navy-800:#f6f8fc; --navy-700:#eaf0f9; --navy-600:#dfe8f5;
+    --blue-700:#2563eb; --blue-500:#3b82f6; --sky-400:#2a6fdb;
+    --amber-400:#c27200; --amber-300:#8f5a00; --mint-400:#0f7a5b; --red-400:#c53030;
+    --slate-50:#0f1b30; --slate-200:#475569; --slate-300:#364763; --slate-400:#5b6a82;
+    --lm-line:rgba(15,27,48,0.11); --lm-line-soft:rgba(15,27,48,0.07); --lm-hover:rgba(42,111,219,0.07);
+    --lm-shadow:0 1px 2px rgba(15,27,48,0.05), 0 10px 24px -14px rgba(15,27,48,0.18);
+    background: var(--navy-950); color: var(--slate-50);
   }
-  body.branch-manager-theme.light-mode .sidebar,
-  body.branch-manager-theme.light-mode .topbar,
-  body.branch-manager-theme.light-mode .panel,
-  body.branch-manager-theme.light-mode .notif-popup,
-  body.branch-manager-theme.light-mode .bell,
-  body.branch-manager-theme.light-mode .side-branch,
-  body.branch-manager-theme.light-mode .avatar-chip,
-  body.branch-manager-theme.light-mode .search,
-  body.branch-manager-theme.light-mode .fb-card,
-  body.branch-manager-theme.light-mode .feedback-summary,
-  body.branch-manager-theme.light-mode .feedback-modal-content,
-  body.branch-manager-theme.light-mode .table-scroll thead th {
-    background: var(--navy-900); border-color: rgba(17,24,39,0.12); color: var(--slate-50);
-  }
-  body.branch-manager-theme.light-mode .side-link,
-  body.branch-manager-theme.light-mode .topbar .date,
-  body.branch-manager-theme.light-mode .side-branch span,
-  body.branch-manager-theme.light-mode .notif-item-body span,
-  body.branch-manager-theme.light-mode .fb-date,
-  body.branch-manager-theme.light-mode .rating-caption,
-  body.branch-manager-theme.light-mode .rating-row,
-  body.branch-manager-theme.light-mode .fb-text,
-  body.branch-manager-theme.light-mode .feedback-empty,
-  body.branch-manager-theme.light-mode .log-body {
-    color: var(--slate-300);
-  }
-  body.branch-manager-theme.light-mode .side-link.active,
-  body.branch-manager-theme.light-mode .side-link:hover,
-  body.branch-manager-theme.light-mode .avatar-chip:hover,
-  body.branch-manager-theme.light-mode .bell:hover,
-  body.branch-manager-theme.light-mode .rating-filter.active {
-    background: rgba(63, 140, 245, 0.10);
-    color: var(--slate-50);
-  }
+  body.branch-manager-theme.light-mode ::selection { background: rgba(42,111,219,0.22); }
+
+  /* sidebar */
+  body.branch-manager-theme.light-mode .sidebar { background:#ffffff; border-right-color: var(--lm-line); }
+  body.branch-manager-theme.light-mode .sidebar .disp { color: var(--slate-50) !important; }
+  body.branch-manager-theme.light-mode .side-branch { background: var(--navy-800); border-color: var(--lm-line); color: var(--slate-50); }
+  body.branch-manager-theme.light-mode .side-branch:hover { background: var(--navy-700); border-color: rgba(42,111,219,0.35); }
+  body.branch-manager-theme.light-mode .side-branch span { color: var(--slate-400); }
+  body.branch-manager-theme.light-mode .side-branch .hq-logo { background:#ffffff; border-color: var(--lm-line); }
+  body.branch-manager-theme.light-mode .side-link { color: var(--slate-300); }
+  body.branch-manager-theme.light-mode .side-link:hover { background: var(--lm-hover); color: var(--slate-50); }
+  body.branch-manager-theme.light-mode .side-link.active, body.branch-manager-theme.light-mode .side-link.active:hover { background: linear-gradient(135deg, rgba(42,111,219,0.14), rgba(37,99,235,0.06)); color: var(--slate-50); box-shadow: inset 0 0 0 1px rgba(42,111,219,0.38); }
+  body.branch-manager-theme.light-mode .side-logout { border-top-color: var(--lm-line); }
+  body.branch-manager-theme.light-mode .side-logout:hover { background: rgba(197,48,48,0.08); }
+
+  /* topbar */
+  body.branch-manager-theme.light-mode .topbar { background: rgba(255,255,255,0.86); border-bottom-color: var(--lm-line); color: var(--slate-50); }
+  body.branch-manager-theme.light-mode .topbar .date { color: var(--slate-400); }
+  body.branch-manager-theme.light-mode .bell { background:#ffffff; border-color: var(--lm-line); color: var(--slate-300); }
+  body.branch-manager-theme.light-mode .bell:hover { background: var(--navy-700); color: var(--slate-50); }
+  body.branch-manager-theme.light-mode .bell .ping { box-shadow: 0 0 0 2px #ffffff; }
+  body.branch-manager-theme.light-mode .avatar-chip { background: transparent; border-color: transparent; color: var(--slate-50); }
+  body.branch-manager-theme.light-mode .avatar-chip:hover { background: var(--lm-hover); }
+  body.branch-manager-theme.light-mode .avatar-circle, body.branch-manager-theme.light-mode .mini-avatar { background: linear-gradient(135deg,#3b82f6,#1d4ed8); color:#ffffff; }
+  body.branch-manager-theme.light-mode .avatar-circle a { color:#ffffff; }
+
+  /* notifications */
+  body.branch-manager-theme.light-mode .notif-popup { background:#ffffff; border-color: var(--lm-line); box-shadow: 0 20px 44px -16px rgba(15,27,48,0.28); color: var(--slate-50); }
+  body.branch-manager-theme.light-mode .notif-header { border-bottom-color: var(--lm-line); }
+  body.branch-manager-theme.light-mode .notif-item:hover { background: var(--navy-800); }
+  body.branch-manager-theme.light-mode .notif-item.unread { border-color: rgba(42,111,219,0.28); background: rgba(42,111,219,0.04); }
+  body.branch-manager-theme.light-mode .notif-item .icon { color: var(--slate-200); }
+  body.branch-manager-theme.light-mode .notif-item.warning .icon { background: rgba(194,114,0,0.14); color: var(--amber-300); }
+  body.branch-manager-theme.light-mode .notif-item.error .icon { background: rgba(197,48,48,0.12); color: var(--red-400); }
+  body.branch-manager-theme.light-mode .notif-item.success .icon { background: rgba(15,122,91,0.12); color: var(--mint-400); }
+  body.branch-manager-theme.light-mode .notif-item.info .icon { background: rgba(42,111,219,0.12); color: var(--sky-400); }
+  body.branch-manager-theme.light-mode .notif-item .text b, body.branch-manager-theme.light-mode .notif-item-body b { color: var(--slate-50); }
+  body.branch-manager-theme.light-mode .notif-item .text span, body.branch-manager-theme.light-mode .notif-item-body span { color: var(--slate-400); }
+  body.branch-manager-theme.light-mode .notif-item .time, body.branch-manager-theme.light-mode .notif-time, body.branch-manager-theme.light-mode .notif-empty { color: var(--slate-400); }
+
+  /* shell */
+  body.branch-manager-theme.light-mode .page-foot { border-top-color: var(--lm-line); color: var(--slate-400); }
+  body.branch-manager-theme.light-mode .page-head p { color: var(--slate-400); }
+  body.branch-manager-theme.light-mode .panel { background:#ffffff; border-color: var(--lm-line); box-shadow: var(--lm-shadow); color: var(--slate-50); }
+  body.branch-manager-theme.light-mode .staff-theme-control { color: var(--slate-300); }
+  body.branch-manager-theme.light-mode .staff-theme-control:hover { color: var(--slate-50); }
+
+  /* stats, tabs, search */
+  body.branch-manager-theme.light-mode .stat { background:#ffffff; border-color: var(--lm-line); box-shadow: var(--lm-shadow); }
+  body.branch-manager-theme.light-mode .stat:hover { border-color: rgba(42,111,219,0.35); }
+  body.branch-manager-theme.light-mode .tabs { border-bottom-color: var(--lm-line); }
+  body.branch-manager-theme.light-mode .search { background:#ffffff; border-color: rgba(15,27,48,0.16); color: var(--slate-400); }
+  body.branch-manager-theme.light-mode .search:focus-within { border-color: var(--sky-400); box-shadow: 0 0 0 3px rgba(42,111,219,0.14); }
+  body.branch-manager-theme.light-mode .search input { color: var(--slate-50); }
+  body.branch-manager-theme.light-mode .search input::placeholder { color: var(--slate-400); opacity: 0.8; }
+
+  /* customer table */
+  body.branch-manager-theme.light-mode .table-scroll thead th, body.branch-manager-theme.light-mode thead th { background: var(--navy-800); border-bottom-color: var(--lm-line); color: var(--slate-400); }
+  body.branch-manager-theme.light-mode tbody td { border-bottom-color: var(--lm-line-soft); }
+  body.branch-manager-theme.light-mode tbody tr:hover { background: rgba(42,111,219,0.045); }
+  body.branch-manager-theme.light-mode .cust-name span { color: var(--slate-400); }
+
+  /* tier pills */
+  body.branch-manager-theme.light-mode .tier-pill.bronze, body.branch-manager-theme.light-mode .feedback-tier.bronze { background: rgba(161,92,7,0.10); color:#8a4f05; border-color: rgba(161,92,7,0.38); }
+  body.branch-manager-theme.light-mode .tier-pill.silver, body.branch-manager-theme.light-mode .feedback-tier.silver { background: rgba(71,85,105,0.09); color:#3c4d68; border-color: rgba(71,85,105,0.30); }
+  body.branch-manager-theme.light-mode .tier-pill.gold, body.branch-manager-theme.light-mode .feedback-tier.gold { background: rgba(194,114,0,0.11); color: var(--amber-300); border-color: rgba(194,114,0,0.40); }
+  body.branch-manager-theme.light-mode .tier-pill.platinum, body.branch-manager-theme.light-mode .feedback-tier.platinum { background: rgba(100,116,139,0.12); color:#475569; border-color: rgba(100,116,139,0.40); }
+  body.branch-manager-theme.light-mode .tier-pill.diamond, body.branch-manager-theme.light-mode .feedback-tier.diamond { background: rgba(2,132,199,0.10); color:#0369a1; border-color: rgba(2,132,199,0.38); }
+  body.branch-manager-theme.light-mode .tier-pill.regular, body.branch-manager-theme.light-mode .feedback-tier.regular { background: rgba(15,27,48,0.05); color: var(--slate-400); border-color: var(--lm-line); }
+
+  /* feedback */
+  body.branch-manager-theme.light-mode .feedback-summary, body.branch-manager-theme.light-mode .fb-card { background:#ffffff; border-color: var(--lm-line); box-shadow: var(--lm-shadow); }
+  body.branch-manager-theme.light-mode .fb-card:hover { border-color: rgba(42,111,219,0.35); }
+  body.branch-manager-theme.light-mode .fb-profile .mini-avatar { background: rgba(42,111,219,0.10); color: var(--sky-400); }
+  body.branch-manager-theme.light-mode .fb-actions { border-top-color: var(--lm-line-soft); }
+  body.branch-manager-theme.light-mode .fb-details:hover { color: var(--slate-50); }
+  body.branch-manager-theme.light-mode .rating-track { background: rgba(15,27,48,0.08); }
+  body.branch-manager-theme.light-mode .rating-filter { background:#ffffff; border-color: rgba(15,27,48,0.16); color: var(--slate-300); }
+  body.branch-manager-theme.light-mode .rating-filter:hover { background: var(--navy-700); }
+  body.branch-manager-theme.light-mode .rating-filter.active, body.branch-manager-theme.light-mode .rating-filter.active:hover { background: rgba(42,111,219,0.10); border-color: var(--sky-400); color: var(--sky-400); }
+
+  /* pagination */
+  body.branch-manager-theme.light-mode .pg-btn { background:#ffffff; border-color: rgba(15,27,48,0.16); color: var(--slate-300); }
+  body.branch-manager-theme.light-mode .pg-btn:hover:not(:disabled):not(.active) { background: var(--navy-700); color: var(--slate-50); }
+  body.branch-manager-theme.light-mode .pg-btn.active { background: var(--amber-400); border-color: var(--amber-400); color:#ffffff; }
+
+  /* modals */
+  body.branch-manager-theme.light-mode #feedback-modal, body.branch-manager-theme.light-mode #conv-log-modal { --bs-modal-border-color: var(--lm-line); --bs-modal-header-border-color: var(--lm-line-soft); --bs-modal-footer-border-color: var(--lm-line-soft); }
+  body.branch-manager-theme.light-mode #feedback-modal .modal-content, body.branch-manager-theme.light-mode #conv-log-modal .modal-content { box-shadow: 0 28px 70px -20px rgba(15,27,48,0.35); }
+  body.branch-manager-theme.light-mode #feedback-modal .btn-close, body.branch-manager-theme.light-mode #conv-log-modal .btn-close { filter: none; opacity: 0.55; }
+  body.branch-manager-theme.light-mode #feedback-modal .btn-close:hover, body.branch-manager-theme.light-mode #conv-log-modal .btn-close:hover { opacity: 0.9; }
+  body.branch-manager-theme.light-mode .feedback-modal-text { background: var(--navy-800); border-color: var(--lm-line-soft); color: var(--slate-50); }
+  body.branch-manager-theme.light-mode .feedback-reply-section { border-top-color: var(--lm-line-soft); }
+  body.branch-manager-theme.light-mode .feedback-reply-text { background: rgba(42,111,219,0.05); border-color: rgba(42,111,219,0.28); color: var(--slate-50); }
+  body.branch-manager-theme.light-mode .feedback-reply-text.is-empty { color: var(--slate-400); }
+  body.branch-manager-theme.light-mode .log-entry { background: var(--navy-800); border-color: var(--lm-line-soft); }
+  body.branch-manager-theme.light-mode .log-entry.is-customer { border-left-color: var(--amber-400); }
+  body.branch-manager-theme.light-mode .log-entry.is-staff { background: rgba(42,111,219,0.05); border-color: rgba(42,111,219,0.22); border-left-color: var(--sky-400); }
+  body.branch-manager-theme.light-mode .log-badge.customer { background: rgba(194,114,0,0.13); color: var(--amber-300); }
+  body.branch-manager-theme.light-mode .log-badge.staff { background: rgba(42,111,219,0.12); color: var(--sky-400); }
+  body.branch-manager-theme.light-mode .log-badge.latest { background: rgba(15,122,91,0.12); color: var(--mint-400); }
   .staff-theme-control {
     position: relative; display: grid; width: 28px; height: 32px; place-items: center; margin: 0; color: var(--slate-300); cursor: pointer;
   }
   .staff-theme-control input { position: absolute; width: 1px; height: 1px; opacity: 0; }
   .staff-theme-control span { font-size: 1.05rem; }
   .staff-theme-control:focus-within span { outline: 2px solid var(--sky-400); outline-offset: 4px; }
-  body.branch-manager-theme.light-mode .staff-theme-control { color: var(--slate-400); }
 </style>
 </head>
 <body>
@@ -561,13 +655,42 @@ if (!empty($feedbackIds)) {
         <div class="date" id="live-clock">Wednesday · July 9, 2026</div>
       </div>
       <div class="topbar-right">
+        <div class="bell" id="notif-bell"><i class="fa-regular fa-bell"></i><?php if ($has_unread): ?><span class="ping" id="notif-ping"></span><?php endif; ?></div>
+        <div class="notif-popup" id="notif-popup">
+          <div class="notif-header">
+            <h4>Notifications</h4>
+          </div>
+          <div class="notif-list" id="notif-list">
+            <?php if (!$alerts): ?>
+              <div class="notif-empty">No new notifications</div>
+            <?php else:
+              foreach ($alerts as $a):
+                $meta = notif_ui_meta($a['type'], $a['title']);
+                $icon = $meta['icon'];
+                $tone = $meta['tone'];
+            ?>
+              <div class="notif-item <?= h($tone) ?>" data-notif-id="<?= (int)$a['notif_id'] ?>" data-link="<?= h($a['link'] ?? 'view-customers.php') ?>">
+                <div class="icon"><i class="fa-solid <?= h($icon) ?>"></i></div>
+                <div class="notif-item-body">
+                  <b><?= h($a['title']) ?></b>
+                  <span><?= h($a['body']) ?></span>
+                  <div class="notif-time"><?= h($a['time_ago']) ?></div>
+                </div>
+              </div>
+            <?php endforeach; endif; ?>
+          </div>
+        </div>
         <label class="staff-theme-control" title="Toggle light mode">
           <input class="js-theme-toggle" type="checkbox" aria-label="Toggle light mode">
           <span><i class="fa-solid fa-sun"></i></span>
         </label>
 
         <div class="avatar-chip">
+          <?php if ($managerAvatarUrl !== ''): ?>
+          <img src="<?= htmlspecialchars($managerAvatarUrl, ENT_QUOTES, 'UTF-8') ?>" alt="Profile Picture" style="width:36px;height:36px;border-radius:50%;object-fit:cover;border:1px solid rgba(255,255,255,0.12)">
+          <?php else: ?>
           <div class="avatar-circle"><a href="edit-profile.php"><?= htmlspecialchars($managerInitial, ENT_QUOTES, 'UTF-8') ?></a></div>
+          <?php endif; ?>
           <div><b><a href="edit-profile.php"><?= htmlspecialchars($managerDisplayName, ENT_QUOTES, 'UTF-8') ?></a></b></div>
         </div>
       </div>
@@ -968,32 +1091,6 @@ if (!empty($feedbackIds)) {
             titleEl.textContent = `${nameEl.textContent}’s Feedback`;
           }
 
-          const stars = document.getElementById('feedback-modal-stars');
-          const cardStars = card.querySelector('.fb-stars');
-          if (stars && cardStars) {
-            stars.textContent = cardStars.textContent;
-            stars.setAttribute('aria-label', cardStars.getAttribute('aria-label'));
-          }
-
-          const modalDate = document.getElementById('feedback-modal-date');
-          const cardDate = card.querySelector('.fb-date');
-          if (modalDate && cardDate) {
-            modalDate.textContent = cardDate.textContent;
-          }
-
-          const tier = card.querySelector('.feedback-tier');
-          const modalTier = document.getElementById('feedback-modal-tier');
-          if (modalTier && tier) {
-            modalTier.className = `${tier.className} feedback-modal-tier`;
-            modalTier.textContent = tier.textContent;
-          }
-
-          const modalText = document.getElementById('feedback-modal-text');
-          const cardText = card.querySelector('.fb-text');
-          if (modalText && cardText) {
-            modalText.textContent = cardText.textContent;
-          }
-          
           let replies = [];
           try {
             replies = JSON.parse(card.dataset.replies || '[]');
@@ -1015,6 +1112,7 @@ if (!empty($feedbackIds)) {
             if (logContainer) {
               logContainer.innerHTML = '';
               const customerName = nameEl ? nameEl.textContent : 'Customer';
+              const cardText = card.querySelector('.fb-text');
               const customerBody = (cardText ? cardText.textContent : '').replace(/^\s*\[Usage[^\]]*\]\s*/, '');
               const first = document.createElement('div');
               first.className = 'log-entry is-customer';
@@ -1049,6 +1147,19 @@ if (!empty($feedbackIds)) {
           }
 
           // View Details modal: latest staff reply only
+          const starsEl = card.querySelector('.fb-stars');
+          const dateEl = card.querySelector('.fb-date');
+          const tierEl = card.querySelector('.feedback-tier');
+          const textEl = card.querySelector('.fb-text');
+          const modalStars = document.getElementById('feedback-modal-stars');
+          modalStars.textContent = starsEl ? starsEl.textContent : '';
+          modalStars.setAttribute('aria-label', starsEl ? starsEl.getAttribute('aria-label') || '' : '');
+          document.getElementById('feedback-modal-date').textContent = dateEl ? dateEl.textContent : '';
+          const modalTier = document.getElementById('feedback-modal-tier');
+          modalTier.textContent = tierEl ? tierEl.textContent : 'Regular Tier';
+          modalTier.className = tierEl ? `${tierEl.className} feedback-modal-tier` : 'tier-pill feedback-tier feedback-modal-tier regular';
+          document.getElementById('feedback-modal-text').textContent = (textEl ? textEl.textContent : '').replace(/^\s*\[Usage[^\]]*\]\s*/, '');
+
           const replyBox = document.getElementById('feedback-modal-reply');
           if (replyBox) {
             const latestReply = replies.length ? replies[replies.length - 1] : null;
@@ -1077,15 +1188,14 @@ if (!empty($feedbackIds)) {
         .replace(/"/g, "&quot;")
         .replace(/'/g, "&#039;");
     }
-    feedbackModalElement.addEventListener('hidden.bs.modal', () => {
-      if (feedbackOpener && !feedbackOpener.closest('.fb-card').hidden) feedbackOpener.focus();
+    feedbackModalEl.addEventListener('hidden.bs.modal', () => {
+  if (feedbackOpener && !feedbackOpener.closest('.fb-card').hidden) feedbackOpener.focus();
     });
 
-    // Notifications Popup Toggle, Clear Badge, & Clear All Handler
+    // Notifications Popup Toggle, Clear Badge, & Item Dismiss Handler
     const bellBtn = document.getElementById('notif-bell');
     const notifPopup = document.getElementById('notif-popup');
     const notifPing = document.getElementById('notif-ping');
-    const clearNotifsBtn = document.getElementById('clear-notifs-btn');
     const notifList = document.getElementById('notif-list');
 
     function postDismiss(payload) {
@@ -1096,50 +1206,38 @@ if (!empty($feedbackIds)) {
       }).then(r => r.json()).catch(() => ({ ok: false }));
     }
 
-    function renderNotifEmpty() {
-      if (!notifList) return;
-      notifList.innerHTML = '<div class="notif-empty" style="text-align:center; padding:12px 0; color:var(--slate-400); font-size:12px;">No new notifications</div>';
-      if (notifPing) notifPing.remove();
-    }
-
-    bellBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const ping = bellBtn.querySelector('.ping');
-      if (ping) {
-        ping.style.transform = 'scale(0)';
-        setTimeout(() => ping.remove(), 200);
-      }
-      notifPopup.classList.toggle('show');
-    });
-
-    document.addEventListener('click', (e) => {
-      if (!notifPopup.contains(e.target) && !bellBtn.contains(e.target)) {
-        notifPopup.classList.remove('show');
-      }
-    });
-
-    if (notifList) {
-      notifList.addEventListener('click', (e) => {
-        const item = e.target.closest('.notif-item');
-        if (!item) return;
-        const id = Number(item.dataset.notifId || 0);
-        const link = item.dataset.link || '';
-        if (id > 0) {
-          postDismiss({ notif_id: id }).then((res) => {
-            if (res.ok && notifPing && Number(res.unread || 0) <= 0) {
-              notifPing.remove();
-            }
-          });
+    if (bellBtn && notifPopup) {
+      const toggleNotifPopup = () => {
+        const isOpen = notifPopup.classList.contains('show');
+        notifPopup.classList.toggle('show', !isOpen);
+        if (notifPopup.classList.contains('show')) {
+          notifPopup.style.display = 'block';
+          bellBtn.setAttribute('aria-expanded', 'true');
+        } else {
+          notifPopup.style.display = 'none';
+          bellBtn.setAttribute('aria-expanded', 'false');
         }
-        if (link) window.location.href = link;
-      });
-    }
 
-    if (clearNotifsBtn) {
-      clearNotifsBtn.addEventListener('click', () => {
-        postDismiss({ all: true }).then((res) => {
-          if (res.ok) renderNotifEmpty();
-        });
+        const ping = bellBtn.querySelector('.ping');
+        if (ping) {
+          ping.style.transform = 'scale(0)';
+          setTimeout(() => ping.remove(), 180);
+        }
+      };
+
+      bellBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggleNotifPopup();
+      });
+
+      document.addEventListener('click', (e) => {
+        const clickedBell = bellBtn.contains(e.target);
+        const clickedPopup = notifPopup.contains(e.target);
+        if (!clickedBell && !clickedPopup) {
+          notifPopup.classList.remove('show');
+          notifPopup.style.display = 'none';
+          bellBtn.setAttribute('aria-expanded', 'false');
+        }
       });
     }
   });

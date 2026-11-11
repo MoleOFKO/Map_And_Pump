@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 /**
  * booking-slot.php — Live queue + pump status
  * POST actions
@@ -9,6 +9,9 @@
  */
 require_once __DIR__ . '/_helpers.php';
 require_once __DIR__ . '/../conn.php';
+if (!function_exists('map_pump_user_avatar_url')) {
+    require_once __DIR__ . '/../profile_avatar.php';
+}
 require_branch_manager();
 require_once __DIR__ . '/../usage_history_schema.php';
 require_once __DIR__ . '/../booking_rules.php';
@@ -35,8 +38,11 @@ $pumpsTableExists = map_pump_table_exists($pdo, 'pumps');
 $ctx      = current_context($pdo);
 $user     = $ctx['user'];
 $branch   = $ctx['branch'];
-$initials = initials($user['full_name']);
-$bid      = (int)$branch['branch_id'];
+$managerName = getFullDisplayName($user);
+$initials = initials($managerName);
+$managerDisplayName = $managerName;
+$managerAvatarUrl   = map_pump_user_avatar_url($user['avatar_url'] ?? ($_SESSION['user_avatar_url'] ?? ''), '');
+$bid      = (int)($branch['branch_id'] ?? 0);
 map_pump_booking_configure_timezone($pdo);
 customer_license_status_column_ready($pdo);
 
@@ -317,27 +323,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     (booking_id, user_id, car_license_id, station_id, oil_type_id,
                      qr_code, qr_refrence_code, filled_liters, price_per_litre, total_cost,
                      status, booked_at, expire_at, filled_at, staff_user_id)
-                VALUES
+                 VALUES
                     (:bid, :uid, :clid, :sid, :oid,
                      :qr, :qref, :liters, :price, :total,
                      'filled', :booked_at, :expire_at, NOW(), :staff)"
             );
             $stmt->execute([
-                ':bid'       => $tok['booking_id'],
-                ':uid'       => $tok['user_id'],
-                ':clid'      => $tok['car_license_id'],
-                ':sid'       => $tok['station_id'],
-                ':oid'       => $tok['oil_type_id'],
-                ':qr'        => $tok['qr_code'],
-                ':qref'      => $tok['token_code'],
-                ':liters'    => $filled_liters,
-                ':price'     => $price,
-                ':total'     => $total,
+                ':bid' => (int)$tok['booking_id'],
+                ':uid' => (int)$tok['user_id'],
+                ':clid' => (int)$tok['car_license_id'],
+                ':sid' => (int)$tok['station_id'],
+                ':oid' => (int)$tok['oil_type_id'],
+                ':qr' => (string)$tok['qr_code'],
+                ':qref' => (string)$tok['token_code'],
+                ':liters' => (float)$filled_liters,
+                ':price' => (float)$price,
+                ':total' => (float)$total,
                 ':booked_at' => $tok['booked_at'],
                 ':expire_at' => $tok['expire_at'],
-                ':staff'     => $user['user_id'],
+                ':staff' => (int)$user['user_id'],
             ]);
-            $usageId = (int) $pdo->lastInsertId();
+            $usageId = (int)$pdo->lastInsertId();
 
             $isInternal = loyalty_is_internal_fill($pdo, (int)$tok['user_id'], (int)$tok['station_id']);
             $loyaltyResult = loyalty_apply_on_fill(
@@ -546,25 +552,32 @@ if ($historyStart > $historyEnd) {
 
 try {
     $historySql = "
-        SELECT l.log_id, l.user_id, l.action, l.created_at
-        FROM log l
-        WHERE l.user_id = :manager_id
-          AND (
-                l.action LIKE 'Completed token %'
-             OR l.action LIKE 'Cancelled token %'
-             OR l.action LIKE 'Marked token % as unable to fulfill:%'
+        SELECT bk.booking_id,
+               bk.qr_refrence_code AS token_code,
+               bk.status,
+               COALESCE(bk.time_of_filled, bk.created_at) AS logged_at,
+               bk.filled_gas,
+               COALESCE(u.user_name, 'Customer') AS customer_name,
+               COALESCE(ot.oil_name, '') AS fuel_name
+        FROM booking bk
+        LEFT JOIN users u ON u.user_id = bk.user_id
+        LEFT JOIN oil_types ot ON ot.oil_type_id = bk.oil_type_id
+        WHERE bk.station_id = :branch_id
+          AND LOWER(COALESCE(bk.status, '')) IN (
+              'completed', 'cancelled', 'canceled', 'station_unable_to_fulfill', 'unable_to_fulfill',
+              'customer_cancelled', 'branch_cancelled', 'unable to fulfill'
           )
     ";
-    $historyParams = [':manager_id' => (int)$user['user_id']];
+    $historyParams = [':branch_id' => (int)$bid];
     if ($historyStart !== '') {
-        $historySql .= ' AND DATE(l.created_at) >= :start_date';
+        $historySql .= ' AND DATE(COALESCE(bk.time_of_filled, bk.created_at)) >= :start_date';
         $historyParams[':start_date'] = $historyStart;
     }
     if ($historyEnd !== '') {
-        $historySql .= ' AND DATE(l.created_at) <= :end_date';
+        $historySql .= ' AND DATE(COALESCE(bk.time_of_filled, bk.created_at)) <= :end_date';
         $historyParams[':end_date'] = $historyEnd;
     }
-    $historySql .= ' ORDER BY l.created_at DESC, l.log_id DESC';
+    $historySql .= ' ORDER BY COALESCE(bk.time_of_filled, bk.created_at) DESC, bk.booking_id DESC';
 
     $stmt = $pdo->prepare($historySql);
     $stmt->execute($historyParams);
@@ -572,33 +585,27 @@ try {
 
     $history = [];
     foreach ($rawHistory as $row) {
-        $action = (string)($row['action'] ?? '');
-        $status = 'cancelled';
-        if (stripos($action, 'Completed token ') === 0) {
-            $status = 'completed';
-        } elseif (stripos($action, 'Marked token ') === 0 && stripos($action, 'unable to fulfill') !== false) {
+        $status = strtolower(trim((string)($row['status'] ?? '')));
+        if (in_array($status, ['unable_to_fulfill', 'unable to fulfill', 'station_unable_to_fulfill'], true)) {
             $status = 'station_unable_to_fulfill';
-        }
-
-        $token = '';
-        if (preg_match('/Token\s+([^\s]+)\b/i', $action, $m)) {
-            $token = $m[1];
-        } elseif (preg_match('/token\s+([^\s]+)\b/i', $action, $m)) {
-            $token = $m[1];
+        } elseif (in_array($status, ['canceled', 'cancelled', 'customer_cancelled', 'branch_cancelled'], true)) {
+            $status = 'cancelled';
+        } elseif (!in_array($status, ['completed'], true)) {
+            continue;
         }
 
         $history[] = [
             'status' => $status,
-            'logged_at' => $row['created_at'],
-            'token_code' => $token,
-            'customer_name' => 'Customer',
-            'fuel_name' => '',
-            'filled_gas' => null,
+            'logged_at' => $row['logged_at'],
+            'token_code' => (string)($row['token_code'] ?? ''),
+            'customer_name' => (string)($row['customer_name'] ?? 'Customer'),
+            'fuel_name' => (string)($row['fuel_name'] ?? ''),
+            'filled_gas' => $row['filled_gas'] !== null && $row['filled_gas'] !== '' ? (float)$row['filled_gas'] : null,
         ];
     }
 } catch (Throwable $e) {
     $history = [];
-    error_log('Unable to load booking history log: ' . $e->getMessage());
+    error_log('Unable to load booking history: ' . $e->getMessage());
 }
 ?>
 <!DOCTYPE html>
@@ -743,7 +750,7 @@ try {
     background: var(--navy-700);
     transform: scale(1.05);
   }
-  .bell .ping{position:absolute; top:6px; right:7px; width:7px; height:7px; border-radius:50%; background:var(--amber-400); box-shadow:0 0 0 2px var(--navy-800); transition: transform 0.2s;}
+  .bell .ping{position:absolute; top:4px; right:4px; width:10px; height:10px; border-radius:50%; background:#ef4444; box-shadow:0 0 0 2px var(--navy-800); transition: transform 0.2s;}
 
   /* ---------- Notifications Dropdown Popup ---------- */
   .notif-popup {
@@ -752,35 +759,52 @@ try {
     right: 60px;
     width: 320px;
     max-height: 420px;
-    overflow-y: auto;
+    overflow: hidden;
     background: var(--navy-800);
     border: 1px solid rgba(255, 255, 255, 0.12);
     border-radius: 14px;
     box-shadow: 0 16px 32px rgba(0, 0, 0, 0.4);
-    padding: 14px 12px;
+    padding: 12px;
     z-index: 100;
     display: none;
     animation: fadeInDown 0.25s cubic-bezier(0.16, 1, 0.3, 1);
   }
   .notif-popup.show { display: block; }
-  .notif-header { display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid rgba(255, 255, 255, 0.08); padding-bottom: 10px; margin-bottom: 10px; }
-  .notif-header h4 { font-size: 14px; font-weight: 700; margin: 0; }
+  .notif-header { display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom:10px; margin-bottom:10px; }
+  .notif-header h4 { font-size: 14px; font-weight:700; margin:0; }
   .notif-header button { background: transparent; border: none; color: var(--sky-400); font-size: 11px; cursor: pointer; }
+  .notif-list {
+    max-height: 330px;
+    overflow-y: auto;
+    overflow-x: auto;
+    padding-right: 4px;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(56,189,248,0.35) transparent;
+  }
+  .notif-list::-webkit-scrollbar { width: 8px; height: 8px; }
+  .notif-list::-webkit-scrollbar-track { background: transparent; }
+  .notif-list::-webkit-scrollbar-thumb { background: rgba(56,189,248,0.35); border-radius: 999px; }
+  .notif-list::-webkit-scrollbar-thumb:hover { background: rgba(56,189,248,0.55); }
   .notif-item {
-    padding: 9px 8px; border-radius: 10px; display: flex; gap: 10px; align-items: flex-start; transition: background-color 0.2s; border: 1px solid transparent;
+    padding: 10px 8px; border-radius: 10px; display: flex; gap: 10px; align-items: flex-start; transition: background-color 0.2s; border: 1px solid transparent;
   }
   .notif-item:hover { background-color: rgba(255,255,255,0.04); }
-  .notif-item .ic {
-    width: 32px; height: 32px; border-radius: 10px; display:flex; align-items:center; justify-content:center; font-size:12px; flex-shrink:0;
-    background: rgba(148,163,184,0.12); color: var(--slate-200);
+  .notif-item.unread { border-color: rgba(56,189,248,0.2); }
+  .notif-item-warning .icon,
+  .notif-item.error .icon,
+  .notif-item.warn .icon,
+  .notif-item .ic,
+  .notif-item .icon {
+    display: none;
   }
-  .notif-item[data-kind="warn"] .ic, .notif-item.warn .ic { background: rgba(251,191,36,0.16); color: var(--amber-300); }
-  .notif-item[data-kind="err"] .ic, .notif-item.err .ic { background: rgba(248,113,113,0.16); color: var(--red-400); }
-  .notif-item[data-kind="ok"] .ic, .notif-item.ok .ic { background: rgba(52,211,153,0.14); color: var(--mint-400); }
-  .notif-item[data-kind="info"] .ic, .notif-item.info .ic { background: rgba(56,189,248,0.14); color: var(--sky-400); }
+  .notif-item-body {
+    min-width: 0;
+    flex: 1;
+  }
   .notif-item-body b { display:block; font-size:12.5px; color:var(--slate-50); margin-bottom:2px; }
-  .notif-item-body span { color:var(--slate-400); font-size:11.5px; display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  .notif-time { font-size:10px; color:var(--slate-400); margin-top:4px; }
+  .notif-item-body span { color:var(--slate-400); font-size:11.5px; display:block; white-space:normal; line-height:1.5; }
+  .notif-item-body .notif-time { font-size:10px; color:var(--slate-400); margin-top:4px; }
+  .notif-empty { text-align:center; padding:12px 0; color:var(--slate-400); font-size:12px; }
   @keyframes fadeInDown { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
 
   .avatar-chip{display:flex; align-items:center; gap:10px; font-size:13px; cursor: pointer; padding: 4px 8px; border-radius: 99px; transition: background 0.2s;}
@@ -1120,6 +1144,108 @@ try {
   .staff-theme-control span { font-size: 1.05rem; }
   .staff-theme-control:focus-within span { outline: 2px solid var(--sky-400); outline-offset: 4px; border-radius: 3px; }
   body.branch-manager-theme.light-mode .staff-theme-control { color: var(--slate-400); }
+
+  /* ---------- Light mode refinements (light mode only; dark mode untouched) ---------- */
+  body.branch-manager-theme.light-mode {
+    color-scheme: light;
+    --amber-300:#c28a0a;
+    --lm-line:rgba(15,23,42,0.10); --lm-line-soft:rgba(15,23,42,0.06); --lm-line-strong:rgba(15,23,42,0.18);
+    --lm-hover:rgba(15,23,42,0.045);
+    --lm-shadow:0 1px 2px rgba(15,23,42,0.04), 0 10px 26px -16px rgba(15,23,42,0.16);
+    --lm-shadow-pop:0 18px 40px -14px rgba(15,23,42,0.25);
+  }
+  /* Shell */
+  body.branch-manager-theme.light-mode .sidebar { background:#fff; border-right-color:var(--lm-line); box-shadow:1px 0 0 rgba(15,23,42,0.02); }
+  body.branch-manager-theme.light-mode .topbar { background:rgba(255,255,255,0.86); backdrop-filter:blur(14px); border-bottom-color:var(--lm-line); }
+  body.branch-manager-theme.light-mode .sidebar > a .disp { color:var(--slate-50) !important; }
+  body.branch-manager-theme.light-mode .side-role { color:var(--slate-400); }
+  body.branch-manager-theme.light-mode .side-branch { background:var(--navy-800); border-color:var(--lm-line); }
+  body.branch-manager-theme.light-mode .side-branch .hq-logo { background:#fff; border-color:var(--lm-line); }
+  body.branch-manager-theme.light-mode .side-link:hover { background:var(--lm-hover); color:var(--slate-50); }
+  body.branch-manager-theme.light-mode .side-logout { border-top-color:var(--lm-line); }
+  body.branch-manager-theme.light-mode .side-logout:hover { background:rgba(207,61,61,0.08); }
+  body.branch-manager-theme.light-mode .bell { color:var(--slate-300); border-color:var(--lm-line); }
+  body.branch-manager-theme.light-mode .bell:hover { background:var(--navy-700); }
+  body.branch-manager-theme.light-mode .bell .ping { box-shadow:0 0 0 2px #fff; }
+  body.branch-manager-theme.light-mode .avatar-chip { background:transparent; border-color:transparent; }
+  body.branch-manager-theme.light-mode .avatar-chip:hover { background:var(--lm-hover); }
+  body.branch-manager-theme.light-mode .avatar-circle,
+  body.branch-manager-theme.light-mode .avatar-circle a { color:#fff; }
+  body.branch-manager-theme.light-mode .page-foot { border-top-color:var(--lm-line); }
+  body.branch-manager-theme.light-mode .staff-theme-control:hover { color:var(--slate-50); }
+
+  /* Notifications popup */
+  body.branch-manager-theme.light-mode .notif-popup {
+    --slate-50:#0f172a; --slate-300:#334155; --slate-400:#5b6b82;
+    border-color:rgba(15,23,42,0.09);
+  }
+  body.branch-manager-theme.light-mode .notif-header { border-bottom-color:rgba(15,23,42,0.09); }
+  body.branch-manager-theme.light-mode .notif-item { border-bottom-color:transparent; }
+  body.branch-manager-theme.light-mode .notif-item.unread { border-color:rgba(2,132,199,0.28); }
+  body.branch-manager-theme.light-mode .notif-item:hover { background:var(--lm-hover); }
+  body.branch-manager-theme.light-mode .notif-item .ic,
+  body.branch-manager-theme.light-mode .notif-item .icon { background:rgba(88,103,126,0.12); color:var(--slate-300); }
+  body.branch-manager-theme.light-mode .notif-item[data-kind="warn"] .ic,
+  body.branch-manager-theme.light-mode .notif-item.warn .ic { background:rgba(217,132,0,0.14); color:#a96800; }
+  body.branch-manager-theme.light-mode .notif-item[data-kind="err"] .ic,
+  body.branch-manager-theme.light-mode .notif-item.err .ic,
+  body.branch-manager-theme.light-mode .notif-item.warning .icon { background:rgba(207,61,61,0.12); color:var(--red-400); }
+  body.branch-manager-theme.light-mode .notif-item[data-kind="ok"] .ic,
+  body.branch-manager-theme.light-mode .notif-item.ok .ic,
+  body.branch-manager-theme.light-mode .notif-item.success .icon { background:rgba(18,142,107,0.12); color:var(--mint-400); }
+  body.branch-manager-theme.light-mode .notif-item[data-kind="info"] .ic,
+  body.branch-manager-theme.light-mode .notif-item.info .ic,
+  body.branch-manager-theme.light-mode .notif-item.info .icon { background:rgba(63,140,245,0.12); color:var(--sky-400); }
+
+  /* Cards & panels */
+  body.branch-manager-theme.light-mode .panel,
+  body.branch-manager-theme.light-mode .stat-card { border-color:var(--lm-line); box-shadow:var(--lm-shadow); }
+  body.branch-manager-theme.light-mode .side-link.active { background:rgba(63,140,245,0.11); box-shadow:inset 0 0 0 1px rgba(63,140,245,0.32); color:var(--slate-50); }
+  body.branch-manager-theme.light-mode .side-branch:hover { background:var(--navy-700); border-color:rgba(63,140,245,0.35); }
+  body.branch-manager-theme.light-mode .stat-card:hover { border-color:rgba(63,140,245,0.40); }
+  body.branch-manager-theme.light-mode .live-tag { background:rgba(18,142,107,0.12); }
+
+  /* Queue table */
+  body.branch-manager-theme.light-mode .table-custom thead th { border-bottom-color:var(--lm-line); }
+  body.branch-manager-theme.light-mode .table-custom tbody td { border-bottom-color:var(--lm-line-soft); }
+  body.branch-manager-theme.light-mode .table-custom tbody tr:hover td { background:var(--lm-hover); }
+  body.branch-manager-theme.light-mode #queue-scroll.has-scroll #queue-table thead th { background:#fff; }
+
+  /* Status pills (base light-mode rule would otherwise flatten them all to grey) */
+  body.branch-manager-theme.light-mode .status-pill { background:rgba(88,103,126,0.12); color:var(--slate-400); }
+  body.branch-manager-theme.light-mode .status-pill.st-complete { color:#0b7a5a; background:rgba(18,142,107,0.13); }
+  body.branch-manager-theme.light-mode .status-pill.st-waiting { color:#1d5fd1; background:rgba(60,130,255,0.13); }
+  body.branch-manager-theme.light-mode .status-pill.st-unable { color:#b45309; background:rgba(217,119,6,0.14); }
+  body.branch-manager-theme.light-mode .status-pill.st-canceled { color:#c53030; background:rgba(207,61,61,0.12); }
+  body.branch-manager-theme.light-mode .status-pill.st-neutral { color:var(--slate-400); background:rgba(88,103,126,0.12); }
+  body.branch-manager-theme.light-mode .act-link.unable-btn { color:#c53030; border-color:#c53030; background:transparent; }
+  body.branch-manager-theme.light-mode .act-link.unable-btn:hover { color:#fff; background:#c53030; }
+
+  /* Tabs */
+  body.branch-manager-theme.light-mode .tabs { border-bottom-color:var(--lm-line); }
+
+  /* Booking history */
+  body.branch-manager-theme.light-mode .history-box { background:var(--navy-800); border-color:var(--lm-line); }
+  body.branch-manager-theme.light-mode .activity-row { border-bottom-color:var(--lm-line-soft); }
+  body.branch-manager-theme.light-mode .activity-row:hover { background:var(--lm-hover); }
+  body.branch-manager-theme.light-mode .history-filter input[type="date"] { background:#fff; border-color:var(--lm-line-strong); color:var(--slate-50); color-scheme:light; }
+  body.branch-manager-theme.light-mode .history-filter input[type="date"]:focus { border-color:var(--sky-400); }
+
+  /* Unable-to-fulfill dialog */
+  body.branch-manager-theme.light-mode .ufm-backdrop { background:rgba(15,23,42,0.45); }
+  body.branch-manager-theme.light-mode .ufm-dialog { background:#fff; border-color:var(--lm-line); box-shadow:var(--lm-shadow-pop); }
+  body.branch-manager-theme.light-mode .ufm-head { border-bottom-color:var(--lm-line); }
+  body.branch-manager-theme.light-mode .ufm-foot { border-top-color:var(--lm-line); }
+  body.branch-manager-theme.light-mode .ufm-trigger,
+  body.branch-manager-theme.light-mode .ufm-comment { background:#fff; border-color:var(--lm-line-strong); color:var(--slate-50); }
+  body.branch-manager-theme.light-mode .ufm-trigger[aria-expanded="true"],
+  body.branch-manager-theme.light-mode .ufm-comment:focus { border-color:var(--sky-400); }
+  body.branch-manager-theme.light-mode .ufm-options { background:#fff; border-color:var(--lm-line); box-shadow:var(--lm-shadow-pop); }
+  body.branch-manager-theme.light-mode .ufm-options li:hover { background:var(--lm-hover); }
+  body.branch-manager-theme.light-mode .ufm-btn { border-color:var(--lm-line-strong); }
+  body.branch-manager-theme.light-mode .ufm-btn:hover { background:var(--lm-hover); }
+  body.branch-manager-theme.light-mode .ufm-btn.primary { border-color:transparent; color:#fff; }
+  body.branch-manager-theme.light-mode .ufm-btn.primary:hover { background:linear-gradient(135deg, var(--sky-400), var(--blue-700)); filter:brightness(1.05); }
 </style>
 </head>
 <body>
@@ -1179,11 +1305,10 @@ try {
         <div class="notif-popup" id="notif-popup">
           <div class="notif-header">
             <h4>Notifications</h4>
-            <button id="clear-notifs-btn" type="button">Mark all read</button>
           </div>
           <div class="notif-list" id="notif-list">
             <?php if (!$alerts): ?>
-              <div class="notif-empty" style="text-align:center; padding:12px 0; color:var(--slate-400); font-size:12px;">No new notifications</div>
+              <div class="notif-empty">No new notifications</div>
             <?php else:
               foreach ($alerts as $a):
                 $meta = notif_ui_meta($a['type'], $a['title']);
@@ -1191,7 +1316,6 @@ try {
                 $tone = $meta['tone'];
             ?>
               <div class="notif-item <?= h($tone) ?>" data-notif-id="<?= (int)$a['notif_id'] ?>" data-link="<?= h($a['link'] ?? 'dashboard.php') ?>" data-kind="<?= h($tone) ?>">
-                <div class="ic"><i class="fa-solid <?= h($icon) ?>"></i></div>
                 <div class="notif-item-body">
                   <b><?= h($a['title']) ?></b>
                   <span><?= h($a['body']) ?></span>
@@ -1203,8 +1327,12 @@ try {
         </div>
         
         <div class="avatar-chip">
+          <?php if ($managerAvatarUrl !== ''): ?>
+          <img src="<?= h($managerAvatarUrl) ?>" alt="Profile Picture" style="width:36px;height:36px;border-radius:50%;object-fit:cover;border:1px solid rgba(255,255,255,0.12)">
+          <?php else: ?>
           <div class="avatar-circle"><a href="edit-profile.php"><?= h(mb_substr($initials,0,1)) ?></a></div>
-          <div><b><a href="edit-profile.php"><?= h(explode(' ', $user['full_name'])[0]) ?></a></b></div>
+          <?php endif; ?>
+          <div><b><a href="edit-profile.php"><?= h($managerDisplayName) ?></a></b></div>
         </div>
       </div>
     </div>
@@ -1466,7 +1594,6 @@ try {
     const bellBtn = document.getElementById('notif-bell');
     const notifPopup = document.getElementById('notif-popup');
     const notifPing = document.getElementById('notif-ping');
-    const clearNotifsBtn = document.getElementById('clear-notifs-btn');
     const notifList = document.getElementById('notif-list');
 
     function postDismiss(payload) {
@@ -1477,25 +1604,21 @@ try {
       }).then(r => r.json()).catch(() => ({ ok: false }));
     }
 
-    function renderNotifEmpty() {
-      if (!notifList) return;
-      notifList.innerHTML = '<div class="notif-empty" style="text-align:center; padding:12px 0; color:var(--slate-400); font-size:12px;">No new notifications</div>';
-      if (notifPing) notifPing.remove();
-    }
-
     if (bellBtn && notifPopup) {
       bellBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         const ping = bellBtn.querySelector('.ping');
         if (ping) {
           ping.style.transform = 'scale(0)';
-          setTimeout(() => ping.remove(), 200);
+          setTimeout(() => ping.remove(), 180);
         }
         notifPopup.classList.toggle('show');
       });
 
-      document.addEventListener('click', (e) => {
-        if (!notifPopup.contains(e.target) && !bellBtn.contains(e.target)) {
+      document.addEventListener('click', (event) => {
+        const clickedBell = bellBtn.contains(event.target);
+        const clickedPopup = notifPopup.contains(event.target);
+        if (!clickedBell && !clickedPopup) {
           notifPopup.classList.remove('show');
         }
       });
@@ -1506,7 +1629,7 @@ try {
         const item = e.target.closest('.notif-item');
         if (!item) return;
         const id = Number(item.dataset.notifId || 0);
-        const link = item.dataset.link || '';
+        const link = item.dataset.link || 'dashboard.php';
         if (id > 0) {
           postDismiss({ notif_id: id }).then((res) => {
             if (res.ok && notifPing && Number(res.unread || 0) <= 0) {
@@ -1515,14 +1638,6 @@ try {
           });
         }
         if (link) window.location.href = link;
-      });
-    }
-
-    if (clearNotifsBtn) {
-      clearNotifsBtn.addEventListener('click', () => {
-        postDismiss({ all: true }).then((res) => {
-          if (res.ok) renderNotifEmpty();
-        });
       });
     }
 

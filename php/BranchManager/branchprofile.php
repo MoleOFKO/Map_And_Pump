@@ -1,11 +1,13 @@
-<?php
+﻿<?php
 /**
  * branchprofile.php  —  Branch (station) profile management
  * Shows physical info about the station itself (not the user account
  */
 require_once __DIR__ . '/_helpers.php';
 require_once __DIR__ . '/../conn.php';
-require_once __DIR__ . '/../profile_avatar.php';
+if (!function_exists('map_pump_user_avatar_url')) {
+    require_once __DIR__ . '/../profile_avatar.php';
+}
 require_branch_manager();
 
 function map_pump_table_exists(PDO $pdo, string $tableName): bool {
@@ -23,8 +25,11 @@ function map_pump_table_exists(PDO $pdo, string $tableName): bool {
 $ctx    = current_context($pdo);
 $user   = $ctx['user'];
 $branch = $ctx['branch'];
-$initials = initials($user['full_name']);
-$profileAvatarUrl = map_pump_profile_avatar_url((string) ($user['avatar_url'] ?? ''), '');
+$managerName = getFullDisplayName($user);
+$initials = initials($managerName);
+$hqLogoSrc = function_exists('hq_logo_src') ? hq_logo_src($branch['hq_logo'] ?? null) : null;
+$profileDisplayName = $managerName;
+$profileAvatarUrl = map_pump_user_avatar_url($user['avatar_url'] ?? ($_SESSION['user_avatar_url'] ?? ''), '');
 $pumpsTableExists = map_pump_table_exists($pdo, 'pumps');
 
 function map_pump_branch_profile_report_data(array $manager, array $branch, array $changes): array {
@@ -162,6 +167,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ':short_summery' => $reportData['short_summery'],
                 ':message' => $reportData['message'],
             ]);
+            $report_id = (int)$pdo->lastInsertId();
+
+            // Notify HQ recipients (non-fatal: report is already saved).
+            try {
+                $recipients = hq_recipient_ids($pdo, (int)$user['user_id']);
+                $branchName = $branch['branch_name'] ?? ('Branch #' . $branch['branch_id']);
+                $notifSubject = '[Medium] Branch profile updated: ' . $branchName;
+                $notifBody = $reportData['message'];
+                foreach ($recipients as $rid) {
+                    notif_create($pdo, $rid, null, 'branch_report', $notifSubject, $notifBody, $report_id);
+                }
+            } catch (Throwable $e) {
+                error_log('branchprofile notify failed: ' . $e->getMessage());
+            }
         }
 
         log_activity($pdo, $branch['branch_id'], 'user', $user['user_id'], $user['full_name'],
@@ -253,6 +272,77 @@ $has_unread   = $unread_count > 0;
     --red-400:#f87171;
     --slate-50:#f8fafc; --slate-300:#c9d2e3; --slate-400:#8b96ad;
   }
+  body.branch-manager-theme {
+    --navy-950:#070b14; --navy-900:#0b1220; --navy-800:#101a30; --navy-700:#16213f; --navy-600:#1a2438;
+    --blue-700:#1d4ed8; --blue-500:#2f6feb; --sky-400:#38bdf8;
+    --amber-400:#fbbf24; --amber-300:#fcd34d; --mint-400:#34d399; --red-400:#f87171;
+    --slate-50:#f8fafc; --slate-300:#c9d2e3; --slate-400:#8b96ad;
+    background: var(--navy-950); color: var(--slate-50);
+  }
+  body.branch-manager-theme.light-mode {
+    --navy-950:#f3f6fb; --navy-900:#ffffff; --navy-800:#f7f9fc; --navy-700:#edf3fb; --navy-600:#e5edf8;
+    --blue-700:#286be0; --blue-500:#3c82ff; --sky-400:#3f8cf5; --amber-400:#d98400; --amber-300:#e2a72d; --mint-400:#128e6b; --red-400:#cf3d3d;
+    --slate-50:#172337; --slate-300:#3c4d68; --slate-400:#58677e; background: var(--navy-950); color: var(--slate-50);
+  }
+  body.branch-manager-theme.light-mode .sidebar,
+  body.branch-manager-theme.light-mode .topbar,
+  body.branch-manager-theme.light-mode .panel,
+  body.branch-manager-theme.light-mode .kpi,
+  body.branch-manager-theme.light-mode .tank-mini,
+  body.branch-manager-theme.light-mode .notif-popup,
+  body.branch-manager-theme.light-mode .bell,
+  body.branch-manager-theme.light-mode .side-branch,
+  body.branch-manager-theme.light-mode .avatar-chip,
+  body.branch-manager-theme.light-mode .form-control-custom,
+  body.branch-manager-theme.light-mode .checkbox-row,
+  body.branch-manager-theme.light-mode .tank-carousel-nav {
+    background: var(--navy-900); border-color: rgba(17,24,39,0.12); color: var(--slate-50);
+  }
+  body.branch-manager-theme.light-mode .sidebar { border-right-color: rgba(17,24,39,0.12); }
+  body.branch-manager-theme.light-mode .topbar { border-bottom-color: rgba(17,24,39,0.12); }
+  body.branch-manager-theme.light-mode .side-link,
+  body.branch-manager-theme.light-mode .side-branch span,
+  body.branch-manager-theme.light-mode .topbar .date,
+  body.branch-manager-theme.light-mode .notif-item .text span,
+  body.branch-manager-theme.light-mode .panel h3,
+  body.branch-manager-theme.light-mode .form-group label {
+    color: var(--slate-300);
+  }
+  body.branch-manager-theme.light-mode .side-link.active,
+  body.branch-manager-theme.light-mode .side-link:hover,
+  body.branch-manager-theme.light-mode .avatar-chip:hover,
+  body.branch-manager-theme.light-mode .bell:hover {
+    background: rgba(63, 140, 245, 0.10);
+    color: var(--slate-50);
+  }
+  body.branch-manager-theme.light-mode .sidebar .disp { color: var(--slate-50) !important; }
+  body.branch-manager-theme.light-mode .side-logout { border-top-color: rgba(17,24,39,0.12); }
+  body.branch-manager-theme.light-mode .side-logout:hover { background: rgba(207,61,61,0.08); }
+  body.branch-manager-theme.light-mode .side-branch .hq-logo { background: var(--navy-950); border-color: rgba(17,24,39,0.12); }
+  body.branch-manager-theme.light-mode .panel,
+  body.branch-manager-theme.light-mode .kpi { background: linear-gradient(160deg, var(--navy-800), var(--navy-900)); }
+  body.branch-manager-theme.light-mode .branch-hero { border-color: rgba(63,140,245,0.28); }
+  body.branch-manager-theme.light-mode .page-foot { border-top-color: rgba(17,24,39,0.12); }
+  body.branch-manager-theme.light-mode .info-list .row { border-bottom-color: rgba(17,24,39,0.12); }
+  body.branch-manager-theme.light-mode .gauge-mini { background: rgba(17,24,39,0.10); }
+  body.branch-manager-theme.light-mode .tank-dot { background: rgba(17,24,39,0.22); }
+  body.branch-manager-theme.light-mode .tank-dot.active { background: var(--slate-50); }
+  body.branch-manager-theme.light-mode .btn-edit-mode { background: rgba(17,24,39,0.04); border-color: rgba(17,24,39,0.18); }
+  body.branch-manager-theme.light-mode .btn-edit-mode:hover,
+  body.branch-manager-theme.light-mode .btn-edit-mode.is-editing { background: rgba(63,140,245,0.12); border-color: var(--sky-400); color: var(--sky-400); }
+  body.branch-manager-theme.light-mode .notif-popup { box-shadow: 0 16px 32px rgba(17,24,39,0.16); border-color: rgba(17,24,39,0.12); }
+  body.branch-manager-theme.light-mode .notif-header { border-bottom-color: rgba(17,24,39,0.12); }
+  body.branch-manager-theme.light-mode .notif-item:hover { background-color: rgba(17,24,39,0.04); }
+  body.branch-manager-theme.light-mode .tank-carousel-nav:hover { background: var(--navy-700); border-color: var(--sky-400); }
+  body.branch-manager-theme.light-mode .modal-content { border-color: rgba(17,24,39,0.12) !important; color: var(--slate-50); }
+  .staff-theme-control {
+    position: relative; display: grid; width: 28px; height: 32px; place-items: center; margin: 0; color: var(--slate-300); cursor: pointer;
+  }
+  .staff-theme-control input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+  .staff-theme-control span { font-size: 1.05rem; }
+  .staff-theme-control:focus-within span { outline: 2px solid var(--sky-400); outline-offset: 4px; border-radius: 3px; }
+  body.branch-manager-theme.light-mode .staff-theme-control { color: var(--slate-400); }
+
   *{box-sizing:border-box; margin:0; padding:0;}
   body{background:var(--navy-950); color:var(--slate-50); font-family:'Inter','Space Grotesk',sans-serif; overflow-x:hidden;}
   .disp{font-family:'Space Grotesk','Noto Sans Myanmar',sans-serif;}
@@ -313,7 +403,7 @@ $has_unread   = $unread_count > 0;
   }
   .topbar h1{font-size:18px; font-weight:700;}
   .topbar .date{font-size:12.5px; color:var(--slate-400); margin-top:2px; font-variant-numeric: tabular-nums;}
-  .topbar-right{display:flex; align-items:center; gap:16px;}
+  .topbar-right{display:flex; align-items:center; gap:16px; position:relative;}
   .bell{
     width:36px; height:36px; border-radius:50%; background:var(--navy-800); display:flex; align-items:center;
     justify-content:center; border:1px solid rgba(255,255,255,0.08); position:relative; font-size:15px; cursor:pointer;
@@ -452,12 +542,12 @@ $has_unread   = $unread_count > 0;
     right: 60px;
     width: 320px;
     max-height: 420px;
-    overflow-y: auto;
+    overflow: hidden;
     background: var(--navy-800);
     border: 1px solid rgba(255, 255, 255, 0.12);
     border-radius: 14px;
     box-shadow: 0 16px 32px rgba(0, 0, 0, 0.4);
-    padding: 14px 12px;
+    padding: 12px;
     z-index: 100;
     display: none;
     animation: fadeInDown 0.25s cubic-bezier(0.16, 1, 0.3, 1);
@@ -466,9 +556,21 @@ $has_unread   = $unread_count > 0;
   .notif-header { display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid rgba(255,255,255,0.08); padding-bottom:10px; margin-bottom:10px; }
   .notif-header h4 { font-size:14px; font-weight:700; margin:0; }
   .notif-header button { background:transparent; border:none; color:var(--sky-400); font-size:11px; cursor:pointer; }
-  .notif-item { padding:9px 8px; border-radius:10px; display:flex; gap:10px; align-items:flex-start; transition:background-color 0.2s; border:1px solid transparent; }
+  .notif-list {
+    max-height: 330px;
+    overflow-y: auto;
+    overflow-x: auto;
+    padding-right: 4px;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(56,189,248,0.35) transparent;
+  }
+  .notif-list::-webkit-scrollbar { width: 8px; height: 8px; }
+  .notif-list::-webkit-scrollbar-track { background: transparent; }
+  .notif-list::-webkit-scrollbar-thumb { background: rgba(56,189,248,0.35); border-radius: 999px; }
+  .notif-list::-webkit-scrollbar-thumb:hover { background: rgba(56,189,248,0.55); }
+  .notif-item { padding:10px 8px; border-radius:10px; display:flex; gap:10px; align-items:flex-start; transition:background-color 0.2s; border:1px solid transparent; }
   .notif-item:hover { background-color:rgba(255,255,255,0.04); }
-  .notif-item .icon { width:32px; height:32px; border-radius:10px; display:flex; align-items:center; justify-content:center; font-size:12px; flex-shrink:0; background:rgba(148,163,184,0.12); color:var(--slate-200); }
+  .notif-item .icon { width:32px; height:32px; border-radius:10px; display:none; align-items:center; justify-content:center; font-size:12px; flex-shrink:0; background:rgba(148,163,184,0.12); color:var(--slate-200); }
   .notif-item.unread { border-color: rgba(56,189,248,0.2); }
   .notif-item.warning .icon { background: rgba(251,191,36,0.16); color: var(--amber-300); }
   .notif-item.error .icon { background: rgba(248,113,113,0.16); color: var(--red-400); }
@@ -477,6 +579,14 @@ $has_unread   = $unread_count > 0;
   .notif-item .text b { display:block; font-size:12.5px; color:var(--slate-50); margin-bottom:2px; }
   .notif-item .text span { color:var(--slate-400); font-size:11.5px; display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .notif-item .time { font-size:10px; color:var(--slate-400); margin-top:4px; }
+  .notif-item-body {
+    min-width: 0;
+    flex: 1;
+  }
+  .notif-item-body b { display:block; font-size:12.5px; color:var(--slate-50); margin-bottom:2px; }
+  .notif-item-body span { color:var(--slate-400); font-size:11.5px; display:block; white-space:normal; line-height:1.5; }
+  .notif-item-body .notif-time { font-size:10px; color:var(--slate-400); margin-top:4px; }
+  .notif-empty { text-align:center; padding:12px 0; color:var(--slate-400); font-size:12px; }
   @keyframes fadeInDown { from { opacity:0; transform: translateY(-8px); } to { opacity:1; transform: translateY(0); } }
 
   /* ---------- Tank Carousel Styles ---------- */
@@ -552,35 +662,38 @@ $has_unread   = $unread_count > 0;
         <div class="notif-popup" id="notif-popup">
           <div class="notif-header">
             <h4>Notifications</h4>
-            <button id="clear-notifs-btn" type="button">Mark all read</button>
           </div>
           <div class="notif-list" id="notif-list">
             <?php if (!$alerts): ?>
-              <div class="notif-empty" style="text-align:center; padding:12px 0; color:var(--slate-400); font-size:12px;">No new notifications</div>
+              <div class="notif-empty">No new notifications</div>
             <?php else:
               foreach ($alerts as $a):
                 $meta = notif_ui_meta($a['type'], $a['title']);
                 $icon = $meta['icon'];
                 $tone = $meta['tone'];
             ?>
-              <div class="notif-item <?= h($tone) ?>" data-notif-id="<?= (int)$a['notif_id'] ?>" data-link="<?= h($a['link'] ?? 'dashboard.php') ?>">
-                <div class="icon"><i class="fa-solid <?= h($icon) ?>"></i></div>
-                <div class="text">
+              <div class="notif-item <?= h($tone) ?>" data-notif-id="<?= (int)$a['notif_id'] ?>" data-link="<?= h($a['link'] ?? 'dashboard.php') ?>" data-kind="<?= h($tone) ?>">
+                <div class="notif-item-body">
                   <b><?= h($a['title']) ?></b>
                   <span><?= h($a['body']) ?></span>
-                  <div class="time"><?= h($a['time_ago']) ?></div>
+                  <div class="notif-time"><?= h($a['time_ago']) ?></div>
                 </div>
               </div>
             <?php endforeach; endif; ?>
           </div>
         </div>
+        <label class="staff-theme-control" title="Toggle light mode">
+          <input class="js-theme-toggle" type="checkbox" aria-label="Toggle light mode">
+          <span><i class="fa-solid fa-sun"></i></span>
+        </label>
+
         <div class="avatar-chip">
           <?php if ($profileAvatarUrl !== ''): ?>
             <img src="<?= h($profileAvatarUrl) ?>" alt="Profile Picture" style="width:36px;height:36px;border-radius:50%;object-fit:cover;border:1px solid rgba(255,255,255,0.12);">
           <?php else: ?>
             <div class="avatar-circle"><a href="edit-profile.php"><?= h(mb_substr($initials,0,1)) ?></a></div>
           <?php endif; ?>
-          <div><b><a href="edit-profile.php"><?= h(explode(' ', $user['full_name'])[0]) ?></a></b></div>
+          <div><b><a href="edit-profile.php"><?= h($profileDisplayName) ?></a></b></div>
         </div>
       </div>
     </div>
@@ -601,7 +714,13 @@ $has_unread   = $unread_count > 0;
       <!-- ===== Hero card + stacked KPIs ===== -->
       <div class="top-overview-grid">
         <div class="branch-hero">
-          <div class="branch-logo"><?= h(substr($branch['branch_code'], 0, 2)) ?></div>
+          <div class="branch-logo" style="overflow:hidden;">
+            <?php if ($hqLogoSrc): ?>
+              <img src="<?= h($hqLogoSrc) ?>" alt="HQ branch profile image" style="width:100%; height:100%; object-fit:cover; border-radius:20px; display:block;">
+            <?php else: ?>
+              <span><?= h(mb_substr($branch['branch_code'] ?? 'BR', 0, 2)) ?></span>
+            <?php endif; ?>
+          </div>
           <div style="flex:1;">
             <h4>
               <?= h($branch['branch_name']) ?>
@@ -759,7 +878,6 @@ document.addEventListener('DOMContentLoaded', () => {
   const bell = document.getElementById('notif-bell');
   const notifPopup = document.getElementById('notif-popup');
   const notifPing = document.getElementById('notif-ping');
-  const clearNotifsBtn = document.getElementById('clear-notifs-btn');
   const notifList = document.getElementById('notif-list');
 
   function postDismiss(payload) {
@@ -770,53 +888,39 @@ document.addEventListener('DOMContentLoaded', () => {
     }).then(r => r.json()).catch(() => ({ ok: false }));
   }
 
-  function renderNotifEmpty() {
-    if (!notifList) return;
-    notifList.innerHTML = '<div class="notif-empty" style="text-align:center; padding:12px 0; color:var(--slate-400); font-size:12px;">No new notifications</div>';
-    if (notifPing) notifPing.remove();
-  }
-
-  // Edit mode toggle: fields + save button stay disabled until Edit is pressed
-  const toggleEditBtn = document.getElementById('toggleEditBtn');
-  const toggleEditText = document.getElementById('toggleEditText');
-  const saveBtn = document.getElementById('saveBtn');
-  const branchForm = document.getElementById('branchForm');
-  const editableFields = document.querySelectorAll('#branchForm .editable-field');
-  let isEditMode = false;
-
-  function setEditMode(enabled) {
-    isEditMode = enabled;
-    editableFields.forEach(field => { field.disabled = !isEditMode; });
-    if (saveBtn) saveBtn.disabled = !isEditMode;
-    if (toggleEditBtn) toggleEditBtn.classList.toggle('is-editing', isEditMode);
-    if (toggleEditText) toggleEditText.textContent = isEditMode ? 'Cancel' : 'Edit';
-  }
-
-  if (toggleEditBtn && branchForm) {
-    toggleEditBtn.addEventListener('click', () => {
-      if (isEditMode) branchForm.reset(); // Cancel discards unsaved edits
-      setEditMode(!isEditMode);
-    });
-    branchForm.addEventListener('submit', (e) => {
-      if (!isEditMode) e.preventDefault();
-    });
-  }
-
   if (bell && notifPopup) {
     bell.addEventListener('click', (e) => {
       e.stopPropagation();
       const ping = bell.querySelector('.ping');
       if (ping) {
         ping.style.transform = 'scale(0)';
-        setTimeout(() => ping.remove(), 200);
+        setTimeout(() => ping.remove(), 180);
       }
       notifPopup.classList.toggle('show');
     });
 
     document.addEventListener('click', (e) => {
-      if (!notifPopup.contains(e.target) && !bell.contains(e.target)) {
+      const clickedBell = bell.contains(e.target);
+      const clickedPopup = notifPopup.contains(e.target);
+      if (!clickedBell && !clickedPopup) {
         notifPopup.classList.remove('show');
       }
+    });
+  }
+
+  const toggleEditBtn = document.getElementById('toggleEditBtn');
+  const toggleEditText = document.getElementById('toggleEditText');
+  const saveBtn = document.getElementById('saveBtn');
+  const editableFields = document.querySelectorAll('.editable-field');
+
+  if (toggleEditBtn) {
+    toggleEditBtn.addEventListener('click', () => {
+      const isEditing = toggleEditBtn.classList.toggle('is-editing');
+      toggleEditText.textContent = isEditing ? 'Cancel' : 'Edit';
+      editableFields.forEach((field) => {
+        field.disabled = !isEditing;
+      });
+      if (saveBtn) saveBtn.disabled = !isEditing;
     });
   }
 
@@ -825,7 +929,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const item = e.target.closest('.notif-item');
       if (!item) return;
       const id = Number(item.dataset.notifId || 0);
-      const link = item.dataset.link || '';
+      const link = item.dataset.link || 'dashboard.php';
       if (id > 0) {
         postDismiss({ notif_id: id }).then((res) => {
           if (res.ok && notifPing && Number(res.unread || 0) <= 0) {
@@ -833,15 +937,9 @@ document.addEventListener('DOMContentLoaded', () => {
           }
         });
       }
-      if (link) window.location.href = link;
-    });
-  }
-
-  if (clearNotifsBtn) {
-    clearNotifsBtn.addEventListener('click', () => {
-      postDismiss({ all: true }).then((res) => {
-        if (res.ok) renderNotifEmpty();
-      });
+      if (link) {
+        window.location.href = link;
+      }
     });
   }
 });
@@ -877,6 +975,34 @@ document.addEventListener('DOMContentLoaded', () => {
     if (tankPrev) tankPrev.addEventListener('click', () => updateTankSlide(currentTankIndex - 1));
 
   }
+</script>
+<script>
+  (function () {
+    const root = document.body;
+    const storedTheme = localStorage.getItem('map_pump_branch_manager_theme');
+    const toggle = document.querySelector('.js-theme-toggle');
+    const icon = document.querySelector('.staff-theme-control span i');
+
+    function applyTheme(isLight) {
+      root.classList.toggle('light-mode', isLight);
+      if (toggle) toggle.checked = isLight;
+      if (icon) {
+        icon.className = isLight ? 'fa-solid fa-moon' : 'fa-solid fa-sun';
+      }
+      const control = document.querySelector('.staff-theme-control');
+      if (control) control.title = isLight ? 'Toggle dark mode' : 'Toggle light mode';
+      localStorage.setItem('map_pump_branch_manager_theme', isLight ? 'light' : 'dark');
+    }
+
+    root.classList.add('branch-manager-theme');
+    applyTheme(storedTheme === 'light');
+
+    if (toggle) {
+      toggle.addEventListener('change', function () {
+        applyTheme(this.checked);
+      });
+    }
+  })();
 </script>
 </body>
 </html>

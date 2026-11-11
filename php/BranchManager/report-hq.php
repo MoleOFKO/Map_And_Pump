@@ -1,8 +1,10 @@
-<?php
+﻿<?php
 if (session_status() !== PHP_SESSION_ACTIVE) {
     session_start();
 }
-require_once __DIR__ . '/../profile_avatar.php';
+if (!function_exists('map_pump_user_display_name')) {
+    require_once __DIR__ . '/../profile_avatar.php';
+}
 require_once __DIR__ . '/_helpers.php';
 require_once __DIR__ . '/../conn.php';
 require_branch_manager();
@@ -13,8 +15,9 @@ $branch   = $ctx['branch'];
 $initials = initials($user['full_name']);
 $bid      = (int)$branch['branch_id'];
 
-$managerDisplayName = trim((string) ($_SESSION['user_name'] ?? $user['full_name'] ?? 'Manager'));
+$managerDisplayName = map_pump_user_display_name($user['full_name'] ?? ($_SESSION['user_name'] ?? ''), '');
 $managerInitial     = map_pump_profile_initial($managerDisplayName, $initials ?: 'M');
+$managerAvatarUrl   = map_pump_user_avatar_url($user['avatar_url'] ?? '', '');
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!csrf_check($_POST['csrf'] ?? null)) json_out(['ok' => false, 'error' => 'CSRF failed'], 403);
@@ -261,6 +264,12 @@ try {
   .panel{background:linear-gradient(160deg, var(--navy-800), var(--navy-900)); border:1px solid rgba(255,255,255,0.07); border-radius:18px; padding:22px;}
   .panel h3{font-size:15px; font-weight:700; margin-bottom:16px;}
 
+  #report-list{overflow-y:auto; scrollbar-width:thin; scrollbar-color:rgba(56,189,248,0.35) transparent;}
+  #report-list::-webkit-scrollbar{width:8px;}
+  #report-list::-webkit-scrollbar-track{background:transparent;}
+  #report-list::-webkit-scrollbar-thumb{background:rgba(56,189,248,0.35); border-radius:999px;}
+  #report-list::-webkit-scrollbar-thumb:hover{background:rgba(56,189,248,0.55);}
+
   .form-group{margin-bottom:16px;}
   .form-group label{display:block; font-size:12px; color:var(--slate-400); margin-bottom:6px; font-weight:500;}
   .form-control-custom{
@@ -316,46 +325,90 @@ try {
     --slate-50:#f8fafc; --slate-300:#c9d2e3; --slate-400:#8b96ad;
     background: var(--navy-950); color: var(--slate-50);
   }
+  /* ================= Light mode (refined) ================= */
   body.branch-manager-theme.light-mode {
-    --navy-950:#f3f6fb; --navy-900:#ffffff; --navy-800:#f7f9fc; --navy-700:#edf3fb; --navy-600:#e5edf8;
-    --blue-700:#286be0; --blue-500:#3c82ff; --sky-400:#3f8cf5; --amber-400:#d98400; --amber-300:#e2a72d; --mint-400:#128e6b; --red-400:#cf3d3d;
-    --slate-50:#172337; --slate-300:#3c4d68; --slate-400:#58677e; background: var(--navy-950); color: var(--slate-50);
+    --navy-950:#eef2f8; --navy-900:#ffffff; --navy-800:#f6f8fc; --navy-700:#eaf0f9; --navy-600:#dfe8f5;
+    --blue-700:#2563eb; --blue-500:#3b82f6; --sky-400:#2a6fdb;
+    --amber-400:#c27200; --amber-300:#8f5a00; --mint-400:#0f7a5b; --red-400:#c53030;
+    --slate-50:#0f1b30; --slate-200:#475569; --slate-300:#364763; --slate-400:#5b6a82;
+    --lm-line:rgba(15,27,48,0.11); --lm-line-soft:rgba(15,27,48,0.07); --lm-hover:rgba(42,111,219,0.07);
+    --lm-shadow:0 1px 2px rgba(15,27,48,0.05), 0 10px 24px -14px rgba(15,27,48,0.18);
+    background: var(--navy-950); color: var(--slate-50);
   }
-  body.branch-manager-theme.light-mode .sidebar,
-  body.branch-manager-theme.light-mode .topbar,
-  body.branch-manager-theme.light-mode .panel,
-  body.branch-manager-theme.light-mode .notif-popup,
-  body.branch-manager-theme.light-mode .bell,
-  body.branch-manager-theme.light-mode .side-branch,
-  body.branch-manager-theme.light-mode .avatar-chip,
-  body.branch-manager-theme.light-mode .form-control-custom,
-  body.branch-manager-theme.light-mode .priority-chip,
-  body.branch-manager-theme.light-mode .report-row {
-    background: var(--navy-900); border-color: rgba(17,24,39,0.12); color: var(--slate-50);
-  }
-  body.branch-manager-theme.light-mode .side-link,
-  body.branch-manager-theme.light-mode .topbar .date,
-  body.branch-manager-theme.light-mode .side-branch span,
-  body.branch-manager-theme.light-mode .notif-item .text span,
-  body.branch-manager-theme.light-mode .report-body p,
-  body.branch-manager-theme.light-mode .form-group label,
-  body.branch-manager-theme.light-mode .priority-chip {
-    color: var(--slate-300);
-  }
-  body.branch-manager-theme.light-mode .side-link.active,
-  body.branch-manager-theme.light-mode .side-link:hover,
-  body.branch-manager-theme.light-mode .avatar-chip:hover,
-  body.branch-manager-theme.light-mode .bell:hover {
-    background: rgba(63, 140, 245, 0.10);
-    color: var(--slate-50);
-  }
+  body.branch-manager-theme.light-mode ::selection { background: rgba(42,111,219,0.22); }
+
+  /* sidebar */
+  body.branch-manager-theme.light-mode .sidebar { background:#ffffff; border-right-color: var(--lm-line); }
+  body.branch-manager-theme.light-mode .sidebar .disp { color: var(--slate-50) !important; }
+  body.branch-manager-theme.light-mode .side-branch { background: var(--navy-800); border-color: var(--lm-line); color: var(--slate-50); }
+  body.branch-manager-theme.light-mode .side-branch:hover { background: var(--navy-700); border-color: rgba(194,114,0,0.35); }
+  body.branch-manager-theme.light-mode .side-branch span { color: var(--slate-400); }
+  body.branch-manager-theme.light-mode .side-branch .hq-logo { background:#ffffff; border-color: var(--lm-line); }
+  body.branch-manager-theme.light-mode .side-link { color: var(--slate-300); }
+  body.branch-manager-theme.light-mode .side-link:hover { background: var(--lm-hover); color: var(--slate-50); }
+  body.branch-manager-theme.light-mode .side-link.active, body.branch-manager-theme.light-mode .side-link.active:hover { background: linear-gradient(135deg, rgba(194,114,0,0.13), rgba(37,99,235,0.07)); color: var(--slate-50); box-shadow: inset 0 0 0 1px rgba(194,114,0,0.38); }
+  body.branch-manager-theme.light-mode .side-logout { border-top-color: var(--lm-line); }
+  body.branch-manager-theme.light-mode .side-logout:hover { background: rgba(197,48,48,0.08); }
+
+  /* topbar */
+  body.branch-manager-theme.light-mode .topbar { background: rgba(255,255,255,0.86); border-bottom-color: var(--lm-line); color: var(--slate-50); }
+  body.branch-manager-theme.light-mode .topbar .date { color: var(--slate-400); }
+  body.branch-manager-theme.light-mode .bell { background:#ffffff; border-color: var(--lm-line); color: var(--slate-300); }
+  body.branch-manager-theme.light-mode .bell:hover { background: var(--navy-700); color: var(--slate-50); }
+  body.branch-manager-theme.light-mode .bell .ping { box-shadow: 0 0 0 2px #ffffff; }
+  body.branch-manager-theme.light-mode .avatar-chip { background: transparent; border-color: transparent; color: var(--slate-50); }
+  body.branch-manager-theme.light-mode .avatar-chip:hover { background: var(--lm-hover); }
+  body.branch-manager-theme.light-mode .avatar-circle, body.branch-manager-theme.light-mode .mini-avatar { background: linear-gradient(135deg,#3b82f6,#1d4ed8); color:#ffffff; }
+  body.branch-manager-theme.light-mode .avatar-circle a { color:#ffffff; }
+
+  /* notifications */
+  body.branch-manager-theme.light-mode .notif-popup { background:#ffffff; border-color: var(--lm-line); box-shadow: 0 20px 44px -16px rgba(15,27,48,0.28); color: var(--slate-50); }
+  body.branch-manager-theme.light-mode .notif-header { border-bottom-color: var(--lm-line); }
+  body.branch-manager-theme.light-mode .notif-item:hover { background: var(--navy-800); }
+  body.branch-manager-theme.light-mode .notif-item.unread { border-color: rgba(42,111,219,0.28); background: rgba(42,111,219,0.04); }
+  body.branch-manager-theme.light-mode .notif-item .icon { color: var(--slate-200); }
+  body.branch-manager-theme.light-mode .notif-item.warning .icon { background: rgba(194,114,0,0.14); color: var(--amber-300); }
+  body.branch-manager-theme.light-mode .notif-item.error .icon { background: rgba(197,48,48,0.12); color: var(--red-400); }
+  body.branch-manager-theme.light-mode .notif-item.success .icon { background: rgba(15,122,91,0.12); color: var(--mint-400); }
+  body.branch-manager-theme.light-mode .notif-item.info .icon { background: rgba(42,111,219,0.12); color: var(--sky-400); }
+  body.branch-manager-theme.light-mode .notif-item .text b, body.branch-manager-theme.light-mode .notif-item-body b { color: var(--slate-50); }
+  body.branch-manager-theme.light-mode .notif-item .text span, body.branch-manager-theme.light-mode .notif-item-body span { color: var(--slate-400); }
+  body.branch-manager-theme.light-mode .notif-item .time, body.branch-manager-theme.light-mode .notif-time, body.branch-manager-theme.light-mode .notif-empty { color: var(--slate-400); }
+
+  /* shell */
+  body.branch-manager-theme.light-mode .page-foot { border-top-color: var(--lm-line); color: var(--slate-400); }
+  body.branch-manager-theme.light-mode .page-head p { color: var(--slate-400); }
+  body.branch-manager-theme.light-mode .panel { background:#ffffff; border-color: var(--lm-line); box-shadow: var(--lm-shadow); color: var(--slate-50); }
+  body.branch-manager-theme.light-mode .staff-theme-control { color: var(--slate-300); }
+  body.branch-manager-theme.light-mode .staff-theme-control:hover { color: var(--slate-50); }
+
+  /* report form */
+  body.branch-manager-theme.light-mode .form-group label { color: var(--slate-300); }
+  body.branch-manager-theme.light-mode .form-control-custom { background:#ffffff; border-color: rgba(15,27,48,0.18); color: var(--slate-50); }
+  body.branch-manager-theme.light-mode .form-control-custom::placeholder { color: var(--slate-400); opacity: 0.75; }
+  body.branch-manager-theme.light-mode .form-control-custom:focus { border-color: var(--amber-400); box-shadow: 0 0 0 3px rgba(194,114,0,0.14); }
+  body.branch-manager-theme.light-mode .priority-chip { background:#ffffff; border-color: rgba(15,27,48,0.16); color: var(--slate-300); }
+  body.branch-manager-theme.light-mode .priority-chip:hover { background: var(--navy-700); }
+  body.branch-manager-theme.light-mode .priority-chip.active[data-p="low"] { background: rgba(15,122,91,0.10); border-color: rgba(15,122,91,0.5); color: var(--mint-400); }
+  body.branch-manager-theme.light-mode .priority_chip.active[data-p="medium"] { background: rgba(194,114,0,0.10); border-color: rgba(194,114,0,0.5); color: var(--amber-300); }
+  body.branch-manager-theme.light-mode .priority_chip.active[data-p="high"] { background: rgba(197,48,48,0.09); border-color: rgba(197,48,48,0.5); color: var(--red-400); }
+  body.branch-manager-theme.light-mode .btn-report { background: linear-gradient(135deg,#3b82f6,#1d4ed8); color:#ffffff; box-shadow: 0 12px 24px -12px rgba(37,99,235,0.6); }
+  body.branch-manager-theme.light-mode .report-row { background: transparent; border-bottom-color: var(--lm-line-soft); }
+  body.branch-manager-theme.light-mode .report-row:hover { background: var(--navy-800); }
+  body.branch-manager-theme.light-mode .report-icon.low { background: rgba(15,122,91,0.12); color: var(--mint-400); }
+  body.branch-manager-theme.light-mode .report-icon.medium { background: rgba(194,114,0,0.13); color: var(--amber-300); }
+  body.branch-manager-theme.light-mode .report-icon.high { background: rgba(197,48,48,0.11); color: var(--red-400); }
+  body.branch-manager-theme.light-mode .report-body p { color: var(--slate-300); }
+  body.branch-manager-theme.light-mode .report-meta { color: var(--slate-400); }
+  body.branch-manager-theme.light-mode .status-pill.pending { background: rgba(194,114,0,0.13); color: var(--amber-300); }
+  body.branch-manager-theme.light-mode .status-pill.reviewed { background: rgba(42,111,219,0.12); color: var(--sky-400); }
+  body.branch-manager-theme.light-mode .status-pill.resolved { background: rgba(15,122,91,0.12); color: var(--mint-400); }
   .staff-theme-control {
     position: relative; display: grid; width: 28px; height: 32px; place-items: center; margin: 0; color: var(--slate-300); cursor: pointer;
   }
   .staff-theme-control input { position: absolute; width: 1px; height: 1px; opacity: 0; }
   .staff-theme-control span { font-size: 1.05rem; }
   .staff-theme-control:focus-within span { outline: 2px solid var(--sky-400); outline-offset: 4px; border-radius: 3px; }
-  body.branch-manager-theme.light-mode .staff-theme-control { color: var(--slate-400); }
 </style>
 </head>
 <body class="branch-manager-theme">
@@ -407,7 +460,6 @@ try {
         <div class="notif-popup" id="notif-popup">
           <div class="notif-header">
             <h4>Notifications</h4>
-            <button id="clear-notifs-btn" type="button">Mark all read</button>
           </div>
           <div class="notif-list" id="notif-list">
             <?php if (!$alerts): ?>
@@ -436,7 +488,11 @@ try {
         </label>
 
         <div class="avatar-chip">
+          <?php if ($managerAvatarUrl !== ''): ?>
+          <img src="<?= htmlspecialchars($managerAvatarUrl, ENT_QUOTES, 'UTF-8') ?>" alt="Profile Picture" style="width:36px;height:36px;border-radius:50%;object-fit:cover;border:1px solid rgba(255,255,255,0.12)">
+          <?php else: ?>
           <div class="avatar-circle"><a href="edit-profile.php"><?= htmlspecialchars($managerInitial, ENT_QUOTES, 'UTF-8') ?></a></div>
+          <?php endif; ?>
           <div><b><a href="edit-profile.php"><?= htmlspecialchars($managerDisplayName, ENT_QUOTES, 'UTF-8') ?></a></b></div>
         </div>
       </div>
@@ -550,6 +606,28 @@ try {
     // Submit new report → POST to server, then prepend UI
     const form = document.getElementById('report-form');
     const reportList = document.getElementById('report-list');
+    // Keep overflowing recent reports within the neighbouring form card's height.
+    const newReportPanel = form.closest('.panel');
+    const recentReportsPanel = reportList.closest('.panel');
+    const recentReportsHeading = recentReportsPanel.querySelector('h3');
+    function fitRecentReports() {
+      if (window.matchMedia('(max-width:980px)').matches) {
+        reportList.style.maxHeight = '';
+        return;
+      }
+      const panelStyle = getComputedStyle(recentReportsPanel);
+      const listTop = reportList.getBoundingClientRect().top - recentReportsPanel.getBoundingClientRect().top;
+      const availableHeight = newReportPanel.getBoundingClientRect().height - listTop
+        - parseFloat(panelStyle.paddingBottom) - parseFloat(panelStyle.borderBottomWidth);
+      reportList.style.maxHeight = `${Math.max(0, availableHeight)}px`;
+    }
+    fitRecentReports();
+    const reportHeightObserver = new ResizeObserver(fitRecentReports);
+    reportHeightObserver.observe(newReportPanel);
+    reportHeightObserver.observe(recentReportsHeading);
+    window.addEventListener('resize', fitRecentReports);
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(fitRecentReports);
+
     const iconMap = {
       'Stock Shortage': 'fa-gas-pump',
       'Equipment Issue': 'fa-triangle-exclamation',
@@ -557,6 +635,61 @@ try {
       'Customer Complaint': 'fa-comment',
       'Other': 'fa-flag'
     };
+
+    const bellBtn = document.getElementById('notif-bell');
+    const notifPopup = document.getElementById('notif-popup');
+    const notifPing = document.getElementById('notif-ping');
+    const notifList = document.getElementById('notif-list');
+
+    function postDismiss(payload) {
+      return fetch('api_dismiss_notification.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      }).then((r) => r.json()).catch(() => ({ ok: false }));
+    }
+
+    if (bellBtn && notifPopup) {
+      bellBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const ping = bellBtn.querySelector('.ping');
+        if (ping) {
+          ping.style.transform = 'scale(0)';
+          setTimeout(() => ping.remove(), 180);
+        }
+        notifPopup.classList.toggle('show');
+      });
+
+      document.addEventListener('click', (e) => {
+        const clickedBell = bellBtn.contains(e.target);
+        const clickedPopup = notifPopup.contains(e.target);
+        if (!clickedBell && !clickedPopup) {
+          notifPopup.classList.remove('show');
+        }
+      });
+    }
+
+    if (notifList) {
+      notifList.addEventListener('click', (e) => {
+        const item = e.target.closest('.notif-item');
+        if (!item) return;
+
+        const id = Number(item.dataset.notifId || 0);
+        const link = item.dataset.link || 'dashboard.php';
+
+        if (id > 0) {
+          postDismiss({ notif_id: id }).then((res) => {
+            if (res.ok && notifPing && Number(res.unread || 0) <= 0) {
+              notifPing.remove();
+            }
+          });
+        }
+
+        if (link) {
+          window.location.href = link;
+        }
+      });
+    }
 
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -591,70 +724,6 @@ try {
         selectedPriority = 'low';
         priorityHidden.value = 'low';
       } catch (err) { alert('Network error: ' + err.message); }
-
-      // Notifications Popup Toggle, Clear Badge, & Clear All Handler
-      const bellBtn = document.getElementById('notif-bell');
-      const notifPopup = document.getElementById('notif-popup');
-      const notifPing = document.getElementById('notif-ping');
-      const clearNotifsBtn = document.getElementById('clear-notifs-btn');
-      const notifList = document.getElementById('notif-list');
-
-      function postDismiss(payload) {
-        return fetch('api_dismiss_notification.php', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        }).then(r => r.json()).catch(() => ({ ok: false }));
-      }
-
-      function renderNotifEmpty() {
-        if (!notifList) return;
-        notifList.innerHTML = '<div class="notif-empty" style="text-align:center; padding:12px 0; color:var(--slate-400); font-size:12px;">No new notifications</div>';
-        if (notifPing) notifPing.remove();
-      }
-
-      if (bellBtn && notifPopup) {
-        bellBtn.addEventListener('click', (e) => {
-          e.stopPropagation();
-          const ping = bellBtn.querySelector('.ping');
-          if (ping) {
-            ping.style.transform = 'scale(0)';
-            setTimeout(() => ping.remove(), 200);
-          }
-          notifPopup.classList.toggle('show');
-        });
-
-        document.addEventListener('click', (e) => {
-          if (!notifPopup.contains(e.target) && !bellBtn.contains(e.target)) {
-            notifPopup.classList.remove('show');
-          }
-        });
-      }
-
-      if (notifList) {
-        notifList.addEventListener('click', (e) => {
-          const item = e.target.closest('.notif-item');
-          if (!item) return;
-          const id = Number(item.dataset.notifId || 0);
-          const link = item.dataset.link || '';
-          if (id > 0) {
-            postDismiss({ notif_id: id }).then((res) => {
-              if (res.ok && notifPing && Number(res.unread || 0) <= 0) {
-                notifPing.remove();
-              }
-            });
-          }
-          if (link) window.location.href = link;
-        });
-      }
-
-      if (clearNotifsBtn) {
-        clearNotifsBtn.addEventListener('click', () => {
-          postDismiss({ all: true }).then((res) => {
-            if (res.ok) renderNotifEmpty();
-          });
-        });
-      }
     });
   });
 </script>

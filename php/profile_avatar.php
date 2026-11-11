@@ -1,5 +1,21 @@
 <?php
 
+function map_pump_user_display_name(?string $name, string $fallback = ''): string
+{
+    $candidate = trim((string) $name);
+    if ($candidate !== '') {
+        return $candidate;
+    }
+
+    $fallback = trim($fallback);
+    return $fallback !== '' ? $fallback : '';
+}
+
+function map_pump_user_avatar_url(?string $imagePath, string $fallback = ''): string
+{
+    return map_pump_profile_avatar_url($imagePath, $fallback);
+}
+
 function map_pump_profile_initial(?string $name, string $fallback = 'U'): string
 {
     $name = trim((string) $name);

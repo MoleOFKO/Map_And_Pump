@@ -95,7 +95,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $tankId = (int)($_POST['tank_id'] ?? 0);
                 $fuelName = trim((string)($_POST['fuel_name'] ?? ''));
                 $capacityL = max(1, (int)($_POST['capacity_l'] ?? 0));
-                $price = (string)($_POST['price_per_litre'] ?? '0');
                 if ($tankId <= 0 || $fuelName === '') {
                     json_out(['ok' => false, 'error' => 'Invalid fuel record.'], 400);
                 }
@@ -122,10 +121,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
 
                 if (!$nameChanged) {
-                    $updTank = $pdo->prepare('UPDATE tanks SET capacity_l = :capacity_l, fuel_price = :price WHERE tank_id = :tank_id AND branch_id = :branch_id');
+                    $updTank = $pdo->prepare('UPDATE tanks SET capacity_l = :capacity_l WHERE tank_id = :tank_id AND branch_id = :branch_id');
                     $updTank->execute([
                         ':capacity_l' => $capacityL,
-                        ':price' => $price,
                         ':tank_id' => $tankId,
                         ':branch_id' => $branchId,
                     ]);
@@ -151,11 +149,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $ins->execute([':name' => $fuelName]);
                     $newOilTypeId = (int)$pdo->lastInsertId();
 
-                    $updTank = $pdo->prepare('UPDATE tanks SET oil_type_id = :new_oil_type_id, capacity_l = :capacity_l, fuel_price = :price WHERE tank_id = :tank_id AND branch_id = :branch_id');
+                    $updTank = $pdo->prepare('UPDATE tanks SET oil_type_id = :new_oil_type_id, capacity_l = :capacity_l WHERE tank_id = :tank_id AND branch_id = :branch_id');
                     $updTank->execute([
                         ':new_oil_type_id' => $newOilTypeId,
                         ':capacity_l' => $capacityL,
-                        ':price' => $price,
                         ':tank_id' => $tankId,
                         ':branch_id' => $branchId,
                     ]);
@@ -284,6 +281,9 @@ $ctx = current_context($pdo);
 $user = $ctx['user'];
 $branch = $ctx['branch'];
 $branchId = (int)($branch['branch_id'] ?? 0);
+$alerts = notif_recent($pdo, (int)($user['user_id'] ?? 0), 5);
+$unread_count = notif_unread_count($pdo, (int)($user['user_id'] ?? 0));
+$has_unread = $unread_count > 0;
 // --- ADD THIS AUTO-PROVISIONING BLOCK HERE ---
 $defaultFuels = ['Octane 92', 'Octane 95', 'Diesel', 'Premium Diesel'];
 foreach ($defaultFuels as $defaultName) {
@@ -309,7 +309,7 @@ foreach ($defaultFuels as $defaultName) {
     }
 }
 $stmt = $pdo->prepare(
-    'SELECT t.tank_id, t.branch_id, t.oil_type_id, t.capacity_l, t.current_l, t.alert_pct, t.is_enabled, t.fuel_price,
+    'SELECT t.tank_id, t.branch_id, t.oil_type_id, t.capacity_l, t.current_l, t.alert_pct, t.is_enabled,
             COALESCE(ot.oil_name, CONCAT("Fuel ", t.tank_id)) AS fuel_name
      FROM tanks t
      LEFT JOIN oil_types ot ON ot.oil_type_id = t.oil_type_id
@@ -335,19 +335,61 @@ foreach ($tanks as &$tank) {
 }
 unset($tank);
 
-$refillStmt = $pdo->prepare(
+$branchCreatedDate = '';
+$branchCreatedStmt = $pdo->prepare('SELECT DATE(created_at) AS created_date FROM branches WHERE branch_id = :branch_id LIMIT 1');
+$branchCreatedStmt->execute([':branch_id' => $branchId]);
+$rawBranchCreated = $branchCreatedStmt->fetchColumn();
+if (is_string($rawBranchCreated) && trim($rawBranchCreated) !== '') {
+    $branchCreatedDate = date('Y-m-d', strtotime($rawBranchCreated));
+}
+
+$refillStart = trim((string) ($_GET['refill_start_date'] ?? ''));
+$refillEnd = trim((string) ($_GET['refill_end_date'] ?? ''));
+$validRefillDate = static function (string $date): bool {
+    $dt = DateTime::createFromFormat('Y-m-d', $date);
+    return $dt && $dt->format('Y-m-d') === $date;
+};
+$todayDate = (new DateTimeImmutable('now'))->format('Y-m-d');
+if (!$validRefillDate($refillStart)) {
+    $refillStart = $branchCreatedDate !== '' ? $branchCreatedDate : '';
+}
+if (!$validRefillDate($refillEnd)) {
+    $refillEnd = $todayDate;
+}
+if ($branchCreatedDate !== '' && $refillStart < $branchCreatedDate) {
+    $refillStart = $branchCreatedDate;
+}
+if ($refillEnd > $todayDate) {
+    $refillEnd = $todayDate;
+}
+if ($refillStart > $refillEnd) {
+    $refillStart = $branchCreatedDate !== '' ? $branchCreatedDate : $refillEnd;
+}
+
+$refillSql =
     'SELECT tr.tank_refill_id, tr.quantity_l, tr.update_at, t.tank_id,
             COALESCE(ot.oil_name, CONCAT("Fuel ", t.tank_id)) AS fuel_name
      FROM tank_refill tr
      LEFT JOIN tanks t ON t.tank_id = tr.tank_id
      LEFT JOIN oil_types ot ON ot.oil_type_id = t.oil_type_id
-     WHERE tr.branch_id = :branch_id
-     ORDER BY tr.update_at DESC, tr.tank_refill_id DESC'
-);
-$refillStmt->execute([':branch_id' => $branchId]);
+     WHERE tr.branch_id = :branch_id';
+$refillParams = [':branch_id' => $branchId];
+if ($refillStart !== '') {
+    $refillSql .= ' AND DATE(tr.update_at) >= :start_date';
+    $refillParams[':start_date'] = $refillStart;
+}
+if ($refillEnd !== '') {
+    $refillSql .= ' AND DATE(tr.update_at) <= :end_date';
+    $refillParams[':end_date'] = $refillEnd;
+}
+$refillSql .= ' ORDER BY tr.update_at DESC, tr.tank_refill_id DESC';
+$refillStmt = $pdo->prepare($refillSql);
+$refillStmt->execute($refillParams);
 $refills = $refillStmt->fetchAll(PDO::FETCH_ASSOC);
 
-$initials = initials((string)($user['full_name'] ?? 'Manager'));
+$initials = initials((string)($user['full_name'] ?? ($_SESSION['user_name'] ?? '')));
+$managerDisplayName = map_pump_user_display_name($user['full_name'] ?? ($_SESSION['user_name'] ?? ''), '');
+$managerAvatarUrl   = map_pump_user_avatar_url($user['avatar_url'] ?? '', '');
 $branchLabel = $branch['branch_name'] ?? 'Branch';
 $branchCode = $branch['branch_code'] ?? ('Branch ' . $branchId);
 ?>
@@ -455,7 +497,7 @@ body[unresolved] {opacity: 0; display: block; overflow: hidden; position: relati
     background: var(--navy-700);
     transform: scale(1.05);
   }
-  .bell .ping{position:absolute; top:6px; right:7px; width:7px; height:7px; border-radius:50%; background:var(--amber-400); box-shadow:0 0 0 2px var(--navy-800);}
+  .bell .ping{position:absolute; top:4px; right:4px; width:10px; height:10px; border-radius:50%; background:#ef4444; box-shadow:0 0 0 2px var(--navy-800);}
   
   label.staff-theme-control {
     position: relative; display: grid; width: 28px; height: 32px; place-items: center; margin: 0; color: var(--slate-300); cursor: pointer;
@@ -471,33 +513,56 @@ body[unresolved] {opacity: 0; display: block; overflow: hidden; position: relati
 
   /* ---------- Notification Popup Dropdown (dashboard style) ---------- */
   .notif-popup {
-    position: absolute; top: 48px; right: 60px; width: 320px; max-height: 420px; overflow-y: auto;
-    background: var(--navy-800); border: 1px solid rgba(255,255,255,0.12); border-radius: 14px;
-    box-shadow: 0 16px 32px rgba(0,0,0,0.4); padding: 14px 12px; z-index: 100; display: none;
+    position: absolute;
+    top: 48px;
+    right: 60px;
+    width: 320px;
+    max-height: 420px;
+    overflow: hidden;
+    background: var(--navy-800);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 14px;
+    box-shadow: 0 16px 32px rgba(0, 0, 0, 0.4);
+    padding: 12px;
+    z-index: 100;
+    display: none;
     animation: fadeInDown 0.25s cubic-bezier(0.16, 1, 0.3, 1);
   }
   .notif-popup.show,
   .notif-popup.active { display: block; opacity: 1; pointer-events: auto; transform: translateY(0); }
-  .notif-header {
-    display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.06); padding-bottom:10px; margin-bottom:10px;
+  .notif-header { display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom:10px; margin-bottom:10px; }
+  .notif-header h4 { font-size: 14px; font-weight:700; margin:0; }
+  .notif-list {
+    max-height: 330px;
+    overflow-y: auto;
+    overflow-x: auto;
+    padding-right: 4px;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(56,189,248,0.35) transparent;
   }
-  .notif-header h4 { font-size: 13.5px; font-weight: 700; margin: 0; }
-  .notif-header button { background: none; border: none; color: var(--amber-400); font-size: 11px; cursor: pointer; font-weight: 600; }
-  .notif-header button:hover { text-decoration: underline; }
-  .notif-list { max-height: 260px; overflow-y: auto; }
+  .notif-list::-webkit-scrollbar { width: 8px; height: 8px; }
+  .notif-list::-webkit-scrollbar-track { background: transparent; }
+  .notif-list::-webkit-scrollbar-thumb { background: rgba(56,189,248,0.35); border-radius: 999px; }
+  .notif-list::-webkit-scrollbar-thumb:hover { background: rgba(56,189,248,0.55); }
   .notif-item {
-    display: flex; gap: 12px; padding: 12px 16px; border-bottom: 1px solid rgba(255,255,255,0.04);
-    font-size: 12px; transition: background 0.2s; cursor: pointer; border-radius: 10px; border: 1px solid transparent;
+    padding: 10px 8px; border-radius: 10px; display: flex; gap: 10px; align-items: flex-start; transition: background-color 0.2s; border: 1px solid transparent; cursor: pointer;
   }
-  .notif-item:last-child { border-bottom: none; }
-  .notif-item:hover { background: rgba(255,255,255,0.03); }
-  .notif-item .icon { width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 12px; background: rgba(148,163,184,0.12); color: var(--slate-200); }
-  .notif-item.warning .icon { background: rgba(248,113,113,0.15); color: var(--red-400); }
-  .notif-item.info .icon { background: rgba(56,189,248,0.15); color: var(--sky-400); }
-  .notif-item.success .icon { background: rgba(52,211,153,0.15); color: var(--mint-400); }
-  .notif-item .text b { display: block; color: var(--slate-50); margin-bottom: 2px; }
-  .notif-item .text span { color: var(--slate-400); line-height: 1.3; display: block; }
-  .notif-item .time { font-size: 10px; color: var(--slate-400); margin-top: 4px; }
+  .notif-item:hover { background-color: rgba(255,255,255,0.04); }
+  .notif-item.unread { border-color: rgba(56,189,248,0.2); }
+  .notif-item-warning .icon,
+  .notif-item.error .icon,
+  .notif-item.warn .icon,
+  .notif-item .icon {
+    display: none;
+  }
+  .notif-item-body {
+    min-width: 0;
+    flex: 1;
+  }
+  .notif-item-body b { display:block; font-size:12.5px; color:var(--slate-50); margin-bottom:2px; }
+  .notif-item-body span { color:var(--slate-400); font-size:11.5px; display:block; white-space:normal; line-height:1.5; }
+  .notif-item-body .notif-time { font-size:10px; color:var(--slate-400); margin-top:4px; }
+  .notif-empty { text-align:center; padding:12px 0; color:var(--slate-400); font-size:12px; }
   @keyframes fadeInDown { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
 
   /* Content Entrance Fade */
@@ -607,6 +672,21 @@ body[unresolved] {opacity: 0; display: block; overflow: hidden; position: relati
   .refill-table-scroll table{width:100%; border-collapse:collapse;}
   .fuel-table-scroll thead th{position:sticky; top:0; background:rgba(15,23,42,0.94); z-index:2;}
   .refill-table-scroll thead th{position:sticky; top:0; background:rgba(15,23,42,0.94); z-index:2;}
+  
+  /* ---------- Refill History panel (matches Recent Staff Activity) ---------- */
+  #tab-refill-history > .panel{background:linear-gradient(160deg, var(--navy-800), var(--navy-900)); border:1px solid rgba(255,255,255,0.07); border-radius:18px; overflow:hidden; padding:24px;}
+  #tab-refill-history .refill-history-toolbar{display:flex; align-items:center; justify-content:space-between; gap:20px; flex-wrap:wrap; margin-bottom:20px;}
+  #tab-refill-history .refill-history-heading{flex:1 1 280px; min-width:0;}
+  #tab-refill-history .refill-history-heading h3{margin:0 0 10px; font-size:16px; font-weight:700; line-height:1.4; color:var(--slate-50);}
+  #tab-refill-history .refill-history-heading p{margin:0; font-size:13px; line-height:1.6; color:var(--slate-300);}
+  .logs-modal-filters{display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin:0; margin-left:auto;}
+  .logs-modal-filters label{display:flex; align-items:center; gap:6px; font-size:12px; color:var(--slate-300); margin:0;}
+  .logs-modal-filters input[type="date"]{background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.1); border-radius:8px; padding:7px 10px; color:var(--slate-50); font-size:12.5px; color-scheme:dark;}
+  .logs-modal-btn{background:#0d5fdb; color:#fff; border:none; border-radius:8px; padding:8px 14px; font-size:13px; font-weight:700; cursor:pointer; transition:background 0.15s;}
+  .logs-modal-btn:hover{background:#1d6ff0;}
+  #tab-refill-history .refill-table-scroll{border:1px solid rgba(255,255,255,0.1); border-radius:10px; padding:0 12px;}
+  body.branch-manager-theme.light-mode #tab-refill-history .refill-table-scroll { border-color:var(--lm-line-strong); }
+  body.branch-manager-theme.light-mode .logs-modal-filters input[type="date"] { background:#ffffff; border-color:var(--lm-line-strong); color:var(--slate-50); color-scheme:light; }
   
   .fuel-action-table {
     width: 100%;
@@ -1009,6 +1089,124 @@ body[unresolved] {opacity: 0; display: block; overflow: hidden; position: relati
   .staff-theme-control span { font-size: 1.05rem; }
   .staff-theme-control:focus-within span { outline: 2px solid var(--sky-400); outline-offset: 4px; border-radius: 3px; }
   body.branch-manager-theme.light-mode .staff-theme-control { color: var(--slate-400); }
+
+  /* ---------- Light mode refinements (light mode only; dark mode untouched) ---------- */
+  body.branch-manager-theme.light-mode {
+    color-scheme: light;
+    --amber-300:#c28a0a;
+    --lm-line:rgba(15,23,42,0.10); --lm-line-soft:rgba(15,23,42,0.06); --lm-line-strong:rgba(15,23,42,0.18);
+    --lm-hover:rgba(15,23,42,0.045);
+    --lm-shadow:0 1px 2px rgba(15,23,42,0.04), 0 10px 26px -16px rgba(15,23,42,0.16);
+    --lm-shadow-pop:0 18px 40px -14px rgba(15,23,42,0.25);
+  }
+  /* Shell */
+  body.branch-manager-theme.light-mode .sidebar { background:#fff; border-right-color:var(--lm-line); box-shadow:1px 0 0 rgba(15,23,42,0.02); }
+  body.branch-manager-theme.light-mode .topbar { background:rgba(255,255,255,0.86); backdrop-filter:blur(14px); border-bottom-color:var(--lm-line); }
+  body.branch-manager-theme.light-mode .sidebar > a .disp { color:var(--slate-50) !important; }
+  body.branch-manager-theme.light-mode .side-role { color:var(--slate-400); }
+  body.branch-manager-theme.light-mode .side-branch { background:var(--navy-800); border-color:var(--lm-line); }
+  body.branch-manager-theme.light-mode .side-branch .hq-logo { background:#fff; border-color:var(--lm-line); }
+  body.branch-manager-theme.light-mode .side-link:hover { background:var(--lm-hover); color:var(--slate-50); }
+  body.branch-manager-theme.light-mode .side-logout { border-top-color:var(--lm-line); }
+  body.branch-manager-theme.light-mode .side-logout:hover { background:rgba(207,61,61,0.08); }
+  body.branch-manager-theme.light-mode .bell { color:var(--slate-300); border-color:var(--lm-line); }
+  body.branch-manager-theme.light-mode .bell:hover { background:var(--navy-700); }
+  body.branch-manager-theme.light-mode .bell .ping { box-shadow:0 0 0 2px #fff; }
+  body.branch-manager-theme.light-mode .avatar-chip { background:transparent; border-color:transparent; }
+  body.branch-manager-theme.light-mode .avatar-chip:hover { background:var(--lm-hover); }
+  body.branch-manager-theme.light-mode .avatar-circle,
+  body.branch-manager-theme.light-mode .avatar-circle a { color:#fff; }
+  body.branch-manager-theme.light-mode .page-foot { border-top-color:var(--lm-line); }
+  body.branch-manager-theme.light-mode .staff-theme-control:hover { color:var(--slate-50); }
+
+  /* Notifications popup */
+  body.branch-manager-theme.light-mode .notif-popup {
+    --slate-50:#0f172a; --slate-300:#334155; --slate-400:#5b6b82;
+    border-color:rgba(15,23,42,0.16); box-shadow:0 18px 40px -14px rgba(15,23,42,0.28);
+  }
+  body.branch-manager-theme.light-mode .notif-header { border-bottom-color:rgba(15,23,42,0.09); }
+  body.branch-manager-theme.light-mode .notif-item { border-bottom-color:transparent; }
+  body.branch-manager-theme.light-mode .notif-item.unread { border-color:rgba(2,132,199,0.28); }
+  body.branch-manager-theme.light-mode .notif-item:hover { background:var(--lm-hover); }
+  body.branch-manager-theme.light-mode .notif-item .ic,
+  body.branch-manager-theme.light-mode .notif-item .icon { background:rgba(88,103,126,0.12); color:var(--slate-300); }
+  body.branch-manager-theme.light-mode .notif-item[data-kind="warn"] .ic,
+  body.branch-manager-theme.light-mode .notif-item.warn .ic { background:rgba(217,132,0,0.14); color:#a96800; }
+  body.branch-manager-theme.light-mode .notif-item[data-kind="err"] .ic,
+  body.branch-manager-theme.light-mode .notif-item.err .ic,
+  body.branch-manager-theme.light-mode .notif-item.warning .icon { background:rgba(207,61,61,0.12); color:var(--red-400); }
+  body.branch-manager-theme.light-mode .notif-item[data-kind="ok"] .ic,
+  body.branch-manager-theme.light-mode .notif-item.ok .ic,
+  body.branch-manager-theme.light-mode .notif-item.success .icon { background:rgba(18,142,107,0.12); color:var(--mint-400); }
+  body.branch-manager-theme.light-mode .notif-item[data-kind="info"] .ic,
+  body.branch-manager-theme.light-mode .notif-item.info .ic,
+  body.branch-manager-theme.light-mode .notif-item.info .icon { background:rgba(63,140,245,0.12); color:var(--sky-400); }
+
+  /* Cards & panels */
+  body.branch-manager-theme.light-mode .panel,
+  body.branch-manager-theme.light-mode .stat-card { border-color:var(--lm-line); box-shadow:var(--lm-shadow); }
+  body.branch-manager-theme.light-mode .side-link.active { background:rgba(217,132,0,0.10); box-shadow:inset 0 0 0 1px rgba(217,132,0,0.34); color:var(--slate-50); }
+  body.branch-manager-theme.light-mode .side-branch:hover { background:var(--navy-700); border-color:rgba(217,132,0,0.35); }
+
+  /* Header action buttons */
+  body.branch-manager-theme.light-mode .action-btn-refill { background:rgba(60,130,255,0.10) !important; border:1px solid rgba(60,130,255,0.42) !important; color:#1d4ed8 !important; }
+  body.branch-manager-theme.light-mode .action-btn-refill:hover { background:rgba(60,130,255,0.17) !important; }
+
+  /* Stock overview pills */
+  body.branch-manager-theme.light-mode .stock-pill.sufficient { background:rgba(18,142,107,0.12); color:#0b6b52; border-color:rgba(18,142,107,0.30); }
+  body.branch-manager-theme.light-mode .stock-pill.watch { background:rgba(217,132,0,0.13); color:#9a5b00; border-color:rgba(217,132,0,0.34); }
+  body.branch-manager-theme.light-mode .stock-pill.low { background:rgba(207,61,61,0.11); color:#b32d2d; border-color:rgba(207,61,61,0.30); }
+
+  /* Tank cards */
+  body.branch-manager-theme.light-mode .tank { background:var(--navy-900); border-color:var(--lm-line); box-shadow:var(--lm-shadow); }
+  body.branch-manager-theme.light-mode .tank:hover:not(.disabled-tank) { border-color:rgba(217,132,0,0.45); box-shadow:0 14px 30px -18px rgba(15,23,42,0.28); }
+  body.branch-manager-theme.light-mode .gauge-track { background:rgba(15,23,42,0.08); }
+  body.branch-manager-theme.light-mode .tank-flag.ok { background:rgba(18,142,107,0.12); }
+  body.branch-manager-theme.light-mode .tank-flag.mid { background:rgba(217,132,0,0.13); color:#9a5b00; }
+  body.branch-manager-theme.light-mode .tank-flag.low { background:rgba(207,61,61,0.11); }
+  body.branch-manager-theme.light-mode .tank-flag.inactive { background:rgba(88,103,126,0.12); }
+
+  /* Tabs */
+  body.branch-manager-theme.light-mode .tabs { border-bottom-color:var(--lm-line); }
+
+  /* Tables */
+  body.branch-manager-theme.light-mode .fuel-table-scroll thead th,
+  body.branch-manager-theme.light-mode .refill-table-scroll thead th { background:#fff; }
+  body.branch-manager-theme.light-mode .fuel-action-table thead th { border-bottom-color:var(--lm-line); }
+  body.branch-manager-theme.light-mode .fuel-action-table tbody td { border-bottom-color:var(--lm-line-soft); }
+  body.branch-manager-theme.light-mode .fuel-action-table tbody tr:hover { background:var(--lm-hover); }
+  body.branch-manager-theme.light-mode .fuel-row-btn { border-color:var(--lm-line-strong); background:#fff; }
+  body.branch-manager-theme.light-mode .fuel-row-btn.edit-btn { color:var(--slate-50); border-color:var(--lm-line-strong); }
+  body.branch-manager-theme.light-mode .fuel-row-btn.toggle-btn.on { color:#b45309; border-color:rgba(217,119,6,0.60); }
+  body.branch-manager-theme.light-mode .fuel-row-btn.toggle-btn.off { color:var(--mint-400); border-color:rgba(18,142,107,0.55); }
+  body.branch-manager-theme.light-mode .fuel-row-btn.delete-btn { color:var(--red-400); border-color:rgba(207,61,61,0.60); }
+  body.branch-manager-theme.light-mode .fuel-row-btn.edit-btn:hover { background:var(--lm-hover); }
+  body.branch-manager-theme.light-mode .fuel-row-btn.toggle-btn.on:hover { background:rgba(217,119,6,0.10); }
+  body.branch-manager-theme.light-mode .fuel-row-btn.toggle-btn.off:hover { background:rgba(18,142,107,0.10); }
+  body.branch-manager-theme.light-mode .fuel-row-btn.delete-btn:hover { background:rgba(207,61,61,0.09); }
+  body.branch-manager-theme.light-mode .fuel-row-btn:focus-visible { outline-color:rgba(60,130,255,0.55); }
+
+  /* Modals */
+  body.branch-manager-theme.light-mode .modal-overlay { background:rgba(15,23,42,0.45); }
+  body.branch-manager-theme.light-mode .modal-card-custom { border-color:var(--lm-line); box-shadow:var(--lm-shadow-pop); }
+  body.branch-manager-theme.light-mode .limit-form-item { background:var(--navy-800); border-color:var(--lm-line); }
+  body.branch-manager-theme.light-mode .limit-form-item label { color:var(--slate-50); }
+  body.branch-manager-theme.light-mode .limit-input-wrap input { background:#fff; border-color:var(--lm-line-strong); color:var(--slate-50); }
+  body.branch-manager-theme.light-mode .limit-input-wrap input:focus { border-color:var(--amber-400); box-shadow:0 0 0 1px rgba(217,132,0,0.30); }
+  body.branch-manager-theme.light-mode .form-control-custom { border-color:var(--lm-line-strong); color-scheme:light; }
+  body.branch-manager-theme.light-mode .form-control-custom:focus { border-color:var(--amber-400); }
+  body.branch-manager-theme.light-mode .btn-secondary-custom { border-color:var(--lm-line-strong); color:var(--slate-300); }
+  body.branch-manager-theme.light-mode .btn-secondary-custom:hover { background:var(--lm-hover); color:var(--slate-50); }
+  body.branch-manager-theme.light-mode .delete-modal-card { background:var(--navy-900); }
+  body.branch-manager-theme.light-mode .delete-modal-icon { background:rgba(207,61,61,0.12); }
+
+  /* Toast */
+  body.branch-manager-theme.light-mode .oil-toast { background:#fff; border-color:rgba(18,142,107,0.40); color:#0b6b52; box-shadow:0 12px 30px -10px rgba(15,23,42,0.28); }
+  body.branch-manager-theme.light-mode .oil-toast.error { border-color:rgba(207,61,61,0.45); color:#b32d2d; }
+
+  /* Pagination */
+  body.branch-manager-theme.light-mode .pg-btn:not(.active) { background:#fff; border-color:var(--lm-line-strong); color:var(--slate-300); }
+  body.branch-manager-theme.light-mode .pg-btn:not(.active):hover:not(:disabled) { background:var(--navy-700); color:var(--slate-50); }
 </style>
 </head>
 <body>
@@ -1050,57 +1248,30 @@ body[unresolved] {opacity: 0; display: block; overflow: hidden; position: relati
         <div class="date" id="live-clock">Friday, Oct 30, 2026 · 07:43:02 PM</div>
       </div>
       <div class="topbar-right">
-        <!-- Bell Trigger Button -->
-        <div class="bell" id="notif-bell"><i class="fa-regular fa-bell"></i><span class="ping" id="notif-ping"></span></div>
+        <div class="bell" id="notif-bell"><i class="fa-regular fa-bell"></i><?php if ($has_unread): ?><span class="ping" id="notif-ping"></span><?php endif; ?></div>
         
-        <!-- Notification Dropdown Popup (Dashboard Style) -->
         <div class="notif-popup" id="notif-popup">
           <div class="notif-header">
             <h4>Notifications</h4>
-            <button id="clear-notifs-btn" type="button">Mark all read</button>
           </div>
-          <div id="notif-list">
-                          <div class="notif-item warning" data-notif-id="5451601" data-link="manage-oil.php" data-kind="warning">
-                <div class="ic"><i class="fa-solid fa-droplet"></i></div>
+          <div class="notif-list" id="notif-list">
+            <?php if (!$alerts): ?>
+              <div class="notif-empty">No new notifications</div>
+            <?php else:
+              foreach ($alerts as $a):
+                $meta = notif_ui_meta($a['type'], $a['title']);
+                $icon = $meta['icon'];
+                $tone = $meta['tone'];
+            ?>
+              <div class="notif-item <?= h($tone) ?>" data-notif-id="<?= (int)$a['notif_id'] ?>" data-link="<?= h($a['link'] ?? 'dashboard.php') ?>" data-kind="<?= h($tone) ?>">
                 <div class="notif-item-body">
-                  <b>Low stock: Test_Fuel_1</b>
-                  <span>Test_Fuel_1 is at 0% (0.00 / 10,000 L), below the 20% alert level.</span>
-                  <div class="notif-time">2 days ago</div>
+                  <b><?= h($a['title']) ?></b>
+                  <span><?= h($a['body']) ?></span>
+                  <div class="notif-time"><?= h($a['time_ago']) ?></div>
                 </div>
-                           </div>
-                          <div class="notif-item warning" data-notif-id="5260007" data-link="manage-oil.php" data-kind="warning">
-                <div class="ic"><i class="fa-solid fa-droplet"></i></div>
-                <div class="notif-item-body">
-                  <b>Low stock: Premium Diesel</b>
-                  <span>Premium Diesel is at 0% (0.00 / 12,000 L), below the 25% alert level.</span>
-                  <div class="notif-time">2 days ago</div>
-                </div>
-                           </div>
-                          <div class="notif-item warning" data-notif-id="5260005" data-link="manage-oil.php" data-kind="warning">
-                <div class="ic"><i class="fa-solid fa-droplet"></i></div>
-                <div class="notif-item-body">
-                  <b>Low stock: Octane 95</b>
-                  <span>Octane 95 is at 0% (0.00 / 15,000 L), below the 25% alert level.</span>
-                  <div class="notif-time">2 days ago</div>
-                </div>
-                           </div>
-                          <div class="notif-item warning" data-notif-id="5260006" data-link="manage-oil.php" data-kind="warning">
-                <div class="ic"><i class="fa-solid fa-droplet"></i></div>
-                <div class="notif-item-body">
-                  <b>Low stock: Diesel</b>
-                  <span>Diesel is at 0% (0.00 / 12,000 L), below the 25% alert level.</span>
-                  <div class="notif-time">2 days ago</div>
-                </div>
-                           </div>
-                          <div class="notif-item warning" data-notif-id="5260004" data-link="manage-oil.php" data-kind="warning">
-                <div class="ic"><i class="fa-solid fa-droplet"></i></div>
-                <div class="notif-item-body">
-                  <b>Low stock: Octane 92</b>
-                  <span>Octane 92 is at 0% (0.00 / 15,000 L), below the 25% alert level.</span>
-                  <div class="notif-time">2 days ago</div>
-                </div>
-                           </div>
-                      </div>
+              </div>
+            <?php endforeach; endif; ?>
+          </div>
         </div>
 
         <label class="staff-theme-control" title="Toggle light mode">
@@ -1109,8 +1280,12 @@ body[unresolved] {opacity: 0; display: block; overflow: hidden; position: relati
         </label>
 
         <div class="avatar-chip">
-          <div class="avatar-circle"><a href="edit-profile.php"><?= htmlspecialchars(substr((string)($user['full_name'] ?? 'Manager'), 0, 1)) ?></a></div>
-          <div><b><a href="edit-profile.php"><?= htmlspecialchars(explode(' ', (string)($user['full_name'] ?? 'Manager'))[0]) ?></a></b></div>
+          <?php if ($managerAvatarUrl !== ''): ?>
+          <img src="<?= htmlspecialchars($managerAvatarUrl, ENT_QUOTES, 'UTF-8') ?>" alt="Profile Picture" style="width:36px;height:36px;border-radius:50%;object-fit:cover;border:1px solid rgba(255,255,255,0.12)">
+          <?php else: ?>
+          <div class="avatar-circle"><a href="edit-profile.php"><?= htmlspecialchars(mb_substr($initials, 0, 1, 'UTF-8'), ENT_QUOTES, 'UTF-8') ?></a></div>
+          <?php endif; ?>
+          <div><b><a href="edit-profile.php"><?= htmlspecialchars($managerDisplayName, ENT_QUOTES, 'UTF-8') ?></a></b></div>
         </div>
       </div>
     </div>
@@ -1158,7 +1333,7 @@ body[unresolved] {opacity: 0; display: block; overflow: hidden; position: relati
               'low' => ['color' => 'var(--red-400)', 'label' => 'Stock low — delivery needed', 'icon' => 'fa-triangle-exclamation', 'class' => 'low'],
             ][$status] ?? ['color' => 'var(--mint-400)', 'label' => 'Stock sufficient', 'icon' => 'fa-check', 'class' => 'ok'];
             $remainingText = number_format((float)$tank['current_l'], 2, '.', ',') . ' / ' . number_format((int)$tank['capacity_l'], 0, '.', ',') . ' L remaining';
-            $isDisabled = empty($tank['is_enabled']) ? 'disabled-tank' : '';
+            $isDisabled = empty($tank['is_enabled']) ? 'disabled' : '';
           ?>
             <div class="tank <?= $isDisabled ?>" id="tank-<?= (int)$tank['tank_id'] ?>" data-capacity="<?= (int)$tank['capacity_l'] ?>" data-tankid="<?= (int)$tank['tank_id'] ?>">
               <div class="top">
@@ -1201,7 +1376,7 @@ body[unresolved] {opacity: 0; display: block; overflow: hidden; position: relati
                   <td class="fuel-stock-meta"><span style="color:<?= $statusColor ?>; font-weight:700; margin-right:6px;"> </span><?= $remainingText ?></td>
                   <td class="fuel-action-cell">
                     <div class="fuel-actions">
-                      <button type="button" class="fuel-row-btn edit-btn edit-action" data-action="edit" data-id="<?= (int)$tank['tank_id'] ?>" data-fuel="fuel_<?= (int)$tank['tank_id'] ?>" data-name="<?= htmlspecialchars($tank['fuel_name'], ENT_QUOTES, 'UTF-8') ?>" data-capacity="<?= (int)$tank['capacity_l'] ?>" data-price="<?= htmlspecialchars((string)($tank['fuel_price'] ?? '0'), ENT_QUOTES, 'UTF-8') ?>" title="Edit fuel" aria-label="Edit fuel">
+                      <button type="button" class="fuel-row-btn edit-btn edit-action" data-action="edit" data-id="<?= (int)$tank['tank_id'] ?>" data-fuel="fuel_<?= (int)$tank['tank_id'] ?>" data-name="<?= htmlspecialchars($tank['fuel_name'], ENT_QUOTES, 'UTF-8') ?>" data-capacity="<?= (int)$tank['capacity_l'] ?>" title="Edit fuel" aria-label="Edit fuel">
                         Edit
                       </button>
                       <button type="button" class="fuel-row-btn toggle-btn <?= $enabled ? 'on' : 'off' ?>" data-action="toggle" data-id="<?= (int)$tank['tank_id'] ?>" data-fuel="fuel_<?= (int)$tank['tank_id'] ?>" data-enabled="<?= (int)$enabled ?>" title="<?= $enabled ? 'Disable fuel' : 'Enable fuel' ?>" aria-label="<?= $enabled ? 'Disable fuel' : 'Enable fuel' ?>">
@@ -1221,7 +1396,20 @@ body[unresolved] {opacity: 0; display: block; overflow: hidden; position: relati
 
       <!-- TAB 3: REFILL HISTORY -->
       <div class="tab-panel" id="tab-refill-history">
-        <div class="panel refill-table-scroll">
+        <div class="panel">
+          <div class="refill-history-toolbar">
+            <div class="refill-history-heading">
+              <h3>Refill History</h3>
+              <p>Track fuel refills recorded for this branch.</p>
+            </div>
+            <form class="logs-modal-filters" id="refill-filters" method="get" action="manage-oil.php">
+              <label><span>From</span><input type="date" name="refill_start_date" value="<?= h($refillStart) ?>" min="<?= h($branchCreatedDate) ?>" max="<?= h($todayDate) ?>"></label>
+              <label><span>To</span><input type="date" name="refill_end_date" value="<?= h($refillEnd) ?>" min="<?= h($branchCreatedDate) ?>" max="<?= h($todayDate) ?>"></label>
+              <button type="submit" class="logs-modal-btn">Apply</button>
+              <button type="button" class="logs-modal-btn" id="refill-clear-btn">Clear</button>
+            </form>
+          </div>
+          <div class="refill-table-scroll" id="refill-scroll">
           <table class="fuel-action-table">
             <thead>
               <tr>
@@ -1233,7 +1421,7 @@ body[unresolved] {opacity: 0; display: block; overflow: hidden; position: relati
             <tbody>
               <?php if (empty($refills)): ?>
                 <tr>
-                  <td colspan="3" class="fuel-stock-meta" style="text-align:center; padding:18px;">No refill history for this branch yet.</td>
+                  <td colspan="3" class="fuel-stock-meta" style="text-align:center; padding:18px;">No refill history is recorded for the selected date range.</td>
                 </tr>
               <?php else: ?>
                 <?php foreach ($refills as $refill): ?>
@@ -1246,6 +1434,7 @@ body[unresolved] {opacity: 0; display: block; overflow: hidden; position: relati
               <?php endif; ?>
             </tbody>
           </table>
+          </div>
         </div>
       </div>
 
@@ -1347,11 +1536,6 @@ body[unresolved] {opacity: 0; display: block; overflow: hidden; position: relati
       <div class="form-group">
         <label for="edit-fuel-capacity">Tank Capacity (Liters)</label>
         <input type="number" id="edit-fuel-capacity" name="capacity_l" class="form-control-custom" min="1" max="200000" required="">
-      </div>
-
-      <div class="form-group">
-        <label for="edit-fuel-price">Fuel Price (MMK/L)</label>
-        <input type="number" id="edit-fuel-price" name="price_per_litre" class="form-control-custom" min="0" step="1" required="">
       </div>
 
       <div class="modal-actions">
@@ -1478,15 +1662,8 @@ body[unresolved] {opacity: 0; display: block; overflow: hidden; position: relati
     // 2. Notification Popup Controller
     const bellBtn = document.getElementById('notif-bell');
     const notifPopup = document.getElementById('notif-popup');
-    const clearNotifsBtn = document.getElementById('clear-notifs-btn');
     const notifList = document.getElementById('notif-list');
     const notifPing = document.getElementById('notif-ping');
-
-    function renderNotifEmpty() {
-      if (!notifList) return;
-      notifList.innerHTML = '<div class="notif-empty" style="text-align:center; padding:12px 0; color:var(--slate-400); font-size:12px;">No new notifications</div>';
-      if (notifPing) notifPing.style.display = 'none';
-    }
 
     function postDismiss(payload) {
       return fetch('api_dismiss_notification.php', {
@@ -1499,85 +1676,43 @@ body[unresolved] {opacity: 0; display: block; overflow: hidden; position: relati
     if (bellBtn && notifPopup) {
       bellBtn.addEventListener('click', (e) => {
         e.stopPropagation();
-        notifPopup.classList.toggle('active');
-        if (notifPing) notifPing.style.display = 'none';
+        const ping = bellBtn.querySelector('.ping');
+        if (ping) {
+          ping.style.transform = 'scale(0)';
+          setTimeout(() => ping.remove(), 180);
+        }
+        notifPopup.classList.toggle('show');
       });
 
       document.addEventListener('click', (e) => {
-        if (!notifPopup.contains(e.target) && !bellBtn.contains(e.target)) {
-          notifPopup.classList.remove('active');
+        const clickedBell = bellBtn.contains(e.target);
+        const clickedPopup = notifPopup.contains(e.target);
+        if (!clickedBell && !clickedPopup) {
+          notifPopup.classList.remove('show');
         }
       });
     }
 
     if (notifList) {
-      notifList.querySelectorAll('.notif-item').forEach((item) => {
-        item.addEventListener('click', async () => {
-          const id = Number(item.dataset.notifId || 0);
-          item.style.opacity = '0.5';
-          const res = await postDismiss(id > 0 ? { notif_id: id } : { all: true });
-          if (res.ok) {
-            item.remove();
-            if (!notifList.querySelector('.notif-item')) {
-              renderNotifEmpty();
+      notifList.addEventListener('click', (e) => {
+        const item = e.target.closest('.notif-item');
+        if (!item) return;
+
+        const id = Number(item.dataset.notifId || 0);
+        const link = item.dataset.link || 'dashboard.php';
+
+        if (id > 0) {
+          postDismiss({ notif_id: id }).then((res) => {
+            if (res.ok && notifPing && Number(res.unread || 0) <= 0) {
+              notifPing.remove();
             }
-          } else {
-            item.style.opacity = '1';
-          }
-        });
+          });
+        }
+
+        if (link) {
+          window.location.href = link;
+        }
       });
-    }
-
-    if (clearNotifsBtn) {
-      clearNotifsBtn.addEventListener('click', () => {
-        postDismiss({ all: true }).then((res) => {
-          if (res.ok) renderNotifEmpty();
-        });
-      });
-    }
-
-    function updateFuelTableScrollState() {
-      document.querySelectorAll('.fuel-table-scroll, .refill-table-scroll').forEach((scrollWrap) => {
-        const table = scrollWrap.querySelector('table');
-        if (!table) return;
-
-        const rows = table.querySelectorAll('tbody tr');
-        const visibleRows = Array.from(rows).filter(row => row.style.display !== 'none').length;
-        const shouldScroll = visibleRows > 5;
-
-        scrollWrap.classList.toggle('has-scroll', shouldScroll);
-        scrollWrap.style.maxHeight = shouldScroll ? 'calc(5 * 66px + 12px)' : 'none';
-        scrollWrap.style.overflowY = shouldScroll ? 'auto' : 'hidden';
-      });
-    }
-
-    document.querySelectorAll('.fuel-table-scroll table, .refill-table-scroll table').forEach((table) => {
-      const tbody = table.querySelector('tbody');
-      if (!tbody) return;
-
-      const observer = new MutationObserver(() => {
-        updateFuelTableScrollState();
-      });
-
-      observer.observe(tbody, {
-        childList: true,
-        subtree: true
-      });
-    });
-
-    updateFuelTableScrollState();
-
-    const addFuelModal = document.getElementById('add-oil-modal');
-    const addFuelForm = document.getElementById('add-oil-form');
-    const openAddFuelBtn = document.getElementById('open-add-oil-modal');
-    const closeAddFuelBtn = document.getElementById('add-oil-modal-close-btn');
-    const cancelAddFuelBtn = document.getElementById('add-oil-modal-cancel-btn');
-
-    function getCsrfToken() {
-      const candidates = Array.from(document.querySelectorAll('input[name="csrf"]'))
-        .map((input) => String(input.value || '').trim())
-        .filter(Boolean);
-      return candidates[0] || '';
     }
 
     const deleteModal = document.getElementById('delete-modal');
@@ -1620,6 +1755,19 @@ body[unresolved] {opacity: 0; display: block; overflow: hidden; position: relati
           closeDeleteModal();
         }
       });
+    }
+
+    const addFuelModal = document.getElementById('add-oil-modal');
+    const addFuelForm = document.getElementById('add-oil-form');
+    const openAddFuelBtn = document.getElementById('open-add-oil-modal');
+    const closeAddFuelBtn = document.getElementById('add-oil-modal-close-btn');
+    const cancelAddFuelBtn = document.getElementById('add-oil-modal-cancel-btn');
+
+    function getCsrfToken() {
+      const candidates = Array.from(document.querySelectorAll('input[name="csrf"]'))
+        .map((input) => String(input.value || '').trim())
+        .filter(Boolean);
+      return candidates[0] || '';
     }
 
     if (openAddFuelBtn && addFuelModal) {
@@ -1667,13 +1815,11 @@ body[unresolved] {opacity: 0; display: block; overflow: hidden; position: relati
       const fuelCode = button.dataset.fuel || '';
       const name = button.dataset.name || '';
       const capacity = button.dataset.capacity || '';
-      const price = button.dataset.price || '';
 
       document.getElementById('edit-fuel-tank-id').value = id;
       document.getElementById('edit-fuel-code').value = fuelCode;
       document.getElementById('edit-fuel-name').value = name;
       document.getElementById('edit-fuel-capacity').value = capacity;
-      document.getElementById('edit-fuel-price').value = price;
       editFuelModal.classList.add('active');
     }
 
@@ -1900,6 +2046,40 @@ body[unresolved] {opacity: 0; display: block; overflow: hidden; position: relati
       }
       return { render, goToPage: (p) => { currentPage = p; render(); }, getPage: () => currentPage, getTotal: totalPages };
     }
+
+    // ===== Refill History: filter clear + scroll after 10 rows =====
+    (function() {
+      const clearBtn = document.getElementById('refill-clear-btn');
+      const form = document.getElementById('refill-filters');
+      if (clearBtn && form) {
+        clearBtn.addEventListener('click', () => {
+          form.querySelectorAll('input[type="date"]').forEach(input => { input.value = ''; });
+          form.submit();
+        });
+      }
+      const box = document.getElementById('refill-scroll');
+      function updateRefillScrollState() {
+        if (!box) return;
+        const rows = box.querySelectorAll('tbody tr');
+        if (rows.length <= 10) {
+          box.classList.remove('has-scroll');
+          box.style.maxHeight = 'none';
+          box.style.overflowY = 'hidden';
+          return;
+        }
+        let height = box.querySelector('thead').getBoundingClientRect().height;
+        for (let i = 0; i < 10; i++) height += rows[i].getBoundingClientRect().height;
+        if (!height) return;
+        const style = getComputedStyle(box);
+        height += parseFloat(style.borderTopWidth) + parseFloat(style.borderBottomWidth);
+        box.classList.add('has-scroll');
+        box.style.maxHeight = height + 'px';
+        box.style.overflowY = 'auto';
+      }
+      updateRefillScrollState();
+      window.addEventListener('resize', updateRefillScrollState);
+      document.getElementById('tabbtn-refill-history')?.addEventListener('click', () => setTimeout(updateRefillScrollState, 0));
+    })();
 
     // ===== TAB 1: Tank Grid Pagination (6 per page, 2-col grid) =====
     (function() {

@@ -21,14 +21,13 @@ require_once __DIR__ . '/../Login/mailer.php';
 require_once __DIR__ . '/../Login/mail_templates.php';
 require_branch_manager();
 
-$managerDisplayName = trim((string) ($_SESSION['user_name'] ?? 'Manager'));
-$managerInitial = map_pump_profile_initial($managerDisplayName, 'M');
-
 $ctx      = current_context($pdo);
 $user     = $ctx['user'];
 $branch   = $ctx['branch'];
 $initials = initials($user['full_name']);
 $bid      = (int)$branch['branch_id'];
+$managerDisplayName = map_pump_user_display_name($user['full_name'] ?? ($_SESSION['user_name'] ?? ''), '');
+$managerAvatarUrl   = map_pump_user_avatar_url($user['avatar_url'] ?? '', '');
 $alerts       = notif_recent($pdo, (int)$user['user_id'], 5);
 $unread_count = notif_unread_count($pdo, (int)$user['user_id']);
 $has_unread   = $unread_count > 0;
@@ -952,14 +951,14 @@ try {
          WHERE s.branch_id = :branch_id";
     $activityParams = [':branch_id' => $bid];
     if ($activityStart !== '') {
-        $activitySql += ' AND DATE(l.created_at) >= :start_date';
+        $activitySql .= ' AND DATE(l.created_at) >= :start_date';
         $activityParams[':start_date'] = $activityStart;
     }
     if ($activityEnd !== '') {
-        $activitySql += ' AND DATE(l.created_at) <= :end_date';
+        $activitySql .= ' AND DATE(l.created_at) <= :end_date';
         $activityParams[':end_date'] = $activityEnd;
     }
-    $activitySql += ' ORDER BY l.created_at DESC, l.log_id DESC';
+    $activitySql .= ' ORDER BY l.created_at DESC, l.log_id DESC';
     $activityStmt = $pdo->prepare($activitySql);
     $activityStmt->execute($activityParams);
     $activities = $activityStmt->fetchAll(PDO::FETCH_ASSOC);
@@ -996,9 +995,13 @@ try {
     background: var(--navy-950); color: var(--slate-50);
   }
   body.branch-manager-theme.light-mode {
-    --navy-950:#f3f6fb; --navy-900:#ffffff; --navy-800:#f7f9fc; --navy-700:#edf3fb; --navy-600:#e5edf8;
-    --blue-700:#286be0; --blue-500:#3c82ff; --sky-400:#3f8cf5; --amber-400:#d98400; --amber-300:#e2a72d; --mint-400:#128e6b; --red-400:#cf3d3d;
-    --slate-50:#172337; --slate-300:#3c4d68; --slate-400:#58677e; background: var(--navy-950); color: var(--slate-50);
+    --navy-950:#f1f5fa; --navy-900:#ffffff; --navy-800:#f8fafc; --navy-700:#eef3f9; --navy-600:#e4ebf4;
+    --blue-700:#2563eb; --blue-500:#3b82f6; --sky-400:#0284c7; --amber-400:#d97706; --amber-300:#a16207; --mint-400:#047857; --red-400:#dc2626;
+    --slate-50:#0f172a; --slate-200:#1e293b; --slate-300:#334155; --slate-400:#5b6b82; background: var(--navy-950); color: var(--slate-50);
+    --lm-border:rgba(15,23,42,0.09); --lm-border-strong:rgba(15,23,42,0.16); --lm-hover:rgba(15,23,42,0.045);
+    --lm-shadow:0 1px 2px rgba(15,23,42,0.04), 0 8px 20px -12px rgba(15,23,42,0.12);
+    --lm-shadow-hover:0 14px 28px -14px rgba(15,23,42,0.22);
+    color-scheme: light;
   }
   body.branch-manager-theme.light-mode .sidebar,
   body.branch-manager-theme.light-mode .topbar,
@@ -1014,7 +1017,7 @@ try {
   body.branch-manager-theme.light-mode .form-control-custom,
   body.branch-manager-theme.light-mode .staff-info-panel,
   body.branch-manager-theme.light-mode .row-action-menu {
-    background: var(--navy-900); border-color: rgba(17,24,39,0.12); color: var(--slate-50);
+    background: var(--navy-900); border-color: var(--lm-border); color: var(--slate-50);
   }
   body.branch-manager-theme.light-mode .side-link,
   body.branch-manager-theme.light-mode .topbar .date,
@@ -1023,7 +1026,7 @@ try {
   body.branch-manager-theme.light-mode .status-pill,
   body.branch-manager-theme.light-mode .row-action,
   body.branch-manager-theme.light-mode .staff-search input,
-  body.branch-manager-theme.light-mode .notif-item-body span,
+  body.branch-manager-theme.light-mode .notif-item .text span,
   body.branch-manager-theme.light-mode .form-group label {
     color: var(--slate-300);
   }
@@ -1032,6 +1035,94 @@ try {
   .staff-theme-control span { font-size: 1.05rem; }
   .staff-theme-control:focus-within span { outline: 2px solid var(--sky-400); outline-offset: 4px; border-radius: 3px; }
   body.branch-manager-theme.light-mode .staff-theme-control { color: var(--slate-400); }
+
+  /* ---------- Light mode refinements ---------- */
+  body.branch-manager-theme.light-mode .sidebar { border-right-color: var(--lm-border); }
+  body.branch-manager-theme.light-mode .sidebar .disp { color: var(--slate-50) !important; }
+  body.branch-manager-theme.light-mode .side-branch { background: var(--navy-800); }
+  body.branch-manager-theme.light-mode .side-branch:hover { background: var(--navy-700); }
+  body.branch-manager-theme.light-mode .side-link:hover { background: var(--lm-hover); color: var(--slate-50); }
+  body.branch-manager-theme.light-mode .side-logout { border-top-color: var(--lm-border); }
+  body.branch-manager-theme.light-mode .side-logout:hover { background: rgba(220,38,38,0.08); }
+  body.branch-manager-theme.light-mode .topbar { background: rgba(255,255,255,0.86); border-bottom-color: var(--lm-border); box-shadow: 0 1px 0 rgba(15,23,42,0.02); }
+  body.branch-manager-theme.light-mode .bell:hover { background: var(--navy-700); }
+  body.branch-manager-theme.light-mode .bell .ping { box-shadow: 0 0 0 2px #ffffff; }
+  body.branch-manager-theme.light-mode .avatar-circle,
+  body.branch-manager-theme.light-mode .avatar-circle a,
+  body.branch-manager-theme.light-mode .mini-avatar { color: #ffffff; }
+  body.branch-manager-theme.light-mode .avatar-chip img { border-color: var(--lm-border-strong) !important; }
+  body.branch-manager-theme.light-mode .staff-theme-control:hover { color: var(--slate-50); }
+  body.branch-manager-theme.light-mode .notif-popup { border-color: var(--lm-border-strong); box-shadow: 0 18px 40px -14px rgba(15,23,42,0.28); }
+  body.branch-manager-theme.light-mode .notif-header { border-bottom-color: var(--lm-border); }
+  body.branch-manager-theme.light-mode .notif-item:hover { background-color: var(--lm-hover); }
+  body.branch-manager-theme.light-mode .notif-item.unread { border-color: rgba(2,132,199,0.28); }
+  body.branch-manager-theme.light-mode .page-foot { border-top-color: var(--lm-border); }
+
+  body.branch-manager-theme.light-mode .side-link.active { background: rgba(217,119,6,0.10); color: var(--slate-50); box-shadow: inset 0 0 0 1px rgba(217,119,6,0.38); }
+  body.branch-manager-theme.light-mode .side-branch:hover { border-color: rgba(217,119,6,0.35); }
+  body.branch-manager-theme.light-mode .btn-primary { background: linear-gradient(135deg, #f59e0b, #d97706); color: #2b1704; box-shadow: 0 10px 22px -10px rgba(217,119,6,0.55); }
+  body.branch-manager-theme.light-mode .btn-primary:hover { box-shadow: 0 12px 26px -8px rgba(217,119,6,0.65); }
+  body.branch-manager-theme.light-mode .stat,
+  body.branch-manager-theme.light-mode .panel { box-shadow: var(--lm-shadow); }
+  body.branch-manager-theme.light-mode .stat:hover { border-color: rgba(217,119,6,0.40); box-shadow: var(--lm-shadow-hover); }
+  body.branch-manager-theme.light-mode .search { background: #ffffff; border-color: var(--lm-border-strong); }
+  body.branch-manager-theme.light-mode .search:focus-within { border-color: rgba(217,119,6,0.65); box-shadow: 0 0 0 3px rgba(217,119,6,0.15); }
+  body.branch-manager-theme.light-mode .chip { background: #ffffff; border-color: var(--lm-border-strong); }
+  body.branch-manager-theme.light-mode .chip:hover { background: #f1f5f9; color: var(--slate-50); }
+  body.branch-manager-theme.light-mode .chip.active { background: rgba(217,119,6,0.12); border-color: rgba(217,119,6,0.45); color: #92400e; }
+  body.branch-manager-theme.light-mode thead th { background: rgba(15,23,42,0.025); border-bottom-color: var(--lm-border); }
+  body.branch-manager-theme.light-mode tbody td { border-bottom-color: var(--lm-border); }
+  body.branch-manager-theme.light-mode tbody tr:hover,
+  body.branch-manager-theme.light-mode tbody tr:hover:not(:has(.table-actions-menu-wrap:hover, .row-menu-toggle:hover, .row-action-menu:hover, .row-action-menu.active)) { background: rgba(15,23,42,0.03); }
+  body.branch-manager-theme.light-mode .role-pill { background: rgba(15,23,42,0.06); color: var(--slate-300); }
+  body.branch-manager-theme.light-mode .status-pill.on { background: rgba(4,120,87,0.10); color: var(--mint-400); }
+  body.branch-manager-theme.light-mode .status-pill.off { background: rgba(91,107,130,0.14); color: var(--slate-400); }
+  body.branch-manager-theme.light-mode .status-pill.leave { background: rgba(217,119,6,0.12); color: var(--amber-300); }
+  body.branch-manager-theme.light-mode .staff-action-btn { border-color: #94a3b8; }
+  body.branch-manager-theme.light-mode .staff-action-btn.view-btn { color: var(--slate-50); border-color: #94a3b8; }
+  body.branch-manager-theme.light-mode .staff-action-btn.view-btn:hover { background: rgba(100,116,139,0.12); }
+  body.branch-manager-theme.light-mode .staff-action-btn.toggle-btn { color: #b45309; border-color: #d97706; }
+  body.branch-manager-theme.light-mode .staff-action-btn.toggle-btn:hover { background: rgba(217,119,6,0.10); }
+  body.branch-manager-theme.light-mode .staff-action-btn.toggle-btn.activate { color: #15803d; border-color: #16a34a; }
+  body.branch-manager-theme.light-mode .staff-action-btn.toggle-btn.activate:hover { background: rgba(22,163,74,0.10); }
+  body.branch-manager-theme.light-mode .staff-action-btn.delete-btn { color: #dc2626; border-color: #dc2626; }
+  body.branch-manager-theme.light-mode .staff-action-btn.delete-btn:hover { background: rgba(220,38,38,0.08); }
+  body.branch-manager-theme.light-mode .tabs { border-bottom-color: var(--lm-border-strong); }
+  body.branch-manager-theme.light-mode .activity-row { border-bottom-color: var(--lm-border); }
+  body.branch-manager-theme.light-mode .activity-row:hover { background: rgba(15,23,42,0.02); }
+  body.branch-manager-theme.light-mode .activity-scroll,
+  body.branch-manager-theme.light-mode .logs-modal-box { border-color: var(--lm-border-strong); }
+  body.branch-manager-theme.light-mode #tab-activity .staff-activity-log,
+  body.branch-manager-theme.light-mode .logs-modal-row { border-bottom-color: var(--lm-border); }
+  body.branch-manager-theme.light-mode .logs-modal-filters input[type="date"] { background: #ffffff; border-color: var(--lm-border-strong); color: var(--slate-50); color-scheme: light; }
+  body.branch-manager-theme.light-mode .modal-overlay { background: rgba(15,23,42,0.45); }
+  body.branch-manager-theme.light-mode .modal-card-custom { border-color: var(--lm-border-strong); box-shadow: 0 24px 60px -20px rgba(15,23,42,0.35); }
+  body.branch-manager-theme.light-mode .delete-modal-card { border-color: rgba(220,38,38,0.35); }
+  body.branch-manager-theme.light-mode .delete-target { color: var(--slate-50); background: rgba(217,119,6,0.10); border-color: rgba(217,119,6,0.45); }
+  body.branch-manager-theme.light-mode .delete-account-details { color: var(--slate-300); }
+  body.branch-manager-theme.light-mode .form-control-custom { background: var(--navy-800); border-color: var(--lm-border-strong); }
+  body.branch-manager-theme.light-mode .btn-secondary-custom { border-color: var(--lm-border-strong); }
+  body.branch-manager-theme.light-mode .btn-secondary-custom:hover { background: var(--lm-hover); color: var(--slate-50); }
+  body.branch-manager-theme.light-mode .row-menu-toggle { background: #ffffff; border-color: var(--lm-border-strong); color: var(--slate-300); box-shadow: none; }
+  body.branch-manager-theme.light-mode .row-menu-toggle:hover,
+  body.branch-manager-theme.light-mode .row-menu-toggle:focus-visible { background: #f1f5f9; border-color: rgba(15,23,42,0.28); box-shadow: none; }
+  body.branch-manager-theme.light-mode .row-action-menu { border-color: var(--lm-border-strong); box-shadow: 0 14px 32px -10px rgba(15,23,42,0.28); }
+  body.branch-manager-theme.light-mode .row-action:hover,
+  body.branch-manager-theme.light-mode .row-action:focus-visible { background: rgba(15,23,42,0.05) !important; }
+  body.branch-manager-theme.light-mode .row-action.status-toggle[data-action="activate"]:hover,
+  body.branch-manager-theme.light-mode .row-action.status-toggle[data-action="activate"]:focus-visible { color: #047857 !important; background: rgba(4,120,87,0.08) !important; }
+  body.branch-manager-theme.light-mode .row-action.delete-action:hover,
+  body.branch-manager-theme.light-mode .row-action.delete-action:focus-visible,
+  body.branch-manager-theme.light-mode .row-action.danger:hover,
+  body.branch-manager-theme.light-mode .row-action.danger:focus-visible { color: #b91c1c !important; background: rgba(220,38,38,0.08) !important; }
+  body.branch-manager-theme.light-mode .notif-item .icon { background: rgba(15,23,42,0.06); }
+  body.branch-manager-theme.light-mode .notif-item.warning .icon { background: rgba(217,119,6,0.14); }
+  body.branch-manager-theme.light-mode .notif-item.error .icon,
+  body.branch-manager-theme.light-mode .notif-item.err .icon { background: rgba(220,38,38,0.10); }
+  body.branch-manager-theme.light-mode .notif-item.success .icon,
+  body.branch-manager-theme.light-mode .notif-item.ok .icon { background: rgba(4,120,87,0.10); }
+  body.branch-manager-theme.light-mode .notif-item.info .icon,
+  body.branch-manager-theme.light-mode .notif-item[data-kind="info"] .icon { background: rgba(2,132,199,0.10); }
   *{box-sizing:border-box; margin:0; padding:0;}
   body{background:var(--navy-950); color:var(--slate-50); font-family:'Inter','Space Grotesk',sans-serif; overflow-x:hidden;}
   .disp{font-family:'Space Grotesk','Noto Sans Myanmar',sans-serif;}
@@ -1114,7 +1205,7 @@ try {
     background: var(--navy-700);
     transform: scale(1.05);
   }
-  .bell .ping{position:absolute; top:6px; right:7px; width:7px; height:7px; border-radius:50%; background:var(--amber-400); box-shadow:0 0 0 2px var(--navy-800);}
+  .bell .ping{position:absolute; top:4px; right:4px; width:10px; height:10px; border-radius:50%; background:#ef4444; box-shadow:0 0 0 2px var(--navy-800);}
   
   .avatar-chip{display:flex; align-items:center; gap:10px; font-size:13px; cursor: pointer; padding: 4px 8px; border-radius: 99px; transition: background 0.2s;}
   .avatar-chip:hover{background: rgba(255,255,255,0.05);}
@@ -1127,52 +1218,55 @@ try {
     right: 60px;
     width: 320px;
     max-height: 420px;
-    overflow-y: auto;
+    overflow: hidden;
     background: var(--navy-800);
     border: 1px solid rgba(255, 255, 255, 0.12);
     border-radius: 14px;
     box-shadow: 0 16px 32px rgba(0, 0, 0, 0.4);
-    padding: 14px 12px;
+    padding: 12px;
     z-index: 100;
     display: none;
     animation: fadeInDown 0.25s cubic-bezier(0.16, 1, 0.3, 1);
   }
   .notif-popup.show,
   .notif-popup.active { display: block; opacity: 1; pointer-events: auto; transform: translateY(0); }
-  .notif-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-    padding-bottom: 10px;
-    margin-bottom: 10px;
-  }
-  .notif-header h4 { font-size: 14px; font-weight: 700; margin: 0; }
+  .notif-header { display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom:10px; margin-bottom:10px; }
+  .notif-header h4 { font-size: 14px; font-weight:700; margin:0; }
   .notif-header button { background: transparent; border: none; color: var(--sky-400); font-size: 11px; cursor: pointer; }
-  .notif-list { max-height: 260px; overflow-y: auto; }
+  .notif-list {
+    max-height: 330px;
+    overflow-y: auto;
+    overflow-x: auto;
+    padding-right: 4px;
+    scrollbar-width: thin;
+    overflow-x: auto;
+    padding-right: 4px;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(56,189,248,0.35) transparent;
+  }
+  .notif-list::-webkit-scrollbar { width: 8px; height: 8px; }
+  .notif-list::-webkit-scrollbar-track { background: transparent; }
+  .notif-list::-webkit-scrollbar-thumb { background: rgba(56,189,248,0.35); border-radius: 999px; }
+  .notif-list::-webkit-scrollbar-thumb:hover { background: rgba(56,189,248,0.55); }
   .notif-item {
-    padding: 9px 8px;
-    border-radius: 10px;
-    display: flex;
-    gap: 10px;
-    align-items: flex-start;
-    transition: background-color 0.2s;
-    border: 1px solid transparent;
-    cursor: pointer;
+    padding: 10px 8px; border-radius: 10px; display: flex; gap: 10px; align-items: flex-start; transition: background-color 0.2s; border: 1px solid transparent; cursor: pointer;
   }
   .notif-item:hover { background-color: rgba(255,255,255,0.04); }
-  .notif-item .icon {
-    width: 32px; height: 32px; border-radius: 10px; display:flex; align-items:center; justify-content:center; font-size:12px; flex-shrink:0;
-    background: rgba(148,163,184,0.12); color: var(--slate-200);
-  }
   .notif-item.unread { border-color: rgba(56,189,248,0.2); }
-  .notif-item.warning .icon { background: rgba(251,191,36,0.16); color: var(--amber-300); }
-  .notif-item.error .icon, .notif-item.err .icon { background: rgba(248,113,113,0.16); color: var(--red-400); }
-  .notif-item.success .icon, .notif-item.ok .icon { background: rgba(52,211,153,0.14); color: var(--mint-400); }
-  .notif-item.info .icon, .notif-item[data-kind="info"] .icon { background: rgba(56,189,248,0.14); color: var(--sky-400); }
+  .notif-item-warning .icon,
+  .notif-item.error .icon,
+  .notif-item.warn .icon,
+  .notif-item .icon {
+    display: none;
+  }
+  .notif-item .text {
+    min-width: 0;
+    flex: 1;
+  }
   .notif-item .text b { display:block; font-size:12.5px; color:var(--slate-50); margin-bottom:2px; }
-  .notif-item .text span { color:var(--slate-400); font-size:11.5px; display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  .notif-item .time { font-size:10px; color:var(--slate-400); margin-top:4px; }
+  .notif-item .text span { color:var(--slate-400); font-size:11.5px; display:block; white-space:normal; line-height:1.5; }
+  .notif-item .text .time { font-size:10px; color:var(--slate-400); margin-top:4px; }
+  .notif-empty { text-align:center; padding:12px 0; color:var(--slate-400); font-size:12px; }
   @keyframes fadeInDown { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
 
   .content{
@@ -1314,11 +1408,21 @@ try {
     white-space:nowrap;
     overflow:visible;
   }
+  #staff-directory-table thead th:nth-child(1),
+  #staff-directory-table tbody td:nth-child(1){width:20%;}
+  #staff-directory-table thead th:nth-child(2),
+  #staff-directory-table tbody td:nth-child(2){width:22%;}
+  #staff-directory-table thead th:nth-child(3),
+  #staff-directory-table tbody td:nth-child(3){width:14%;}
+  #staff-directory-table thead th:nth-child(4),
+  #staff-directory-table tbody td:nth-child(4){width:14%;}
+  #staff-directory-table thead th:nth-child(5),
+  #staff-directory-table tbody td:nth-child(5){width:30%;}
   .staff-actions-wrap{
     display:flex;
     align-items:center;
     justify-content:center;
-    gap:5px;
+    gap:10px;
     white-space:nowrap;
   }
   .staff-action-btn{
@@ -1328,11 +1432,12 @@ try {
     display:inline-flex;
     align-items:center;
     justify-content:center;
-    border-radius:8px;
+    border-radius:10px;
     cursor:pointer;
-    padding:5px 8px;
-    font-size:12px;
-    font-weight:600;
+    height:34px;
+    padding:0 14px;
+    font-size:13px;
+    font-weight:700;
     line-height:1.2;
     transition:background-color 0.15s ease;
   }
@@ -1345,7 +1450,7 @@ try {
   .staff-action-btn.toggle-btn { color: #ea580c; border-color: #d97706; }
   .staff-action-btn.toggle-btn:hover { background: rgba(217,119,6,0.14); }
   .staff-action-btn.toggle-btn.activate { color: #22c55e; border-color: #16a34a; }
-  .staff-action-btn.toggle-btn.activate:hover { background: rgba(22,163,74,0.14); }
+  .staff-action-btn.toggle-btn.activate:hover { background: rgba(22,255,255,0.14); }
   .staff-action-btn.delete-btn { color: var(--red-400); border-color: #dc2626; }
   .staff-action-btn.delete-btn:hover { background: rgba(220,38,38,0.14); }
   .staff-action-btn:active,
@@ -1449,6 +1554,48 @@ try {
   #tab-activity .logs-modal-filters{margin:0; margin-left:auto;}
   #tab-activity .staff-activity-log{font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; font-size:13px; line-height:1.5; color:var(--slate-50); padding:12px 0; border-bottom:1px solid rgba(255,255,255,0.08); overflow-wrap:anywhere;}
   #tab-activity .staff-activity-log:last-child{border-bottom:none;}
+
+  /* ---------- View Staff Report tab ---------- */
+  #tab-reports > .panel{padding:24px;}
+  #tab-reports .staff-report-heading h3{margin:0 0 10px; font-size:16px; font-weight:700; line-height:1.4; color:var(--slate-50);}
+  #tab-reports .staff-report-heading p{margin:0 0 20px; font-size:13px; line-height:1.6; color:var(--slate-300);}
+  .report-table-scroll{overflow-x:auto; overflow-y:hidden; scrollbar-width:thin; scrollbar-color:rgba(148,163,184,0.45) transparent;}
+  .report-table-scroll.has-scroll{overflow-y:auto;}
+  .report-table-scroll::-webkit-scrollbar{width:8px; height:8px;}
+  .report-table-scroll::-webkit-scrollbar-track{background:transparent;}
+  .report-table-scroll::-webkit-scrollbar-thumb{background:rgba(148,163,184,0.38); border-radius:999px; border:2px solid transparent; background-clip:content-box;}
+  .report-table-scroll::-webkit-scrollbar-thumb:hover{background:rgba(148,163,184,0.62);}
+  #staff-report-table{table-layout:fixed; min-width:760px;}
+  #staff-report-table thead th{padding:10px 12px; position:sticky; top:0; z-index:2; background:var(--navy-800);}
+  #staff-report-table tbody td{padding:10px 12px; font-size:13px; vertical-align:middle;}
+  #staff-report-table thead th:nth-child(1), #staff-report-table tbody td:nth-child(1){width:15%; overflow-wrap:anywhere;}
+  #staff-report-table thead th:nth-child(2), #staff-report-table tbody td:nth-child(2){width:11%;}
+  #staff-report-table thead th:nth-child(3), #staff-report-table tbody td:nth-child(3){width:10%;}
+  #staff-report-table tbody td:nth-child(3){text-transform:capitalize;}
+  #staff-report-table thead th:nth-child(4), #staff-report-table tbody td:nth-child(4){width:22%;}
+  #staff-report-table thead th:nth-child(5), #staff-report-table tbody td:nth-child(5){width:10%;}
+  #staff-report-table thead th:last-child, #staff-report-table tbody td:last-child{width:32%; min-width:0; max-width:none; padding-left:12px; padding-right:12px; text-align:left; white-space:normal;}
+  #staff-report-table thead th, #staff-report-table thead th:last-child{text-align:center;}
+  .report-date{display:block; line-height:1.35; white-space:nowrap;}
+  .report-time{display:block; line-height:1.35; font-size:11.5px; color:var(--slate-400); white-space:nowrap;}
+  .report-summary{display:-webkit-box; -webkit-line-clamp:2; line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; overflow-wrap:anywhere; line-height:1.4;}
+  #staff-report-table .staff-actions-wrap{justify-content:flex-start; flex-wrap:wrap; gap:6px;}
+  #staff-report-table .staff-action-btn{height:30px; padding:0 10px; font-size:12px; border-radius:8px;}
+  .report-pill{font-size:11px; font-weight:700; padding:4px 12px; border-radius:999px; display:inline-flex; align-items:center; transition:all 0.3s;}
+  .report-pill.read{background:rgba(52,211,153,0.16); color:var(--mint-400);}
+  .report-pill.unread{background:rgba(248,113,113,0.16); color:var(--red-400);}
+  .sr-toggle-btn{min-width:112px; color:var(--slate-300); border-color:#64748b;}
+  .sr-toggle-btn:hover{background:rgba(100,116,139,0.18);}
+  .report-empty-row td{text-align:center; color:var(--slate-400); padding:22px;}
+  .report-detail-card{position:relative; max-width:560px;}
+  .report-detail-row{margin-bottom:16px;}
+  .report-detail-row .lbl{display:block; font-size:12px; color:var(--slate-400); margin-bottom:4px; font-weight:500;}
+  .report-detail-row .val{font-size:14px; color:var(--slate-50); line-height:1.6; overflow-wrap:anywhere;}
+  .report-detail-desc{white-space:pre-wrap; background:var(--navy-950); border:1px solid rgba(255,255,255,0.08); border-radius:10px; padding:12px 14px; max-height:240px; overflow-y:auto;}
+  body.branch-manager-theme.light-mode .report-pill.read{background:rgba(4,120,87,0.10); color:var(--mint-400);}
+  body.branch-manager-theme.light-mode .report-pill.unread{background:rgba(220,38,38,0.10); color:var(--red-400);}
+  body.branch-manager-theme.light-mode .sr-toggle-btn{color:var(--slate-50); border-color:#94a3b8;}
+  body.branch-manager-theme.light-mode .report-detail-desc{border-color:var(--lm-border-strong);}
 
   /* ---------- Staff Logs Modal ---------- */
   .modal-card-custom.logs-modal-card{position:relative; max-width:900px; width:calc(100% - 32px); padding:26px;}
@@ -1706,7 +1853,6 @@ try {
         <div class="notif-popup" id="notif-popup">
           <div class="notif-header">
             <h4>Notifications</h4>
-            <button id="clear-notifs-btn" type="button">Clear All</button>
           </div>
           <div class="notif-list" id="notif-list">
             <?php if (!$alerts): ?>
@@ -1731,8 +1877,12 @@ try {
         </label>
 
         <div class="avatar-chip">
-          <div class="avatar-circle"><a href="edit-profile.php"><?= h(mb_substr($initials,0,1)) ?></a></div>
-          <div><b><a href="edit-profile.php"><?= h(explode(' ', $user['full_name'])[0]) ?></a></b></div>
+          <?php if ($managerAvatarUrl !== ''): ?>
+            <img src="<?= h($managerAvatarUrl) ?>" alt="Profile Picture" style="width:36px;height:36px;border-radius:50%;object-fit:cover;border:1px solid rgba(255,255,255,0.12);">
+          <?php else: ?>
+            <div class="avatar-circle"><a href="edit-profile.php"><?= h(mb_substr($initials,0,1)) ?></a></div>
+          <?php endif; ?>
+          <div><b><a href="edit-profile.php"><?= h($managerDisplayName) ?></a></b></div>
         </div>
       </div>
     </div>
@@ -1755,6 +1905,7 @@ try {
       <div class="tabs">
         <button class="tab-btn active" id="tabbtn-manage" onclick="showTab('manage')">Manage Staff Accounts</button>
         <button class="tab-btn" id="tabbtn-activity" onclick="showTab('activity')">View Staff Activity</button>
+        <button class="tab-btn" id="tabbtn-reports" onclick="showTab('reports')">View Staff Report</button>
       </div>
 
       <!-- TAB 1: MANAGE STAFF ACCOUNTS -->
@@ -1844,7 +1995,58 @@ try {
         </div>
       </div>
 
-      <div class="page-foot">Â© 2026 MAP & PUMP | All Rights Reserved</div>
+      <!-- TAB 3: VIEW STAFF REPORT -->
+      <div class="tab-panel" id="tab-reports">
+        <div class="panel">
+          <div class="staff-report-heading">
+            <h3>Staff Reports</h3>
+            <p>Review reports submitted by your staff members.</p>
+          </div>
+          <div class="report-table-scroll" id="report-table-scroll">
+            <table id="staff-report-table">
+              <thead><tr><th>User</th><th>Date</th><th>Importance</th><th>Short Summary</th><th>Status</th><th>Action</th></tr></thead>
+              <tbody>
+                <?php
+                /* PREVIEW DATA ONLY - replace with the real staff reports query. */
+                $staffReports = [
+                  ['id'=>1,'user'=>'Aung Ko Latt','date'=>'2026-11-11 13:51:49','importance'=>'high','summary'=>'Pump 3 nozzle leaking','description'=>"Pump 3 nozzle has been leaking since the morning shift.\nPlease send a technician before the evening rush.",'is_read'=>0],
+                  ['id'=>2,'user'=>'Su Su Hlaing','date'=>'2026-11-11 06:58:25','importance'=>'medium','summary'=>'Cash drawer short by 5,000 MMK','description'=>'Cash drawer was short by 5,000 MMK at the end of the night shift. Receipts were rechecked twice.','is_read'=>0],
+                  ['id'=>3,'user'=>'Min Thu','date'=>'2026-11-10 21:12:03','importance'=>'low','summary'=>'Restroom supplies running low','description'=>'Soap and tissue stock is running low. Needs a refill by the weekend.','is_read'=>1],
+                  ['id'=>4,'user'=>'Aung Ko Latt','date'=>'2026-11-10 09:30:41','importance'=>'medium','summary'=>'Delivery truck arrived 2 hours late','description'=>'The fuel delivery truck arrived two hours late. Pumps 1 and 2 were offline for about 40 minutes.','is_read'=>1],
+                  ['id'=>5,'user'=>'Su Su Hlaing','date'=>'2026-11-09 18:05:12','importance'=>'high','summary'=>'Customer complaint about fuel quality on pump 2 that needs a follow up with the supplier this week','description'=>'A customer complained about fuel quality from pump 2. Please follow up with the supplier.','is_read'=>0],
+                  ['id'=>6,'user'=>'Min Thu','date'=>'2026-11-09 08:44:30','importance'=>'low','summary'=>'Broken light at entrance','description'=>'The entrance light is broken.','is_read'=>1],
+                  ['id'=>7,'user'=>'Aung Ko Latt','date'=>'2026-11-08 20:15:00','importance'=>'medium','summary'=>'POS printer paper jam','description'=>'The POS printer jams often.','is_read'=>0],
+                  ['id'=>8,'user'=>'Su Su Hlaing','date'=>'2026-11-08 07:20:09','importance'=>'low','summary'=>'Uniform request','description'=>'Requesting two new uniforms.','is_read'=>1],
+                  ['id'=>9,'user'=>'Min Thu','date'=>'2026-11-07 15:02:44','importance'=>'medium','summary'=>'Tank 2 level sensor reading wrong','description'=>'Tank 2 sensor shows a lower level than the dipstick.','is_read'=>0],
+                ];
+                foreach ($staffReports as $r):
+                  $rRead = (int)$r['is_read'] === 1;
+                ?>
+                <tr data-report-id="<?= (int)$r['id'] ?>" data-read="<?= $rRead ? '1' : '0' ?>" data-user="<?= h($r['user']) ?>" data-summary="<?= h($r['summary']) ?>" data-description="<?= h($r['description']) ?>">
+                  <td><?= h($r['user']) ?></td>
+                  <td><?php $rTs = strtotime((string)$r['date']); ?><span class="report-date"><?= h($rTs ? date('Y-m-d', $rTs) : $r['date']) ?></span><?php if ($rTs): ?><span class="report-time"><?= h(date('H:i:s', $rTs)) ?></span><?php endif; ?></td>
+                  <td><?= h($r['importance']) ?></td>
+                  <td title="<?= h($r['summary']) ?>"><span class="report-summary"><?= h($r['summary']) ?></span></td>
+                  <td><span class="report-pill <?= $rRead ? 'read' : 'unread' ?>"><?= $rRead ? 'Read' : 'Unread' ?></span></td>
+                  <td>
+                    <div class="staff-actions-wrap">
+                      <button type="button" class="staff-action-btn sr-toggle-btn report-toggle-btn"><?= $rRead ? 'Mark As Unread' : 'Mark As Read' ?></button>
+                      <button type="button" class="staff-action-btn view-btn report-details-btn">See Details</button>
+                      <button type="button" class="staff-action-btn delete-btn report-delete-btn">Delete</button>
+                    </div>
+                  </td>
+                </tr>
+                <?php endforeach; ?>
+                <?php if (!$staffReports): ?>
+                  <tr class="report-empty-row"><td colspan="6">No staff reports yet.</td></tr>
+                <?php endif; ?>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="page-foot">&copy; 2026 MAP & PUMP | All Rights Reserved</div>
     </div>
   </div>
 </div>
@@ -1960,6 +2162,36 @@ try {
   </div>
 </div>
 
+<!-- ---------- Report Details Modal ---------- -->
+<div class="modal-overlay" id="report-detail-modal">
+  <div class="modal-card-custom report-detail-card" role="dialog" aria-modal="true" aria-labelledby="report-detail-title">
+    <div class="modal-header-custom">
+      <h3 id="report-detail-title">Report Details</h3>
+      <button type="button" class="modal-close" id="report-detail-close" aria-label="Close">&times;</button>
+    </div>
+    <div class="report-detail-row"><span class="lbl">User</span><div class="val" id="report-detail-user"></div></div>
+    <div class="report-detail-row"><span class="lbl">Summary</span><div class="val" id="report-detail-summary"></div></div>
+    <div class="report-detail-row"><span class="lbl">Status</span><div class="val" id="report-detail-status"></div></div>
+    <div class="report-detail-row" style="margin-bottom:0;"><span class="lbl">Description</span><div class="val report-detail-desc" id="report-detail-desc"></div></div>
+  </div>
+</div>
+
+<!-- ---------- Report Delete Confirmation Modal ---------- -->
+<div class="modal-overlay" id="report-delete-modal">
+  <div class="modal-card-custom delete-modal-card" role="dialog" aria-modal="true">
+    <div class="delete-modal-icon"><i class="fa-solid fa-triangle-exclamation"></i></div>
+    <h3 class="delete-modal-title">Delete Report?</h3>
+    <div class="delete-modal-message"><p>This report will be permanently deleted. This action cannot be undone.</p></div>
+    <div class="modal-actions">
+      <button type="button" class="btn-secondary-custom" id="report-delete-cancel">Cancel</button>
+      <button type="button" id="report-delete-confirm"
+        style="background:linear-gradient(135deg,#f87171,#b91c1c); color:#fff; font-weight:700; font-size:13px; padding:10px 18px; border-radius:10px; border:none; cursor:pointer;">
+        Delete Report
+      </button>
+    </div>
+  </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script>
   // Tab Switching Controller
@@ -1970,6 +2202,76 @@ try {
     document.getElementById('tabbtn-' + name).classList.add('active');
   }
 
+
+  // View Staff Report tab controller (self-contained)
+  (function(){
+    const table = document.getElementById('staff-report-table');
+    if (!table) return;
+    const detailModal = document.getElementById('report-detail-modal');
+    const deleteModal = document.getElementById('report-delete-modal');
+    let pendingRow = null;
+
+    function setRead(row, isRead){
+      row.dataset.read = isRead ? '1' : '0';
+      const pill = row.querySelector('.report-pill');
+      pill.className = 'report-pill ' + (isRead ? 'read' : 'unread');
+      pill.textContent = isRead ? 'Read' : 'Unread';
+      row.querySelector('.report-toggle-btn').textContent = isRead ? 'Mark As Unread' : 'Mark As Read';
+    }
+    function openDetails(row){
+      const isRead = row.dataset.read === '1';
+      document.getElementById('report-detail-user').textContent = row.dataset.user;
+      document.getElementById('report-detail-summary').textContent = row.dataset.summary;
+      document.getElementById('report-detail-desc').textContent = row.dataset.description;
+      document.getElementById('report-detail-status').innerHTML =
+        '<span class="report-pill ' + (isRead ? 'read' : 'unread') + '">' + (isRead ? 'Read' : 'Unread') + '</span>';
+      detailModal.classList.add('active');
+    }
+    function closeDetails(){ detailModal.classList.remove('active'); }
+    function closeDelete(){ deleteModal.classList.remove('active'); pendingRow = null; }
+
+    table.addEventListener('click', function(e){
+      const row = e.target.closest('tbody tr[data-report-id]');
+      if (!row) return;
+      if (e.target.closest('.report-toggle-btn')) { setRead(row, row.dataset.read !== '1'); return; }
+      if (e.target.closest('.report-details-btn')) { openDetails(row); return; }
+      if (e.target.closest('.report-delete-btn')) { pendingRow = row; deleteModal.classList.add('active'); }
+    });
+    // Scroll after 7 rows: cap the box at header + first 7 rows' height.
+    const scrollBox = document.getElementById('report-table-scroll');
+    const MAX_ROWS = 7;
+    function fitReportScroll(){
+      const rows = table.querySelectorAll('tbody tr[data-report-id]');
+      scrollBox.style.maxHeight = '';
+      scrollBox.classList.remove('has-scroll');
+      if (rows.length <= MAX_ROWS || !scrollBox.offsetParent) return;
+      let h = table.tHead.offsetHeight;
+      for (let i = 0; i < MAX_ROWS; i++) h += rows[i].offsetHeight;
+      scrollBox.style.maxHeight = (h + 1) + 'px';
+      scrollBox.classList.add('has-scroll');
+    }
+    new MutationObserver(fitReportScroll).observe(document.getElementById('tab-reports'), {attributes:true, attributeFilter:['class']});
+    window.addEventListener('resize', fitReportScroll);
+    fitReportScroll();
+
+    document.getElementById('report-detail-close').addEventListener('click', closeDetails);
+    detailModal.addEventListener('click', (e) => { if (e.target === detailModal) closeDetails(); });
+    document.getElementById('report-delete-cancel').addEventListener('click', closeDelete);
+    deleteModal.addEventListener('click', (e) => { if (e.target === deleteModal) closeDelete(); });
+    document.getElementById('report-delete-confirm').addEventListener('click', function(){
+      if (pendingRow) pendingRow.remove();
+      closeDelete();
+      fitReportScroll();
+      if (!table.querySelector('tbody tr[data-report-id]')) {
+        table.querySelector('tbody').innerHTML = '<tr class="report-empty-row"><td colspan="6">No staff reports yet.</td></tr>';
+      }
+    });
+    document.addEventListener('keydown', function(e){
+      if (e.key !== 'Escape') return;
+      closeDetails(); closeDelete();
+    });
+  })();
+
   document.addEventListener('DOMContentLoaded', () => {
     
     // 1. Digital Clock Component
@@ -1978,7 +2280,7 @@ try {
       const options = { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' };
       const dateString = now.toLocaleDateString('en-US', options);
       const timeString = now.toLocaleTimeString('en-US', { hour12: true, hour: '2-digit', minute: '2-digit', second: '2-digit' });
-      document.getElementById('live-clock').textContent = `${dateString} Â· ${timeString}`;
+      document.getElementById('live-clock').textContent = `${dateString} · ${timeString}`;
     }
     setInterval(updateClock, 1000);
     updateClock();
@@ -1987,7 +2289,6 @@ try {
     const bellBtn = document.getElementById('notif-bell');
     const notifPopup = document.getElementById('notif-popup');
     const notifPing = document.getElementById('notif-ping');
-    const clearNotifsBtn = document.getElementById('clear-notifs-btn');
     const notifList = document.getElementById('notif-list');
 
     function postDismiss(payload) {
@@ -1998,30 +2299,34 @@ try {
       }).then(r => r.json()).catch(() => ({ ok: false }));
     }
 
-    function renderNotifEmpty() {
-      if (!notifList) return;
-      notifList.innerHTML = '<div class="notif-empty" style="text-align:center; padding:12px 0; color:var(--slate-400); font-size:12px;">No new notifications</div>';
-      if (notifPing) notifPing.remove();
+    if (bellBtn && notifPopup) {
+      bellBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const ping = bellBtn.querySelector('.ping');
+        if (ping) {
+          ping.style.transform = 'scale(0)';
+          setTimeout(() => ping.remove(), 180);
+        }
+        notifPopup.classList.toggle('show');
+      });
+
+      document.addEventListener('click', (e) => {
+        const clickedBell = bellBtn.contains(e.target);
+        const clickedPopup = notifPopup.contains(e.target);
+        if (!clickedBell && !clickedPopup) {
+          notifPopup.classList.remove('show');
+        }
+      });
     }
-
-    bellBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      notifPopup.classList.toggle('active');
-      if (notifPing) notifPing.style.opacity = '0';
-    });
-
-    document.addEventListener('click', (e) => {
-      if (!notifPopup.contains(e.target) && !bellBtn.contains(e.target)) {
-        notifPopup.classList.remove('active');
-      }
-    });
 
     if (notifList) {
       notifList.addEventListener('click', (e) => {
         const item = e.target.closest('.notif-item');
         if (!item) return;
+
         const id = Number(item.dataset.notifId || 0);
-        const link = item.dataset.link || '';
+        const link = item.dataset.link || 'dashboard.php';
+
         if (id > 0) {
           postDismiss({ notif_id: id }).then((res) => {
             if (res.ok && notifPing && Number(res.unread || 0) <= 0) {
@@ -2029,15 +2334,10 @@ try {
             }
           });
         }
-        if (link) window.location.href = link;
-      });
-    }
 
-    if (clearNotifsBtn) {
-      clearNotifsBtn.addEventListener('click', () => {
-        postDismiss({ all: true }).then((res) => {
-          if (res.ok) renderNotifEmpty();
-        });
+        if (link) {
+          window.location.href = link;
+        }
       });
     }
 
@@ -2692,12 +2992,10 @@ try {
 
     function applyTheme(isLight) {
       root.classList.toggle('light-mode', isLight);
-      if (toggle) toggle.checked = isLight;
-      if (icon) {
-        icon.className = isLight ? 'fa-solid fa-moon' : 'fa-solid fa-sun';
+      if (toggle) {
+        const control = document.querySelector('.staff-theme-control');
+        if (control) control.title = isLight ? 'Toggle dark mode' : 'Toggle light mode';
       }
-      const control = document.querySelector('.staff-theme-control');
-      if (control) control.title = isLight ? 'Toggle dark mode' : 'Toggle light mode';
       localStorage.setItem('map_pump_branch_manager_theme', isLight ? 'light' : 'dark');
     }
 
@@ -2707,9 +3005,9 @@ try {
     if (toggle) {
       toggle.addEventListener('change', function () {
         applyTheme(this.checked);
-      });
+           });
     }
   })();
 </script>
 </body>
-</html>
+</html><div><b><a href="edit-profile.php"><?= h(explode(' ', $managerDisplayName)[0]) ?></a></b></div>
