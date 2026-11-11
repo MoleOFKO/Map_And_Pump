@@ -214,7 +214,8 @@ function hq_registry_schema_ready(): bool
         'roles' => ['role_id', 'role_name'],
         'headquarter' => [
             'headquarter_id', 'company_name', 'company_logo', 'contact_number',
-            'headquarter_email', 'location', 'business_license', 'status', 'created_at', 'expire_at',
+            'headquarter_email', 'location', 'business_license', 'business_license_expire_date',
+            'status', 'created_at', 'expire_at',
         ],
         // HQ ownership now lives in business_account_scope; the redundant
         // users.headquarter_id column was removed by the 2026-11-04 migration.

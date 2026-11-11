@@ -31,6 +31,7 @@ try {
         'SELECT h.headquarter_id, h.company_name, h.location, h.contact_number,
                 h.headquarter_email, h.company_logo, h.business_license,
                 h.created_at, h.expire_at,
+                COALESCE(NULLIF(h.business_license_expire_date, \'\'), DATE(h.expire_at)) AS license_expiry_date,
                 owner.user_name AS owner_name, owner.email AS owner_email
          FROM headquarter h
          LEFT JOIN (
@@ -188,6 +189,7 @@ try {
             'business_license' => $hq['business_license'],
             'created_at' => $hq['created_at'],
             'expire_at' => $hq['expire_at'],
+            'license_expiry_date' => $hq['license_expiry_date'],
             'owner_name' => $hq['owner_name'],
             'owner_email' => $hq['owner_email'],
         ],
