@@ -98,18 +98,27 @@ $actionVerb = match ($actionType) {
 try {
     $conn->begin_transaction();
 
-    // Update HQ-role accounts under this HQ across all role slots used by the app.
+    // HQ ownership is stored in business_account_scope / headquarters_owner_id.
     $statusUpdate = $conn->prepare(
-        'UPDATE users
+        'UPDATE users AS u
          SET status = ?, updated_at = NOW()
-         WHERE headquarter_id = ?
-           AND (role_id = ? OR business_role_id = ? OR current_role_id = ?)'
+         WHERE (
+             EXISTS (
+                 SELECT 1 FROM business_account_scope bas
+                 WHERE bas.user_id = u.user_id AND bas.headquarter_id = ?
+             )
+             OR EXISTS (
+                 SELECT 1 FROM headquarter h
+                 WHERE h.headquarters_owner_id = u.user_id AND h.headquarter_id = ?
+             )
+         )
+           AND (u.role_id = ? OR u.business_role_id = ? OR u.current_role_id = ?)'
     );
     if (!$statusUpdate) {
         throw new RuntimeException('Could not prepare the company status update: ' . $conn->error);
     }
 
-    $statusUpdate->bind_param('siiii', $newStatus, $headquarterId, $hqRoleId, $hqRoleId, $hqRoleId);
+    $statusUpdate->bind_param('siiiii', $newStatus, $headquarterId, $headquarterId, $hqRoleId, $hqRoleId, $hqRoleId);
     if (!$statusUpdate->execute()) {
         throw new RuntimeException('Could not update the company account status: ' . $statusUpdate->error);
     }
@@ -174,7 +183,9 @@ try {
         $actionInsert->close();
     }
 
-    $conn->commit();
+    if (!$conn->commit()) {
+        throw new RuntimeException('The company action transaction could not be committed.');
+    }
 
     try {
         $notification = !empty($target['email'])
@@ -235,7 +246,7 @@ try {
 } catch (Throwable $exception) {
     $conn->rollback();
     error_log('[HQ registry] Account action failed: ' . $exception->getMessage());
-    hq_flash('danger', 'The company action could not be completed. The account status was not changed.');
+    hq_flash('danger', 'The company action could not be completed: ' . $exception->getMessage());
 }
 
 hq_redirect('view_hq_and_user_account.php');
