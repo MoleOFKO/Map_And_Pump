@@ -1931,15 +1931,15 @@ try {
                   $staff_contact = trim((string) ($s['phone_number'] ?? ''));
                   $on = (int)$s['is_active'] === 1;
                 ?>
-                <tr data-id="<?= (int)$s['staff_id'] ?>">
+                <tr data-id="<?= (int)$s['staff_id'] ?>" data-name="<?= h((string) ($s['full_name'] ?? '')) ?>" data-email="<?= h($staff_email) ?>" data-contact="<?= h($staff_contact) ?>" data-search="<?= h(strtolower(trim((string) ($s['full_name'] ?? '') . ' ' . $staff_email . ' ' . (string) ($s['staff_code'] ?? '')))) ?>">
                   <td>
                     <div class="staff-name">
                       <div class="mini-avatar"><?= h(initials($s['full_name'])) ?></div>
-                      <div><b><?= h($s['full_name']) ?></b><span>ID: <?= h($s['staff_code']) ?></span></div>
+                      <div><b><?= h(privacy_mask_name((string) $s['full_name'])) ?></b><span>ID: <?= h($s['staff_code']) ?></span></div>
                     </div>
                   </td>
-                  <td><?= $staff_email !== '' ? h($staff_email) : '<span style="color:var(--slate-400);">—</span>' ?></td>
-                  <td><?= $staff_contact !== '' ? h($staff_contact) : ' - ' ?></td>
+                  <td><?= $staff_email !== '' ? h(privacy_mask_email($staff_email)) : '<span style="color:var(--slate-400);">—</span>' ?></td>
+                  <td><?= $staff_contact !== '' ? h(privacy_mask_phone($staff_contact)) : ' - ' ?></td>
                   <td>
                     <span class="status-pill <?= $on ? 'on' : 'off' ?>">
                       <span class="d"></span>
@@ -1948,13 +1948,13 @@ try {
                   </td>
                   <td class="staff-action-cell">
                     <div class="staff-actions-wrap">
-                      <button type="button" class="staff-action-btn view-btn view-action" data-id="<?= (int)$s['staff_id'] ?>" data-name="<?= h($s['full_name']) ?>" data-code="<?= h($s['staff_code']) ?>" title="View staff logs" aria-label="View staff logs">View Logs</button>
+                      <button type="button" class="staff-action-btn view-btn view-action" data-id="<?= (int)$s['staff_id'] ?>" data-name="<?= h(privacy_mask_name((string) $s['full_name'])) ?>" data-code="<?= h($s['staff_code']) ?>" title="View staff logs" aria-label="View staff logs">View Logs</button>
                       <?php if ($on): ?>
                         <button type="button" class="staff-action-btn toggle-btn active" data-action="disable" data-id="<?= (int)$s['staff_id'] ?>" title="Disable staff account" aria-label="Disable staff account">Disable</button>
                       <?php else: ?>
                         <button type="button" class="staff-action-btn toggle-btn activate" data-action="activate" data-id="<?= (int)$s['staff_id'] ?>" title="Activate staff account" aria-label="Activate staff account">Activate</button>
                       <?php endif; ?>
-                      <button type="button" class="staff-action-btn delete-btn delete-action" data-id="<?= (int)$s['staff_id'] ?>" data-name="<?= h($s['full_name']) ?>" data-code="<?= h($s['staff_code']) ?>" title="Delete staff member" aria-label="Delete staff member">Delete</button>
+                      <button type="button" class="staff-action-btn delete-btn delete-action" data-id="<?= (int)$s['staff_id'] ?>" data-name="<?= h(privacy_mask_name((string) $s['full_name'])) ?>" data-code="<?= h($s['staff_code']) ?>" title="Delete staff member" aria-label="Delete staff member">Delete</button>
                     </div>
                   </td>
                 </tr>
@@ -2362,7 +2362,7 @@ try {
     searchInput.addEventListener('input', () => {
       const query = searchInput.value.toLowerCase().trim();
       directoryRows().forEach(row => {
-        const rowText = row.textContent.toLowerCase();
+        const rowText = (row.dataset.search || row.textContent).toLowerCase();
         const matchesSearch = query === '' || rowText.includes(query);
         row.style.display = matchesSearch ? '' : 'none';
       });
@@ -2557,6 +2557,34 @@ try {
         .replace(/'/g, '&#39;');
     }
 
+    function maskEmail(value) {
+      const email = String(value ?? '').trim();
+      const separator = email.indexOf('@');
+      if (separator < 1) return email;
+      const local = email.slice(0, separator);
+      const visible = local.slice(0, 2);
+      return `${visible}${'*'.repeat(Math.max(1, local.length - visible.length))}${email.slice(separator)}`;
+    }
+
+    function maskPhone(value) {
+      const phone = String(value ?? '').trim();
+      const digits = Array.from(phone).filter((character) => /\d/.test(character)).length;
+      if (!digits) return phone;
+      let seen = 0;
+      const preserveAfter = Math.max(0, digits - 2);
+      return Array.from(phone).map((character) => {
+        if (/\d/.test(character)) return seen++ >= preserveAfter ? character : '*';
+        return '*';
+      }).join('');
+    }
+
+    function maskName(value) {
+      return String(value ?? '').replace(/[\p{L}\p{N}][\p{L}\p{N}'’.-]*/gu, (word) => {
+        const characters = Array.from(word);
+        return `${characters[0]}${'*'.repeat(Math.max(1, characters.length - 1))}`;
+      });
+    }
+
     function getInitials(name) {
       if (!name) return '';
       const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -2599,14 +2627,17 @@ try {
             const email = (s.email || '').trim();
             const safeName = escapeHtml(s.full_name || '');
             const safeCode = escapeHtml(s.staff_code || '');
-            const safeEmail = escapeHtml(email || '');
-            const safeContact = escapeHtml(s.contact || '');
+            const safeEmail = escapeHtml(email ? maskEmail(email) : '');
+            const safeContact = escapeHtml(s.contact ? maskPhone(s.contact) : '');
+            const safeNameDisplay = escapeHtml(maskName(s.full_name || ''));
+            const safeSearch = escapeHtml([s.full_name || '', email, s.staff_code || ''].join(' ').toLowerCase());
+            const safeRawContact = escapeHtml(s.contact || '');
             return `
-              <tr data-id="${s.staff_id}">
+              <tr data-id="${s.staff_id}" data-name="${safeName}" data-email="${escapeHtml(email)}" data-contact="${safeRawContact}" data-search="${safeSearch}">
                 <td>
                   <div class="staff-name">
                     <div class="mini-avatar">${escapeHtml(getInitials(s.full_name || ''))}</div>
-                    <div><b>${safeName}</b><span>ID: ${safeCode}</span></div>
+                    <div><b>${safeNameDisplay}</b><span>ID: ${safeCode}</span></div>
                   </div>
                 </td>
                 <td>${email ? safeEmail : '<span style="color:var(--slate-400);">â€”</span>'}</td>
@@ -2619,13 +2650,13 @@ try {
                 </td>
                 <td class="staff-action-cell">
                   <div class="staff-actions-wrap">
-                    <button type="button" class="staff-action-btn view-btn view-action" data-id="${s.staff_id}" data-name="${safeName}" data-code="${safeCode}" title="View staff logs" aria-label="View staff logs">View Logs</button>
+                    <button type="button" class="staff-action-btn view-btn view-action" data-id="${s.staff_id}" data-name="${escapeHtml(maskName(s.full_name || ''))}" data-code="${safeCode}" title="View staff logs" aria-label="View staff logs">View Logs</button>
                     ${isActive ? `
                       <button type="button" class="staff-action-btn toggle-btn active" data-action="disable" data-id="${s.staff_id}" title="Disable staff account" aria-label="Disable staff account">Disable</button>
                     ` : `
                       <button type="button" class="staff-action-btn toggle-btn activate" data-action="activate" data-id="${s.staff_id}" title="Activate staff account" aria-label="Activate staff account">Activate</button>
                     `}
-                    <button type="button" class="staff-action-btn delete-btn delete-action" data-id="${s.staff_id}" data-name="${safeName}" data-code="${safeCode}" title="Delete staff member" aria-label="Delete staff member">Delete</button>
+                    <button type="button" class="staff-action-btn delete-btn delete-action" data-id="${s.staff_id}" data-name="${escapeHtml(maskName(s.full_name || ''))}" data-code="${safeCode}" title="Delete staff member" aria-label="Delete staff member">Delete</button>
                   </div>
                 </td>
               </tr>
@@ -2734,9 +2765,9 @@ try {
       const row = getStaffRowById(staffId);
       if (!row) return;
 
-      const name = row.querySelector('.staff-name b')?.textContent.trim() || '';
-      const email = row.cells[1]?.textContent.trim() || '';
-      const contact = row.cells[2]?.textContent.trim() || '';
+      const name = row.dataset.name || row.querySelector('.staff-name b')?.textContent.trim() || '';
+      const email = row.dataset.email || '';
+      const contact = row.dataset.contact || '';
 
       editTargetRow = row;
       document.getElementById('staff-form-action').value = 'edit';

@@ -232,11 +232,13 @@ $flashType = (string) ($flash['type'] ?? '');
             $normalizedRoleName = strtolower(trim($roleName));
             $isCompany = in_array($normalizedRoleName, ['hq', 'headquarter', 'headquarters', 'company'], true);
             $entityLabel = $isCompany ? 'Company' : (in_array($normalizedRoleName, ['customer', 'driver'], true) ? 'Driver' : 'Account');
-            $sender = $isCompany ? (string) ($row['headquarter_name'] ?: $row['user_name']) : (string) ($row['user_name'] ?: 'Unknown account');
+            $sender = $isCompany
+                ? privacy_mask_name((string) ($row['headquarter_name'] ?: $row['user_name']))
+                : privacy_mask_name((string) ($row['user_name'] ?: 'Unknown account'));
             ?>
             <tr data-created-at="<?= (int) (strtotime((string) ($row['created_at'] ?? '')) ?: 0) ?>">
                 <td class="fw-bold txt-neon-cyan">#ACCT-<?= (int) $row['user_id'] ?></td>
-                <td><div class="fw-semibold text-white"><?= moderator_escape($sender) ?></div><div class="text-white-50 small"><?= moderator_escape((string) ($row['email'] ?? 'Not provided')) ?></div></td>
+                <td><div class="fw-semibold text-white"><?= moderator_escape($sender) ?></div><div class="text-white-50 small"><?= moderator_escape(privacy_mask_email((string) ($row['email'] ?? 'Not provided'))) ?></div></td>
                 <td><span class="badge rounded-pill bg-info bg-opacity-10 text-info border border-info border-opacity-25 px-2 py-1"><?= moderator_escape($entityLabel) ?> Verification</span><?php if ((int) ($row['license_conflict_count'] ?? 0) > 0): ?><span class="badge bg-warning text-dark ms-1">Duplicate license</span><?php endif; ?></td>
                 <td class="text-white-50"><?= moderator_escape(moderator_format_date((string) $row['created_at'])) ?></td>
                 <td><span class="request-status request-status-pending">Pending</span></td>
@@ -246,10 +248,10 @@ $flashType = (string) ($flash['type'] ?? '');
             </tr>
         <?php endforeach; ?>
         <?php foreach ($carLicenseRows as $row): ?>
-            <?php $carSender = (string) ($row['user_name'] ?: $row['car_owner_name'] ?: 'Unknown owner'); ?>
+            <?php $carSender = privacy_mask_name((string) ($row['user_name'] ?: $row['car_owner_name'] ?: 'Unknown owner')); ?>
             <tr data-created-at="<?= (int) (strtotime((string) ($row['created_at'] ?? '')) ?: 0) ?>">
                 <td class="fw-bold txt-neon-cyan">#CAR-<?= (int) $row['car_license_id'] ?></td>
-                <td><div class="fw-semibold text-white"><?= moderator_escape($carSender) ?></div><div class="text-white-50 small"><?= moderator_escape((string) ($row['car_plate_number'] ?? '')) ?><?= !empty($row['email']) ? ' · ' . moderator_escape((string) $row['email']) : '' ?></div></td>
+                <td><div class="fw-semibold text-white"><?= moderator_escape($carSender) ?></div><div class="text-white-50 small"><?= moderator_escape(privacy_mask_identifier((string) ($row['car_plate_number'] ?? ''))) ?><?= !empty($row['email']) ? ' · ' . moderator_escape(privacy_mask_email((string) $row['email'])) : '' ?></div></td>
                 <td><span class="badge rounded-pill bg-info bg-opacity-10 text-info border border-info border-opacity-25 px-2 py-1">Car License Review</span><?php if ((int) $row['conflict_count'] > 0): ?><span class="badge bg-warning text-dark ms-1">Duplicate plate</span><?php endif; ?></td>
                 <td class="text-white-50"><?= moderator_escape(moderator_format_date((string) $row['created_at'])) ?></td>
                 <td><span class="request-status request-status-pending">Pending</span></td>
@@ -262,7 +264,9 @@ $flashType = (string) ($flash['type'] ?? '');
             <?php
             $rowStatus = strtolower((string) ($row['status'] ?? 'pending'));
             $requestTypeName = strtolower((string) ($row['request_type'] ?? ''));
-            $sender = (string) ($row['sender_entity'] ?: $row['sender_name'] ?: 'Unknown sender');
+            $sender = !empty($row['sender_entity'])
+                ? privacy_mask_name((string) $row['sender_entity'])
+                : privacy_mask_name((string) ($row['sender_name'] ?: 'Unknown sender'));
             $payment = $paymentReviewByRequest[(int) $row['request_id']] ?? null;
             $paymentState = strtolower((string) ($payment['status'] ?? ''));
             $requestDetails = json_decode((string) ($row['request_details'] ?? ''), true);
@@ -270,13 +274,13 @@ $flashType = (string) ($flash['type'] ?? '');
             $requiresRegistrationPayment = $requestTypeName === 'hq_registration' && request_registration_payment_required($requestDetails);
             ?>
             <tr data-created-at="<?= (int) (strtotime((string) ($row['created_at'] ?? '')) ?: 0) ?>">
-                <td class="fw-bold txt-neon-cyan">#<?= moderator_escape((string) $row['reference_code']) ?></td>
-                <td><div class="fw-semibold text-white"><?= moderator_escape($sender) ?></div><div class="text-white-50 small"><?= moderator_escape((string) ($row['location'] ?? 'Location not provided')) ?></div></td>
+                <td class="fw-bold txt-neon-cyan">#<?= moderator_escape(privacy_mask_identifier((string) $row['reference_code'])) ?></td>
+                <td><div class="fw-semibold text-white"><?= moderator_escape($sender) ?></div><div class="text-white-50 small"><?= moderator_escape(privacy_mask_location((string) ($row['location'] ?? 'Location not provided'))) ?></div></td>
                 <td><span class="badge rounded-pill bg-info bg-opacity-10 text-info border border-info border-opacity-25 px-2 py-1"><?= moderator_escape(request_type_short_label((string) $row['request_type'])) ?></span><?php if (!empty($row['business_license_conflict'])): ?><span class="badge bg-warning text-dark ms-1">Duplicate business license</span><?php endif; ?></td>
                 <td class="text-white-50"><?= moderator_escape(moderator_format_date((string) $row['created_at'])) ?></td>
                 <td><span class="request-status <?= moderator_escape(request_status_class($rowStatus)) ?>"><?= moderator_escape(request_status_label($rowStatus)) ?></span><?php if ($requestTypeName === 'hq_registration'): ?><div class="small mt-1"><span class="badge rounded-pill <?= $paymentState === 'received' ? 'bg-success' : ($paymentState === 'payer_reported_paid' ? 'bg-warning text-dark' : 'bg-secondary') ?>"><?= moderator_escape(match ($paymentState) { 'received' => 'Payment received', 'payer_reported_paid' => 'Payment needs verification', 'rejected' => 'Payment not received', 'cancelled' => 'Payment cancelled', 'pending_payment' => 'Awaiting payer', default => $requiresRegistrationPayment ? 'Payment record missing' : 'No payment required' }) ?></span></div><?php endif; ?></td>
                 <td class="text-end"><div class="d-flex gap-2 justify-content-end">
-                    <button type="button" class="btn-action js-view-request" title="View Details" aria-label="View details for request <?= moderator_escape((string) $row['reference_code']) ?>" data-request-id="<?= (int) $row['request_id'] ?>"><i class="bi bi-eye-fill"></i></button>
+                    <button type="button" class="btn-action js-view-request" title="View Details" aria-label="View details for request <?= moderator_escape(privacy_mask_identifier((string) $row['reference_code'])) ?>" data-request-id="<?= (int) $row['request_id'] ?>"><i class="bi bi-eye-fill"></i></button>
                 </div></td>
             </tr>
         <?php endforeach; ?>
@@ -284,17 +288,17 @@ $flashType = (string) ($flash['type'] ?? '');
             <?php $paymentId = (int) $paymentRow['payment_transfer_id']; $paymentState = (string) $paymentRow['status']; $paymentStatus = in_array($paymentState, ['pending_payment', 'payer_reported_paid'], true) ? 'pending' : ($paymentState === 'received' ? 'approved' : 'rejected'); $isPayer = ((int) ($paymentRow['payer_user_id'] ?? 0) === (int) ($_SESSION['user_id'] ?? 0)) || (strtolower((string) ($_SESSION['user_email'] ?? '')) !== '' && strtolower((string) ($_SESSION['user_email'] ?? '')) === strtolower((string) ($paymentRow['payer_email'] ?? ''))); $isRegistrationPayment = (string) ($paymentRow['payment_type'] ?? '') === 'hq_registration'; $registrationCanComplete = in_array(strtolower(trim((string) ($paymentRow['registration_request_status'] ?? ''))), ['pending', 'approved'], true); ?>
             <tr data-created-at="<?= (int) (strtotime((string) ($paymentRow['created_at'] ?? '')) ?: 0) ?>">
                 <td class="fw-bold txt-neon-cyan">#PAY-<?= $paymentId ?></td>
-                <td><div class="fw-semibold text-white"><?= moderator_escape((string) ($paymentRow['payer_hq_name'] ?: $paymentRow['payer_name'] ?: 'Company payer')) ?></div><div class="text-white-50 small"><?= moderator_escape((string) ($paymentRow['description'] ?? '')) ?></div><div class="text-white-50 small"><?= number_format((float) $paymentRow['amount_mmk'], 2) ?> MMK · <?= moderator_escape((string) ($paymentRow['payer_email'] ?? '')) ?></div></td>
+                <td><div class="fw-semibold text-white"><?= moderator_escape(privacy_mask_name((string) (($paymentRow['payer_hq_name'] ?? '') ?: ($paymentRow['payer_name'] ?? 'Company payer')))) ?></div><div class="text-white-50 small"><?= moderator_escape(privacy_mask_free_text((string) ($paymentRow['description'] ?? ''))) ?></div><div class="text-white-50 small"><?= number_format((float) $paymentRow['amount_mmk'], 2) ?> MMK · <?= moderator_escape(privacy_mask_email((string) ($paymentRow['payer_email'] ?? ''))) ?></div></td>
                 <td><span class="badge rounded-pill bg-info bg-opacity-10 text-info border border-info border-opacity-25 px-2 py-1">Payment Verification</span><div class="text-white-50 small mt-1"><?= moderator_escape(match ((string) $paymentRow['payment_type']) { 'hq_station_package' => 'Company Station Package', default => 'Company Service Extension' }) ?></div></td>
                 <td class="text-white-50"><?= moderator_escape(moderator_format_date((string) $paymentRow['created_at'])) ?></td>
                 <td><span class="request-status <?= moderator_escape(request_status_class($paymentStatus)) ?>"><?= moderator_escape(request_status_label($paymentStatus)) ?></span></td>
                 <td class="text-end"><div class="d-flex gap-2 justify-content-end align-items-center">
                     <button type="button" class="btn-action js-view-payment" title="View Details" aria-label="View details for payment #PAY-<?= $paymentId ?>"
                         data-payment-id="<?= $paymentId ?>" data-payment-type="Company Service Extension"
-                        data-payment-status="<?= moderator_escape($paymentState) ?>" data-payment-name="<?= moderator_escape((string) ($paymentRow['payer_hq_name'] ?: $paymentRow['payer_name'] ?: 'Company payer')) ?>"
-                        data-payment-email="<?= moderator_escape((string) ($paymentRow['payer_email'] ?? '')) ?>" data-payment-description="<?= moderator_escape((string) ($paymentRow['description'] ?? '')) ?>"
+                        data-payment-status="<?= moderator_escape($paymentState) ?>" data-payment-name="<?= moderator_escape(privacy_mask_name((string) (($paymentRow['payer_hq_name'] ?? '') ?: ($paymentRow['payer_name'] ?? 'Company payer')))) ?>"
+                        data-payment-email="<?= moderator_escape(privacy_mask_email((string) ($paymentRow['payer_email'] ?? ''))) ?>" data-payment-description="<?= moderator_escape(privacy_mask_free_text((string) ($paymentRow['description'] ?? ''))) ?>"
                         data-payment-amount="<?= moderator_escape(number_format((float) $paymentRow['amount_mmk'], 2)) ?>" data-payment-date="<?= moderator_escape(moderator_format_date((string) $paymentRow['created_at'])) ?>"
-                        data-payment-method="<?= moderator_escape((string) ($paymentRow['payment_method'] ?? 'Not provided')) ?>" data-receipt-name="<?= moderator_escape((string) ($paymentRow['receipt_name'] ?? '')) ?>"
+                        data-payment-method="<?= moderator_escape(privacy_mask_identifier((string) ($paymentRow['payment_method'] ?? 'Not provided'))) ?>" data-receipt-name="<?= moderator_escape(privacy_mask_identifier((string) ($paymentRow['receipt_name'] ?? ''))) ?>"
                         data-receipt-mime="<?= moderator_escape((string) ($paymentRow['receipt_mime_type'] ?? '')) ?>" data-is-payer="<?= $isPayer ? 'yes' : 'no' ?>"><i class="bi bi-eye-fill"></i></button>
                     <?php if ($paymentState === 'payer_reported_paid' && !$isPayer && (!$isRegistrationPayment || $registrationCanComplete)): ?><div class="d-none" id="paymentActions<?= $paymentId ?>">
                         <form action="/php/Payment/action.php" method="POST" class="m-0 flex-fill"><input type="hidden" name="csrf_token" value="<?= moderator_escape((string) ($_SESSION['payment_transfer_csrf'] ?? '')) ?>"><input type="hidden" name="transfer_id" value="<?= $paymentId ?>"><input type="hidden" name="action" value="confirm_received"><input type="hidden" name="return_to" value="/php/Moderators(UnderAdmin)/view_requests(M).php"><button type="submit" class="btn btn-success w-100" onclick="return confirm('Confirm receipt only after checking your bank or wallet records.')">Approve</button></form>

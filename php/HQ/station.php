@@ -8,6 +8,7 @@ require_once __DIR__ . '/../business_scope.php';
 require_once __DIR__ . '/../loyalty_points.php';
 require_once __DIR__ . '/../billing_config.php';
 require_once __DIR__ . '/../payment_transfers.php';
+require_once __DIR__ . '/../shared/privacy_display.php';
 map_pump_ensure_station_scope_manager_nullable($pdo);
 $message = '';
 $error = '';
@@ -897,8 +898,8 @@ if ($paymentTransferSchemaReady) {
                                     )), ENT_QUOTES) ?>">
                                     <td>#<?= htmlspecialchars($row['station_id']) ?></td>
                                     <td><?= htmlspecialchars($row['station_name']) ?></td>
-                                    <td><?= htmlspecialchars($row['station_address']) ?></td>
-                                    <td><?= htmlspecialchars($row['manager_name'] ?? 'Not assigned') ?></td>
+                                    <td><?= htmlspecialchars(privacy_mask_location((string) ($row['station_address'] ?? '')), ENT_QUOTES, 'UTF-8') ?></td>
+                                    <td><?= htmlspecialchars(privacy_mask_name((string) ($row['manager_name'] ?? 'Not assigned')), ENT_QUOTES, 'UTF-8') ?></td>
                                     <td>
                                         <span id="status-badge-<?= $row['station_id'] ?>" class="<?= $badgeClass ?>">
                                             <?= $statusText ?>
@@ -966,7 +967,7 @@ if ($paymentTransferSchemaReady) {
                                 <select name="manager_email" class="form-select bg-dark text-light border-secondary" required>
                                     <option value="" selected disabled>Select a branch manager</option>
                                     <?php foreach ($availableBranchManagers as $manager): ?>
-                                        <option value="<?= htmlspecialchars($manager['email'], ENT_QUOTES, 'UTF-8') ?>"><?= htmlspecialchars($manager['email']) ?></option>
+                                        <option value="<?= htmlspecialchars($manager['email'], ENT_QUOTES, 'UTF-8') ?>"><?= htmlspecialchars(privacy_mask_email((string) $manager['email']), ENT_QUOTES, 'UTF-8') ?></option>
                                     <?php endforeach; ?>
                                 </select>
                             </div>
@@ -1117,7 +1118,7 @@ if ($paymentTransferSchemaReady) {
                             <h3>Transfer and package total</h3>
                             <p class="station-limit-receipt-company">
                                 <strong><?= htmlspecialchars((string) ($hqDetails['company_name'] ?? ''), ENT_QUOTES, 'UTF-8') ?></strong><br>
-                                <?= htmlspecialchars((string) ($hqDetails['headquarter_email'] ?? ''), ENT_QUOTES, 'UTF-8') ?><br>
+                                <?= htmlspecialchars(privacy_mask_email((string) ($hqDetails['headquarter_email'] ?? '')), ENT_QUOTES, 'UTF-8') ?><br>
                                 <span id="stationLimitReceiptPackageCount"></span> stations · <span id="stationLimitReceiptTerm"></span>
                             </p>
                             <p class="station-limit-receipt-method">Payment method: <strong id="stationLimitReceiptMethod"></strong></p>
@@ -1166,7 +1167,7 @@ if ($paymentTransferSchemaReady) {
                                     <option value="">Choose a branch manager</option>
                                     <?php foreach ($branchManagers as $manager): ?>
                                         <option value="<?= htmlspecialchars($manager['email'], ENT_QUOTES, 'UTF-8') ?>">
-                                            <?= htmlspecialchars($manager['email']) ?>
+                                            <?= htmlspecialchars(privacy_mask_email((string) $manager['email']), ENT_QUOTES, 'UTF-8') ?>
                                         </option>
                                     <?php endforeach; ?>
                                 </select>

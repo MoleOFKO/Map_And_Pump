@@ -310,11 +310,56 @@ LIMIT " . (int) $limit;
 }
 
 /**
+ * Count expired driver accounts shown by the admin user list, regardless of
+ * account status. Notification rows intentionally use the narrower
+ * expiry_user_attention_rows() query so Removed accounts do not generate alerts.
+ */
+function expiry_user_expired_account_count(): int
+{
+    global $conn;
+    if (!expiry_db_ready()) {
+        return 0;
+    }
+
+    $customerRoleId = function_exists('customer_role_id') ? customer_role_id() : 6;
+    if (!function_exists('customer_role_id')) {
+        $roleQuery = $conn->query(
+            "SELECT role_id FROM roles WHERE LOWER(TRIM(role_name)) = 'customer' ORDER BY role_id ASC LIMIT 1"
+        );
+        if ($roleQuery && ($roleRow = $roleQuery->fetch_assoc()) && (int) ($roleRow['role_id'] ?? 0) > 0) {
+            $customerRoleId = (int) $roleRow['role_id'];
+        }
+    }
+
+    $roleChecks = ['u.business_role_id = ' . (int) $customerRoleId];
+    $hasCurrentRole = function_exists('user_account_column_exists')
+        ? user_account_column_exists('users', 'current_role_id')
+        : false;
+    if ($hasCurrentRole) {
+        $roleChecks[] = 'u.current_role_id = ' . (int) $customerRoleId;
+    }
+
+    $sql = "SELECT COUNT(DISTINCT u.user_id) AS total
+            FROM users u
+            INNER JOIN user_license l ON l.license_id = u.license_id
+            WHERE (" . implode(' OR ', $roleChecks) . ")
+              AND l.license_last_valid_date IS NOT NULL
+              AND DATE(l.license_last_valid_date) < CURDATE()";
+    $result = $conn->query($sql);
+    if (!$result) {
+        error_log('[Expiry alerts] Expired driver account count failed: ' . $conn->error);
+        return 0;
+    }
+
+    return (int) ($result->fetch_assoc()['total'] ?? 0);
+}
+
+/**
  * Combined payload for banners + navbar bell.
  * Session-cached ~5 minutes unless $forceRefresh.
  *
  * @return array{
- *   warning_hq:int, warning_users:int, expired_hq:int, expired_users:int,
+ *   warning_hq:int, warning_users:int, expired_hq:int, expired_users:int, expired_users_all_statuses:int,
  *   total:int, items:list<array>, synced_hq:int, synced_users:int
  * }
  */
@@ -394,6 +439,7 @@ function expiry_alert_payload(bool $forceRefresh = false, bool $runSync = true):
         'warning_users' => count($userWarning),
         'expired_hq' => count($hqExpired),
         'expired_users' => count($userExpired),
+        'expired_users_all_statuses' => expiry_user_expired_account_count(),
         'total' => count($hqWarning) + count($userWarning) + count($hqExpired) + count($userExpired),
         'items' => array_slice($items, 0, 20),
         'synced_hq' => count($syncedHq),

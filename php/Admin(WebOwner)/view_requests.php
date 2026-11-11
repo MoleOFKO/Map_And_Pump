@@ -75,7 +75,7 @@ if (hq_db_available() && request_schema_ready()) {
             'deactivation', 'account_deactivation' => ['deactivation', 'account_deactivation'],
             default => [$requestType],
         };
-        $where[] = 'LOWER(r.request_type) IN (' . implode(',', array_fill(0, count($typeValues), '?')) . ')';
+        $where[] = 'LOWER(TRIM(r.request_type)) IN (' . implode(',', array_fill(0, count($typeValues), '?')) . ')';
         foreach ($typeValues as $typeValue) {
             $params[] = $typeValue;
             $types .= 's';
@@ -664,11 +664,13 @@ body.background_color.admin-blue-page:is(.light-mode,[data-theme="light"]) {
                     $normalizedRoleName = strtolower(trim($roleName));
                     $isCompany = in_array($normalizedRoleName, ['hq', 'headquarter', 'headquarters', 'company'], true);
                     $entityLabel = $isCompany ? 'Company' : (in_array($normalizedRoleName, ['customer', 'driver'], true) ? 'Driver' : 'Account');
-                    $sender = $isCompany ? (string) ($row['headquarter_name'] ?: $row['user_name']) : (string) ($row['user_name'] ?: 'Unknown account');
+                    $sender = $isCompany
+                        ? privacy_mask_name((string) ($row['headquarter_name'] ?: $row['user_name']))
+                        : privacy_mask_name((string) ($row['user_name'] ?: 'Unknown account'));
                     ?>
                     <tr data-created-at="<?= (int) (strtotime((string) ($row['created_at'] ?? '')) ?: 0) ?>">
                         <td class="fw-bold txt-neon-cyan">#ACCT-<?= (int) $row['user_id'] ?></td>
-                        <td><div class="fw-semibold text-white"><?= hq_escape($sender) ?></div><div class="text-white-50 small" style="font-size:.8rem;"><?= hq_escape((string) ($row['email'] ?? 'Not provided')) ?></div></td>
+                        <td><div class="fw-semibold text-white"><?= hq_escape($sender) ?></div><div class="text-white-50 small" style="font-size:.8rem;"><?= hq_escape(privacy_mask_email((string) ($row['email'] ?? 'Not provided'))) ?></div></td>
                         <td><span class="badge rounded-pill bg-info bg-opacity-10 text-info border border-info border-opacity-25 px-2 py-1"><?= hq_escape($entityLabel) ?> Verification</span><?php if ((int) ($row['license_conflict_count'] ?? 0) > 0): ?><span class="badge bg-warning text-dark ms-1">Duplicate license</span><?php endif; ?></td>
                         <td class="text-white-50"><?= hq_escape(request_date($row['created_at'])) ?></td>
                         <td><span class="request-status <?= request_status_class((string) $row['status']) ?>"><?= hq_escape(request_status_label((string) $row['status'])) ?></span></td>
@@ -678,10 +680,10 @@ body.background_color.admin-blue-page:is(.light-mode,[data-theme="light"]) {
                     </tr>
                 <?php endforeach; ?>
                 <?php foreach ($carLicenseRows as $row): ?>
-                    <?php $carSender = (string) ($row['user_name'] ?: $row['car_owner_name'] ?: 'Unknown owner'); $carStatus = (string) ($row['status'] ?? 'pending'); ?>
+                    <?php $carSender = privacy_mask_name((string) ($row['user_name'] ?: $row['car_owner_name'] ?: 'Unknown owner')); $carStatus = (string) ($row['status'] ?? 'pending'); ?>
                     <tr data-created-at="<?= (int) (strtotime((string) ($row['created_at'] ?? '')) ?: 0) ?>">
                         <td class="fw-bold txt-neon-cyan">#CAR-<?= (int) $row['car_license_id'] ?></td>
-                        <td><div class="fw-semibold text-white"><?= hq_escape($carSender) ?></div><div class="text-white-50 small"><?= hq_escape((string) ($row['car_plate_number'] ?? '')) ?><?= !empty($row['email']) ? ' · ' . hq_escape((string) $row['email']) : '' ?></div></td>
+                        <td><div class="fw-semibold text-white"><?= hq_escape($carSender) ?></div><div class="text-white-50 small"><?= hq_escape(privacy_mask_identifier((string) ($row['car_plate_number'] ?? ''))) ?><?= !empty($row['email']) ? ' · ' . hq_escape(privacy_mask_email((string) $row['email'])) : '' ?></div></td>
                         <td><span class="badge rounded-pill bg-info bg-opacity-10 text-info border border-info border-opacity-25 px-2 py-1">Car License Review</span><?php if ((int) $row['conflict_count'] > 0): ?><span class="badge bg-warning text-dark ms-1">Duplicate plate</span><?php endif; ?></td>
                         <td class="text-white-50"><?= hq_escape(request_date($row['created_at'])) ?></td>
                         <td><span class="request-status <?= request_status_class($carStatus) ?>"><?= hq_escape(request_status_label($carStatus)) ?></span></td>
@@ -691,15 +693,15 @@ body.background_color.admin-blue-page:is(.light-mode,[data-theme="light"]) {
                     </tr>
                 <?php endforeach; ?>
                 <?php foreach ($requestRows as $row): ?>
-                    <?php $sender = (string) ($row['sender_entity'] ?: $row['sender_name'] ?: 'Unknown sender'); $location = (string) ($row['location'] ?: 'Location not provided'); $rowStatus = (string) ($row['status'] ?: 'pending'); $payment = $paymentReviewByRequest[(int) $row['request_id']] ?? null; $paymentState = strtolower((string) ($payment['status'] ?? '')); ?>
+                    <?php $sender = !empty($row['sender_entity']) ? privacy_mask_name((string) $row['sender_entity']) : privacy_mask_name((string) ($row['sender_name'] ?: 'Unknown sender')); $location = privacy_mask_location((string) ($row['location'] ?: 'Location not provided')); $rowStatus = (string) ($row['status'] ?: 'pending'); $payment = $paymentReviewByRequest[(int) $row['request_id']] ?? null; $paymentState = strtolower((string) ($payment['status'] ?? '')); ?>
                     <tr data-created-at="<?= (int) (strtotime((string) ($row['created_at'] ?? '')) ?: 0) ?>">
-                        <td class="fw-bold txt-neon-cyan">#<?= hq_escape($row['reference_code']) ?></td>
+                        <td class="fw-bold txt-neon-cyan">#<?= hq_escape(privacy_mask_identifier((string) $row['reference_code'])) ?></td>
                         <td><div class="fw-semibold text-white"><?= hq_escape($sender) ?></div><div class="text-white-50 small" style="font-size:.8rem;"><?= hq_escape($location) ?></div></td>
                         <td><span class="badge rounded-pill bg-info bg-opacity-10 text-info border border-info border-opacity-25 px-2 py-1"><?= hq_escape(request_type_short_label($row['request_type'])) ?></span><?php if (!empty($row['business_license_conflict'])): ?><span class="badge bg-warning text-dark ms-1">Duplicate business license</span><?php endif; ?></td>
                         <td class="text-white-50"><?= hq_escape(request_date($row['created_at'])) ?></td>
                         <td><span class="request-status <?= request_status_class($rowStatus) ?>"><?= hq_escape(request_status_label($rowStatus)) ?></span><?php if (strtolower((string) $row['request_type']) === 'hq_registration'): ?><div class="mt-1"><span class="badge rounded-pill <?= $paymentState === 'received' ? 'bg-success' : ($paymentState === 'payer_reported_paid' ? 'bg-warning text-dark' : 'bg-secondary') ?>"><?= hq_escape(match ($paymentState) { 'received' => 'Payment received', 'payer_reported_paid' => 'Payment needs verification', 'rejected' => 'Payment not received', 'cancelled' => 'Payment cancelled', 'pending_payment' => 'Awaiting payer', default => 'Payment record missing' }) ?></span></div><?php endif; ?></td>
                         <td class="text-end"><div class="d-flex gap-2 justify-content-end">
-                            <button type="button" class="btn-action js-view-request" title="View Details" aria-label="View details for request <?= hq_escape($row['reference_code']) ?>" data-request-id="<?= (int) $row['request_id'] ?>"><i class="bi bi-eye-fill"></i></button>
+                            <button type="button" class="btn-action js-view-request" title="View Details" aria-label="View details for request <?= hq_escape(privacy_mask_identifier((string) $row['reference_code'])) ?>" data-request-id="<?= (int) $row['request_id'] ?>"><i class="bi bi-eye-fill"></i></button>
                         </div></td>
                     </tr>
                 <?php endforeach; ?>
@@ -728,17 +730,17 @@ body.background_color.admin-blue-page:is(.light-mode,[data-theme="light"]) {
                     ?>
                     <tr data-created-at="<?= (int) (strtotime((string) ($paymentRow['created_at'] ?? '')) ?: 0) ?>">
                         <td class="fw-bold txt-neon-cyan">#PAY-<?= $paymentId ?></td>
-                        <td><div class="fw-semibold text-white"><?= hq_escape((string) ($paymentRow['payer_hq_name'] ?: $paymentRow['payer_name'] ?: 'Company payer')) ?></div><div class="text-white-50 small"><?= hq_escape((string) ($paymentRow['description'] ?? '')) ?></div><div class="text-white-50 small"><?= number_format((float) $paymentRow['amount_mmk'], 2) ?> MMK · <?= hq_escape((string) ($paymentRow['payer_email'] ?? '')) ?></div></td>
+                        <td><div class="fw-semibold text-white"><?= hq_escape(privacy_mask_name((string) (($paymentRow['payer_hq_name'] ?? '') ?: ($paymentRow['payer_name'] ?? 'Company payer')))) ?></div><div class="text-white-50 small"><?= hq_escape(privacy_mask_free_text((string) ($paymentRow['description'] ?? ''))) ?></div><div class="text-white-50 small"><?= number_format((float) $paymentRow['amount_mmk'], 2) ?> MMK · <?= hq_escape(privacy_mask_email((string) ($paymentRow['payer_email'] ?? ''))) ?></div></td>
                         <td><span class="badge rounded-pill bg-info bg-opacity-10 text-info border border-info border-opacity-25 px-2 py-1">Payment Verification</span><div class="text-white-50 small mt-1"><?= hq_escape($paymentTypeLabel) ?></div></td>
                         <td class="text-white-50"><?= hq_escape(request_date((string) $paymentRow['created_at'])) ?></td>
                         <td><span class="request-status <?= request_status_class($paymentStatus) ?>"><?= hq_escape($paymentStatusLabel) ?></span></td>
                         <td class="text-end"><div class="d-flex gap-2 justify-content-end align-items-center">
                             <button type="button" class="btn-action js-view-payment" title="View Details" aria-label="View details for payment #PAY-<?= $paymentId ?>"
                                 data-payment-id="<?= $paymentId ?>" data-payment-type="<?= hq_escape($paymentTypeLabel) ?>"
-                                data-payment-status="<?= hq_escape($paymentState) ?>" data-payment-name="<?= hq_escape((string) ($paymentRow['payer_hq_name'] ?: $paymentRow['payer_name'] ?: 'Company payer')) ?>"
-                                data-payment-email="<?= hq_escape((string) ($paymentRow['payer_email'] ?? '')) ?>" data-payment-description="<?= hq_escape((string) ($paymentRow['description'] ?? '')) ?>"
+                                data-payment-status="<?= hq_escape($paymentState) ?>" data-payment-name="<?= hq_escape(privacy_mask_name((string) (($paymentRow['payer_hq_name'] ?? '') ?: ($paymentRow['payer_name'] ?? 'Company payer')))) ?>"
+                                data-payment-email="<?= hq_escape(privacy_mask_email((string) ($paymentRow['payer_email'] ?? ''))) ?>" data-payment-description="<?= hq_escape(privacy_mask_free_text((string) ($paymentRow['description'] ?? ''))) ?>"
                                 data-payment-amount="<?= hq_escape(number_format((float) $paymentRow['amount_mmk'], 2)) ?>" data-payment-date="<?= hq_escape(request_date((string) $paymentRow['created_at'])) ?>"
-                                data-payment-method="<?= hq_escape((string) ($paymentRow['payment_method'] ?? 'Not provided')) ?>" data-receipt-name="<?= hq_escape((string) ($paymentRow['receipt_name'] ?? '')) ?>"
+                                data-payment-method="<?= hq_escape(privacy_mask_identifier((string) ($paymentRow['payment_method'] ?? 'Not provided'))) ?>" data-receipt-name="<?= hq_escape(privacy_mask_identifier((string) ($paymentRow['receipt_name'] ?? ''))) ?>"
                                 data-receipt-mime="<?= hq_escape((string) ($paymentRow['receipt_mime_type'] ?? '')) ?>" data-is-payer="<?= $isPayer ? 'yes' : 'no' ?>"><i class="bi bi-eye-fill"></i></button>
                             <?php if ($paymentState === 'payer_reported_paid' && !$isPayer && (!$isRegistrationPayment || $registrationCanComplete)): ?><div class="d-none" id="paymentActions<?= $paymentId ?>">
                                 <form action="/php/Payment/action.php" method="POST" class="m-0 flex-fill"><input type="hidden" name="csrf_token" value="<?= hq_escape((string) $_SESSION['payment_transfer_csrf']) ?>"><input type="hidden" name="transfer_id" value="<?= $paymentId ?>"><input type="hidden" name="action" value="confirm_received"><input type="hidden" name="return_to" value="/php/Admin(WebOwner)/view_requests.php"><button type="submit" class="request-action-btn request-action-btn--approve" onclick="return confirm('<?= $isRegistrationPayment ? 'Confirm the funds were received. This will also complete the company registration.' : 'Confirm receipt only after checking your bank or wallet records.' ?>')">Approve</button></form>

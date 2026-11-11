@@ -96,7 +96,7 @@ $registrationDetails = json_decode((string) ($request['request_details'] ?? ''),
 $registrationDetails = is_array($registrationDetails) ? $registrationDetails : [];
 $businessLicenseConflict = request_business_license_match_for_request($request);
 
-echo json_encode([
+echo json_encode(privacy_mask_sensitive_data([
     'success' => true,
     'request' => [
         'request_id' => (int) $request['request_id'],
@@ -148,4 +148,4 @@ echo json_encode([
         'payment_transfer_csrf' => (string) $_SESSION['payment_transfer_csrf'],
         'can_review_registration_payment' => (bool) ($registrationPayment['can_review'] ?? false),
     ],
-]);
+]), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);

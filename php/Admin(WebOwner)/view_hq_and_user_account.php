@@ -547,7 +547,7 @@ body.background_color.admin-blue-page:is(.light-mode,[data-theme="light"]) {
                                 <div class="fw-semibold txt-neon-cyan mb-1">Temporary login credentials — save these now</div>
                                 <div>Username: <code><?= hq_escape($flashContext['username'] ?? '') ?></code></div>
                                 <div>Temporary password: <code><?= hq_escape($flashContext['temporary_password']) ?></code></div>
-                                <div class="text-white-50 mt-2">Email: <?= hq_escape($flashContext['email'] ?? '') ?></div>
+                                <div class="text-white-50 mt-2">Email: <?= hq_escape(privacy_mask_email((string) ($flashContext['email'] ?? ''))) ?></div>
                             </div>
                         <?php endif; ?>
                     </div>
@@ -628,14 +628,14 @@ body.background_color.admin-blue-page:is(.light-mode,[data-theme="light"]) {
                                 <?php endif; ?>
                                 <?php foreach ($hqRows as $row): ?>
                                     <?php
-                                    $companyName = (string) ($row['company_name'] ?? 'Company name unavailable');
-                                    $ownerName = (string) ($row['owner_name'] ?? 'Owner account unavailable');
-                                    $ownerEmail = (string) ($row['owner_email'] ?? 'Not provided');
+                                    $companyName = privacy_mask_name((string) ($row['company_name'] ?? 'Company name unavailable'));
+                                    $ownerName = privacy_mask_name((string) ($row['owner_name'] ?? 'Owner account unavailable'));
+                                    $ownerEmail = privacy_mask_email((string) ($row['owner_email'] ?? 'Not provided'));
                                     $rowStatus = (string) ($row['account_status'] ?? 'pending');
                                     $stationCount = (int) ($row['station_count'] ?? 0);
                                     $locationParts = preg_split('/\s+[—-]\s+/u', (string) ($row['location'] ?? ''), 2) ?: [];
-                                    $locationRegion = $locationParts[0] ?? 'Not provided';
-                                    $locationAddress = $locationParts[1] ?? '';
+                                    $locationRegion = privacy_mask_location((string) ($locationParts[0] ?? 'Not provided'));
+                                    $locationAddress = privacy_mask_location((string) ($locationParts[1] ?? ''));
                                     ?>
                                     <tr>
                                         <td>

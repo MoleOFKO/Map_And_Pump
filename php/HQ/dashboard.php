@@ -3,6 +3,7 @@ require_once __DIR__ . '/hq_guard.php';
 require_once __DIR__ . '/../conn.php';
 require_once __DIR__ . '/../business_scope.php';
 require_once __DIR__ . '/../loyalty_points.php';
+require_once __DIR__ . '/../shared/privacy_display.php';
 $hqId = map_pump_current_hq_id($pdo);
 $hqBillingReady = loyalty_countermeasures_schema_ready($pdo);
 $hqBillingMonth = loyalty_current_year_month();
@@ -363,7 +364,7 @@ echo htmlspecialchars($station['station_id']); ?></td>
                 <td><?php
 echo htmlspecialchars($station['station_name']); ?></td>
                 <td><?php
-echo htmlspecialchars((string) ($station['address'] ?? '')); ?></td>
+echo htmlspecialchars(privacy_mask_location((string) ($station['address'] ?? '')), ENT_QUOTES, 'UTF-8'); ?></td>
                 <td><span class="badge <?= $stationStatusClass ?>"><?php
 echo htmlspecialchars($stationStatus, ENT_QUOTES, 'UTF-8'); ?></span></td>
               </tr>

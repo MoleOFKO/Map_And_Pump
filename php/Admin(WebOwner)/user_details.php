@@ -185,7 +185,7 @@ if ($user['headquarter_id'] !== null) {
     }
 }
 
-echo json_encode([
+echo json_encode(privacy_mask_sensitive_data([
     'success' => true,
     'context' => $requestContext ? 'request' : 'account',
     'user' => [
@@ -208,4 +208,4 @@ echo json_encode([
     'license_conflicts' => $licenseConflicts,
     'headquarter' => $headquarterPayload,
     'actions' => $requestContext ? [] : $actions,
-]);
+]), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);

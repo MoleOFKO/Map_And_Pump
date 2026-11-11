@@ -9,6 +9,7 @@ error_reporting(E_ALL);
 
 require_once __DIR__ . '/hq_account_common.php';
 require_once __DIR__ . '/../expiry_alerts.php';
+require_once __DIR__ . '/../shared/privacy_display.php';
 
 function admin_flash(string $type, string $message): void
 {
@@ -541,6 +542,7 @@ function admin_filter_label(string $value): string
         'account' => 'Users',
         'car_license' => 'Car license review',
         'payment' => 'Payment Verification',
+        'hq_registration' => 'Company registration',
         'station' => 'New station registration',
         'new_station' => 'New station registration',
         'new_station_registration' => 'New station registration',

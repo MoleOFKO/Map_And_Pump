@@ -2,6 +2,7 @@
 require_once __DIR__ . '/../conn.php';
 require_once __DIR__ . '/car_access.php';
 require_once __DIR__ . '/license_expiry.php';
+require_once __DIR__ . '/../shared/privacy_display.php';
 
 if (session_status() !== PHP_SESSION_ACTIVE) {
     session_start();
@@ -288,7 +289,7 @@ body.customer-light-mode .car-license-fact { background: rgba(255, 255, 255, .7)
                                 </div>
                                 <div>
                                     <span class="text-muted small d-block">Active Plate</span>
-                                    <h5 class="text-white fw-bold mb-0"><?php echo htmlspecialchars((string) ($selectedCar['car_plate_number'] ?? '')); ?></h5>
+                                    <h5 class="text-white fw-bold mb-0"><?php echo htmlspecialchars(privacy_mask_identifier((string) ($selectedCar['car_plate_number'] ?? '')), ENT_QUOTES, 'UTF-8'); ?></h5>
                                 </div>
                             </div>
                             <div class="small text-secondary mb-3">
@@ -341,13 +342,13 @@ body.customer-light-mode .car-license-fact { background: rgba(255, 255, 255, .7)
                 <!-- Read-Only View Grid -->
                 <?php if ($hasCars && !$showForm): ?>
                     <div class="car-license-grid mb-3">
-                        <div class="car-license-fact"><span>Plate Number</span><strong><?php echo htmlspecialchars((string) $selectedCar['car_plate_number']); ?></strong></div>
-                        <div class="car-license-fact"><span>Owner Name</span><strong><?php echo htmlspecialchars((string) $selectedCar['car_owner_name']); ?></strong></div>
+                        <div class="car-license-fact"><span>Plate Number</span><strong><?php echo htmlspecialchars(privacy_mask_identifier((string) $selectedCar['car_plate_number']), ENT_QUOTES, 'UTF-8'); ?></strong></div>
+                        <div class="car-license-fact"><span>Owner Name</span><strong><?php echo htmlspecialchars(privacy_mask_name((string) $selectedCar['car_owner_name']), ENT_QUOTES, 'UTF-8'); ?></strong></div>
                         <div class="car-license-fact"><span>Model Year</span><strong><?php echo htmlspecialchars((string) $selectedCar['model_year']); ?></strong></div>
                         <div class="car-license-fact"><span>Vehicle Name</span><strong><?php echo htmlspecialchars((string) $selectedCar['vehicle_name']); ?></strong></div>
                         <div class="car-license-fact"><span>Vehicle Type</span><strong><?php echo htmlspecialchars((string) $selectedCar['vehicle_type']); ?></strong></div>
-                        <div class="car-license-fact"><span>Chassis Number</span><strong><?php echo htmlspecialchars((string) $selectedCar['chassis_number']); ?></strong></div>
-                        <div class="car-license-fact"><span>Location</span><strong><?php echo htmlspecialchars((string) $selectedCar['location']); ?></strong></div>
+                        <div class="car-license-fact"><span>Chassis Number</span><strong><?php echo htmlspecialchars(privacy_mask_identifier((string) $selectedCar['chassis_number']), ENT_QUOTES, 'UTF-8'); ?></strong></div>
+                        <div class="car-license-fact"><span>Location</span><strong><?php echo htmlspecialchars(privacy_mask_location((string) $selectedCar['location']), ENT_QUOTES, 'UTF-8'); ?></strong></div>
                         <div class="car-license-fact"><span>Issued Date</span><strong><?php echo htmlspecialchars((string) $selectedCar['issue_date']); ?></strong></div>
                         <div class="car-license-fact"><span>Expiry Date</span><strong><?php echo htmlspecialchars((string) ($selectedCar['license_expire_date'] ?? 'Not set')); ?></strong></div>
                         <div class="car-license-fact"><span>Status</span><strong><?php echo htmlspecialchars(ucfirst((string) ($selectedCar['status'] ?? 'pending'))); ?></strong></div>
@@ -730,12 +731,12 @@ body.customer-light-mode .car-license-fact { background: rgba(255, 255, 255, .7)
                                     <input type="radio" name="car_license_id" value="<?php echo $carId; ?>" <?php echo $isActiveCar ? 'checked' : ''; ?> required>
                                     <span class="car-switch-card d-block">
                                         <div class="d-flex justify-content-between align-items-center mb-2">
-                                            <span class="text-white fw-bold fs-5"><?php echo htmlspecialchars((string) $car['car_plate_number']); ?></span>
+                                            <span class="text-white fw-bold fs-5"><?php echo htmlspecialchars(privacy_mask_identifier((string) $car['car_plate_number']), ENT_QUOTES, 'UTF-8'); ?></span>
                                             <span class="badge <?php echo $isActiveCar ? 'bg-success bg-opacity-25 text-success' : 'bg-secondary bg-opacity-25 text-white-50'; ?>"><?php echo $isActiveCar ? 'Active' : 'Saved'; ?></span>
                                         </div>
                                         <div class="text-secondary small">
                                             <div><i class="bi bi-car-front me-1"></i><?php echo htmlspecialchars($vehicleLabel . ' / ' . $typeLabel); ?></div>
-                                            <div><i class="bi bi-geo-alt me-1"></i><?php echo htmlspecialchars($locationLabel); ?></div>
+                                            <div><i class="bi bi-geo-alt me-1"></i><?php echo htmlspecialchars(privacy_mask_location((string) $locationLabel), ENT_QUOTES, 'UTF-8'); ?></div>
                                         </div>
                                     </span>
                                 </label>

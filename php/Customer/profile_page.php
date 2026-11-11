@@ -23,6 +23,7 @@ require_once __DIR__ . '/../imgbb_image_host.php';
 require_once __DIR__ . '/../Login/session_helper.php';
 require_once __DIR__ . '/car_access.php';
 require_once __DIR__ . '/license_access.php';
+require_once __DIR__ . '/../shared/privacy_display.php';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST'
     && in_array($_POST['action'] ?? '', ['delete_account', 'change_password', 'update_profile'], true)) {
@@ -352,8 +353,8 @@ body.customer-light-mode .profile-active-car { background: rgba(255, 255, 255, .
         <img class="profile-hero-avatar" src="<?php echo htmlspecialchars(map_pump_profile_avatar_url($profileImage, $profileFallbackUrl), ENT_QUOTES, 'UTF-8'); ?>" alt="">
         <div class="min-w-0">
             <div class="profile-eyebrow">Your account</div>
-            <h2 class="profile-hero-name"><?php echo htmlspecialchars((string) ($_SESSION['user_name'] ?? ''), ENT_QUOTES, 'UTF-8'); ?></h2>
-            <div class="profile-hero-email"><?php echo htmlspecialchars((string) ($_SESSION['user_email'] ?? ''), ENT_QUOTES, 'UTF-8'); ?></div>
+            <h2 class="profile-hero-name"><?php echo htmlspecialchars(privacy_mask_name((string) ($_SESSION['user_name'] ?? '')), ENT_QUOTES, 'UTF-8'); ?></h2>
+            <div class="profile-hero-email"><?php echo htmlspecialchars(privacy_mask_email((string) ($_SESSION['user_email'] ?? '')), ENT_QUOTES, 'UTF-8'); ?></div>
         </div>
     </div>
     <div class="profile-hero-stats">
@@ -363,7 +364,7 @@ body.customer-light-mode .profile-active-car { background: rgba(255, 255, 255, .
         </div>
         <div class="profile-stat">
             <span class="profile-stat-label">Active car</span>
-            <strong class="profile-stat-value"><?php echo $activeCar ? htmlspecialchars((string) $activeCar['car_plate_number'], ENT_QUOTES, 'UTF-8') : 'None'; ?></strong>
+            <strong class="profile-stat-value"><?php echo $activeCar ? htmlspecialchars(privacy_mask_identifier((string) $activeCar['car_plate_number']), ENT_QUOTES, 'UTF-8') : 'None'; ?></strong>
         </div>
         <div class="profile-stat">
             <span class="profile-stat-label">Business link</span>
@@ -402,13 +403,13 @@ body.customer-light-mode .profile-active-car { background: rgba(255, 255, 255, .
                 <div class="mb-3">
                     <label class="profile-field-label text-secondary">DISPLAY FULL NAME</label>
                     <div class="form-control custom-form-field profile-readonly text-secondary">
-                        <?php echo htmlspecialchars($_SESSION['user_name']); ?>
+                        <?php echo htmlspecialchars(privacy_mask_name((string) $_SESSION['user_name']), ENT_QUOTES, 'UTF-8'); ?>
                     </div>
                 </div>
                 <div class="mb-4">
                     <label class="profile-field-label text-secondary">REGISTERED SYSTEM EMAIL</label>
                     <div class="form-control custom-form-field profile-readonly text-secondary">
-                        <?php echo htmlspecialchars($_SESSION['user_email']); ?>
+                        <?php echo htmlspecialchars(privacy_mask_email((string) $_SESSION['user_email']), ENT_QUOTES, 'UTF-8'); ?>
                     </div>
                 </div>
                 <div class="d-flex gap-2 flex-wrap">
@@ -484,7 +485,7 @@ body.customer-light-mode .profile-active-car { background: rgba(255, 255, 255, .
                         <div class="d-flex align-items-center justify-content-between gap-3 flex-wrap">
                             <div>
                                 <span class="status-pill active mb-2" style="font-size:10px;"><i class="bi bi-check-circle-fill"></i> Active Car</span>
-                                <div class="text-white fw-semibold"><?php echo htmlspecialchars((string) $activeCar['car_plate_number']); ?></div>
+                                <div class="text-white fw-semibold"><?php echo htmlspecialchars(privacy_mask_identifier((string) $activeCar['car_plate_number']), ENT_QUOTES, 'UTF-8'); ?></div>
                                 <div class="text-secondary" style="font-size:12px;"><?php echo htmlspecialchars(trim((string) ($activeCar['vehicle_name'] ?? '') . ' / ' . (string) ($activeCar['vehicle_type'] ?? ''))); ?></div>
                             </div>
                             <a href="car_license.php?add=1" class="btn btn-outline-info btn-sm px-3 rounded-3 fw-bold profile-small-btn"><i class="bi bi-plus-lg me-1"></i>Add Car</a>
@@ -797,7 +798,7 @@ document.addEventListener('DOMContentLoaded', function () {
                                     <input type="radio" name="car_license_id" value="<?php echo $carId; ?>" <?php echo $isActiveCar ? 'checked' : ''; ?> required>
                                     <span class="car-switch-card d-block">
                                         <div class="d-flex justify-content-between align-items-center mb-2">
-                                            <span class="text-white fw-bold fs-5"><?php echo htmlspecialchars((string) $car['car_plate_number']); ?></span>
+                                            <span class="text-white fw-bold fs-5"><?php echo htmlspecialchars(privacy_mask_identifier((string) $car['car_plate_number']), ENT_QUOTES, 'UTF-8'); ?></span>
                                             <span class="badge <?php echo $isActiveCar ? 'bg-success bg-opacity-25 text-success' : 'bg-secondary bg-opacity-25 text-white-50'; ?>"><?php echo $isActiveCar ? 'Active' : 'Saved'; ?></span>
                                         </div>
                                         <div class="text-secondary small">

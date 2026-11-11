@@ -9,6 +9,7 @@ require_once __DIR__ . '/../conn.php';
 require_once __DIR__ . '/../billing_config.php';
 require_once __DIR__ . '/../imgbb_image_host.php';
 require_once __DIR__ . '/../shared/license_expiry_date.php';
+require_once __DIR__ . '/../shared/privacy_display.php';
 // Handle form submission
 $message = '';
 $loggedUserId = isset($_SESSION['user_id']) ? (int) $_SESSION['user_id'] : 0;
@@ -285,19 +286,19 @@ if ($brandLogo !== '' && !preg_match('#^(?:https?:)?//#i', $brandLogo)) {
             <div class="col">
                 <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-3">
                     <div>
-                        <h3 id="brandSummaryTitle" class="mb-1"><?= htmlspecialchars($brandTitle) ?></h3>
-                        <p class="text-muted mb-0"><?= htmlspecialchars($brandInfo ?: 'No company information added.') ?></p>
+                        <h3 id="brandSummaryTitle" class="mb-1"><?= htmlspecialchars(privacy_mask_name((string) $brandTitle), ENT_QUOTES, 'UTF-8') ?></h3>
+                        <p class="text-muted mb-0"><?= htmlspecialchars(privacy_mask_free_text((string) ($brandInfo ?: 'No company information added.')), ENT_QUOTES, 'UTF-8') ?></p>
                     </div>
                     <button type="button" class="btn btn-primary flex-shrink-0" data-bs-toggle="modal" data-bs-target="#brandInfoModal">Change Info</button>
                 </div>
                 <dl class="row mb-0">
-                    <dt class="col-sm-4 col-lg-3">Corporate Email</dt><dd class="col-sm-8 col-lg-9"><?= htmlspecialchars($brandEmail ?: 'Not provided') ?></dd>
-                    <dt class="col-sm-4 col-lg-3">Contact Phone</dt><dd class="col-sm-8 col-lg-9"><?= htmlspecialchars($brandPhone ?: 'Not provided') ?></dd>
-                    <dt class="col-sm-4 col-lg-3">Business License</dt><dd class="col-sm-8 col-lg-9"><?= htmlspecialchars($businessLicense ?: 'Not provided') ?></dd>
+                    <dt class="col-sm-4 col-lg-3">Corporate Email</dt><dd class="col-sm-8 col-lg-9"><?= htmlspecialchars(privacy_mask_email((string) ($brandEmail ?: 'Not provided')), ENT_QUOTES, 'UTF-8') ?></dd>
+                    <dt class="col-sm-4 col-lg-3">Contact Phone</dt><dd class="col-sm-8 col-lg-9"><?= htmlspecialchars(privacy_mask_phone((string) ($brandPhone ?: 'Not provided')), ENT_QUOTES, 'UTF-8') ?></dd>
+                    <dt class="col-sm-4 col-lg-3">Business License</dt><dd class="col-sm-8 col-lg-9"><?= htmlspecialchars(privacy_mask_identifier((string) ($businessLicense ?: 'Not provided')), ENT_QUOTES, 'UTF-8') ?></dd>
                     <dt class="col-sm-4 col-lg-3">License Expire Date</dt><dd class="col-sm-8 col-lg-9"><?= htmlspecialchars($licenseExpireDate ?: 'Not provided') ?></dd>
-                    <dt class="col-sm-4 col-lg-3">Owner Name</dt><dd class="col-sm-8 col-lg-9"><?= htmlspecialchars($ownerName ?: 'Not available') ?></dd>
+                    <dt class="col-sm-4 col-lg-3">Owner Name</dt><dd class="col-sm-8 col-lg-9"><?= htmlspecialchars(privacy_mask_name((string) ($ownerName ?: 'Not available')), ENT_QUOTES, 'UTF-8') ?></dd>
                     <dt class="col-sm-4 col-lg-3">Register Date</dt><dd class="col-sm-8 col-lg-9"><?= htmlspecialchars($registerDate ?: 'Not available') ?></dd>
-                    <dt class="col-sm-4 col-lg-3">Location</dt><dd class="col-sm-8 col-lg-9 mb-0"><?= htmlspecialchars($location ?: 'Not provided') ?></dd>
+                    <dt class="col-sm-4 col-lg-3">Location</dt><dd class="col-sm-8 col-lg-9 mb-0"><?= htmlspecialchars(privacy_mask_location((string) ($location ?: 'Not provided')), ENT_QUOTES, 'UTF-8') ?></dd>
                 </dl>
             </div>
         </div>

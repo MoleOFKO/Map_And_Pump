@@ -177,7 +177,7 @@ try {
         $fallbackQuery->close();
     }
 
-    echo json_encode([
+    echo json_encode(privacy_mask_sensitive_data([
         'success' => true,
         'hq' => [
             'headquarter_id' => (int) $hq['headquarter_id'],
@@ -196,7 +196,7 @@ try {
         'accounts' => $accounts,
         'stations' => $stations,
         'actions' => $actions,
-    ], JSON_UNESCAPED_UNICODE);
+    ]), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 } catch (Throwable $exception) {
     error_log('[HQ details] ' . $exception->getMessage());
     http_response_code(500);

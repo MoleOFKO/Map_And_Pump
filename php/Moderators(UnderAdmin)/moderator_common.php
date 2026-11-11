@@ -204,7 +204,7 @@ function moderator_request_rows(string $search, string $requestType, string $sta
             'license' => ['license', 'license_modification'],
             'deactivation' => ['deactivation', 'account_deactivation'],
         ][$requestType] ?? [$requestType];
-        $where[] = 'LOWER(r.request_type) IN (' . implode(',', array_fill(0, count($aliases), '?')) . ')';
+        $where[] = 'LOWER(TRIM(r.request_type)) IN (' . implode(',', array_fill(0, count($aliases), '?')) . ')';
         foreach ($aliases as $alias) {
             $params[] = $alias;
             $types .= 's';

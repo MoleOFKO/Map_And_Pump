@@ -34,6 +34,7 @@ $loyaltyBalanceError = false;
 $pendingAccounts = 0;
 $pendingCarLicenseReviewCount = 0;
 $pendingPaymentReviewCount = 0;
+$pendingCompanyRegistrationCount = 0;
 
 if ($dbOnline) {
     // Station totals must come from `branches` (canonical table), never the dummy `stations` view.
@@ -59,6 +60,20 @@ if ($dbOnline) {
     $pendingAccounts = $requestSummary['pending_accounts'];
     $pendingCarLicenseReviewCount = $requestSummary['pending_car_licenses'];
     $pendingPaymentReviewCount = $requestSummary['pending_payment_rows'];
+    if (request_schema_ready()) {
+        $companyRegistrationQuery = $conn->query(
+            "SELECT COUNT(*) AS total
+             FROM system_requests
+             WHERE LOWER(TRIM(request_type)) = 'hq_registration'
+               AND LOWER(TRIM(status)) = 'pending'"
+        );
+        if ($companyRegistrationQuery) {
+            $pendingCompanyRegistrationCount = (int) ($companyRegistrationQuery->fetch_assoc()['total'] ?? 0);
+        } else {
+            error_log('[Request registry] Pending company registration count failed: ' . $conn->error);
+            $requestSummaryError ??= 'Company registration review totals could not be loaded.';
+        }
+    }
     $metrics['open_requests'] = $requestSummary['pending'];
     $metrics['pending_requests'] = $requestSummary['pending'];
 
@@ -363,7 +378,6 @@ body.light-mode .dashboard-shell .summary-stat-grid span[data-live-request-count
             'icon' => $icon,
         ];
     };
-    $addPriorityTask('Inbound requests awaiting review', (int) $requestSummary['pending'], 'Awaiting review', 'view_requests.php?status=pending', 'bi-inbox');
     $addPriorityTask(
         'Driver account verifications',
         $pendingAccounts,
@@ -375,14 +389,21 @@ body.light-mode .dashboard-shell .summary-stat-grid span[data-live-request-count
         'Vehicle license reviews',
         $pendingCarLicenseReviewCount,
         'Awaiting review',
-        'view_requests.php?type=account&status=pending',
+        'view_requests.php?type=car_license&status=pending',
         'bi-car-front'
+    );
+    $addPriorityTask(
+        'Company registrations reviews',
+        $pendingCompanyRegistrationCount,
+        'Awaiting review',
+        'view_requests.php?type=hq_registration&status=pending',
+        'bi-building-check'
     );
     $addPriorityTask('Payment confirmations to verify', $pendingPaymentReviewCount, 'Awaiting verification', 'view_requests.php?type=payment&status=pending', 'bi-cash-coin');
     $addPriorityTask('Company licenses expiring soon', (int) ($expiryPayload['warning_hq'] ?? 0), 'Due within 10 days', 'view_hq_and_user_account.php?expiry=warning', 'bi-building');
     $addPriorityTask('Driver licenses expiring soon', (int) ($expiryPayload['warning_users'] ?? 0), 'Due within 10 days', 'view_users.php?expiry=warning', 'bi-person-vcard');
     $addPriorityTask('Expired company licenses', (int) ($expiryPayload['expired_hq'] ?? 0), 'Renewal follow-up', 'view_hq_and_user_account.php?expiry=expired', 'bi-building-exclamation');
-    $addPriorityTask('Expired driver licenses', (int) ($expiryPayload['expired_users'] ?? 0), 'Renewal follow-up', 'view_users.php?expiry=expired', 'bi-person-x');
+    $addPriorityTask('Expired driver licenses', (int) ($expiryPayload['expired_users_all_statuses'] ?? $expiryPayload['expired_users'] ?? 0), 'Renewal follow-up', 'view_users.php?expiry=expired', 'bi-person-x');
     ?>
     <div class="row g-3 mb-4">
         <div class="col-12 col-sm-6 col-xl-3">
@@ -498,7 +519,7 @@ body.light-mode .dashboard-shell .summary-stat-grid span[data-live-request-count
                     <div class="d-flex align-items-center justify-content-between gap-3">
                         <div>
                             <p class="mb-0 metric-label text-danger">Expired Driver Licenses</p>
-                            <h3 class="metric-value text-white mb-0"><?= (int) ($expiryPayload['expired_users'] ?? 0) ?></h3>
+                            <h3 class="metric-value text-white mb-0"><?= (int) ($expiryPayload['expired_users_all_statuses'] ?? $expiryPayload['expired_users'] ?? 0) ?></h3>
                         </div>
                         <span class="text-danger fs-3"><i class="bi bi-person-x"></i></span>
                     </div>

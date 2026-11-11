@@ -281,12 +281,12 @@ if ($hasCustomerProfile) {
                     <?php if ($hasCustomerProfile): ?>
                         <div class="small text-white-50 mb-2">
                             <span class="text-white fw-semibold"><?= hq_escape((string) $user['user_name']) ?></span>
-                            <span class="d-block"><?= hq_escape((string) $user['email']) ?></span>
+                            <span class="d-block"><?= hq_escape(privacy_mask_email((string) $user['email'])) ?></span>
                         </div>
                         <?php if ($customerVehicle): ?>
                             <div class="small text-white-50 mb-3">
                                 <i class="bi bi-car-front me-1 txt-neon-cyan"></i>
-                                <?= hq_escape((string) $customerVehicle['car_plate_number']) ?>
+                                <?= hq_escape(privacy_mask_identifier((string) $customerVehicle['car_plate_number'])) ?>
                                 <?php
                                 $vehicleDescription = trim(implode(' / ', array_filter([
                                     trim((string) ($customerVehicle['vehicle_name'] ?? '')),

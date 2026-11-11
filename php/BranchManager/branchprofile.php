@@ -727,7 +727,7 @@ $has_unread   = $unread_count > 0;
               <span class="status-badge <?= h($branch['status']) ?>"><span class="d"></span> <?= h(ucfirst($branch['status'])) ?></span>
             </h4>
             <div class="sub">
-              <span><i class="fa-solid fa-location-dot"></i> <?= h($branch['address'] ?: 'No address on file') ?></span>
+              <span><i class="fa-solid fa-location-dot"></i> <?= h(privacy_mask_location((string) ($branch['address'] ?: 'No address on file'))) ?></span>
               <span>·</span>
               <span><i class="fa-solid fa-hashtag"></i> <?= h($branch['branch_code']) ?></span>
             </div>
@@ -782,17 +782,17 @@ $has_unread   = $unread_count > 0;
 
             <div class="form-group">
               <label for="address">Full Address</label>
-              <input type="text" id="address" name="address" class="form-control-custom editable-field" disabled value="<?= h($branch['address']) ?>">
+              <input type="text" id="address" name="address" class="form-control-custom editable-field" disabled value="<?= h(privacy_mask_location((string) $branch['address'])) ?>" data-masked-value="<?= h(privacy_mask_location((string) $branch['address'])) ?>" data-full-value="<?= h((string) $branch['address']) ?>">
             </div>
 
             <div class="form-row">
               <div class="form-group">
                 <label for="branch_phone">Branch Phone</label>
-                <input type="text" id="branch_phone" name="branch_phone" class="form-control-custom editable-field" disabled value="<?= h($branch['phone']) ?>">
+                <input type="text" id="branch_phone" name="branch_phone" class="form-control-custom editable-field" disabled value="<?= h(privacy_mask_phone((string) $branch['phone'])) ?>" data-masked-value="<?= h(privacy_mask_phone((string) $branch['phone'])) ?>" data-full-value="<?= h((string) $branch['phone']) ?>">
               </div>
               <div class="form-group">
                 <label for="branch_email">Branch Email</label>
-                <input type="email" id="branch_email" name="branch_email" class="form-control-custom editable-field" disabled value="<?= h($branch['email']) ?>">
+                <input type="email" id="branch_email" name="branch_email" class="form-control-custom editable-field" disabled value="<?= h(privacy_mask_email((string) $branch['email'])) ?>" data-masked-value="<?= h(privacy_mask_email((string) $branch['email'])) ?>" data-full-value="<?= h((string) $branch['email']) ?>">
               </div>
             </div>
 
@@ -918,6 +918,14 @@ document.addEventListener('DOMContentLoaded', () => {
       const isEditing = toggleEditBtn.classList.toggle('is-editing');
       toggleEditText.textContent = isEditing ? 'Cancel' : 'Edit';
       editableFields.forEach((field) => {
+        if (field.dataset.maskedValue !== undefined) {
+          if (isEditing) {
+            field.value = field.dataset.fullValue || '';
+          } else {
+            field.dataset.fullValue = field.value;
+            field.value = field.dataset.maskedValue;
+          }
+        }
         field.disabled = !isEditing;
       });
       if (saveBtn) saveBtn.disabled = !isEditing;
