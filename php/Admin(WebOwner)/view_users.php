@@ -419,29 +419,25 @@ document.addEventListener('DOMContentLoaded', () => {
 
             let licenseBlock = '';
             if (license) {
+                // Account view: minimum license fields only. NRC, DOB, blood type, phone are never shown.
                 licenseBlock =
                     '<div class="d-flex align-items-center justify-content-between mb-2"><h6 class="text-white fw-semibold mb-0"><i class="bi bi-card-heading txt-neon-cyan me-2"></i>License</h6></div>' +
                     '<div class="row g-3 mb-4">' +
                     '<div class="col-12 col-sm-6 col-lg-4">' + card('License name', esc(license.license_name || '—')) + '</div>' +
                     '<div class="col-12 col-sm-6 col-lg-4">' + card('License number', esc(license.license_number || '—')) + '</div>' +
-                    '<div class="col-6 col-sm-4 col-lg-4">' + card('Phone', esc(license.phone_number || '—')) + '</div>' +
-                    '<div class="col-6 col-sm-4 col-lg-4">' + card('NRC', esc(license.nrc_number || '—')) + '</div>' +
                     '<div class="col-6 col-sm-4 col-lg-4">' + card('Status', esc(license.status || '—')) + '</div>' +
-                    '<div class="col-6 col-sm-4 col-lg-4">' + card('Date of birth', esc(license.date_of_birth || '—')) + '</div>' +
-                    '<div class="col-6 col-sm-4 col-lg-4">' + card('Blood type', esc(license.blood_type || '—')) + '</div>' +
                     '<div class="col-6 col-sm-4 col-lg-4">' + card('Valid until', esc(license.license_last_valid_date || '—')) + '</div>' +
                     '</div>';
             }
 
             let hqBlock = '';
             if (hq) {
+                // Account view: company name + location only.
                 hqBlock =
                     '<div class="d-flex align-items-center justify-content-between mb-2"><h6 class="text-white fw-semibold mb-0"><i class="bi bi-building txt-neon-cyan me-2"></i>Linked Company</h6></div>' +
                     '<div class="row g-3 mb-4">' +
-                    '<div class="col-12 col-sm-6 col-lg-3">' + card('Company', esc(hq.company_name || '—')) + '</div>' +
-                    '<div class="col-12 col-sm-6 col-lg-3">' + card('Location', esc(hq.location || '—')) + '</div>' +
-                    '<div class="col-12 col-sm-6 col-lg-3">' + card('Company email', esc(hq.headquarter_email || '—')) + '</div>' +
-                    '<div class="col-12 col-sm-6 col-lg-3">' + card('Contact', esc(hq.contact_number || '—')) + '</div>' +
+                    '<div class="col-12 col-sm-6 col-lg-6">' + card('Company', esc(hq.company_name || '—')) + '</div>' +
+                    '<div class="col-12 col-sm-6 col-lg-6">' + card('Location', esc(hq.location || '—')) + '</div>' +
                     '</div>';
             }
 
@@ -461,8 +457,15 @@ document.addEventListener('DOMContentLoaded', () => {
             let duplicateBlock = '';
             if (conflicts.length) {
                 const existing = conflicts[0] || {};
+                const matchTypes = Array.isArray(existing.duplicate_fields) && existing.duplicate_fields.length
+                    ? existing.duplicate_fields.join(', ')
+                    : 'Driver license number or NRC number';
+                const docThumb = (path, label) => {
+                    if (!path) return '';
+                    return '<div class="mod-detail-value small mt-2">' + esc(label) + ': <a href="' + esc(path) + '" target="_blank" rel="noopener" class="txt-neon-cyan">View</a></div>';
+                };
                 duplicateBlock =
-                    '<div class="alert alert-warning d-flex align-items-center justify-content-between gap-3 flex-wrap mb-4"><span><i class="bi bi-exclamation-triangle-fill me-2"></i>Duplicate license number or NRC was found for this driver.</span></div>' +
+                    '<div class="alert alert-warning d-flex align-items-center justify-content-between gap-3 flex-wrap mb-4"><span><i class="bi bi-exclamation-triangle-fill me-2"></i>Automated conflict detection matched on: ' + esc(matchTypes) + '.</span></div>' +
                     '<div class="row g-3 mb-4">' +
                     '<div class="col-12 col-lg-6">' +
                     '<div class="p-3 rounded-3 h-100" style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);">' +
@@ -470,7 +473,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     '<div class="mod-detail-value fw-semibold mb-2">' + esc(u.user_name || 'Name unavailable') + '</div>' +
                     '<div class="mod-detail-value small text-white-50 mb-2">' + esc(u.email || 'Not provided') + '</div>' +
                     '<div class="mod-detail-value small">License: ' + esc((license && license.license_number) || 'Not provided') + '</div>' +
-                    '<div class="mod-detail-value small mt-1">NRC: ' + esc((license && license.nrc_number) || 'Not provided') + '</div>' +
+                    '<div class="mod-detail-value small mt-1">Matched on: ' + esc(matchTypes) + '</div>' +
+                    docThumb(license && license.license_image, 'License image') +
+                    docThumb(license && license.face_image, 'Face image') +
                     '</div>' +
                     '</div>' +
                     '<div class="col-12 col-lg-6">' +
@@ -479,7 +484,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     '<div class="mod-detail-value fw-semibold mb-2">' + esc(existing.user_name || 'Name unavailable') + '</div>' +
                     '<div class="mod-detail-value small text-white-50 mb-2">' + esc(existing.email || 'Not provided') + '</div>' +
                     '<div class="mod-detail-value small">License: ' + esc(existing.license_number || 'Not provided') + '</div>' +
-                    '<div class="mod-detail-value small mt-1">NRC: ' + esc(existing.nrc_number || 'Not provided') + '</div>' +
+                    '<div class="mod-detail-value small mt-1">Matched on: ' + esc(matchTypes) + '</div>' +
+                    docThumb(existing.license_image, 'License image') +
+                    docThumb(existing.face_image, 'Face image') +
                     '</div>' +
                     '</div>' +
                     '</div>' +

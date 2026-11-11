@@ -740,21 +740,10 @@ body.background_color.admin-blue-page:is(.light-mode,[data-theme="light"]) {
                                 data-payment-amount="<?= hq_escape(number_format((float) $paymentRow['amount_mmk'], 2)) ?>" data-payment-date="<?= hq_escape(request_date((string) $paymentRow['created_at'])) ?>"
                                 data-payment-method="<?= hq_escape((string) ($paymentRow['payment_method'] ?? 'Not provided')) ?>" data-receipt-name="<?= hq_escape((string) ($paymentRow['receipt_name'] ?? '')) ?>"
                                 data-receipt-mime="<?= hq_escape((string) ($paymentRow['receipt_mime_type'] ?? '')) ?>" data-is-payer="<?= $isPayer ? 'yes' : 'no' ?>"><i class="bi bi-eye-fill"></i></button>
-                            <?php
-                            $canShowPaymentActions = $paymentState === 'payer_reported_paid' && !$isPayer && (!$isRegistrationPayment || $registrationCanComplete);
-                            $paymentActionHint = '';
-                            if ($paymentState === 'pending_payment') {
-                                $paymentActionHint = 'Awaiting payer to report payment and upload evidence. Approve/Reject appear after that.';
-                            } elseif ($isPayer && in_array($paymentState, ['pending_payment', 'payer_reported_paid'], true)) {
-                                $paymentActionHint = 'You are the payer on this record. Another Admin or Moderator must verify it.';
-                            } elseif ($isRegistrationPayment && $paymentState === 'payer_reported_paid' && !$registrationCanComplete) {
-                                $paymentActionHint = 'Linked company registration is not pending/approved, so verification is blocked.';
-                            }
-                            ?>
-                            <?php if ($canShowPaymentActions): ?><div class="d-none" id="paymentActions<?= $paymentId ?>">
+                            <?php if ($paymentState === 'payer_reported_paid' && !$isPayer && (!$isRegistrationPayment || $registrationCanComplete)): ?><div class="d-none" id="paymentActions<?= $paymentId ?>">
                                 <form action="/php/Payment/action.php" method="POST" class="m-0 flex-fill"><input type="hidden" name="csrf_token" value="<?= hq_escape((string) $_SESSION['payment_transfer_csrf']) ?>"><input type="hidden" name="transfer_id" value="<?= $paymentId ?>"><input type="hidden" name="action" value="confirm_received"><input type="hidden" name="return_to" value="/php/Admin(WebOwner)/view_requests.php"><button type="submit" class="request-action-btn request-action-btn--approve" onclick="return confirm('<?= $isRegistrationPayment ? 'Confirm the funds were received. This will also complete the company registration.' : 'Confirm receipt only after checking your bank or wallet records.' ?>')">Approve</button></form>
                                 <form action="/php/Payment/action.php" method="POST" class="m-0 flex-fill"><input type="hidden" name="csrf_token" value="<?= hq_escape((string) $_SESSION['payment_transfer_csrf']) ?>"><input type="hidden" name="transfer_id" value="<?= $paymentId ?>"><input type="hidden" name="action" value="mark_not_received"><input type="hidden" name="return_to" value="/php/Admin(WebOwner)/view_requests.php"><input type="hidden" name="decision_note" value="Payment not verified by Admin."><button type="submit" class="request-action-btn request-action-btn--payment-reject" onclick="return confirm('Record that the payment was not received or could not be verified?')">Reject</button></form>
-                            </div><?php elseif ($paymentActionHint !== ''): ?><div class="d-none" id="paymentActions<?= $paymentId ?>"><div class="small text-warning me-auto"><?= hq_escape($paymentActionHint) ?></div></div><?php endif; ?>
+                            </div><?php endif; ?>
                         </div></td>
                     </tr>
                 <?php endforeach; ?>
@@ -772,7 +761,7 @@ body.background_color.admin-blue-page:is(.light-mode,[data-theme="light"]) {
         <div class="modal fade glass-modal request-review-success" id="accountReviewSuccessModal" tabindex="-1" aria-labelledby="accountReviewSuccessLabel" aria-hidden="true"><div class="modal-dialog modal-dialog-centered modal-sm"><div class="modal-content"><div class="modal-body text-center py-4 px-4"><div class="request-review-success-icon"><i class="bi bi-check-lg"></i></div><h5 class="fw-bold text-white mb-2" id="accountReviewSuccessLabel">Action completed</h5><p class="text-white-50 mb-1">The <?= hq_escape((string) $accountReviewSuccess['action']) ?> is executed successfully!</p><p class="small text-white-50 mb-0">Account ACCT-<?= (int) ($accountReviewSuccess['account_id'] ?? 0) ?></p></div><div class="modal-footer justify-content-center"><button type="button" class="btn btn-neon px-4" data-bs-dismiss="modal">Done</button></div></div></div></div>
     <?php endif; ?>
 
-    <div class="modal fade glass-modal" id="rejectReqModal" tabindex="-1" aria-labelledby="rejectReqModalLabel" aria-hidden="true"><div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-header"><h5 class="modal-title fw-bold" id="rejectReqModalLabel"><i class="bi bi-shield-x text-danger me-2"></i> Reject Request</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button></div><form action="request_action.php" method="POST" id="rejectReqForm"><div class="modal-body d-flex flex-column gap-3"><input type="hidden" name="request_id" id="rejectRequestId"><input type="hidden" name="user_id" id="rejectUserId"><input type="hidden" name="action" value="reject"><input type="hidden" name="return_to" value="view_requests.php"><div class="small text-white-50">Target request: <span class="txt-neon-cyan fw-semibold" id="rejectRequestReference">—</span></div><div class="small text-white-50">Sender: <span class="text-white" id="rejectRequestSender">—</span></div><div><label class="form-label text-white-50 small" for="rejectReasonCode">Reason for rejection <span class="text-danger">*</span></label><select class="form-select glass-select" name="reject_reason_code" id="rejectReasonCode" required><option value="" selected disabled>Select a reason…</option><?php foreach (request_rejection_reason_options() as $reasonCode => $reasonLabel): ?><option value="<?= hq_escape($reasonCode) ?>"><?= hq_escape($reasonLabel) ?></option><?php endforeach; ?></select></div><div id="rejectReasonDetailsWrap" hidden><label class="form-label text-white-50 small" for="rejectReason">Additional details <span class="text-danger" id="rejectReasonRequiredMark" hidden>*</span></label><textarea class="form-control glass-input" name="reason" id="rejectReason" rows="4" maxlength="2000" placeholder="Add optional details, or specify the reason when Other is selected…" style="resize:none;"></textarea><div class="form-text text-white-50 small" id="rejectReasonHint">Optional for preset reasons. Required when you choose Other.</div></div></div><div class="modal-footer"><button type="button" class="btn btn-outline-secondary rounded-3 text-white-50 border-secondary border-opacity-20" data-bs-dismiss="modal">Cancel</button><button type="submit" class="btn btn-danger">Reject</button></div></form></div></div></div>
+    <div class="modal fade glass-modal" id="rejectReqModal" tabindex="-1" aria-labelledby="rejectReqModalLabel" aria-hidden="true"><div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-header"><h5 class="modal-title fw-bold" id="rejectReqModalLabel"><i class="bi bi-shield-x text-danger me-2"></i> Reject Request</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button></div><form action="request_action.php" method="POST" id="rejectReqForm"><div class="modal-body d-flex flex-column gap-3"><input type="hidden" name="request_id" id="rejectRequestId"><input type="hidden" name="user_id" id="rejectUserId"><input type="hidden" name="action" value="reject"><input type="hidden" name="return_to" value="view_requests.php"><div class="small text-white-50">Target request: <span class="txt-neon-cyan fw-semibold" id="rejectRequestReference">—</span></div><div class="small text-white-50">Sender: <span class="text-white" id="rejectRequestSender">—</span></div><div><label class="form-label text-white-50 small" for="rejectReason">Reason for rejection</label><textarea class="form-control glass-input" name="reason" id="rejectReason" rows="5" maxlength="2000" placeholder="Explain why this request is being rejected..." required style="resize:none;"></textarea></div></div><div class="modal-footer"><button type="button" class="btn btn-outline-secondary rounded-3 text-white-50 border-secondary border-opacity-20" data-bs-dismiss="modal">Cancel</button><button type="submit" class="btn btn-danger">Reject</button></div></form></div></div></div>
 
     
 
@@ -790,34 +779,8 @@ body.background_color.admin-blue-page:is(.light-mode,[data-theme="light"]) {
             const rejectUserId = document.getElementById('rejectUserId');
             const rejectReference = document.getElementById('rejectRequestReference');
             const rejectSender = document.getElementById('rejectRequestSender');
-            const rejectReasonCode = document.getElementById('rejectReasonCode');
             const rejectReason = document.getElementById('rejectReason');
-            const rejectReasonDetailsWrap = document.getElementById('rejectReasonDetailsWrap');
-            const rejectReasonRequiredMark = document.getElementById('rejectReasonRequiredMark');
-            const rejectReasonHint = document.getElementById('rejectReasonHint');
             const approveId = document.getElementById('approveRequestId');
-            const syncRejectReasonUi = () => {
-                const code = String(rejectReasonCode?.value || '');
-                const isOther = code === 'other';
-                if (rejectReasonDetailsWrap) {
-                    rejectReasonDetailsWrap.hidden = code === '';
-                }
-                if (rejectReason) {
-                    rejectReason.required = isOther;
-                    rejectReason.placeholder = isOther
-                        ? 'Describe the rejection reason…'
-                        : 'Optional notes for this rejection…';
-                }
-                if (rejectReasonRequiredMark) {
-                    rejectReasonRequiredMark.hidden = !isOther;
-                }
-                if (rejectReasonHint) {
-                    rejectReasonHint.textContent = isOther
-                        ? 'Required when you choose Other.'
-                        : 'Optional for preset reasons. Required when you choose Other.';
-                }
-            };
-            rejectReasonCode?.addEventListener('change', syncRejectReasonUi);
             const escapeHtml = (value) => String(value ?? '').replace(/[&<>'"]/g, (character) => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#039;','"':'&quot;'}[character]));
             const formatDate = (value) => value ? new Date(String(value).replace(' ', 'T')).toLocaleString() : 'Not available';
             const statusClass = (status) => ({approved:'request-status-approved', rejected:'request-status-rejected', flagged:'request-status-flagged'}[String(status || '').toLowerCase()] || 'request-status-pending');
@@ -920,13 +883,7 @@ body.background_color.admin-blue-page:is(.light-mode,[data-theme="light"]) {
                 rejectUserId.value = targetType === 'account' ? id : '';
                 rejectReference.textContent = label || 'Selected request';
                 rejectSender.textContent = sender || 'Unknown sender';
-                if (rejectReasonCode) {
-                    rejectReasonCode.value = '';
-                }
-                if (rejectReason) {
-                    rejectReason.value = '';
-                }
-                syncRejectReasonUi();
+                rejectReason.value = '';
                 rejectModal.show();
             };
             document.addEventListener('click', (event) => {
@@ -1055,25 +1012,21 @@ body.background_color.admin-blue-page:is(.light-mode,[data-theme="light"]) {
 
                         const verificationSection = '<div class="acct-section"><div class="acct-section-title"><i class="bi bi-patch-check"></i>Verification Status</div>' + fieldRow('bi-person-check', 'Account Status', '<span class="request-status request-status-pending">Pending Verification</span>') + fieldRow('bi-card-checklist', 'License Status', '<span class="request-status ' + statusClass((l && l.status) || 'pending') + '">' + escapeHtml(statusLabel((l && l.status) || 'pending')) + '</span>') + '</div>';
 
+                        // Request review: only fields needed to approve/reject. NRC, DOB, blood type, phone never shown.
                         const licenseBlock = l ? '<div class="acct-section"><div class="acct-section-title"><i class="bi bi-card-heading"></i>Driver License Details</div><div class="row g-3">' +
                             '<div class="col-12 col-md-6">' + fieldRow('bi-hash', 'License Number', escapeHtml(l.license_number || 'Not provided')) + '</div>' +
                             '<div class="col-12 col-md-6">' + fieldRow('bi-person-lines-fill', 'License Name', escapeHtml(l.license_name || 'Not provided')) + '</div>' +
-                            '<div class="col-12 col-md-6">' + fieldRow('bi-telephone', 'Phone', escapeHtml(l.phone_number || 'Not provided')) + '</div>' +
-                            '<div class="col-12 col-md-6">' + fieldRow('bi-person-vcard', 'NRC', escapeHtml(l.nrc_number || 'Not provided')) + '</div>' +
-                            '<div class="col-12 col-md-6">' + fieldRow('bi-cake2', 'Date of Birth', escapeHtml(l.date_of_birth || 'Not provided')) + '</div>' +
-                            '<div class="col-12 col-md-6">' + fieldRow('bi-droplet', 'Blood Type', escapeHtml(l.blood_type || 'Not provided')) + '</div>' +
                             '<div class="col-12 col-md-6">' + fieldRow('bi-calendar-check', 'Valid Until', escapeHtml(l.license_last_valid_date || 'Not provided')) + '</div>' +
+                            '<div class="col-12 col-md-6">' + fieldRow('bi-card-checklist', 'License Status', escapeHtml(statusLabel(l.status || 'pending'))) + '</div>' +
                             '</div><div class="mt-2"><div class="request-detail-label mb-2">Uploaded Documents</div><div class="acct-doc-grid">' + docCard(l.license_image, 'License image', 'bi-card-image') + docCard(l.face_image, 'Face photo', 'bi-person-bounding-box') + '</div></div></div>'
                             : '<div class="acct-section"><div class="acct-empty-note"><i class="bi bi-info-circle txt-neon-cyan"></i>No driver license has been linked to this account yet.</div></div>';
 
+                        // Request review company: identity docs needed for decision; contact email/phone/bio omitted.
                         const companyBlock = h ? '<div class="acct-section"><div class="acct-section-title"><i class="bi bi-building"></i>Company Details</div><div class="row g-3">' +
                             '<div class="col-12 col-md-6">' + fieldRow('bi-building', 'Company', escapeHtml(h.company_name || u.headquarter_name || 'Not provided')) + '</div>' +
-                            '<div class="col-12 col-md-6">' + fieldRow('bi-envelope', 'Company email', escapeHtml(h.headquarter_email || 'Not provided')) + '</div>' +
-                            '<div class="col-12 col-md-6">' + fieldRow('bi-telephone-outbound', 'Contact', escapeHtml(h.contact_number || 'Not provided')) + '</div>' +
                             '<div class="col-12 col-md-6">' + fieldRow('bi-geo-alt', 'Location', escapeHtml(h.location || u.headquarter_location || 'Not provided')) + '</div>' +
                             '<div class="col-12 col-md-6">' + fieldRow('bi-file-earmark-ruled', 'Business License', escapeHtml(h.business_license || 'Not provided')) + '</div>' +
                             '<div class="col-12 col-md-6">' + fieldRow('bi-calendar-x', 'License Expiry', escapeHtml(h.business_license_expire_date || h.expire_at || 'Not provided')) + '</div>' +
-                            '<div class="col-12">' + fieldRow('bi-chat-square-text', 'Company Bio', escapeHtml(h.headquarter_bio || 'Not provided')) + '</div>' +
                             '</div><div class="mt-2"><div class="request-detail-label mb-2">Uploaded Documents</div><div class="acct-doc-grid">' + docCard(h.company_logo, 'Company logo', 'bi-image') + docCard(h.business_license_image, 'License / receipt', 'bi-file-earmark-text') + '</div></div></div>'
                             : '';
 

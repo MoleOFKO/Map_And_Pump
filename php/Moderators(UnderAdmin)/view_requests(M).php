@@ -295,21 +295,10 @@ $flashType = (string) ($flash['type'] ?? '');
                         data-payment-amount="<?= moderator_escape(number_format((float) $paymentRow['amount_mmk'], 2)) ?>" data-payment-date="<?= moderator_escape(moderator_format_date((string) $paymentRow['created_at'])) ?>"
                         data-payment-method="<?= moderator_escape((string) ($paymentRow['payment_method'] ?? 'Not provided')) ?>" data-receipt-name="<?= moderator_escape((string) ($paymentRow['receipt_name'] ?? '')) ?>"
                         data-receipt-mime="<?= moderator_escape((string) ($paymentRow['receipt_mime_type'] ?? '')) ?>" data-is-payer="<?= $isPayer ? 'yes' : 'no' ?>"><i class="bi bi-eye-fill"></i></button>
-                    <?php
-                    $canShowPaymentActions = $paymentState === 'payer_reported_paid' && !$isPayer && (!$isRegistrationPayment || $registrationCanComplete);
-                    $paymentActionHint = '';
-                    if ($paymentState === 'pending_payment') {
-                        $paymentActionHint = 'Awaiting payer to report payment and upload evidence. Approve/Reject appear after that.';
-                    } elseif ($isPayer && in_array($paymentState, ['pending_payment', 'payer_reported_paid'], true)) {
-                        $paymentActionHint = 'You are the payer on this record. Another Admin or Moderator must verify it.';
-                    } elseif ($isRegistrationPayment && $paymentState === 'payer_reported_paid' && !$registrationCanComplete) {
-                        $paymentActionHint = 'Linked company registration is not pending/approved, so verification is blocked.';
-                    }
-                    ?>
-                    <?php if ($canShowPaymentActions): ?><div class="d-none" id="paymentActions<?= $paymentId ?>">
+                    <?php if ($paymentState === 'payer_reported_paid' && !$isPayer && (!$isRegistrationPayment || $registrationCanComplete)): ?><div class="d-none" id="paymentActions<?= $paymentId ?>">
                         <form action="/php/Payment/action.php" method="POST" class="m-0 flex-fill"><input type="hidden" name="csrf_token" value="<?= moderator_escape((string) ($_SESSION['payment_transfer_csrf'] ?? '')) ?>"><input type="hidden" name="transfer_id" value="<?= $paymentId ?>"><input type="hidden" name="action" value="confirm_received"><input type="hidden" name="return_to" value="/php/Moderators(UnderAdmin)/view_requests(M).php"><button type="submit" class="btn btn-success w-100" onclick="return confirm('Confirm receipt only after checking your bank or wallet records.')">Approve</button></form>
                         <form action="/php/Payment/action.php" method="POST" class="m-0 flex-fill"><input type="hidden" name="csrf_token" value="<?= moderator_escape((string) ($_SESSION['payment_transfer_csrf'] ?? '')) ?>"><input type="hidden" name="transfer_id" value="<?= $paymentId ?>"><input type="hidden" name="action" value="mark_not_received"><input type="hidden" name="return_to" value="/php/Moderators(UnderAdmin)/view_requests(M).php"><input type="hidden" name="decision_note" value="Payment not verified by Moderator."><button type="submit" class="btn btn-danger w-100" onclick="return confirm('Record that the payment was not received or could not be verified?')">Reject</button></form>
-                    </div><?php elseif ($paymentActionHint !== ''): ?><div class="d-none" id="paymentActions<?= $paymentId ?>"><div class="small text-warning me-auto"><?= moderator_escape($paymentActionHint) ?></div></div><?php endif; ?>
+                    </div><?php endif; ?>
                 </div></td>
             </tr>
         <?php endforeach; ?>
@@ -323,7 +312,7 @@ $flashType = (string) ($flash['type'] ?? '');
 
 <div class="modal fade glass-modal request-detail-modal" id="viewReqModal" tabindex="-1" aria-labelledby="viewReqTitle" aria-hidden="true"><div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-xl"><div class="modal-content"><div class="modal-header"><h5 class="modal-title fw-bold" id="viewReqTitle"><i class="bi bi-file-earmark-text txt-neon-cyan me-2"></i> Request Details</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button></div><div class="modal-body" id="requestDetailsBody"><div class="text-center text-white-50 py-5"><div class="spinner-border spinner-border-sm txt-neon-cyan mb-2" role="status"></div><div>Loading request details…</div></div></div><div class="modal-footer" id="requestDetailsFooter"><button type="button" class="btn btn-outline-secondary rounded-3 text-white-50 border-secondary border-opacity-20 w-100" data-bs-dismiss="modal">Close</button></div></div></div></div>
 
-<div class="modal fade glass-modal" id="rejectReqModal" tabindex="-1" aria-labelledby="rejectReqModalLabel" aria-hidden="true"><div class="modal-dialog modal-dialog-centered modal-dialog-scrollable"><div class="modal-content"><div class="modal-header"><h5 class="modal-title fw-bold" id="rejectReqModalLabel"><i class="bi bi-shield-x text-danger me-2"></i> Reject Request</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button></div><form action="request_action(M).php" method="POST" id="rejectReqForm"><div class="modal-body d-flex flex-column gap-3"><input type="hidden" name="request_id" id="rejectRequestId"><input type="hidden" name="user_id" id="rejectUserId"><input type="hidden" name="action" value="reject"><input type="hidden" name="return_to" value="view_requests(M).php"><div class="small text-white-50">Target request: <span class="txt-neon-cyan fw-semibold" id="rejectRequestReference">—</span></div><div class="small text-white-50">Sender: <span class="text-white" id="rejectRequestSender">—</span></div><div><label class="form-label text-white-50 small" for="rejectReasonCode">Reason for rejection <span class="text-danger">*</span></label><select class="form-select glass-select" name="reject_reason_code" id="rejectReasonCode" required><option value="" selected disabled>Select a reason…</option><?php foreach (request_rejection_reason_options() as $reasonCode => $reasonLabel): ?><option value="<?= moderator_escape($reasonCode) ?>"><?= moderator_escape($reasonLabel) ?></option><?php endforeach; ?></select></div><div id="rejectReasonDetailsWrap" hidden><label class="form-label text-white-50 small" for="rejectReason">Additional details <span class="text-danger" id="rejectReasonRequiredMark" hidden>*</span></label><textarea class="form-control glass-input" name="reason" id="rejectReason" rows="4" maxlength="2000" placeholder="Add optional details, or specify the reason when Other is selected…" style="resize:none;"></textarea><div class="form-text text-white-50 small" id="rejectReasonHint">Optional for preset reasons. Required when you choose Other.</div></div></div><div class="modal-footer"><button type="button" class="btn btn-outline-secondary rounded-3 text-white-50 border-secondary border-opacity-20" data-bs-dismiss="modal">Cancel</button><button type="submit" class="btn btn-danger">Confirm Rejection</button></div></form></div></div></div>
+<div class="modal fade glass-modal" id="rejectReqModal" tabindex="-1" aria-labelledby="rejectReqModalLabel" aria-hidden="true"><div class="modal-dialog modal-dialog-centered modal-dialog-scrollable"><div class="modal-content"><div class="modal-header"><h5 class="modal-title fw-bold" id="rejectReqModalLabel"><i class="bi bi-shield-x text-danger me-2"></i> Reject Request</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button></div><form action="request_action(M).php" method="POST" id="rejectReqForm"><div class="modal-body d-flex flex-column gap-3"><input type="hidden" name="request_id" id="rejectRequestId"><input type="hidden" name="user_id" id="rejectUserId"><input type="hidden" name="action" value="reject"><input type="hidden" name="return_to" value="view_requests(M).php"><div class="small text-white-50">Target request: <span class="txt-neon-cyan fw-semibold" id="rejectRequestReference">—</span></div><div class="small text-white-50">Sender: <span class="text-white" id="rejectRequestSender">—</span></div><div><label class="form-label text-white-50 small" for="rejectReason">Reason for rejection</label><textarea class="form-control glass-input" name="reason" id="rejectReason" rows="5" maxlength="2000" placeholder="Explain why this request is being rejected..." required style="resize:none;"></textarea></div></div><div class="modal-footer"><button type="button" class="btn btn-outline-secondary rounded-3 text-white-50 border-secondary border-opacity-20" data-bs-dismiss="modal">Cancel</button><button type="submit" class="btn btn-danger">Confirm Rejection</button></div></form></div></div></div>
 
 <?php $moderatorActiveNav = 'requests'; include __DIR__ . '/includes/moderator_offcanvas.php'; ?>
 <footer class="text-white-50 text-center py-4 mt-5 small">&copy; 2026 Map &amp; Pump | All Rights Reserved</footer>
@@ -340,34 +329,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const rejectUserId = document.getElementById('rejectUserId');
     const rejectReference = document.getElementById('rejectRequestReference');
     const rejectSender = document.getElementById('rejectRequestSender');
-    const rejectReasonCode = document.getElementById('rejectReasonCode');
     const rejectReason = document.getElementById('rejectReason');
-    const rejectReasonDetailsWrap = document.getElementById('rejectReasonDetailsWrap');
-    const rejectReasonRequiredMark = document.getElementById('rejectReasonRequiredMark');
-    const rejectReasonHint = document.getElementById('rejectReasonHint');
     const approveId = document.getElementById('approveRequestId');
-    const syncRejectReasonUi = () => {
-        const code = String(rejectReasonCode?.value || '');
-        const isOther = code === 'other';
-        if (rejectReasonDetailsWrap) {
-            rejectReasonDetailsWrap.hidden = code === '';
-        }
-        if (rejectReason) {
-            rejectReason.required = isOther;
-            rejectReason.placeholder = isOther
-                ? 'Describe the rejection reason…'
-                : 'Optional notes for this rejection…';
-        }
-        if (rejectReasonRequiredMark) {
-            rejectReasonRequiredMark.hidden = !isOther;
-        }
-        if (rejectReasonHint) {
-            rejectReasonHint.textContent = isOther
-                ? 'Required when you choose Other.'
-                : 'Optional for preset reasons. Required when you choose Other.';
-        }
-    };
-    rejectReasonCode?.addEventListener('change', syncRejectReasonUi);
     const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
     const date = value => value ? new Date(String(value).replace(' ', 'T')).toLocaleString() : 'Not available';
     const setFooter = html => { footer.innerHTML = html || ''; };
@@ -454,13 +417,7 @@ document.addEventListener('DOMContentLoaded', () => {
         rejectUserId.value = targetType === 'account' ? id : '';
         rejectReference.textContent = label || 'Selected request';
         rejectSender.textContent = sender || 'Unknown sender';
-        if (rejectReasonCode) {
-            rejectReasonCode.value = '';
-        }
-        if (rejectReason) {
-            rejectReason.value = '';
-        }
-        syncRejectReasonUi();
+        rejectReason.value = '';
         reject.show();
     };
     document.addEventListener('click', event => {
@@ -578,9 +535,11 @@ document.addEventListener('DOMContentLoaded', () => {
             const roleNameSource = String(u.role_name || '');
             const normalizedRoleName = roleNameSource.trim().toLowerCase();
             const roleName = esc(['customer', 'driver'].includes(normalizedRoleName) ? 'Driver' : (['hq', 'headquarter', 'headquarters', 'company'].includes(normalizedRoleName) ? 'Company' : (roleNameSource || 'Account')));
-            const licenseBlock = l ? '<div class="acct-section"><div class="acct-section-title"><i class="bi bi-card-list"></i> Driver License Details</div>' + fieldRow('bi-hash', 'License Number', esc(l.license_number || 'Not provided')) + fieldRow('bi-person-vcard', 'License Name', esc(l.license_name || 'Not provided')) + fieldRow('bi-telephone', 'Phone', esc(l.phone_number || 'Not provided')) + fieldRow('bi-file-earmark', 'NRC', esc(l.nrc_number || 'Not provided')) + fieldRow('bi-calendar', 'Date of Birth', esc(l.date_of_birth || 'Not provided')) + fieldRow('bi-droplet', 'Blood Type', esc(l.blood_type || 'Not provided')) + fieldRow('bi-check-circle', 'License Valid Until', esc(l.license_last_valid_date || 'Not provided')) + '<div class="acct-field-row"><div class="acct-field-icon"><i class="bi bi-image"></i></div><div class="min-width-0"><div class="request-detail-label">License Documents</div><div class="request-detail-value"><div class="acct-doc-grid">' + docCard(l.license_image, 'License Image', 'bi-file-earmark-image') + docCard(l.face_image, 'Face Image', 'bi-person-circle') + '</div></div></div></div></div>' : '<div class="acct-empty-note"><i class="bi bi-info-circle-fill"></i><span>No driver license has been linked to this account yet.</span></div>';
-            const hqBlock = h ? '<div class="acct-section"><div class="acct-section-title"><i class="bi bi-building"></i> Company Details</div>' + fieldRow('bi-shop', 'Company Name', esc(h.company_name || u.headquarter_name || 'Not provided')) + fieldRow('bi-envelope', 'Company email', esc(h.headquarter_email || 'Not provided')) + fieldRow('bi-telephone', 'Contact Number', esc(h.contact_number || 'Not provided')) + fieldRow('bi-geo-alt', 'Location', esc(h.location || u.headquarter_location || 'Not provided')) + fieldRow('bi-file-earmark-text', 'Business License Number', esc(h.business_license || 'Not provided')) + fieldRow('bi-calendar-check', 'License Expiry', esc(h.business_license_expire_date || h.expire_at || 'Not provided')) + '<div class="acct-field-row"><div class="acct-field-icon"><i class="bi bi-image"></i></div><div class="min-width-0"><div class="request-detail-label">Company Documents</div><div class="request-detail-value"><div class="acct-doc-grid">' + docCard(h.company_logo, 'Company Logo', 'bi-image') + docCard(h.business_license_image, 'Business License', 'bi-file-earmark-pdf') + '</div></div></div></div><div class="acct-field-row"><div class="acct-field-icon"><i class="bi bi-chat-dots"></i></div><div class="min-width-0"><div class="request-detail-label">Company Bio</div><div class="request-detail-value">' + esc(h.headquarter_bio || 'Not provided') + '</div></div></div></div>' : '';
-            body.innerHTML = '<div class="acct-profile-header"><div class="acct-avatar">' + initialsOf(u.user_name) + '</div><div class="acct-profile-meta"><div class="acct-profile-name">' + userName + '</div><div class="acct-profile-sub">' + userEmail + '</div></div><div class="acct-badge acct-badge-pending"><i class="bi bi-clock-fill"></i> Pending Verification</div><div class="acct-badge acct-badge-role"><i class="bi bi-tag-fill"></i> ' + roleName + '</div></div><div class="acct-section"><div class="acct-section-title"><i class="bi bi-person-check"></i> Account Information</div>' + fieldRow('bi-person', 'Name', userName) + fieldRow('bi-envelope', 'Email Address', userEmail) + fieldRow('bi-tag', 'Role', roleName + ' (#' + esc(u.role_id) + ')') + fieldRow('bi-calendar', 'Account Created', date(u.created_at)) + '</div>' + licenseReviewWarning + licenseConflictMarkup(l, payload.license_conflicts || []) + licenseBlock + hqBlock;
+            // Request review: only fields needed to approve/reject. NRC, DOB, blood type, phone never shown.
+            const licenseBlock = l ? '<div class="acct-section"><div class="acct-section-title"><i class="bi bi-card-list"></i> Driver License Details</div>' + fieldRow('bi-hash', 'License Number', esc(l.license_number || 'Not provided')) + fieldRow('bi-person-vcard', 'License Name', esc(l.license_name || 'Not provided')) + fieldRow('bi-check-circle', 'License Valid Until', esc(l.license_last_valid_date || 'Not provided')) + fieldRow('bi-card-checklist', 'License Status', esc(l.status || 'pending')) + '<div class="acct-field-row"><div class="acct-field-icon"><i class="bi bi-image"></i></div><div class="min-width-0"><div class="request-detail-label">License Documents</div><div class="request-detail-value"><div class="acct-doc-grid">' + docCard(l.license_image, 'License Image', 'bi-file-earmark-image') + docCard(l.face_image, 'Face Image', 'bi-person-circle') + '</div></div></div></div></div>' : '<div class="acct-empty-note"><i class="bi bi-info-circle-fill"></i><span>No driver license has been linked to this account yet.</span></div>';
+            // Request review company: identity docs for decision; contact email/phone/bio omitted.
+            const hqBlock = h ? '<div class="acct-section"><div class="acct-section-title"><i class="bi bi-building"></i> Company Details</div>' + fieldRow('bi-shop', 'Company Name', esc(h.company_name || u.headquarter_name || 'Not provided')) + fieldRow('bi-geo-alt', 'Location', esc(h.location || u.headquarter_location || 'Not provided')) + fieldRow('bi-file-earmark-text', 'Business License Number', esc(h.business_license || 'Not provided')) + fieldRow('bi-calendar-check', 'License Expiry', esc(h.business_license_expire_date || h.expire_at || 'Not provided')) + '<div class="acct-field-row"><div class="acct-field-icon"><i class="bi bi-image"></i></div><div class="min-width-0"><div class="request-detail-label">Company Documents</div><div class="request-detail-value"><div class="acct-doc-grid">' + docCard(h.company_logo, 'Company Logo', 'bi-image') + docCard(h.business_license_image, 'Business License', 'bi-file-earmark-pdf') + '</div></div></div></div></div>' : '';
+            body.innerHTML = '<div class="acct-profile-header"><div class="acct-avatar">' + initialsOf(u.user_name) + '</div><div class="acct-profile-meta"><div class="acct-profile-name">' + userName + '</div><div class="acct-profile-sub">' + userEmail + '</div></div><div class="acct-badge acct-badge-pending"><i class="bi bi-clock-fill"></i> Pending Verification</div><div class="acct-badge acct-badge-role"><i class="bi bi-tag-fill"></i> ' + roleName + '</div></div><div class="acct-section"><div class="acct-section-title"><i class="bi bi-person-check"></i> Account Information</div>' + fieldRow('bi-person', 'Name', userName) + fieldRow('bi-envelope', 'Email Address', userEmail) + fieldRow('bi-tag', 'Role', roleName + ' (#' + esc(u.role_id) + ')') + fieldRow('bi-calendar', 'Account Created', date(u.created_at)) + '</div>' + licenseReviewWarning + licenseConflictMarkup(l, p.license_conflicts || []) + licenseBlock + hqBlock;
             markUnavailableDocImages(body);
             body.querySelector('[data-license-compare-toggle]')?.addEventListener('click', event => {
                 const button = event.currentTarget;
@@ -598,12 +557,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (reasonField) reasonField.hidden = !blocking;
                 if (reasonInput) reasonInput.required = blocking;
             });
-            configurePairDecisionForm(body.querySelector('[data-license-conflict-form]'), payload.license_conflicts?.[0]?.license_id);
+            configurePairDecisionForm(body.querySelector('[data-license-conflict-form]'), p.license_conflicts?.[0]?.license_id);
             if (isPendingAccount) {
                 setFooter('<form action="account_review_action(M).php" method="POST" class="m-0 flex-fill"><input type="hidden" name="user_id" value="' + esc(u.user_id) + '"><input type="hidden" name="action" value="approve"><input type="hidden" name="return_to" value="view_requests(M).php"><button type="submit" class="acct-btn acct-btn-approve w-100"><i class="bi bi-check-lg me-1"></i>Approve</button></form><button type="button" class="acct-btn acct-btn-reject w-100 js-modal-reject"><i class="bi bi-x-lg me-1"></i>Reject</button>');
                 footer.querySelector('.js-modal-reject').addEventListener('click', () => rejectTarget('account', u.user_id, label, userName));
             }
-            if (isPendingAccount && (payload.license_conflicts || []).length) {
+            if (isPendingAccount && (p.license_conflicts || []).length) {
                 setFooter('<button type="button" class="acct-btn acct-btn-approve w-100" data-manage-driver-duplicate><i class="bi bi-person-gear me-1"></i>Manage this account</button>');
                 footer.querySelector('[data-manage-driver-duplicate]')?.addEventListener('click', () => {
                     revealPairDecision(body.querySelector('[data-license-conflict-form]'));
