@@ -9,21 +9,20 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 
 $userId = filter_var($_POST['user_id'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
 $action = strtolower(trim((string) ($_POST['action'] ?? '')));
-$reason = trim((string) ($_POST['reason'] ?? ''));
+$reason = '';
 
 if (!$userId || !in_array($action, ['approve', 'reject'], true)) {
     request_flash('danger', 'The account review action was invalid.');
     request_redirect('view_requests(M).php');
 }
 
-if ($action === 'reject' && $reason === '') {
-    request_flash('danger', 'A rejection reason is required.');
-    request_redirect('view_requests(M).php');
-}
-
-if (mb_strlen($reason) > 2000) {
-    request_flash('danger', 'The rejection reason must be 2,000 characters or fewer.');
-    request_redirect('view_requests(M).php');
+if ($action === 'reject') {
+    $resolvedReason = request_resolve_rejection_reason($_POST);
+    if (empty($resolvedReason['ok'])) {
+        request_flash('danger', (string) ($resolvedReason['error'] ?? 'A rejection reason is required.'));
+        request_redirect('view_requests(M).php');
+    }
+    $reason = (string) $resolvedReason['reason'];
 }
 
 if (!hq_db_available() || !user_account_review_schema_ready()) {

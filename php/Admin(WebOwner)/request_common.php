@@ -6,6 +6,73 @@ require_once __DIR__ . '/hq_account_common.php';
 require_once __DIR__ . '/../Login/mail_templates.php';
 require_once __DIR__ . '/../payment_transfers.php';
 
+/**
+ * Preset rejection reasons for request / account review.
+ * Key "other" requires free-text details.
+ *
+ * @return array<string, string>
+ */
+function request_rejection_reason_options(): array
+{
+    // Intentionally omit duplicate-license / duplicate-company reasons.
+    // Those cases must use the existing conflict UI (Manage this account / pair decisions),
+    // which updates licenses, related accounts, and HQ status correctly.
+    return [
+        'incomplete_documents' => 'Documents incomplete, unclear, or unreadable',
+        'identity_mismatch' => 'Identity or license details do not match the submission',
+        'expired_invalid_license' => 'License is expired or invalid',
+        'missing_required_info' => 'Required information is missing',
+        'payment_not_received' => 'Payment not received or could not be verified',
+        'payment_amount_mismatch' => 'Payment amount does not match the requested package',
+        'other' => 'Other (please specify)',
+    ];
+}
+
+/**
+ * Build the stored rejection reason from POST fields.
+ * Expects reject_reason_code (+ optional reason / reject_reason_details free text).
+ *
+ * @return array{ok:bool, reason:string, error?:string}
+ */
+function request_resolve_rejection_reason(array $post): array
+{
+    $options = request_rejection_reason_options();
+    $code = strtolower(trim((string) ($post['reject_reason_code'] ?? '')));
+    $details = trim((string) ($post['reason'] ?? $post['reject_reason_details'] ?? ''));
+
+    // Backward compatibility: older forms only posted free-text "reason".
+    if ($code === '' && $details !== '') {
+        if (mb_strlen($details) > 2000) {
+            return ['ok' => false, 'reason' => '', 'error' => 'The rejection reason must be 2,000 characters or fewer.'];
+        }
+        return ['ok' => true, 'reason' => $details];
+    }
+
+    if ($code === '' || !isset($options[$code])) {
+        return ['ok' => false, 'reason' => '', 'error' => 'Select a rejection reason from the list.'];
+    }
+
+    if ($code === 'other') {
+        if ($details === '') {
+            return ['ok' => false, 'reason' => '', 'error' => 'Please specify the other rejection reason.'];
+        }
+        if (mb_strlen($details) > 2000) {
+            return ['ok' => false, 'reason' => '', 'error' => 'The rejection reason must be 2,000 characters or fewer.'];
+        }
+        return ['ok' => true, 'reason' => 'Other: ' . $details];
+    }
+
+    $label = $options[$code];
+    if ($details !== '') {
+        if (mb_strlen($details) > 1800) {
+            return ['ok' => false, 'reason' => '', 'error' => 'Additional details must be 1,800 characters or fewer.'];
+        }
+        return ['ok' => true, 'reason' => $label . ' — ' . $details];
+    }
+
+    return ['ok' => true, 'reason' => $label];
+}
+
 function request_registration_payment_required(array $details): bool
 {
     if (array_key_exists('registration_amount_mmk', $details)) {
@@ -231,7 +298,11 @@ function request_payment_verification_rows(string $reviewerRole, string $search,
                 GROUP BY payment_transfer_id
             ) receipt ON receipt.payment_transfer_id = pt.payment_transfer_id
             WHERE pt.payment_type IN ({$typeMarks})
-              AND LOWER(TRIM(pt.status)) IN ({$statusMarks})";
+              AND LOWER(TRIM(pt.status)) IN ({$statusMarks})
+              AND (
+                    pt.payment_type <> 'hq_registration'
+                 OR LOWER(TRIM(COALESCE(registration_request.status, ''))) IN ('pending', 'approved')
+              )";
     $params = array_merge($types, $paymentStatuses);
     if ($search !== '') {
         $sql .= " AND (CAST(pt.payment_transfer_id AS CHAR) LIKE ? OR LOWER(pt.reference_code) LIKE ?

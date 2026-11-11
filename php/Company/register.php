@@ -10,6 +10,63 @@ require_once __DIR__ . '/../conn.php';
 require_once __DIR__ . '/../payment_transfers.php';
 require_once __DIR__ . '/../imgbb_image_host.php';
 require_once __DIR__ . '/../shared/license_expiry_date.php';
+
+/**
+ * HQ statuses that still "own" the company email / owner link and must block a new registration.
+ * Rejected (failed registration) is intentionally excluded so the applicant can correct and resubmit.
+ */
+function company_registration_blocking_hq_statuses(): array
+{
+    return ['pending', 'active', 'approved', 'enabled', 'ready', 'disabled', 'suspended'];
+}
+
+/**
+ * Find an HQ that should block registration for this owner/email, if any.
+ *
+ * @return array{headquarter_id:int,status:string}|null
+ */
+function company_registration_find_blocking_hq(PDO $pdo, int $ownerUserId, string $companyEmail): ?array
+{
+    $statuses = company_registration_blocking_hq_statuses();
+    $marks = implode(',', array_fill(0, count($statuses), '?'));
+    $sql = "SELECT headquarter_id, status
+            FROM headquarter
+            WHERE (
+                (? > 0 AND headquarters_owner_id = ?)
+                OR LOWER(TRIM(headquarter_email)) = ?
+              )
+              AND LOWER(TRIM(COALESCE(status, ''))) IN ({$marks})
+            ORDER BY headquarter_id DESC
+            LIMIT 1";
+    $params = array_merge([$ownerUserId, $ownerUserId, $companyEmail], array_map('strtolower', $statuses));
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute($params);
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+    return $row ? [
+        'headquarter_id' => (int) $row['headquarter_id'],
+        'status' => strtolower(trim((string) $row['status'])),
+    ] : null;
+}
+
+/**
+ * Rejected HQ row for this company email that can be reused on resubmission.
+ */
+function company_registration_find_reusable_rejected_hq(PDO $pdo, string $companyEmail): ?array
+{
+    $stmt = $pdo->prepare(
+        "SELECT headquarter_id, company_logo, status
+         FROM headquarter
+         WHERE LOWER(TRIM(headquarter_email)) = ?
+           AND LOWER(TRIM(COALESCE(status, ''))) = 'rejected'
+         ORDER BY headquarter_id DESC
+         LIMIT 1
+         FOR UPDATE"
+    );
+    $stmt->execute([$companyEmail]);
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+    return $row ?: null;
+}
+
 try {
     $registrationFee = billing_admin_setting($pdo, 'hq_registration_fee_mmk', BILLING_HQ_REGISTRATION_FEE_MMK);
     $packageRate = billing_admin_setting($pdo, 'hq_package_mmk_per_station_month', BILLING_HQ_PACKAGE_MMK_PER_STATION_MONTHLY);
@@ -103,10 +160,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             || (int) ($ownerAccount['has_hq_scope'] ?? 0) === 1)) {
             $respond(false, 'The owner email belongs to an account that cannot be linked to an HQ.', 409);
         }
-        $existingHq = $pdo->prepare('SELECT 1 FROM headquarter WHERE (? > 0 AND headquarters_owner_id = ?) OR LOWER(TRIM(headquarter_email)) = ? LIMIT 1');
-        $existingHq->execute([$ownerUserId, $ownerUserId, $companyEmail]);
-        if ($existingHq->fetchColumn()) {
-            $respond(false, 'This owner account or company email is already linked to an HQ.', 409);
+        if (company_registration_find_blocking_hq($pdo, $ownerUserId, $companyEmail) !== null) {
+            $respond(false, 'This owner account or company email is already linked to an active or pending HQ.', 409);
         }
         $pendingRequest = $pdo->prepare(
             "SELECT 1 FROM system_requests
@@ -287,23 +342,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             || (int) ($ownerAccount['has_hq_scope'] ?? 0) === 1)) {
             $respond(false, 'The owner email belongs to an account that cannot be linked to an HQ.', 409);
         }
-        $emailConflict = $pdo->prepare(
-            'SELECT 1 FROM headquarter
-             WHERE (? > 0 AND headquarters_owner_id = ?) OR LOWER(TRIM(headquarter_email)) = ?
-             LIMIT 1'
-        );
-        $emailConflict->execute([$ownerUserId, $ownerUserId, $companyEmail]);
-        if ($emailConflict->fetchColumn()) {
-            $respond(false, 'This owner account or company email is already linked to an HQ.', 409);
+        if (company_registration_find_blocking_hq($pdo, $ownerUserId, $companyEmail) !== null) {
+            $respond(false, 'This owner account or company email is already linked to an active or pending HQ.', 409);
         }
 
-                $duplicate = $pdo->prepare(
-                        "SELECT request_id FROM system_requests
-                         WHERE request_type = 'hq_registration' AND status = 'pending'
-                             AND (LOWER(TRIM(headquarter_email)) IN (?, ?) OR LOWER(TRIM(COALESCE(NULLIF(headquarter_owner_email, ''), sender_email))) = ?)
-                         LIMIT 1"
-                );
-                $duplicate->execute([$accountEmail, $companyEmail, $accountEmail]);
+        $duplicate = $pdo->prepare(
+            "SELECT request_id FROM system_requests
+             WHERE request_type = 'hq_registration' AND status = 'pending'
+               AND (LOWER(TRIM(headquarter_email)) IN (?, ?) OR LOWER(TRIM(COALESCE(NULLIF(headquarter_owner_email, ''), sender_email))) = ?)
+             LIMIT 1"
+        );
+        $duplicate->execute([$accountEmail, $companyEmail, $accountEmail]);
         if ($duplicate->fetchColumn()) {
             $respond(false, 'A pending registration already exists for this email address.', 409);
         }
@@ -326,26 +375,82 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
         $reference = 'HQ-REG-' . date('YmdHis') . '-' . strtoupper(bin2hex(random_bytes(3)));
         $pdo->beginTransaction();
-        $headquarterInsert = $pdo->prepare(
-            "INSERT INTO headquarter
-                (company_name, company_logo, contact_number, headquarter_email, location,
-                 business_license, business_license_image, business_license_expire_date,
-                 expire_at, station_count, status)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')"
-        );
-        $headquarterInsert->execute([
-            $companyName,
-            $logoPath,
-            $companyPhone,
-            $companyEmail,
-            $companyAddress,
-            $licenseId,
-            $licensePath,
-            $licenseExpiry,
-            $licenseExpiry . ' 23:59:59',
-            BILLING_HQ_INCLUDED_STATION_SLOTS,
-        ]);
-        $headquarterId = (int) $pdo->lastInsertId();
+
+        // Reuse a previously rejected HQ for the same company email so UNIQUE(headquarter_email)
+        // does not block a corrected resubmission.
+        $reusableHq = company_registration_find_reusable_rejected_hq($pdo, $companyEmail);
+        if ($reusableHq !== null) {
+            $headquarterId = (int) $reusableHq['headquarter_id'];
+            $logoValue = $logoPath !== '' ? $logoPath : null;
+            $headquarterUpdate = $pdo->prepare(
+                "UPDATE headquarter
+                 SET company_name = ?,
+                     company_logo = ?,
+                     contact_number = ?,
+                     headquarter_email = ?,
+                     location = ?,
+                     business_license = ?,
+                     business_license_image = ?,
+                     business_license_expire_date = ?,
+                     expire_at = ?,
+                     station_count = ?,
+                     status = 'pending',
+                     headquarters_owner_id = NULL,
+                     service_expires_at = NULL,
+                     included_stations_free_until = NULL,
+                     created_at = created_at
+                 WHERE headquarter_id = ?
+                   AND LOWER(TRIM(COALESCE(status, ''))) = 'rejected'"
+            );
+            $headquarterUpdate->execute([
+                $companyName,
+                $logoValue,
+                $companyPhone,
+                $companyEmail,
+                $companyAddress,
+                $licenseId,
+                $licensePath,
+                $licenseExpiry,
+                $licenseExpiry . ' 23:59:59',
+                BILLING_HQ_INCLUDED_STATION_SLOTS,
+                $headquarterId,
+            ]);
+            if ($headquarterUpdate->rowCount() < 1) {
+                // Concurrent change: fall through only if the row is still usable; otherwise fail clearly.
+                $stillRejected = $pdo->prepare(
+                    "SELECT 1 FROM headquarter WHERE headquarter_id = ? AND LOWER(TRIM(COALESCE(status, ''))) = 'rejected' LIMIT 1"
+                );
+                $stillRejected->execute([$headquarterId]);
+                if (!$stillRejected->fetchColumn()) {
+                    throw new RuntimeException('This company email was claimed by another registration. Refresh and try again.');
+                }
+            }
+        } else {
+            $logoValue = $logoPath !== '' ? $logoPath : null;
+            $headquarterInsert = $pdo->prepare(
+                "INSERT INTO headquarter
+                    (company_name, company_logo, contact_number, headquarter_email, location,
+                     business_license, business_license_image, business_license_expire_date,
+                     expire_at, station_count, status)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')"
+            );
+            $headquarterInsert->execute([
+                $companyName,
+                $logoValue,
+                $companyPhone,
+                $companyEmail,
+                $companyAddress,
+                $licenseId,
+                $licensePath,
+                $licenseExpiry,
+                $licenseExpiry . ' 23:59:59',
+                BILLING_HQ_INCLUDED_STATION_SLOTS,
+            ]);
+            $headquarterId = (int) $pdo->lastInsertId();
+            if ($headquarterId <= 0) {
+                throw new RuntimeException('Could not create the company registration record.');
+            }
+        }
         $stmt = $pdo->prepare(
             "INSERT INTO system_requests
                 (reference_code, request_type, status, submitter_user_id, role_id, headquarter_id, sender_entity, sender_name, sender_email,
@@ -372,6 +477,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'service_start_month' => date('Y-m'),
                 'payer_user_id' => $payerUserId,
                 'payer_email' => $accountEmail,
+                'payer_headquarter_id' => $headquarterId > 0 ? $headquarterId : null,
                 'recipient_role' => BILLING_PLATFORM_RECEIVER_ROLE,
                 'request_id' => $requestId,
                 'payment_method' => $paymentMethod === 'Bank transfer' ? $paymentMethod . ': ' . $bankName : $paymentMethod,
