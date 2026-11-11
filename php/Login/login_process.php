@@ -243,6 +243,7 @@ try {
         $pendingStaffStatusEvents = staff_status_pending_for_current_user($pdo, (int) $user['user_id']);
         $_SESSION['pending_staff_status_events'] = $pendingStaffStatusEvents;
 
+        $_SESSION['login_destination'] = $destination;
         header('Location: ' . $destination);
         exit;
     }
@@ -288,6 +289,7 @@ try {
     $_SESSION['pending_staff_status_events'] = staff_status_pending_for_current_user($pdo, (int) ($_SESSION['user_id'] ?? 0), (string) ($_SESSION['user_email'] ?? ''));
     map_pump_set_remembered_email((string) ($_SESSION['user_email'] ?? $email), $remember);
 
+    $_SESSION['login_destination'] = '../Staff/staff_dashboard.php';
     header('Location: ../Staff/staff_dashboard.php');
     exit;
 } catch (Throwable $e) {
