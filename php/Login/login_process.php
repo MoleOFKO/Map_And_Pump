@@ -11,6 +11,7 @@ require_once __DIR__ . '/../account_deletion.php';
 require_once __DIR__ . '/../Customer/license_access.php';
 require_once __DIR__ . '/../Customer/car_access.php';
 require_once __DIR__ . '/../role_state.php';
+require_once __DIR__ . '/../business_scope.php';
 require_once __DIR__ . '/../moderator_hire_helpers.php';
 require_once __DIR__ . '/../BranchManager/_helpers.php';
 
@@ -175,43 +176,42 @@ try {
         if ($isHqAccount) {
             $hqId = (int) ($user['headquarter_id'] ?? 0);
             if ($hqId > 0) {
-                $hqStmt = $pdo->prepare('SELECT expire_at FROM headquarter WHERE headquarter_id = ? LIMIT 1');
+                $hqStmt = $pdo->prepare('SELECT business_license_expire_date, expire_at FROM headquarter WHERE headquarter_id = ? LIMIT 1');
                 if ($hqStmt && $hqStmt->execute([$hqId])) {
                     $hqRow = $hqStmt->fetch(PDO::FETCH_ASSOC);
-                    $expireAt = trim((string) ($hqRow['expire_at'] ?? ''));
-                    if ($expireAt !== '') {
-                        $expireDate = DateTimeImmutable::createFromFormat('!Y-m-d', $expireAt);
-                        if ($expireDate && $expireDate->format('Y-m-d') === $expireAt) {
-                            $hqLicenseExpired = $expireDate < new DateTimeImmutable('today');
-                        }
+                    $hqLicenseExpiry = trim((string) ($hqRow['business_license_expire_date'] ?? ''));
+                    if ($hqLicenseExpiry === '') {
+                        $hqLicenseExpiry = trim((string) ($hqRow['expire_at'] ?? ''));
                     }
+                    $hqLicenseExpired = map_pump_hq_license_past_grace_period($hqLicenseExpiry);
                 }
             }
         }
 
-        $status = strtolower((string) ($user['status'] ?? ''));
-        $blockedStatuses = ['disabled', 'banned', 'suspended', 'removed'];
+        [$activeRoleId, $activeRoleName] = map_pump_session_role($user);
+        $roleName = trim(strtolower($activeRoleName));
+        $status = strtolower(trim((string) ($user['status'] ?? '')));
+        $isCustomerLogin = $roleName === 'customer';
+        $isHqAccount = (int) ($user['business_role_id'] ?? 0) === 3 || (int) ($user['role_id'] ?? 0) === 3;
+        $isExpiredCustomer = $status === 'license_expired' && strtolower(trim((string) ($user['role_name'] ?? ''))) === 'customer';
+        $blockedStatuses = $isCustomerLogin
+            ? ['banned', 'disabled', 'deleted', 'removed']
+            : ['disabled', 'banned', 'suspended', 'deleted', 'removed'];
         if (in_array($status, $blockedStatuses, true)) {
             auth_redirect_to_login('This account is disabled or banned. Please contact support.', $email);
         }
-        $allowedStatuses = ['active', 'approved', 'enabled', 'ready', 'pending'];
-        $isHqAccount = (int) ($user['business_role_id'] ?? 0) === 3 || (int) ($user['role_id'] ?? 0) === 3;
-        if ($isHqAccount) {
-            $allowedStatuses[] = 'expired';
+        if (!$isCustomerLogin) {
+            $allowedStatuses = ['active', 'approved', 'enabled', 'ready', 'pending'];
+            if ($isHqAccount) {
+                $allowedStatuses[] = 'expired';
+            }
+            if ($status === 'pending_deletion' && $isHqAccount) {
+                $allowedStatuses[] = 'pending_deletion';
+            }
+            if ($status !== '' && !in_array($status, $allowedStatuses, true)) {
+                auth_redirect_to_login('Your account is not active. Please contact support.', $email);
+            }
         }
-        $isExpiredCustomer = $status === 'license_expired' && strtolower(trim((string) ($user['role_name'] ?? ''))) === 'customer';
-        if ($isExpiredCustomer) {
-            $allowedStatuses[] = 'license_expired';
-        }
-        if ($status === 'pending_deletion' && $isHqAccount) {
-            $allowedStatuses[] = 'pending_deletion';
-        }
-        if ($status !== '' && !in_array($status, $allowedStatuses, true)) {
-            auth_redirect_to_login('Your account is not active. Please contact support.', $email);
-        }
-
-        [$activeRoleId, $activeRoleName] = map_pump_session_role($user);
-        $roleName = trim(strtolower($activeRoleName));
 
         $dashboardMap = [
             'admin' => '/php/Admin(WebOwner)/admin_dashboard.php',
@@ -233,7 +233,7 @@ try {
             $destination = '../Customer/license.php';
         }
         $customerLicenseAccess = null;
-        if ($roleName === 'customer') {
+        if ($isCustomerLogin) {
             $customerLicenseAccess = customer_license_access($pdo, (int) $user['user_id']);
             if ($isExpiredCustomer) {
                 $destination = '../Customer/profile_page.php';

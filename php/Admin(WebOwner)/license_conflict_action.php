@@ -15,6 +15,11 @@ $licenseType = strtolower(trim((string) ($_POST['license_type'] ?? '')));
 $recordId = filter_var($_POST['record_id'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
 $decision = strtolower(trim((string) ($_POST['decision'] ?? '')));
 $reason = trim((string) ($_POST['reason'] ?? ''));
+$pairDecisions = ['approve_new_disable_existing', 'keep_existing_reject_new', 'accept_both', 'disable_both'];
+if (in_array($decision, $pairDecisions, true)) {
+    require_once __DIR__ . '/license_conflict_pair_action.php';
+    license_conflict_process_pair($licenseType, (int) $recordId, $decision, $reason, $reviewer, $returnTo);
+}
 $blocking = in_array($decision, ['block_current', 'block_all'], true);
 if (!in_array($licenseType, ['driver', 'car'], true) || !$recordId || !in_array($decision, ['allow_all', 'block_current', 'block_all'], true)
     || ($blocking && $reason === '') || mb_strlen($reason) > 2000) {
@@ -50,8 +55,9 @@ try {
         if (!$target) {
             throw new RuntimeException('The selected driver license was not found.');
         }
-        $licenseNumber = trim((string) $target['license_number']);
-        $normalizedNumber = strtoupper(preg_replace('/\s+/', '', $licenseNumber) ?: $licenseNumber);
+        $licenseNumberRaw = (string) $target['license_number'];
+        $licenseNumber = trim($licenseNumberRaw);
+        $normalizedNumber = strtoupper(str_replace(' ', '', $licenseNumberRaw));
         $matches = $conn->prepare(
             "SELECT l.license_id AS record_id, l.license_number, l.status AS license_status,
                     u.user_id, u.user_name, u.email
@@ -85,8 +91,9 @@ try {
         if (!$target) {
             throw new RuntimeException('The selected car license was not found.');
         }
-        $licenseNumber = trim((string) $target['car_plate_number']);
-        $normalizedNumber = strtoupper(preg_replace('/[^0-9A-Z]/', '', $licenseNumber) ?: '');
+        $licenseNumberRaw = (string) $target['car_plate_number'];
+        $licenseNumber = trim($licenseNumberRaw);
+        $normalizedNumber = strtoupper(str_replace(['/', ' ', '-'], '', $licenseNumberRaw));
         $matches = $conn->prepare(
             "SELECT car_license_id AS record_id, car_plate_number AS license_number, status AS license_status
              FROM car_license

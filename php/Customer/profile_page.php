@@ -22,6 +22,20 @@ require_once __DIR__ . '/../profile_avatar.php';
 require_once __DIR__ . '/../imgbb_image_host.php';
 require_once __DIR__ . '/../Login/session_helper.php';
 require_once __DIR__ . '/car_access.php';
+require_once __DIR__ . '/license_access.php';
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST'
+    && in_array($_POST['action'] ?? '', ['delete_account', 'change_password', 'update_profile'], true)) {
+    $userId = (int) ($_SESSION['user_id'] ?? 0);
+    if ($userId <= 0) {
+        header('Location: ../Login/login.php');
+        exit;
+    }
+    if (!customer_license_access($pdo, $userId)['is_approved']) {
+        header('Location: license.php');
+        exit;
+    }
+}
 
 $profileFlashMessage = $_SESSION['profile_flash_message'] ?? null;
 $profileFlashType = $_SESSION['profile_flash_type'] ?? 'success';

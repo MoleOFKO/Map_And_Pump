@@ -29,7 +29,7 @@ try {
     $lookup->execute();
     $car = $lookup->get_result()?->fetch_assoc();
     $lookup->close();
-    if (!$car || !in_array(strtolower(trim((string) $car['status'])), ['pending', 'pending_verification'], true)) {
+    if (!$car || strtolower(trim((string) $car['status'])) !== 'pending') {
         throw new RuntimeException('Only a pending car license can be approved or rejected.');
     }
     $newStatus = $action === 'approve' ? 'approved' : 'rejected';

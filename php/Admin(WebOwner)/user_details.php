@@ -85,24 +85,40 @@ if (!$user) {
 
 $actions = user_action_rows((int) $userId);
 $licenseConflicts = [];
-if (!empty($user['license_id']) && trim((string) ($user['license_number'] ?? '')) !== '') {
+if (!empty($user['license_id'])
+    && (trim((string) ($user['license_number'] ?? '')) !== '' || trim((string) ($user['nrc_number'] ?? '')) !== '')) {
+    $eligibleAccountFilter = $requestContext
+        ? "AND LOWER(TRIM(COALESCE(u.status, ''))) NOT IN ('banned', 'disabled', 'suspended', 'removed', 'deleted')"
+        : '';
+    $conflictLimit = $requestContext ? 'LIMIT 1' : '';
     $conflictStatement = $conn->prepare(
         "SELECT u.user_id, u.user_name, u.email, u.status AS account_status,
-                l.license_id, l.license_number, l.license_name, l.status AS license_status,
+                l.license_id, l.license_number, l.nrc_number, l.license_name, l.status AS license_status,
                 l.license_image, l.face_image
          FROM user_license l
          INNER JOIN users u ON u.license_id = l.license_id
-         WHERE UPPER(REPLACE(TRIM(l.license_number), ' ', '')) = UPPER(REPLACE(TRIM(?), ' ', ''))
+         WHERE ((? <> '' AND UPPER(REPLACE(TRIM(l.license_number), ' ', '')) = UPPER(REPLACE(TRIM(?), ' ', '')))
+             OR (? <> '' AND UPPER(REPLACE(TRIM(l.nrc_number), ' ', '')) = UPPER(REPLACE(TRIM(?), ' ', ''))))
            AND l.license_id <> ?
-         ORDER BY CASE WHEN LOWER(TRIM(l.status)) = 'approved' THEN 0 ELSE 1 END,
-                  l.license_id DESC"
+                     {$eligibleAccountFilter}
+         ORDER BY u.created_at ASC, u.user_id ASC
+                 {$conflictLimit}"
     );
     if ($conflictStatement) {
         $licenseId = (int) $user['license_id'];
-        $conflictStatement->bind_param('si', $user['license_number'], $licenseId);
+        $licenseNumber = trim((string) ($user['license_number'] ?? ''));
+        $nrcNumber = trim((string) ($user['nrc_number'] ?? ''));
+        $conflictStatement->bind_param('ssssi', $licenseNumber, $licenseNumber, $nrcNumber, $nrcNumber, $licenseId);
         if ($conflictStatement->execute()) {
             $conflictResult = $conflictStatement->get_result();
             while ($conflictResult && ($conflict = $conflictResult->fetch_assoc())) {
+                $duplicateFields = [];
+                if ($licenseNumber !== '' && strcasecmp(preg_replace('/\s+/', '', (string) $conflict['license_number']), preg_replace('/\s+/', '', $licenseNumber)) === 0) {
+                    $duplicateFields[] = 'Driver license number';
+                }
+                if ($nrcNumber !== '' && strcasecmp(preg_replace('/\s+/', '', (string) $conflict['nrc_number']), preg_replace('/\s+/', '', $nrcNumber)) === 0) {
+                    $duplicateFields[] = 'NRC number';
+                }
                 $licenseConflicts[] = [
                     'user_id' => (int) $conflict['user_id'],
                     'user_name' => $conflict['user_name'],
@@ -114,6 +130,7 @@ if (!empty($user['license_id']) && trim((string) ($user['license_number'] ?? '')
                     'license_status' => $conflict['license_status'],
                     'license_image' => $conflict['license_image'],
                     'face_image' => $conflict['face_image'],
+                    'duplicate_fields' => $duplicateFields,
                 ];
             }
         }

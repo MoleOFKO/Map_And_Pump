@@ -32,8 +32,22 @@ if (!function_exists('map_pump_current_hq_id')) {
              LIMIT 1"
         );
         $stmt->execute([$userId]);
-
         return (int)($stmt->fetchColumn() ?: 0);
+    }
+}
+
+if (!function_exists('map_pump_hq_license_past_grace_period')) {
+    function map_pump_hq_license_past_grace_period(?string $expiryDate): bool
+    {
+        $expiryDate = substr(trim((string) $expiryDate), 0, 10);
+        $parsedExpiry = DateTimeImmutable::createFromFormat('!Y-m-d', $expiryDate);
+        $dateErrors = DateTimeImmutable::getLastErrors();
+        if (!$parsedExpiry || $parsedExpiry->format('Y-m-d') !== $expiryDate
+            || ($dateErrors !== false && ($dateErrors['warning_count'] > 0 || $dateErrors['error_count'] > 0))) {
+            return false;
+        }
+
+        return $parsedExpiry->modify('+7 days') < new DateTimeImmutable('today');
     }
 }
 

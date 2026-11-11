@@ -107,6 +107,75 @@ function request_type_short_label(?string $type): string
     };
 }
 
+function request_business_license_match(string $licenseNumber, int $excludeHeadquarterId = 0): ?array
+{
+    global $conn;
+    $normalizedNumber = strtoupper(preg_replace('/\s+/', '', trim($licenseNumber)) ?? '');
+    if ($normalizedNumber === '' || !hq_db_available()) {
+        return null;
+    }
+
+    $excludeSql = $excludeHeadquarterId > 0 ? 'AND h.headquarter_id <> ?' : '';
+    $statement = $conn->prepare(
+        "SELECT h.headquarter_id, h.company_name, h.headquarter_email, h.contact_number,
+                h.location, h.business_license, h.status AS headquarter_status,
+                COALESCE(h.headquarters_owner_id, owner_link.user_id) AS owner_user_id,
+                owner.user_name AS owner_name, owner.email AS owner_email, owner.status AS owner_status
+         FROM headquarter h
+         LEFT JOIN (
+             SELECT bas.headquarter_id, MIN(u.user_id) AS user_id
+             FROM business_account_scope bas
+             INNER JOIN users u ON u.user_id = bas.user_id
+             GROUP BY bas.headquarter_id
+         ) owner_link ON owner_link.headquarter_id = h.headquarter_id
+         LEFT JOIN users owner ON owner.user_id = COALESCE(h.headquarters_owner_id, owner_link.user_id)
+         WHERE UPPER(REPLACE(TRIM(h.business_license), ' ', '')) = ?
+           {$excludeSql}
+           AND LOWER(TRIM(COALESCE(h.status, ''))) NOT IN ('banned', 'disabled', 'suspended', 'removed', 'rejected', 'deleted')
+           AND LOWER(TRIM(COALESCE(owner.status, ''))) NOT IN ('banned', 'disabled', 'suspended', 'removed', 'deleted')
+         ORDER BY h.created_at ASC, h.headquarter_id ASC
+         LIMIT 1"
+    );
+    if (!$statement) {
+        return null;
+    }
+
+    if ($excludeHeadquarterId > 0) {
+        $statement->bind_param('si', $normalizedNumber, $excludeHeadquarterId);
+    } else {
+        $statement->bind_param('s', $normalizedNumber);
+    }
+    if (!$statement->execute()) {
+        $statement->close();
+        return null;
+    }
+    $match = $statement->get_result()?->fetch_assoc() ?: null;
+    $statement->close();
+    if (!$match) {
+        return null;
+    }
+
+    $match['headquarter_id'] = (int) $match['headquarter_id'];
+    $match['owner_user_id'] = $match['owner_user_id'] === null ? null : (int) $match['owner_user_id'];
+    return $match;
+}
+
+function request_business_license_match_for_request(array $request): ?array
+{
+    $requestType = strtolower(trim((string) ($request['request_type'] ?? '')));
+    if (!in_array($requestType, ['hq_registration', 'license_modification', 'license'], true)) {
+        return null;
+    }
+
+    $details = json_decode((string) ($request['request_details'] ?? ''), true);
+    $details = is_array($details) ? $details : [];
+    $licenseNumber = $requestType === 'hq_registration'
+        ? (string) ($details['license_id'] ?? '')
+        : (string) ($details['renewal_license_number'] ?? '');
+
+    return request_business_license_match($licenseNumber, (int) ($request['headquarter_id'] ?? 0));
+}
+
 /** Payment types that are visible to each review role. */
 function request_payment_types_for_reviewer(string $reviewerRole, bool $includeRegistration = false): array
 {

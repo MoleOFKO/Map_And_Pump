@@ -325,11 +325,17 @@ function social_sign_in_user(PDO $pdo, string $provider, string $providerId, str
         social_login_fail('Unable to create your account right now.');
     }
 
-    $status = strtolower((string) ($user['status'] ?? ''));
-    if (in_array($status, ['disabled', 'banned', 'suspended', 'removed'], true)) {
+    [$activeRoleId, $activeRoleName] = map_pump_session_role($user);
+    $roleName = strtolower(trim($activeRoleName));
+    $isCustomerLogin = $roleName === 'customer';
+    $status = strtolower(trim((string) ($user['status'] ?? '')));
+    $blockedStatuses = $isCustomerLogin
+        ? ['banned', 'disabled', 'deleted', 'removed']
+        : ['disabled', 'banned', 'suspended', 'deleted', 'removed'];
+    if (in_array($status, $blockedStatuses, true)) {
         social_login_fail('This account is disabled or banned. Please contact support.');
     }
-    if ($status !== '' && !in_array($status, ['active', 'approved', 'enabled', 'ready', 'pending'], true)) {
+    if (!$isCustomerLogin && $status !== '' && !in_array($status, ['active', 'approved', 'enabled', 'ready', 'pending'], true)) {
         social_login_fail('Your account is not active. Please contact support.');
     }
 
@@ -337,7 +343,6 @@ function social_sign_in_user(PDO $pdo, string $provider, string $providerId, str
     $_SESSION['user_id'] = (int) $user['user_id'];
     $_SESSION['user_name'] = (string) $user['user_name'];
     $_SESSION['user_email'] = (string) $user['email'];
-    [$activeRoleId, $activeRoleName] = map_pump_session_role($user);
     $_SESSION['role_id'] = $activeRoleId;
     $_SESSION['role_name'] = $activeRoleName;
     $_SESSION['business_role_id'] = (int) ($user['business_role_id'] ?? 0);
@@ -346,7 +351,6 @@ function social_sign_in_user(PDO $pdo, string $provider, string $providerId, str
     $_SESSION['active_profile_mode'] = strtolower($activeRoleName) === 'customer' ? 'customer' : 'business';
     map_pump_set_current_role($pdo, (int) $user['user_id'], $activeRoleId);
 
-    $roleName = strtolower($activeRoleName);
     $destination = social_dashboard_for_role($activeRoleName);
     if ($roleName === 'customer') {
         $licenseAccess = customer_license_access($pdo, (int) $user['user_id']);

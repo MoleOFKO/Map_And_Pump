@@ -7,6 +7,7 @@ require_once __DIR__ . '/../conn.php';
 require_once __DIR__ . '/../Login/mail_templates.php';
 require_once __DIR__ . '/car_access.php';
 require_once __DIR__ . '/license_expiry.php';
+require_once __DIR__ . '/license_access.php';
 
 header('Content-Type: application/json; charset=utf-8');
 
@@ -148,6 +149,11 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 $userId = (int) ($_SESSION['user_id'] ?? 0);
 if ($userId <= 0) {
     car_license_json(false, 'Please sign in before adding a car license.', ['redirect' => '/php/Login/login.php']);
+}
+
+$licenseAccess = customer_license_access($pdo, $userId);
+if (!$licenseAccess['is_approved']) {
+    car_license_json(false, 'Your driver license must be confirmed before managing car licenses.', ['redirect' => '/php/Customer/license.php']);
 }
 
 $licenseExpiryState = customer_sync_license_expiry($pdo, $userId);

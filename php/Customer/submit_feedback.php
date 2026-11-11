@@ -7,6 +7,7 @@ require_once __DIR__ . '/../conn.php';
 require_once __DIR__ . '/../feedback_schema.php';
 require_once __DIR__ . '/../usage_history_schema.php';
 require_once __DIR__ . '/license_expiry.php';
+require_once __DIR__ . '/license_access.php';
 
 function customer_feedback_redirect(string $query = ''): void
 {
@@ -22,6 +23,12 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 $userId = (int)($_SESSION['user_id'] ?? 0);
 if ($userId <= 0) {
     header('Location: ../Login/login.php');
+    exit;
+}
+
+$licenseAccess = customer_license_access($pdo, $userId);
+if (!$licenseAccess['is_approved']) {
+    header('Location: license.php');
     exit;
 }
 

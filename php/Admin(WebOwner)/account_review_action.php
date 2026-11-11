@@ -42,8 +42,9 @@ try {
     $conn->begin_transaction();
 
     $targetQuery = $conn->prepare(
-        'SELECT u.user_id, u.user_name, u.email, u.status, u.license_id
+        'SELECT u.user_id, u.user_name, u.email, u.status, u.license_id, l.status AS license_status
          FROM users u
+         LEFT JOIN user_license l ON l.license_id = u.license_id
          WHERE u.user_id = ?
          FOR UPDATE'
     );
@@ -60,6 +61,9 @@ try {
     }
     if (strtolower(trim((string) $target['status'])) !== 'pending_verification') {
         throw new RuntimeException('Only pending verification accounts can be approved or rejected.');
+    }
+    if (strtolower(trim((string) ($target['license_status'] ?? ''))) !== 'pending') {
+        throw new RuntimeException('Only accounts with a pending driver license can be approved or rejected.');
     }
     if (!empty($target['license_id']) && duplicate_license_record_count('driver', (int) $target['license_id']) !== 0) {
         throw new RuntimeException('This account has a duplicate driver license. Use Compare to record the decision and notify every affected customer.');

@@ -134,12 +134,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             $details,
                             $licenseExpiry . ' 23:59:59',
                         ]);
-                        if ($loggedUserId > 0) {
-                            $updateStatus = $pdo->prepare("UPDATE users SET status = 'pending', updated_at = NOW() WHERE user_id = ?");
-                            $updateStatus->execute([$loggedUserId]);
-                        }
                         $pdo->commit();
-                        $_SESSION['user_status'] = 'pending';
                         $message = 'License expiry extension submitted (' . $reference . '). '
                             . 'An Admin or Moderator must approve it before the new expiry date is applied.';
                     } catch (Throwable $e) {

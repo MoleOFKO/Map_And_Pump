@@ -111,8 +111,8 @@ function customer_account_rows(string $search = '', string $status = '', string 
     }
 
     $expiryFilter = strtolower(trim($expiryFilter));
-    $hasLicenseExpiry = user_account_column_exists('user_license', 'license_id')
-        && user_account_column_exists('user_license', 'license_last_valid_date');
+    $hasLicenseRecord = user_account_column_exists('user_license', 'license_id');
+    $hasLicenseExpiry = $hasLicenseRecord && user_account_column_exists('user_license', 'license_last_valid_date');
     if ($expiryFilter !== '' && $hasLicenseExpiry && function_exists('expiry_user_filter_sql')) {
         $expirySql = expiry_user_filter_sql($expiryFilter, 'l.license_last_valid_date');
         if ($expirySql !== '') {
@@ -126,13 +126,24 @@ function customer_account_rows(string $search = '', string $status = '', string 
     $licenseExpirySelect = $hasLicenseExpiry
         ? 'l.license_last_valid_date'
         : 'NULL AS license_last_valid_date';
-    $licenseJoin = $hasLicenseExpiry
+    $licenseJoin = $hasLicenseRecord
         ? 'LEFT JOIN user_license l ON l.license_id = u.license_id'
         : '';
+    $licenseConflictSelect = $hasLicenseRecord
+        && user_account_column_exists('user_license', 'license_number')
+        && user_account_column_exists('user_license', 'nrc_number')
+        ? "(SELECT COUNT(*) FROM user_license duplicate
+            WHERE duplicate.license_id <> l.license_id
+              AND ((TRIM(COALESCE(l.license_number, '')) <> ''
+                    AND UPPER(REPLACE(TRIM(duplicate.license_number), ' ', '')) = UPPER(REPLACE(TRIM(l.license_number), ' ', '')))
+                OR (TRIM(COALESCE(l.nrc_number, '')) <> ''
+                    AND UPPER(REPLACE(TRIM(duplicate.nrc_number), ' ', '')) = UPPER(REPLACE(TRIM(l.nrc_number), ' ', ''))))) AS license_conflict_count"
+        : '0 AS license_conflict_count';
     $staffRoleSql = customer_account_has_staff_role_sql();
     $sql = <<<SQL
 SELECT u.user_id, {$publicIdSelect}, u.user_name, u.email, u.status, u.created_at, u.updated_at,
     CASE WHEN {$staffRoleSql} THEN 1 ELSE 0 END AS staff_access_protected,
+    {$licenseConflictSelect},
     bas.headquarter_id, {$customerRoleId} AS role_id, customer_role.role_name,
     h.company_name AS headquarter_name, h.location AS headquarter_location,
     {$licenseExpirySelect}
@@ -205,7 +216,7 @@ function user_account_column_exists(string $table, string $column): bool
 
     $allowedColumns = [
         'users' => ['current_role_id', 'user_public_id', 'last_login_at'],
-        'user_license' => ['license_id', 'license_last_valid_date', 'status', 'face_image'],
+        'user_license' => ['license_id', 'license_last_valid_date', 'status', 'face_image', 'license_number', 'nrc_number'],
         'car_license' => [
             'car_license_id', 'status', 'car_plate_number', 'car_owner_name',
             'vehicle_name', 'vehicle_type', 'chassis_number', 'location',
@@ -327,20 +338,22 @@ function pending_account_rows(string $search = '', string $status = 'pending'): 
     global $conn;
     $rows = [];
 
-    if (!hq_db_available() || !user_account_schema_ready()) {
+    if (!hq_db_available() || !user_account_schema_ready() || !user_account_column_exists('user_license', 'status')) {
         return $rows;
     }
 
     $status = strtolower(trim($status));
-    $statusValues = match ($status) {
-        'approved' => ['approved', 'active'],
-        'reject' => ['rejected'],
-        default => ['pending_verification'],
+    [$accountStatusValues, $licenseStatusValues] = match ($status) {
+        'approved' => [['approved', 'active'], ['approved', 'active']],
+        'reject' => [['rejected'], ['rejected']],
+        default => [['pending_verification'], ['pending']],
     };
-    $where = ['LOWER(TRIM(u.status)) IN (' . implode(',', array_fill(0, count($statusValues), '?')) . ')'];
-    $params = $statusValues;
-    $types = str_repeat('s', count($statusValues));
-
+    $where = [
+        'LOWER(TRIM(u.status)) IN (' . implode(',', array_fill(0, count($accountStatusValues), '?')) . ')',
+        'LOWER(TRIM(l.status)) IN (' . implode(',', array_fill(0, count($licenseStatusValues), '?')) . ')',
+    ];
+    $params = array_merge($accountStatusValues, $licenseStatusValues);
+    $types = str_repeat('s', count($params));
     if ($search !== '') {
         $where[] = '(LOWER(u.user_name) LIKE ? OR LOWER(u.email) LIKE ? OR LOWER(COALESCE(h.company_name, \'\')) LIKE ? OR LOWER(COALESCE(l.license_number, \'\')) LIKE ? OR LOWER(COALESCE(l.license_name, \'\')) LIKE ?)';
         $like = '%' . strtolower($search) . '%';
@@ -351,9 +364,7 @@ function pending_account_rows(string $search = '', string $status = 'pending'): 
     $publicIdSelect = user_account_column_exists('users', 'user_public_id')
         ? 'u.user_public_id'
         : 'NULL AS user_public_id';
-    $licenseStatusSelect = user_account_column_exists('user_license', 'status')
-        ? 'l.status AS license_status'
-        : 'NULL AS license_status';
+    $licenseStatusSelect = 'l.status AS license_status';
     $faceImageSelect = user_account_column_exists('user_license', 'face_image')
         ? 'l.face_image'
         : 'NULL AS face_image';
@@ -366,8 +377,9 @@ SELECT u.user_id, {$publicIdSelect}, u.user_name, u.email, u.status, u.created_a
        l.license_number, l.license_name, l.phone_number, l.nrc_number,
        l.date_of_birth, l.blood_type, l.license_last_valid_date,
              (SELECT COUNT(*) FROM user_license duplicate
-                WHERE UPPER(REPLACE(TRIM(duplicate.license_number), ' ', '')) = UPPER(REPLACE(TRIM(l.license_number), ' ', ''))
-                    AND duplicate.license_id <> l.license_id) AS license_conflict_count,
+                                WHERE duplicate.license_id <> l.license_id
+                                    AND ((UPPER(REPLACE(TRIM(duplicate.license_number), ' ', '')) = UPPER(REPLACE(TRIM(l.license_number), ' ', '')))
+                                        OR (UPPER(REPLACE(TRIM(duplicate.nrc_number), ' ', '')) = UPPER(REPLACE(TRIM(l.nrc_number), ' ', ''))))) AS license_conflict_count,
        {$licenseStatusSelect}, l.license_image, {$faceImageSelect}
 FROM users u
 LEFT JOIN roles r ON r.role_id = u.role_id
@@ -422,11 +434,17 @@ function pending_car_license_rows(string $search = '', string $status = 'pending
     }
 
     $hasPlateNumber = user_account_column_exists('car_license', 'car_plate_number');
-    $conflictSelect = $hasPlateNumber
+    $hasEligibleCarOwner = user_account_column_exists('user_car', 'car_id')
+        && user_account_column_exists('user_car', 'user_id');
+    $conflictSelect = $hasPlateNumber && $hasEligibleCarOwner
         ? "(SELECT COUNT(*) FROM car_license duplicate
              WHERE UPPER(REPLACE(REPLACE(REPLACE(TRIM(duplicate.car_plate_number), '/', ''), ' ', ''), '-', '')) =
                    UPPER(REPLACE(REPLACE(REPLACE(TRIM(c.car_plate_number), '/', ''), ' ', ''), '-', ''))
-               AND duplicate.car_license_id <> c.car_license_id) AS conflict_count"
+               AND duplicate.car_license_id <> c.car_license_id
+               AND EXISTS (SELECT 1 FROM user_car duplicate_link
+                           INNER JOIN users duplicate_user ON duplicate_user.user_id = duplicate_link.user_id
+                           WHERE duplicate_link.car_id = duplicate.car_license_id
+                             AND LOWER(TRIM(COALESCE(duplicate_user.status, ''))) NOT IN ('banned', 'disabled', 'suspended', 'removed', 'deleted'))) AS conflict_count"
         : '0 AS conflict_count';
 
     // Car ownership is helpful detail, but it is not required to list or
@@ -452,7 +470,7 @@ function pending_car_license_rows(string $search = '', string $status = 'pending
     $statusValues = match ($status) {
         'approved' => ['approved'],
         'reject' => ['rejected'],
-        default => ['pending', 'pending_verification'],
+        default => ['pending'],
     };
     $sql = 'SELECT c.car_license_id, ' . implode(', ', $selectFields) . ', c.status,
                    ' . $ownerSelect . ', ' . $conflictSelect . '
@@ -538,7 +556,7 @@ function car_license_review_status_summary(): array
 
     $countQuery = $conn->query(
         "SELECT
-            COALESCE(SUM(CASE WHEN LOWER(TRIM(status)) IN ('pending', 'pending_verification') THEN 1 ELSE 0 END), 0) AS pending,
+            COALESCE(SUM(CASE WHEN LOWER(TRIM(status)) = 'pending' THEN 1 ELSE 0 END), 0) AS pending,
             COALESCE(SUM(CASE WHEN LOWER(TRIM(status)) IN ('approved', 'active') THEN 1 ELSE 0 END), 0) AS approved,
             COALESCE(SUM(CASE WHEN LOWER(TRIM(status)) IN ('rejected', 'flagged') THEN 1 ELSE 0 END), 0) AS rejected
          FROM car_license"
@@ -568,17 +586,26 @@ function duplicate_license_record_count(string $licenseType, int $recordId): int
     }
 
     $sql = $licenseType === 'driver'
-        ? "SELECT COUNT(*) FROM user_license current_license
+           ? "SELECT COUNT(*) FROM user_license current_license
            INNER JOIN user_license duplicate
-             ON UPPER(REPLACE(TRIM(duplicate.license_number), ' ', '')) = UPPER(REPLACE(TRIM(current_license.license_number), ' ', ''))
-            AND duplicate.license_id <> current_license.license_id
-           WHERE current_license.license_id = ?"
+               ON ((TRIM(COALESCE(current_license.license_number, '')) <> ''
+                   AND UPPER(REPLACE(TRIM(duplicate.license_number), ' ', '')) = UPPER(REPLACE(TRIM(current_license.license_number), ' ', '')))
+                OR (TRIM(COALESCE(current_license.nrc_number, '')) <> ''
+                   AND UPPER(REPLACE(TRIM(duplicate.nrc_number), ' ', '')) = UPPER(REPLACE(TRIM(current_license.nrc_number), ' ', ''))))
+              AND duplicate.license_id <> current_license.license_id
+             INNER JOIN users duplicate_user ON duplicate_user.license_id = duplicate.license_id
+             WHERE current_license.license_id = ?
+               AND LOWER(TRIM(COALESCE(duplicate_user.status, ''))) NOT IN ('banned', 'disabled', 'suspended', 'removed', 'deleted')"
         : "SELECT COUNT(*) FROM car_license current_license
            INNER JOIN car_license duplicate
              ON UPPER(REPLACE(REPLACE(REPLACE(TRIM(duplicate.car_plate_number), '/', ''), ' ', ''), '-', '')) =
                 UPPER(REPLACE(REPLACE(REPLACE(TRIM(current_license.car_plate_number), '/', ''), ' ', ''), '-', ''))
             AND duplicate.car_license_id <> current_license.car_license_id
-           WHERE current_license.car_license_id = ?";
+                     WHERE current_license.car_license_id = ?
+                         AND EXISTS (SELECT 1 FROM user_car duplicate_link
+                                                 INNER JOIN users duplicate_user ON duplicate_user.user_id = duplicate_link.user_id
+                                                 WHERE duplicate_link.car_id = duplicate.car_license_id
+                                                     AND LOWER(TRIM(COALESCE(duplicate_user.status, ''))) NOT IN ('banned', 'disabled', 'suspended', 'removed', 'deleted'))";
     $statement = $conn->prepare($sql);
     if (!$statement) {
         return -1;
@@ -597,14 +624,16 @@ function pending_account_count(): int
 {
     global $conn;
 
-    if (!hq_db_available() || !user_account_schema_ready()) {
+    if (!hq_db_available() || !user_account_schema_ready() || !user_account_column_exists('user_license', 'status')) {
         return 0;
     }
 
     $query = $conn->query(
         "SELECT COUNT(*) AS total
          FROM users u
-         WHERE LOWER(TRIM(u.status)) = 'pending_verification'"
+         INNER JOIN user_license l ON l.license_id = u.license_id
+         WHERE LOWER(TRIM(u.status)) = 'pending_verification'
+           AND LOWER(TRIM(l.status)) = 'pending'"
     );
 
     return $query ? (int) ($query->fetch_assoc()['total'] ?? 0) : 0;
