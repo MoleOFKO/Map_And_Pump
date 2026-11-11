@@ -210,6 +210,11 @@ function expiry_hq_attention_rows(string $bucket = 'any', int $limit = 50): arra
         return $rows;
     }
 
+    // The HQ entity status is authoritative in the registry. Only terminal
+    // removal states suppress a license deadline notification; restored and
+    // other statuses remain eligible when the license date qualifies.
+    $statusFilter = "AND LOWER(TRIM(COALESCE(NULLIF(h.status, ''), owner.status, 'pending'))) NOT IN ('removed','deleted','revoked')";
+
     $licenseExpirySql = "COALESCE(NULLIF(h.business_license_expire_date, ''), DATE(h.expire_at))";
     $whereExtra = '';
     if ($bucket === 'warning') {
@@ -223,7 +228,7 @@ function expiry_hq_attention_rows(string $bucket = 'any', int $limit = 50): arra
     $sql = "
 SELECT h.headquarter_id, h.company_name, {$licenseExpirySql} AS expire_at, h.location,
        owner.user_id AS owner_user_id, owner.user_name AS owner_name,
-       COALESCE(owner.status, 'pending') AS account_status
+       COALESCE(NULLIF(h.status, ''), owner.status, 'pending') AS account_status
 FROM headquarter h
 LEFT JOIN (
     SELECT bas.headquarter_id, MIN(u.user_id) AS owner_user_id
@@ -234,6 +239,7 @@ LEFT JOIN (
 ) owners ON owners.headquarter_id = h.headquarter_id
 LEFT JOIN users owner ON owner.user_id = COALESCE(h.headquarters_owner_id, owners.owner_user_id)
 WHERE {$licenseExpirySql} IS NOT NULL
+  {$statusFilter}
 {$whereExtra}
 ORDER BY {$licenseExpirySql} ASC
 LIMIT " . (int) $limit;
@@ -282,6 +288,7 @@ INNER JOIN roles base_role ON base_role.role_id = u.role_id
 INNER JOIN user_license l ON l.license_id = u.license_id
 WHERE u.role_id = 6
   AND LOWER(TRIM(base_role.role_name)) = 'customer'
+  AND LOWER(TRIM(COALESCE(u.status, ''))) NOT IN ('removed','deleted','revoked')
   AND l.license_last_valid_date IS NOT NULL
 {$whereExtra}
 ORDER BY l.license_last_valid_date ASC
@@ -313,18 +320,12 @@ LIMIT " . (int) $limit;
  */
 function expiry_alert_payload(bool $forceRefresh = false, bool $runSync = true): array
 {
-    if (session_status() !== PHP_SESSION_ACTIVE) {
-        @session_start();
-    }
-
-    $cacheKey = 'map_pump_expiry_payload';
-    $cacheAtKey = 'map_pump_expiry_payload_at';
-    $ttl = 300;
-
-    if (!$forceRefresh && isset($_SESSION[$cacheKey], $_SESSION[$cacheAtKey])) {
-        if ((time() - (int) $_SESSION[$cacheAtKey]) < $ttl) {
-            return $_SESSION[$cacheKey];
-        }
+    // Keep repeated calls within one page render inexpensive, but rebuild on
+    // every request so status changes are reflected in the bell immediately.
+    static $requestCache = [];
+    $requestKey = $runSync ? 'with_sync' : 'without_sync';
+    if (!$forceRefresh && array_key_exists($requestKey, $requestCache)) {
+        return $requestCache[$requestKey];
     }
 
     $syncedHq = [];
@@ -400,9 +401,7 @@ function expiry_alert_payload(bool $forceRefresh = false, bool $runSync = true):
         'warning_days' => MAP_PUMP_EXPIRY_WARNING_DAYS,
     ];
 
-    $_SESSION[$cacheKey] = $payload;
-    $_SESSION[$cacheAtKey] = time();
-
+    $requestCache[$requestKey] = $payload;
     return $payload;
 }
 
@@ -413,7 +412,7 @@ function expiry_alert_payload(bool $forceRefresh = false, bool $runSync = true):
  */
 function expiry_render_nav_bell(string $portal = 'admin'): void
 {
-    // Uses session cache; runs sync only on cache miss (see expiry_alert_payload).
+    // Uses a request-local payload; status changes appear on the next page load.
     $payload = expiry_alert_payload(false, true);
     $total = (int) ($payload['total'] ?? 0);
     $items = $payload['items'] ?? [];
