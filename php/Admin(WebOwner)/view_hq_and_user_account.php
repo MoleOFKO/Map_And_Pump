@@ -80,7 +80,7 @@ if (hq_db_available() && hq_registry_schema_ready()) {
        }
 
        if ($expiryFilter !== '' && function_exists('expiry_hq_filter_sql')) {
-           $expirySql = expiry_hq_filter_sql($expiryFilter, 'h.expire_at');
+           $expirySql = expiry_hq_filter_sql($expiryFilter, 'COALESCE(NULLIF(h.business_license_expire_date, \'\'), DATE(h.expire_at))');
            if ($expirySql !== '') {
                $where[] = $expirySql;
            }
@@ -94,6 +94,7 @@ if (hq_db_available() && hq_registry_schema_ready()) {
             h.headquarter_email,
             h.created_at,
             h.expire_at,
+            COALESCE(NULLIF(h.business_license_expire_date, ''), DATE(h.expire_at)) AS license_expiry_date,
             owner.user_name AS owner_name,
             owner.email AS owner_email,
             {$hqStateSql} AS account_status,
@@ -323,7 +324,7 @@ $flashContext = $flash['context'] ?? [];
                                         <td>
                                             <span class="hq-status <?= hq_status_class($rowStatus) ?>"><?= hq_escape(hq_status_label($rowStatus)) ?></span>
                                             <?php if (function_exists('expiry_badge_html')): ?>
-                                                <div class="mt-1"><?= expiry_badge_html(isset($row['expire_at']) ? (string) $row['expire_at'] : null) ?></div>
+                                                <div class="mt-1"><?= expiry_badge_html(isset($row['license_expiry_date']) ? (string) $row['license_expiry_date'] : null) ?></div>
                                             <?php endif; ?>
                                         </td>
                                         <td class="text-end">
@@ -386,6 +387,18 @@ $flashContext = $flash['context'] ?? [];
 
             const escapeHtml = (value) => String(value ?? '').replace(/[&<>'"]/g, (character) => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#039;','"':'&quot;'}[character]));
             const formatDate = (value) => value ? new Date(String(value).replace(' ', 'T')).toLocaleString() : 'Not available';
+            const formatLicenseExpiry = (value) => {
+                const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+                if (!match) return 'Not available';
+                const year = Number(match[1]);
+                const month = Number(match[2]);
+                const day = Number(match[3]);
+                const leapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+                const daysInMonth = [31, leapYear ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month - 1];
+                if (month < 1 || month > 12 || day < 1 || day > daysInMonth) return 'Not available';
+                const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+                return monthNames[month - 1] + ' ' + day + ', ' + year;
+            };
             const statusClass = (status) => ({active:'hq-status-active', approved:'hq-status-active', suspended:'hq-status-suspended', removed:'hq-status-removed'}[String(status || '').toLowerCase()] || 'hq-status-pending');
             const statusLabel = (status) => ({active:'Active', approved:'Approved', suspended:'Suspended', removed:'Removed', pending:'Pending Verification', pending_verification:'Pending Verification'}[String(status || '').toLowerCase()] || (status ? String(status) : 'Unknown'));
             const stationStatusLabel = (status) => ({active:'Active', approved:'Active', decommissioned:'Decommissioned', suspended:'Suspended', removed:'Removed', offline:'Offline'}[String(status || '').toLowerCase()] || (status ? String(status) : 'Unknown'));
@@ -428,7 +441,7 @@ $flashContext = $flash['context'] ?? [];
                 detailsTitle.innerHTML = '<i class="bi bi-building txt-neon-cyan me-2"></i>' + escapeHtml(hq.company_name || 'Company Details');
 
                 const registeredDay = String(hq.created_at || '').slice(0, 10);
-                const expiryDay = String(hq.expire_at || '').slice(0, 10);
+                const expiryDay = String(hq.license_expiry_date || '').slice(0, 10);
                 const currentDate = new Date();
                 const today = [currentDate.getFullYear(), String(currentDate.getMonth() + 1).padStart(2, '0'), String(currentDate.getDate()).padStart(2, '0')].join('-');
                 const licenseDateWarning = registeredDay && expiryDay && expiryDay <= registeredDay
@@ -442,7 +455,7 @@ $flashContext = $flash['context'] ?? [];
                     '<div class="col-6 col-md-3"><div class="p-3 rounded-3 h-100" style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);"><div class="hq-detail-label">Email</div><div class="hq-detail-value mt-1 text-break">' + escapeHtml(hq.headquarter_email || '—') + '</div></div></div>' +
                     '<div class="col-6 col-md-3"><div class="p-3 rounded-3 h-100" style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);"><div class="hq-detail-label">Owner</div><div class="hq-detail-value mt-1">' + escapeHtml(hq.owner_name || '—') + '</div></div></div>' +
                     '<div class="col-6 col-md-3"><div class="p-3 rounded-3 h-100" style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);"><div class="hq-detail-label">Registered</div><div class="hq-detail-value mt-1">' + escapeHtml(formatDate(hq.created_at)) + '</div></div></div>' +
-                    '<div class="col-6 col-md-3"><div class="p-3 rounded-3 h-100" style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);"><div class="hq-detail-label">License expiry</div><div class="hq-detail-value mt-1">' + escapeHtml(formatDate(hq.expire_at)) + '</div></div></div>' +
+                    '<div class="col-6 col-md-3"><div class="p-3 rounded-3 h-100" style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);"><div class="hq-detail-label">License expiry</div><div class="hq-detail-value mt-1">' + escapeHtml(formatLicenseExpiry(hq.license_expiry_date)) + '</div></div></div>' +
                     '<div class="col-6 col-md-3"><div class="p-3 rounded-3 h-100" style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);"><div class="hq-detail-label">Business license</div><div class="hq-detail-value mt-1 text-break">' + escapeHtml(hq.business_license || '—') + '</div></div></div>' +
                     '</div>';
 

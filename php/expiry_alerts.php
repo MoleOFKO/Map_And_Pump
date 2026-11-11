@@ -5,7 +5,7 @@
  * Warning window: 0 ≤ days_left ≤ MAP_PUMP_EXPIRY_WARNING_DAYS (10).
  * Past deadline: auto-suspend related accounts (idempotent) + surface danger alerts.
  *
- * HQ source: headquarter.expire_at
+ * HQ source: headquarter.business_license_expire_date (with expire_at fallback)
  * User source: user_license.license_last_valid_date (driver license)
  */
 
@@ -210,17 +210,18 @@ function expiry_hq_attention_rows(string $bucket = 'any', int $limit = 50): arra
         return $rows;
     }
 
+    $licenseExpirySql = "COALESCE(NULLIF(h.business_license_expire_date, ''), DATE(h.expire_at))";
     $whereExtra = '';
     if ($bucket === 'warning') {
-        $whereExtra = ' AND DATE(h.expire_at) BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL ' . (int) MAP_PUMP_EXPIRY_WARNING_DAYS . ' DAY)';
+        $whereExtra = ' AND DATE(' . $licenseExpirySql . ') BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL ' . (int) MAP_PUMP_EXPIRY_WARNING_DAYS . ' DAY)';
     } elseif ($bucket === 'expired') {
-        $whereExtra = ' AND DATE(h.expire_at) < CURDATE()';
+        $whereExtra = ' AND DATE(' . $licenseExpirySql . ') < CURDATE()';
     } else {
-        $whereExtra = ' AND DATE(h.expire_at) <= DATE_ADD(CURDATE(), INTERVAL ' . (int) MAP_PUMP_EXPIRY_WARNING_DAYS . ' DAY)';
+        $whereExtra = ' AND DATE(' . $licenseExpirySql . ') <= DATE_ADD(CURDATE(), INTERVAL ' . (int) MAP_PUMP_EXPIRY_WARNING_DAYS . ' DAY)';
     }
 
     $sql = "
-SELECT h.headquarter_id, h.company_name, h.expire_at, h.location,
+SELECT h.headquarter_id, h.company_name, {$licenseExpirySql} AS expire_at, h.location,
        owner.user_id AS owner_user_id, owner.user_name AS owner_name,
        COALESCE(owner.status, 'pending') AS account_status
 FROM headquarter h
@@ -232,9 +233,9 @@ LEFT JOIN (
     GROUP BY bas.headquarter_id
 ) owners ON owners.headquarter_id = h.headquarter_id
 LEFT JOIN users owner ON owner.user_id = COALESCE(h.headquarters_owner_id, owners.owner_user_id)
-WHERE h.expire_at IS NOT NULL
+WHERE {$licenseExpirySql} IS NOT NULL
 {$whereExtra}
-ORDER BY h.expire_at ASC
+ORDER BY {$licenseExpirySql} ASC
 LIMIT " . (int) $limit;
 
     $result = $conn->query($sql);
@@ -536,7 +537,7 @@ function expiry_badge_html(?string $dateYmd): string
 }
 
 /**
- * SQL fragment for HQ list expiry filter (on headquarter.expire_at).
+ * SQL fragment for HQ list expiry filter (on the supplied license-date column).
  */
 function expiry_hq_filter_sql(string $expiryParam, string $column = 'h.expire_at'): string
 {

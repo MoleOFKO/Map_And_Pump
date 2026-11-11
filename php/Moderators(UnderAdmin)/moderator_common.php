@@ -122,7 +122,7 @@ function moderator_hq_rows(string $search, string $region, string $status, strin
     }
     $expiryFilter = strtolower(trim($expiryFilter));
     if ($expiryFilter !== '' && function_exists('expiry_hq_filter_sql')) {
-        $expirySql = expiry_hq_filter_sql($expiryFilter, 'h.expire_at');
+        $expirySql = expiry_hq_filter_sql($expiryFilter, 'COALESCE(NULLIF(h.business_license_expire_date, \'\'), DATE(h.expire_at))');
         if ($expirySql !== '') {
             $where[] = $expirySql;
         }
@@ -135,6 +135,7 @@ function moderator_hq_rows(string $search, string $region, string $status, strin
     // Station totals from `branches` via station_business_scope (never dummy `stations` view).
     $sql = "SELECT h.headquarter_id, h.company_name, h.company_logo, h.location, h.headquarter_email,
        h.contact_number, h.business_license, h.created_at, h.expire_at,
+       COALESCE(NULLIF(h.business_license_expire_date, ''), DATE(h.expire_at)) AS license_expiry_date,
        owner.user_name AS owner_name, owner.email AS owner_email,
     {$hqStateSql} AS account_status,
        COALESCE(user_counts.user_count, 0) AS user_count,

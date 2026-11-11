@@ -3,6 +3,7 @@ require_once __DIR__ . '/request_common.php';
 require_once __DIR__ . '/admin_common.php';
 require_once __DIR__ . '/../billing_config.php';
 require_once __DIR__ . '/../payment_transfers.php';
+require_once __DIR__ . '/../shared/license_expiry_date.php';
 require_once __DIR__ . '/../Login/account_password_setup.php';
 
 if (session_status() !== PHP_SESSION_ACTIVE) {
@@ -156,7 +157,8 @@ try {
             $expiryTimestamp = $renewalExpiryDate . ' 23:59:59';
             $hqLicenseUpdate = $conn->prepare(
                 'UPDATE headquarter
-                 SET business_license = ?, business_license_expire_date = ?, expire_at = ?
+                 SET business_license = ?, business_license_expire_date = ?, expire_at = ?,
+                     created_at = created_at
                  WHERE headquarter_id = ?'
             );
             if (!$hqLicenseUpdate) {
@@ -182,9 +184,11 @@ try {
 
         // License expiry must be stored on both business_license_expire_date and expire_at.
         // created_at = registration time; expire_at = submitted license end date (not "now").
-        $licenseExpiryRaw = trim((string) ($target['headquarter_expire_at'] ?? ''));
-        $licenseExpiryDate = $licenseExpiryRaw !== '' ? substr($licenseExpiryRaw, 0, 10) : '';
-        if ($licenseExpiryDate === '' || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $licenseExpiryDate)) {
+        $licenseExpirySource = array_key_exists('license_expiry', $details)
+            ? trim((string) $details['license_expiry'])
+            : substr(trim((string) ($target['headquarter_expire_at'] ?? '')), 0, 10);
+        $licenseExpiryDate = map_pump_parse_license_expiry_date($licenseExpirySource);
+        if ($licenseExpiryDate === null) {
             throw new RuntimeException('The company registration is missing a valid license expiry date.');
         }
         $licenseExpiryTs = $licenseExpiryDate . ' 23:59:59';
@@ -248,6 +252,7 @@ try {
              SET status = \'pending\',
                  service_expires_at = ?,
                  included_stations_free_until = NULL,
+                 created_at = created_at,
                  expire_at = ?,
                  business_license_expire_date = ?
              WHERE headquarter_id = ?'
@@ -403,11 +408,15 @@ try {
         $createdOwnerSetupUrl = account_password_setup_create_link($conn, $createdOwnerUserId);
         $createdOwnerEmail = $ownerEmail;
 
-        $hqOwnerUpdate = $conn->prepare('UPDATE headquarter SET headquarters_owner_id = ? WHERE headquarter_id = ?');
+        $hqOwnerUpdate = $conn->prepare(
+            'UPDATE headquarter
+             SET headquarters_owner_id = ?, created_at = created_at, expire_at = ?, business_license_expire_date = ?
+             WHERE headquarter_id = ?'
+        );
         if (!$hqOwnerUpdate) {
             throw new RuntimeException('Could not link the company owner.');
         }
-        $hqOwnerUpdate->bind_param('ii', $createdOwnerUserId, $createdHeadquarterId);
+        $hqOwnerUpdate->bind_param('issi', $createdOwnerUserId, $licenseExpiryTs, $licenseExpiryDate, $createdHeadquarterId);
         if (!$hqOwnerUpdate->execute()) {
             throw new RuntimeException('Could not link the company owner.');
         }
