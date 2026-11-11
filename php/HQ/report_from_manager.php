@@ -72,14 +72,7 @@ try {
         $reportSql .= ' AND DATE(r.created_at) <= ?';
         $reportParams[] = $endDate;
     }
-    $reportSql .=
-        ' ORDER BY CASE
-                   WHEN LOWER(TRIM(COALESCE(r.importance, \'\'))) = \'high\'
-                    AND r.created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)
-                   THEN 0 ELSE 1
-                 END,
-                 r.created_at DESC
-        LIMIT 5';
+    $reportSql .= ' ORDER BY r.created_at DESC';
     $stmt = $pdo->prepare($reportSql);
     $stmt->execute($reportParams);
     $reports = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -217,6 +210,19 @@ try {
             justify-content: center;
         }
 
+        .manager-report-table-scroll {
+            max-height: 360px;
+            overflow-y: auto;
+            overscroll-behavior: contain;
+        }
+
+        .manager-report-table-scroll thead th {
+            position: sticky;
+            top: 0;
+            z-index: 2;
+            background: var(--card-bg, #0f172a);
+        }
+
         /* Manager activity log (monospace audit-trail lines) */
         .manager-activity-row {
             font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
@@ -308,13 +314,14 @@ if (empty($reports)): ?>
                 </div>
             <?php
 else: ?>
-                <div class="table-responsive">
+                <div class="table-responsive manager-report-table-scroll" id="managerReportTableScroll">
                     <table id="reportsTable" class="table table-dark table-striped">
                         <thead>
                             <tr>
                                 <th>Report ID</th>
                                 <th>Date</th>
                                 <th>User</th>
+                                <th>Date</th>
                                 <th>Importance</th>
                                 <th>Summary</th>
                                 <th>Status</th>
@@ -335,6 +342,7 @@ foreach ($reports as $rep): ?>
                                     <td><?= htmlspecialchars($rep['report_id']) ?></td>
                                     <td><?= htmlspecialchars((string) ($rep['created_at'] ?? ''), ENT_QUOTES, 'UTF-8') ?></td>
                                     <td><?= htmlspecialchars($rep['user_name']) ?></td>
+                                    <td><?= htmlspecialchars($rep['created_at']) ?></td>
                                     <td><?= htmlspecialchars($rep['importance']) ?></td>
                                     <td><?= htmlspecialchars($rep['short_summery']) ?></td>
                                     <td>
@@ -456,6 +464,28 @@ endif; ?>
 
             const rows = Array.prototype.slice.call(document.querySelectorAll('.report-row'));
             const noResults = document.getElementById('reportsNoResults');
+            const tableScroll = document.getElementById('managerReportTableScroll');
+
+            function sizeReportTableScroll() {
+                if (!tableScroll) return;
+
+                const visibleRows = rows.filter(function (row) {
+                    return !row.classList.contains('d-none');
+                });
+                if (visibleRows.length <= 5) {
+                    tableScroll.style.maxHeight = 'none';
+                    tableScroll.style.overflowY = 'hidden';
+                    return;
+                }
+
+                const header = tableScroll.querySelector('thead');
+                let height = header ? header.getBoundingClientRect().height : 0;
+                visibleRows.slice(0, 5).forEach(function (row) {
+                    height += row.getBoundingClientRect().height;
+                });
+                tableScroll.style.maxHeight = Math.ceil(height) + 'px';
+                tableScroll.style.overflowY = 'auto';
+            }
 
             function updateClearButton() {
                 if (input.value.trim() !== '') {
@@ -480,6 +510,7 @@ endif; ?>
                     noResults.classList.toggle('d-none', !(rows.length > 0 && visible === 0));
                 }
                 updateClearButton();
+                sizeReportTableScroll();
             }
 
             input.addEventListener('input', applyFilter);
@@ -499,6 +530,7 @@ endif; ?>
             }
 
             applyFilter();
+            window.addEventListener('resize', sizeReportTableScroll);
         })();
 
         // Toggle Actions Menu
