@@ -4,6 +4,7 @@ require_once __DIR__ . '/hq_guard.php';
  * Shared database connection.
  */
 include_once __DIR__ . '/../conn.php';
+require_once __DIR__ . '/../account_identity.php';
 require_once __DIR__ . '/../business_scope.php';
 require_once __DIR__ . '/../loyalty_points.php';
 require_once __DIR__ . '/../billing_config.php';
