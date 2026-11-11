@@ -187,8 +187,8 @@ if ($password !== $confirmPassword) {
     register_json(false, 'Password Does Not Match, Please Try Again');
 }
 
-if (strlen($password) < 8 || strlen($password) > 15) {
-    register_json(false, 'Password must be 8 to 15 characters.');
+if (strlen($password) < 8) {
+    register_json(false, 'Password must be at least 8 characters.');
 }
 
 if (!preg_match('/[a-z]/', $password) || !preg_match('/[A-Z]/', $password) || !preg_match('/\d/', $password) || !preg_match('/[^a-zA-Z0-9]/', $password)) {

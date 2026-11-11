@@ -17,7 +17,9 @@ function map_pump_configure_session(bool $remember = false): void
     }
 
     $lifetime = $remember ? MAP_PUMP_REMEMBER_SECONDS : 0;
-    ini_set('session.gc_maxlifetime', (string) ($remember ? MAP_PUMP_REMEMBER_SECONDS : 1440));
+    // Always keep the server-side session data for the remember period, otherwise a login page request
+    // could clean up a remembered session that is older than the default 24 minutes.
+    ini_set('session.gc_maxlifetime', (string) MAP_PUMP_REMEMBER_SECONDS);
     session_set_cookie_params([
         'lifetime' => $lifetime,
         'path' => '/',

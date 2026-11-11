@@ -2,6 +2,18 @@
 require_once __DIR__ . '/session_helper.php';
 map_pump_configure_session();
 session_start();
+
+// Remember Me: if this browser is still logged in from a remembered login, skip the login page.
+// The 10 second guard stops a redirect loop if the dashboard sends the user straight back here.
+if (!empty($_SESSION['is_logged_in']) && !empty($_SESSION['remember_me']) && !empty($_SESSION['login_destination'])) {
+  $lastAutoRedirect = (int) ($_SESSION['login_autoredirect_at'] ?? 0);
+  if (time() - $lastAutoRedirect > 10) {
+    $_SESSION['login_autoredirect_at'] = time();
+    header('Location: ' . $_SESSION['login_destination']);
+    exit;
+  }
+}
+
 $loginError = $_SESSION['login_error'] ?? '';
 $socialDebug = $_SESSION['social_login_debug'] ?? '';
 $loginSuccess = $_SESSION['login_success'] ?? '';
