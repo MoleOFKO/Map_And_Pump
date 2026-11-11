@@ -131,8 +131,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'link_
         );
         $scope->execute([$linkedUserId, $staffRoleId, $headquarterId, $branchId]);
 
-        $linkStaff = $pdo->prepare('UPDATE staff SET user_id = ?, email = ?, is_active = 1, updated_at = NOW() WHERE staff_id = ? AND user_id IS NULL');
-        $linkStaff->execute([$linkedUserId, (string) $existingAccount['email'], (int) $standaloneRecord['staff_id']]);
+        $linkStaff = $pdo->prepare('UPDATE staff SET user_id = ?, email = ?, staff_password = ?, is_active = 1, updated_at = NOW() WHERE staff_id = ? AND user_id IS NULL');
+        $linkStaff->execute([
+            $linkedUserId,
+            (string) $existingAccount['email'],
+            (string) $existingAccount['hashed_password'],
+            (int) $standaloneRecord['staff_id'],
+        ]);
         if ($linkStaff->rowCount() !== 1) {
             throw new RuntimeException('The staff account changed while it was being linked. Please try again.');
         }
@@ -156,7 +161,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'link_
         $_SESSION['branch_id'] = $branchId;
         $_SESSION['has_business'] = true;
         $_SESSION['active_profile_mode'] = 'business';
-        $_SESSION['flash_message'] = 'Your staff account is now linked to the existing customer account. Both passwords remain unchanged.';
+        $_SESSION['flash_message'] = 'Your staff account is now linked. Use the linked account email and password to sign in.';
         $_SESSION['flash_type'] = 'success';
         header('Location: staff_account.php');
         exit;

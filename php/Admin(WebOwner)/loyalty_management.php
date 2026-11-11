@@ -362,16 +362,69 @@ $redemptionValues = array_values($redemptions ?? []);
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Loyalty &amp; Billing Management</title>
+    <meta name="description" content="Manage loyalty rewards, billing, company payouts, and fuel limits.">
+    <title>Loyalty &amp; Billing — Map &amp; Pump</title>
+    <link rel="icon" type="image/png" href="/images/Logo.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
     <link rel="stylesheet" href="/css/Admin.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    <style>
+        /* Matches the shared visual language used by the Users and Requests admin views. */
+        body.background_color.admin-blue-page {
+            --ab-bg: #0b1220; --ab-surface: #121d2d; --ab-raised: #182537;
+            --ab-border: #27364a; --ab-text: #edf3fa; --ab-muted: #a4b3c6;
+            --ab-accent: #79aaff; --ab-warning: #f7ca72; --ab-danger: #ff9aab;
+            --neon-cyan: var(--ab-accent); --neon-blue: #89b5ff;
+            --glass-border: var(--ab-border); --text-primary: var(--ab-text); --text-muted: var(--ab-muted);
+            background: radial-gradient(ellipse at 90% 0%, rgba(45,80,155,.13), transparent 48%), var(--ab-bg);
+            color: var(--ab-text); min-height: 100vh; background-repeat: no-repeat;
+        }
+        body.background_color.admin-blue-page:is(.light-mode,[data-theme="light"]) {
+            --ab-bg: #f1f5f8; --ab-surface: #fff; --ab-raised: #f4f7fa; --ab-border: #d9e3ec;
+            --ab-text: #172b40; --ab-muted: #53667b; --ab-accent: #285ec7;
+            --ab-warning: #865b08; --ab-danger: #b0354c;
+        }
+        .admin-blue-page .admin-blue-shell { max-width: 1480px; padding-inline: clamp(16px,3.5vw,48px); margin: 36px auto 24px !important; color: var(--ab-text); font: 14px/1.65 'Poppins',system-ui,sans-serif; }
+        .admin-blue-page .admin-blue-shell *, .admin-blue-page .admin-blue-shell *::before, .admin-blue-page .admin-blue-shell *::after { box-sizing: border-box; }
+        .admin-blue-page .admin-blue-header { padding: 8px 0 28px; border-bottom: 1px solid var(--ab-border); }
+        .admin-blue-page .admin-blue-header h1 { color: var(--ab-text); font-size: clamp(26px,3vw,38px); font-weight: 600; letter-spacing: -.03em; line-height: 1.3; }
+        .admin-blue-page .companies-eyebrow { color: var(--ab-accent); font-size: 11px; font-weight: 600; letter-spacing: .13em; text-transform: uppercase; }
+        .admin-blue-page .admin-blue-description, .admin-blue-page .loyalty-muted { color: var(--ab-muted) !important; font-size: 13px; }
+        .admin-blue-page .admin-blue-shell :is(.analytics-card,.loyalty-metric-card) { padding: 24px; border: 1px solid var(--ab-border); border-radius: 14px; background: var(--ab-surface); color: var(--ab-text); box-shadow: 0 6px 24px rgba(0,0,0,.08); }
+        .admin-blue-page .loyalty-metric-card { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 18px; height: 100%; min-height: 148px; overflow: hidden; background: linear-gradient(135deg,rgba(121,170,255,.025),transparent 80%),var(--ab-surface) !important; }
+        .admin-blue-page .loyalty-metric-card::before { content: ''; position: absolute; top: 24px; left: 0; width: 3px; height: 32px; border-radius: 0 4px 4px 0; background: var(--ab-accent); }
+        .admin-blue-page .loyalty-metric-card span { display: block; margin-bottom: 10px; color: var(--ab-muted); font-size: 12px; font-weight: 500; }
+        .admin-blue-page .loyalty-metric-card strong { display: block; font-size: clamp(22px,2.2vw,30px); font-weight: 600; line-height: 1.35; font-variant-numeric: tabular-nums; }
+        .admin-blue-page .loyalty-metric-card strong small { display: block; margin-top: 6px; color: var(--ab-muted); font-size: 11px; font-weight: 500; letter-spacing: .1em; }
+        .admin-blue-page :is(.loyalty-metric-card > i,.loyalty-section-icon) { display: grid; place-items: center; flex: 0 0 auto; width: 44px; height: 44px; border: 1px solid var(--ab-border); border-radius: 12px; background: var(--ab-raised); color: var(--ab-accent); font-size: 20px; }
+        .admin-blue-page .loyalty-section-heading { display: flex; align-items: center; gap: 14px; margin-bottom: 24px; }
+        .admin-blue-page .loyalty-section-heading h2 { color: var(--ab-text); font-size: 18px; font-weight: 600; letter-spacing: -.03em; }
+        .admin-blue-page .loyalty-budget-control { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 24px; }
+        .admin-blue-page .loyalty-budget-input { flex: 1 1 260px; min-width: 0; }
+        .admin-blue-page .loyalty-budget-status { display: grid; grid-template-columns: auto auto; flex: 1 1 310px; gap: 8px 24px; padding-left: 24px; border-left: 1px solid var(--ab-border); font-size: 12px; }
+        .admin-blue-page .loyalty-budget-status span { color: var(--ab-muted); }.admin-blue-page .loyalty-budget-status strong { color: var(--ab-text); font-weight: 500; text-align: right; font-variant-numeric: tabular-nums; }.admin-blue-page #loyalty-budget-remaining,.admin-blue-page .loyalty-company-balance { color: var(--ab-accent) !important; }
+        .admin-blue-page .admin-blue-shell :is(.form-label,.form-control,.form-select) { font-family: 'Poppins',system-ui,sans-serif; }.admin-blue-page .admin-blue-shell .form-label { display:block; margin-bottom:8px; color:var(--ab-muted); font-size:12px; font-weight:500; }
+        .admin-blue-page .admin-blue-shell :is(.form-control,.form-select) { min-height:44px; border:1px solid var(--ab-border); border-radius:8px; background:var(--ab-raised); color:var(--ab-text); font-size:13px; box-shadow:none; }.admin-blue-page:not(.light-mode):not([data-theme="light"]) .admin-blue-shell :is(.form-control,.form-select) { color-scheme:dark; }.admin-blue-page .admin-blue-shell :is(.form-control,.form-select):focus { border-color:var(--ab-accent); outline:2px solid var(--ab-accent); outline-offset:2px; box-shadow:none; }
+        .admin-blue-page .admin-blue-shell .btn { display:inline-flex; align-items:center; justify-content:center; gap:6px; min-height:44px; border-radius:8px; padding:10px 16px; font:500 12px 'Poppins',system-ui,sans-serif; }.admin-blue-page .admin-blue-shell :is(.btn-primary,.btn-success) { border-color:#79aaff; background:#79aaff; color:#10284c; }.admin-blue-page .admin-blue-shell :is(.btn-primary,.btn-success):hover { border-color:#9cc1ff; background:#9cc1ff; color:#10284c; }
+        .admin-blue-page .loyalty-advanced-settings { margin-top:28px; overflow:hidden; border:1px solid var(--ab-border); border-radius:10px; }.admin-blue-page .loyalty-advanced-settings summary { padding:16px 20px; cursor:pointer; background:var(--ab-raised); color:var(--ab-accent); font-size:13px; font-weight:500; }.admin-blue-page .loyalty-advanced-content { padding:24px; }.admin-blue-page .loyalty-form-actions { display:flex; justify-content:flex-end; margin-top:20px; }
+        .admin-blue-page .admin-blue-shell .table-responsive { overflow:auto; border:1px solid var(--ab-border); border-radius:10px; scrollbar-color:var(--ab-border) var(--ab-raised); }.admin-blue-page .admin-blue-shell .table { --bs-table-bg:transparent; --bs-table-color:var(--ab-text); --bs-table-border-color:var(--ab-border); margin-bottom:0; color:var(--ab-text); font-size:13px; }.admin-blue-page .admin-blue-shell .table > :not(caption) > * > * { padding:16px; color:inherit; background:transparent; border-color:var(--ab-border); }.admin-blue-page .admin-blue-shell .table thead th { background:var(--ab-raised); color:var(--ab-muted); font-size:11px; font-weight:500; letter-spacing:.06em; text-transform:uppercase; white-space:nowrap; }.admin-blue-page .admin-blue-shell .table tbody tr:hover { background:var(--ab-raised); }.admin-blue-page .loyalty-table:has(input) { min-width:520px; }.admin-blue-page .loyalty-table:has(.loyalty-status) { min-width:840px; }
+        .admin-blue-page .loyalty-payout-instructions { max-width:740px; }.admin-blue-page .loyalty-payout-balance { display:block; padding:14px 18px; border:1px solid var(--ab-border); border-radius:8px; background:var(--ab-raised); color:var(--ab-muted); font-size:12px; }.admin-blue-page .loyalty-payout-balance strong { color:var(--ab-text); font-weight:500; }.admin-blue-page .loyalty-optional { margin-left:6px; font-size:11px; font-weight:400; }
+        .admin-blue-page .loyalty-status { display:inline-flex; align-items:center; gap:7px; padding:5px 9px; border:1px solid var(--ab-border); border-radius:6px; background:var(--ab-raised); color:var(--ab-muted); font-size:11px; font-weight:500; }.admin-blue-page .loyalty-status-pending { color:var(--ab-warning); }.admin-blue-page :is(.loyalty-status-confirmed,.loyalty-status-paid,.loyalty-status-approved) { color:var(--ab-accent); }.admin-blue-page :is(.loyalty-status-rejected,.loyalty-status-cancelled) { color:var(--ab-danger); }
+        .admin-blue-page .admin-blue-shell .alert { padding:16px 20px; border:1px solid var(--ab-border); border-radius:10px; background:var(--ab-raised); color:var(--ab-text); font-size:13px; }.admin-blue-page .admin-blue-shell .alert-success { border-color:rgba(121,170,255,.4); }.admin-blue-page .admin-blue-shell .alert-danger { border-color:rgba(255,154,171,.4); }
+        @media (max-width:767.98px) { .admin-blue-page .admin-blue-shell { margin-top:22px !important; }.admin-blue-page .admin-blue-shell :is(.analytics-card,.loyalty-metric-card) { padding:20px; }.admin-blue-page .loyalty-budget-control { gap:18px; }.admin-blue-page .loyalty-budget-status { flex-basis:100%; padding-top:18px; padding-left:0; border-top:1px solid var(--ab-border); border-left:0; }.admin-blue-page .loyalty-budget-save { width:100%; }.admin-blue-page .loyalty-advanced-content { padding:18px; } }
+        @media (prefers-reduced-motion:reduce) { .admin-blue-page .admin-blue-shell * { transition:none !important; animation:none !important; } }
+    </style>
 </head>
-<body class="background_color" id="background_color">
+<body class="background_color admin-blue-page" id="background_color">
 <?php $adminSection = 'loyalty'; include __DIR__ . '/admin_section_nav.php'; ?>
-<main class="container my-5 loyalty-billing-page">
-    <header class="loyalty-page-header mb-4">
-        <h1 class="h3 mb-0">Loyalty &amp; Billing</h1>
+<main class="container my-5 admin-blue-shell loyalty-billing-page">
+    <header class="admin-blue-header mb-4">
+        <div class="companies-eyebrow">Platform controls</div>
+        <h1 class="mb-0">Loyalty &amp; Billing</h1>
+        <p class="admin-blue-description">Configure rewards, monthly budget controls, company payouts, and vehicle fuel limits.</p>
     </header>
     <?php if ($message !== ''): ?><div class="alert alert-success"><?= hq_escape($message) ?></div><?php endif; ?>
     <?php if ($error !== ''): ?><div class="alert alert-danger" role="alert"><?= hq_escape($error) ?></div><?php endif; ?>

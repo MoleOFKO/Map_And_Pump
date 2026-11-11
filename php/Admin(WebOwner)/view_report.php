@@ -108,6 +108,8 @@ $flashType = (string) ($flash['type'] ?? '');
     <meta name="description" content="Map &amp; Pump Admin — Database-backed system reports and logs.">
     <title>View Report — Map &amp; Pump</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
     <link rel="icon" type="image/png" href="/images/Logo.png">
     <link rel="stylesheet" href="/css/Admin.css">
@@ -121,8 +123,225 @@ $flashType = (string) ($flash['type'] ?? '');
         .report-table-scroll{max-height:min(60vh,520px);overflow:auto}
         .report-scope-chip{font-size:.72rem}
     </style>
+    <style>
+        body.background_color.admin-blue-page {
+            --ab-bg: #0b1220;
+            --ab-surface: #121d2d;
+            --ab-raised: #182537;
+            --ab-border: #27364a;
+            --ab-text: #edf3fa;
+            --ab-muted: #a4b3c6;
+            --ab-accent: #79aaff;
+            --ab-warning: #f7ca72;
+            --ab-danger: #ff9aab;
+            --neon-cyan: var(--ab-accent);
+            --glass-border: var(--ab-border);
+            --text-primary: var(--ab-text);
+            --text-muted: var(--ab-muted);
+            min-height: 100vh;
+            color: var(--ab-text);
+            font-family: 'Poppins',system-ui,sans-serif;
+            background: radial-gradient(ellipse at 90% 0%, rgba(45,80,155,.13), transparent 48%), var(--ab-bg);
+            background-repeat: no-repeat;
+        }
+        body.background_color.admin-blue-page:is(.light-mode,[data-theme="light"]) {
+            --ab-bg: #f1f5f8;
+            --ab-surface: #fff;
+            --ab-raised: #f4f7fa;
+            --ab-border: #d9e3ec;
+            --ab-text: #172b40;
+            --ab-muted: #53667b;
+            --ab-accent: #285ec7;
+            --ab-warning: #865b08;
+            --ab-danger: #b0354c;
+        }
+        body.admin-blue-page main.container {
+            max-width: 1480px;
+            padding-inline: clamp(16px,3.5vw,48px);
+            margin: 36px auto 24px !important;
+            color: var(--ab-text);
+            font: 14px/1.65 'Poppins',system-ui,sans-serif;
+        }
+        body.admin-blue-page main.container > .d-flex:first-child {
+            padding: 8px 0 28px;
+            border-bottom: 1px solid var(--ab-border);
+        }
+        body.admin-blue-page main.container > .d-flex:first-child .stat-chip {
+            padding: 0;
+            border: 0;
+            border-radius: 0;
+            background: none;
+            color: var(--ab-accent);
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: .13em;
+            text-transform: uppercase;
+        }
+        body.admin-blue-page main.container > .d-flex:first-child h1 {
+            margin-top: 8px !important;
+            color: var(--ab-text) !important;
+            font-size: clamp(26px,3vw,38px);
+            font-weight: 600 !important;
+            line-height: 1.3;
+        }
+        body.admin-blue-page main.container :is(.text-white,.fw-bold) { color: var(--ab-text) !important; }
+        body.admin-blue-page main.container :is(.text-white-50,.metric-label) { color: var(--ab-muted) !important; }
+        body.admin-blue-page main.container .txt-neon-cyan { color: var(--ab-accent) !important; }
+        body.admin-blue-page main.container :is(.analytics-card,.dashboard-card) {
+            padding: 24px;
+            border: 1px solid var(--ab-border);
+            border-radius: 14px;
+            background: var(--ab-surface);
+            color: var(--ab-text);
+            box-shadow: 0 6px 24px rgba(0,0,0,.08);
+        }
+        body.admin-blue-page main.container .metric-card {
+            position: relative;
+            height: 100%;
+            min-height: 148px;
+            overflow: hidden;
+            background: linear-gradient(135deg,rgba(121,170,255,.025),transparent 80%),var(--ab-surface);
+        }
+        body.admin-blue-page main.container .metric-card::before {
+            position: absolute;
+            top: 24px;
+            left: 0;
+            width: 3px;
+            height: 32px;
+            border-radius: 0 4px 4px 0;
+            background: var(--ab-accent);
+            content: '';
+        }
+        body.admin-blue-page main.container .metric-card h4 { font-size: 34px; font-variant-numeric: tabular-nums; }
+        body.admin-blue-page main.container .admin-filter-card { padding: 22px 24px; }
+        body.admin-blue-page main.container .admin-filter-form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 16px; }
+        body.admin-blue-page main.container .filter-group { flex: 1 1 170px; min-width: 0; }
+        body.admin-blue-page main.container .filter-group--search { flex: 2 1 300px; }
+        body.admin-blue-page main.container :is(.filter-label,.filter-group label) {
+            display: block;
+            margin-bottom: 8px;
+            color: var(--ab-muted);
+            font-size: 12px;
+            font-weight: 500;
+        }
+        body.admin-blue-page main.container .filter-search { position: relative; }
+        body.admin-blue-page main.container .filter-search-icon {
+            position: absolute;
+            top: 50%;
+            left: 13px;
+            z-index: 1;
+            color: var(--ab-muted);
+            pointer-events: none;
+            transform: translateY(-50%);
+        }
+        body.admin-blue-page main.container .filter-input { padding-left: 38px !important; }
+        body.admin-blue-page main.container :is(.form-control,.form-select) {
+            min-height: 44px;
+            width: 100%;
+            border: 1px solid var(--ab-border);
+            border-radius: 8px;
+            background-color: var(--ab-raised);
+            color: var(--ab-text);
+            font: 13px/1.5 'Poppins',system-ui,sans-serif;
+            padding: 11px 12px;
+            box-shadow: none;
+        }
+        body.admin-blue-page main.container :is(.form-control,.form-select):focus {
+            border-color: var(--ab-accent);
+            outline: 2px solid var(--ab-accent);
+            outline-offset: 2px;
+        }
+        body.admin-blue-page main.container .filter-actions { display: flex; flex: 0 0 auto; }
+        body.admin-blue-page main.container .btn-clear-filters {
+            min-height: 44px;
+            border: 1px solid var(--ab-border);
+            border-radius: 8px;
+            background: var(--ab-raised);
+            color: var(--ab-text);
+            padding: 10px 16px;
+        }
+        body.admin-blue-page main.container .report-scope {
+            border-color: var(--ab-border);
+            border-radius: 6px;
+            background: var(--ab-raised);
+            color: var(--ab-muted);
+            font-size: 11px;
+            font-weight: 500;
+        }
+        body.admin-blue-page main.container .report-table-scroll { max-height: min(68vh,640px); }
+        body.admin-blue-page main.container .table-responsive {
+            border: 1px solid var(--ab-border);
+            border-radius: 10px;
+            scrollbar-color: var(--ab-border) var(--ab-raised);
+        }
+        body.admin-blue-page main.container .table {
+            --bs-table-bg: transparent;
+            --bs-table-color: var(--ab-text);
+            --bs-table-border-color: var(--ab-border);
+            color: var(--ab-text);
+            font-size: 13px;
+        }
+        body.admin-blue-page main.container .table > :not(caption) > * > * {
+            padding: 16px;
+            color: inherit;
+            background: transparent;
+            border-color: var(--ab-border);
+            box-shadow: none;
+        }
+        body.admin-blue-page main.container .table thead th {
+            position: sticky;
+            top: 0;
+            z-index: 2;
+            background: var(--ab-raised);
+            color: var(--ab-muted);
+            font-size: 11px;
+            font-weight: 500;
+            letter-spacing: .06em;
+            text-transform: uppercase;
+            white-space: nowrap;
+        }
+        body.admin-blue-page main.container .table tbody tr:hover { background: var(--ab-raised); }
+        body.admin-blue-page main.container .table-dark-custom { min-width: 960px; }
+        body.admin-blue-page .report-flash,
+        body.admin-blue-page .alert-danger {
+            border: 1px solid var(--ab-border);
+            border-radius: 10px;
+            background: var(--ab-raised);
+            color: var(--ab-text);
+        }
+        body.admin-blue-page .modal .modal-content {
+            border: 1px solid var(--ab-border);
+            border-radius: 14px;
+            background: var(--ab-surface) !important;
+            color: var(--ab-text);
+        }
+        body.admin-blue-page .modal :is(.modal-header,.modal-footer) {
+            border-color: var(--ab-border);
+            background: var(--ab-surface);
+        }
+        body.admin-blue-page .modal .modal-title,
+        body.admin-blue-page .modal .text-white { color: var(--ab-text) !important; }
+        body.admin-blue-page .modal .text-white-50 { color: var(--ab-muted) !important; }
+        body.admin-blue-page .modal :is(.report-detail-hero,.report-detail-card,.report-detail-content) {
+            border-color: var(--ab-border);
+            border-radius: 10px;
+            background: var(--ab-raised);
+            color: var(--ab-text);
+        }
+        body.admin-blue-page .modal .report-detail-label { color: var(--ab-muted); }
+        body.admin-blue-page footer { color: var(--ab-muted) !important; font: 11px/1.6 'Poppins',system-ui,sans-serif; }
+        @media (max-width: 767.98px) {
+            body.admin-blue-page main.container { margin-top: 22px !important; }
+            body.admin-blue-page main.container :is(.analytics-card,.dashboard-card) { padding: 20px; }
+            body.admin-blue-page main.container .filter-group { flex-basis: calc(50% - 8px); }
+            body.admin-blue-page main.container .filter-actions { flex-basis: 100%; justify-content: flex-end; }
+        }
+        @media (max-width: 419.98px) {
+            body.admin-blue-page main.container .filter-group { flex-basis: 100%; }
+        }
+    </style>
 </head>
-<body class="background_color" id="background_color">
+<body class="background_color admin-blue-page" id="background_color">
 <?php $adminSection = 'report'; include __DIR__ . '/admin_section_nav.php'; ?>
 
     
