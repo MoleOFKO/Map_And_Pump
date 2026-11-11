@@ -127,11 +127,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
 
                 $manager_id = null;
-                if ($manager_email === '') {
-                    if (!$quickStationRequest) {
-                        throw new RuntimeException('A branch manager is required to create a station.');
-                    }
-                } else {
+                if ($manager_email !== '') {
                     $managerStmt = $pdo->prepare(
                         "SELECT u.user_id
                          FROM users u
@@ -322,27 +318,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 throw new RuntimeException('You can only configure stations under your own HQ.');
             }
 
-            $managerStmt = $pdo->prepare(
-                "SELECT u.user_id
-                 FROM users u
-                 LEFT JOIN business_account_scope bas ON bas.user_id = u.user_id
-                 WHERE u.email = ?
-                   AND COALESCE(u.business_role_id, u.role_id) = 4
-                   AND (
-                       bas.headquarter_id = ?
-                       OR EXISTS (
-                           SELECT 1 FROM station_business_scope sbs
-                           WHERE sbs.branch_manager_user_id = u.user_id
-                             AND sbs.headquarter_id = ?
+            $manager_id = null;
+            if ($manager_email !== '') {
+                $managerStmt = $pdo->prepare(
+                    "SELECT u.user_id
+                     FROM users u
+                     LEFT JOIN business_account_scope bas ON bas.user_id = u.user_id
+                     WHERE u.email = ?
+                       AND COALESCE(u.business_role_id, u.role_id) = 4
+                       AND (
+                           bas.headquarter_id = ?
+                           OR EXISTS (
+                               SELECT 1 FROM station_business_scope sbs
+                               WHERE sbs.branch_manager_user_id = u.user_id
+                                 AND sbs.headquarter_id = ?
+                           )
                        )
-                   )
-                 LIMIT 1"
-            );
-            $managerStmt->execute([$manager_email, $hqId, $hqId]);
-            $manager_id = $managerStmt->fetchColumn();
-
-            if (!$manager_id) {
-                throw new RuntimeException('Please select a valid branch manager.');
+                     LIMIT 1"
+                );
+                $managerStmt->execute([$manager_email, $hqId, $hqId]);
+                $manager_id = $managerStmt->fetchColumn();
+                if (!$manager_id) {
+                    throw new RuntimeException('Please select a valid branch manager.');
+                }
+                $manager_id = (int) $manager_id;
             }
 
             $pdo->beginTransaction();
@@ -363,18 +362,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (!$currentAssignment) {
                 throw new RuntimeException('Could not verify this station assignment.');
             }
-            $assignedElsewhereStmt = $pdo->prepare(
-                "SELECT 1
-                 FROM branches b
-                 LEFT JOIN station_business_scope sbs ON sbs.station_id = b.branch_id
-                 WHERE b.status <> 'closed'
-                   AND b.branch_id <> ?
-                   AND (b.manager_user_id = ? OR sbs.branch_manager_user_id = ?)
-                 LIMIT 1"
-            );
-            $assignedElsewhereStmt->execute([(int) $station_id, (int) $manager_id, (int) $manager_id]);
-            if ($assignedElsewhereStmt->fetchColumn()) {
-                throw new RuntimeException('This branch manager is already assigned to another station.');
+            if ($manager_id !== null) {
+                $assignedElsewhereStmt = $pdo->prepare(
+                    "SELECT 1
+                     FROM branches b
+                     LEFT JOIN station_business_scope sbs ON sbs.station_id = b.branch_id
+                     WHERE b.status <> 'closed'
+                       AND b.branch_id <> ?
+                       AND (b.manager_user_id = ? OR sbs.branch_manager_user_id = ?)
+                     LIMIT 1"
+                );
+                $assignedElsewhereStmt->execute([(int) $station_id, $manager_id, $manager_id]);
+                if ($assignedElsewhereStmt->fetchColumn()) {
+                    throw new RuntimeException('This branch manager is already assigned to another station.');
+                }
             }
 
             [$latitude, $longitude] = array_map('trim', explode(',', $location, 2));
@@ -383,7 +384,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $scopeStmt = $pdo->prepare("UPDATE station_business_scope SET branch_manager_user_id = ? WHERE station_id = ? AND headquarter_id = ?");
             $scopeStmt->execute([$manager_id, $station_id, $hqId]);
             $previousManagerId = (int) ($currentAssignment['manager_user_id'] ?: $currentAssignment['branch_manager_user_id']);
-            if ($previousManagerId > 0 && $previousManagerId !== (int) $manager_id) {
+            if ($previousManagerId > 0 && $previousManagerId !== (int) ($manager_id ?? 0)) {
                 $previousManagerScopeStmt = $pdo->prepare(
                     'UPDATE business_account_scope
                      SET station_id = NULL
@@ -391,15 +392,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 );
                 $previousManagerScopeStmt->execute([$previousManagerId, $hqId, (int) $station_id]);
             }
-            $accountScopeStmt = $pdo->prepare(
-                "INSERT INTO business_account_scope
-                    (user_id, business_role_id, headquarter_id, branch_manager_user_id, station_id, status)
-                 VALUES (?, 4, ?, NULL, ?, 'active')
-                 ON DUPLICATE KEY UPDATE headquarter_id = VALUES(headquarter_id), station_id = VALUES(station_id), status = 'active'"
-            );
-            $accountScopeStmt->execute([$manager_id, $hqId, $station_id]);
-            $userScopeStmt = $pdo->prepare("UPDATE users SET business_role_id = 4 WHERE user_id = ?");
-            $userScopeStmt->execute([$manager_id]);
+            if ($manager_id !== null) {
+                $accountScopeStmt = $pdo->prepare(
+                    "INSERT INTO business_account_scope
+                        (user_id, business_role_id, headquarter_id, branch_manager_user_id, station_id, status)
+                     VALUES (?, 4, ?, NULL, ?, 'active')
+                     ON DUPLICATE KEY UPDATE headquarter_id = VALUES(headquarter_id), station_id = VALUES(station_id), status = 'active'"
+                );
+                $accountScopeStmt->execute([$manager_id, $hqId, $station_id]);
+                $userScopeStmt = $pdo->prepare("UPDATE users SET business_role_id = 4 WHERE user_id = ?");
+                $userScopeStmt->execute([$manager_id]);
+            }
             $pdo->commit();
             $message = "Configuration saved successfully!";
         } catch (PDOException $e) {
@@ -964,9 +967,9 @@ if ($paymentTransferSchemaReady) {
                                 <input type="text" name="station_address" class="form-control bg-dark text-light border-secondary" placeholder="e.g. No. 45, Main Road, Township">
                             </div>
                             <div class="col-12 mb-3">
-                                <label class="form-label text-light">Branch Manager Email <span class="text-danger">*</span></label>
-                                <select name="manager_email" class="form-select bg-dark text-light border-secondary" required>
-                                    <option value="" selected disabled>Select a branch manager</option>
+                                <label class="form-label text-light">Branch Manager Email (Optional)</label>
+                                <select name="manager_email" class="form-select bg-dark text-light border-secondary">
+                                    <option value="" selected>No branch manager (assign later)</option>
                                     <?php foreach ($availableBranchManagers as $manager): ?>
                                         <option value="<?= htmlspecialchars($manager['email'], ENT_QUOTES, 'UTF-8') ?>"><?= htmlspecialchars(privacy_mask_email((string) $manager['email']), ENT_QUOTES, 'UTF-8') ?></option>
                                     <?php endforeach; ?>
@@ -1163,9 +1166,9 @@ if ($paymentTransferSchemaReady) {
                                 <input type="text" id="configStationName" name="station_name" class="form-control bg-dark text-light border-secondary" required>
                             </div>
                             <div class="col-md-6 mb-3">
-                                <label class="form-label text-light">Branch Manager Email</label>
-                                <select id="configManagerEmail" name="manager_email" class="form-select bg-dark text-light border-secondary" required>
-                                    <option value="">Choose a branch manager</option>
+                                <label class="form-label text-light">Branch Manager Email (Optional)</label>
+                                <select id="configManagerEmail" name="manager_email" class="form-select bg-dark text-light border-secondary">
+                                    <option value="">No branch manager (assign later)</option>
                                     <?php foreach ($branchManagers as $manager): ?>
                                         <option value="<?= htmlspecialchars($manager['email'], ENT_QUOTES, 'UTF-8') ?>">
                                             <?= htmlspecialchars(privacy_mask_email((string) $manager['email']), ENT_QUOTES, 'UTF-8') ?>
