@@ -424,7 +424,7 @@ $flashType = $flash['type'] ?? '';
                         <td class="text-white-50"><?= hq_escape(request_date($row['created_at'])) ?></td>
                         <td><span class="request-status <?= request_status_class((string) $row['status']) ?>"><?= hq_escape(request_status_label((string) $row['status'])) ?></span></td>
                         <td class="text-end"><div class="d-flex gap-2 justify-content-end">
-                            <button type="button" class="btn-action js-view-account-request" title="View Account Details" aria-label="View account ACCT-<?= (int) $row['user_id'] ?> details" data-user-id="<?= (int) $row['user_id'] ?>" data-role-name="<?= hq_escape($roleName) ?>"><i class="bi bi-eye-fill"></i></button>
+                            <button type="button" class="btn-action js-view-account-request" title="View Details" aria-label="View details for account ACCT-<?= (int) $row['user_id'] ?>" data-user-id="<?= (int) $row['user_id'] ?>" data-role-name="<?= hq_escape($roleName) ?>"><i class="bi bi-eye-fill"></i></button>
                         </div></td>
                     </tr>
                 <?php endforeach; ?>
@@ -437,7 +437,7 @@ $flashType = $flash['type'] ?? '';
                         <td class="text-white-50"><?= hq_escape(request_date($row['created_at'])) ?></td>
                         <td><span class="request-status <?= request_status_class($carStatus) ?>"><?= hq_escape(request_status_label($carStatus)) ?></span></td>
                         <td class="text-end"><div class="d-flex gap-2 justify-content-end">
-                            <button type="button" class="btn-action js-view-car-license" title="Compare car license" aria-label="Review car license #<?= (int) $row['car_license_id'] ?>" data-car-license-id="<?= (int) $row['car_license_id'] ?>"><i class="bi bi-eye-fill"></i></button>
+                            <button type="button" class="btn-action js-view-car-license" title="View Details" aria-label="View details for car license #<?= (int) $row['car_license_id'] ?>" data-car-license-id="<?= (int) $row['car_license_id'] ?>"><i class="bi bi-eye-fill"></i></button>
                         </div></td>
                     </tr>
                 <?php endforeach; ?>
@@ -450,7 +450,7 @@ $flashType = $flash['type'] ?? '';
                         <td class="text-white-50"><?= hq_escape(request_date($row['created_at'])) ?></td>
                         <td><span class="request-status <?= request_status_class($rowStatus) ?>"><?= hq_escape(request_status_label($rowStatus)) ?></span><?php if (strtolower((string) $row['request_type']) === 'hq_registration'): ?><div class="mt-1"><span class="badge rounded-pill <?= $paymentState === 'received' ? 'bg-success' : ($paymentState === 'payer_reported_paid' ? 'bg-warning text-dark' : 'bg-secondary') ?>"><?= hq_escape(match ($paymentState) { 'received' => 'Payment received', 'payer_reported_paid' => 'Payment needs verification', 'rejected' => 'Payment not received', 'cancelled' => 'Payment cancelled', 'pending_payment' => 'Awaiting payer', default => 'Payment record missing' }) ?></span></div><?php endif; ?></td>
                         <td class="text-end"><div class="d-flex gap-2 justify-content-end">
-                            <button type="button" class="btn-action js-view-request" title="View Request Details" aria-label="View request <?= hq_escape($row['reference_code']) ?> details" data-request-id="<?= (int) $row['request_id'] ?>"><i class="bi bi-eye-fill"></i></button>
+                            <button type="button" class="btn-action js-view-request" title="View Details" aria-label="View details for request <?= hq_escape($row['reference_code']) ?>" data-request-id="<?= (int) $row['request_id'] ?>"><i class="bi bi-eye-fill"></i></button>
                         </div></td>
                     </tr>
                 <?php endforeach; ?>
@@ -484,7 +484,7 @@ $flashType = $flash['type'] ?? '';
                         <td class="text-white-50"><?= hq_escape(request_date((string) $paymentRow['created_at'])) ?></td>
                         <td><span class="request-status <?= request_status_class($paymentStatus) ?>"><?= hq_escape($paymentStatusLabel) ?></span></td>
                         <td class="text-end"><div class="d-flex gap-2 justify-content-end align-items-center">
-                            <button type="button" class="btn-action js-view-payment" title="View payment verification details" aria-label="View payment verification #PAY-<?= $paymentId ?> details"
+                            <button type="button" class="btn-action js-view-payment" title="View Details" aria-label="View details for payment #PAY-<?= $paymentId ?>"
                                 data-payment-id="<?= $paymentId ?>" data-payment-type="<?= hq_escape($paymentTypeLabel) ?>"
                                 data-payment-status="<?= hq_escape($paymentState) ?>" data-payment-name="<?= hq_escape((string) ($paymentRow['payer_hq_name'] ?: $paymentRow['payer_name'] ?: 'Company payer')) ?>"
                                 data-payment-email="<?= hq_escape((string) ($paymentRow['payer_email'] ?? '')) ?>" data-payment-description="<?= hq_escape((string) ($paymentRow['description'] ?? '')) ?>"
@@ -492,8 +492,8 @@ $flashType = $flash['type'] ?? '';
                                 data-payment-method="<?= hq_escape((string) ($paymentRow['payment_method'] ?? 'Not provided')) ?>" data-receipt-name="<?= hq_escape((string) ($paymentRow['receipt_name'] ?? '')) ?>"
                                 data-receipt-mime="<?= hq_escape((string) ($paymentRow['receipt_mime_type'] ?? '')) ?>" data-is-payer="<?= $isPayer ? 'yes' : 'no' ?>"><i class="bi bi-eye-fill"></i></button>
                             <?php if ($paymentState === 'payer_reported_paid' && !$isPayer && (!$isRegistrationPayment || $registrationCanComplete)): ?><div class="d-none" id="paymentActions<?= $paymentId ?>">
-                                <form action="/php/Payment/action.php" method="POST" class="m-0 flex-fill"><input type="hidden" name="csrf_token" value="<?= hq_escape((string) $_SESSION['payment_transfer_csrf']) ?>"><input type="hidden" name="transfer_id" value="<?= $paymentId ?>"><input type="hidden" name="action" value="confirm_received"><input type="hidden" name="return_to" value="/php/Admin(WebOwner)/view_requests.php"><button type="submit" class="request-action-btn request-action-btn--approve" onclick="return confirm('<?= $isRegistrationPayment ? 'Confirm the funds were received. This will also complete the company registration.' : 'Confirm receipt only after checking your bank or wallet records.' ?>')"><?= $isRegistrationPayment ? 'Confirm Payment &amp; Complete Registration' : 'Confirm payment' ?></button></form>
-                                <form action="/php/Payment/action.php" method="POST" class="m-0 flex-fill"><input type="hidden" name="csrf_token" value="<?= hq_escape((string) $_SESSION['payment_transfer_csrf']) ?>"><input type="hidden" name="transfer_id" value="<?= $paymentId ?>"><input type="hidden" name="action" value="mark_not_received"><input type="hidden" name="return_to" value="/php/Admin(WebOwner)/view_requests.php"><input type="hidden" name="decision_note" value="Payment not verified by Admin."><button type="submit" class="request-action-btn request-action-btn--payment-reject" onclick="return confirm('Record that the payment was not received or could not be verified?')">Mark not received</button></form>
+                                <form action="/php/Payment/action.php" method="POST" class="m-0 flex-fill"><input type="hidden" name="csrf_token" value="<?= hq_escape((string) $_SESSION['payment_transfer_csrf']) ?>"><input type="hidden" name="transfer_id" value="<?= $paymentId ?>"><input type="hidden" name="action" value="confirm_received"><input type="hidden" name="return_to" value="/php/Admin(WebOwner)/view_requests.php"><button type="submit" class="request-action-btn request-action-btn--approve" onclick="return confirm('<?= $isRegistrationPayment ? 'Confirm the funds were received. This will also complete the company registration.' : 'Confirm receipt only after checking your bank or wallet records.' ?>')">Approve</button></form>
+                                <form action="/php/Payment/action.php" method="POST" class="m-0 flex-fill"><input type="hidden" name="csrf_token" value="<?= hq_escape((string) $_SESSION['payment_transfer_csrf']) ?>"><input type="hidden" name="transfer_id" value="<?= $paymentId ?>"><input type="hidden" name="action" value="mark_not_received"><input type="hidden" name="return_to" value="/php/Admin(WebOwner)/view_requests.php"><input type="hidden" name="decision_note" value="Payment not verified by Admin."><button type="submit" class="request-action-btn request-action-btn--payment-reject" onclick="return confirm('Record that the payment was not received or could not be verified?')">Reject</button></form>
                             </div><?php endif; ?>
                         </div></td>
                     </tr>
@@ -536,7 +536,7 @@ $flashType = $flash['type'] ?? '';
             const formatDate = (value) => value ? new Date(String(value).replace(' ', 'T')).toLocaleString() : 'Not available';
             const statusClass = (status) => ({approved:'request-status-approved', rejected:'request-status-rejected', flagged:'request-status-flagged'}[String(status || '').toLowerCase()] || 'request-status-pending');
             const statusLabel = (status) => ({pending:'Pending', approved:'Approved', rejected:'Reject', flagged:'Reject'}[String(status || '').toLowerCase()] || 'Pending');
-            const defaultFooter = '<button type="button" class="btn btn-outline-secondary rounded-3 text-white-50 border-secondary border-opacity-20 w-100" data-bs-dismiss="modal">Close</button>';
+            const defaultFooter = '';
             const setFooter = (html = defaultFooter) => { detailsFooter.innerHTML = html; };
             const fileLink = (path, label) => path ? '<a href="' + escapeHtml(path) + '" target="_blank" rel="noopener" class="txt-neon-blue text-decoration-none"><i class="bi bi-box-arrow-up-right me-1"></i>' + escapeHtml(label || 'Open file') + '</a>' : '<span class="text-white-50">Not uploaded</span>';
             const isImagePath = (path) => /\.(png|jpe?g|gif|webp|bmp|svg)(\?.*)?$/i.test(String(path || ''));
@@ -731,9 +731,7 @@ $flashType = $flash['type'] ?? '';
                             if (reasonField) reasonField.hidden = !blocking;
                             if (reasonInput) reasonInput.required = blocking;
                         });
-                        if (Array.isArray(payload.license_conflicts) && payload.license_conflicts.length) {
-                            setFooter('<div class="small text-warning w-100 text-center">Use Compare to approve or block the matching records together.</div>');
-                        } else {
+                        if (String(u.status || '').toLowerCase() === 'pending_verification') {
                             setFooter('<form action="account_review_action.php" method="POST" class="m-0"><input type="hidden" name="user_id" value="' + escapeHtml(u.user_id) + '"><input type="hidden" name="action" value="approve"><input type="hidden" name="return_to" value="view_requests.php"><button type="submit" class="request-action-btn request-action-btn--approve"><i class="bi bi-check-lg"></i>Approve</button></form><button type="button" class="request-action-btn request-action-btn--reject js-modal-reject"><i class="bi bi-x-lg"></i>Reject</button>');
                             detailsFooter.querySelector('.js-modal-reject').addEventListener('click', () => rejectTarget('account', u.user_id, label, u.user_name || u.email || 'Unknown user'));
                         }
@@ -781,8 +779,8 @@ $flashType = $flash['type'] ?? '';
                     markUnavailableDocImages(detailsBody);
                     const carId = escapeHtml(car.car_license_id);
                     const isPendingCar = ['pending', 'pending_verification'].includes(String(car.status || '').toLowerCase());
-                    setFooter(conflicts.length || !isPendingCar
-                        ? '<button type="button" class="btn btn-outline-secondary w-100" data-bs-dismiss="modal">Close</button>'
+                    setFooter(!isPendingCar
+                        ? ''
                         : '<form action="car_license_review_action.php" method="POST" class="m-0"><input type="hidden" name="car_license_id" value="' + carId + '"><input type="hidden" name="action" value="approve"><input type="hidden" name="return_to" value="view_requests.php"><button type="submit" class="request-action-btn request-action-btn--approve">Approve</button></form><form action="car_license_review_action.php" method="POST" class="m-0"><input type="hidden" name="car_license_id" value="' + carId + '"><input type="hidden" name="action" value="reject"><input type="hidden" name="return_to" value="view_requests.php"><button type="submit" class="request-action-btn request-action-btn--reject">Reject</button></form>');
                 } catch (error) {
                     detailsBody.innerHTML = '<div class="alert request-flash alert-danger"><i class="bi bi-exclamation-triangle me-2"></i>' + escapeHtml(error.message) + '</div>';
@@ -827,7 +825,7 @@ $flashType = $flash['type'] ?? '';
                         : (data.paymentStatus === 'received' ? 'Payment received' : 'Payment not received'));
                 body.innerHTML = '<div class="row g-4"><div class="col-12 col-lg-5"><h6 class="fw-semibold text-white mb-3" style="letter-spacing:.5px;font-size:.78rem;text-transform:uppercase">Payment Information</h6><div class="mb-3"><div class="request-detail-label">Payer / Company</div><div class="request-detail-value">' + escape(data.paymentName) + '</div></div><div class="mb-3"><div class="request-detail-label">Email</div><div class="request-detail-value">' + escape(data.paymentEmail || 'Not provided') + '</div></div><div class="mb-3"><div class="request-detail-label">Payment Type</div><div class="request-detail-value">' + escape(data.paymentType) + '</div></div><div class="mb-3"><div class="request-detail-label">Amount</div><div class="request-detail-value">' + escape(data.paymentAmount) + ' MMK</div></div><div class="mb-3"><div class="request-detail-label">Payment Method</div><div class="request-detail-value">' + escape(data.paymentMethod || 'Not provided') + '</div></div><div class="mb-3"><div class="request-detail-label">Submitted</div><div class="request-detail-value">' + escape(data.paymentDate) + '</div></div><div class="mb-3"><div class="request-detail-label">Status</div><div class="request-detail-value">' + escape(statusLabel) + '</div></div><div class="mb-3"><div class="request-detail-label">Description</div><div class="request-detail-value">' + escape(data.paymentDescription || 'No additional details provided.') + '</div></div></div><div class="col-12 col-lg-7"><h6 class="fw-semibold text-white mb-3" style="letter-spacing:.5px;font-size:.78rem;text-transform:uppercase">Payment Evidence</h6><div class="request-detail-value p-3 rounded-3" style="background:rgba(0,244,255,.04);border:1px solid var(--glass-border);min-height:220px">' + evidence + '</div><div class="small text-white-50 mt-2">A payer declaration or screenshot is evidence for review, not proof of received money.</div></div></div>';
                 const actions = document.getElementById('paymentActions' + data.paymentId);
-                footer.innerHTML = (actions ? actions.innerHTML : (data.paymentStatus === 'payer_reported_paid' && data.isPayer === 'yes' ? '<div class="small text-warning me-auto">You submitted this payment. Another Admin must review it.</div>' : '')) + '<button type="button" class="btn btn-outline-secondary rounded-3 text-white-50 border-secondary border-opacity-20" data-bs-dismiss="modal">Close</button>';
+                footer.innerHTML = actions ? actions.innerHTML : (data.paymentStatus === 'payer_reported_paid' && data.isPayer === 'yes' ? '<div class="small text-warning me-auto">You submitted this payment. Another Admin must review it.</div>' : '');
                 modal.show();
             });
         })();
