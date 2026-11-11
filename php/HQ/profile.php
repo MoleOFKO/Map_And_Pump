@@ -4,6 +4,7 @@ require_once __DIR__ . '/../conn.php';
 require_once __DIR__ . '/../account_deletion.php';
 require_once __DIR__ . '/../profile_avatar.php';
 require_once __DIR__ . '/../imgbb_image_host.php';
+require_once __DIR__ . '/profile_schema.php';
 
 if (empty($_SESSION['user_id']) && empty($_SESSION['hq_auth'])) {
     $loginUrl = '../Login/login.php';
@@ -12,12 +13,24 @@ if (empty($_SESSION['user_id']) && empty($_SESSION['hq_auth'])) {
     exit;
 }
 
-$userId = (int) $_SESSION['user_id'];
+$userId = (int) ($_SESSION['user_id'] ?? 0);
 $isHqAuth = !empty($_SESSION['hq_auth']);
+$hqAvatarSchemaReady = true;
+if ($isHqAuth) {
+    try {
+        hq_profile_ensure_avatar_schema($pdo);
+    } catch (Throwable $exception) {
+        $hqAvatarSchemaReady = false;
+        error_log('HQ profile avatar schema could not be prepared: ' . $exception->getMessage());
+    }
+}
 if (empty($_SESSION['hq_customer_link_csrf'])) {
     $_SESSION['hq_customer_link_csrf'] = bin2hex(random_bytes(32));
 }
 $customerLinkCsrf = (string) $_SESSION['hq_customer_link_csrf'];
+if ($isHqAuth && empty($_SESSION['hq_switch_csrf'])) {
+    $_SESSION['hq_switch_csrf'] = bin2hex(random_bytes(32));
+}
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     header('Content-Type: application/json; charset=utf-8');
@@ -102,9 +115,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         if ($action === 'update_avatar') {
-            if (!empty($_SESSION['hq_auth'])) {
+            if ($isHqAuth && !$hqAvatarSchemaReady) {
+                http_response_code(500);
+                echo json_encode(['ok' => false, 'message' => 'The HQ profile picture field is not available in the database.']);
+                exit;
+            }
+            if ($isHqAuth && (int) ($_SESSION['headquarter_id'] ?? 0) <= 0) {
                 http_response_code(422);
-                echo json_encode(['ok' => false, 'message' => 'Profile pictures are not available for HQ-only accounts.']);
+                echo json_encode(['ok' => false, 'message' => 'The HQ account could not be identified.']);
                 exit;
             }
             $upload = $_FILES['profile_avatar'] ?? null;
@@ -139,7 +157,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 exit;
             }
 
-            $fileName = 'hq-profile-' . $userId . '-' . bin2hex(random_bytes(8)) . '.' . $extensions[$mime];
+            $avatarOwnerId = $isHqAuth ? (int) $_SESSION['headquarter_id'] : $userId;
+            $fileName = 'hq-profile-' . $avatarOwnerId . '-' . bin2hex(random_bytes(8)) . '.' . $extensions[$mime];
             $avatarUrl = '/php/HQ/uploads/profile/' . $fileName;
             if (map_pump_imgbb_enabled()) {
                 $imageBytes = @file_get_contents((string) $upload['tmp_name']);
@@ -168,8 +187,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
 
-            $update = $pdo->prepare('UPDATE users SET oauth_avatar_url = ?, updated_at = NOW() WHERE user_id = ?');
-            $update->execute([$avatarUrl, $userId]);
+            if ($isHqAuth) {
+                $update = $pdo->prepare('UPDATE headquarter SET profile_avatar_url = ? WHERE headquarter_id = ?');
+                $update->execute([$avatarUrl, $avatarOwnerId]);
+            } else {
+                $update = $pdo->prepare('UPDATE users SET oauth_avatar_url = ?, updated_at = NOW() WHERE user_id = ?');
+                $update->execute([$avatarUrl, $userId]);
+            }
             $_SESSION['oauth_avatar_url'] = $avatarUrl;
 
             echo json_encode(['ok' => true, 'message' => 'Profile picture updated successfully.', 'avatar_url' => $avatarUrl]);
@@ -238,9 +262,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 if ($isHqAuth) {
+    $hqAvatarSelect = $hqAvatarSchemaReady ? 'profile_avatar_url' : 'NULL';
     $stmt = $pdo->prepare(
         "SELECT headquarter_id AS user_id, company_name AS user_name, headquarter_email AS email,
-                NULL AS oauth_avatar_url, 3 AS role_id, 3 AS business_role_id
+                {$hqAvatarSelect} AS oauth_avatar_url, 3 AS role_id, 3 AS business_role_id
          FROM headquarter WHERE headquarter_id = ? LIMIT 1"
     );
     $stmt->execute([(int) ($_SESSION['headquarter_id'] ?? 0)]);
@@ -264,6 +289,18 @@ $profileFallbackUrl = map_pump_profile_initial_svg($profileName, 'H');
 $customerRoleStmt = $pdo->query("SELECT role_id FROM roles WHERE LOWER(TRIM(role_name)) = 'customer' LIMIT 1");
 $customerRoleId = (int) ($customerRoleStmt->fetchColumn() ?: 0);
 $headquarterId = (int) ($_SESSION['headquarter_id'] ?? 0);
+$ownerCustomer = null;
+if ($headquarterId > 0 && $customerRoleId > 0) {
+    $ownerCustomerStmt = $pdo->prepare(
+        'SELECT u.user_id, u.user_name, u.email, u.status, u.role_id
+         FROM headquarter h
+         INNER JOIN users u ON u.user_id = h.headquarters_owner_id
+         WHERE h.headquarter_id = ? AND u.role_id = ?
+         LIMIT 1'
+    );
+    $ownerCustomerStmt->execute([$headquarterId, $customerRoleId]);
+    $ownerCustomer = $ownerCustomerStmt->fetch(PDO::FETCH_ASSOC) ?: null;
+}
 $linkedCustomer = null;
 $canLinkCustomer = false;
 if ($headquarterId > 0 && $customerRoleId > 0) {
@@ -273,11 +310,10 @@ if ($headquarterId > 0 && $customerRoleId > 0) {
          INNER JOIN business_account_scope bas ON bas.headquarter_id = h.headquarter_id
              AND bas.business_role_id = ?
          INNER JOIN users u ON u.user_id = bas.user_id
-         WHERE h.headquarter_id = ? AND (? = 1 OR h.headquarters_owner_id = ?)
-           AND u.role_id = ?
+            WHERE h.headquarter_id = ? AND u.role_id = ?
          LIMIT 1'
     );
-    $customerLinkStmt->execute([$customerRoleId, $headquarterId, $isHqAuth ? 1 : 0, $userId, $customerRoleId]);
+    $customerLinkStmt->execute([$customerRoleId, $headquarterId, $customerRoleId]);
     $linkedCustomer = $customerLinkStmt->fetch(PDO::FETCH_ASSOC) ?: null;
     if ($isHqAuth) {
         $ownerCheck = $pdo->prepare('SELECT 1 FROM headquarter WHERE headquarter_id = ? AND headquarters_owner_id IS NULL LIMIT 1');
@@ -290,8 +326,10 @@ if ($headquarterId > 0 && $customerRoleId > 0) {
 }
 $linkedCustomerCanSwitch = $linkedCustomer !== null
     && in_array(strtolower(trim((string) ($linkedCustomer['status'] ?? ''))), ['active', 'approved', 'license_expired'], true);
-$hasCustomerProfile = (int) ($user['role_id'] ?? 0) === $customerRoleId || $linkedCustomerCanSwitch;
-$linkedCustomerUnavailable = $linkedCustomer !== null && !$linkedCustomerCanSwitch;
+$ownerCustomerCanSwitch = $ownerCustomer !== null
+    && in_array(strtolower(trim((string) ($ownerCustomer['status'] ?? ''))), ['active', 'approved', 'license_expired'], true);
+$hasCustomerProfile = $ownerCustomerCanSwitch || $linkedCustomerCanSwitch;
+$linkedCustomerUnavailable = ($ownerCustomer !== null || $linkedCustomer !== null) && !$hasCustomerProfile;
 $canLinkCustomer = $canLinkCustomer && $linkedCustomer === null;
 ?>
 <!DOCTYPE html>
@@ -455,7 +493,8 @@ $canLinkCustomer = $canLinkCustomer && $linkedCustomer === null;
                         <img id="profilePreview" src="<?= htmlspecialchars(map_pump_profile_avatar_url($profileImage, $profileFallbackUrl), ENT_QUOTES, 'UTF-8') ?>" alt="Profile Picture" class="rounded-circle img-thumbnail mb-3" style="width: 130px; height: 130px; object-fit: cover; background-color: #fff;">
                         <div>
                             <label for="profilePictureInput" class="btn btn-sm btn-outline-secondary text-white">Change Profile Picture</label>
-                            <input type="file" id="profilePictureInput" name="profile_avatar" accept="image/*" style="display: none;" onchange="previewImage(event)">
+                            <input type="file" id="profilePictureInput" name="profile_avatar" accept="image/*" style="display: none;" onchange="window.previewImage(event)">
+                            <div id="profilePictureStatus" class="small mt-2" role="status" aria-live="polite"></div>
                         </div>
                     </div>
 
@@ -491,14 +530,18 @@ $canLinkCustomer = $canLinkCustomer && $linkedCustomer === null;
                     <?php if ($hasCustomerProfile): ?>
                         <form action="../account_switch.php" method="POST" target="_top">
                             <input type="hidden" name="mode" value="customer">
+                            <?php if ($isHqAuth): ?>
+                                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars((string) $_SESSION['hq_switch_csrf'], ENT_QUOTES, 'UTF-8') ?>">
+                            <?php endif; ?>
                             <button type="submit" class="btn btn-outline-primary w-100">Switch to Customer Profile</button>
                         </form>
                     <?php elseif ($canLinkCustomer): ?>
                         <button type="button" class="btn btn-outline-primary w-100" onclick="openCustomerLinkModal()">Link to Customer Account</button>
                     <?php elseif ($linkedCustomerUnavailable): ?>
+                        <button type="button" class="btn btn-outline-primary w-100" disabled>Switch to Customer Profile</button>
                         <p class="small text-warning mb-0">The linked customer account is currently unavailable.</p>
                     <?php else: ?>
-                        <p class="small text-warning mb-0">Only the HQ account owner can link a customer account.</p>
+                        <p class="small text-muted mb-0">No customer account is linked to this HQ.</p>
                     <?php endif; ?>
                 </div>
             </div>
@@ -659,40 +702,54 @@ $canLinkCustomer = $canLinkCustomer && $linkedCustomer === null;
             document.getElementById('profilePreview').src = serverImage;
         });
 
-        function previewImage(event) {
-            const file = event.target.files[0];
+        window.previewImage = async function(event) {
+            const input = event.currentTarget;
+            const file = input.files[0];
             if (!file) return;
 
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                document.getElementById('profilePreview').src = e.target.result;
-            };
-            reader.readAsDataURL(file);
+            const preview = document.getElementById('profilePreview');
+            const status = document.getElementById('profilePictureStatus');
+            const previewUrl = URL.createObjectURL(file);
+            preview.src = previewUrl;
+            status.className = 'small mt-2 text-muted';
+            status.textContent = 'Saving profile picture...';
+            input.disabled = true;
+            let keepPreviewUrl = false;
 
             const data = new FormData();
             data.append('action', 'update_avatar');
             data.append('profile_avatar', file);
 
-            fetch('profile.php', {
-                method: 'POST',
-                body: data,
-                credentials: 'same-origin'
-            })
-                .then(response => response.json())
-                .then(result => {
-                    if (!result.ok) {
-                        throw new Error(result.message || 'Profile picture could not be saved.');
-                    }
-                    if (result.avatar_url) {
-                        localStorage.removeItem('profile_image');
-                        document.getElementById('profilePreview').src = result.avatar_url;
-                    }
-                    notifyParentProfileChange({ avatarUrl: result.avatar_url || '' });
-                })
-                .catch(error => {
-                    alert(error.message || 'Profile picture could not be saved.');
+            try {
+                const response = await fetch(window.location.href, {
+                    method: 'POST',
+                    body: data,
+                    credentials: 'same-origin',
+                    headers: { Accept: 'application/json' }
                 });
-        }
+                const result = await response.json().catch(() => null);
+                if (!response.ok || !result?.ok) {
+                    throw new Error(result?.message || `Profile picture upload failed (${response.status}).`);
+                }
+
+                if (result.avatar_url) {
+                    const savedUrl = new URL(result.avatar_url, window.location.href);
+                    savedUrl.searchParams.set('v', Date.now().toString());
+                    preview.src = savedUrl.toString();
+                }
+                status.className = 'small mt-2 text-success';
+                status.textContent = result.message || 'Profile picture updated successfully.';
+                notifyParentProfileChange({ avatarUrl: result.avatar_url || '' });
+            } catch (error) {
+                keepPreviewUrl = true;
+                status.className = 'small mt-2 text-danger';
+                status.textContent = `${error.message || 'Profile picture could not be saved.'} The selected image is only a preview and was not saved.`;
+            } finally {
+                input.disabled = false;
+                input.value = '';
+                if (!keepPreviewUrl) URL.revokeObjectURL(previewUrl);
+            }
+        };
 
         async function saveProfile(event) {
             event.preventDefault();

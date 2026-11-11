@@ -6,9 +6,22 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
 
 require_once __DIR__ . '/../conn.php';
 require_once __DIR__ . '/../profile_avatar.php';
+require_once __DIR__ . '/profile_schema.php';
 
-$loggedUserId = isset($_SESSION['user_id']) ? (int) $_SESSION['user_id'] : '';
+$loggedUserId = (int) ($_SESSION['user_id'] ?? 0);
 $loggedUserEmail = isset($_SESSION['user_email']) ? trim((string) $_SESSION['user_email']) : '';
+$hqAvatarSchemaReady = true;
+if (!empty($_SESSION['hq_auth'])) {
+    try {
+        hq_profile_ensure_avatar_schema($pdo);
+    } catch (Throwable $exception) {
+        $hqAvatarSchemaReady = false;
+        error_log('HQ profile avatar schema could not be prepared: ' . $exception->getMessage());
+    }
+}
+if (empty($_SESSION['hq_notifications_csrf'])) {
+    $_SESSION['hq_notifications_csrf'] = bin2hex(random_bytes(32));
+}
 $extensionReturnPages = ['dashboard.php', 'brand.php', 'station.php', 'pricing.php', 'loyalty_payouts.php', 'report_from_manager.php', 'report_to_admin.php', 'account.php', 'profile.php'];
 $extensionReturnTo = basename((string) ($_GET['return_to'] ?? ''));
 $extensionPaymentSubmitted = in_array((string) ($_GET['extension_payment'] ?? ''), ['submitted', 'cancelled'], true)
@@ -98,7 +111,8 @@ if ($loggedUserId > 0) {
         }
     }
 } else {
-    $brandStmt = $pdo->prepare('SELECT company_name, company_logo FROM headquarter WHERE headquarter_id = ? LIMIT 1');
+    $avatarColumn = $hqAvatarSchemaReady ? 'profile_avatar_url' : 'NULL';
+    $brandStmt = $pdo->prepare("SELECT company_name, company_logo, {$avatarColumn} AS profile_avatar_url FROM headquarter WHERE headquarter_id = ? LIMIT 1");
     $brandStmt->execute([$hq_id]);
     $brandRow = $brandStmt->fetch(PDO::FETCH_ASSOC);
     if ($brandRow) {
@@ -108,45 +122,56 @@ if ($loggedUserId > 0) {
         if (!empty($brandRow['company_logo'])) {
             $brand_logo = resolveImageUrl($brandRow['company_logo'], '/images/Logo.png');
         }
+        if (!empty($brandRow['profile_avatar_url'])) {
+            $user_avatar = map_pump_profile_avatar_url((string) $brandRow['profile_avatar_url'], '');
+        }
     }
 }
 
-// Fetch notifications from database
+$notificationRecipients = [];
+$notificationParams = [];
+if ($loggedUserId > 0) {
+    $notificationRecipients[] = 'recipient_user_id = :user_id';
+    $notificationParams[':user_id'] = $loggedUserId;
+}
+if ($loggedUserEmail !== '') {
+    $notificationRecipients[] = 'LOWER(recipient_email) = LOWER(:email)';
+    $notificationParams[':email'] = $loggedUserEmail;
+}
+$notificationWhere = $notificationRecipients ? '(' . implode(' OR ', $notificationRecipients) . ')' : '1 = 0';
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'mark_notifications_read') {
+    header('Content-Type: application/json; charset=utf-8');
+    $csrfToken = (string) ($_POST['csrf_token'] ?? '');
+    if (!hash_equals((string) $_SESSION['hq_notifications_csrf'], $csrfToken)) {
+        http_response_code(403);
+        echo json_encode(['ok' => false]);
+        exit;
+    }
+
+    $markReadStmt = $pdo->prepare("UPDATE notifications SET read_at = NOW() WHERE {$notificationWhere} AND read_at IS NULL");
+    $markReadStmt->execute($notificationParams);
+    echo json_encode(['ok' => true]);
+    exit;
+}
+
+// Fetch recent notifications and count unread items for the bell badge.
 $notifications = [];
-if ($loggedUserId > 0 && $loggedUserEmail !== '') {
+$unreadNotificationCount = 0;
+if ($notificationRecipients) {
     $notificationStmt = $pdo->prepare(
-        'SELECT notification_id, subject, message, notification_type, created_at
+        "SELECT notification_id, subject, message, notification_type, created_at, read_at
          FROM notifications
-         WHERE recipient_user_id = :user_id
-            OR LOWER(recipient_email) = LOWER(:email)
+         WHERE {$notificationWhere}
          ORDER BY created_at DESC
-         LIMIT 5'
+         LIMIT 5"
     );
-    $notificationStmt->execute([
-        ':user_id' => $loggedUserId,
-        ':email' => $loggedUserEmail,
-    ]);
+    $notificationStmt->execute($notificationParams);
     $notifications = $notificationStmt->fetchAll(PDO::FETCH_ASSOC);
-} elseif ($loggedUserId > 0) {
-    $notificationStmt = $pdo->prepare(
-        'SELECT notification_id, subject, message, notification_type, created_at
-         FROM notifications
-         WHERE recipient_user_id = :user_id
-         ORDER BY created_at DESC
-         LIMIT 5'
-    );
-    $notificationStmt->execute([':user_id' => $loggedUserId]);
-    $notifications = $notificationStmt->fetchAll(PDO::FETCH_ASSOC);
-} elseif ($loggedUserEmail !== '') {
-    $notificationStmt = $pdo->prepare(
-        'SELECT notification_id, subject, message, notification_type, created_at
-         FROM notifications
-         WHERE LOWER(recipient_email) = LOWER(:email)
-         ORDER BY created_at DESC
-         LIMIT 5'
-    );
-    $notificationStmt->execute([':email' => $loggedUserEmail]);
-    $notifications = $notificationStmt->fetchAll(PDO::FETCH_ASSOC);
+
+    $unreadStmt = $pdo->prepare("SELECT COUNT(*) FROM notifications WHERE {$notificationWhere} AND read_at IS NULL");
+    $unreadStmt->execute($notificationParams);
+    $unreadNotificationCount = (int) $unreadStmt->fetchColumn();
 }
 ?>
 <!DOCTYPE html>
@@ -243,12 +268,13 @@ echo $brand_title; ?></span>
                                 <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
                                 <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
                             </svg>
-                            <?php if (!empty($notifications)): ?><span style="position: absolute; top: 6px; right: 8px; width: 8px; height: 8px; background: #ef4444; border-radius: 50%;"></span><?php endif; ?>
+                            <?php if ($unreadNotificationCount > 0): ?><span id="unreadNotificationIndicator" style="position: absolute; top: 6px; right: 8px; width: 8px; height: 8px; background: #ef4444; border-radius: 50%;"></span><?php endif; ?>
                         </button>
 
                         <div class="user-dropdown-popup" id="notificationDropdownPopup" style="width: 300px;">
                             <div class="dropdown-header" style="justify-content: space-between;">
                                 <p class="user-title" style="margin: 0;">Notifications</p>
+                                <button type="button" id="markHqNotificationsRead" data-csrf-token="<?= htmlspecialchars((string) $_SESSION['hq_notifications_csrf'], ENT_QUOTES, 'UTF-8') ?>" <?= $unreadNotificationCount === 0 ? 'hidden' : '' ?> style="border: 0; background: transparent; color: var(--blue-700); font-size: 0.75rem; cursor: pointer;">Mark all read</button>
                             </div>
                             <div style="display: flex; flex-direction: column; gap: 8px; max-height: 240px; overflow-y: auto;">
                                 <?php
@@ -260,7 +286,7 @@ if (empty($notifications)): ?>
 else: ?>
                                     <?php
 foreach ($notifications as $notification): ?>
-                                        <div style="padding: 8px; background: rgba(255,255,255,0.02); border-radius: 6px; font-size: 0.85rem; color: var(--slate-300, #cbd5e1);">
+                                        <div class="hq-notification-item<?= empty($notification['read_at']) ? ' is-unread' : '' ?>" style="padding: 8px; background: rgba(255,255,255,0.02); border-radius: 6px; font-size: 0.85rem; color: var(--slate-300, #cbd5e1);<?= empty($notification['read_at']) ? ' border-left: 2px solid #ef4444;' : '' ?>">
                                             <strong><?= htmlspecialchars((string) ($notification['subject'] ?? 'Notification'), ENT_QUOTES, 'UTF-8') ?></strong><br>
                                             <span style="font-size: 0.75rem; color: var(--slate-400, #94a3b8);">
                                                 <?= htmlspecialchars((string) ($notification['message'] ?? ''), ENT_QUOTES, 'UTF-8') ?>
@@ -405,6 +431,32 @@ echo $user_email_display; ?></p>
         const popup = document.getElementById('userDropdownPopup');
         popup.classList.toggle('active');
     }
+
+    document.getElementById('markHqNotificationsRead')?.addEventListener('click', async function(event) {
+        event.stopPropagation();
+        const button = this;
+        button.disabled = true;
+        try {
+            const response = await fetch('index.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+                body: new URLSearchParams({
+                    action: 'mark_notifications_read',
+                    csrf_token: button.dataset.csrfToken || ''
+                })
+            });
+            const result = await response.json();
+            if (!response.ok || !result.ok) throw new Error('Unable to update notifications');
+            document.getElementById('unreadNotificationIndicator')?.remove();
+            document.querySelectorAll('.hq-notification-item.is-unread').forEach(item => {
+                item.classList.remove('is-unread');
+                item.style.borderLeft = '';
+            });
+            button.hidden = true;
+        } catch (error) {
+            button.disabled = false;
+        }
+    });
 
     window.addEventListener('message', function (event) {
         if (event.origin !== window.location.origin || event.data?.type !== 'map-pump-profile-updated') return;
