@@ -78,19 +78,37 @@ function account_password_setup_create_link_pdo(PDO $pdo, int $userId, int $expi
 
 function hq_password_setup_ensure_schema(PDO $pdo): void
 {
-    $exists = $pdo->prepare(
-        "SELECT 1 FROM INFORMATION_SCHEMA.TABLES
-         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'hq_password_setup_tokens'
-         LIMIT 1"
+    $columns = $pdo->prepare(
+        "SELECT COLUMN_NAME
+         FROM INFORMATION_SCHEMA.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'hq_password_setup_tokens'"
     );
-    $exists->execute();
-    if ($exists->fetchColumn()) {
+    $columns->execute();
+    $columnNames = array_fill_keys(array_map('strval', $columns->fetchAll(PDO::FETCH_COLUMN)), true);
+
+    if (isset($columnNames['headquarter_id'])) {
         return;
+    }
+
+    // Earlier installations used this table for user password setup tokens.
+    // The table name alone is not enough to identify the HQ schema, and using
+    // it as-is causes approval to fail on WHERE headquarter_id = ?.
+    if (isset($columnNames['user_id'])) {
+        account_password_setup_ensure_schema_pdo($pdo);
+        $pdo->exec(
+            "INSERT IGNORE INTO account_password_setup_tokens
+                (user_id, token_hash, expires_at, used_at, created_at)
+             SELECT user_id, token_hash, expires_at, used_at, created_at
+             FROM hq_password_setup_tokens"
+        );
+        $pdo->exec('DROP TABLE hq_password_setup_tokens');
+    } elseif ($columnNames !== []) {
+        throw new RuntimeException('The HQ password setup token table has an unsupported schema.');
     }
 
     try {
         $pdo->exec(
-            "CREATE TABLE hq_password_setup_tokens (
+            "CREATE TABLE IF NOT EXISTS hq_password_setup_tokens (
             token_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
             headquarter_id INT NOT NULL,
             token_hash CHAR(64) COLLATE utf8mb4_bin NOT NULL,
@@ -104,8 +122,9 @@ function hq_password_setup_ensure_schema(PDO $pdo): void
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin"
         );
     } catch (PDOException $e) {
-        $exists->execute();
-        if (!$exists->fetchColumn()) {
+        $columns->execute();
+        $columnNames = array_fill_keys(array_map('strval', $columns->fetchAll(PDO::FETCH_COLUMN)), true);
+        if (!isset($columnNames['headquarter_id'])) {
             throw $e;
         }
     }

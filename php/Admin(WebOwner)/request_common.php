@@ -146,11 +146,15 @@ function request_payment_verification_rows(string $reviewerRole, string $search,
     $statusMarks = implode(',', array_fill(0, count($paymentStatuses), '?'));
     $sql = "SELECT pt.payment_transfer_id, pt.payment_type, pt.status, pt.amount_mmk, pt.description, pt.payment_method,
                    pt.payer_user_id, pt.payer_email, pt.created_at, h.company_name AS payer_hq_name,
+                   registration_request.status AS registration_request_status,
                    payer_user.user_name AS payer_name,
                    receipt.file_name AS receipt_name,
                    receipt.mime_type AS receipt_mime_type
             FROM payment_transfers pt
             LEFT JOIN headquarter h ON h.headquarter_id = pt.payer_headquarter_id
+            LEFT JOIN system_requests registration_request
+                   ON registration_request.request_id = pt.request_id
+                  AND pt.payment_type = 'hq_registration'
             LEFT JOIN users payer_user ON payer_user.user_id = h.headquarters_owner_id
             LEFT JOIN (
                 SELECT payment_transfer_id, MAX(file_name) AS file_name, MAX(mime_type) AS mime_type

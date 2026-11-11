@@ -7,6 +7,7 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
 require_once __DIR__ . '/../conn.php';
 require_once __DIR__ . '/../business_scope.php';
 require_once __DIR__ . '/../payment_transfers.php';
+require_once __DIR__ . '/../Login/account_password_setup.php';
 
 $userId = (int) ($_SESSION['user_id'] ?? 0);
 if ((empty($_SESSION['is_logged_in']) || $userId <= 0)
@@ -39,6 +40,7 @@ if (!payment_transfer_ensure_hq_service_expiry_schema($pdo)) {
 
 $action = trim((string) ($_POST['action'] ?? ''));
 $transferId = (int) ($_POST['transfer_id'] ?? 0);
+$paymentSuccessMessage = null;
 $statusMessage = '';
 $redirect = '/php/payment_center.php';
 $returnTo = trim((string) ($_POST['return_to'] ?? ''));
@@ -236,6 +238,15 @@ try {
         payment_transfer_send_notices($pdo, $transferId, 'recipient', 'payer_reported_paid');
         $redirect = '../HQ/station.php?payment=station_limit_pending';
     } elseif (in_array($action, ['report_paid', 'confirm_received', 'mark_not_received', 'cancel_transfer'], true)) {
+        if ($action === 'confirm_received') {
+            $typeStmt = $pdo->prepare('SELECT payment_type FROM payment_transfers WHERE payment_transfer_id = ? LIMIT 1');
+            $typeStmt->execute([$transferId]);
+            if ((string) $typeStmt->fetchColumn() === 'hq_registration') {
+                // Repair the legacy token table before beginning this transaction;
+                // MySQL schema changes can commit an active transaction.
+                hq_password_setup_ensure_schema($pdo);
+            }
+        }
         $pdo->beginTransaction();
         $transferStmt = $pdo->prepare('SELECT * FROM payment_transfers WHERE payment_transfer_id = ? FOR UPDATE');
         $transferStmt->execute([$transferId]);
@@ -246,6 +257,7 @@ try {
         if ((string) ($transfer['payment_type'] ?? '') === 'fuel_purchase') {
             throw new RuntimeException('Fuel payment confirmations are no longer supported.');
         }
+        $registrationMailJobs = [];
         $isPayer = ($userId > 0 && (int) ($transfer['payer_user_id'] ?? 0) === $userId)
             || ($currentUserEmail !== '' && $currentUserEmail === strtolower((string) ($transfer['payer_email'] ?? '')))
             || (int) ($_SESSION['payment_transfer_access_id'] ?? 0) === $transferId;
@@ -322,10 +334,14 @@ try {
                 }
                 $eventNote = 'Designated recipient recorded receipt.';
                 if ($transfer['payment_type'] === 'hq_registration') {
-                    $registrationActivated = payment_transfer_activate_hq_registration($pdo, $transfer);
-                    $eventNote = $registrationActivated
-                        ? 'Admin or Moderator confirmed the registration payment for the approved HQ.'
-                        : 'Admin or Moderator confirmed the registration payment. The HQ service package will activate after the request is approved.';
+                    $registrationResult = payment_transfer_complete_hq_registration($pdo, $transfer, $userId);
+                    $registrationMailJobs = $registrationResult['mail_jobs'] ?? [];
+                    $eventNote = !empty($registrationResult['auto_approved'])
+                        ? 'Admin or Moderator confirmed the registration payment and approved the company registration.'
+                        : 'Admin or Moderator confirmed payment for the approved company registration.';
+                    $paymentSuccessMessage = !empty($registrationResult['auto_approved'])
+                        ? 'Payment verified. The company registration is approved and the Company account is active.'
+                        : 'Payment verified for the approved Company registration.';
                 }
                 if (in_array($transfer['payment_type'], ['hq_period_extension', 'hq_station_package'], true)) {
                     if (!payment_transfer_ensure_hq_service_expiry_schema($pdo)) {
@@ -388,6 +404,9 @@ try {
         }
         $pdo->commit();
         payment_transfer_send_notices($pdo, $transferId, $noticeSide, $noticeAction);
+        if ($action === 'confirm_received' && (string) ($transfer['payment_type'] ?? '') === 'hq_registration') {
+            payment_transfer_send_hq_registration_notices($pdo, $registrationMailJobs);
+        }
         $redirect = in_array($returnTo, $allowedReturnTargets, true)
             ? $returnTo
             : '/php/payment_center.php?updated=' . rawurlencode($nextStatus);
@@ -403,7 +422,10 @@ try {
     exit;
 }
 
-$_SESSION['payment_transfer_flash'] = ['type' => 'success', 'message' => 'Payment request or status updated. The website does not move money; only the designated recipient’s recorded receipt can unlock the related feature.'];
+$_SESSION['payment_transfer_flash'] = [
+    'type' => 'success',
+    'message' => $paymentSuccessMessage ?? 'Payment request or status updated. The website does not move money; only the designated recipient’s recorded receipt can unlock the related feature.',
+];
 header('Location: ' . $redirect);
 exit;
 

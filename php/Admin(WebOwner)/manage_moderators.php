@@ -252,7 +252,7 @@ $flashType = (string) ($flash['type'] ?? '');
                 <span class="stat-chip mb-2"><i class="bi bi-shield-lock-fill txt-neon-cyan"></i> Security Division</span>
                 <h1 class="fw-bold m-0 h4 text-white mt-2">Manage Moderators</h1>
             </div>
-            <button class="btn btn-neon d-flex align-items-center gap-2" type="button" data-bs-toggle="modal" data-bs-target="#addAdminModal"><i class="bi bi-person-plus-fill"></i> Add New Moderator</button>
+            <button class="btn btn-neon d-flex align-items-center gap-2" type="button" data-bs-toggle="modal" data-bs-target="#addAdminModal"><i class="bi bi-person-plus-fill"></i> Add moderator</button>
         </div>
 
         <?php if ($flash && $flashType !== ''): ?>
@@ -337,7 +337,7 @@ $flashType = (string) ($flash['type'] ?? '');
                 </div>
             </div>
 
-            <div class="col-12"><div class="analytics-card"><div class="table-responsive"><table class="table table-dark-custom align-middle m-0"><thead><tr><th>Moderator Identity</th><th>Email Address</th><th>Designation Role</th><th>Last Account Update</th><th>Account State</th><th class="text-end">Actions</th></tr></thead><tbody>
+            <div class="col-12"><div class="analytics-card"><div class="table-responsive"><table class="table table-dark-custom align-middle m-0"><thead><tr><th>Moderator</th><th>Email</th><th>Role</th><th>Last updated</th><th>Account status</th><th class="text-end">Actions</th></tr></thead><tbody>
             <?php if (!$moderatorRows): ?>
                 <tr><td colspan="6" class="text-center text-white-50 py-5"><i class="bi bi-person-x fs-3 d-block mb-2"></i>No moderator accounts match the current filters.</td></tr>
             <?php else: ?>
@@ -353,7 +353,7 @@ $flashType = (string) ($flash['type'] ?? '');
                         <td class="text-white-50"><?= hq_escape(hq_date((string) ($row['updated_at'] ?? ''))) ?></td>
                         <td><span class="moderator-status <?= hq_escape(moderator_status_class($status)) ?>"><?= hq_escape(moderator_status_label($status)) ?></span></td>
                         <td class="text-end"><div class="d-flex gap-2 justify-content-end">
-                            <button type="button" class="btn-action btn-action-danger js-status-moderator" title="Change Account Status" aria-label="Change status for <?= hq_escape((string) $row['user_name']) ?>" data-bs-toggle="modal" data-bs-target="#statusAdminModal" data-user-id="<?= (int) $row['user_id'] ?>" data-user-name="<?= hq_escape((string) $row['user_name']) ?>" data-status="<?= hq_escape($status) ?>"><i class="bi bi-person-x-fill"></i></button>
+                            <button type="button" class="btn-action btn-action-danger js-status-moderator" title="Update account status" aria-label="Update status for <?= hq_escape((string) $row['user_name']) ?>" data-bs-toggle="modal" data-bs-target="#statusAdminModal" data-user-id="<?= (int) $row['user_id'] ?>" data-user-name="<?= hq_escape((string) $row['user_name']) ?>" data-status="<?= hq_escape($status) ?>"><i class="bi bi-person-x-fill"></i></button>
                         </div></td>
                     </tr>
                 <?php endforeach; ?>
@@ -368,21 +368,21 @@ $flashType = (string) ($flash['type'] ?? '');
             <div class="modal-content">
                 <div class="modal-header">
                     <div>
-                        <h5 class="modal-title fw-bold" id="addAdminModalLabel"><i class="bi bi-person-lock txt-neon-cyan me-2"></i> Add New Moderator</h5>
+                        <h5 class="modal-title fw-bold" id="addAdminModalLabel"><i class="bi bi-person-lock txt-neon-cyan me-2"></i> Add moderator</h5>
                     </div>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body d-flex flex-column gap-3">
-                    <div class="moderator-mode-tabs" role="tablist" aria-label="Provision mode">
-                        <button type="button" class="btn btn-neon js-moderator-mode" data-mode="create" aria-pressed="true">Create new account</button>
-                        <button type="button" class="btn btn-outline-secondary text-white-50 border-secondary border-opacity-25 js-moderator-mode" data-mode="hire" aria-pressed="false">Hire existing account</button>
+                    <div class="moderator-mode-tabs" role="tablist" aria-label="Account setup options">
+                        <button type="button" class="btn btn-neon js-moderator-mode" data-mode="create" aria-pressed="true">Create account</button>
+                        <button type="button" class="btn btn-outline-secondary text-white-50 border-secondary border-opacity-25 js-moderator-mode" data-mode="hire" aria-pressed="false">Invite existing account</button>
                     </div>
 
                     <form id="createModeratorForm" action="moderator_action.php" method="POST">
                         <input type="hidden" name="action" value="create">
                         <div class="d-flex flex-column gap-3">
                             <div>
-                                <label class="form-label text-white-50 small" for="newModeratorName">Username / Display Name <span class="text-danger">*</span></label>
+                                <label class="form-label text-white-50 small" for="newModeratorName">Username or display name <span class="text-danger">*</span></label>
                                 <input id="newModeratorName" type="text" name="user_name" class="form-control glass-input" placeholder="e.g. ei_thinzar" maxlength="225" autocomplete="username" required>
                             </div>
                             <div>
@@ -390,7 +390,7 @@ $flashType = (string) ($flash['type'] ?? '');
                                 <input id="newModeratorEmail" type="email" name="email" class="form-control glass-input" placeholder="moderator@mapandpump.com" maxlength="255" autocomplete="email" required>
                             </div>
                             <div>
-                                <label class="form-label text-white-50 small" for="newModeratorRole">Database Role <span class="text-danger">*</span></label>
+                                <label class="form-label text-white-50 small" for="newModeratorRole">Role <span class="text-danger">*</span></label>
                                 <input type="hidden" name="role_id" value="<?= hq_escape($defaultRoleId) ?>">
                                 <input id="newModeratorRole" class="form-control glass-input" value="Moderator" readonly>
                             </div>
@@ -407,7 +407,7 @@ $flashType = (string) ($flash['type'] ?? '');
                         </div>
                         <div class="d-flex justify-content-end gap-2 mt-4">
                             <button type="button" class="btn btn-outline-secondary rounded-3 text-white-50 border-secondary border-opacity-20" data-bs-dismiss="modal">Cancel</button>
-                            <button type="submit" class="btn btn-neon" <?= !$roles ? 'disabled' : '' ?>>Provision Access</button>
+                            <button type="submit" class="btn btn-neon" <?= !$roles ? 'disabled' : '' ?>>Create account</button>
                         </div>
                     </form>
 
@@ -428,18 +428,18 @@ $flashType = (string) ($flash['type'] ?? '');
                                 </div>
                             </div>
                             <div>
-                                <label class="form-label text-white-50 small" for="hireModeratorRole">Offered Moderator role <span class="text-danger">*</span></label>
+                                <label class="form-label text-white-50 small" for="hireModeratorRole">Moderator role <span class="text-danger">*</span></label>
                                 <input type="hidden" name="role_id" value="<?= hq_escape($defaultRoleId) ?>">
                                 <input id="hireModeratorRole" class="form-control glass-input" value="Moderator" readonly>
                             </div>
                             <div>
-                                <label class="form-label text-white-50 small" for="hireMessage">Hire message <span class="text-danger">*</span></label>
+                                <label class="form-label text-white-50 small" for="hireMessage">Invitation message <span class="text-danger">*</span></label>
                                 <textarea id="hireMessage" name="hire_message" class="form-control glass-input" rows="4" maxlength="2000" placeholder="Explain why they are being invited and what access they will receive." required></textarea>
                             </div>
                         </div>
                         <div class="d-flex justify-content-end gap-2 mt-4">
                             <button type="button" class="btn btn-outline-secondary rounded-3 text-white-50 border-secondary border-opacity-20" data-bs-dismiss="modal">Cancel</button>
-                            <button type="submit" class="btn btn-neon" id="hireSubmitBtn" <?= !$roles ? 'disabled' : '' ?>>Provision Access</button>
+                            <button type="submit" class="btn btn-neon" id="hireSubmitBtn" <?= !$roles ? 'disabled' : '' ?>>Send invitation</button>
                         </div>
                     </form>
                 </div>
@@ -447,7 +447,7 @@ $flashType = (string) ($flash['type'] ?? '');
         </div>
     </div>
 
-    <div class="modal fade glass-modal" id="statusAdminModal" tabindex="-1" aria-labelledby="statusAdminModalLabel" aria-hidden="true"><div class="modal-dialog modal-dialog-centered modal-dialog-scrollable"><div class="modal-content"><div class="modal-header"><h5 class="modal-title fw-bold" id="statusAdminModalLabel"><i class="bi bi-person-x txt-neon-cyan me-2"></i> Change Moderator Status</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button></div><form action="moderator_action.php" method="POST"><input type="hidden" name="action" value="update_status"><input type="hidden" name="user_id" id="statusModeratorId"><div class="modal-body"><label class="form-label text-white-50 small" for="statusModeratorValue">Account Status</label><div class="moderator-status-select-wrap"><select id="statusModeratorValue" class="form-select glass-select moderator-status-select" name="status" aria-describedby="statusModeratorHint" required><option value="approved">Approved</option><option value="suspended">Suspended</option><option value="removed">Revoked / Removed</option></select><span class="moderator-status-select-caret" aria-hidden="true"></span></div><div id="statusModeratorHint" class="form-text mt-2">Select the account status to apply.</div></div><div class="modal-footer"><button type="button" class="btn btn-outline-secondary rounded-3 text-white-50 border-secondary border-opacity-20" data-bs-dismiss="modal">Cancel</button><button type="submit" class="btn btn-neon">Update Status</button></div></form></div></div></div>
+    <div class="modal fade glass-modal" id="statusAdminModal" tabindex="-1" aria-labelledby="statusAdminModalLabel" aria-hidden="true"><div class="modal-dialog modal-dialog-centered modal-dialog-scrollable"><div class="modal-content"><div class="modal-header"><h5 class="modal-title fw-bold" id="statusAdminModalLabel"><i class="bi bi-person-x txt-neon-cyan me-2"></i> Update moderator status</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button></div><form action="moderator_action.php" method="POST"><input type="hidden" name="action" value="update_status"><input type="hidden" name="user_id" id="statusModeratorId"><div class="modal-body"><label class="form-label text-white-50 small" for="statusModeratorValue">Account status</label><div class="moderator-status-select-wrap"><select id="statusModeratorValue" class="form-select glass-select moderator-status-select" name="status" aria-describedby="statusModeratorHint" required><option value="approved">Approved</option><option value="suspended">Suspended</option><option value="removed">Removed</option></select><span class="moderator-status-select-caret" aria-hidden="true"></span></div><div id="statusModeratorHint" class="form-text mt-2">Select the account status to apply.</div></div><div class="modal-footer"><button type="button" class="btn btn-outline-secondary rounded-3 text-white-50 border-secondary border-opacity-20" data-bs-dismiss="modal">Cancel</button><button type="submit" class="btn btn-neon">Update status</button></div></form></div></div></div>
 
     
 
@@ -537,7 +537,7 @@ $flashType = (string) ($flash['type'] ?? '');
                 const filtered = accounts.filter((row) => `${row.user_name || ''} ${row.email || ''}`.toLocaleLowerCase().includes(query));
                 accountsBody.innerHTML = '';
                 if (!filtered.length) {
-                    accountsBody.innerHTML = `<tr><td colspan="4" class="text-center text-white-50 py-4">${accounts.length ? 'No accounts match this search.' : 'No available accounts.'}</td></tr>`;
+                    accountsBody.innerHTML = `<tr><td colspan="4" class="text-center text-white-50 py-4">${accounts.length ? 'No accounts match this search.' : 'No eligible accounts found.'}</td></tr>`;
                     return;
                 }
                 filtered.forEach((row) => {
@@ -545,7 +545,7 @@ $flashType = (string) ($flash['type'] ?? '');
                     tr.dataset.userId = String(row.user_id || '');
                     if (targetInput?.value === String(row.user_id)) tr.classList.add('is-selected');
                     const displayRole = displayAccountRole(row.role_name);
-                    tr.innerHTML = `<td><div class="d-flex align-items-center gap-3"><div class="rounded-3 d-flex align-items-center justify-content-center fw-bold" style="width:44px;height:44px;background:rgba(0,244,255,.1);border:1px solid rgba(0,244,255,.28);color:var(--neon-cyan)">${escapeHtml(row.initials || 'A')}</div><div><div class="fw-semibold text-white">${escapeHtml(row.user_name || 'Unnamed account')}</div><div class="text-white-50 small">Account ID: ${escapeHtml(row.user_id || '')}</div></div></div></td><td class="text-white-50">${escapeHtml(row.email || 'No email')}</td><td class="text-white-50">${escapeHtml(row.hq_name || 'No company linked')}</td><td class="text-white-50">${escapeHtml(displayRole)}</td>`;
+                    tr.innerHTML = `<td><div class="d-flex align-items-center gap-3"><div class="rounded-3 d-flex align-items-center justify-content-center fw-bold" style="width:44px;height:44px;background:rgba(0,244,255,.1);border:1px solid rgba(0,244,255,.28);color:var(--neon-cyan)">${escapeHtml(row.initials || 'A')}</div><div><div class="fw-semibold text-white">${escapeHtml(row.user_name || 'Name unavailable')}</div><div class="text-white-50 small">Account ID: ${escapeHtml(row.user_id || '')}</div></div></div></td><td class="text-white-50">${escapeHtml(row.email || 'Not provided')}</td><td class="text-white-50">${escapeHtml(row.hq_name || 'Not linked')}</td><td class="text-white-50">${escapeHtml(displayRole)}</td>`;
                     tr.addEventListener('click', () => selectHireTarget(row));
                     accountsBody.appendChild(tr);
                 });
@@ -578,7 +578,7 @@ $flashType = (string) ($flash['type'] ?? '');
             hireForm?.addEventListener('submit', (event) => {
                 if (!targetInput?.value) {
                     event.preventDefault();
-                    alert('Select an account from the table before provisioning access.');
+                    alert('Select an account from the list before sending the invitation.');
                     searchInput?.focus();
                 }
             });

@@ -53,7 +53,7 @@ function moderator_schema_ready(): bool
         'roles' => ['role_id', 'role_name'],
         'users' => [
             'user_id', 'user_name', 'email', 'hashed_password', 'role_id',
-            'headquarter_id', 'status', 'created_at', 'updated_at',
+            'business_role_id', 'current_role_id', 'status', 'created_at', 'updated_at',
         ],
     ];
     $tableNames = array_keys($requiredColumns);
