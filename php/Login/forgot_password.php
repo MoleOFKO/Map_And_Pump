@@ -12,7 +12,7 @@ $passwordResetCsrf = (string) $_SESSION['password_reset_csrf'];
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>MAP & PUMP - Reset Password</title>
   
   <!-- Fonts -->
@@ -69,9 +69,144 @@ $passwordResetCsrf = (string) $_SESSION['password_reset_csrf'];
     .submit-btn, .social-btn, .input-wrapper, .input-wrapper input, .otp-digit, .eye-btn, .back-nav-link { transition: none !important; }
     .submit-btn:hover:not(:disabled), .social-btn:hover { transform: none; }
   }
+
+  /* ===== Responsive layer (Tablet / Phone; Laptop stays as original) =====
+     Everything below is inside media queries, so screens wider than 1024px
+     render exactly like the original Login.css design. Only sizing, spacing,
+     overflow and stacking are changed; display of .auth-step / .pw-popover /
+     .mini-popup / .strength-label is never touched (page JS toggles
+     .active, .visible and .show on them). */
+
+  /* Phone-only logo shown inside the card (hidden everywhere else) */
+  .mobile-logo { display: none; }
+
+  /* --- Small laptop (861px - 1024px): just shrink so nothing is cut off --- */
+  @media (min-width: 861px) and (max-width: 1024px) {
+    body { padding: 0 16px; }
+    .main-card { width: 100%; max-width: 900px; padding: 30px 32px; gap: 32px; }
+    .form-container { width: 400px; flex-shrink: 0; }
+    .brand-title { font-size: 30px; letter-spacing: 4px; }
+  }
+
+  /* --- Tablet and below (860px): stack form on top, branding below --- */
+  @media (max-width: 860px) {
+    html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+    body {
+      align-items: flex-start;
+      overflow-x: hidden;
+      overflow-y: auto;
+      min-height: 100vh;
+      min-height: 100dvh;
+      padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+    }
+    .bg-blur-1 { width: 360px; height: 360px; }
+    .bg-blur-2 { width: 320px; height: 320px; }
+    .main-card {
+      flex-direction: column;
+      align-items: center;
+      width: 100%;
+      max-width: 560px;
+      min-height: 0;
+      margin: auto;
+      padding: 24px 28px 28px;
+      gap: 24px;
+    }
+    .form-container, .branding-container { min-width: 0; }
+    .form-container {
+      width: 100%;
+      max-width: 100%;
+      margin-top: 40px;
+      padding: 28px 26px;
+    }
+    .branding-container { flex: 0 0 auto; width: 100%; }
+    .title, .step-subtitle, .brand-title, .brand-subtitle, .mini-msg { overflow-wrap: anywhere; }
+    .logo-img { width: 110px; max-width: 100%; object-fit: contain; margin-bottom: 14px; }
+    .brand-title { font-size: 28px; }
+    .back-nav-link { top: 16px; left: 22px; min-height: 40px; }
+    .input-wrapper input { padding-right: 48px; }
+    .eye-btn { min-width: 40px; min-height: 40px; right: 2px; }
+    .close-btn { min-width: 40px; min-height: 40px; }
+    .form-options { flex-wrap: wrap; gap: 8px 16px; }
+    .register-prompt, .resend-prompt { line-height: 1.7; }
+    .mini-popup { top: max(16px, env(safe-area-inset-top)); width: max-content; max-width: calc(100vw - 32px); }
+    /* Password rules: show under the field instead of floating off to the right */
+    .pw-popover {
+      position: static;
+      left: auto;
+      top: auto;
+      width: 100%;
+      min-width: 0;
+      max-width: none;
+      margin-top: 10px;
+    }
+  }
+
+  /* --- Phone (600px) --- */
+  @media (max-width: 600px) {
+    body { padding-left: max(10px, env(safe-area-inset-left)); padding-right: max(10px, env(safe-area-inset-right)); }
+    .bg-blur-1 { width: 260px; height: 260px; filter: blur(100px); }
+    .bg-blur-2 { width: 240px; height: 240px; filter: blur(100px); }
+    .main-card { padding: 16px 14px 22px; gap: 18px; }
+    .form-container { margin-top: 38px; padding: 22px 16px; border-radius: 16px; }
+    .title { font-size: 22px; }
+    .step-subtitle { font-size: 12.5px; }
+    /* 16px stops iOS Safari from zooming when an input is focused */
+    .input-wrapper input { font-size: 16px; height: 46px; }
+    .input-group label { font-size: 12px; }
+    .otp-digit-container { gap: 8px; }
+    .otp-digit { width: clamp(38px, 12.5vw, 50px); height: 50px; font-size: 18px; padding: 0; }
+    .form-options { flex-direction: column; align-items: flex-start; }
+    .divider-text { font-size: 10px; }
+    .logo-img { width: 84px; margin-bottom: 10px; }
+    .brand-title { font-size: 22px; letter-spacing: 3px; }
+    .brand-subtitle { font-size: 11px; letter-spacing: 1px; }
+    .back-nav-link { left: 14px; top: 12px; }
+    .mini-popup { min-width: 0; width: calc(100vw - 32px); }
+
+    /* Login + Register: logo only (no text) inside the card on phones */
+    body.has-mobile-logo .branding-container { display: none; }
+    body.has-mobile-logo .main-card { gap: 0; }
+    .form-container { position: relative; }
+    .mobile-logo {
+      display: block;
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      width: 44px;
+      height: auto;
+      margin: 0;
+      object-fit: contain;
+      z-index: 2;
+    }
+  }
+
+  /* --- Small phones (360px and below) --- */
+  @media (max-width: 360px) {
+    .main-card { padding: 14px 10px 18px; }
+    .form-container { padding: 18px 12px; }
+    .otp-digit-container { gap: 5px; }
+    .otp-digit { width: clamp(34px, 12vw, 42px); height: 46px; }
+    .brand-title { letter-spacing: 2px; }
+    .mobile-logo { width: 38px; top: 10px; right: 10px; }
+  }
+
+  /* --- Landscape phones / very short screens --- */
+  @media (max-width: 860px) and (max-height: 520px) and (orientation: landscape) {
+    body { align-items: flex-start; }
+    .main-card { margin: 0 auto; min-height: 0; }
+    .branding-container { display: none; }
+    .form-container { margin-top: 34px; }
+    .mobile-logo { display: none; }
+  }
+
+  /* --- Touch screens: no sticky hover lift --- */
+  @media (hover: none) {
+    .social-btn:hover { transform: none; }
+    .submit-btn:hover:not(:disabled) { transform: none; }
+  }
   </style>
 </head>
-<body class="auth-refined">
+<body class="auth-refined has-mobile-logo">
 
   <!-- Background Decorative Blurs -->
   <div class="bg-blur bg-blur-1"></div>
@@ -82,6 +217,7 @@ $passwordResetCsrf = (string) $_SESSION['password_reset_csrf'];
     
     <!-- Left Side: Forgot Password Multi-Step Flow -->
     <div class="form-container">
+      <img src="../../images/Logo.png" alt="MAP &amp; PUMP Logo" class="mobile-logo" />
       <div id="reset-status" role="status" aria-live="polite" style="display:none;margin-bottom:1rem;padding:0.85rem 1rem;border-radius:12px;"></div>
       
       <!-- STEP 1: Enter Email -->

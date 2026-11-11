@@ -9,7 +9,7 @@ $registrationCsrf = $_SESSION['registration_csrf'];
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>MAP & PUMP - Register</title>
   
   <!-- Fonts -->
@@ -66,9 +66,239 @@ $registrationCsrf = $_SESSION['registration_csrf'];
     .submit-btn, .social-btn, .input-wrapper, .input-wrapper input, .otp-digit, .eye-btn, .back-nav-link { transition: none !important; }
     .submit-btn:hover:not(:disabled), .social-btn:hover { transform: none; }
   }
+
+  /* ===== Responsive layer (Tablet / Phone; Laptop stays as original) =====
+     Everything below is inside media queries, so screens wider than 1024px
+     render exactly like the original Login.css design. Only sizing, spacing,
+     overflow and stacking are changed; display of .auth-step / .pw-popover /
+     .mini-popup / .strength-label is never touched (page JS toggles
+     .active, .visible and .show on them). */
+
+  /* Phone-only logo shown inside the card (hidden everywhere else) */
+  .mobile-logo { display: none; }
+
+  /* --- Small laptop (861px - 1024px): just shrink so nothing is cut off --- */
+  @media (min-width: 861px) and (max-width: 1024px) {
+    body { padding: 0 16px; }
+    .main-card { width: 100%; max-width: 900px; padding: 30px 32px; gap: 32px; }
+    .form-container { width: 400px; flex-shrink: 0; }
+    .brand-title { font-size: 30px; letter-spacing: 4px; }
+  }
+
+  /* --- Tablet and below (860px): stack form on top, branding below --- */
+  @media (max-width: 860px) {
+    html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+    body {
+      align-items: flex-start;
+      overflow-x: hidden;
+      overflow-y: auto;
+      min-height: 100vh;
+      min-height: 100dvh;
+      padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+    }
+    .bg-blur-1 { width: 360px; height: 360px; }
+    .bg-blur-2 { width: 320px; height: 320px; }
+    .main-card {
+      flex-direction: column;
+      align-items: center;
+      width: 100%;
+      max-width: 560px;
+      min-height: 0;
+      margin: auto;
+      padding: 24px 28px 28px;
+      gap: 24px;
+    }
+    .form-container, .branding-container { min-width: 0; }
+    .form-container {
+      width: 100%;
+      max-width: 100%;
+      margin-top: 40px;
+      padding: 28px 26px;
+    }
+    .branding-container { flex: 0 0 auto; width: 100%; }
+    .title, .step-subtitle, .brand-title, .brand-subtitle, .mini-msg { overflow-wrap: anywhere; }
+    .logo-img { width: 110px; max-width: 100%; object-fit: contain; margin-bottom: 14px; }
+    .brand-title { font-size: 28px; }
+    .back-nav-link { top: 16px; left: 22px; min-height: 40px; }
+    .input-wrapper input { padding-right: 48px; }
+    .eye-btn { min-width: 40px; min-height: 40px; right: 2px; }
+    .close-btn { min-width: 40px; min-height: 40px; }
+    .form-options { flex-wrap: wrap; gap: 8px 16px; }
+    .register-prompt, .resend-prompt { line-height: 1.7; }
+    .mini-popup { top: max(16px, env(safe-area-inset-top)); width: max-content; max-width: calc(100vw - 32px); }
+    /* Password rules: show under the field instead of floating off to the right */
+    .pw-popover {
+      position: static;
+      left: auto;
+      top: auto;
+      width: 100%;
+      min-width: 0;
+      max-width: none;
+      margin-top: 10px;
+    }
+  }
+
+  /* --- Phone (600px) --- */
+  @media (max-width: 600px) {
+    body { padding-left: max(10px, env(safe-area-inset-left)); padding-right: max(10px, env(safe-area-inset-right)); }
+    .bg-blur-1 { width: 260px; height: 260px; filter: blur(100px); }
+    .bg-blur-2 { width: 240px; height: 240px; filter: blur(100px); }
+    .main-card { padding: 16px 14px 22px; gap: 18px; }
+    .form-container { margin-top: 38px; padding: 22px 16px; border-radius: 16px; }
+    .title { font-size: 22px; }
+    .step-subtitle { font-size: 12.5px; }
+    /* 16px stops iOS Safari from zooming when an input is focused */
+    .input-wrapper input { font-size: 16px; height: 46px; }
+    .input-group label { font-size: 12px; }
+    .otp-digit-container { gap: 8px; }
+    .otp-digit { width: clamp(38px, 12.5vw, 50px); height: 50px; font-size: 18px; padding: 0; }
+    .form-options { flex-direction: column; align-items: flex-start; }
+    .divider-text { font-size: 10px; }
+    .logo-img { width: 84px; margin-bottom: 10px; }
+    .brand-title { font-size: 22px; letter-spacing: 3px; }
+    .brand-subtitle { font-size: 11px; letter-spacing: 1px; }
+    .back-nav-link { left: 14px; top: 12px; }
+    .mini-popup { min-width: 0; width: calc(100vw - 32px); }
+
+    /* Login + Register: logo only (no text) inside the card on phones */
+    body.has-mobile-logo .branding-container { display: none; }
+    body.has-mobile-logo .main-card { gap: 0; }
+    .form-container { position: relative; }
+    .mobile-logo {
+      display: block;
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      width: 44px;
+      height: auto;
+      margin: 0;
+      object-fit: contain;
+      z-index: 2;
+    }
+  }
+
+  /* --- Small phones (360px and below) --- */
+  @media (max-width: 360px) {
+    .main-card { padding: 14px 10px 18px; }
+    .form-container { padding: 18px 12px; }
+    .otp-digit-container { gap: 5px; }
+    .otp-digit { width: clamp(34px, 12vw, 42px); height: 46px; }
+    .brand-title { letter-spacing: 2px; }
+    .mobile-logo { width: 38px; top: 10px; right: 10px; }
+  }
+
+  /* --- Landscape phones / very short screens --- */
+  @media (max-width: 860px) and (max-height: 520px) and (orientation: landscape) {
+    body { align-items: flex-start; }
+    .main-card { margin: 0 auto; min-height: 0; }
+    .branding-container { display: none; }
+    .form-container { margin-top: 34px; }
+    .mobile-logo { display: none; }
+  }
+
+  /* --- Touch screens: no sticky hover lift --- */
+  @media (hover: none) {
+    .social-btn:hover { transform: none; }
+    .submit-btn:hover:not(:disabled) { transform: none; }
+  }
+
+  /* Register page: always allow scrolling (card is taller than most laptop screens) */
+  body.page-register { overflow-x: hidden; overflow-y: auto; padding-top: 24px; padding-bottom: 24px; }
+
+
+  /* ===== Logo speech-cloud: the logo "talks" (tail points at the logo) ===== */
+  .logo-bubble {
+    --bx: 50px;
+    position: relative;
+    align-self: center;
+    width: 280px;
+    max-width: 100%;
+    margin: 0 0 24px;
+    padding: 12px 16px;
+    font-size: 12px;
+    line-height: 1.5;
+    text-align: left;
+    color: #d5e3f2;
+    background: #11293b;
+    border: 1px solid rgba(56, 189, 248, .55);
+    border-radius: 30px 36px 32px 34px / 32px 30px 36px 30px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, .3), 0 0 16px rgba(56, 189, 248, .15);
+    overflow-wrap: anywhere;
+    transform: translateX(var(--bx));
+    animation: logoTalk 3.2s ease-in-out infinite;
+  }
+  /* speech tail pointing down at the logo */
+  .logo-bubble::before {
+    content: "";
+    position: absolute;
+    width: 14px;
+    height: 14px;
+    left: 83px;
+    bottom: -8px;
+    background: #11293b;
+    border-right: 1px solid rgba(56, 189, 248, .55);
+    border-bottom: 1px solid rgba(56, 189, 248, .55);
+    border-radius: 0 0 4px 0;
+    transform: rotate(45deg);
+  }
+  .logo-bubble-mobile { display: none; }
+  @keyframes logoTalk {
+    0%, 100% { transform: translate(var(--bx), 0); }
+    50%      { transform: translate(var(--bx), -4px); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .logo-bubble { animation: none; }
+  }
+
+  /* Register card: same size as the Login card on laptop */
+  @media (min-width: 861px) {
+    body.page-register .form-container { padding: 22px 26px; }
+    body.page-register .input-group { margin-bottom: 12px; }
+    body.page-register .input-group label { margin-bottom: 5px; }
+    body.page-register .input-wrapper input { height: 40px; }
+    body.page-register #form-step-1 > label { margin: 2px 0 10px !important; font-size: 11px !important; }
+    body.page-register .login-btn-wrapper { margin-top: 8px; margin-bottom: 8px; }
+    body.page-register .register-prompt { margin-top: 12px !important; }
+  }
+
+  /* Tablet: cloud centered right above the logo */
+  @media (max-width: 860px) {
+    .logo-bubble { --bx: 0px; width: min(300px, 100%); }
+    .logo-bubble::before { left: calc(50% - 7px); }
+  }
+
+  /* Phone: logo sits in the card's top-right corner; cloud is beside it, tail points right */
+  @media (max-width: 600px) {
+    .branding-container .logo-bubble { display: none; }
+    .logo-bubble-mobile {
+      display: block;
+      align-self: auto;
+      width: auto;
+      max-width: none;
+      margin: 0 52px 18px 0;
+      padding: 10px 13px;
+      font-size: 11px;
+      border-radius: 22px 26px 24px 26px / 24px 22px 26px 22px;
+    }
+    .logo-bubble-mobile::before {
+      left: auto;
+      right: -8px;
+      bottom: auto;
+      top: 6px;
+      border-bottom: 0;
+      border-top: 1px solid rgba(56, 189, 248, .55);
+      border-radius: 0 4px 0 0;
+    }
+  }
+  @media (max-width: 360px) {
+    .logo-bubble-mobile { margin-right: 45px; font-size: 10.5px; }
+  }
+  @media (max-width: 860px) and (max-height: 520px) and (orientation: landscape) {
+    .logo-bubble-mobile { display: none; }
+  }
   </style>
 </head>
-<body class="auth-refined">
+<body class="auth-refined has-mobile-logo page-register">
 
   <!-- Background Decorative Blurs -->
   <div class="bg-blur bg-blur-1"></div>
@@ -88,9 +318,11 @@ $registrationCsrf = $_SESSION['registration_csrf'];
 
     <!-- Left Side: Registration Flow -->
     <div class="form-container">
+      <img src="../../images/Logo.png" alt="MAP &amp; PUMP Logo" class="mobile-logo" />
       
       <!-- STEP 1: Registration Form -->
       <div class="auth-step active" id="step-1">
+        <div class="logo-bubble logo-bubble-mobile" role="note">Use an email address you can access for verification and essential account, security, invitation, or request-status notices. Use fictional information for every other field.</div>
         <div class="header">
           <h1 class="title">REGISTER</h1>
         </div>
@@ -119,7 +351,6 @@ $registrationCsrf = $_SESSION['registration_csrf'];
             <div class="input-wrapper">
               <input type="email" id="register-email" name="email" placeholder="example123@gmail.com" required />
             </div>
-            <small style="display:block;margin-top:8px;color:#a8b3c7;line-height:1.45;">Use an email address you can access for verification and essential account, security, invitation, or request-status notices. Use fictional information for every other field.</small>
           </div>
 
           <!-- Password Input -->
@@ -149,7 +380,7 @@ $registrationCsrf = $_SESSION['registration_csrf'];
             <div class="pw-popover" id="pw-popover">
               <div class="popover-title">Password Conditions</div>
               <ul class="req-list">
-                <li id="rule-length"><span class="bullet">✕</span> 8~15 Characters</li>
+                <li id="rule-length"><span class="bullet">✕</span> Minimum 8 Characters</li>
                 <li id="rule-cases"><span class="bullet">✕</span> Upper & Lowercase</li>
                 <li id="rule-number"><span class="bullet">✕</span> At least 1 Number</li>
                 <li id="rule-symbol"><span class="bullet">✕</span> At least 1 Symbol</li>
@@ -253,6 +484,7 @@ $registrationCsrf = $_SESSION['registration_csrf'];
 
     <!-- Right Side: Branding -->
     <div class="branding-container">
+      <div class="logo-bubble" role="note">Use an email address you can access for verification and essential account, security, invitation, or request-status notices. Use fictional information for every other field.</div>
       <img src="../../images/Logo.png" alt="MAP & PUMP Logo" class="logo-img" />
       <h2 class="brand-title">MAP &amp; PUMP</h2>
       <p class="brand-subtitle">No need to queue.<br>Get a token and fill up on time</p>
@@ -387,7 +619,7 @@ $registrationCsrf = $_SESSION['registration_csrf'];
       const val1 = newPassword.value;
       const val2 = confirmPassword.value;
 
-      const isLength = val1.length >= 8 && val1.length <= 15;
+      const isLength = val1.length >= 8;
       const isCases = /[a-z]/.test(val1) && /[A-Z]/.test(val1);
       const isNumber = /\d/.test(val1);
       const isSymbol = /[^a-zA-Z0-9]/.test(val1);
@@ -456,7 +688,7 @@ $registrationCsrf = $_SESSION['registration_csrf'];
 
       const val1 = newPassword.value;
       const val2 = confirmPassword.value;
-      const isLength = val1.length >= 8 && val1.length <= 15;
+      const isLength = val1.length >= 8;
       const isCases = /[a-z]/.test(val1) && /[A-Z]/.test(val1);
       const isNumber = /\d/.test(val1);
       const isSymbol = /[^a-zA-Z0-9]/.test(val1);
@@ -587,6 +819,7 @@ $registrationCsrf = $_SESSION['registration_csrf'];
         ? `<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line>`
         : `<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle>`;
     });
+
   </script>
 
 </body>
