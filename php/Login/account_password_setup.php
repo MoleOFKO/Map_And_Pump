@@ -150,3 +150,41 @@ function hq_password_setup_create_link(PDO $pdo, int $headquarterId, int $expire
 
     return payment_transfer_absolute_url('/php/Login/set_account_password.php?token=' . rawurlencode($token));
 }
+
+function hq_password_setup_create_link_mysqli(mysqli $conn, int $headquarterId, int $expiresHours = 48): string
+{
+    if ($headquarterId <= 0 || $expiresHours < 1 || $expiresHours > 168) {
+        throw new InvalidArgumentException('HQ password setup link parameters are invalid.');
+    }
+
+    $token = rtrim(strtr(base64_encode(random_bytes(32)), '+/', '-_'), '=');
+    $tokenHash = hash('sha256', $token);
+    $invalidate = $conn->prepare(
+        'UPDATE hq_password_setup_tokens SET used_at = NOW() WHERE headquarter_id = ? AND used_at IS NULL'
+    );
+    if (!$invalidate) {
+        throw new RuntimeException('Could not prepare replacement HQ password setup links.');
+    }
+    $invalidate->bind_param('i', $headquarterId);
+    if (!$invalidate->execute()) {
+        $invalidate->close();
+        throw new RuntimeException('Could not invalidate previous HQ password setup links.');
+    }
+    $invalidate->close();
+
+    $insert = $conn->prepare(
+        'INSERT INTO hq_password_setup_tokens (headquarter_id, token_hash, expires_at)
+         VALUES (?, ?, DATE_ADD(NOW(), INTERVAL ' . $expiresHours . ' HOUR))'
+    );
+    if (!$insert) {
+        throw new RuntimeException('Could not prepare the HQ password setup link.');
+    }
+    $insert->bind_param('is', $headquarterId, $tokenHash);
+    if (!$insert->execute()) {
+        $insert->close();
+        throw new RuntimeException('Could not create the HQ password setup link.');
+    }
+    $insert->close();
+
+    return payment_transfer_absolute_url('/php/Login/set_account_password.php?token=' . rawurlencode($token));
+}

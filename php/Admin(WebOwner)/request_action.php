@@ -437,7 +437,7 @@ try {
         if (!filter_var($ownerEmail, FILTER_VALIDATE_EMAIL)) {
             throw new RuntimeException('The approved company has no valid owner or company email address.');
         }
-        $createdOwnerSetupUrl = hq_password_setup_create_link($pdo, (int) $createdHeadquarterId);
+        $createdOwnerSetupUrl = hq_password_setup_create_link_mysqli($conn, (int) $createdHeadquarterId);
         $createdOwnerEmail = $ownerEmail;
 
         $hqOwnerUpdate = $conn->prepare(
