@@ -157,12 +157,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if (!empty($changeList)) {
             $reportData = map_pump_branch_profile_report_data($user, $branch, $changeList);
+          $accountId = map_pump_account_identity_ensure($pdo, 'user', (int) $user['user_id']);
             $insertReport = $pdo->prepare(
-                "INSERT INTO report (user_id, role_id, importance, short_summery, message, created_at)
-                 VALUES (:user_id, 4, :importance, :short_summery, :message, NOW())"
+            "INSERT INTO report (user_id, submitted_by_account_id, role_id, importance, short_summery, message, created_at)
+             VALUES (:user_id, :account_id, 4, :importance, :short_summery, :message, NOW())"
             );
             $insertReport->execute([
                 ':user_id' => $user['user_id'],
+            ':account_id' => $accountId,
                 ':importance' => $reportData['importance'],
                 ':short_summery' => $reportData['short_summery'],
                 ':message' => $reportData['message'],

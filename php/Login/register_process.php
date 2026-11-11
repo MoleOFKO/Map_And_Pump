@@ -274,6 +274,7 @@ try {
         $insert->execute($insertParams);
         $userId = (int) $pdo->lastInsertId();
     }
+    map_pump_account_identity_ensure($pdo, 'user', $userId);
 
     $code = (string) random_int(100000, 999999);
     $_SESSION['pending_registration'] = [

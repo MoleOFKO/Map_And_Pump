@@ -2,9 +2,13 @@
 FROM php:8.2-apache
 
 # Install required extensions
-RUN apt-get update && apt-get install -y --no-install-recommends libcurl4-openssl-dev && \
+RUN apt-get update && apt-get install -y --no-install-recommends libcurl4-openssl-dev tzdata && \
+    ln -snf /usr/share/zoneinfo/Asia/Yangon /etc/localtime && \
+    echo "Asia/Yangon" > /etc/timezone && \
     docker-php-ext-install pdo pdo_mysql mysqli fileinfo curl && \
     rm -rf /var/lib/apt/lists/*
+
+ENV TZ=Asia/Yangon
 
 # Enable Apache modules
 RUN a2enmod rewrite
@@ -19,6 +23,7 @@ COPY --from=php:8.2-apache /usr/local/etc/php/php.ini-production /usr/local/etc/
 # Configure PHP for production
 RUN echo "display_errors = Off" >> /usr/local/etc/php/php.ini && \
     echo "log_errors = On" >> /usr/local/etc/php/php.ini && \
+    echo "date.timezone = Asia/Yangon" >> /usr/local/etc/php/php.ini && \
     echo "error_log = /var/log/php_errors.log" >> /usr/local/etc/php/php.ini && \
     echo "upload_max_filesize = 10M" >> /usr/local/etc/php/php.ini && \
     echo "post_max_size = 24M" >> /usr/local/etc/php/php.ini

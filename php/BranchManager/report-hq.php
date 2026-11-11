@@ -32,12 +32,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($subject === '' || $desc === '') json_out(['ok' => false, 'error' => 'Subject and description are required']);
 
     try {
+      $accountId = map_pump_account_identity_ensure($pdo, 'user', (int) $user['user_id']);
         $stmt = $pdo->prepare("
-            INSERT INTO report (user_id, role_id, importance, short_summery, message)
-            VALUES (:u, 4, :p, :s, :d)
+        INSERT INTO report (user_id, submitted_by_account_id, role_id, importance, short_summery, message)
+        VALUES (:u, :account_id, 4, :p, :s, :d)
         ");
         $stmt->execute([
             ':u' => $user['user_id'],
+        ':account_id' => $accountId,
             ':s' => $subject,
             ':p' => $priority,
             ':d' => '[' . $category . '] ' . $desc,

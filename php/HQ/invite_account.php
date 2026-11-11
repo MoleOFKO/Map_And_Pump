@@ -110,6 +110,7 @@ try {
             password_hash($password, PASSWORD_DEFAULT),
         ]);
         $staffId = (int) $pdo->lastInsertId();
+        map_pump_account_identity_ensure($pdo, 'staff', $staffId);
         $pdo->commit();
 
         $hqStmt = $pdo->prepare('SELECT company_name FROM headquarter WHERE headquarter_id = ? LIMIT 1');
@@ -241,6 +242,7 @@ try {
             );
             $createAccount->execute([$invitee['user_name'], $email]);
             $invitee['user_id'] = (int) $pdo->lastInsertId();
+            map_pump_account_identity_ensure($pdo, 'user', (int) $invitee['user_id']);
         } else {
             $userUpdate = $pdo->prepare(
                 "UPDATE users
@@ -328,6 +330,7 @@ try {
             );
             $createAccount->execute([$invitee['user_name'], $email, $passwordHash]);
             $invitee['user_id'] = (int) $pdo->lastInsertId();
+            map_pump_account_identity_ensure($pdo, 'user', (int) $invitee['user_id']);
         }
 
         $insert = $pdo->prepare(

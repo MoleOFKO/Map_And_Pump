@@ -159,6 +159,7 @@ if ($action === 'create') {
     }
     $newUserId = (int) $statement->insert_id;
     $statement->close();
+    map_pump_account_identity_ensure($pdo, 'user', $newUserId);
 
     admin_record_log((int) $adminUser['user_id'], 'Created moderator account #' . $newUserId . '.');
 

@@ -54,14 +54,15 @@ if (strlen($message) > 255) $message = substr($message, 0, 252) . '...';
 
 // Use current user's role if available; fallback to Staff role id (5)
 $roleId = isset($_SESSION['role_id']) ? (int)$_SESSION['role_id'] : 5;
+$accountId = map_pump_account_identity_ensure($pdo, 'user', $userId);
 
 // Insert into report table
-$insert = $conn->prepare('INSERT INTO report (user_id, role_id, importance, short_summery, message, created_at) VALUES (?, ?, ?, ?, ?, NOW())');
+$insert = $conn->prepare('INSERT INTO report (user_id, submitted_by_account_id, role_id, importance, short_summery, message, created_at) VALUES (?, ?, ?, ?, ?, ?, NOW())');
 if (!$insert) {
     header('Location: feedback_manage.php');
     exit;
 }
-$insert->bind_param('iisss', $userId, $roleId, $importance, $short, $message);
+$insert->bind_param('iiisss', $userId, $accountId, $roleId, $importance, $short, $message);
 $ok = $insert->execute();
 $insert->close();
 

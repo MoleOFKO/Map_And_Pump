@@ -164,14 +164,15 @@ if ($action === 'generate') {
 
     $message = sprintf('[scope=%s][format=%s][start=%s][end=%s] %s', $scope, $format, $startDate, $endDate, $summary);
     $userId = (int) $currentUser['user_id'];
+    $accountId = map_pump_account_identity_ensure($pdo, 'user', $userId);
     $roleId = (int) ($currentUser['effective_role_id'] ?? $currentUser['role_id']);
     $importance = 'normal';
-    $statement = $conn->prepare('INSERT INTO report (user_id, role_id, importance, short_summery, message, created_at) VALUES (?, ?, ?, ?, ?, NOW())');
+    $statement = $conn->prepare('INSERT INTO report (user_id, submitted_by_account_id, role_id, importance, short_summery, message, created_at) VALUES (?, ?, ?, ?, ?, ?, NOW())');
     if (!$statement) {
         admin_flash('danger', 'The report could not be prepared.');
         admin_redirect('view_report.php');
     }
-    $statement->bind_param('iisss', $userId, $roleId, $importance, $title, $message);
+    $statement->bind_param('iiisss', $userId, $accountId, $roleId, $importance, $title, $message);
     if (!$statement->execute()) {
         $statement->close();
         admin_flash('danger', 'The report could not be generated.');
