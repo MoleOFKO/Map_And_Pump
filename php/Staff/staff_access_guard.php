@@ -24,7 +24,7 @@ function map_pump_staff_record_for_user(PDO $pdo, int $userId): ?array
             ? 's.staff_id = :staff_id'
             : 's.user_id = :user_id';
         $stmt = $pdo->prepare(
-                "SELECT s.staff_id, s.branch_id, s.is_active, s.full_name, s.staff_code, s.email, s.staff_password, s.created_at,
+                "SELECT s.staff_id, s.branch_id, s.is_active, s.full_name, s.staff_code, s.email, s.contact, s.staff_password, s.created_at,
                     u.user_id, u.user_name, u.email AS user_email, u.status, u.role_id, u.business_role_id, u.current_role_id,
                     COALESCE(bas.headquarter_id, sbs.headquarter_id) AS headquarter_id,
                     h.company_name AS headquarter_name, h.company_logo AS headquarter_logo,

@@ -57,7 +57,21 @@ $flashType = (string) ($flash['type'] ?? '');
     </form></div>
     <div class="analytics-card"><div class="table-responsive user-table-scroll"><table class="table table-dark-custom align-middle m-0"><thead><tr><th>Driver Account</th><th>Email</th><th>Company</th><th>Account Type</th><th>Status</th><th class="text-end">Actions</th></tr></thead><tbody>
     <?php if (!$userRows): ?><tr><td colspan="6" class="text-center text-white-50 py-5"><i class="bi bi-person-x fs-3 d-block mb-2"></i>No driver accounts match the current filter.</td></tr><?php endif; ?>
-    <?php foreach ($userRows as $row): $userStatus = (string) ($row['status'] ?? 'pending'); ?><tr><td><div class="d-flex align-items-center gap-3"><div class="rounded-3 d-flex align-items-center justify-content-center fw-bold" style="width:44px;height:44px;background:rgba(0,244,255,.1);border:1px solid rgba(0,244,255,.28);color:var(--neon-cyan)"><?= moderator_escape(hq_initials((string) ($row['user_name'] ?? 'Driver'))) ?></div><div><div class="fw-semibold text-white"><?= moderator_escape(privacy_mask_name((string) ($row['user_name'] ?? 'Name unavailable'))) ?></div><div class="text-white-50 small">Driver ID: <?= moderator_escape(privacy_mask_identifier((string) (trim((string) ($row['user_public_id'] ?? '')) ?: 'Not available'))) ?></div></div></div></td><td class="text-white-50"><?= moderator_escape(privacy_mask_email((string) ($row['email'] ?? 'Not provided'))) ?></td><td class="text-white-50"><?= moderator_escape(privacy_mask_name((string) ($row['headquarter_name'] ?? 'Not linked'))) ?></td><td class="text-white-50">Driver</td><td><span class="hq-status <?= moderator_escape(hq_status_class($userStatus)) ?>"><?= moderator_escape(hq_status_label($userStatus)) ?></span><?php if (function_exists("expiry_badge_html")): ?><div class="mt-1"><?= expiry_badge_html(isset($row["license_last_valid_date"]) ? (string) $row["license_last_valid_date"] : null) ?></div><?php endif; ?></td><td class="text-end"><div class="d-flex gap-2 justify-content-end"><a href="#" class="btn-action js-view-user" title="View driver details" data-user-id="<?= (int) $row['user_id'] ?>"><i class="bi bi-eye-fill"></i></a><?php if ($userStatus === 'pending_verification'): ?><a href="view_requests(M).php?type=account&amp;status=pending" class="btn-action" title="Open account verification request"><i class="bi bi-arrow-up-right-circle-fill"></i></a><?php elseif (!empty($row['staff_access_protected'])): ?><span class="badge rounded-pill bg-secondary bg-opacity-25 text-white-50" title="Account changes are unavailable for Admin and Moderator accounts">Restricted</span><?php else: ?><button type="button" class="btn-action btn-action-danger js-user-action" title="Manage driver account" data-user-id="<?= (int) $row['user_id'] ?>" data-user-name="<?= moderator_escape(privacy_mask_name((string) $row['user_name'])) ?>"><i class="bi bi-gear-fill"></i></button><?php endif; ?></div></td></tr><?php endforeach; ?>
+    <?php foreach ($userRows as $row):
+        $userStatus = strtolower(trim((string) ($row['status'] ?? 'pending')));
+        $contactEmail = trim((string) ($row['email'] ?? ''));
+        $showContact = in_array($userStatus, ['disabled', 'removed', 'suspended'], true)
+            && filter_var($contactEmail, FILTER_VALIDATE_EMAIL);
+    ?>
+        <tr>
+            <td><div class="d-flex align-items-center gap-3"><div class="rounded-3 d-flex align-items-center justify-content-center fw-bold" style="width:44px;height:44px;background:rgba(0,244,255,.1);border:1px solid rgba(0,244,255,.28);color:var(--neon-cyan)"><?= moderator_escape(hq_initials((string) ($row['user_name'] ?? 'Driver'))) ?></div><div><div class="fw-semibold text-white"><?= moderator_escape((string) ($row['user_name'] ?? 'Name unavailable')) ?></div><div class="text-white-50 small">Driver ID: <?= moderator_escape((string) (trim((string) ($row['user_public_id'] ?? '')) ?: 'Not available')) ?></div></div></div></td>
+            <td class="text-white-50"><?php if ($showContact): ?><a href="mailto:<?= moderator_escape($contactEmail) ?>" class="text-white-50 text-decoration-none"><i class="bi bi-envelope me-1" aria-hidden="true"></i><?= moderator_escape($contactEmail) ?></a><?php else: ?>—<?php endif; ?></td>
+            <td class="text-white-50"><?= moderator_escape((string) ($row['headquarter_name'] ?? 'Not linked')) ?></td>
+            <td class="text-white-50">Driver</td>
+            <td><span class="hq-status <?= moderator_escape(hq_status_class($userStatus)) ?>"><?= moderator_escape(hq_status_label($userStatus)) ?></span><?php if (function_exists("expiry_badge_html")): ?><div class="mt-1"><?= expiry_badge_html(isset($row["license_last_valid_date"]) ? (string) $row["license_last_valid_date"] : null) ?></div><?php endif; ?></td>
+            <td class="text-end"><div class="d-flex gap-2 justify-content-end"><a href="#" class="btn-action js-view-user" title="View driver details" data-user-id="<?= (int) $row['user_id'] ?>"><i class="bi bi-eye-fill"></i></a><?php if ($userStatus === 'pending_verification'): ?><a href="view_requests(M).php?type=account&amp;status=pending" class="btn-action" title="Open account verification request"><i class="bi bi-arrow-up-right-circle-fill"></i></a><?php elseif (!empty($row['staff_access_protected'])): ?><span class="badge rounded-pill bg-secondary bg-opacity-25 text-white-50" title="Account changes are unavailable for Admin and Moderator accounts">Restricted</span><?php else: ?><button type="button" class="btn-action btn-action-danger js-user-action" title="Manage driver account" data-user-id="<?= (int) $row['user_id'] ?>" data-user-name="<?= moderator_escape((string) $row['user_name']) ?>"><i class="bi bi-gear-fill"></i></button><?php endif; ?></div></td>
+        </tr>
+    <?php endforeach; ?>
     </tbody></table></div></div>
 </main>
 <div class="modal fade glass-modal" id="userActionModal" tabindex="-1" aria-labelledby="userActionLabel" aria-hidden="true"><div class="modal-dialog modal-dialog-centered modal-dialog-scrollable"><div class="modal-content"><div class="modal-header"><h5 class="modal-title fw-bold" id="userActionLabel"><i class="bi bi-shield-exclamation text-danger me-2"></i> Manage driver account</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div><form action="user_account_action(M).php" method="POST"><div class="modal-body d-flex flex-column gap-3"><input type="hidden" name="user_id" id="userActionId"><input type="hidden" name="return_to" value="view_users(M).php"><div class="small text-white-50">Driver: <span class="txt-neon-cyan fw-semibold" id="userActionName">Selected driver</span></div><div><label class="form-label text-white-50 small" for="userActionType">Account action</label><select class="form-select glass-select" name="action_type" id="userActionType" required><option value="suspend">Suspend account</option><option value="remove">Remove account</option><option value="restore">Restore account</option></select></div><div><label class="form-label text-white-50 small" for="userActionReason">Reason <span class="text-danger">*</span></label><textarea class="form-control glass-input" name="reason" id="userActionReason" rows="5" maxlength="2000" required></textarea></div></div><div class="modal-footer"><button type="button" class="btn btn-outline-secondary rounded-3 text-white-50" data-bs-dismiss="modal">Cancel</button><button type="submit" class="btn btn-danger">Apply action</button></div></form></div></div></div>
@@ -83,6 +97,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const detailsModal = detailsModalEl ? new bootstrap.Modal(detailsModalEl) : null;
     const detailsBody = document.getElementById('userDetailsBody');
     const esc = value => String(value ?? '').replace(/[&<>"']/g, character => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[character]));
+    const contactLink = (email, status) => {
+        const address = String(email || '').trim();
+        const canContact = ['disabled', 'removed', 'suspended'].includes(String(status || '').toLowerCase());
+        return canContact && address
+            ? '<a href="mailto:' + encodeURIComponent(address) + '">' + esc(address) + ' <i class="bi bi-envelope" aria-hidden="true"></i></a>'
+            : 'Not available for this account status';
+    };
     const date = value => value ? new Date(String(value).replace(' ', 'T')).toLocaleString() : 'Not available';
     const statusClass = status => ({active:'hq-status-active', approved:'hq-status-active', suspended:'hq-status-suspended', removed:'hq-status-removed'}[String(status || '').toLowerCase()] || 'hq-status-pending');
     const statusLabel = status => ({active:'Approved', approved:'Approved', suspended:'Suspended', removed:'Removed', pending:'Pending', pending_verification:'Pending Verification'}[String(status || '').toLowerCase()] || (status ? String(status) : 'Unknown'));
@@ -98,16 +119,17 @@ document.addEventListener('DOMContentLoaded', () => {
         detailsBody.innerHTML = '<div class="text-center text-white-50 py-5"><span class="spinner-border spinner-border-sm me-2"></span>Loading driver details...</div>';
         detailsModal.show();
         try {
-            const response = await fetch('user_details(M).php?id=' + encodeURIComponent(button.dataset.userId), { headers: { Accept: 'application/json' } });
+            const response = await fetch('user_details(M).php?id=' + encodeURIComponent(button.dataset.userId) + '&context=compare', { headers: { Accept: 'application/json' } });
             const payload = await response.json();
             if (!response.ok || !payload.success) throw new Error(payload.message || 'Unable to load driver details.');
             const u = payload.user || {};
             const license = payload.license || null;
             const hq = payload.headquarter || null;
             const actions = payload.actions || [];
+            const conflicts = payload.license_conflicts || [];
 
             const profile = '<div class="d-flex align-items-center gap-3 mb-4 pb-3 border-bottom border-white border-opacity-10"><div class="rounded-3 d-flex align-items-center justify-content-center fw-bold" style="width:52px;height:52px;background:rgba(0,244,255,.1);border:1px solid rgba(0,244,255,.28);color:var(--neon-cyan);font-size:1.1rem;">' + esc(String(u.user_name || 'U').slice(0, 2).toUpperCase()) + '</div><div><div class="fw-semibold text-white fs-5">' + esc(u.user_name || 'Name unavailable') + '</div><div class="text-white-50 small">Driver ID ' + esc(u.user_public_id || 'Not available') + ' · <span class="hq-status ' + statusClass(u.status) + '">' + esc(statusLabel(u.status)) + '</span></div></div></div>';
-            const accountGrid = '<div class="row g-3 mb-4"><div class="col-12 col-sm-6 col-lg-4">' + card('Email', esc(u.email || '—')) + '</div><div class="col-12 col-sm-6 col-lg-4">' + card('Account type', 'Driver') + '</div><div class="col-12 col-sm-6 col-lg-4">' + card('Company', esc(u.headquarter_name || 'Not linked')) + '</div><div class="col-6 col-sm-4 col-lg-4">' + card('Created', esc(date(u.created_at))) + '</div><div class="col-6 col-sm-4 col-lg-4">' + card('Updated', esc(date(u.updated_at))) + '</div><div class="col-12 col-sm-4 col-lg-4">' + card('Last login', esc(date(u.last_login_at))) + '</div></div>';
+            const accountGrid = '<div class="row g-3 mb-4"><div class="col-12 col-sm-6 col-lg-4">' + card('Contact email', contactLink(u.email, u.status)) + '</div><div class="col-12 col-sm-6 col-lg-4">' + card('Account type', 'Driver') + '</div><div class="col-12 col-sm-6 col-lg-4">' + card('Company', esc(u.headquarter_name || 'Not linked')) + '</div><div class="col-6 col-sm-4 col-lg-4">' + card('Created', esc(date(u.created_at))) + '</div><div class="col-6 col-sm-4 col-lg-4">' + card('Updated', esc(date(u.updated_at))) + '</div><div class="col-12 col-sm-4 col-lg-4">' + card('Last login', esc(date(u.last_login_at))) + '</div></div>';
             let licenseBlock = '';
             if (license) {
                 // Account view: minimum license fields. NRC, DOB, blood type, phone never shown.
@@ -118,8 +140,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 // Account view: company name + location only.
                 hqBlock = '<div class="d-flex align-items-center justify-content-between mb-2"><h6 class="text-white fw-semibold mb-0"><i class="bi bi-building txt-neon-cyan me-2"></i>Linked Company</h6></div><div class="row g-3 mb-4"><div class="col-12 col-sm-6 col-lg-6">' + card('Company', esc(hq.company_name || '—')) + '</div><div class="col-12 col-sm-6 col-lg-6">' + card('Location', esc(hq.location || '—')) + '</div></div>';
             }
+            let duplicateBlock = '';
+            if (conflicts.length) {
+                const existing = conflicts[0] || {};
+                const matchedOn = Array.isArray(existing.duplicate_fields) && existing.duplicate_fields.length
+                    ? existing.duplicate_fields.join(', ')
+                    : 'Driver license number or NRC number';
+                duplicateBlock = '<div class="alert alert-warning mb-3"><i class="bi bi-exclamation-triangle-fill me-2"></i>Possible duplicate matched on: ' + esc(matchedOn) + '.</div>' +
+                    '<div class="row g-3 mb-4">' +
+                    '<div class="col-12 col-lg-6">' + card('Current driver', esc(u.user_name || 'Name unavailable') + '<br>' + contactLink(u.email, u.status) + '<br>License: ' + esc((license && license.license_number) || 'Not provided') + '<br>NRC: ' + esc((license && license.nrc_number) || 'Not provided')) + '</div>' +
+                    '<div class="col-12 col-lg-6">' + card('Existing account', esc(existing.user_name || 'Name unavailable') + '<br>' + contactLink(existing.email, existing.account_status) + '<br>License: ' + esc(existing.license_number || 'Not provided') + '<br>NRC: ' + esc(existing.nrc_number || 'Not provided')) + '</div>' +
+                    '</div>';
+            }
             const history = '<div class="d-flex align-items-center justify-content-between mb-2"><h6 class="text-white fw-semibold mb-0"><i class="bi bi-clock-history txt-neon-cyan me-2"></i>Account action history</h6><span class="badge rounded-pill" style="background:rgba(0,244,255,.12);color:#7eefff;border:1px solid rgba(0,244,255,.25);">' + actions.length + '</span></div>' + (actions.length ? '<div class="table-responsive"><table class="table mod-modal-table align-middle mb-0"><thead><tr><th>Action</th><th>Reason</th><th>When</th></tr></thead><tbody>' + actions.map(a => '<tr><td><span class="badge text-bg-dark border border-secondary border-opacity-25">' + esc(String(a.action_type || '').toUpperCase()) + '</span></td><td class="text-white-50">' + esc(a.reason || '—') + '</td><td class="text-white-50 small">' + esc(date(a.created_at)) + '</td></tr>').join('') + '</tbody></table></div>' : '<div class="text-white-50 py-3"><i class="bi bi-inbox me-1"></i>No action history.</div>');
-            detailsBody.innerHTML = expiryDetailAlert((license && license.license_last_valid_date) || '', 'license') + profile + accountGrid + licenseBlock + hqBlock + history;
+            detailsBody.innerHTML = expiryDetailAlert((license && license.license_last_valid_date) || '', 'license') + profile + accountGrid + duplicateBlock + licenseBlock + hqBlock + history;
         } catch (error) {
             detailsBody.innerHTML = '<div class="alert alert-danger">'+esc(error.message)+'</div>';
         }
