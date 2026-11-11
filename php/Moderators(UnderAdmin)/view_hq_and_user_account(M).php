@@ -40,6 +40,8 @@ $flashType = (string) ($flash['type'] ?? '');
     <title>View/Manage Companies — Map &amp; Pump</title>
     <link rel="icon" type="image/png" href="/images/Logo.png"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.googleapis.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&amp;display=swap" rel="stylesheet"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"><link rel="stylesheet" href="/css/Admin.css"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/css/admin-blue-pages.css">
     <style>
         .mod-flash{border-radius:14px;background:rgba(10,22,44,.82);border:1px solid var(--glass-border);color:var(--text-primary)}
         body.background_color.light-mode .mod-flash{background:rgba(255,255,255,.92)}
@@ -61,13 +63,13 @@ $flashType = (string) ($flash['type'] ?? '');
         .hq-status-removed:before{background:#ff4d6a;box-shadow:0 0 8px #ff4d6a}
     </style>
 </head>
-<body class="background_color" id="background_color">
+<body class="background_color admin-blue-page" id="background_color">
 <?php include __DIR__ . '/includes/moderator_navbar.php'; ?>
-<main class="container my-5">
+<main class="container my-5 admin-blue-shell">
     <?php if ($flash && $flashType): ?><div class="alert mod-flash alert-<?= moderator_escape($flashType) ?> alert-dismissible fade show mb-4" role="alert"><i class="bi <?= $flashType === 'success' ? 'bi-check-circle-fill text-success' : 'bi-exclamation-triangle-fill text-danger' ?> me-2"></i><?= moderator_escape((string) ($flash['message'] ?? '')) ?><button type="button" class="btn-close btn-close-white" data-bs-dismiss="alert"></button></div><?php endif; ?>
     <?php if ($dbError): ?><div class="alert mod-flash alert-danger mb-4"><i class="bi bi-database-exclamation me-2"></i><?= moderator_escape($dbError) ?></div><?php endif; ?>
     <?php if (function_exists('expiry_render_page_banners')) { expiry_render_page_banners('moderator', true); } ?>
-    <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3"><div><span class="stat-chip mb-2"><i class="bi bi-building-fill txt-neon-cyan"></i> Company Administration</span><h1 class="fw-bold m-0 h4 text-white mt-2">View/Manage Companies</h1></div></div>
+    <div class="admin-blue-header d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3"><div><span class="stat-chip mb-2"><i class="bi bi-building-fill txt-neon-cyan"></i> Company Administration</span><h1 class="fw-bold m-0 h4 text-white mt-2">View/Manage Companies</h1><p class="admin-blue-description">Review company profiles, ownership details, stations, and account status.</p></div></div>
 
             <div class="dashboard-card admin-filter-card mb-4"><form class="admin-filter-form" method="GET" action="view_hq_and_user_account(M).php">
                 <div class="filter-group filter-group--search"><label class="filter-label" for="modHqSearch">Search</label><div class="filter-search"><i class="bi bi-search filter-search-icon" aria-hidden="true"></i><input id="modHqSearch" type="search" class="form-control filter-control filter-input" placeholder="Search by company or owner name..." name="search" value="<?= moderator_escape($search) ?>"></div></div>
@@ -133,7 +135,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const licenseDateWarning = registeredDay && expiryDay && expiryDay <= registeredDay
             ? '<div class="alert alert-warning py-2 mb-3" role="status"><i class="bi bi-exclamation-triangle-fill me-2"></i>License expiry must be after registration. Verify the current business license before changing account status.</div>'
             : (expiryDay && expiryDay < today ? '<div class="alert alert-warning py-2 mb-3" role="status"><i class="bi bi-exclamation-triangle-fill me-2"></i>This business license has expired. Company access is limited to the profile until the business license is renewed.</div>' : '');
-        const metaCards = '<div class="row g-3 mb-4">' +
+        const metaCards = '<div class="hq-detail-grid mb-4">' +
             '<div class="col-12 col-md-6"><div class="p-3 rounded-3" style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);"><div class="mod-detail-label">Company location</div><div class="mod-detail-value mt-1">' + esc(hq.location || 'Not available') + '</div></div></div>' +
             '<div class="col-6 col-md-3"><div class="p-3 rounded-3 h-100" style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);"><div class="mod-detail-label">Contact</div><div class="mod-detail-value mt-1">' + esc(hq.contact_number || '—') + '</div></div></div>' +
             '<div class="col-6 col-md-3"><div class="p-3 rounded-3 h-100" style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);"><div class="mod-detail-label">Email</div><div class="mod-detail-value mt-1 text-break">' + esc(hq.headquarter_email || '—') + '</div></div></div>' +

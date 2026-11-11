@@ -2573,6 +2573,24 @@ body.background_color.light-mode #mainMenuOffcanvas {
     color: var(--text-primary);
 }
 
+body.background_color.light-mode .glass-modal .modal-content,
+body.background_color[data-theme="light"] .glass-modal .modal-content {
+    border-color: #b6c2d2 !important;
+}
+
+body.background_color.light-mode .glass-modal :is(.request-detail-card,.request-detail-callout,.request-account-hero,.acct-section,.report-detail-card,.report-detail-content,.report-detail-hero),
+body.background_color[data-theme="light"] .glass-modal :is(.request-detail-card,.request-detail-callout,.request-account-hero,.acct-section,.report-detail-card,.report-detail-content,.report-detail-hero) {
+    border-color: #b6c2d2 !important;
+}
+
+body.background_color.light-mode .glass-modal .p-3.rounded-3:has(.mod-detail-label),
+body.background_color.light-mode .glass-modal .p-3.rounded-3:has(.hq-detail-label),
+body.background_color[data-theme="light"] .glass-modal .p-3.rounded-3:has(.mod-detail-label),
+body.background_color[data-theme="light"] .glass-modal .p-3.rounded-3:has(.hq-detail-label) {
+    border: 1px solid #b6c2d2 !important;
+    background: #f4f7fa !important;
+}
+
 body.background_color.light-mode .offcanvas-title,
 body.background_color.light-mode #mainMenuOffcanvas .text-white {
     color: var(--text-primary) !important;

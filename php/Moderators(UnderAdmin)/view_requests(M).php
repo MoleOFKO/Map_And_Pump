@@ -80,6 +80,7 @@ $flashType = (string) ($flash['type'] ?? '');
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&amp;display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
     <link rel="stylesheet" href="/css/Admin.css">
+    <link rel="stylesheet" href="/css/moderator_blue_theme.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
     <style>
         .request-status { display:inline-flex; align-items:center; gap:.45rem; color:rgba(255,255,255,.68); font-size:.8rem; white-space:nowrap; }
@@ -185,9 +186,9 @@ $flashType = (string) ($flash['type'] ?? '');
         body.background_color.light-mode .acct-profile-name{color:#12233f;}
     </style>
 </head>
-<body class="background_color" id="background_color">
+<body class="background_color admin-blue-page" id="background_color">
 <?php include __DIR__ . '/includes/moderator_navbar.php'; ?>
-<main class="container my-5">
+<main class="container my-5 admin-blue-shell">
     <?php if (is_array($paymentFlash)): ?><div class="alert request-flash alert-<?= moderator_escape((string) ($paymentFlash['type'] ?? 'info')) ?> alert-dismissible fade show mb-4" role="status"><?= moderator_escape((string) ($paymentFlash['message'] ?? 'Payment status updated.')) ?><button type="button" class="btn-close btn-close-white" data-bs-dismiss="alert" aria-label="Close"></button></div><?php endif; ?>
     <?php if ($flash && $flashType): ?>
         <div class="alert request-flash alert-<?= moderator_escape($flashType) ?> alert-dismissible fade show mb-4" role="alert">
@@ -198,14 +199,14 @@ $flashType = (string) ($flash['type'] ?? '');
     <?php if ($dbError): ?><div class="alert request-flash alert-danger mb-4" role="alert"><i class="bi bi-database-exclamation me-2"></i><?= moderator_escape($dbError) ?></div><?php endif; ?>
 
     <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3">
-        <div>
-            <span class="stat-chip mb-2"><i class="bi bi-clipboard-check-fill txt-neon-cyan"></i> Review Pipeline</span>
-            <h1 class="fw-bold m-0 h4 text-white mt-2">Inbound System Requests</h1>
-
+        <div class="admin-blue-header flex-grow-1">
+            <div class="companies-eyebrow">Review pipeline</div>
+            <h1 class="mb-0">Inbound System Requests</h1>
+            <p class="admin-blue-description">Review pending account, company, licensing, and payment requests.</p>
         </div>
     </div>
 
-    <div class="row g-3 mb-4">
+    <div class="row g-3 mb-4 request-summary-row">
         <div class="col-12 col-sm-4"><div class="request-indicator-card"><div><p class="text-white-50 mb-1 small fw-semibold" style="text-transform:uppercase;letter-spacing:.06em;font-size:.72rem;">Pending Verification</p><h4 class="fw-bold text-warning mb-0" style="font-size:1.8rem;letter-spacing:-.04em;"><?= (int) $summary['pending'] ?></h4></div><span class="fs-3 text-warning"><i class="bi bi-hourglass-split"></i></span></div></div>
         <div class="col-12 col-sm-4"><div class="request-indicator-card"><div><p class="text-white-50 mb-1 small fw-semibold" style="text-transform:uppercase;letter-spacing:.06em;font-size:.72rem;">Approved</p><h4 class="fw-bold mb-0" data-live-request-count="approved" style="font-size:1.8rem;letter-spacing:-.04em;color:#1be494;"><?= (int) $summary['approved'] ?></h4></div><span class="fs-3" style="color:#1be494;"><i class="bi bi-patch-check-fill"></i></span></div></div>
         <div class="col-12 col-sm-4"><div class="request-indicator-card"><div><p class="text-white-50 mb-1 small fw-semibold" style="text-transform:uppercase;letter-spacing:.06em;font-size:.72rem;">Declined / Flagged</p><h4 class="fw-bold mb-0" data-live-request-count="declined_flagged" style="font-size:1.8rem;letter-spacing:-.04em;color:#ff4d6a;"><?= (int) $summary['declined_flagged'] ?></h4></div><span class="fs-3" style="color:#ff4d6a;"><i class="bi bi-shield-x"></i></span></div></div>
