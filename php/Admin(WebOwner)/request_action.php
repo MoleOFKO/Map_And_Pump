@@ -109,7 +109,7 @@ try {
                         reference_code, description, payment_method
                  FROM payment_transfers
                  WHERE request_id = ? AND payment_type = 'hq_registration'
-                 ORDER BY payment_transfer_id DESC LIMIT 1 FOR UPDATE"
+                 ORDER BY payment_transfer_id DESC LIMIT 1"
             );
             if (!$paymentCheck) {
                 throw new RuntimeException('Payment status is unavailable. The company registration cannot be approved yet.');
@@ -128,7 +128,10 @@ try {
                 || (int) ($paymentRow['term_months'] ?? 0) !== $requestedMonths
                 || ($expectedRegistrationAmount !== null
                     && abs((float) $paymentRow['amount_mmk'] - $expectedRegistrationAmount) > 0.01)) {
-            throw new RuntimeException('The company payment request does not match the requested amount, station count, or service term.');
+                throw new RuntimeException('The company payment request does not match the requested amount, station count, or service term.');
+            }
+            if (strtolower(trim((string) ($paymentRow['status'] ?? ''))) !== 'received') {
+                throw new RuntimeException('Confirm the company registration payment in Payment Verification to complete registration.');
             }
         }
     }
@@ -217,7 +220,7 @@ try {
                     (company_name, company_logo, contact_number, headquarter_email, location,
                      business_license, business_license_image, business_license_expire_date,
                      expire_at, station_count, status)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, \'pending\')'
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, \'active\')'
             );
             if (!$headquarterInsert) {
                 throw new RuntimeException('Could not prepare the company account creation.');
@@ -257,7 +260,7 @@ try {
             : null;
         $serviceExpiryUpdate = $conn->prepare(
             'UPDATE headquarter
-             SET status = \'pending\',
+             SET status = \'active\',
                  service_expires_at = ?,
                  included_stations_free_until = NULL,
                  created_at = created_at,
@@ -619,7 +622,14 @@ try {
 } catch (Throwable $exception) {
     $conn->rollback();
     error_log('[Request registry] Review failed: ' . $exception->getMessage());
-    request_flash('danger', 'The request could not be updated. Please try again.');
+    $companyApprovalError = isset($requestType)
+        && $requestType === 'hq_registration'
+        && $action === 'approve'
+        && $exception instanceof RuntimeException;
+    request_flash(
+        'danger',
+        $companyApprovalError ? $exception->getMessage() : 'The request could not be updated. Please try again.'
+    );
 }
 
 request_redirect();

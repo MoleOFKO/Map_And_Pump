@@ -68,7 +68,7 @@ if ($adminUserId > 0) {
 }
 
 if (!$isAdmin) {
-    moderator_search_json(false, 'Only administrators can search accounts for moderator hiring.');
+    moderator_search_json(false, 'Only administrators can search for accounts to invite as moderators.');
 }
 
 if (!moderator_schema_ready()) {

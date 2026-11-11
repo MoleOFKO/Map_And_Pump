@@ -56,6 +56,41 @@ function mail_config_value(string $key, string $default = ''): string
     return is_string($value) && trim($value) !== '' ? trim($value) : $default;
 }
 
+function mail_smtp_is_configured(): bool
+{
+    return mail_config_value('SMTP_USERNAME') !== ''
+        && mail_config_value('SMTP_PASSWORD') !== ''
+        && mail_config_value('SMTP_FROM_EMAIL', mail_config_value('SMTP_USERNAME')) !== '';
+}
+
+function mail_resend_is_configured(): bool
+{
+    return mail_config_value('RESEND_API_KEY') !== ''
+        && mail_config_value('RESEND_FROM_EMAIL', mail_from_address()) !== '';
+}
+
+/** Prefer MAIL_PROVIDER, but use the other configured provider as a fallback. */
+function mail_active_provider(): ?string
+{
+    $preferred = strtolower(mail_config_value('MAIL_PROVIDER', 'smtp'));
+    $available = [
+        'smtp' => mail_smtp_is_configured(),
+        'resend' => mail_resend_is_configured(),
+    ];
+
+    if (!empty($available[$preferred])) {
+        return $preferred;
+    }
+    if ($available['smtp']) {
+        return 'smtp';
+    }
+    if ($available['resend']) {
+        return 'resend';
+    }
+
+    return null;
+}
+
 function mail_from_address(): string
 {
     return mail_config_value(
@@ -163,7 +198,12 @@ function smtp_send_mail_via_phpmailer(string $to, string $subject, string $htmlB
 
 function smtp_send_mail(string $to, string $subject, string $htmlBody, string $textBody = ''): void
 {
-    if (strtolower(mail_config_value('MAIL_PROVIDER', 'smtp')) === 'resend') {
+    $provider = mail_active_provider();
+    if ($provider === null) {
+        throw new RuntimeException('No email provider is configured. Configure Resend or SMTP credentials.');
+    }
+
+    if ($provider === 'resend') {
         resend_send_mail($to, $subject, $htmlBody, $textBody);
         return;
     }

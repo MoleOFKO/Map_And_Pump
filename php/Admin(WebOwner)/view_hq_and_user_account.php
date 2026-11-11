@@ -289,7 +289,7 @@ $flashContext = $flash['context'] ?? [];
                     <div class="table-responsive hq-table-scroll">
                         <table class="table table-dark-custom align-middle m-0">
                             <thead>
-                                <tr><th>Company &amp; Owner</th><th>Role</th><th>Company Location</th><th>Stations</th><th>Owner Account Status</th><th class="text-end">Command</th></tr>
+                                <tr><th>Company &amp; Owner</th><th>Role</th><th>Location</th><th>Stations</th><th>Owner status</th><th class="text-end">Actions</th></tr>
                             </thead>
                             <tbody>
                                 <?php if (!$hqRows): ?>
@@ -297,13 +297,13 @@ $flashContext = $flash['context'] ?? [];
                                 <?php endif; ?>
                                 <?php foreach ($hqRows as $row): ?>
                                     <?php
-                                    $companyName = (string) ($row['company_name'] ?? 'Unnamed Company');
-                                    $ownerName = (string) ($row['owner_name'] ?? 'No owner account');
-                                    $ownerEmail = (string) ($row['owner_email'] ?? 'No email available');
+                                    $companyName = (string) ($row['company_name'] ?? 'Company name unavailable');
+                                    $ownerName = (string) ($row['owner_name'] ?? 'Owner account unavailable');
+                                    $ownerEmail = (string) ($row['owner_email'] ?? 'Not provided');
                                     $rowStatus = (string) ($row['account_status'] ?? 'pending');
                                     $stationCount = (int) ($row['station_count'] ?? 0);
                                     $locationParts = preg_split('/\s+[—-]\s+/u', (string) ($row['location'] ?? ''), 2) ?: [];
-                                    $locationRegion = $locationParts[0] ?? 'Location not available';
+                                    $locationRegion = $locationParts[0] ?? 'Not provided';
                                     $locationAddress = $locationParts[1] ?? '';
                                     ?>
                                     <tr>
@@ -330,7 +330,7 @@ $flashContext = $flash['context'] ?? [];
                                         <td class="text-end">
                                             <div class="d-flex gap-2 justify-content-end">
                                                 <a href="#" class="btn-action js-view-hq" title="View Stations &amp; Accounts" aria-label="View <?= hq_escape($companyName) ?> details" data-hq-id="<?= (int) $row['headquarter_id'] ?>"><i class="bi bi-eye-fill"></i></a>
-                                                <a href="#" class="btn-action btn-action-danger js-account-action" title="Activate / Suspend / Remove Company" aria-label="Change status for <?= hq_escape($companyName) ?>" data-hq-id="<?= (int) $row['headquarter_id'] ?>" data-hq-name="<?= hq_escape($companyName) ?>" data-hq-status="<?= hq_escape($rowStatus) ?>"><i class="bi bi-gear-fill"></i></a>
+                                                <a href="#" class="btn-action btn-action-danger js-account-action" title="Manage company account" aria-label="Change status for <?= hq_escape($companyName) ?>" data-hq-id="<?= (int) $row['headquarter_id'] ?>" data-hq-name="<?= hq_escape($companyName) ?>" data-hq-status="<?= hq_escape($rowStatus) ?>"><i class="bi bi-gear-fill"></i></a>
                                             </div>
                                         </td>
                                     </tr>
@@ -346,13 +346,13 @@ $flashContext = $flash['context'] ?? [];
     <div class="modal fade glass-modal" id="accountActionModal" tabindex="-1" aria-labelledby="accountActionModalLabel" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
             <div class="modal-content">
-                <div class="modal-header"><h5 class="modal-title fw-bold" id="accountActionModalLabel"><i class="bi bi-shield-exclamation text-danger me-2"></i> Company Account Review</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button></div>
+                <div class="modal-header"><h5 class="modal-title fw-bold" id="accountActionModalLabel"><i class="bi bi-shield-exclamation text-danger me-2"></i> Manage company account</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button></div>
                 <form action="hq_account_action.php" method="POST">
                     <div class="modal-body d-flex flex-column gap-3">
                         <input type="hidden" name="headquarter_id" id="actionHQId"><input type="hidden" name="return_to" value="view_hq_and_user_account.php">
-                        <div class="small text-white-50">Target Company: <span class="txt-neon-cyan fw-semibold" id="actionHQName">—</span></div>
-                        <div><label class="form-label text-white-50 small" for="actionType">Account action</label><select class="form-select glass-select account-action-select" name="action_type" id="actionType" required><option value="activate">Activate pending company</option><option value="suspend">Suspend account</option><option value="remove">Remove account</option><option value="restore">Restore (approve again)</option></select></div>
-                        <div><label class="form-label text-white-50 small" for="actionReason">Reason to record and notify</label><textarea class="form-control glass-input" name="reason" id="actionReason" rows="5" maxlength="2000" placeholder="Explain why this company account is being suspended, removed, or restored..." required style="resize:none;"></textarea></div>
+                        <div class="small text-white-50">Company: <span class="txt-neon-cyan fw-semibold" id="actionHQName">—</span></div>
+                        <div><label class="form-label text-white-50 small" for="actionType">Account action</label><select class="form-select glass-select account-action-select" name="action_type" id="actionType" required><option value="activate">Activate pending company</option><option value="suspend">Suspend account</option><option value="remove">Remove account</option><option value="restore">Restore account</option></select></div>
+                        <div><label class="form-label text-white-50 small" for="actionReason">Reason</label><textarea class="form-control glass-input" name="reason" id="actionReason" rows="5" maxlength="2000" placeholder="Explain why this company account is being suspended, removed, or restored..." required style="resize:none;"></textarea></div>
 
                     </div>
                     <div class="modal-footer"><button type="button" class="btn btn-outline-secondary rounded-3 text-white-50 border-secondary border-opacity-20" data-bs-dismiss="modal">Cancel</button><button type="submit" class="btn btn-danger" id="actionSubmit">Confirm Suspend</button></div>
@@ -405,7 +405,7 @@ $flashContext = $flash['context'] ?? [];
 
             const updateActionButton = () => {
                 const kind = actionType.value;
-                actionSubmit.textContent = ({activate:'Confirm Activation', remove:'Confirm Remove', restore:'Confirm Restore', suspend:'Confirm Suspend'})[kind];
+                actionSubmit.textContent = ({activate:'Confirm activation', remove:'Confirm removal', restore:'Confirm restoration', suspend:'Confirm suspension'})[kind];
                 actionSubmit.classList.toggle('btn-danger', !['activate', 'restore'].includes(kind));
                 actionSubmit.classList.toggle('btn-neon', ['activate', 'restore'].includes(kind));
             };
@@ -416,7 +416,7 @@ $flashContext = $flash['context'] ?? [];
                 if (!button) return;
                 event.preventDefault();
                 actionId.value = button.dataset.hqId || '';
-                actionName.textContent = button.dataset.hqName || 'Selected Company';
+                actionName.textContent = button.dataset.hqName || 'Selected company';
                 actionType.value = button.dataset.hqStatus === 'pending' ? 'activate' : 'suspend';
                 updateActionButton();
                 document.getElementById('actionReason').value = '';

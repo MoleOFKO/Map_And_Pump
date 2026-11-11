@@ -10,18 +10,7 @@ require_once __DIR__ . '/mailer.php';
  */
 function mail_is_configured(): bool
 {
-    $provider = strtolower(mail_config_value('MAIL_PROVIDER', 'smtp'));
-
-    if ($provider === 'resend') {
-        return mail_config_value('RESEND_API_KEY') !== ''
-            && mail_config_value('RESEND_FROM_EMAIL', mail_from_address()) !== '';
-    }
-
-    $username = mail_config_value('SMTP_USERNAME');
-    $password = mail_config_value('SMTP_PASSWORD');
-    $from = mail_config_value('SMTP_FROM_EMAIL', $username);
-
-    return $username !== '' && $password !== '' && $from !== '';
+    return mail_active_provider() !== null;
 }
 
 /**

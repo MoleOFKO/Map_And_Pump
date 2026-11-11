@@ -366,6 +366,247 @@ function payment_transfer_activate_hq_registration(PDO $pdo, array $transfer): b
     return true;
 }
 
+/** Complete a paid HQ registration when its recipient confirms payment. */
+function payment_transfer_complete_hq_registration(PDO $pdo, array $transfer, int $reviewerId): array
+{
+    $requestId = (int) ($transfer['request_id'] ?? 0);
+    $transferId = (int) ($transfer['payment_transfer_id'] ?? 0);
+    if ($requestId <= 0 || $transferId <= 0) {
+        throw new RuntimeException('The company registration payment is not linked to a valid request.');
+    }
+
+    $requestStmt = $pdo->prepare(
+        "SELECT * FROM system_requests
+         WHERE request_id = ? AND request_type = 'hq_registration'
+         LIMIT 1 FOR UPDATE"
+    );
+    $requestStmt->execute([$requestId]);
+    $request = $requestStmt->fetch(PDO::FETCH_ASSOC);
+    if (!$request) {
+        throw new RuntimeException('The company registration request could not be found.');
+    }
+
+    $details = json_decode((string) ($request['request_details'] ?? ''), true);
+    if (!is_array($details)) {
+        throw new RuntimeException('The company registration details are invalid.');
+    }
+    $stationCount = (int) ($details['requested_station_count'] ?? 0);
+    $months = (int) ($details['requested_service_months'] ?? 1);
+    $extraStationCount = max(0, $stationCount - BILLING_HQ_INCLUDED_STATION_SLOTS);
+    $quantityValid = !empty($transfer['service_start_month'])
+        ? (int) ($transfer['quantity'] ?? 0) === $stationCount
+        : (int) ($transfer['quantity'] ?? 0) >= $extraStationCount;
+    $expectedAmount = isset($details['registration_amount_mmk'])
+        ? (float) $details['registration_amount_mmk']
+        : null;
+    if ($stationCount < BILLING_HQ_INCLUDED_STATION_SLOTS || $stationCount > 60
+        || $months < 1 || $months > 24
+        || (float) ($transfer['amount_mmk'] ?? 0) <= 0
+        || !$quantityValid
+        || (int) ($transfer['term_months'] ?? 0) !== $months
+        || ($expectedAmount !== null && abs((float) $transfer['amount_mmk'] - $expectedAmount) > 0.01)) {
+        throw new RuntimeException('The confirmed payment does not match the requested company registration package.');
+    }
+
+    $status = strtolower(trim((string) ($request['status'] ?? '')));
+    $wasPending = $status === 'pending';
+    if (!$wasPending && $status !== 'approved') {
+        throw new RuntimeException('This company registration is no longer awaiting approval.');
+    }
+    if ($wasPending) {
+        $receiptStmt = $pdo->prepare(
+            'SELECT 1 FROM payment_transfer_receipts WHERE payment_transfer_id = ? LIMIT 1'
+        );
+        $receiptStmt->execute([$transferId]);
+        if (!$receiptStmt->fetchColumn()) {
+            throw new RuntimeException('The company registration payment screenshot is missing.');
+        }
+    }
+
+    require_once __DIR__ . '/shared/license_expiry_date.php';
+    $headquarterId = (int) ($request['headquarter_id'] ?? 0);
+    if ($headquarterId <= 0) {
+        $licenseExpiryDate = map_pump_parse_license_expiry_date(
+            (string) ($details['license_expiry'] ?? $request['headquarter_expire_at'] ?? '')
+        );
+        if ($licenseExpiryDate === null) {
+            throw new RuntimeException('The company registration is missing a valid license expiry date.');
+        }
+        $insertHq = $pdo->prepare(
+            "INSERT INTO headquarter
+                (company_name, company_logo, contact_number, headquarter_email, location,
+                 business_license, business_license_image, business_license_expire_date,
+                 expire_at, station_count, status)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')"
+        );
+        $insertHq->execute([
+            (string) $request['sender_entity'],
+            (string) ($request['headquarter_company_logo'] ?? ''),
+            (string) ($request['headquarter_contact_number'] ?? ''),
+            (string) ($request['headquarter_email'] ?? ''),
+            (string) ($request['location'] ?? ''),
+            (string) ($request['document_name'] ?? ''),
+            (string) ($request['document_path'] ?? ''),
+            $licenseExpiryDate,
+            $licenseExpiryDate . ' 23:59:59',
+            BILLING_HQ_INCLUDED_STATION_SLOTS,
+        ]);
+        $headquarterId = (int) $pdo->lastInsertId();
+        $linkRequest = $pdo->prepare('UPDATE system_requests SET headquarter_id = ? WHERE request_id = ?');
+        $linkRequest->execute([$headquarterId, $requestId]);
+    }
+
+    $licenseExpirySource = array_key_exists('license_expiry', $details)
+        ? trim((string) $details['license_expiry'])
+        : substr(trim((string) ($request['headquarter_expire_at'] ?? '')), 0, 10);
+    $licenseExpiryDate = map_pump_parse_license_expiry_date($licenseExpirySource);
+    if ($licenseExpiryDate === null) {
+        throw new RuntimeException('The company registration is missing a valid license expiry date.');
+    }
+    $licenseExpiryTs = $licenseExpiryDate . ' 23:59:59';
+
+    $activateHq = $pdo->prepare(
+        "UPDATE headquarter
+         SET status = 'active', business_license_expire_date = ?, expire_at = ?, created_at = created_at
+         WHERE headquarter_id = ?"
+    );
+    $activateHq->execute([$licenseExpiryDate, $licenseExpiryTs, $headquarterId]);
+    $existsHq = $pdo->prepare('SELECT 1 FROM headquarter WHERE headquarter_id = ? LIMIT 1 FOR UPDATE');
+    $existsHq->execute([$headquarterId]);
+    if (!$existsHq->fetchColumn()) {
+        throw new RuntimeException('The company account could not be activated.');
+    }
+
+    $linkPayment = $pdo->prepare(
+        'UPDATE payment_transfers SET payer_headquarter_id = ? WHERE payment_transfer_id = ?'
+    );
+    $linkPayment->execute([$headquarterId, $transferId]);
+    $transfer['payer_headquarter_id'] = $headquarterId;
+
+    if ($wasPending) {
+        $approve = $pdo->prepare(
+            "UPDATE system_requests
+             SET status = 'approved', review_reason = 'Approved after payment verification.',
+                 reviewed_at = NOW(), reviewed_by = ?, updated_at = NOW(), headquarter_id = ?
+             WHERE request_id = ? AND status = 'pending'"
+        );
+        $approve->execute([$reviewerId > 0 ? $reviewerId : null, $headquarterId, $requestId]);
+        if ($approve->rowCount() !== 1) {
+            throw new RuntimeException('The company registration request has already changed.');
+        }
+    }
+
+    if (!payment_transfer_activate_hq_registration($pdo, $transfer)) {
+        throw new RuntimeException('The company service package could not be activated.');
+    }
+
+    $jobs = [];
+    if ($wasPending) {
+        if (!function_exists('hq_password_setup_create_link')) {
+            throw new RuntimeException('Company password setup is unavailable.');
+        }
+        $ownerEmail = strtolower(trim((string) ($request['headquarter_owner_email'] ?? '')));
+        if ($ownerEmail === '') {
+            $ownerEmail = strtolower(trim((string) ($request['headquarter_email'] ?? $request['sender_email'] ?? '')));
+        }
+        if (!filter_var($ownerEmail, FILTER_VALIDATE_EMAIL)) {
+            throw new RuntimeException('The approved company has no valid owner or company email address.');
+        }
+        $setupUrl = hq_password_setup_create_link($pdo, $headquarterId);
+        $receiptContext = [
+            'kind' => 'hq_registration_receipt',
+            'company_name' => (string) $request['sender_entity'],
+            'request_reference' => (string) $request['reference_code'],
+            'payment_reference' => (string) ($transfer['reference_code'] ?? ''),
+            'description' => (string) ($transfer['description'] ?? 'Company registration payment'),
+            'payment_method' => (string) ($transfer['payment_method'] ?? ''),
+            'payment_status' => 'received',
+            'amount_mmk' => (float) $transfer['amount_mmk'],
+        ];
+        $mailContexts = [
+            [
+                'notification_type' => 'hq_password_setup',
+                'message' => 'Set up the password for your approved Company account.',
+                'email' => $ownerEmail,
+                'context' => [
+                    'kind' => 'account_password_setup',
+                    'account_label' => 'Company',
+                    'account_name' => (string) $request['sender_entity'],
+                    'setup_url' => $setupUrl,
+                    'reference_code' => (string) $request['reference_code'],
+                ],
+            ],
+            [
+                'notification_type' => 'hq_registration_receipt',
+                'message' => 'Your Company registration payment record is available in this email.',
+                'email' => $ownerEmail,
+                'context' => $receiptContext,
+            ],
+            [
+                'notification_type' => 'hq_registration_approved',
+                'message' => sprintf('Your company registration for %s was approved after payment verification.', (string) $request['sender_entity']),
+                'email' => $ownerEmail,
+                'context' => [
+                    'kind' => 'hq_registration_approved',
+                    'company_name' => (string) $request['sender_entity'],
+                    'reviewer_label' => 'Administrator or Moderator',
+                    'reference_code' => (string) $request['reference_code'],
+                    'login_url' => payment_transfer_absolute_url('/php/Login/login.php'),
+                ],
+            ],
+        ];
+        foreach ($mailContexts as $mailJob) {
+            $mail = mail_build_account_notice($mailJob['context']);
+            $insertNotice = $pdo->prepare(
+                'INSERT INTO notifications
+                    (request_id, recipient_email, notification_type, subject, message, delivery_status, delivery_note)
+                 VALUES (?, ?, ?, ?, ?, \'pending\', \'Email will be sent after the payment confirmation transaction commits.\')'
+            );
+            $insertNotice->execute([
+                $requestId,
+                $mailJob['email'],
+                $mailJob['notification_type'],
+                (string) ($mail['subject'] ?? 'Map & Pump company registration update'),
+                $mailJob['message'],
+            ]);
+            $jobs[] = [
+                'notification_id' => (int) $pdo->lastInsertId(),
+                'email' => $mailJob['email'],
+                'context' => $mailJob['context'],
+                'subject' => (string) ($mail['subject'] ?? 'Map & Pump company registration update'),
+            ];
+        }
+    }
+
+    return [
+        'activated' => true,
+        'auto_approved' => $wasPending,
+        'headquarter_id' => $headquarterId,
+        'mail_jobs' => $jobs,
+    ];
+}
+
+/** Deliver registration messages prepared in the same transaction as approval. */
+function payment_transfer_send_hq_registration_notices(PDO $pdo, array $jobs): void
+{
+    foreach ($jobs as $job) {
+        try {
+            $mail = mail_send_account_notice((string) ($job['email'] ?? ''), (array) ($job['context'] ?? []));
+            $update = $pdo->prepare(
+                'UPDATE notifications SET subject = ?, delivery_status = ?, delivery_note = ? WHERE notification_id = ?'
+            );
+            $update->execute([
+                (string) ($mail['subject'] ?? $job['subject'] ?? 'Map & Pump company registration update'),
+                (string) ($mail['status'] ?? 'failed'),
+                substr((string) ($mail['note'] ?? 'Email delivery failed.'), 0, 255),
+                (int) ($job['notification_id'] ?? 0),
+            ]);
+        } catch (Throwable $error) {
+            error_log('payment_transfer_send_hq_registration_notices: ' . $error->getMessage());
+        }
+    }
+}
+
 /** Return active platform Admin accounts that may receive platform-fee notices. */
 function payment_transfer_admin_recipients(PDO $pdo): array
 {
