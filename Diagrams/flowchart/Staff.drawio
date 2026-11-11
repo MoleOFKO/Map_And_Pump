@@ -1,6 +1,6 @@
 <mxfile host="65bd71144e">
     <diagram id="YlJEispRjf1XqH8je4Tc" name="Page-1">
-        <mxGraphModel dx="743" dy="386" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" background="#ffffff" math="0" shadow="0">
+        <mxGraphModel dx="991" dy="671" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" background="#ffffff" math="0" shadow="0">
             <root>
                 <mxCell id="0"/>
                 <mxCell id="1" parent="0"/>
@@ -120,7 +120,7 @@
                 <mxCell id="13" edge="1" parent="cWLGQJMK8xU7PDPDDmh0-14" source="12" style="edgeStyle=none;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="vJbsyR4YLVCGQT26c1s1-27">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
-                <mxCell id="12" parent="cWLGQJMK8xU7PDPDDmh0-14" style="whiteSpace=wrap;html=1;fontSize=15;dashed=0;fontStyle=1;strokeWidth=2;" value="View booked&lt;div&gt;info&lt;/div&gt;" vertex="1">
+                <mxCell id="12" parent="cWLGQJMK8xU7PDPDDmh0-14" style="whiteSpace=wrap;html=1;fontSize=15;dashed=0;fontStyle=1;strokeWidth=2;" value="View booked&lt;div&gt;info and confirm&lt;/div&gt;" vertex="1">
                     <mxGeometry height="67.3314606741573" width="106.4153668072954" x="186.89188881056089" y="597.005617977528" as="geometry"/>
                 </mxCell>
                 <mxCell id="2tVAOs-xwB5IslTZQyUz-14" edge="1" parent="cWLGQJMK8xU7PDPDDmh0-14" source="2tVAOs-xwB5IslTZQyUz-13" style="edgeStyle=orthogonalEdgeStyle;shape=connector;rounded=0;html=1;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;strokeColor=default;strokeWidth=2;align=center;verticalAlign=middle;fontFamily=Helvetica;fontSize=11;fontColor=default;labelBackgroundColor=default;endArrow=classic;" target="vJbsyR4YLVCGQT26c1s1-23">
