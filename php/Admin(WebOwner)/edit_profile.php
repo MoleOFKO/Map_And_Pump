@@ -66,22 +66,141 @@ if ($hasCustomerProfile) {
     <title>Edit Profile — Map &amp; Pump</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
     <link rel="icon" type="image/png" href="/images/Logo.png">
     <link rel="stylesheet" href="/css/Admin.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
 <style>
-        .profile-flash { border-radius:14px; background:rgba(10,22,44,.82); border:1px solid var(--glass-border); color:var(--text-primary); }
-        body.background_color.light-mode .profile-flash { background:rgba(255,255,255,.92); }
+        body.background_color.admin-blue-page {
+            --ab-bg: #0b1220;
+            --ab-surface: #121d2d;
+            --ab-raised: #182537;
+            --ab-border: #27364a;
+            --ab-text: #edf3fa;
+            --ab-muted: #a4b3c6;
+            --ab-accent: #79aaff;
+            --ab-warning: #f7ca72;
+            --ab-danger: #ff9aab;
+            --neon-cyan: var(--ab-accent);
+            --glass-border: var(--ab-border);
+            --text-primary: var(--ab-text);
+            --text-muted: var(--ab-muted);
+            min-height: 100vh;
+            color: var(--ab-text);
+            font-family: 'Poppins',system-ui,sans-serif;
+            background: radial-gradient(ellipse at 90% 0%, rgba(45,80,155,.13), transparent 48%), var(--ab-bg);
+            background-repeat: no-repeat;
+        }
+        body.background_color.admin-blue-page:is(.light-mode,[data-theme="light"]) {
+            --ab-bg: #f1f5f8;
+            --ab-surface: #fff;
+            --ab-raised: #f4f7fa;
+            --ab-border: #d9e3ec;
+            --ab-text: #172b40;
+            --ab-muted: #53667b;
+            --ab-accent: #285ec7;
+            --ab-warning: #865b08;
+            --ab-danger: #b0354c;
+        }
+        .admin-blue-page .admin-blue-shell {
+            max-width: 1480px;
+            padding-inline: clamp(16px,3.5vw,48px);
+            margin: 36px auto 24px !important;
+            color: var(--ab-text);
+            font: 14px/1.65 'Poppins',system-ui,sans-serif;
+        }
+        .admin-blue-page .admin-blue-header { padding: 8px 0 28px; border-bottom: 1px solid var(--ab-border); }
+        .admin-blue-page .admin-blue-header h1 {
+            margin-top: 8px !important;
+            color: var(--ab-text) !important;
+            font-size: clamp(26px,3vw,38px);
+            font-weight: 600 !important;
+            line-height: 1.3;
+        }
+        .admin-blue-page .admin-blue-header .stat-chip {
+            padding: 0;
+            border: 0;
+            border-radius: 0;
+            background: none;
+            color: var(--ab-accent);
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: .13em;
+            text-transform: uppercase;
+        }
+        .admin-blue-page .admin-blue-description { max-width: 660px; margin: 12px 0 0; color: var(--ab-muted); font-size: 13px; }
+        .admin-blue-page .admin-blue-shell :is(.text-white,.fw-bold) { color: var(--ab-text) !important; }
+        .admin-blue-page .admin-blue-shell :is(.text-white-50,.form-label) { color: var(--ab-muted) !important; }
+        .admin-blue-page .admin-blue-shell :is(.txt-neon-cyan,.text-info,.text-success) { color: var(--ab-accent) !important; }
+        .admin-blue-page .admin-blue-shell .text-warning { color: var(--ab-warning) !important; }
+        .admin-blue-page .admin-blue-shell .text-danger { color: var(--ab-danger) !important; }
+        .admin-blue-page .admin-blue-shell .dashboard-card {
+            border: 1px solid var(--ab-border);
+            border-radius: 14px;
+            background: var(--ab-surface);
+            color: var(--ab-text);
+            box-shadow: 0 6px 24px rgba(0,0,0,.08);
+        }
+        .admin-blue-page .admin-blue-shell :is(.form-control,.form-select) {
+            min-height: 44px;
+            border: 1px solid var(--ab-border);
+            border-radius: 8px;
+            background: var(--ab-raised);
+            color: var(--ab-text);
+            font: 13px/1.5 'Poppins',system-ui,sans-serif;
+            box-shadow: none;
+        }
+        .admin-blue-page .admin-blue-shell :is(.form-control,.form-select):focus {
+            border-color: var(--ab-accent);
+            outline: 2px solid var(--ab-accent);
+            outline-offset: 2px;
+        }
+        .admin-blue-page .admin-blue-shell .form-control::placeholder { color: var(--ab-muted); }
+        .admin-blue-page .admin-blue-shell :is(.btn,.btn-outline-info) {
+            min-height: 40px;
+            border-radius: 8px;
+            font-family: inherit;
+            font-size: 12px;
+            font-weight: 500;
+        }
+        .admin-blue-page .admin-blue-shell .btn-neon {
+            border: 1px solid #79aaff;
+            background: #79aaff;
+            color: #10284c;
+            box-shadow: none;
+        }
+        .admin-blue-page .admin-blue-shell .btn-outline-info {
+            border-color: var(--ab-border);
+            background: var(--ab-raised);
+            color: var(--ab-accent);
+        }
+        .admin-blue-page .admin-blue-shell .profile-flash,
+        .admin-blue-page .admin-blue-shell .alert {
+            border: 1px solid var(--ab-border);
+            border-radius: 10px;
+            background: var(--ab-raised);
+            color: var(--ab-text);
+        }
+        .admin-blue-page .admin-blue-shell .badge.bg-info {
+            border-color: var(--ab-border) !important;
+            background: rgba(121,170,255,.1) !important;
+            color: var(--ab-accent) !important;
+        }
+        .admin-blue-page footer { color: var(--ab-muted) !important; font: 11px/1.6 'Poppins',system-ui,sans-serif; }
+        @media (max-width: 767.98px) {
+            .admin-blue-page .admin-blue-shell { margin-top: 22px !important; }
+        }
     </style>
 </head>
-<body class="background_color" id="background_color">
+<body class="background_color admin-blue-page" id="background_color">
 <?php $adminSection = 'profile'; include __DIR__ . '/admin_section_nav.php'; ?>
 
-    <main class="container my-5" style="max-width:1140px;">
-        <div class="mb-4">
+    <main class="container my-5 admin-blue-shell">
+        <div class="admin-blue-header mb-4">
             <span class="stat-chip mb-2"><i class="bi bi-person-badge-fill txt-neon-cyan"></i> Account Settings</span>
             <h1 class="fw-bold m-0 h4 text-white mt-2">Edit Profile Details</h1>
+            <p class="admin-blue-description">Manage your profile information, password, and account security.</p>
         </div>
         
         <?php if ($flash): ?>
@@ -101,10 +220,10 @@ if ($hasCustomerProfile) {
         <div class="row g-4">
             
             <!-- Profile overview and personal information -->
-            <div class="col-12 col-lg-5">
+            <div class="col-12 col-lg-6">
                 
                 <!-- Profile Avatar & Details Card -->
-                <div class="dashboard-card p-4">
+                <div class="dashboard-card p-4 h-100">
                     <div class="text-center pb-4 border-bottom border-white border-opacity-10">
                         <form action="update_avatar_action.php" method="POST" enctype="multipart/form-data" id="avatarForm">
                             <div class="profile-avatar-container mb-3 mx-auto">
@@ -134,8 +253,8 @@ if ($hasCustomerProfile) {
 
             </div>
 
-            <div class="col-12 col-lg-7">
-                <div class="dashboard-card p-4">
+            <div class="col-12 col-lg-6">
+                <div class="dashboard-card p-4 h-100">
                     <h5 class="fw-bold text-white mb-4"><i class="bi bi-sliders txt-neon-cyan me-2"></i>Personal Information</h5>
                     <form action="update_profile_action.php" method="POST">
                         <div class="row g-3">
@@ -157,7 +276,7 @@ if ($hasCustomerProfile) {
 
             <!-- Compact linked driver profile beside Security & Password -->
             <div class="col-12 col-lg-5">
-                <div class="dashboard-card p-4 h-100" style="border-color:rgba(0,244,255,.18);background:rgba(0,244,255,.025)!important;">
+                <div class="dashboard-card p-4 h-100">
                     <h6 class="fw-bold text-white mb-3"><i class="bi bi-fuel-pump txt-neon-cyan me-2"></i>Driver Gas Profile</h6>
                     <?php if ($hasCustomerProfile): ?>
                         <div class="small text-white-50 mb-2">
