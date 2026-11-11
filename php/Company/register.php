@@ -7,6 +7,7 @@ $page_description = 'Submit your company details to join MAP & PUMP.';
 $page_styles = ['/css/CompanyRegistration.css'];
 require_once __DIR__ . '/../billing_config.php';
 require_once __DIR__ . '/../conn.php';
+require_once __DIR__ . '/../account_identity.php';
 require_once __DIR__ . '/../payment_transfers.php';
 require_once __DIR__ . '/../imgbb_image_host.php';
 require_once __DIR__ . '/../shared/license_expiry_date.php';
