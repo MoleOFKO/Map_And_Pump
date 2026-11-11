@@ -16,8 +16,8 @@
                 </div>
                 <div class="social-row">
                     <a href="https://www.facebook.com/profile.php?id=61593561616596" target="_blank" rel="noopener" aria-label="Facebook"><i class="fa-brands fa-facebook-f"></i></a>
-                    <a href="#" aria-label="Telegram"><i class="fa-brands fa-telegram"></i></a>
-                    <a href="#" aria-label="Viber"><i class="fa-brands fa-viber"></i></a>
+                    <a href="https://t.me/Map_And_Pump_2026" target="_blank" rel="noopener noreferrer" aria-label="Join our Telegram"><i class="fa-brands fa-telegram"></i></a>
+                    <a href="https://invite.viber.com/?g2=AQB%2FPXj%2Bo7hnMVdzHzRWu0o8PWlJAgvqUtOhOB8SkO9LoE4JRV%2BXnMitkrNoDm%2BQ" target="_blank" rel="noopener noreferrer" aria-label="Join our Viber community"><i class="fa-brands fa-viber"></i></a>
                     <a href="mailto:map.and.pump@gmail.com" aria-label="Email"><i class="fa-solid fa-envelope"></i></a>
                 </div>
             </div>
