@@ -84,6 +84,8 @@ if (!$user) {
 }
 
 $actions = user_action_rows((int) $userId);
+// Conflict detection still uses NRC + license number server-side.
+// Sensitive identity fields (nrc_number, date_of_birth, blood_type) are never returned to staff UIs.
 $licenseConflicts = [];
 if (!empty($user['license_id'])
     && (trim((string) ($user['license_number'] ?? '')) !== '' || trim((string) ($user['nrc_number'] ?? '')) !== '')) {
@@ -119,6 +121,7 @@ if (!empty($user['license_id'])
                 if ($nrcNumber !== '' && strcasecmp(preg_replace('/\s+/', '', (string) $conflict['nrc_number']), preg_replace('/\s+/', '', $nrcNumber)) === 0) {
                     $duplicateFields[] = 'NRC number';
                 }
+                // Images stay available for conflict investigation; raw NRC is never exposed.
                 $licenseConflicts[] = [
                     'user_id' => (int) $conflict['user_id'],
                     'user_name' => $conflict['user_name'],
@@ -138,8 +141,53 @@ if (!empty($user['license_id'])
     }
 }
 
+$hasConflicts = count($licenseConflicts) > 0;
+$includeLicenseImages = $requestContext || $hasConflicts;
+
+$licensePayload = null;
+if ($user['license_id'] !== null) {
+    $licensePayload = [
+        'license_id' => (int) $user['license_id'],
+        'license_number' => $user['license_number'],
+        'license_name' => $user['license_name'],
+        'license_last_valid_date' => $user['license_last_valid_date'],
+        'status' => $user['license_status'],
+    ];
+    // Request review and conflict investigation need document images.
+    if ($includeLicenseImages) {
+        $licensePayload['license_image'] = $user['license_image'];
+        $licensePayload['face_image'] = $user['face_image'];
+    }
+    // phone_number, nrc_number, date_of_birth, blood_type are intentionally omitted from all staff responses.
+}
+
+$headquarterPayload = null;
+if ($user['headquarter_id'] !== null) {
+    if ($requestContext) {
+        // Request review: company identity needed to approve/reject linkage.
+        $headquarterPayload = [
+            'headquarter_id' => (int) $user['headquarter_id'],
+            'company_name' => $user['headquarter_name'],
+            'location' => $user['headquarter_location'],
+            'business_license' => $user['business_license'],
+            'business_license_image' => $user['business_license_image'],
+            'business_license_expire_date' => $user['business_license_expire_date'],
+            'expire_at' => $user['headquarter_expire_at'],
+            'company_logo' => $user['company_logo'],
+        ];
+    } else {
+        // Account management: minimum company summary only.
+        $headquarterPayload = [
+            'headquarter_id' => (int) $user['headquarter_id'],
+            'company_name' => $user['headquarter_name'],
+            'location' => $user['headquarter_location'],
+        ];
+    }
+}
+
 echo json_encode([
     'success' => true,
+    'context' => $requestContext ? 'request' : 'account',
     'user' => [
         'user_id' => (int) $user['user_id'],
         'user_public_id' => (string) ($user['user_public_id'] ?? ''),
@@ -156,33 +204,8 @@ echo json_encode([
         'role_id' => isset($user['role_id']) ? (int) $user['role_id'] : null,
         'role_name' => $user['role_name'],
     ],
-    'license' => $user['license_id'] !== null ? [
-        'license_id' => (int) $user['license_id'],
-        'license_number' => $user['license_number'],
-        'license_name' => $user['license_name'],
-        'phone_number' => $user['phone_number'],
-        'nrc_number' => $user['nrc_number'],
-        'date_of_birth' => $user['date_of_birth'],
-        'blood_type' => $user['blood_type'],
-        'license_last_valid_date' => $user['license_last_valid_date'],
-        'status' => $user['license_status'],
-        'license_image' => $user['license_image'],
-        'face_image' => $user['face_image'],
-    ] : null,
+    'license' => $licensePayload,
     'license_conflicts' => $licenseConflicts,
-    'headquarter' => $user['headquarter_id'] !== null ? [
-        'headquarter_id' => (int) $user['headquarter_id'],
-        'company_name' => $user['headquarter_name'],
-        'headquarters_owner_id' => isset($user['headquarters_owner_id']) ? (int) $user['headquarters_owner_id'] : null,
-        'company_logo' => $user['company_logo'],
-        'contact_number' => $user['contact_number'],
-        'headquarter_email' => $user['headquarter_email'],
-        'headquarter_bio' => $user['headquarter_bio'],
-        'location' => $user['headquarter_location'],
-        'business_license' => $user['business_license'],
-        'business_license_image' => $user['business_license_image'],
-        'business_license_expire_date' => $user['business_license_expire_date'],
-        'expire_at' => $user['headquarter_expire_at'],
-    ] : null,
-    'actions' => $actions,
+    'headquarter' => $headquarterPayload,
+    'actions' => $requestContext ? [] : $actions,
 ]);
