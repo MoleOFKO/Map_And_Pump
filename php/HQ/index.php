@@ -11,13 +11,11 @@ require_once __DIR__ . '/profile_schema.php';
 $loggedUserId = (int) ($_SESSION['user_id'] ?? 0);
 $loggedUserEmail = isset($_SESSION['user_email']) ? trim((string) $_SESSION['user_email']) : '';
 $hqAvatarSchemaReady = true;
-if (!empty($_SESSION['hq_auth'])) {
-    try {
-        hq_profile_ensure_avatar_schema($pdo);
-    } catch (Throwable $exception) {
-        $hqAvatarSchemaReady = false;
-        error_log('HQ profile avatar schema could not be prepared: ' . $exception->getMessage());
-    }
+try {
+    hq_profile_ensure_avatar_schema($pdo, !empty($_SESSION['hq_auth']));
+} catch (Throwable $exception) {
+    $hqAvatarSchemaReady = false;
+    error_log('HQ profile avatar schema could not be prepared: ' . $exception->getMessage());
 }
 if (empty($_SESSION['hq_notifications_csrf'])) {
     $_SESSION['hq_notifications_csrf'] = bin2hex(random_bytes(32));
@@ -72,10 +70,28 @@ $user_avatar = '';
 $user_initial = map_pump_profile_initial($user_display_name, 'H');
 $user_email_display = $loggedUserEmail ?: 'hq_admin@mapandpump.com';
 
-if ($loggedUserId > 0) {
-    // Fetch User Info, Headquarter Brand details, and OAuth avatar in a single query from database
+$isHqAuthSession = !empty($_SESSION['hq_auth']);
+$activeHqId = isset($_SESSION['headquarter_id']) ? (int) $_SESSION['headquarter_id'] : 0;
+
+if ($isHqAuthSession && $activeHqId > 0) {
+    $hqProfileStmt = $pdo->prepare(
+        'SELECT company_name AS user_name, headquarter_email AS email, profile_avatar_url AS oauth_avatar_url,
+                  ' . ($hqAvatarSchemaReady
+            ? 'CASE WHEN profile_avatar_data IS NOT NULL AND OCTET_LENGTH(profile_avatar_data) > 0 THEN 1 ELSE 0 END'
+            : '0') . ' AS has_profile_avatar,
+                  company_name, company_logo, headquarter_id
+         FROM headquarter
+         WHERE headquarter_id = ?
+         LIMIT 1'
+    );
+    $hqProfileStmt->execute([$activeHqId]);
+    $userHqRow = $hqProfileStmt->fetch(PDO::FETCH_ASSOC);
+} elseif ($loggedUserId > 0) {
     $userHqStmt = $pdo->prepare(
-        'SELECT u.user_name, u.email, u.oauth_avatar_url, 
+        'SELECT u.user_name, u.email, u.oauth_avatar_url,
+                  ' . ($hqAvatarSchemaReady
+            ? 'CASE WHEN u.profile_avatar_data IS NOT NULL AND OCTET_LENGTH(u.profile_avatar_data) > 0 THEN 1 ELSE 0 END'
+            : '0') . ' AS has_profile_avatar,
                   h.company_name, h.company_logo, h.headquarter_id
          FROM users u
               LEFT JOIN business_account_scope bas ON bas.user_id = u.user_id
@@ -85,46 +101,34 @@ if ($loggedUserId > 0) {
     );
     $userHqStmt->execute([$loggedUserId]);
     $userHqRow = $userHqStmt->fetch(PDO::FETCH_ASSOC);
-
-    if ($userHqRow) {
-        // Set User Details from database
-        if (!empty($userHqRow['user_name'])) {
-            $user_display_name = htmlspecialchars((string) $userHqRow['user_name'], ENT_QUOTES, 'UTF-8');
-            $user_initial = map_pump_profile_initial((string) $userHqRow['user_name'], 'H');
-        }
-        if (!empty($userHqRow['email'])) {
-            $user_email_display = htmlspecialchars((string) $userHqRow['email'], ENT_QUOTES, 'UTF-8');
-        }
-        if (!empty($userHqRow['oauth_avatar_url'])) {
-            $user_avatar = resolveImageUrl($userHqRow['oauth_avatar_url'], '');
-        }
-
-        // Set Brand Details from database
-        if (!empty($userHqRow['company_name'])) {
-            $brand_title = htmlspecialchars((string) $userHqRow['company_name'], ENT_QUOTES, 'UTF-8');
-        }
-        if (!empty($userHqRow['company_logo'])) {
-            $brand_logo = resolveImageUrl($userHqRow['company_logo'], '/images/Logo.png');
-        }
-        if (!empty($userHqRow['headquarter_id'])) {
-            $hq_id = (int) $userHqRow['headquarter_id'];
-        }
-    }
 } else {
-    $avatarColumn = $hqAvatarSchemaReady ? 'profile_avatar_url' : 'NULL';
-    $brandStmt = $pdo->prepare("SELECT company_name, company_logo, {$avatarColumn} AS profile_avatar_url FROM headquarter WHERE headquarter_id = ? LIMIT 1");
-    $brandStmt->execute([$hq_id]);
-    $brandRow = $brandStmt->fetch(PDO::FETCH_ASSOC);
-    if ($brandRow) {
-        if (!empty($brandRow['company_name'])) {
-            $brand_title = htmlspecialchars((string) $brandRow['company_name'], ENT_QUOTES, 'UTF-8');
-        }
-        if (!empty($brandRow['company_logo'])) {
-            $brand_logo = resolveImageUrl($brandRow['company_logo'], '/images/Logo.png');
-        }
-        if (!empty($brandRow['profile_avatar_url'])) {
-            $user_avatar = map_pump_profile_avatar_url((string) $brandRow['profile_avatar_url'], '');
-        }
+    $userHqRow = null;
+}
+
+if ($userHqRow) {
+    // Set User Details from database
+    if (!empty($userHqRow['user_name'])) {
+        $user_display_name = htmlspecialchars((string) $userHqRow['user_name'], ENT_QUOTES, 'UTF-8');
+        $user_initial = map_pump_profile_initial((string) $userHqRow['user_name'], 'H');
+    }
+    if (!empty($userHqRow['email'])) {
+        $user_email_display = htmlspecialchars((string) $userHqRow['email'], ENT_QUOTES, 'UTF-8');
+    }
+    if (!empty($userHqRow['has_profile_avatar'])) {
+        $user_avatar = '/php/HQ/profile_image.php';
+    } elseif (!empty($userHqRow['oauth_avatar_url'])) {
+        $user_avatar = resolveImageUrl($userHqRow['oauth_avatar_url'], '');
+    }
+
+    // Set Brand Details from database
+    if (!empty($userHqRow['company_name'])) {
+        $brand_title = htmlspecialchars((string) $userHqRow['company_name'], ENT_QUOTES, 'UTF-8');
+    }
+    if (!empty($userHqRow['company_logo'])) {
+        $brand_logo = resolveImageUrl($userHqRow['company_logo'], '/images/Logo.png');
+    }
+    if (!empty($userHqRow['headquarter_id'])) {
+        $hq_id = (int) $userHqRow['headquarter_id'];
     }
 }
 
@@ -473,12 +477,20 @@ echo $user_email_display; ?></p>
             ['headerUserAvatar', 'dropdownUserAvatar'].forEach(function (id) {
                 const currentAvatar = document.getElementById(id);
                 if (!currentAvatar) return;
-                const image = document.createElement('img');
-                image.id = id;
+
+                let image = currentAvatar;
+                if (currentAvatar.tagName !== 'IMG') {
+                    image = document.createElement('img');
+                    image.id = id;
+                    image.alt = 'User Avatar';
+                }
+                
                 image.className = currentAvatar.className.replace('user-avatar-initial', '').trim();
-                image.src = profile.avatarUrl + (profile.avatarUrl.includes('?') ? '&' : '?') + 'v=' + Date.now();
-                image.alt = 'User Avatar';
-                currentAvatar.replaceWith(image);
+                image.src = profile.avatarUrl;
+                
+                if (currentAvatar !== image) {
+                    currentAvatar.replaceWith(image);
+                }
             });
         } else if (profile.name) {
             const initial = Array.from(profile.name.trim())[0]?.toUpperCase() || 'H';

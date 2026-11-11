@@ -3,7 +3,6 @@ require_once __DIR__ . '/hq_guard.php';
 require_once __DIR__ . '/../conn.php';
 require_once __DIR__ . '/../account_deletion.php';
 require_once __DIR__ . '/../profile_avatar.php';
-require_once __DIR__ . '/../imgbb_image_host.php';
 require_once __DIR__ . '/profile_schema.php';
 
 if (empty($_SESSION['user_id']) && empty($_SESSION['hq_auth'])) {
@@ -15,14 +14,12 @@ if (empty($_SESSION['user_id']) && empty($_SESSION['hq_auth'])) {
 
 $userId = (int) ($_SESSION['user_id'] ?? 0);
 $isHqAuth = !empty($_SESSION['hq_auth']);
-$hqAvatarSchemaReady = true;
-if ($isHqAuth) {
-    try {
-        hq_profile_ensure_avatar_schema($pdo);
-    } catch (Throwable $exception) {
-        $hqAvatarSchemaReady = false;
-        error_log('HQ profile avatar schema could not be prepared: ' . $exception->getMessage());
-    }
+$avatarSchemaReady = true;
+try {
+    hq_profile_ensure_avatar_schema($pdo, $isHqAuth);
+} catch (Throwable $exception) {
+    $avatarSchemaReady = false;
+    error_log('HQ profile avatar schema could not be prepared: ' . $exception->getMessage());
 }
 if (empty($_SESSION['hq_customer_link_csrf'])) {
     $_SESSION['hq_customer_link_csrf'] = bin2hex(random_bytes(32));
@@ -34,10 +31,9 @@ if ($isHqAuth && empty($_SESSION['hq_switch_csrf'])) {
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     header('Content-Type: application/json; charset=utf-8');
+    $action = (string) ($_POST['action'] ?? '');
 
     try {
-        $action = $_POST['action'] ?? '';
-
         if ($action === 'request_deletion') {
             $context = map_pump_hq_owner_context($pdo, $userId);
             $confirmation = trim((string) ($_POST['account_name_delete_account'] ?? ''));
@@ -75,6 +71,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($action === 'update_profile') {
             $name = trim((string) ($_POST['name'] ?? ''));
             $email = trim((string) ($_POST['email'] ?? ''));
+            $profileId = $isHqAuth ? (int) ($_SESSION['headquarter_id'] ?? 0) : $userId;
+            if ($profileId <= 0) {
+                http_response_code(422);
+                echo json_encode(['ok' => false, 'message' => 'The account could not be identified. Please reload and try again.']);
+                exit;
+            }
 
             if ($name === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
                 http_response_code(422);
@@ -85,7 +87,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $emailCheck = $isHqAuth
                 ? $pdo->prepare('SELECT headquarter_id FROM headquarter WHERE LOWER(headquarter_email) = LOWER(?) AND headquarter_id <> ? LIMIT 1')
                 : $pdo->prepare('SELECT user_id FROM users WHERE LOWER(email) = LOWER(?) AND user_id <> ? LIMIT 1');
-            $emailCheck->execute([$email, $isHqAuth ? (int) ($_SESSION['headquarter_id'] ?? 0) : $userId]);
+            $emailCheck->execute([$email, $profileId]);
             if ($emailCheck->fetchColumn()) {
                 http_response_code(422);
                 echo json_encode(['ok' => false, 'message' => 'That email address is already in use.']);
@@ -96,28 +98,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $update = $pdo->prepare(
                     'UPDATE headquarter SET company_name = ?, headquarter_email = ? WHERE headquarter_id = ?'
                 );
-                $update->execute([$name, $email, (int) ($_SESSION['headquarter_id'] ?? 0)]);
+                $update->execute([$name, $email, $profileId]);
+                $savedProfile = $pdo->prepare('SELECT company_name AS user_name, headquarter_email AS email FROM headquarter WHERE headquarter_id = ? LIMIT 1');
             } else {
                 $update = $pdo->prepare('UPDATE users SET user_name = ?, email = ?, updated_at = NOW() WHERE user_id = ?');
-                $update->execute([$name, $email, $userId]);
+                $update->execute([$name, $email, $profileId]);
+                $savedProfile = $pdo->prepare('SELECT user_name, email FROM users WHERE user_id = ? LIMIT 1');
             }
-            $_SESSION['user_name'] = $name;
-            $_SESSION['user_email'] = $email;
+            $savedProfile->execute([$profileId]);
+            $savedProfile = $savedProfile->fetch(PDO::FETCH_ASSOC);
+            if (!$savedProfile || (string) $savedProfile['user_name'] !== $name || strcasecmp((string) $savedProfile['email'], $email) !== 0) {
+                throw new RuntimeException('The updated profile could not be confirmed in the database. Please try again.');
+            }
+            $_SESSION['user_name'] = (string) $savedProfile['user_name'];
+            $_SESSION['user_email'] = (string) $savedProfile['email'];
             if ($isHqAuth) {
                 $avatarUrl = '';
             } else {
                 $avatarStmt = $pdo->prepare('SELECT oauth_avatar_url FROM users WHERE user_id = ? LIMIT 1');
-                $avatarStmt->execute([$userId]);
+                $avatarStmt->execute([$profileId]);
                 $avatarUrl = map_pump_profile_avatar_url((string) $avatarStmt->fetchColumn(), '');
             }
-            echo json_encode(['ok' => true, 'message' => 'Profile details updated successfully.', 'name' => $name, 'email' => $email, 'avatar_url' => $avatarUrl]);
+            echo json_encode(['ok' => true, 'message' => 'Profile details updated successfully.', 'name' => $savedProfile['user_name'], 'email' => $savedProfile['email'], 'avatar_url' => $avatarUrl]);
             exit;
         }
 
         if ($action === 'update_avatar') {
-            if ($isHqAuth && !$hqAvatarSchemaReady) {
+            if (!$avatarSchemaReady) {
                 http_response_code(500);
-                echo json_encode(['ok' => false, 'message' => 'The HQ profile picture field is not available in the database.']);
+                echo json_encode(['ok' => false, 'message' => 'Profile image storage is not available in the database.']);
                 exit;
             }
             if ($isHqAuth && (int) ($_SESSION['headquarter_id'] ?? 0) <= 0) {
@@ -125,10 +134,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 echo json_encode(['ok' => false, 'message' => 'The HQ account could not be identified.']);
                 exit;
             }
-            $upload = $_FILES['profile_avatar'] ?? null;
-            if (!$upload || ($upload['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+            if (!$isHqAuth && $userId <= 0) {
                 http_response_code(422);
-                echo json_encode(['ok' => false, 'message' => 'Please choose a profile picture.']);
+                echo json_encode(['ok' => false, 'message' => 'The account could not be identified. Please reload and try again.']);
+                exit;
+            }
+            $upload = $_FILES['profile_avatar'] ?? null;
+            $uploadError = (int) ($upload['error'] ?? UPLOAD_ERR_NO_FILE);
+            if ($uploadError !== UPLOAD_ERR_OK) {
+                $uploadMessage = match ($uploadError) {
+                    UPLOAD_ERR_INI_SIZE, UPLOAD_ERR_FORM_SIZE => 'The image exceeds the server upload limit. Choose a smaller image.',
+                    UPLOAD_ERR_PARTIAL => 'The image upload was interrupted. Please try again.',
+                    UPLOAD_ERR_NO_TMP_DIR, UPLOAD_ERR_CANT_WRITE => 'The server could not receive the image. Please contact support.',
+                    UPLOAD_ERR_NO_FILE => 'Please choose a profile picture.',
+                    default => 'The image upload failed. Please try again.',
+                };
+                http_response_code(422);
+                echo json_encode(['ok' => false, 'message' => $uploadMessage]);
                 exit;
             }
 
@@ -138,62 +160,92 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 exit;
             }
 
-            $mime = '';
-            if (class_exists('finfo')) {
-                $finfo = new finfo(FILEINFO_MIME_TYPE);
-                $mime = (string) $finfo->file((string) $upload['tmp_name']);
+            $imageInfo = getimagesize((string) $upload['tmp_name']);
+            $imageMimes = [
+                IMAGETYPE_JPEG => 'image/jpeg',
+                IMAGETYPE_PNG => 'image/png',
+                IMAGETYPE_GIF => 'image/gif',
+                IMAGETYPE_WEBP => 'image/webp',
+            ];
+            $mime = is_array($imageInfo) ? ($imageMimes[$imageInfo[2]] ?? '') : '';
+            if ($mime === '') {
+                http_response_code(422);
+                echo json_encode(['ok' => false, 'message' => 'The uploaded file is not a valid JPG, PNG, GIF, or WebP image.']);
+                exit;
             }
 
-            $extensions = [
+            $imageData = file_get_contents((string) $upload['tmp_name']);
+            if (!is_string($imageData)) {
+                throw new RuntimeException('The selected profile picture could not be read.');
+            }
+
+            $avatarOwnerId = $isHqAuth ? (int) $_SESSION['headquarter_id'] : $userId;
+            $extension = match ($mime) {
                 'image/jpeg' => 'jpg',
                 'image/png' => 'png',
                 'image/gif' => 'gif',
                 'image/webp' => 'webp',
-            ];
-
-            if (!isset($extensions[$mime])) {
-                http_response_code(422);
-                echo json_encode(['ok' => false, 'message' => 'Only JPG, PNG, GIF, and WebP profile pictures are supported.']);
-                exit;
+            };
+            $fileName = 'profile-' . $avatarOwnerId . '-' . bin2hex(random_bytes(12)) . '.' . $extension;
+            $uploadDir = __DIR__ . '/uploads/profile';
+            if (!is_dir($uploadDir) && !mkdir($uploadDir, 0775, true) && !is_dir($uploadDir)) {
+                throw new RuntimeException('The profile picture folder could not be created.');
             }
-
-            $avatarOwnerId = $isHqAuth ? (int) $_SESSION['headquarter_id'] : $userId;
-            $fileName = 'hq-profile-' . $avatarOwnerId . '-' . bin2hex(random_bytes(8)) . '.' . $extensions[$mime];
-            $avatarUrl = '/php/HQ/uploads/profile/' . $fileName;
-            if (map_pump_imgbb_enabled()) {
-                $imageBytes = @file_get_contents((string) $upload['tmp_name']);
-                try {
-                    if (!is_string($imageBytes)) {
-                        throw new RuntimeException('The profile picture could not be read.');
-                    }
-                    $avatarUrl = map_pump_imgbb_upload($imageBytes, $fileName, $mime);
-                } catch (Throwable $e) {
-                    error_log('HQ avatar ImgBB upload failed: ' . $e->getMessage());
-                    http_response_code(502);
-                    echo json_encode(['ok' => false, 'message' => 'The profile picture could not be uploaded.']);
-                    exit;
+            $imagePath = $uploadDir . DIRECTORY_SEPARATOR . $fileName;
+            $imageUrl = '/php/HQ/uploads/profile/' . $fileName;
+            if (file_put_contents($imagePath, $imageData, LOCK_EX) !== strlen($imageData)) {
+                if (is_file($imagePath)) {
+                    unlink($imagePath);
                 }
-            } else {
-                $uploadDir = __DIR__ . '/uploads/profile';
-                if (!is_dir($uploadDir) && !mkdir($uploadDir, 0775, true)) {
-                    http_response_code(500);
-                    echo json_encode(['ok' => false, 'message' => 'The profile picture folder could not be prepared.']);
-                    exit;
-                }
-                if (!move_uploaded_file((string) $upload['tmp_name'], $uploadDir . '/' . $fileName)) {
-                    http_response_code(500);
-                    echo json_encode(['ok' => false, 'message' => 'The profile picture could not be saved.']);
-                    exit;
-                }
+                throw new RuntimeException('The profile picture could not be saved to the uploads folder.');
             }
 
             if ($isHqAuth) {
-                $update = $pdo->prepare('UPDATE headquarter SET profile_avatar_url = ? WHERE headquarter_id = ?');
-                $update->execute([$avatarUrl, $avatarOwnerId]);
+                $update = $pdo->prepare(
+                    'UPDATE headquarter SET profile_avatar_data = ?, profile_avatar_mime = ?, profile_avatar_url = ?
+                     WHERE headquarter_id = ?'
+                );
             } else {
-                $update = $pdo->prepare('UPDATE users SET oauth_avatar_url = ?, updated_at = NOW() WHERE user_id = ?');
-                $update->execute([$avatarUrl, $userId]);
+                $update = $pdo->prepare(
+                    'UPDATE users SET profile_avatar_data = ?, profile_avatar_mime = ?, oauth_avatar_url = ?, updated_at = NOW()
+                     WHERE user_id = ?'
+                );
             }
+            try {
+                $pdo->beginTransaction();
+                $update->bindValue(1, $imageData, PDO::PARAM_STR);
+                $update->bindValue(2, $mime, PDO::PARAM_STR);
+                $update->bindValue(3, $imageUrl, PDO::PARAM_STR);
+                $update->bindValue(4, $avatarOwnerId, PDO::PARAM_INT);
+                $update->execute();
+
+                $savedAvatar = $isHqAuth
+                    ? $pdo->prepare('SELECT profile_avatar_data, profile_avatar_mime, profile_avatar_url FROM headquarter WHERE headquarter_id = ? LIMIT 1')
+                    : $pdo->prepare('SELECT profile_avatar_data, profile_avatar_mime, oauth_avatar_url AS profile_avatar_url FROM users WHERE user_id = ? LIMIT 1');
+                $savedAvatar->execute([$avatarOwnerId]);
+                $savedAvatarRow = $savedAvatar->fetch(PDO::FETCH_ASSOC);
+                $savedImageData = $savedAvatarRow['profile_avatar_data'] ?? null;
+                if (is_resource($savedImageData)) {
+                    $savedImageData = stream_get_contents($savedImageData);
+                }
+                if (!$savedAvatarRow || !is_string($savedImageData)
+                    || (string) $savedAvatarRow['profile_avatar_mime'] !== $mime
+                    || (string) $savedAvatarRow['profile_avatar_url'] !== $imageUrl
+                    || !hash_equals(hash('sha256', $imageData), hash('sha256', $savedImageData))) {
+                    throw new RuntimeException('The profile picture could not be confirmed in the database.');
+                }
+                $pdo->commit();
+            } catch (Throwable $exception) {
+                if ($pdo->inTransaction()) {
+                    $pdo->rollBack();
+                }
+                if (is_file($imagePath)) {
+                    unlink($imagePath);
+                }
+                throw $exception;
+            }
+
+            $avatarUrl = '/php/HQ/profile_image.php';
             $_SESSION['oauth_avatar_url'] = $avatarUrl;
 
             echo json_encode(['ok' => true, 'message' => 'Profile picture updated successfully.', 'avatar_url' => $avatarUrl]);
@@ -256,23 +308,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } catch (Throwable $exception) {
         error_log('HQ profile update failed: ' . $exception->getMessage());
         http_response_code(500);
-        echo json_encode(['ok' => false, 'message' => 'The account update could not be saved.']);
+        $message = $action === 'update_avatar'
+            ? ($exception instanceof PDOException
+                ? 'The database could not save the image. Apply the profile avatar database migration and try again.'
+                : $exception->getMessage())
+            : 'The account update could not be saved.';
+        echo json_encode(['ok' => false, 'message' => $message]);
     }
     exit;
 }
 
 if ($isHqAuth) {
-    $hqAvatarSelect = $hqAvatarSchemaReady ? 'profile_avatar_url' : 'NULL';
+    $hqAvatarSelect = $avatarSchemaReady ? 'profile_avatar_url' : 'NULL';
+    $avatarDataSelect = $avatarSchemaReady
+        ? 'CASE WHEN profile_avatar_data IS NOT NULL AND OCTET_LENGTH(profile_avatar_data) > 0 THEN 1 ELSE 0 END'
+        : '0';
     $stmt = $pdo->prepare(
         "SELECT headquarter_id AS user_id, company_name AS user_name, headquarter_email AS email,
-                {$hqAvatarSelect} AS oauth_avatar_url, 3 AS role_id, 3 AS business_role_id
+                {$hqAvatarSelect} AS oauth_avatar_url, {$avatarDataSelect} AS has_profile_avatar,
+                3 AS role_id, 3 AS business_role_id
          FROM headquarter WHERE headquarter_id = ? LIMIT 1"
     );
     $stmt->execute([(int) ($_SESSION['headquarter_id'] ?? 0)]);
 } else {
+    $avatarDataSelect = $avatarSchemaReady
+        ? 'CASE WHEN profile_avatar_data IS NOT NULL AND OCTET_LENGTH(profile_avatar_data) > 0 THEN 1 ELSE 0 END'
+        : '0';
     $stmt = $pdo->prepare(
-        'SELECT user_id, user_name, email, oauth_avatar_url, role_id, business_role_id
-         FROM users WHERE user_id = ? LIMIT 1'
+        "SELECT user_id, user_name, email, oauth_avatar_url, {$avatarDataSelect} AS has_profile_avatar,
+                role_id, business_role_id
+         FROM users WHERE user_id = ? LIMIT 1"
     );
     $stmt->execute([$userId]);
 }
@@ -283,7 +348,9 @@ $deletionScheduledFor = (string) ($deletionContext['account_deletion_scheduled_f
 
 $profileName = !empty($user['user_name']) ? $user['user_name'] : 'Unknown User';
 $profileEmail = !empty($user['email']) ? $user['email'] : '';
-$profileImage = map_pump_profile_avatar_url((string) ($user['oauth_avatar_url'] ?? ''), '');
+$profileImage = !empty($user['has_profile_avatar'])
+    ? '/php/HQ/profile_image.php'
+    : map_pump_profile_avatar_url((string) ($user['oauth_avatar_url'] ?? ''), '');
 $profileInitial = map_pump_profile_initial($profileName, 'H');
 $profileFallbackUrl = map_pump_profile_initial_svg($profileName, 'H');
 $customerRoleStmt = $pdo->query("SELECT role_id FROM roles WHERE LOWER(TRIM(role_name)) = 'customer' LIMIT 1");
@@ -490,7 +557,11 @@ $canLinkCustomer = $canLinkCustomer && $linkedCustomer === null;
                     
                     <!-- Profile Picture Centered at Top -->
                     <div class="text-center mb-4">
-                        <img id="profilePreview" src="<?= htmlspecialchars(map_pump_profile_avatar_url($profileImage, $profileFallbackUrl), ENT_QUOTES, 'UTF-8') ?>" alt="Profile Picture" class="rounded-circle img-thumbnail mb-3" style="width: 130px; height: 130px; object-fit: cover; background-color: #fff;">
+                        <?php if (!empty($profileImage)): ?>
+                            <img id="profilePreview" src="<?= htmlspecialchars($profileImage, ENT_QUOTES, 'UTF-8') ?>" alt="Profile Picture" class="rounded-circle img-thumbnail mb-3" style="width: 130px; height: 130px; object-fit: cover; background-color: #fff;">
+                        <?php else: ?>
+                            <img id="profilePreview" src="data:image/svg+xml;utf8,<?= rawurlencode($profileFallbackUrl) ?>" alt="Profile Picture" class="rounded-circle img-thumbnail mb-3" style="width: 130px; height: 130px; object-fit: cover; background-color: #fff;">
+                        <?php endif; ?>
                         <div>
                             <label for="profilePictureInput" class="btn btn-sm btn-outline-secondary text-white">Change Profile Picture</label>
                             <input type="file" id="profilePictureInput" name="profile_avatar" accept="image/*" style="display: none;" onchange="window.previewImage(event)">
@@ -696,7 +767,7 @@ $canLinkCustomer = $canLinkCustomer && $linkedCustomer === null;
     <script>
         const serverName = <?= json_encode($profileName, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
         const serverEmail = <?= json_encode($profileEmail, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
-        const serverImage = <?= json_encode(map_pump_profile_avatar_url($profileImage, $profileFallbackUrl), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
+        const serverImage = <?= json_encode(!empty($profileImage) ? $profileImage : ('data:image/svg+xml;utf8,' . rawurlencode($profileFallbackUrl)), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
 
         window.addEventListener('DOMContentLoaded', () => {
             document.getElementById('profilePreview').src = serverImage;
@@ -709,12 +780,9 @@ $canLinkCustomer = $canLinkCustomer && $linkedCustomer === null;
 
             const preview = document.getElementById('profilePreview');
             const status = document.getElementById('profilePictureStatus');
-            const previewUrl = URL.createObjectURL(file);
-            preview.src = previewUrl;
             status.className = 'small mt-2 text-muted';
-            status.textContent = 'Saving profile picture...';
+            status.textContent = 'Saving image to this account and the uploads folder...';
             input.disabled = true;
-            let keepPreviewUrl = false;
 
             const data = new FormData();
             data.append('action', 'update_avatar');
@@ -732,22 +800,18 @@ $canLinkCustomer = $canLinkCustomer && $linkedCustomer === null;
                     throw new Error(result?.message || `Profile picture upload failed (${response.status}).`);
                 }
 
-                if (result.avatar_url) {
-                    const savedUrl = new URL(result.avatar_url, window.location.href);
-                    savedUrl.searchParams.set('v', Date.now().toString());
-                    preview.src = savedUrl.toString();
-                }
+                const avatarEndpoint = '/php/HQ/profile_image.php?v=' + Date.now();
+                preview.src = avatarEndpoint;
+
                 status.className = 'small mt-2 text-success';
                 status.textContent = result.message || 'Profile picture updated successfully.';
-                notifyParentProfileChange({ avatarUrl: result.avatar_url || '' });
+                notifyParentProfileChange({ avatarUrl: avatarEndpoint });
             } catch (error) {
-                keepPreviewUrl = true;
                 status.className = 'small mt-2 text-danger';
-                status.textContent = `${error.message || 'Profile picture could not be saved.'} The selected image is only a preview and was not saved.`;
+                status.textContent = error.message || 'Profile picture could not be saved.';
             } finally {
                 input.disabled = false;
                 input.value = '';
-                if (!keepPreviewUrl) URL.revokeObjectURL(previewUrl);
             }
         };
 
@@ -813,6 +877,8 @@ $canLinkCustomer = $canLinkCustomer && $linkedCustomer === null;
                     document.querySelector('#passwordModal form').reset();
                 }
                 if (formData.get('action') === 'update_profile') {
+                    document.getElementById('profileName').value = result.name || '';
+                    document.getElementById('profileEmail').value = result.email || '';
                     notifyParentProfileChange({
                         name: result.name || document.getElementById('profileName').value,
                         email: result.email || document.getElementById('profileEmail').value,
@@ -926,8 +992,10 @@ $canLinkCustomer = $canLinkCustomer && $linkedCustomer === null;
                 try {
                     const result = await sendCustomerLinkRequest(event.currentTarget, action);
                     showCustomerLinkStatus(result.message, true);
-                    document.getElementById('linkCustomerPassword')?.value = '';
-                    document.getElementById('linkCustomerConfirmPassword')?.value = '';
+                    const passwordInput = document.getElementById('linkCustomerPassword');
+                    const confirmPasswordInput = document.getElementById('linkCustomerConfirmPassword');
+                    if (passwordInput) passwordInput.value = '';
+                    if (confirmPasswordInput) confirmPasswordInput.value = '';
                     document.getElementById('customerLinkOptions')?.classList.add('d-none');
                     document.getElementById('newCustomerAccountForm')?.classList.add('d-none');
                     document.getElementById('existingCustomerAccountForm')?.classList.add('d-none');

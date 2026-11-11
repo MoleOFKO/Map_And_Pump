@@ -231,6 +231,19 @@ try {
             color: #146b4f !important;
         }
 
+        .action-menu {
+            position: fixed;
+            display: none;
+            min-width: 180px;
+            max-height: calc(100vh - 16px);
+            overflow-y: auto;
+            padding: 8px;
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 5px;
+            z-index: 1050;
+        }
+
         /* Manager activity log (monospace audit-trail lines) */
         .manager-activity-row {
             font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
@@ -329,7 +342,6 @@ else: ?>
                                 <th>Report ID</th>
                                 <th>Date</th>
                                 <th>User</th>
-                                <th>Date</th>
                                 <th>Importance</th>
                                 <th>Summary</th>
                                 <th>Status</th>
@@ -353,17 +365,16 @@ else: ?>
                                     <td><?= htmlspecialchars($rep['report_id']) ?></td>
                                     <td><?= htmlspecialchars((string) ($rep['created_at'] ?? ''), ENT_QUOTES, 'UTF-8') ?></td>
                                     <td><?= htmlspecialchars($rep['user_name']) ?></td>
-                                    <td><?= htmlspecialchars($rep['created_at']) ?></td>
                                     <td><?= htmlspecialchars($rep['importance']) ?></td>
                                     <td><?= htmlspecialchars($rep['short_summery']) ?></td>
                                     <td>
                                         <span class="badge <?= $reportStatus === 'read' ? 'bg-success text-white' : 'bg-warning text-dark' ?> status-badge" data-status="<?= htmlspecialchars($reportStatus, ENT_QUOTES, 'UTF-8') ?>"><?= ucfirst($reportStatus) ?></span>
                                     </td>
                                     <td onclick="event.stopPropagation();">
-                                        <button onclick="toggleActions(this, <?= htmlspecialchars($rep['report_id']) ?>)" title="More Actions" style="border: none; background: none; color: #6c757d; cursor: pointer; font-size: 1.5rem; box-shadow: none; padding: 5px;">
+                                        <button onclick="toggleActions(this, <?= htmlspecialchars($rep['report_id']) ?>)" title="More Actions" aria-label="More actions for report <?= htmlspecialchars($rep['report_id']) ?>" aria-controls="menu-<?= htmlspecialchars($rep['report_id']) ?>" aria-expanded="false" style="border: none; background: none; color: #6c757d; cursor: pointer; font-size: 1.5rem; box-shadow: none; padding: 5px;">
                                             <i class="bi bi-three-dots-vertical"></i>
                                         </button>
-                                        <div class="action-menu" id="menu-<?= htmlspecialchars($rep['report_id']) ?>" style="display: none; position: absolute; background: var(--card-bg); border: 1px solid var(--border); border-radius: 5px; padding: 8px; min-width: 180px; z-index: 1000;">
+                                        <div class="action-menu" id="menu-<?= htmlspecialchars($rep['report_id']) ?>">
                                             <button class="toggle-read-status" onclick="event.stopPropagation(); toggleReadStatus(this, <?= htmlspecialchars($rep['report_id']) ?>)" style="border: none; background: none; color: var(--slate-50); cursor: pointer; width: 100%; text-align: left; padding: 8px; display: flex; align-items: center; gap: 10px;">
                                                 <i class="bi bi-envelope" style="font-size: 1rem;"></i><span><?= $reportStatus === 'read' ? 'Mark as Unread' : 'Mark as Read' ?></span>
                                             </button>
@@ -546,30 +557,62 @@ endif; ?>
             window.addEventListener('resize', sizeReportTableScroll);
         })();
 
+        let closeActiveActionMenu = null;
+
         // Toggle Actions Menu
         function toggleActions(button, reportId) {
             const menu = document.getElementById('menu-' + reportId);
             const isVisible = menu.style.display === 'block';
-            
-            // Hide all other menus
-            document.querySelectorAll('.action-menu').forEach(m => {
-                if (m.id !== 'menu-' + reportId) {
-                    m.style.display = 'none';
-                }
-            });
-            
-            // Toggle current menu
-            menu.style.display = isVisible ? 'none' : 'block';
-            
-            // Close menu when clicking outside
-            if (!isVisible) {
-                document.addEventListener('click', function closeMenu(e) {
-                    if (!menu.contains(e.target) && e.target !== button) {
-                        menu.style.display = 'none';
-                        document.removeEventListener('click', closeMenu);
-                    }
-                });
+
+            if (closeActiveActionMenu) {
+                closeActiveActionMenu();
             }
+            document.querySelectorAll('.action-menu').forEach(m => {
+                m.style.display = 'none';
+                const toggle = document.querySelector('[aria-controls="' + m.id + '"]');
+                if (toggle) toggle.setAttribute('aria-expanded', 'false');
+            });
+
+            if (isVisible) {
+                return;
+            }
+
+            menu.style.display = 'block';
+            const buttonRect = button.getBoundingClientRect();
+            const menuRect = menu.getBoundingClientRect();
+            const margin = 8;
+            const left = Math.max(margin, Math.min(
+                buttonRect.right - menuRect.width,
+                window.innerWidth - menuRect.width - margin
+            ));
+            let top = buttonRect.bottom + margin;
+            if (top + menuRect.height > window.innerHeight - margin) {
+                top = buttonRect.top - menuRect.height - margin;
+            }
+            menu.style.left = left + 'px';
+            menu.style.top = Math.max(margin, top) + 'px';
+            button.setAttribute('aria-expanded', 'true');
+
+            let cleanup;
+            const closeMenu = function (e) {
+                if (!menu.contains(e.target) && e.target !== button) {
+                    cleanup();
+                }
+            };
+            cleanup = function () {
+                menu.style.display = 'none';
+                button.setAttribute('aria-expanded', 'false');
+                document.removeEventListener('click', closeMenu);
+                window.removeEventListener('scroll', cleanup, true);
+                window.removeEventListener('resize', cleanup);
+                if (closeActiveActionMenu === cleanup) {
+                    closeActiveActionMenu = null;
+                }
+            };
+            closeActiveActionMenu = cleanup;
+            document.addEventListener('click', closeMenu);
+            window.addEventListener('scroll', cleanup, true);
+            window.addEventListener('resize', cleanup);
         }
 
         function renderReportStatus(reportId, status) {

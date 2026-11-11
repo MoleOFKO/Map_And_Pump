@@ -511,7 +511,7 @@ endforeach; ?>
                         <div id="inviteAccountHelp" class="invite-help-panel small p-3 mb-3" hidden>
                             <p class="mb-2"><strong>New Customer Account:</strong> Select this when the email entered above does not already have a customer account. The password you set will be used to create that account and sign in with that email.</p>
                             <p class="mb-2"><strong>Existing Customer Account:</strong> Select this when the email already belongs to a customer. Their current password is kept and is not changed.</p>
-                            <p class="mb-0"><strong>Role records:</strong> Branch manager accounts use the existing account process. Staff accounts are stored directly in <code>staff</code> and can be created with or without a station assignment.</p>
+                            <p class="mb-0"><strong>Station assignment:</strong> Every branch manager and staff account must be assigned to a station.</p>
                         </div>
 
                         <div class="row g-3 align-items-end mb-3">
@@ -565,12 +565,12 @@ endforeach; ?>
                         </div>
 
                         <div class="d-flex align-items-center justify-content-between gap-2 mb-2">
-                            <label class="form-label mb-0" for="inviteStation">Assign To Station <span id="inviteStationRequirement" class="text-white-50">(optional)</span></label>
+                            <label class="form-label mb-0" for="inviteStation">Assign To Station <span id="inviteStationRequirement" class="text-white-50">(required)</span></label>
                             <button type="button" class="btn btn-sm btn-outline-info" data-bs-toggle="modal" data-bs-target="#quickStationModal" data-reopen-source="inviteAccountModal">+ Add Station</button>
                         </div>
-                        <select class="form-select" id="inviteStation" name="station_id"><option value="">Select a station</option><option value="none">Do not assign a station</option><?php foreach ($stations as $station): ?><option value="<?= (int)$station['station_id'] ?>"><?= htmlspecialchars((string)$station['station_name'] . ' — ' . (string)$station['location']) ?></option><?php endforeach; ?></select>
+                        <select class="form-select" id="inviteStation" name="station_id" required><option value="">Select a station</option><?php foreach ($stations as $station): ?><option value="<?= (int)$station['station_id'] ?>"><?= htmlspecialchars((string)$station['station_name'] . ' — ' . (string)$station['location']) ?></option><?php endforeach; ?></select>
                         <?php if (empty($stations)): ?>
-                            <div class="alert alert-info mt-2 mb-0" role="alert">Station assignment is optional. Staff accounts are saved directly in the staff roster.</div>
+                            <div class="alert alert-info mt-2 mb-0" role="alert">Create a station before adding a branch manager or staff account.</div>
                         <?php endif; ?>
                     </div>
                     <div class="modal-footer border-0"><button type="button" class="btn btn-outline-secondary text-white" data-bs-dismiss="modal">Cancel</button><button type="submit" class="btn btn-primary">Send Invitation</button></div>
@@ -582,14 +582,16 @@ endforeach; ?>
     <div class="modal fade" id="quickStationModal" tabindex="-1" aria-labelledby="quickStationModalLabel" aria-hidden="true">
         <div class="modal-dialog modal-lg modal-dialog-centered">
             <div class="modal-content" style="background: var(--bg, #111827); color: var(--slate-50, #f8fafc); border: 1px solid rgba(255,255,255,0.08); border-radius: 18px;">
-                <form method="POST" action="./station.php">
+                <form method="POST" action="./station.php" id="quickStationForm">
                     <input type="hidden" name="action" value="register">
                     <input type="hidden" name="return_to" value="account.php">
+                    <input type="hidden" name="allow_unassigned_manager" value="1">
                     <div class="modal-header border-0">
                         <h5 class="modal-title" id="quickStationModalLabel">Add Station</h5>
                         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
                     </div>
                     <div class="modal-body">
+                        <div id="quickStationStatus" class="alert d-none" role="status" aria-live="polite"></div>
                         <div class="row">
                             <div class="col-12 mb-3">
                                 <label class="form-label text-light">Station Name</label>
@@ -616,7 +618,7 @@ endforeach; ?>
                     </div>
                     <div class="modal-footer border-0">
                         <button type="button" class="btn btn-outline-secondary text-white" data-bs-dismiss="modal">Cancel</button>
-                        <button type="submit" class="btn btn-success">Save Station</button>
+                        <button type="submit" class="btn btn-success" id="quickStationSubmit">Save Station</button>
                     </div>
                 </form>
             </div>
@@ -733,6 +735,52 @@ endforeach; ?>
                 setQuickStationLocation(document.getElementById('quickStationLocation'), location);
                 quickStationMap.setView(location, 14);
             }, () => alert('Could not get your location. Check browser location permissions and try again.'), { enableHighAccuracy: true, timeout: 10000 });
+        });
+
+        const quickStationForm = document.getElementById('quickStationForm');
+        quickStationForm.addEventListener('submit', async event => {
+            event.preventDefault();
+            const submitButton = document.getElementById('quickStationSubmit');
+            const status = document.getElementById('quickStationStatus');
+            submitButton.disabled = true;
+            status.className = 'alert alert-info';
+            status.textContent = 'Saving station...';
+
+            try {
+                const response = await fetch(quickStationForm.action, {
+                    method: 'POST',
+                    body: new FormData(quickStationForm),
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'Accept': 'application/json'
+                    },
+                    credentials: 'same-origin'
+                });
+                const result = await response.json();
+                if (!response.ok || !result.success) {
+                    throw new Error(result.message || 'The station could not be created.');
+                }
+
+                const stationSelect = document.getElementById('inviteStation');
+                const option = new Option(result.station.name + ' — ' + result.station.location, result.station.id, true, true);
+                stationSelect.add(option);
+                stationSelect.dispatchEvent(new Event('change', { bubbles: true }));
+
+                status.className = 'alert alert-success';
+                status.textContent = result.message;
+                quickStationForm.reset();
+                document.getElementById('quickStationLocation').value = '';
+                if (quickStationMarker) {
+                    quickStationMap.removeLayer(quickStationMarker);
+                }
+                quickStationMarker = null;
+                bootstrap.Modal.getOrCreateInstance(document.getElementById('quickStationModal')).hide();
+            } catch (error) {
+                status.className = 'alert alert-danger';
+                status.textContent = error.message || 'The station could not be created.';
+            } finally {
+                submitButton.disabled = false;
+            }
         });
 
         document.querySelectorAll('.status-toggle-btn').forEach(function (button) {
@@ -907,8 +955,8 @@ endforeach; ?>
                 managerPasswordConfirm.required = !isManager || isNewAccount;
                 managerPassword.disabled = isManager && !isNewAccount;
                 managerPasswordConfirm.disabled = isManager && !isNewAccount;
-                inviteStation.required = false;
-                stationRequirement.textContent = '(optional)';
+                inviteStation.required = true;
+                stationRequirement.textContent = '(required)';
                 if (!isNewAccount) {
                     managerPassword.value = '';
                     managerPasswordConfirm.value = '';
