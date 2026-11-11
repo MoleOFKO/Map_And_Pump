@@ -228,8 +228,8 @@ try {
 
     if ($statusPlaceholders) {
         $bookingStmt = $pdo->prepare(
-            'SELECT bk.booking_id, bk.station_id, bk.oil_type_id, bk.qr_code, bk.qr_refrence_code,
-                    bk.status, bk.expire_at, bk.created_at, r.requested_liters,
+                'SELECT bk.booking_id, bk.station_id, bk.oil_type_id, bk.qr_code, bk.qr_refrence_code,
+                    bk.status, bk.expire_at, UNIX_TIMESTAMP(bk.expire_at) AS expire_at_epoch, bk.created_at, r.requested_liters,
                     po.offered_liters, po.status AS partial_offer_status,
                     b.branch_name AS station_name, b.address AS station_address,
                     ot.oil_name
@@ -307,6 +307,12 @@ $bookingCsrfToken = (string) $_SESSION['booking_csrf_token'];
             <div class="d-flex flex-wrap gap-2 mt-3">
                 <button type="button" class="btn btn-outline-info btn-sm px-3 py-2 fw-bold" onclick="downloadBookingDetails()" title="Save a JPEG receipt with booking details and QR code"><i class="bi bi-download me-1"></i>Download receipt</button>
                 <button type="button" class="btn btn-outline-danger btn-sm px-3 py-2 fw-bold" onclick="openCancellationDialog()"><i class="bi bi-x-circle me-1"></i>Cancel booking</button>
+            </div>
+        </div>
+        <div class="col-12 col-md-auto ms-md-auto text-md-end">
+            <div class="booking-countdown-panel">
+                <span class="booking-countdown-label">Time left</span>
+                <strong id="current-booking-countdown" class="booking-countdown-value" role="timer" aria-label="Booking time remaining">--:--:--</strong>
             </div>
         </div>
     </div>
@@ -786,6 +792,37 @@ body.customer-light-mode .cmp-icon {
 }
 #current-booking-card .btn {
     border-radius: 12px;
+}
+.booking-countdown-panel {
+    min-width: 142px;
+    padding: 11px 14px;
+    border: 1px solid rgba(16, 185, 129, .35);
+    border-radius: 12px;
+    background: rgba(16, 185, 129, .08);
+}
+.booking-countdown-label {
+    display: block;
+    margin-bottom: 4px;
+    color: #9aa8b8;
+    font-size: 11px;
+}
+.booking-countdown-value {
+    display: block;
+    color: #34d399;
+    font: 700 18px/1.3 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+.booking-countdown-value.is-expiring { color: #fbbf24; }
+.booking-countdown-value.is-expired { color: #fb7185; }
+body.customer-light-mode .booking-countdown-panel { background: rgba(16, 185, 129, .06); }
+body.customer-light-mode .booking-countdown-label { color: #526174; }
+body.customer-light-mode .booking-countdown-value { color: #087f5b; }
+body.customer-light-mode .booking-countdown-value.is-expiring { color: #9a6700; }
+body.customer-light-mode .booking-countdown-value.is-expired { color: #b4233c; }
+@media (max-width: 767.98px) {
+    .booking-countdown-panel { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .booking-countdown-label { margin: 0; }
 }
 
 /* ---- Top 5 nearest stations ---- */
@@ -1280,6 +1317,39 @@ body.customer-light-mode .customer-fuel-status--active {
                 .catch(error => console.error('Could not generate booking QR code.', error));
         }
         document.getElementById('current-booking-card').classList.remove('d-none');
+        updateBookingCountdown();
+    }
+
+    function updateBookingCountdown() {
+        const countdown = document.getElementById('current-booking-countdown');
+        if (!countdown) return;
+
+        const booking = currentBooking || savedActiveBooking;
+        let expiryEpoch = Number(booking?.expire_at_epoch || 0);
+        if (!Number.isFinite(expiryEpoch) || expiryEpoch <= 0) {
+            const expiryText = String(booking?.expire_at || '');
+            const parsedExpiry = Date.parse(`${expiryText.replace(' ', 'T')}+06:30`);
+            expiryEpoch = Number.isFinite(parsedExpiry) ? Math.floor(parsedExpiry / 1000) : 0;
+        }
+        if (expiryEpoch <= 0) {
+            countdown.textContent = '--:--:--';
+            return;
+        }
+
+        const secondsLeft = Math.max(0, expiryEpoch - Math.floor(Date.now() / 1000));
+        if (secondsLeft === 0) {
+            countdown.textContent = 'Expired';
+            countdown.classList.remove('is-expiring');
+            countdown.classList.add('is-expired');
+            return;
+        }
+
+        const hours = Math.floor(secondsLeft / 3600);
+        const minutes = Math.floor((secondsLeft % 3600) / 60);
+        const seconds = secondsLeft % 60;
+        countdown.textContent = [hours, minutes, seconds].map(value => String(value).padStart(2, '0')).join(':');
+        countdown.classList.toggle('is-expiring', secondsLeft <= 600);
+        countdown.classList.remove('is-expired');
     }
 
     async function downloadBookingDetails() {
@@ -2070,9 +2140,14 @@ body.customer-light-mode .customer-fuel-status--active {
             station_address: selectedStation.address,
             oil_name: fuel.name,
             quantity_liters: quantity,
-            expire_at: result.expire_at || 'When confirmed by station staff'
+            expire_at: result.expire_at || 'When confirmed by station staff',
+            expire_at_epoch: result.expire_at_epoch || 0
         });
     }
+
+    if (savedActiveBooking) currentBooking = { ...savedActiveBooking };
+    updateBookingCountdown();
+    window.setInterval(updateBookingCountdown, 1000);
 </script>
 
 <?php include 'share_footer.php'; ?>

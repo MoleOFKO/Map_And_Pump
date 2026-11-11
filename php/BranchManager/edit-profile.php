@@ -234,6 +234,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && in_array
                 }
                 $insert->execute($insertParams);
                 $targetUserId = (int) $pdo->lastInsertId();
+                map_pump_account_identity_ensure($pdo, 'user', $targetUserId);
             } else {
                 throw new RuntimeException('The link request is invalid.');
             }

@@ -559,6 +559,7 @@ function payment_transfer_create_pending_registration_hq(PDO $pdo, array $transf
         $serviceExpiry,
     ]);
     $headquarterId = (int) $pdo->lastInsertId();
+    map_pump_account_identity_ensure($pdo, 'headquarter', $headquarterId);
 
     $ownerUpdate = $pdo->prepare(
            "UPDATE users SET business_role_id = ?, status = 'pending', updated_at = NOW()

@@ -32,7 +32,7 @@ if (!defined('MAP_PUMP_FUEL_QUOTA_PERIOD')) {
 }
 
 if (!defined('MAP_PUMP_BOOKING_EXPIRY_HOURS')) {
-    define('MAP_PUMP_BOOKING_EXPIRY_HOURS', 1);
+    define('MAP_PUMP_BOOKING_EXPIRY_HOURS', 2);
 }
 
 if (!function_exists('map_pump_fuel_quota_liters')) {

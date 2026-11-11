@@ -373,7 +373,7 @@ try {
         }
     }
 
-    $expiryStmt = $pdo->prepare('SELECT expire_at, created_at FROM booking WHERE booking_id = ? LIMIT 1');
+    $expiryStmt = $pdo->prepare('SELECT expire_at, UNIX_TIMESTAMP(expire_at) AS expire_at_epoch, created_at FROM booking WHERE booking_id = ? LIMIT 1');
     $expiryStmt->execute([$bookingId]);
     $bookingTimestamps = $expiryStmt->fetch(PDO::FETCH_ASSOC) ?: [];
     $expireAt = $bookingTimestamps['expire_at'] ?? null;
@@ -388,6 +388,7 @@ try {
         'booking_code' => $bookingCode,
         'payload' => $displayPayload,
         'expire_at' => $expireAt,
+        'expire_at_epoch' => (int) ($bookingTimestamps['expire_at_epoch'] ?? 0),
         'created_at' => $createdAt,
         'points_to_redeem' => $pointsToRedeem,
     ]);

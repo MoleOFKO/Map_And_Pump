@@ -38,6 +38,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                      VALUES (?, ?, 'Unknown', ?, ?, ?, ?, 'active')"
                 );
                 $stmt->execute([$branchCode, $station_name, $station_address, $latitude, $longitude, $manager_id]);
+                map_pump_account_identity_ensure($pdo, 'branch', (int) $pdo->lastInsertId());
                 $message = "Station node created successfully.";
             } catch (PDOException $e) {
                 $error = "Error registering station: " . $e->getMessage();

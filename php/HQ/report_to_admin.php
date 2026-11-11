@@ -23,12 +23,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $alertMessage = 'Submitted reports are read-only and cannot be edited.';
     } elseif ($topic !== '' && in_array($urgency, ['low', 'normal', 'high'], true) && $description !== '' && $headquarterId > 0) {
         try {
-            $stmt = $pdo->prepare("INSERT INTO report (user_id, headquarter_id, role_id, importance, short_summery, message, created_at) VALUES (?, ?, ?, ?, ?, ?, NOW())");
+            $accountId = $user_id > 0
+                ? map_pump_account_identity_ensure($pdo, 'user', $user_id)
+                : map_pump_account_identity_ensure($pdo, 'headquarter', $headquarterId);
+            $stmt = $pdo->prepare("INSERT INTO report (user_id, submitted_by_account_id, headquarter_id, role_id, importance, short_summery, message, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())");
             
             $importance = ($urgency === 'high') ? 'high' : 'normal';
             $summary = ucfirst($topic) . " Issue";
             
-            $stmt->execute([$user_id > 0 ? $user_id : null, $headquarterId, $role_id, $importance, $summary, $description]);
+            $stmt->execute([$user_id > 0 ? $user_id : null, $accountId, $headquarterId, $role_id, $importance, $summary, $description]);
             $alertMessage = "Your report has been successfully sent to the admin and moderator team!";
         } catch (PDOException $e) {
             $alertMessage = "Error dispatching report: " . $e->getMessage();

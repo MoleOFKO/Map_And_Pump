@@ -149,6 +149,7 @@ try {
             );
             $insert->execute([$userId, $branchId, $code, $user['user_name']]);
         }
+        map_pump_account_identity_ensure($pdo, 'staff', (int) $pdo->lastInsertId(), $userId);
         $knownStaffUsers[$userId] = true;
         $inserted++;
     }

@@ -46,6 +46,14 @@ Table staff {
   branch_id int [ref: > branches.branch_id]
 }
 
+Table accounts {
+  account_id int [pk]
+  user_id int [ref: > users.user_id, unique]
+  staff_id int [ref: > staff.staff_id, unique]
+  branch_id int [ref: > branches.branch_id, unique]
+  headquarter_id int [ref: > headquarter.headquarter_id, unique]
+}
+
 Table station_business_scope {
   station_id int [pk]
   headquarter_id int [ref: > headquarter.headquarter_id]
@@ -115,6 +123,14 @@ Table feedback_replies {
 Table system_requests {
   request_id int [pk]
   submitter_user_id int [ref: > users.user_id]
+  role_id int [ref: > roles.role_id]
+  headquarter_id int [ref: > headquarter.headquarter_id]
+}
+
+Table report {
+  report_id int [pk]
+  user_id int [ref: > users.user_id]
+  submitted_by_account_id int [ref: > accounts.account_id]
   role_id int [ref: > roles.role_id]
   headquarter_id int [ref: > headquarter.headquarter_id]
 }

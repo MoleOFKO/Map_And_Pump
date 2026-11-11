@@ -451,6 +451,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 throw new RuntimeException('Could not create the company registration record.');
             }
         }
+        map_pump_account_identity_ensure($pdo, 'headquarter', $headquarterId);
         $stmt = $pdo->prepare(
             "INSERT INTO system_requests
                 (reference_code, request_type, status, submitter_user_id, role_id, headquarter_id, sender_entity, sender_name, sender_email,

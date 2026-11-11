@@ -364,6 +364,7 @@ try {
             }
             $createdHeadquarterId = (int) $conn->insert_id;
             $headquarterInsert->close();
+            map_pump_account_identity_ensure($pdo, 'headquarter', $createdHeadquarterId);
         }
 
         // Set service period without clobbering license expire_at / created_at.

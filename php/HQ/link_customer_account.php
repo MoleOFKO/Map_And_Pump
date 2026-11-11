@@ -237,6 +237,7 @@ $pending = $_SESSION['hq_customer_link_otp'] ?? null;
             }
             $insert->execute($insertParams);
             $targetUserId = (int) $pdo->lastInsertId();
+            map_pump_account_identity_ensure($pdo, 'user', $targetUserId);
         } else {
             throw new RuntimeException('The customer account verification request is invalid.');
         }

@@ -206,6 +206,7 @@ try {
                         $sql = 'INSERT INTO staff (' . implode(', ', $columns) . ') VALUES (' . implode(', ', $values) . ')';
                         $stmtInsert = $pdo->prepare($sql);
                         $stmtInsert->execute($params);
+                        map_pump_account_identity_ensure($pdo, 'staff', (int) $pdo->lastInsertId(), $userId);
                     } finally {
                         try { $pdo->query("SELECT RELEASE_LOCK('" . addslashes($lockName) . "')"); } catch (Throwable $_) {}
                     }

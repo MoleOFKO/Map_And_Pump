@@ -515,6 +515,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     ]);
 
                     $staffId = (int) $pdo->lastInsertId();
+                    map_pump_account_identity_ensure($pdo, 'staff', $staffId);
                     $companyName = map_pump_branch_company_name($pdo, $bid);
                     $roleName = 'Staff';
                     $loginLink = ((isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http') . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost') . '/php/Login/login.php';

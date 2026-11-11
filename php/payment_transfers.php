@@ -498,6 +498,7 @@ function payment_transfer_complete_hq_registration(PDO $pdo, array $transfer, in
         if ($headquarterId <= 0) {
             throw new RuntimeException('The company account could not be created (missing insert id).');
         }
+        map_pump_account_identity_ensure($pdo, 'headquarter', $headquarterId);
     }
 
     if ((int) ($request['headquarter_id'] ?? 0) !== $headquarterId) {

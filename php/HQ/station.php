@@ -175,6 +175,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 );
                 $branchStmt->execute([$temporaryBranchCode, $station_name, 'Unknown', null, $station_address, $latitude, $longitude, $manager_id, null]);
                 $branchId = (int)$pdo->lastInsertId();
+                map_pump_account_identity_ensure($pdo, 'branch', $branchId);
                 $stationId = $branchId;
 
                 $branchCode = 'BR-' . str_pad((string) $branchId, 5, '0', STR_PAD_LEFT);

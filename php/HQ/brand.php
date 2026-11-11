@@ -186,6 +186,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $location,
                 $logoPath,
             ]);
+            $headquarterId = (int) $pdo->lastInsertId();
+            map_pump_account_identity_ensure($pdo, 'headquarter', $headquarterId);
         }
     }
 

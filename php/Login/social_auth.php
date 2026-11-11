@@ -306,6 +306,8 @@ function social_sign_in_user(PDO $pdo, string $provider, string $providerId, str
                 (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), NOW())'
         );
         $insert->execute([$displayName, $email, $randomPassword, $roleId, $roleId, 'active', $provider, $providerId, $avatarUrl]);
+        $newUserId = (int) $pdo->lastInsertId();
+        map_pump_account_identity_ensure($pdo, 'user', $newUserId);
 
         $stmt = $pdo->prepare(
             'SELECT u.user_id, u.user_name, u.email, u.status, u.role_id, u.business_role_id, u.current_role_id,
@@ -317,7 +319,7 @@ function social_sign_in_user(PDO $pdo, string $provider, string $providerId, str
              WHERE u.user_id = ?
              LIMIT 1'
         );
-        $stmt->execute([(int) $pdo->lastInsertId()]);
+        $stmt->execute([$newUserId]);
         $user = $stmt->fetch(PDO::FETCH_ASSOC);
     }
 
