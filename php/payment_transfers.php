@@ -424,38 +424,6 @@ function payment_transfer_complete_hq_registration(PDO $pdo, array $transfer, in
     }
 
     require_once __DIR__ . '/shared/license_expiry_date.php';
-    $headquarterId = (int) ($request['headquarter_id'] ?? 0);
-    if ($headquarterId <= 0) {
-        $licenseExpiryDate = map_pump_parse_license_expiry_date(
-            (string) ($details['license_expiry'] ?? $request['headquarter_expire_at'] ?? '')
-        );
-        if ($licenseExpiryDate === null) {
-            throw new RuntimeException('The company registration is missing a valid license expiry date.');
-        }
-        $insertHq = $pdo->prepare(
-            "INSERT INTO headquarter
-                (company_name, company_logo, contact_number, headquarter_email, location,
-                 business_license, business_license_image, business_license_expire_date,
-                 expire_at, station_count, status)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')"
-        );
-        $insertHq->execute([
-            (string) $request['sender_entity'],
-            (string) ($request['headquarter_company_logo'] ?? ''),
-            (string) ($request['headquarter_contact_number'] ?? ''),
-            (string) ($request['headquarter_email'] ?? ''),
-            (string) ($request['location'] ?? ''),
-            (string) ($request['document_name'] ?? ''),
-            (string) ($request['document_path'] ?? ''),
-            $licenseExpiryDate,
-            $licenseExpiryDate . ' 23:59:59',
-            BILLING_HQ_INCLUDED_STATION_SLOTS,
-        ]);
-        $headquarterId = (int) $pdo->lastInsertId();
-        $linkRequest = $pdo->prepare('UPDATE system_requests SET headquarter_id = ? WHERE request_id = ?');
-        $linkRequest->execute([$headquarterId, $requestId]);
-    }
-
     $licenseExpirySource = array_key_exists('license_expiry', $details)
         ? trim((string) $details['license_expiry'])
         : substr(trim((string) ($request['headquarter_expire_at'] ?? '')), 0, 10);
@@ -465,16 +433,95 @@ function payment_transfer_complete_hq_registration(PDO $pdo, array $transfer, in
     }
     $licenseExpiryTs = $licenseExpiryDate . ' 23:59:59';
 
+    $companyEmail = strtolower(trim((string) ($request['headquarter_email'] ?? '')));
+    $headquarterId = (int) ($request['headquarter_id'] ?? 0);
+
+    // Prefer the HQ already linked to the request; fall back to email match (register.php
+    // creates the pending HQ up front). Stale / missing IDs used to throw a generic
+    // "could not be activated" error after a no-op UPDATE.
+    if ($headquarterId > 0) {
+        $existsById = $pdo->prepare('SELECT headquarter_id FROM headquarter WHERE headquarter_id = ? LIMIT 1 FOR UPDATE');
+        $existsById->execute([$headquarterId]);
+        if (!$existsById->fetchColumn()) {
+            $headquarterId = 0;
+        }
+    }
+    if ($headquarterId <= 0 && $companyEmail !== '') {
+        $existsByEmail = $pdo->prepare(
+            'SELECT headquarter_id FROM headquarter WHERE LOWER(TRIM(headquarter_email)) = ? LIMIT 1 FOR UPDATE'
+        );
+        $existsByEmail->execute([$companyEmail]);
+        $headquarterId = (int) ($existsByEmail->fetchColumn() ?: 0);
+    }
+    if ($headquarterId <= 0) {
+        $companyLogo = trim((string) ($request['headquarter_company_logo'] ?? ''));
+        // company_logo has a UNIQUE key; empty string collides across rows — use NULL.
+        $logoValue = $companyLogo !== '' ? $companyLogo : null;
+        try {
+            $insertHq = $pdo->prepare(
+                "INSERT INTO headquarter
+                    (company_name, company_logo, contact_number, headquarter_email, location,
+                     business_license, business_license_image, business_license_expire_date,
+                     expire_at, station_count, status)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')"
+            );
+            $insertHq->execute([
+                (string) $request['sender_entity'],
+                $logoValue,
+                (string) ($request['headquarter_contact_number'] ?? ''),
+                (string) ($request['headquarter_email'] ?? ''),
+                (string) ($request['location'] ?? ''),
+                (string) ($request['document_name'] ?? ''),
+                (string) ($request['document_path'] ?? ''),
+                $licenseExpiryDate,
+                $licenseExpiryTs,
+                BILLING_HQ_INCLUDED_STATION_SLOTS,
+            ]);
+            $headquarterId = (int) $pdo->lastInsertId();
+        } catch (Throwable $insertError) {
+            // Concurrent create or unique email/logo collision: recover the existing row.
+            if ($companyEmail !== '') {
+                $recover = $pdo->prepare(
+                    'SELECT headquarter_id FROM headquarter WHERE LOWER(TRIM(headquarter_email)) = ? LIMIT 1 FOR UPDATE'
+                );
+                $recover->execute([$companyEmail]);
+                $headquarterId = (int) ($recover->fetchColumn() ?: 0);
+            }
+            if ($headquarterId <= 0) {
+                throw new RuntimeException(
+                    'The company account could not be created or found for activation. '
+                    . 'Check that the registration email is unique and try again. ('
+                    . $insertError->getMessage() . ')'
+                );
+            }
+        }
+        if ($headquarterId <= 0) {
+            throw new RuntimeException('The company account could not be created (missing insert id).');
+        }
+    }
+
+    if ((int) ($request['headquarter_id'] ?? 0) !== $headquarterId) {
+        $linkRequest = $pdo->prepare('UPDATE system_requests SET headquarter_id = ? WHERE request_id = ?');
+        $linkRequest->execute([$headquarterId, $requestId]);
+        $request['headquarter_id'] = $headquarterId;
+    }
+
     $activateHq = $pdo->prepare(
         "UPDATE headquarter
          SET status = 'active', business_license_expire_date = ?, expire_at = ?, created_at = created_at
          WHERE headquarter_id = ?"
     );
     $activateHq->execute([$licenseExpiryDate, $licenseExpiryTs, $headquarterId]);
-    $existsHq = $pdo->prepare('SELECT 1 FROM headquarter WHERE headquarter_id = ? LIMIT 1 FOR UPDATE');
-    $existsHq->execute([$headquarterId]);
-    if (!$existsHq->fetchColumn()) {
-        throw new RuntimeException('The company account could not be activated.');
+    if ($activateHq->rowCount() < 1) {
+        // TiDB/MySQL may report 0 when values are unchanged; verify the row still exists.
+        $existsHq = $pdo->prepare('SELECT 1 FROM headquarter WHERE headquarter_id = ? LIMIT 1');
+        $existsHq->execute([$headquarterId]);
+        if (!$existsHq->fetchColumn()) {
+            throw new RuntimeException(
+                'The company account could not be activated because headquarter #'
+                . $headquarterId . ' was not found.'
+            );
+        }
     }
 
     $linkPayment = $pdo->prepare(

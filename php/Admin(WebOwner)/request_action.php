@@ -22,20 +22,20 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 
 $requestId = filter_var($_POST['request_id'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
 $action = strtolower(trim((string) ($_POST['action'] ?? '')));
-$reason = trim((string) ($_POST['reason'] ?? ''));
+$reason = '';
 
 $allowedActions = ['approve', 'reject'];
 if (!$requestId || !in_array($action, $allowedActions, true)) {
     request_flash('danger', 'The request action was invalid.');
     request_redirect();
 }
-if ($action === 'reject' && $reason === '') {
-    request_flash('danger', 'A rejection reason is required.');
-    request_redirect();
-}
-if (mb_strlen($reason) > 2000) {
-    request_flash('danger', 'The reason must be 2,000 characters or fewer.');
-    request_redirect();
+if ($action === 'reject') {
+    $resolvedReason = request_resolve_rejection_reason($_POST);
+    if (empty($resolvedReason['ok'])) {
+        request_flash('danger', (string) ($resolvedReason['error'] ?? 'A rejection reason is required.'));
+        request_redirect();
+    }
+    $reason = (string) $resolvedReason['reason'];
 }
 if (!hq_db_available() || !request_schema_ready()) {
     request_flash('danger', 'The request database is temporarily unavailable.');
@@ -528,16 +528,39 @@ try {
     }
     $requestUpdate->close();
 
-    if ($requestType === 'hq_registration' && $action === 'reject' && $createdHeadquarterId !== null) {
-        $headquarterReject = $conn->prepare("UPDATE headquarter SET status = 'rejected' WHERE headquarter_id = ?");
-        if (!$headquarterReject) {
-            throw new RuntimeException('Could not prepare the company registration rejection.');
+    if ($requestType === 'hq_registration' && $action === 'reject') {
+        // Keep payment verification in sync: rejecting registration must close any open
+        // registration payment so it does not remain in the pending verification queue.
+        $rejectPayments = $conn->prepare(
+            "UPDATE payment_transfers
+             SET status = 'rejected',
+                 rejected_by_user_id = ?,
+                 rejected_at = NOW(),
+                 decision_note = ?
+             WHERE request_id = ?
+               AND payment_type = 'hq_registration'
+               AND status IN ('pending_payment', 'payer_reported_paid')"
+        );
+        if ($rejectPayments) {
+            $paymentRejectNote = 'Registration request rejected: ' . $reason;
+            if (mb_strlen($paymentRejectNote) > 500) {
+                $paymentRejectNote = mb_substr($paymentRejectNote, 0, 500);
+            }
+            $rejectPayments->bind_param('isi', $reviewerId, $paymentRejectNote, $requestId);
+            $rejectPayments->execute();
+            $rejectPayments->close();
         }
-        $headquarterReject->bind_param('i', $createdHeadquarterId);
-        if (!$headquarterReject->execute()) {
-            throw new RuntimeException('Could not reject the company registration.');
+        if ($createdHeadquarterId !== null) {
+            $headquarterReject = $conn->prepare("UPDATE headquarter SET status = 'rejected' WHERE headquarter_id = ?");
+            if (!$headquarterReject) {
+                throw new RuntimeException('Could not prepare the company registration rejection.');
+            }
+            $headquarterReject->bind_param('i', $createdHeadquarterId);
+            if (!$headquarterReject->execute()) {
+                throw new RuntimeException('Could not reject the company registration.');
+            }
+            $headquarterReject->close();
         }
-        $headquarterReject->close();
     } elseif ($recipientUserId !== null && $requestType === 'license_modification') {
         $accountStatus = $newStatus;
         if ($requestType === 'license_modification' && $action === 'reject') {
