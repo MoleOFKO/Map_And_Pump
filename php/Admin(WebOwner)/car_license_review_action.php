@@ -32,10 +32,6 @@ try {
     if (!$car || !in_array(strtolower(trim((string) $car['status'])), ['pending', 'pending_verification'], true)) {
         throw new RuntimeException('Only a pending car license can be approved or rejected.');
     }
-    if (duplicate_license_record_count('car', $carId) !== 0) {
-        throw new RuntimeException('This car plate is duplicated. Use Compare to record the decision and notify every affected customer.');
-    }
-
     $newStatus = $action === 'approve' ? 'approved' : 'rejected';
     $update = $conn->prepare('UPDATE car_license SET status = ?, updated_at = NOW() WHERE car_license_id = ?');
     if (!$update) {

@@ -660,7 +660,7 @@ function payment_transfer_user_is_admin(PDO $pdo, int $userId): bool
 {
     $stmt = $pdo->prepare(
         "SELECT 1 FROM users u
-         WHERE u.user_id = ? AND LOWER(COALESCE(u.status, 'active')) IN ('active', 'approved')
+         WHERE u.user_id = ? AND LOWER(COALESCE(u.status, 'active')) IN ('active', 'approved', 'enabled', 'ready')
            AND (
              EXISTS (SELECT 1 FROM roles r WHERE r.role_id = u.role_id AND LOWER(TRIM(r.role_name)) = 'admin')
              OR EXISTS (SELECT 1 FROM roles r WHERE r.role_id = u.business_role_id AND LOWER(TRIM(r.role_name)) = 'admin')
@@ -676,7 +676,7 @@ function payment_transfer_user_is_admin_or_moderator(PDO $pdo, int $userId): boo
 {
         $stmt = $pdo->prepare(
                 "SELECT 1 FROM users u
-                 WHERE u.user_id = ? AND LOWER(COALESCE(u.status, 'active')) IN ('active', 'approved')
+                 WHERE u.user_id = ? AND LOWER(COALESCE(u.status, 'active')) IN ('active', 'approved', 'enabled', 'ready')
                      AND (
                          EXISTS (SELECT 1 FROM roles r WHERE r.role_id = u.role_id AND LOWER(TRIM(r.role_name)) IN ('admin', 'moderator'))
                          OR EXISTS (SELECT 1 FROM roles r WHERE r.role_id = u.business_role_id AND LOWER(TRIM(r.role_name)) IN ('admin', 'moderator'))
