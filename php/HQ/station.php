@@ -70,10 +70,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // Register Station
     if ($action === 'register') {
+        $quickStationRequest = strtolower((string) ($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '')) === 'xmlhttprequest'
+            && ($_POST['allow_unassigned_manager'] ?? '') === '1'
+            && trim((string) ($_POST['return_to'] ?? '')) === 'account.php';
         $station_name    = trim($_POST['station_name'] ?? '');
         $location        = trim($_POST['location'] ?? '');
         $station_address = trim($_POST['station_address'] ?? '');
         $manager_email   = trim($_POST['manager_email'] ?? '');
+        $createdStation = null;
 
         $location = map_pump_normalize_station_location($location);
 
@@ -123,42 +127,44 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 $manager_id = null;
                 if ($manager_email === '') {
-                    throw new RuntimeException('A branch manager is required to create a station.');
-                }
-
-                $managerStmt = $pdo->prepare(
-                    "SELECT u.user_id
-                     FROM users u
-                     LEFT JOIN business_account_scope bas ON bas.user_id = u.user_id
-                     WHERE u.email = ?
-                       AND COALESCE(u.business_role_id, u.role_id) = 4
-                       AND (
-                           bas.headquarter_id = ?
-                           OR EXISTS (
-                               SELECT 1 FROM station_business_scope sbs
-                               WHERE sbs.branch_manager_user_id = u.user_id
-                                 AND sbs.headquarter_id = ?
+                    if (!$quickStationRequest) {
+                        throw new RuntimeException('A branch manager is required to create a station.');
+                    }
+                } else {
+                    $managerStmt = $pdo->prepare(
+                        "SELECT u.user_id
+                         FROM users u
+                         LEFT JOIN business_account_scope bas ON bas.user_id = u.user_id
+                         WHERE u.email = ?
+                           AND COALESCE(u.business_role_id, u.role_id) = 4
+                           AND (
+                               bas.headquarter_id = ?
+                               OR EXISTS (
+                                   SELECT 1 FROM station_business_scope sbs
+                                   WHERE sbs.branch_manager_user_id = u.user_id
+                                     AND sbs.headquarter_id = ?
+                               )
                            )
-                       )
-                     LIMIT 1"
-                );
-                $managerStmt->execute([$manager_email, $hqId, $hqId]);
-                $manager_id = $managerStmt->fetchColumn();
-                if (!$manager_id) {
-                    throw new RuntimeException('Please select a valid branch manager.');
-                }
+                         LIMIT 1"
+                    );
+                    $managerStmt->execute([$manager_email, $hqId, $hqId]);
+                    $manager_id = $managerStmt->fetchColumn();
+                    if (!$manager_id) {
+                        throw new RuntimeException('Please select a valid branch manager.');
+                    }
 
-                $assignedManagerStmt = $pdo->prepare(
-                    "SELECT 1
-                     FROM branches b
-                     LEFT JOIN station_business_scope sbs ON sbs.station_id = b.branch_id
-                     WHERE b.status <> 'closed'
-                       AND (b.manager_user_id = ? OR sbs.branch_manager_user_id = ?)
-                     LIMIT 1"
-                );
-                $assignedManagerStmt->execute([$manager_id, $manager_id]);
-                if ($assignedManagerStmt->fetchColumn()) {
-                    throw new RuntimeException('This branch manager is already assigned to another station.');
+                    $assignedManagerStmt = $pdo->prepare(
+                        "SELECT 1
+                         FROM branches b
+                         LEFT JOIN station_business_scope sbs ON sbs.station_id = b.branch_id
+                         WHERE b.status <> 'closed'
+                           AND (b.manager_user_id = ? OR sbs.branch_manager_user_id = ?)
+                         LIMIT 1"
+                    );
+                    $assignedManagerStmt->execute([$manager_id, $manager_id]);
+                    if ($assignedManagerStmt->fetchColumn()) {
+                        throw new RuntimeException('This branch manager is already assigned to another station.');
+                    }
                 }
 
                 $temporaryBranchCode = 'TMP-' . bin2hex(random_bytes(8));
@@ -230,8 +236,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
                 $pdo->commit();
                 $message = "Station node created successfully.";
+                $createdStation = [
+                    'id' => $stationId,
+                    'name' => $station_name,
+                    'location' => $location,
+                ];
                 $returnTo = trim((string)($_POST['return_to'] ?? ''));
-                if ($returnTo !== '') {
+                if ($returnTo !== '' && !$quickStationRequest) {
                     $_SESSION['hq_account_message'] = ['type' => 'success', 'text' => $message];
                     header('Location: ' . $returnTo);
                     exit;
@@ -248,10 +259,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($e->getMessage() === 'station_limit_reached') {
                     $showStationLimitModal = true;
                     $returnTo = trim((string)($_POST['return_to'] ?? ''));
-                    if ($returnTo !== '') {
+                    if ($returnTo !== '' && !$quickStationRequest) {
                         $_SESSION['hq_account_message'] = ['type' => 'danger', 'text' => 'Station limit reached for this HQ.'];
                         header('Location: ' . $returnTo);
                         exit;
+                    }
+                    if ($quickStationRequest) {
+                        $error = 'Station limit reached for this HQ.';
                     }
                 } elseif ($e->getMessage() === 'INSUFFICIENT_HQ_POINTS') {
                     $error = 'Station fees, capacity, and service extensions are paid together through the MMK service package.';
@@ -264,9 +278,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         $returnTo = trim((string)($_POST['return_to'] ?? ''));
-        if ($returnTo !== '' && $error !== '') {
+        if ($returnTo !== '' && $error !== '' && !$quickStationRequest) {
             $_SESSION['hq_account_message'] = ['type' => 'danger', 'text' => $error];
             header('Location: ' . $returnTo);
+            exit;
+        }
+        if ($quickStationRequest) {
+            header('Content-Type: application/json; charset=utf-8');
+            if ($createdStation !== null) {
+                echo json_encode([
+                    'success' => true,
+                    'message' => $message,
+                    'station' => $createdStation,
+                ]);
+            } else {
+                http_response_code(422);
+                echo json_encode([
+                    'success' => false,
+                    'message' => $error !== '' ? $error : 'The station could not be created.',
+                ]);
+            }
             exit;
         }
     }
@@ -313,11 +344,51 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
 
             $pdo->beginTransaction();
+            $hqLockStmt = $pdo->prepare('SELECT headquarter_id FROM headquarter WHERE headquarter_id = ? FOR UPDATE');
+            $hqLockStmt->execute([$hqId]);
+            if (!$hqLockStmt->fetchColumn()) {
+                throw new RuntimeException('Could not verify this HQ before assigning the branch manager.');
+            }
+            $currentManagerStmt = $pdo->prepare(
+                'SELECT b.manager_user_id, sbs.branch_manager_user_id
+                 FROM branches b
+                 INNER JOIN station_business_scope sbs ON sbs.station_id = b.branch_id
+                 WHERE b.branch_id = ? AND sbs.headquarter_id = ?
+                 FOR UPDATE'
+            );
+            $currentManagerStmt->execute([(int) $station_id, $hqId]);
+            $currentAssignment = $currentManagerStmt->fetch(PDO::FETCH_ASSOC);
+            if (!$currentAssignment) {
+                throw new RuntimeException('Could not verify this station assignment.');
+            }
+            $assignedElsewhereStmt = $pdo->prepare(
+                "SELECT 1
+                 FROM branches b
+                 LEFT JOIN station_business_scope sbs ON sbs.station_id = b.branch_id
+                 WHERE b.status <> 'closed'
+                   AND b.branch_id <> ?
+                   AND (b.manager_user_id = ? OR sbs.branch_manager_user_id = ?)
+                 LIMIT 1"
+            );
+            $assignedElsewhereStmt->execute([(int) $station_id, (int) $manager_id, (int) $manager_id]);
+            if ($assignedElsewhereStmt->fetchColumn()) {
+                throw new RuntimeException('This branch manager is already assigned to another station.');
+            }
+
             [$latitude, $longitude] = array_map('trim', explode(',', $location, 2));
             $stmt = $pdo->prepare("UPDATE branches SET branch_name = ?, address = ?, latitude = ?, longitude = ?, manager_user_id = ? WHERE branch_id = ?");
             $stmt->execute([$station_name, $station_address, $latitude, $longitude, $manager_id, $station_id]);
             $scopeStmt = $pdo->prepare("UPDATE station_business_scope SET branch_manager_user_id = ? WHERE station_id = ? AND headquarter_id = ?");
             $scopeStmt->execute([$manager_id, $station_id, $hqId]);
+            $previousManagerId = (int) ($currentAssignment['manager_user_id'] ?: $currentAssignment['branch_manager_user_id']);
+            if ($previousManagerId > 0 && $previousManagerId !== (int) $manager_id) {
+                $previousManagerScopeStmt = $pdo->prepare(
+                    'UPDATE business_account_scope
+                     SET station_id = NULL
+                     WHERE user_id = ? AND headquarter_id = ? AND station_id = ?'
+                );
+                $previousManagerScopeStmt->execute([$previousManagerId, $hqId, (int) $station_id]);
+            }
             $accountScopeStmt = $pdo->prepare(
                 "INSERT INTO business_account_scope
                     (user_id, business_role_id, headquarter_id, branch_manager_user_id, station_id, status)
@@ -335,6 +406,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             $error = "Error updating configuration: " . $e->getMessage();
         } catch (RuntimeException $e) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
             $error = $e->getMessage();
         }
     }

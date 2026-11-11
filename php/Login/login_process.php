@@ -39,6 +39,23 @@ if (!filter_var($email, FILTER_VALIDATE_EMAIL) || $password === '') {
 try {
     map_pump_cleanup_due_account_deletions($pdo);
 
+    $branchManagerLoginStmt = $pdo->prepare(
+        "SELECT branch_password
+         FROM branches
+         WHERE LOWER(TRIM(email)) = LOWER(TRIM(?))
+           AND manager_user_id IS NOT NULL
+           AND branch_password IS NOT NULL
+           AND TRIM(branch_password) <> ''
+         ORDER BY branch_id
+         LIMIT 1"
+    );
+    $branchManagerLoginStmt->execute([$email]);
+    $branchManagerCredential = $branchManagerLoginStmt->fetch(PDO::FETCH_ASSOC);
+    if ($branchManagerCredential
+        && !password_verify($password, (string) $branchManagerCredential['branch_password'])) {
+        auth_redirect_to_login('Invalid email or password.', $email);
+    }
+
     $hqLoginStmt = $pdo->prepare(
         'SELECT headquarter_id, company_name, headquarter_email, headquarter_password, status
          FROM headquarter
