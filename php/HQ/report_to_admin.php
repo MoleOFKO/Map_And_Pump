@@ -1,10 +1,18 @@
 <?php
 require_once __DIR__ . '/hq_guard.php';
 require_once __DIR__ . '/../conn.php';
+require_once __DIR__ . '/report_schema.php';
 // 2. Handle Form Submission
 $alertMessage = "";
 $user_id = (int) ($_SESSION['user_id'] ?? 0);
+$headquarterId = (int) ($_SESSION['headquarter_id'] ?? 0);
 $reports = [];
+try {
+    hq_report_ensure_scope_schema($pdo);
+} catch (Throwable $e) {
+    error_log('HQ report ownership schema could not be prepared: ' . $e->getMessage());
+    $alertMessage = 'Report storage is unavailable. Please try again later.';
+}
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $topic = trim((string) ($_POST['topic'] ?? ''));
     $urgency = trim((string) ($_POST['urgency'] ?? ''));
@@ -13,14 +21,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if (isset($_POST['edit_report_id'])) {
         $alertMessage = 'Submitted reports are read-only and cannot be edited.';
-    } elseif ($topic !== '' && in_array($urgency, ['low', 'normal', 'high'], true) && $description !== '') {
+    } elseif ($topic !== '' && in_array($urgency, ['low', 'normal', 'high'], true) && $description !== '' && $headquarterId > 0) {
         try {
-            $stmt = $pdo->prepare("INSERT INTO report (user_id, role_id, importance, short_summery, message, created_at) VALUES (?, ?, ?, ?, ?, NOW())");
+            $stmt = $pdo->prepare("INSERT INTO report (user_id, headquarter_id, role_id, importance, short_summery, message, created_at) VALUES (?, ?, ?, ?, ?, ?, NOW())");
             
             $importance = ($urgency === 'high') ? 'high' : 'normal';
             $summary = ucfirst($topic) . " Issue";
             
-            $stmt->execute([$user_id, $role_id, $importance, $summary, $description]);
+            $stmt->execute([$user_id > 0 ? $user_id : null, $headquarterId, $role_id, $importance, $summary, $description]);
             $alertMessage = "Your report has been successfully sent to the admin and moderator team!";
         } catch (PDOException $e) {
             $alertMessage = "Error dispatching report: " . $e->getMessage();
@@ -34,10 +42,10 @@ try {
     $stmt = $pdo->prepare(
         'SELECT report_id, importance, short_summery, message, created_at
          FROM report
-         WHERE user_id = ?
+         WHERE headquarter_id = ? OR user_id = ?
          ORDER BY created_at DESC, report_id DESC'
     );
-    $stmt->execute([$user_id]);
+    $stmt->execute([$headquarterId, $user_id]);
     $reports = $stmt->fetchAll(PDO::FETCH_ASSOC);
 } catch (PDOException $e) {
     $alertMessage = $alertMessage !== '' ? $alertMessage : 'Your reports could not be loaded.';

@@ -5,6 +5,10 @@ if (!function_exists('map_pump_current_hq_id')) {
     {
         $userId = $userId ?? (int)($_SESSION['user_id'] ?? 0);
         if ($userId <= 0) {
+            $sessionHqId = !empty($_SESSION['hq_auth']) ? (int) ($_SESSION['headquarter_id'] ?? 0) : 0;
+            if ($sessionHqId > 0) {
+                return $sessionHqId;
+            }
             return 0;
         }
 

@@ -115,6 +115,7 @@ function account_switch_activate(array $user, int $targetRoleId, string $targetR
 {
     session_regenerate_id(true);
 
+    unset($_SESSION['hq_auth'], $_SESSION['hq_switch_csrf']);
     $_SESSION['is_logged_in'] = true;
     $_SESSION['user_id'] = (int) $user['user_id'];
     $_SESSION['user_name'] = (string) $user['user_name'];
@@ -139,7 +140,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     exit;
 }
 
-if (empty($_SESSION['is_logged_in']) || empty($_SESSION['user_id'])) {
+if (empty($_SESSION['is_logged_in']) || (empty($_SESSION['user_id']) && empty($_SESSION['hq_auth']))) {
     account_switch_redirect_login();
 }
 
@@ -153,6 +154,53 @@ if (strtolower((string)($_SESSION['role_name'] ?? '')) === 'staff') {
 
 $userId = (int) $_SESSION['user_id'];
 $targetMode = strtolower(trim((string) ($_POST['mode'] ?? '')));
+
+if (!empty($_SESSION['hq_auth'])) {
+    $hqSwitchToken = (string) ($_SESSION['hq_switch_csrf'] ?? '');
+    if ($hqSwitchToken === '' || !hash_equals($hqSwitchToken, (string) ($_POST['csrf_token'] ?? ''))) {
+        http_response_code(403);
+        exit('Invalid request token. Reload the page and try again.');
+    }
+
+    if ($targetMode !== 'customer') {
+        account_switch_redirect_login('Choose the linked customer profile to switch accounts.');
+    }
+
+    $customerRoleId = account_switch_role_id($pdo, 'customer');
+    $headquarterId = (int) ($_SESSION['headquarter_id'] ?? 0);
+    if ($customerRoleId <= 0 || $headquarterId <= 0) {
+        account_switch_redirect_login('The linked customer profile is unavailable.');
+    }
+
+    $linkedCustomerStmt = $pdo->prepare(
+        "SELECT u.user_id, u.user_public_id, u.user_name, u.email, u.oauth_avatar_url,
+                u.status, u.role_id, u.business_role_id, u.license_id, bas.headquarter_id,
+                NULL AS branch_id, customer_role.role_name AS business_role_name
+         FROM headquarter h
+         INNER JOIN business_account_scope bas ON bas.headquarter_id = h.headquarter_id
+             AND bas.business_role_id = ?
+         INNER JOIN users u ON u.user_id = bas.user_id
+         LEFT JOIN roles customer_role ON customer_role.role_id = bas.business_role_id
+         WHERE h.headquarter_id = ? AND h.headquarters_owner_id IS NULL
+           AND u.role_id = ?
+           AND LOWER(TRIM(u.status)) IN ('active', 'approved', 'license_expired')
+         LIMIT 1"
+    );
+    $linkedCustomerStmt->execute([$customerRoleId, $headquarterId, $customerRoleId]);
+    $linkedCustomer = $linkedCustomerStmt->fetch(PDO::FETCH_ASSOC);
+    if (!$linkedCustomer) {
+        account_switch_redirect_login('No active customer account is linked to this HQ.');
+    }
+
+    customer_sync_license_expiry($pdo, (int) $linkedCustomer['user_id']);
+    map_pump_set_current_role($pdo, (int) $linkedCustomer['user_id'], $customerRoleId);
+    account_switch_activate($linkedCustomer, $customerRoleId, 'Customer');
+    $licenseAccess = customer_license_access($pdo, (int) $linkedCustomer['user_id']);
+    header('Location: ' . ($licenseAccess['is_approved']
+        ? account_switch_dashboard('customer', $customerRoleId)
+        : '/php/Customer/license.php'));
+    exit;
+}
 
 try {
     $stmt = $pdo->prepare(

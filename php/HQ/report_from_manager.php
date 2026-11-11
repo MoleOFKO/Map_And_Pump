@@ -313,6 +313,7 @@ else: ?>
                         <thead>
                             <tr>
                                 <th>Report ID</th>
+                                <th>Date</th>
                                 <th>User</th>
                                 <th>Importance</th>
                                 <th>Summary</th>
@@ -325,12 +326,14 @@ else: ?>
 foreach ($reports as $rep): ?>
                                 <tr id="report-<?= htmlspecialchars($rep['report_id']) ?>" class="report-row" data-search="<?= htmlspecialchars(strtolower(trim(
                                         $rep['report_id'] . ' ' .
+                                        ($rep['created_at'] ?? '') . ' ' .
                                         ($rep['user_name'] ?? '') . ' ' .
                                         ($rep['importance'] ?? '') . ' ' .
                                         ($rep['short_summery'] ?? '') . ' ' .
                                         'unread'
                                     )), ENT_QUOTES) ?>" onclick="showDetailFromRow(this)" style="cursor: pointer;">
                                     <td><?= htmlspecialchars($rep['report_id']) ?></td>
+                                    <td><?= htmlspecialchars((string) ($rep['created_at'] ?? ''), ENT_QUOTES, 'UTF-8') ?></td>
                                     <td><?= htmlspecialchars($rep['user_name']) ?></td>
                                     <td><?= htmlspecialchars($rep['importance']) ?></td>
                                     <td><?= htmlspecialchars($rep['short_summery']) ?></td>
@@ -357,7 +360,7 @@ foreach ($reports as $rep): ?>
                             <?php
 endforeach; ?>
                             <tr id="reportsNoResults" class="d-none">
-                                <td colspan="6" class="text-center text-muted">No reports match your search.</td>
+                                <td colspan="7" class="text-center text-muted">No reports match your search.</td>
                             </tr>
                         </tbody>
                     </table>

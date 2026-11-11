@@ -124,7 +124,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         );
                         $request->execute([
                             $reference,
-                            $loggedUserId,
+                            $loggedUserId > 0 ? $loggedUserId : null,
                             (int) ($_SESSION['role_id'] ?? 3),
                             (int) $config['headquarter_id'],
                             (string) ($config['company_name'] ?? $title),
@@ -134,8 +134,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             $details,
                             $licenseExpiry . ' 23:59:59',
                         ]);
-                        $updateStatus = $pdo->prepare("UPDATE users SET status = 'pending', updated_at = NOW() WHERE user_id = ?");
-                        $updateStatus->execute([$loggedUserId]);
+                        if ($loggedUserId > 0) {
+                            $updateStatus = $pdo->prepare("UPDATE users SET status = 'pending', updated_at = NOW() WHERE user_id = ?");
+                            $updateStatus->execute([$loggedUserId]);
+                        }
                         $pdo->commit();
                         $_SESSION['user_status'] = 'pending';
                         $message = 'License expiry extension submitted (' . $reference . '). '

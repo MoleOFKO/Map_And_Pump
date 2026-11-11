@@ -9,17 +9,17 @@ function account_password_setup_create_link(mysqli $conn, int $userId, int $expi
 
     $token = rtrim(strtr(base64_encode(random_bytes(32)), '+/', '-_'), '=');
     $tokenHash = hash('sha256', $token);
-        $invalidate = $conn->prepare(
-            'UPDATE account_password_setup_tokens SET used_at = NOW() WHERE user_id = ? AND used_at IS NULL'
-        );
-        if (!$invalidate) {
-            throw new RuntimeException('Could not prepare replacement password setup links.');
-        }
-        $invalidate->bind_param('i', $userId);
-        if (!$invalidate->execute()) {
-            throw new RuntimeException('Could not invalidate previous password setup links.');
-        }
-        $invalidate->close();
+    $invalidate = $conn->prepare(
+        'UPDATE account_password_setup_tokens SET used_at = NOW() WHERE user_id = ? AND used_at IS NULL'
+    );
+    if (!$invalidate) {
+        throw new RuntimeException('Could not prepare replacement password setup links.');
+    }
+    $invalidate->bind_param('i', $userId);
+    if (!$invalidate->execute()) {
+        throw new RuntimeException('Could not invalidate previous password setup links.');
+    }
+    $invalidate->close();
 
     $insert = $conn->prepare(
         'INSERT INTO account_password_setup_tokens (user_id, token_hash, expires_at)
@@ -72,6 +72,62 @@ function account_password_setup_create_link_pdo(PDO $pdo, int $userId, int $expi
          VALUES (?, ?, DATE_ADD(NOW(), INTERVAL ' . $expiresHours . ' HOUR))'
     );
     $insert->execute([$userId, hash('sha256', $token)]);
+
+    return payment_transfer_absolute_url('/php/Login/set_account_password.php?token=' . rawurlencode($token));
+}
+
+function hq_password_setup_ensure_schema(PDO $pdo): void
+{
+    $exists = $pdo->prepare(
+        "SELECT 1 FROM INFORMATION_SCHEMA.TABLES
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'hq_password_setup_tokens'
+         LIMIT 1"
+    );
+    $exists->execute();
+    if ($exists->fetchColumn()) {
+        return;
+    }
+
+    try {
+        $pdo->exec(
+            "CREATE TABLE hq_password_setup_tokens (
+            token_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            headquarter_id INT NOT NULL,
+            token_hash CHAR(64) COLLATE utf8mb4_bin NOT NULL,
+            expires_at DATETIME NOT NULL,
+            used_at DATETIME DEFAULT NULL,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (token_id),
+            UNIQUE KEY uq_hq_password_setup_token_hash (token_hash),
+            KEY idx_hq_password_setup_hq (headquarter_id, expires_at),
+            CONSTRAINT fk_hq_password_setup_hq FOREIGN KEY (headquarter_id) REFERENCES headquarter (headquarter_id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin"
+        );
+    } catch (PDOException $e) {
+        $exists->execute();
+        if (!$exists->fetchColumn()) {
+            throw $e;
+        }
+    }
+}
+
+function hq_password_setup_create_link(PDO $pdo, int $headquarterId, int $expiresHours = 48): string
+{
+    if ($headquarterId <= 0 || $expiresHours < 1 || $expiresHours > 168) {
+        throw new InvalidArgumentException('HQ password setup link parameters are invalid.');
+    }
+
+    hq_password_setup_ensure_schema($pdo);
+    $token = rtrim(strtr(base64_encode(random_bytes(32)), '+/', '-_'), '=');
+    $pdo->prepare(
+        'UPDATE hq_password_setup_tokens SET used_at = NOW() WHERE headquarter_id = ? AND used_at IS NULL'
+    )->execute([$headquarterId]);
+
+    $insert = $pdo->prepare(
+        'INSERT INTO hq_password_setup_tokens (headquarter_id, token_hash, expires_at)
+         VALUES (?, ?, DATE_ADD(NOW(), INTERVAL ' . $expiresHours . ' HOUR))'
+    );
+    $insert->execute([$headquarterId, hash('sha256', $token)]);
 
     return payment_transfer_absolute_url('/php/Login/set_account_password.php?token=' . rawurlencode($token));
 }

@@ -44,7 +44,8 @@ function hq_guard_dashboard_for_role(string $roleName, int $roleId): string
     return $dashboardsByName[$roleKey] ?? ($dashboardsById[$roleId] ?? '/php/Customer/dashboard.php');
 }
 
-if (empty($_SESSION['is_logged_in']) || empty($_SESSION['user_id'])) {
+if (empty($_SESSION['is_logged_in'])
+    || (empty($_SESSION['user_id']) && (empty($_SESSION['hq_auth']) || (int) ($_SESSION['headquarter_id'] ?? 0) <= 0))) {
     hq_guard_redirect_top('/php/Login/login.php', 'Please sign in to continue.');
 }
 
@@ -52,31 +53,69 @@ if (!payment_transfer_ensure_hq_service_expiry_schema($pdo)) {
     error_log('HQ service period could not be checked because its schema is unavailable.');
 }
 
-$userId = (int) $_SESSION['user_id'];
+$hqAuth = !empty($_SESSION['hq_auth']);
+$userId = (int) ($_SESSION['user_id'] ?? 0);
 
 try {
-    $hasCurrentRole = map_pump_current_role_column_ready($pdo);
-    $currentRoleSelect = $hasCurrentRole ? 'u.current_role_id, cr.role_name AS current_role_name,' : 'NULL AS current_role_id, NULL AS current_role_name,';
-    $currentRoleJoin = $hasCurrentRole ? 'LEFT JOIN roles cr ON cr.role_id = u.current_role_id' : '';
+    if ($hqAuth) {
+        $stmt = $pdo->prepare(
+            'SELECT headquarter_id, company_name, headquarter_email, status AS headquarter_status,
+                    expire_at, business_license_expire_date, service_expires_at,
+                    account_deletion_scheduled_for
+             FROM headquarter
+             WHERE headquarter_id = ?
+             LIMIT 1'
+        );
+        $stmt->execute([(int) $_SESSION['headquarter_id']]);
+        $hq = $stmt->fetch(PDO::FETCH_ASSOC);
+        if ($hq && in_array(strtolower(trim((string) ($hq['headquarter_status'] ?? ''))), ['disabled', 'rejected', 'suspended', 'removed'], true)) {
+            $hq = null;
+        }
+        if ($hq) {
+            $_SESSION['user_email'] = (string) $hq['headquarter_email'];
+            $_SESSION['user_name'] = (string) ($hq['company_name'] ?? 'Company');
+        }
+        $user = $hq ? [
+            'user_id' => 0,
+            'user_name' => (string) ($hq['company_name'] ?? 'Company'),
+            'email' => (string) $hq['headquarter_email'],
+            'role_id' => 3,
+            'business_role_id' => 3,
+            'current_role_id' => 3,
+            'headquarter_id' => (int) $hq['headquarter_id'],
+            'status' => !empty($hq['account_deletion_scheduled_for']) ? 'pending_deletion' : 'active',
+            'headquarter_status' => (string) ($hq['headquarter_status'] ?? ''),
+            'expire_at' => $hq['expire_at'] ?? null,
+            'business_license_expire_date' => $hq['business_license_expire_date'] ?? null,
+            'service_expires_at' => $hq['service_expires_at'] ?? null,
+            'role_name' => 'HQ',
+            'business_role_name' => 'HQ',
+            'current_role_name' => 'HQ',
+        ] : null;
+    } else {
+        $hasCurrentRole = map_pump_current_role_column_ready($pdo);
+        $currentRoleSelect = $hasCurrentRole ? 'u.current_role_id, cr.role_name AS current_role_name,' : 'NULL AS current_role_id, NULL AS current_role_name,';
+        $currentRoleJoin = $hasCurrentRole ? 'LEFT JOIN roles cr ON cr.role_id = u.current_role_id' : '';
 
-    $stmt = $pdo->prepare(
-        "SELECT u.user_id, u.user_name, u.email, u.role_id, u.business_role_id,
-            COALESCE(owned_hq.headquarter_id, bas.headquarter_id) AS headquarter_id, u.status,
-            h.expire_at, h.business_license_expire_date, h.service_expires_at, h.status AS headquarter_status,
-                {$currentRoleSelect}
-                r.role_name, br.role_name AS business_role_name
-         FROM users u
-         LEFT JOIN business_account_scope bas ON bas.user_id = u.user_id
-         LEFT JOIN headquarter owned_hq ON owned_hq.headquarters_owner_id = u.user_id
-         LEFT JOIN headquarter h ON h.headquarter_id = COALESCE(owned_hq.headquarter_id, bas.headquarter_id)
-         LEFT JOIN roles r ON r.role_id = u.role_id
-         LEFT JOIN roles br ON br.role_id = u.business_role_id
-         {$currentRoleJoin}
-         WHERE u.user_id = ?
-         LIMIT 1"
-    );
-    $stmt->execute([$userId]);
-    $user = $stmt->fetch(PDO::FETCH_ASSOC);
+        $stmt = $pdo->prepare(
+            "SELECT u.user_id, u.user_name, u.email, u.role_id, u.business_role_id,
+                COALESCE(owned_hq.headquarter_id, bas.headquarter_id) AS headquarter_id, u.status,
+                h.expire_at, h.business_license_expire_date, h.service_expires_at, h.status AS headquarter_status,
+                    {$currentRoleSelect}
+                    r.role_name, br.role_name AS business_role_name
+             FROM users u
+             LEFT JOIN business_account_scope bas ON bas.user_id = u.user_id
+             LEFT JOIN headquarter owned_hq ON owned_hq.headquarters_owner_id = u.user_id
+             LEFT JOIN headquarter h ON h.headquarter_id = COALESCE(owned_hq.headquarter_id, bas.headquarter_id)
+             LEFT JOIN roles r ON r.role_id = u.role_id
+             LEFT JOIN roles br ON br.role_id = u.business_role_id
+             {$currentRoleJoin}
+             WHERE u.user_id = ?
+             LIMIT 1"
+        );
+        $stmt->execute([$userId]);
+        $user = $stmt->fetch(PDO::FETCH_ASSOC);
+    }
 } catch (Throwable $e) {
     error_log('HQ role guard failed while loading user: ' . $e->getMessage());
     $user = null;
@@ -96,7 +135,7 @@ if ($licenseExpiry === '') {
     $licenseExpiry = trim((string) ($user['expire_at'] ?? ''));
 }
 $expiryTimestamp = $licenseExpiry !== '' ? strtotime($licenseExpiry) : false;
-if ($expiryTimestamp !== false && date('Y-m-d', $expiryTimestamp) < date('Y-m-d')
+if (!$hqAuth && $expiryTimestamp !== false && date('Y-m-d', $expiryTimestamp) < date('Y-m-d')
     && in_array($userStatus, ['active', 'approved', 'enabled', 'ready'], true)) {
     try {
         $expireOwner = $pdo->prepare("UPDATE users SET status = 'expired', updated_at = NOW() WHERE user_id = ?");
@@ -156,7 +195,9 @@ $_SESSION['has_business'] = !empty($user['business_role_id']);
 $_SESSION['active_profile_mode'] = ($activeRoleKey === 'customer') ? 'customer' : 'business';
 $_SESSION['user_name'] = (string) ($user['user_name'] ?? $_SESSION['user_name'] ?? '');
 $_SESSION['user_email'] = (string) ($user['email'] ?? $_SESSION['user_email'] ?? '');
-$_SESSION['headquarter_id'] = map_pump_current_hq_id($pdo, $userId);
+$_SESSION['headquarter_id'] = $hqAuth
+    ? (int) ($user['headquarter_id'] ?? 0)
+    : map_pump_current_hq_id($pdo, $userId);
 
 if ($activeRoleId !== 3 && $activeRoleKey !== 'hq') {
     hq_guard_redirect_top(hq_guard_dashboard_for_role($activeRoleName, $activeRoleId));

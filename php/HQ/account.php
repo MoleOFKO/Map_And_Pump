@@ -11,6 +11,7 @@ try {
 }
 
 $managers = [];
+$staffAccounts = [];
 $stations = [];
 $branchManagers = [];
 $dbError = '';
@@ -103,20 +104,50 @@ try {
                    CASE WHEN s.latitude IS NOT NULL AND s.longitude IS NOT NULL
                         THEN CONCAT(s.latitude, ', ', s.longitude) ELSE s.address END AS location
             FROM users u
-            LEFT JOIN business_account_scope bas ON bas.user_id = u.user_id
-            LEFT JOIN station_business_scope sbs ON sbs.branch_manager_user_id = u.user_id AND sbs.headquarter_id = :hq_id_scope
-                        LEFT JOIN branches s ON s.branch_id = COALESCE(bas.station_id, sbs.station_id)
-                            WHERE COALESCE(u.business_role_id, u.role_id) = 4
-              AND (bas.headquarter_id = :hq_id OR sbs.headquarter_id = :hq_id_scope_filter)
+            LEFT JOIN business_account_scope bas
+                   ON bas.user_id = u.user_id
+                  AND bas.headquarter_id = :hq_id_scope
+            LEFT JOIN station_business_scope sbs
+                   ON sbs.branch_manager_user_id = u.user_id
+                  AND sbs.headquarter_id = :hq_id_scope_filter
+            LEFT JOIN branches s ON s.branch_id = COALESCE(bas.station_id, sbs.station_id)
+            WHERE :hq_id_valid > 0
+              AND COALESCE(u.business_role_id, u.role_id) = 4
+              AND (bas.user_id IS NOT NULL OR sbs.branch_manager_user_id IS NOT NULL)
             ORDER BY u.user_id ASC";
 
     $stmt = $pdo->prepare($sql);
     $stmt->execute([
         ':hq_id_scope' => $hqId,
-        ':hq_id' => $hqId,
         ':hq_id_scope_filter' => $hqId,
+        ':hq_id_valid' => $hqId,
     ]);
     $managers = $stmt ? $stmt->fetchAll(PDO::FETCH_ASSOC) : [];
+} catch (PDOException $e) {
+    $dbError = $e->getMessage();
+}
+
+try {
+    $staffStmt = $pdo->prepare(
+        "SELECT st.staff_id, st.user_id, st.full_name AS user_name, st.email,
+                CASE WHEN st.is_active = 1 THEN 'active' ELSE 'disabled' END AS status,
+                5 AS account_role, b.branch_id AS station_id, b.branch_name AS station_name,
+                CASE WHEN b.latitude IS NOT NULL AND b.longitude IS NOT NULL
+                     THEN CONCAT(b.latitude, ', ', b.longitude) ELSE b.address END AS location
+         FROM staff st
+         INNER JOIN branches b ON b.branch_id = st.branch_id
+         WHERE ? > 0
+           AND st.branch_id IS NOT NULL
+           AND EXISTS (
+             SELECT 1
+             FROM station_business_scope sbs
+             WHERE sbs.station_id = b.branch_id
+               AND sbs.headquarter_id = ?
+         )
+         ORDER BY st.full_name ASC, st.staff_id ASC"
+    );
+    $staffStmt->execute([$hqId, $hqId]);
+    $staffAccounts = $staffStmt->fetchAll(PDO::FETCH_ASSOC);
 } catch (PDOException $e) {
     $dbError = $e->getMessage();
 }
@@ -128,9 +159,9 @@ try {
                                          s.address AS station_address
                                   FROM branches s
                                   INNER JOIN station_business_scope sbs ON sbs.station_id = s.branch_id
-                                  WHERE sbs.headquarter_id = ?
+                                  WHERE ? > 0 AND sbs.headquarter_id = ?
                                   ORDER BY s.branch_name");
-    $stationStmt->execute([$hqId]);
+    $stationStmt->execute([$hqId, $hqId]);
     $stations = $stationStmt->fetchAll(PDO::FETCH_ASSOC);
 } catch (PDOException $e) {
     $dbError = $e->getMessage();
@@ -141,7 +172,8 @@ try {
         "SELECT u.user_id, u.email
          FROM users u
          LEFT JOIN business_account_scope bas ON bas.user_id = u.user_id
-         WHERE COALESCE(u.business_role_id, u.role_id) = 4
+         WHERE ? > 0
+           AND COALESCE(u.business_role_id, u.role_id) = 4
            AND (
                bas.headquarter_id = ?
                OR EXISTS (
@@ -153,7 +185,7 @@ try {
            AND LOWER(COALESCE(u.status, 'active')) NOT IN ('suspended', 'removed')
          ORDER BY u.email"
     );
-    $branchManagerStmt->execute([$hqId, $hqId]);
+    $branchManagerStmt->execute([$hqId, $hqId, $hqId]);
     $branchManagers = $branchManagerStmt->fetchAll(PDO::FETCH_ASSOC);
 } catch (PDOException $e) {
     $dbError = $e->getMessage();
@@ -338,8 +370,8 @@ try {
 </head>
 <body>
     <div class="container">
-        <h2 class="title">Manage Branch Managers</h2>
-        <p class="subtitle">Invite and control branch managers assigned to this HQ. Staff are managed by their branch manager.</p>
+        <h2 class="title">Employee Accounts</h2>
+        <p class="subtitle">View branch managers and staff assigned to stations in this HQ.</p>
 
         <?php
 if (!empty($dbError)): ?>
@@ -366,7 +398,7 @@ endif; ?>
 
         <div class="card">
             <div style="display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap;">
-                <h3 style="margin: 0;">Manager &amp; Staff Roster</h3>
+                <h3 style="margin: 0;">Employee Roster</h3>
                 <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
                     <div class="account-search" id="accountSearchWrap">
                         <i class="fa-solid fa-magnifying-glass account-search-icon" aria-hidden="true"></i>
@@ -377,7 +409,10 @@ endif; ?>
             </div>
             <ul class="nav nav-tabs mt-3" id="accountRoleTabs" role="tablist">
                 <li class="nav-item" role="presentation">
-                    <button class="nav-link active" type="button" role="tab" data-account-role-tab="4" aria-selected="true">Branch Managers</button>
+                    <button class="nav-link active" type="button" role="tab" data-account-role-tab="4" aria-selected="true">Branch Managers <span class="badge bg-secondary ms-1"><?= count($managers) ?></span></button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" type="button" role="tab" data-account-role-tab="5" aria-selected="false">Staff <span class="badge bg-secondary ms-1"><?= count($staffAccounts) ?></span></button>
                 </li>
             </ul>
             <table id="accountRosterTable" style="width: 100%; border-collapse: collapse; margin-top: 10px;">
@@ -428,14 +463,35 @@ $status = strtolower((string)($manager['status'] ?? ''));
                             </tr>
                         <?php
 endforeach; ?>
-                    <?php
-else: ?>
-                        <tr data-account-empty="true">
-                            <td colspan="5" style="padding: 16px 8px; text-align: center; color: var(--muted);">No branch manager accounts found.</td>
-                        </tr>
-                    <?php
-endif; ?>
-                </tbody>
+                                            <?php endif; ?>
+                                            <?php foreach ($staffAccounts as $staffAccount): ?>
+                                                <?php
+                                                    $staffStatus = ($staffAccount['status'] ?? '') === 'active' ? 'active' : 'disabled';
+                                                    $staffStatusLabel = $staffStatus === 'active' ? 'Active' : 'Disabled';
+                                                    $staffStatusColor = $staffStatus === 'active' ? 'var(--success)' : 'var(--danger)';
+                                                    $staffStationName = trim((string) ($staffAccount['station_name'] ?? ''));
+                                                    $staffLocation = trim((string) ($staffAccount['location'] ?? ''));
+                                                    $staffStationText = $staffStationName !== ''
+                                                        ? ($staffLocation !== '' ? $staffStationName . ' — ' . $staffLocation : $staffStationName)
+                                                        : 'Unassigned';
+                                                ?>
+                                                <tr style="border-bottom: 1px solid var(--border);" data-account-role="5" data-search="<?= htmlspecialchars(strtolower(trim(
+                                                    ($staffAccount['user_name'] ?? '') . ' ' .
+                                                    ($staffAccount['email'] ?? '') . ' ' .
+                                                    $staffStationText . ' ' .
+                                                    $staffStatusLabel
+                                                )), ENT_QUOTES) ?>">
+                                                    <td style="padding: 12px 8px;"><?= htmlspecialchars($staffAccount['user_name'] ?? 'N/A', ENT_QUOTES, 'UTF-8') ?></td>
+                                                    <td style="padding: 12px 8px;"><?= htmlspecialchars($staffAccount['email'] ?? 'N/A', ENT_QUOTES, 'UTF-8') ?></td>
+                                                    <td style="padding: 12px 8px;"><?= htmlspecialchars($staffStationText, ENT_QUOTES, 'UTF-8') ?></td>
+                                                    <td style="padding: 12px 8px;"><span style="color: <?= htmlspecialchars($staffStatusColor, ENT_QUOTES, 'UTF-8') ?>; font-weight: bold;"><?= htmlspecialchars($staffStatusLabel, ENT_QUOTES, 'UTF-8') ?></span></td>
+                                                    <td style="padding: 12px 8px; text-align: right;"><span class="text-muted">Managed by branch manager</span></td>
+                                                </tr>
+                                            <?php endforeach; ?>
+                                            <tr data-account-empty="true">
+                                                <td colspan="5" style="padding: 16px 8px; text-align: center; color: var(--muted);"></td>
+                                            </tr>
+                                        </tbody>
             </table>
         </div>
     </div>

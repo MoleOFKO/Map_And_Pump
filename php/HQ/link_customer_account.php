@@ -21,16 +21,16 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST' || empty($_SESSION['is_logged_in'])) {
 $userId = (int) ($_SESSION['user_id'] ?? 0);
 $headquarterId = (int) ($_SESSION['headquarter_id'] ?? 0);
 $csrfToken = (string) ($_POST['csrf_token'] ?? '');
-if ($userId <= 0 || $headquarterId <= 0 || empty($_SESSION['hq_customer_link_csrf'])
+if (($userId <= 0 && empty($_SESSION['hq_auth'])) || $headquarterId <= 0 || empty($_SESSION['hq_customer_link_csrf'])
     || !hash_equals((string) $_SESSION['hq_customer_link_csrf'], $csrfToken)) {
     hq_customer_link_respond(false, 'Your session expired. Refresh the page and try again.', 403);
 }
 
 try {
-$ownerCheck = $pdo->prepare(
-    'SELECT 1 FROM headquarter WHERE headquarter_id = ? AND headquarters_owner_id = ? LIMIT 1'
-);
-$ownerCheck->execute([$headquarterId, $userId]);
+$ownerCheck = !empty($_SESSION['hq_auth'])
+    ? $pdo->prepare('SELECT 1 FROM headquarter WHERE headquarter_id = ? AND headquarters_owner_id IS NULL LIMIT 1')
+    : $pdo->prepare('SELECT 1 FROM headquarter WHERE headquarter_id = ? AND headquarters_owner_id = ? LIMIT 1');
+$ownerCheck->execute(!empty($_SESSION['hq_auth']) ? [$headquarterId] : [$headquarterId, $userId]);
 if (!$ownerCheck->fetchColumn()) {
     hq_customer_link_respond(false, 'Only the HQ account owner can link a customer account.', 403);
 }
@@ -40,10 +40,12 @@ $customerRoleId = (int) ($customerRoleStmt->fetchColumn() ?: 0);
 if ($customerRoleId <= 0) {
     hq_customer_link_respond(false, 'The Customer role is unavailable.', 503);
 }
-$ownerCustomerRole = $pdo->prepare('SELECT role_id FROM users WHERE user_id = ? LIMIT 1');
-$ownerCustomerRole->execute([$userId]);
-if ((int) $ownerCustomerRole->fetchColumn() === $customerRoleId) {
-    hq_customer_link_respond(false, 'This HQ owner account already has a customer profile.', 409);
+if ($userId > 0) {
+    $ownerCustomerRole = $pdo->prepare('SELECT role_id FROM users WHERE user_id = ? LIMIT 1');
+    $ownerCustomerRole->execute([$userId]);
+    if ((int) $ownerCustomerRole->fetchColumn() === $customerRoleId) {
+        hq_customer_link_respond(false, 'This HQ owner account already has a customer profile.', 409);
+    }
 }
 $linkedCustomerCheck = $pdo->prepare(
     'SELECT 1 FROM business_account_scope WHERE headquarter_id = ? AND business_role_id = ? LIMIT 1'
@@ -178,10 +180,10 @@ $pending = $_SESSION['hq_customer_link_otp'] ?? null;
             ? map_pump_current_role_column_ready($pdo)
             : false;
         $pdo->beginTransaction();
-        $ownerCheck = $pdo->prepare(
-            'SELECT 1 FROM headquarter WHERE headquarter_id = ? AND headquarters_owner_id = ? FOR UPDATE'
-        );
-        $ownerCheck->execute([$headquarterId, $userId]);
+        $ownerCheck = !empty($_SESSION['hq_auth'])
+            ? $pdo->prepare('SELECT 1 FROM headquarter WHERE headquarter_id = ? AND headquarters_owner_id IS NULL FOR UPDATE')
+            : $pdo->prepare('SELECT 1 FROM headquarter WHERE headquarter_id = ? AND headquarters_owner_id = ? FOR UPDATE');
+        $ownerCheck->execute(!empty($_SESSION['hq_auth']) ? [$headquarterId] : [$headquarterId, $userId]);
         if (!$ownerCheck->fetchColumn()) {
             throw new RuntimeException('The HQ owner changed before the account could be linked.');
         }
