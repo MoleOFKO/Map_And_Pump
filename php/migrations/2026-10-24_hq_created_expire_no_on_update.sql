@@ -13,10 +13,11 @@
 -- Run against the live map_and_pump database (TiDB / MySQL compatible).
 -- Back up first.
 
--- 1) Schema: created_at stays set on insert only; expire_at has no auto-update.
+-- 1) Schema: created_at is set on insert only; expire_at must be supplied
+--    explicitly and must never be replaced with the registration timestamp.
 ALTER TABLE headquarter
   MODIFY COLUMN `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  MODIFY COLUMN `expire_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP;
+  MODIFY COLUMN `expire_at` DATETIME NOT NULL;
 
 -- 2) Backfill rows where license expiry was lost (expire_at ≈ created_at)
 --    but business_license_expire_date holds a later date.

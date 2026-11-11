@@ -9,6 +9,7 @@ require_once __DIR__ . '/../billing_config.php';
 require_once __DIR__ . '/../conn.php';
 require_once __DIR__ . '/../payment_transfers.php';
 require_once __DIR__ . '/../imgbb_image_host.php';
+require_once __DIR__ . '/../shared/license_expiry_date.php';
 try {
     $registrationFee = billing_admin_setting($pdo, 'hq_registration_fee_mmk', BILLING_HQ_REGISTRATION_FEE_MMK);
     $packageRate = billing_admin_setting($pdo, 'hq_package_mmk_per_station_month', BILLING_HQ_PACKAGE_MMK_PER_STATION_MONTHLY);
@@ -62,7 +63,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $companyName = trim((string) ($_POST['company_name'] ?? ''));
     $companyAddress = trim((string) ($_POST['company_address'] ?? ''));
     $licenseId = trim((string) ($_POST['license_id'] ?? ''));
-    $licenseExpiry = trim((string) ($_POST['license_expiry'] ?? ''));
+    $licenseExpiryInput = trim((string) ($_POST['license_expiry'] ?? ''));
+    $licenseExpiry = map_pump_parse_license_expiry_date($licenseExpiryInput) ?? '';
     $ownerEmail = strtolower(trim((string) ($_POST['owner_email'] ?? '')));
     $ownerPhone = trim((string) ($_POST['owner_phone'] ?? ''));
     $companyEmail = strtolower(trim((string) ($_POST['company_email'] ?? '')));
@@ -121,9 +123,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     $allowedMethods = ['Bank transfer', 'KPay', 'Wave Pay', 'AYA Pay', 'CB Pay'];
     $allowedBanks = ['AYA Bank', 'CB Bank', 'KBZ Bank', 'YOMA Bank'];
-    $expiry = DateTime::createFromFormat('!Y-m-d', $licenseExpiry);
-    $expiryErrors = DateTime::getLastErrors();
-    $expiryValid = $expiry && ($expiryErrors === false || ($expiryErrors['warning_count'] === 0 && $expiryErrors['error_count'] === 0)) && $expiry->format('Y-m-d') === $licenseExpiry;
+    $expiryValid = $licenseExpiry !== '';
 
     $validationErrors = [];
     if ($companyName === '') $validationErrors[] = 'company name';
@@ -315,6 +315,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'owner_phone' => $ownerPhone,
             'company_phone' => $companyPhone,
             'license_id' => $licenseId,
+            'license_expiry' => $licenseExpiry,
             'payment_method' => $paymentMethod,
             'bank_name' => $bankName,
             'requested_station_count' => $requestedStations,

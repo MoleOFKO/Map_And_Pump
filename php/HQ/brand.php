@@ -8,6 +8,7 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
 require_once __DIR__ . '/../conn.php';
 require_once __DIR__ . '/../billing_config.php';
 require_once __DIR__ . '/../imgbb_image_host.php';
+require_once __DIR__ . '/../shared/license_expiry_date.php';
 // Handle form submission
 $message = '';
 $loggedUserId = isset($_SESSION['user_id']) ? (int) $_SESSION['user_id'] : 0;
@@ -167,9 +168,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
     } else {
-        // Insert new record
-        $insertStmt = $pdo->prepare("INSERT INTO headquarter (company_name, headquarter_bio, headquarter_email, contact_number, business_license, location, company_logo, station_count) VALUES (?, ?, ?, ?, ?, ?, ?, " . BILLING_HQ_INCLUDED_STATION_SLOTS . ")");
-        $insertStmt->execute([$title, $info, $email, $phone, $businessLicense, $location, $logoPath]);
+        $expiryDate = map_pump_parse_license_expiry_date($licenseExpiry);
+        if ($expiryDate === null || trim((string) $businessLicense) === '') {
+            $message = 'Enter a valid business license number and expiry date.';
+        } else {
+            $insertStmt = $pdo->prepare(
+                'INSERT INTO headquarter
+                    (company_name, headquarter_bio, headquarter_email, contact_number, business_license,
+                     business_license_expire_date, expire_at, location, company_logo, station_count)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ' . BILLING_HQ_INCLUDED_STATION_SLOTS . ')'
+            );
+            $insertStmt->execute([
+                $title,
+                $info,
+                $email,
+                $phone,
+                $businessLicense,
+                $expiryDate,
+                $expiryDate . ' 23:59:59',
+                $location,
+                $logoPath,
+            ]);
+        }
     }
 
     if ($message === '') {
