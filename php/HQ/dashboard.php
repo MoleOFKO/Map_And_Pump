@@ -25,18 +25,18 @@ $tankStmt = $pdo->prepare(
 $tankStmt->execute([$hqId]);
 $stationTanks = $tankStmt->fetchAll(PDO::FETCH_ASSOC);
 
-// Fetch recent manager reports by the user's original business role, since role_id is normalized to the customer profile in the account-switch flow.
+// Fetch the latest reports from managers associated with this HQ, including station-scoped managers.
 $recentReports = [];
+$managerRoleId = 4;
 $reportsStmt = $pdo->prepare(
-    "SELECT r.report_id, r.user_id, r.short_summery, r.message, r.importance, r.created_at, u.user_name, COALESCE(u.business_role_id, u.role_id) AS source_role_id
+    "SELECT r.report_id, r.user_id, r.short_summery, r.message, r.importance, r.created_at, u.user_name
      FROM report r
      LEFT JOIN users u ON u.user_id = r.user_id
-     INNER JOIN business_account_scope bas ON bas.user_id = u.user_id
-     WHERE COALESCE(u.business_role_id, u.role_id) = 4
-       AND bas.headquarter_id = ?
-     ORDER BY r.created_at DESC LIMIT 5"
+     WHERE " . map_pump_manager_report_scope_sql() . "
+     ORDER BY r.created_at DESC
+     LIMIT 5"
 );
-$reportsStmt->execute([$hqId]);
+$reportsStmt->execute([$managerRoleId, $managerRoleId, $managerRoleId, $hqId, $hqId]);
 $recentReports = $reportsStmt->fetchAll(PDO::FETCH_ASSOC);
 
 // Fetch Live Stations dynamically
@@ -150,7 +150,7 @@ $maintenanceStationCount = count(array_filter($stations, static fn (array $stati
     --dash-row-h: 46px;   /* CSS fallback; JS measures the real height */
     --dash-head-h: 30px;
     max-height: calc((var(--dash-row-h) * var(--dash-rows)) + var(--dash-head-h));
-    overflow-y: auto;
+    overflow-y: hidden;
     overflow-x: auto;
     margin-top: 16px;
   }
@@ -398,6 +398,7 @@ endif; ?>
         var rows = box.querySelectorAll('tbody tr');
         if (rows.length <= VISIBLE_ROWS) {
           box.style.maxHeight = 'none';
+          box.style.overflowY = 'hidden';
           return;
         }
         var head = box.querySelector('thead');
@@ -406,6 +407,7 @@ endif; ?>
           total += rows[i].getBoundingClientRect().height;
         }
         box.style.maxHeight = Math.ceil(total) + 'px';
+        box.style.overflowY = 'auto';
       });
     }
 
