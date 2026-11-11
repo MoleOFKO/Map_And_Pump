@@ -169,51 +169,12 @@ try {
             ? (int) ($registrationDetails['requested_service_months'] ?? 1)
             : 1;
         $extraStationCount = max(0, $requestedStations - BILLING_HQ_INCLUDED_STATION_SLOTS);
+        // Request approval activates the company and included stations. Payment
+        // records remain separate and are never treated as received here.
         $paymentRow = null;
-        $paymentRequired = $extraStationCount > 0;
-        $expectedRegistrationAmount = null;
-        if (is_array($registrationDetails) && array_key_exists('registration_amount_mmk', $registrationDetails)) {
-            $expectedRegistrationAmount = filter_var($registrationDetails['registration_amount_mmk'], FILTER_VALIDATE_FLOAT);
-            if ($expectedRegistrationAmount === false || $expectedRegistrationAmount < 0) {
-                throw new RuntimeException('The recorded company registration amount is invalid.');
-            }
-            $paymentRequired = $expectedRegistrationAmount > 0;
-        }
-
         if ($requestedStations < BILLING_HQ_INCLUDED_STATION_SLOTS || $requestedStations > 60
             || $requestedMonths < 1 || $requestedMonths > 24) {
             throw new RuntimeException('The requested station count or service period is invalid.');
-        }
-        if ($paymentRequired) {
-            $paymentCheck = $conn->prepare(
-                "SELECT status, amount_mmk, quantity, term_months, service_start_month, payment_transfer_id,
-                        reference_code, description, payment_method
-                 FROM payment_transfers
-                 WHERE request_id = ? AND payment_type = 'hq_registration'
-                 ORDER BY payment_transfer_id DESC LIMIT 1"
-            );
-            if (!$paymentCheck) {
-                throw new RuntimeException('Payment status is unavailable. The company registration cannot be approved yet.');
-            }
-            $paymentCheck->bind_param('i', $requestId);
-            if (!$paymentCheck->execute()) {
-                $paymentCheck->close();
-                throw new RuntimeException('Could not verify the company registration payment status.');
-            }
-            $paymentRow = $paymentCheck->get_result()?->fetch_assoc();
-            $paymentCheck->close();
-            $quantityValid = !empty($paymentRow['service_start_month'])
-                ? (int) ($paymentRow['quantity'] ?? 0) === $requestedStations
-                : (int) ($paymentRow['quantity'] ?? 0) >= $extraStationCount;
-            if ((float) ($paymentRow['amount_mmk'] ?? 0) <= 0 || !$quantityValid
-                || (int) ($paymentRow['term_months'] ?? 0) !== $requestedMonths
-                || ($expectedRegistrationAmount !== null
-                    && abs((float) $paymentRow['amount_mmk'] - $expectedRegistrationAmount) > 0.01)) {
-                throw new RuntimeException('The company payment request does not match the requested amount, station count, or service term.');
-            }
-            if (strtolower(trim((string) ($paymentRow['status'] ?? ''))) !== 'received') {
-                throw new RuntimeException('Confirm the company registration payment in Payment Verification to complete registration.');
-            }
         }
     }
 
@@ -364,7 +325,18 @@ try {
             }
             $createdHeadquarterId = (int) $conn->insert_id;
             $headquarterInsert->close();
-            map_pump_account_identity_ensure($pdo, 'headquarter', $createdHeadquarterId);
+            $accountInsert = $conn->prepare(
+                "INSERT INTO accounts (account_type, headquarter_id) VALUES ('headquarter', ?)"
+            );
+            if (!$accountInsert) {
+                throw new RuntimeException('Could not prepare the company account identity.');
+            }
+            $accountInsert->bind_param('i', $createdHeadquarterId);
+            if (!$accountInsert->execute()) {
+                $accountInsert->close();
+                throw new RuntimeException('Could not create the company account identity.');
+            }
+            $accountInsert->close();
         }
 
         // Set service period without clobbering license expire_at / created_at.
@@ -586,19 +558,6 @@ try {
         : sprintf("Your request %s for %s was rejected.\n\nReason:\n%s", $target['reference_code'], $target['sender_entity'], $reason);
     $isHqRegistrationApproval = $requestType === 'hq_registration' && $action === 'approve';
     if ($isHqRegistrationApproval) {
-        $registrationDetails = json_decode((string) ($target['request_details'] ?? ''), true);
-        $registrationDetails = is_array($registrationDetails) ? $registrationDetails : [];
-        $paymentStatus = strtolower(trim((string) ($paymentRow['status'] ?? 'not_required')));
-        $receiptContext = [
-            'kind' => 'hq_registration_receipt',
-            'company_name' => (string) $target['sender_entity'],
-            'request_reference' => (string) $target['reference_code'],
-            'payment_reference' => (string) ($paymentRow['reference_code'] ?? ''),
-            'description' => (string) ($paymentRow['description'] ?? 'Company registration payment'),
-            'payment_method' => (string) ($paymentRow['payment_method'] ?? ''),
-            'payment_status' => $paymentStatus,
-            'amount_mmk' => (float) ($paymentRow['amount_mmk'] ?? $registrationDetails['registration_amount_mmk'] ?? 0),
-        ];
         $mailContexts = [];
         if ($createdOwnerSetupUrl !== null) {
             $mailContexts[] = [
@@ -613,11 +572,6 @@ try {
                 ],
             ];
         }
-        $mailContexts[] = [
-            'notification_type' => 'hq_registration_receipt',
-            'message' => 'Your Company registration payment record is available in this email.',
-            'context' => $receiptContext,
-        ];
         $mailContexts[] = [
             'notification_type' => 'hq_registration_approved',
             'message' => sprintf(

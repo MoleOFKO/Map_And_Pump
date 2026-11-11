@@ -183,71 +183,80 @@
 
     /* ======================================================================
        PRICING CALCULATOR
-       Use the same station, volume, and service-period pricing as registration.
+         Use the station-package pricing advertised on the homepage.
        ====================================================================== */
     var calc = document.getElementById('calc');
     if (calc) {
         var RATE = Number(calc.dataset.rate);
-        var REGISTRATION_FEE = Number(calc.dataset.registrationFee);
-        var VOLUME_DISCOUNTS = JSON.parse(calc.dataset.volumeDiscounts || '[]');
-        var TERM_DISCOUNTS = JSON.parse(calc.dataset.termDiscounts || '[]');
+        var INCLUDED_STATIONS = Number(calc.dataset.included);
         var rangeEl = document.getElementById('calc-range');
+        var numberEl = document.getElementById('calc-number');
         var countEl = document.getElementById('calc-count');
+        var totalStationsEl = document.getElementById('calc-total-stations');
+        var freeEl = document.getElementById('calc-free');
         var paidEl = document.getElementById('calc-paid');
         var monthsWrap = document.getElementById('calc-months');
         var baseEl = document.getElementById('calc-base');
-        var registrationEl = document.getElementById('calc-registration');
-        var volumeDiscountEl = document.getElementById('calc-vol');
-        var termDiscountEl = document.getElementById('calc-dur');
+        var savingsEl = document.getElementById('calc-savings');
+        var termLabelEl = document.getElementById('calc-term-label');
         var totalEl = document.getElementById('calc-total');
         var perEl = document.getElementById('calc-per');
-        var months = 1;
-        var term = TERM_DISCOUNTS.find(function (item) { return Number(item.months) === months; }) || TERM_DISCOUNTS[0];
+        var freeNoteEl = document.getElementById('calc-free-note');
+        var termButtons = monthsWrap ? Array.from(monthsWrap.querySelectorAll('button')) : [];
+        var activeTerm = termButtons.find(function (button) { return button.classList.contains('is-active'); }) || termButtons[0];
 
         function fmt(value) { return Math.round(value).toLocaleString('en-US'); }
 
-        function update() {
-            var stations = Number(rangeEl.value);
-            var volumeDiscount = VOLUME_DISCOUNTS.reduce(function (current, item) {
-                return stations >= Number(item.min) ? Number(item.percent) : current;
-            }, 0);
-            var termDiscount = Number(term.percent);
-            var base = RATE * stations * months;
-            var afterVolumeDiscount = base * (1 - volumeDiscount / 100);
-            var packageTotal = Math.round(afterVolumeDiscount * (1 - termDiscount / 100) * 100) / 100;
-            var total = REGISTRATION_FEE + packageTotal;
-            var volumeSavings = base - afterVolumeDiscount;
-            var termSavings = afterVolumeDiscount - packageTotal;
+        function update(source) {
+            if (source === numberEl && numberEl.value === '') return;
+            var minStations = Number(rangeEl.min) || 1;
+            var maxStations = Number(rangeEl.max) || 60;
+            var requestedStations = Number(source === numberEl ? numberEl.value : rangeEl.value);
+            var stations = Number.isFinite(requestedStations)
+                ? Math.min(maxStations, Math.max(minStations, Math.round(requestedStations)))
+                : minStations;
+            var paidStations = Math.max(0, stations - INCLUDED_STATIONS);
+            var months = Number(activeTerm ? activeTerm.dataset.months : 12);
+            var discount = Number(activeTerm ? activeTerm.dataset.discount : 0);
+            var base = RATE * paidStations * months;
+            var total = Math.round(base * (1 - discount / 100));
+            var savings = base - total;
 
+            rangeEl.value = String(stations);
+            numberEl.value = String(stations);
             countEl.textContent = String(stations);
-            paidEl.textContent = String(stations);
+            totalStationsEl.textContent = String(stations);
+            freeEl.textContent = String(Math.min(stations, INCLUDED_STATIONS));
+            paidEl.textContent = String(paidStations);
+            termLabelEl.textContent = activeTerm ? activeTerm.querySelector('strong').textContent : months + ' months';
             baseEl.textContent = fmt(base) + ' MMK';
-            registrationEl.textContent = fmt(REGISTRATION_FEE) + ' MMK';
-            volumeDiscountEl.textContent = volumeDiscount + '% (' + fmt(volumeSavings) + ' MMK)';
-            termDiscountEl.textContent = termDiscount + '% (' + fmt(termSavings) + ' MMK)';
+            savingsEl.textContent = fmt(savings) + ' MMK (' + discount + '%)';
             totalEl.textContent = fmt(total) + ' MMK';
-            perEl.textContent = fmt(packageTotal / months / stations) + ' MMK / station / month after discounts';
+            perEl.textContent = paidStations > 0
+                ? 'Equivalent to ' + fmt(total / months / paidStations) + ' MMK / paid station / month'
+                : 'No station package payment is due';
+            freeNoteEl.hidden = paidStations > 0;
 
-            var pct = ((stations - Number(rangeEl.min)) / (Number(rangeEl.max) - Number(rangeEl.min))) * 100;
+            var pct = ((stations - minStations) / (maxStations - minStations)) * 100;
             rangeEl.style.setProperty('--fill', pct + '%');
         }
 
-        rangeEl.addEventListener('input', update);
+        rangeEl.addEventListener('input', function () { update(rangeEl); });
+        numberEl.addEventListener('input', function () { update(numberEl); });
 
-        monthsWrap.querySelectorAll('button').forEach(function (button) {
+        termButtons.forEach(function (button) {
             button.addEventListener('click', function () {
-                monthsWrap.querySelectorAll('button').forEach(function (item) {
+                termButtons.forEach(function (item) {
                     var selected = item === button;
                     item.classList.toggle('is-active', selected);
                     item.setAttribute('aria-pressed', String(selected));
                 });
-                months = Number(button.dataset.months);
-                term = TERM_DISCOUNTS.find(function (item) { return Number(item.months) === months; });
-                update();
+                activeTerm = button;
+                update(rangeEl);
             });
         });
 
-        update();
+        update(rangeEl);
     }
 
     /* ======================================================================
