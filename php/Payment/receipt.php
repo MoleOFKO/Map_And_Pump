@@ -29,7 +29,9 @@ $isPayer = ($userId > 0 && (int) ($transfer['payer_user_id'] ?? 0) === $userId)
     || $accessValid;
 $isRecipient = false;
 if ($userId > 0) {
-    if ($transfer['payment_type'] === 'fuel_purchase') {
+    if ($transfer['payment_type'] === 'hq_registration') {
+        $isRecipient = payment_transfer_user_is_admin_or_moderator($pdo, $userId);
+    } elseif ($transfer['payment_type'] === 'fuel_purchase') {
         $isRecipient = payment_transfer_user_is_fuel_staff($pdo, $userId, (int) ($transfer['usage_id'] ?? 0));
     } elseif ($transfer['recipient_role'] === 'admin') {
         $isRecipient = in_array($transfer['payment_type'], ['hq_period_extension', 'hq_station_package'], true)

@@ -109,11 +109,11 @@ if ($isHqAuthSession && $activeHqId > 0) {
 if ($userHqRow) {
     // Set User Details from database
     if (!empty($userHqRow['user_name'])) {
-        $user_display_name = htmlspecialchars(privacy_mask_name((string) $userHqRow['user_name']), ENT_QUOTES, 'UTF-8');
+        $user_display_name = htmlspecialchars((string) $userHqRow['user_name'], ENT_QUOTES, 'UTF-8');
         $user_initial = map_pump_profile_initial((string) $userHqRow['user_name'], 'H');
     }
     if (!empty($userHqRow['email'])) {
-        $user_email_display = htmlspecialchars(privacy_mask_email((string) $userHqRow['email']), ENT_QUOTES, 'UTF-8');
+        $user_email_display = htmlspecialchars((string) $userHqRow['email'], ENT_QUOTES, 'UTF-8');
     }
     if (!empty($userHqRow['has_profile_avatar'])) {
         $user_avatar = '/php/HQ/profile_image.php';
@@ -123,7 +123,7 @@ if ($userHqRow) {
 
     // Set Brand Details from database
     if (!empty($userHqRow['company_name'])) {
-        $brand_title = htmlspecialchars(privacy_mask_name((string) $userHqRow['company_name']), ENT_QUOTES, 'UTF-8');
+        $brand_title = htmlspecialchars((string) $userHqRow['company_name'], ENT_QUOTES, 'UTF-8');
     }
     if (!empty($userHqRow['company_logo'])) {
         $brand_logo = resolveImageUrl($userHqRow['company_logo'], '/images/Logo.png');

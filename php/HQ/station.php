@@ -1122,7 +1122,7 @@ if ($paymentTransferSchemaReady) {
                             <h3>Transfer and package total</h3>
                             <p class="station-limit-receipt-company">
                                 <strong><?= htmlspecialchars((string) ($hqDetails['company_name'] ?? ''), ENT_QUOTES, 'UTF-8') ?></strong><br>
-                                <?= htmlspecialchars(privacy_mask_email((string) ($hqDetails['headquarter_email'] ?? '')), ENT_QUOTES, 'UTF-8') ?><br>
+                                <?= htmlspecialchars((string) ($hqDetails['headquarter_email'] ?? ''), ENT_QUOTES, 'UTF-8') ?><br>
                                 <span id="stationLimitReceiptPackageCount"></span> stations · <span id="stationLimitReceiptTerm"></span>
                             </p>
                             <p class="station-limit-receipt-method">Payment method: <strong id="stationLimitReceiptMethod"></strong></p>

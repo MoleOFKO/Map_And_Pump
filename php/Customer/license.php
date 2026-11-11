@@ -302,8 +302,8 @@ include 'share_header.php';
                             <i class="bi <?php echo $isApproved ? 'bi-check-circle-fill' : 'bi-hourglass-split'; ?>"></i>
                             <?php echo htmlspecialchars($statusLabel); ?>
                         </span>
-                        <span class="text-white fw-semibold"><?php echo htmlspecialchars(privacy_mask_identifier((string) ($license['license_number'] ?? 'Driver License')), ENT_QUOTES, 'UTF-8'); ?></span>
-                        <span class="text-secondary"><?php echo htmlspecialchars(privacy_mask_name((string) ($license['license_name'] ?? '')), ENT_QUOTES, 'UTF-8'); ?></span>
+                        <span class="text-white fw-semibold"><?php echo htmlspecialchars((string) ($license['license_number'] ?? 'Driver License'), ENT_QUOTES, 'UTF-8'); ?></span>
+                        <span class="text-secondary"><?php echo htmlspecialchars((string) ($license['license_name'] ?? ''), ENT_QUOTES, 'UTF-8'); ?></span>
                     </div>
                     <?php if ($showForm): ?>
                         <a href="license.php" class="btn btn-outline-secondary btn-sm rounded-3 px-3">Cancel Update</a>

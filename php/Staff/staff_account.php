@@ -620,8 +620,8 @@ $branchCode = trim((string) ($user['branch_code'] ?? '')) ?: 'N/A';
                 </div>
                 <dl class="account-details">
                     <div class="account-detail-row"><dt>Staff ID</dt><dd><code>#<?= htmlspecialchars($staffId) ?></code></dd></div>
-                    <div class="account-detail-row"><dt>Display name</dt><dd><?= htmlspecialchars(privacy_mask_name((string) ($displayName ?: 'Not set')), ENT_QUOTES, 'UTF-8') ?></dd></div>
-                    <div class="account-detail-row"><dt>Email address</dt><dd><?= htmlspecialchars(privacy_mask_email((string) ($displayEmail ?: 'Not set')), ENT_QUOTES, 'UTF-8') ?></dd></div>
+                    <div class="account-detail-row"><dt>Display name</dt><dd><?= htmlspecialchars((string) ($displayName ?: 'Not set'), ENT_QUOTES, 'UTF-8') ?></dd></div>
+                    <div class="account-detail-row"><dt>Email address</dt><dd><?= htmlspecialchars((string) ($displayEmail ?: 'Not set'), ENT_QUOTES, 'UTF-8') ?></dd></div>
                     <div class="account-detail-row"><dt>Account role</dt><dd><?= htmlspecialchars($accountRole) ?></dd></div>
                 </dl>
                 <div class="account-assignment">
@@ -702,7 +702,7 @@ $branchCode = trim((string) ($user['branch_code'] ?? '')) ?: 'N/A';
                         </section>
                         <section id="create-account-panel" role="tabpanel" aria-labelledby="create-account-tab" hidden>
                             <?php if (is_array($pendingStaffLink) && (int) ($pendingStaffLink['staff_id'] ?? 0) === (int) $staffRecord['staff_id']): ?>
-                                <p class="text-white-50 small">Enter the verification code sent to <?= htmlspecialchars(privacy_mask_email((string) ($pendingStaffLink['email'] ?? 'your email')), ENT_QUOTES, 'UTF-8') ?>. After verification, this account will be linked automatically.</p>
+                                <p class="text-white-50 small">Enter the verification code sent to <?= htmlspecialchars((string) ($pendingStaffLink['email'] ?? 'your email'), ENT_QUOTES, 'UTF-8') ?>. After verification, this account will be linked automatically.</p>
                                 <form id="staff-link-verify-form">
                                     <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($staffLinkRegistrationCsrf, ENT_QUOTES, 'UTF-8') ?>">
                                     <div class="mb-3">

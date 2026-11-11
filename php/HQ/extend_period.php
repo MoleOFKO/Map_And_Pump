@@ -446,7 +446,7 @@ $showPaymentForm = ($_GET['show_payment_form'] ?? '') === '1';
                 <div class="extend-fields">
                     <div class="extend-field-wide">
                         <label for="company-email">Company email</label>
-                        <input id="company-email" type="text" value="<?= htmlspecialchars(privacy_mask_email((string) $hq['headquarter_email']), ENT_QUOTES, 'UTF-8') ?>" readonly aria-describedby="company-email-note">
+                        <input id="company-email" type="text" value="<?= htmlspecialchars((string) $hq['headquarter_email'], ENT_QUOTES, 'UTF-8') ?>" readonly aria-describedby="company-email-note">
                         <input type="hidden" name="company_email" value="<?= htmlspecialchars((string) $hq['headquarter_email'], ENT_QUOTES, 'UTF-8') ?>">
                         <small id="company-email-note" class="text-secondary">Payment notices will be sent to this registered address.</small>
                     </div>

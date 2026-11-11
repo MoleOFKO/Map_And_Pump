@@ -364,7 +364,7 @@ echo htmlspecialchars($station['station_id']); ?></td>
                 <td><?php
 echo htmlspecialchars($station['station_name']); ?></td>
                 <td><?php
-echo htmlspecialchars(privacy_mask_location((string) ($station['address'] ?? '')), ENT_QUOTES, 'UTF-8'); ?></td>
+echo htmlspecialchars((string) ($station['address'] ?? ''), ENT_QUOTES, 'UTF-8'); ?></td>
                 <td><span class="badge <?= $stationStatusClass ?>"><?php
 echo htmlspecialchars($stationStatus, ENT_QUOTES, 'UTF-8'); ?></span></td>
               </tr>
