@@ -1,11 +1,13 @@
 <?php
 require_once __DIR__ . '/hq_guard.php';
 require_once __DIR__ . '/../conn.php';
+require_once __DIR__ . '/report_schema.php';
 
 $reports = [];
 $logs = [];
 $managerRoleId = 4;
 $headquarterId = map_pump_current_hq_id($pdo, (int) ($_SESSION['user_id'] ?? 0));
+$statusCsrfToken = $_SESSION['manager_report_status_csrf'] ??= bin2hex(random_bytes(32));
 $todayDate = (new DateTimeImmutable('now'))->format('Y-m-d');
 $hqCreatedDate = $todayDate;
 $startDate = trim((string) ($_GET['start_date'] ?? ''));
@@ -13,6 +15,8 @@ $endDate = trim((string) ($_GET['end_date'] ?? ''));
 $managerActivityHasOverflow = false;
 
 try {
+    hq_report_ensure_scope_schema($pdo);
+
     if ($headquarterId <= 0) {
         throw new RuntimeException('No HQ scope is available for this account.');
     }
@@ -223,6 +227,10 @@ try {
             background: var(--card-bg, #0f172a);
         }
 
+        .status-badge[data-status="read"] {
+            color: #146b4f !important;
+        }
+
         /* Manager activity log (monospace audit-trail lines) */
         .manager-activity-row {
             font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
@@ -330,15 +338,18 @@ else: ?>
                         </thead>
                         <tbody>
                             <?php
-foreach ($reports as $rep): ?>
-                                <tr id="report-<?= htmlspecialchars($rep['report_id']) ?>" class="report-row" data-search="<?= htmlspecialchars(strtolower(trim(
-                                        $rep['report_id'] . ' ' .
-                                        ($rep['created_at'] ?? '') . ' ' .
-                                        ($rep['user_name'] ?? '') . ' ' .
-                                        ($rep['importance'] ?? '') . ' ' .
-                                        ($rep['short_summery'] ?? '') . ' ' .
-                                        'unread'
-                                    )), ENT_QUOTES) ?>" onclick="showDetailFromRow(this)" style="cursor: pointer;">
+                            foreach ($reports as $rep):
+                                $reportStatus = strtolower(trim((string) ($rep['status'] ?? 'unread')));
+                                $reportStatus = $reportStatus === 'read' ? 'read' : 'unread';
+                                $reportSearchText = strtolower(trim(implode(' ', [
+                                    $rep['report_id'],
+                                    $rep['created_at'] ?? '',
+                                    $rep['user_name'] ?? '',
+                                    $rep['importance'] ?? '',
+                                    $rep['short_summery'] ?? '',
+                                ])));
+                            ?>
+                                <tr id="report-<?= htmlspecialchars($rep['report_id']) ?>" class="report-row" data-search="<?= htmlspecialchars($reportSearchText . ' ' . $reportStatus, ENT_QUOTES) ?>" data-search-base="<?= htmlspecialchars($reportSearchText, ENT_QUOTES) ?>" onclick="showDetailFromRow(this)" style="cursor: pointer;">
                                     <td><?= htmlspecialchars($rep['report_id']) ?></td>
                                     <td><?= htmlspecialchars((string) ($rep['created_at'] ?? ''), ENT_QUOTES, 'UTF-8') ?></td>
                                     <td><?= htmlspecialchars($rep['user_name']) ?></td>
@@ -346,17 +357,17 @@ foreach ($reports as $rep): ?>
                                     <td><?= htmlspecialchars($rep['importance']) ?></td>
                                     <td><?= htmlspecialchars($rep['short_summery']) ?></td>
                                     <td>
-                                        <span class="badge bg-warning text-dark status-badge" data-status="unread">Unread</span>
+                                        <span class="badge <?= $reportStatus === 'read' ? 'bg-success text-white' : 'bg-warning text-dark' ?> status-badge" data-status="<?= htmlspecialchars($reportStatus, ENT_QUOTES, 'UTF-8') ?>"><?= ucfirst($reportStatus) ?></span>
                                     </td>
                                     <td onclick="event.stopPropagation();">
                                         <button onclick="toggleActions(this, <?= htmlspecialchars($rep['report_id']) ?>)" title="More Actions" style="border: none; background: none; color: #6c757d; cursor: pointer; font-size: 1.5rem; box-shadow: none; padding: 5px;">
                                             <i class="bi bi-three-dots-vertical"></i>
                                         </button>
                                         <div class="action-menu" id="menu-<?= htmlspecialchars($rep['report_id']) ?>" style="display: none; position: absolute; background: var(--card-bg); border: 1px solid var(--border); border-radius: 5px; padding: 8px; min-width: 180px; z-index: 1000;">
-                                            <button onclick="event.stopPropagation(); toggleReadStatus(this, <?= htmlspecialchars($rep['report_id']) ?>)" style="border: none; background: none; color: #0d6efd; cursor: pointer; width: 100%; text-align: left; padding: 8px; display: flex; align-items: center; gap: 10px;">
-                                                <i class="bi bi-envelope" style="font-size: 1rem;"></i> Mark as Read
+                                            <button class="toggle-read-status" onclick="event.stopPropagation(); toggleReadStatus(this, <?= htmlspecialchars($rep['report_id']) ?>)" style="border: none; background: none; color: var(--slate-50); cursor: pointer; width: 100%; text-align: left; padding: 8px; display: flex; align-items: center; gap: 10px;">
+                                                <i class="bi bi-envelope" style="font-size: 1rem;"></i><span><?= $reportStatus === 'read' ? 'Mark as Unread' : 'Mark as Read' ?></span>
                                             </button>
-                                            <button onclick="event.stopPropagation(); showDetail(this)" data-report-id="<?= htmlspecialchars($rep['report_id']) ?>" data-user="<?= htmlspecialchars($rep['user_name']) ?>" data-summary="<?= htmlspecialchars($rep['short_summery']) ?>" data-description="<?= htmlspecialchars($rep['message'] ?? '') ?>" data-status="unread" style="border: none; background: none; color: #0d6efd; cursor: pointer; width: 100%; text-align: left; padding: 8px; display: flex; align-items: center; gap: 10px;">
+                                            <button onclick="event.stopPropagation(); showDetail(this)" data-report-id="<?= htmlspecialchars($rep['report_id']) ?>" data-user="<?= htmlspecialchars($rep['user_name']) ?>" data-summary="<?= htmlspecialchars($rep['short_summery']) ?>" data-description="<?= htmlspecialchars($rep['message'] ?? '') ?>" data-status="<?= htmlspecialchars($reportStatus, ENT_QUOTES, 'UTF-8') ?>" style="border: none; background: none; color: #0d6efd; cursor: pointer; width: 100%; text-align: left; padding: 8px; display: flex; align-items: center; gap: 10px;">
                                                 <i class="bi bi-eye" style="font-size: 1rem;"></i> See Detail
                                             </button>
                                             <button onclick="event.stopPropagation(); deleteReport(this, <?= htmlspecialchars($rep['report_id']) ?>)" style="border: none; background: none; color: #dc3545; cursor: pointer; width: 100%; text-align: left; padding: 8px; display: flex; align-items: center; gap: 10px;">
@@ -420,6 +431,8 @@ endif; ?>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
+        const statusCsrfToken = <?= json_encode($statusCsrfToken, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
+
         function setupDateRangeFilter(formId, startName, endName) {
             const filterForm = document.getElementById(formId);
             const startInput = filterForm?.querySelector(`input[name="${startName}"]`);
@@ -559,22 +572,60 @@ endif; ?>
             }
         }
 
-        // Toggle Read Status
-        function toggleReadStatus(element, reportId) {
+        function renderReportStatus(reportId, status) {
             const row = document.getElementById('report-' + reportId);
             const statusBadge = row.querySelector('.status-badge');
-            const isRead = statusBadge.dataset.status === 'read';
-            
+            const detailButton = row.querySelector('button[data-report-id]');
+            const toggleLabel = row.querySelector('.toggle-read-status span');
+            const isRead = status === 'read';
+
             if (isRead) {
-                statusBadge.classList.remove('bg-success', 'text-white');
-                statusBadge.classList.add('bg-warning', 'text-dark');
-                statusBadge.dataset.status = 'unread';
-                statusBadge.textContent = 'Unread';
-            } else {
                 statusBadge.classList.remove('bg-warning', 'text-dark');
                 statusBadge.classList.add('bg-success', 'text-white');
                 statusBadge.dataset.status = 'read';
                 statusBadge.textContent = 'Read';
+            } else {
+                statusBadge.classList.add('bg-warning', 'text-dark');
+                statusBadge.classList.remove('bg-success', 'text-white');
+                statusBadge.dataset.status = 'unread';
+                statusBadge.textContent = 'Unread';
+            }
+
+            detailButton.dataset.status = status;
+            toggleLabel.textContent = isRead ? 'Mark as Unread' : 'Mark as Read';
+            row.dataset.search = row.dataset.searchBase + ' ' + status;
+        }
+
+        async function persistReportStatus(reportId, status) {
+            const response = await fetch('update_manager_report_status.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    report_id: reportId,
+                    status,
+                    csrf_token: statusCsrfToken
+                })
+            });
+            const data = await response.json();
+            if (!response.ok || !data.success) {
+                throw new Error(data.message || 'Unable to update report status.');
+            }
+
+            renderReportStatus(reportId, data.status);
+            return data.status;
+        }
+
+        // Toggle Read Status
+        async function toggleReadStatus(element, reportId) {
+            const row = document.getElementById('report-' + reportId);
+            const isRead = row.querySelector('.status-badge').dataset.status === 'read';
+            element.disabled = true;
+            try {
+                await persistReportStatus(reportId, isRead ? 'unread' : 'read');
+            } catch (error) {
+                alert(error.message);
+            } finally {
+                element.disabled = false;
             }
         }
 
@@ -620,42 +671,22 @@ endif; ?>
         }
 
         // Handle toggle status from modal
-        function handleModalToggleStatus() {
+        async function handleModalToggleStatus() {
             const toggleBtn = document.getElementById('modalToggleStatusBtn');
             const reportId = toggleBtn.dataset.reportId;
             const currentStatus = toggleBtn.dataset.currentStatus;
-            const row = document.getElementById('report-' + reportId);
-            
-            if (!row) return;
-            
-            const statusBadge = row.querySelector('.status-badge');
-            const isRead = currentStatus === 'read';
-            
-            // Update status badge in table
-            if (isRead) {
-                statusBadge.classList.remove('bg-success', 'text-white');
-                statusBadge.classList.add('bg-warning', 'text-dark');
-                statusBadge.dataset.status = 'unread';
-                statusBadge.textContent = 'Unread';
-                toggleBtn.dataset.currentStatus = 'unread';
-                toggleBtn.textContent = 'Mark as Read';
-            } else {
-                statusBadge.classList.remove('bg-warning', 'text-dark');
-                statusBadge.classList.add('bg-success', 'text-white');
-                statusBadge.dataset.status = 'read';
-                statusBadge.textContent = 'Read';
-                toggleBtn.dataset.currentStatus = 'read';
-                toggleBtn.textContent = 'Mark as Unread';
-            }
-            
-            // Update modal status badge
-            const modalStatusBadge = document.getElementById('modalStatus');
-            if (toggleBtn.dataset.currentStatus === 'read') {
-                modalStatusBadge.className = 'badge bg-success';
-                modalStatusBadge.textContent = 'Read';
-            } else {
-                modalStatusBadge.className = 'badge bg-warning text-dark';
-                modalStatusBadge.textContent = 'Unread';
+            toggleBtn.disabled = true;
+            try {
+                const newStatus = await persistReportStatus(reportId, currentStatus === 'read' ? 'unread' : 'read');
+                const modalStatusBadge = document.getElementById('modalStatus');
+                modalStatusBadge.className = newStatus === 'read' ? 'badge bg-success' : 'badge bg-warning text-dark';
+                modalStatusBadge.textContent = newStatus === 'read' ? 'Read' : 'Unread';
+                toggleBtn.dataset.currentStatus = newStatus;
+                toggleBtn.textContent = newStatus === 'read' ? 'Mark as Unread' : 'Mark as Read';
+            } catch (error) {
+                alert(error.message);
+            } finally {
+                toggleBtn.disabled = false;
             }
         }
 

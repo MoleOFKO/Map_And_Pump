@@ -281,9 +281,10 @@ try {
                 'UPDATE station_business_scope SET branch_manager_user_id = ? WHERE station_id = ? AND headquarter_id = ?'
             );
             $stationManagerUpdate->execute([(int) $invitee['user_id'], $stationId, $hqId]);
-            $branchManagerUpdate = $pdo->prepare('UPDATE branches SET manager_user_id = ?, branch_password = ? WHERE branch_id = ?');
+            $branchManagerUpdate = $pdo->prepare('UPDATE branches SET manager_user_id = ?, email = ?, branch_password = ? WHERE branch_id = ?');
             $branchManagerUpdate->execute([
                 (int) $invitee['user_id'],
+                $email,
                 $passwordHash,
                 $stationId,
             ]);
@@ -294,9 +295,12 @@ try {
             );
             $clearStationManager->execute([(int) $invitee['user_id'], $hqId]);
             $clearBranchManager = $pdo->prepare(
-                'UPDATE branches SET manager_user_id = NULL, branch_password = NULL WHERE manager_user_id = ?'
+                'UPDATE branches
+                 SET manager_user_id = NULL, branch_password = NULL,
+                     email = CASE WHEN LOWER(TRIM(email)) = LOWER(TRIM(?)) THEN NULL ELSE email END
+                 WHERE manager_user_id = ?'
             );
-            $clearBranchManager->execute([(int) $invitee['user_id']]);
+            $clearBranchManager->execute([$email, (int) $invitee['user_id']]);
         }
 
         $accountScope = $pdo->prepare(

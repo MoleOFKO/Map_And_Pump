@@ -183,7 +183,7 @@ if (!empty($_SESSION['hq_auth'])) {
          LEFT JOIN roles customer_role ON customer_role.role_id = bas.business_role_id
                  WHERE h.headquarter_id = ?
            AND u.role_id = ?
-           AND LOWER(TRIM(u.status)) IN ('active', 'approved', 'license_expired')
+           AND LOWER(TRIM(u.status)) IN ('active', 'approved', 'enabled', 'ready', 'pending', 'license_expired')
          LIMIT 1"
     );
     $linkedCustomerStmt->execute([$customerRoleId, $headquarterId, $customerRoleId]);
@@ -198,7 +198,7 @@ if (!empty($_SESSION['hq_auth'])) {
              INNER JOIN users u ON u.user_id = h.headquarters_owner_id
              LEFT JOIN roles business_role ON business_role.role_id = u.business_role_id
              WHERE h.headquarter_id = ? AND u.role_id = ?
-               AND LOWER(TRIM(u.status)) IN ('active', 'approved', 'license_expired')
+               AND LOWER(TRIM(u.status)) IN ('active', 'approved', 'enabled', 'ready', 'pending', 'license_expired')
              LIMIT 1"
         );
         $ownerCustomerStmt->execute([$headquarterId, $customerRoleId]);
@@ -296,11 +296,26 @@ if ($targetMode === 'customer') {
                  INNER JOIN headquarter h ON h.headquarter_id = bas.headquarter_id
              WHERE bas.headquarter_id = ? AND bas.business_role_id = ?
                AND u.role_id = ?
-               AND LOWER(TRIM(u.status)) IN ('active', 'approved', 'license_expired')
+               AND LOWER(TRIM(u.status)) IN ('active', 'approved', 'enabled', 'ready', 'pending', 'license_expired')
              LIMIT 1"
         );
-                $linkedCustomerStmt->execute([(int) $user['headquarter_id'], $customerRoleId, $customerRoleId]);
+        $linkedCustomerStmt->execute([(int) $user['headquarter_id'], $customerRoleId, $customerRoleId]);
         $linkedCustomer = $linkedCustomerStmt->fetch(PDO::FETCH_ASSOC);
+        if (!$linkedCustomer) {
+            $ownerCustomerStmt = $pdo->prepare(
+                "SELECT u.user_id, u.user_public_id, u.user_name, u.email, u.oauth_avatar_url,
+                        u.status, u.role_id, u.business_role_id, u.license_id,
+                        h.headquarter_id, business_role.role_name AS business_role_name
+                 FROM headquarter h
+                 INNER JOIN users u ON u.user_id = h.headquarters_owner_id
+                 LEFT JOIN roles business_role ON business_role.role_id = u.business_role_id
+                 WHERE h.headquarter_id = ? AND u.role_id = ?
+                   AND LOWER(TRIM(u.status)) IN ('active', 'approved', 'enabled', 'ready', 'pending', 'license_expired')
+                 LIMIT 1"
+            );
+            $ownerCustomerStmt->execute([(int) $user['headquarter_id'], $customerRoleId]);
+            $linkedCustomer = $ownerCustomerStmt->fetch(PDO::FETCH_ASSOC);
+        }
         if ($linkedCustomer) {
             customer_sync_license_expiry($pdo, (int) $linkedCustomer['user_id']);
             map_pump_set_current_role($pdo, (int) $linkedCustomer['user_id'], $customerRoleId);
