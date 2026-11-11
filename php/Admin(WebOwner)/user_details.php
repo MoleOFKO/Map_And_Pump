@@ -8,6 +8,9 @@ header('Content-Type: application/json; charset=utf-8');
 
 $userId = filter_var($_GET['id'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
 $requestContext = strtolower(trim((string) ($_GET['context'] ?? ''))) === 'request';
+$comparisonContext = strtolower(trim((string) ($_GET['context'] ?? ''))) === 'compare';
+$reviewerContext = $requestContext || $comparisonContext;
+$contactVisibleStatuses = ['disabled', 'removed', 'suspended'];
 if (!$userId) {
     http_response_code(400);
     echo json_encode(['success' => false, 'message' => 'A valid user id is required.']);
@@ -37,7 +40,7 @@ $licenseFaceImageSelect = user_account_column_exists('user_license', 'face_image
     ? 'l.face_image'
     : 'NULL AS face_image';
 $customerRoleId = customer_role_id();
-$roleIdSql = $requestContext ? $roleIdSql : (string) $customerRoleId;
+$roleIdSql = $reviewerContext ? $roleIdSql : (string) $customerRoleId;
 $scopeCondition = $requestContext
     ? "AND LOWER(TRIM(u.status)) = 'pending_verification'"
     : 'AND ' . customer_account_role_guard_sql($customerRoleId);
@@ -82,6 +85,8 @@ if (!$user) {
     echo json_encode(['success' => false, 'message' => 'Account not found.']);
     exit;
 }
+$showComparedUserContact = $comparisonContext
+    && in_array(strtolower(trim((string) ($user['status'] ?? ''))), $contactVisibleStatuses, true);
 
 $actions = user_action_rows((int) $userId);
 // Conflict detection still uses NRC + license number server-side.
@@ -92,7 +97,7 @@ if (!empty($user['license_id'])
     $eligibleAccountFilter = $requestContext
         ? "AND LOWER(TRIM(COALESCE(u.status, ''))) NOT IN ('banned', 'disabled', 'suspended', 'removed', 'deleted')"
         : '';
-    $conflictLimit = $requestContext ? 'LIMIT 1' : '';
+    $conflictLimit = $reviewerContext ? 'LIMIT 1' : '';
     $conflictStatement = $conn->prepare(
         "SELECT u.user_id, u.user_name, u.email, u.status AS account_status,
                 l.license_id, l.license_number, l.nrc_number, l.license_name, l.status AS license_status,
@@ -121,14 +126,17 @@ if (!empty($user['license_id'])
                 if ($nrcNumber !== '' && strcasecmp(preg_replace('/\s+/', '', (string) $conflict['nrc_number']), preg_replace('/\s+/', '', $nrcNumber)) === 0) {
                     $duplicateFields[] = 'NRC number';
                 }
-                // Images stay available for conflict investigation; raw NRC is never exposed.
+                // Return the matching NRC only for reviewer duplicate comparison.
                 $licenseConflicts[] = [
                     'user_id' => (int) $conflict['user_id'],
                     'user_name' => $conflict['user_name'],
-                    'email' => $conflict['email'],
+                    'email' => in_array(strtolower(trim((string) ($conflict['account_status'] ?? ''))), $contactVisibleStatuses, true)
+                        ? $conflict['email']
+                        : null,
                     'account_status' => $conflict['account_status'],
                     'license_id' => (int) $conflict['license_id'],
                     'license_number' => $conflict['license_number'],
+                    'nrc_number' => $conflict['nrc_number'],
                     'license_name' => $conflict['license_name'],
                     'license_status' => $conflict['license_status'],
                     'license_image' => $conflict['license_image'],
@@ -142,7 +150,7 @@ if (!empty($user['license_id'])
 }
 
 $hasConflicts = count($licenseConflicts) > 0;
-$includeLicenseImages = $requestContext || $hasConflicts;
+$includeLicenseImages = $reviewerContext || $hasConflicts;
 
 $licensePayload = null;
 if ($user['license_id'] !== null) {
@@ -158,12 +166,15 @@ if ($user['license_id'] !== null) {
         $licensePayload['license_image'] = $user['license_image'];
         $licensePayload['face_image'] = $user['face_image'];
     }
-    // phone_number, nrc_number, date_of_birth, blood_type are intentionally omitted from all staff responses.
+    if ($hasConflicts) {
+        $licensePayload['nrc_number'] = $user['nrc_number'];
+    }
+    // Phone, date of birth, and blood type remain omitted from staff responses.
 }
 
 $headquarterPayload = null;
 if ($user['headquarter_id'] !== null) {
-    if ($requestContext) {
+    if ($reviewerContext) {
         // Request review: company identity needed to approve/reject linkage.
         $headquarterPayload = [
             'headquarter_id' => (int) $user['headquarter_id'],
@@ -185,14 +196,14 @@ if ($user['headquarter_id'] !== null) {
     }
 }
 
-echo json_encode(privacy_mask_sensitive_data([
+$responsePayload = [
     'success' => true,
-    'context' => $requestContext ? 'request' : 'account',
+    'context' => $requestContext ? 'request' : ($comparisonContext ? 'compare' : 'account'),
     'user' => [
         'user_id' => (int) $user['user_id'],
         'user_public_id' => (string) ($user['user_public_id'] ?? ''),
         'user_name' => $user['user_name'],
-        'email' => $user['email'],
+        'email' => ($requestContext || $showComparedUserContact) ? $user['email'] : null,
         'status' => $user['status'],
         'created_at' => $user['created_at'],
         'updated_at' => $user['updated_at'],
@@ -208,4 +219,6 @@ echo json_encode(privacy_mask_sensitive_data([
     'license_conflicts' => $licenseConflicts,
     'headquarter' => $headquarterPayload,
     'actions' => $requestContext ? [] : $actions,
-]), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+];
+$responsePayload = $reviewerContext ? $responsePayload : privacy_mask_sensitive_data($responsePayload);
+echo json_encode($responsePayload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);

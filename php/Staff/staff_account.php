@@ -19,6 +19,30 @@ function redirect_to_login(string $message = 'Please sign in to continue.')
     exit;
 }
 
+if (!function_exists('map_pump_staff_format_phone_number')) {
+    function map_pump_staff_format_phone_number(?string $value): string
+    {
+        $digits = preg_replace('/\D+/', '', trim((string) $value)) ?? '';
+        if ($digits === '') {
+            return '';
+        }
+        if (str_starts_with($digits, '0095')) {
+            $digits = substr($digits, 2);
+        }
+        if (str_starts_with($digits, '95')) {
+            $digits = substr($digits, 2);
+            if (str_starts_with($digits, '0')) {
+                $digits = substr($digits, 1);
+            }
+            return '+95' . $digits;
+        }
+        if (str_starts_with($digits, '0')) {
+            $digits = substr($digits, 1);
+        }
+        return '+95' . $digits;
+    }
+}
+
 $flashMessage = $_SESSION['flash_message'] ?? null;
 $flashType = $_SESSION['flash_type'] ?? 'success';
 unset($_SESSION['flash_message'], $_SESSION['flash_type']);
@@ -264,12 +288,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'updat
 
     $newName = trim((string) ($_POST['user_name'] ?? ''));
     $newEmail = trim((string) ($_POST['email'] ?? ''));
+    $newContact = map_pump_staff_format_phone_number((string) ($_POST['contact'] ?? ''));
 
     if ($newName === '') {
         $_SESSION['flash_message'] = 'Please enter a display name.';
         $_SESSION['flash_type'] = 'error';
     } elseif (mb_strlen($newName) > ($isStandaloneStaff ? 120 : 225)) {
         $_SESSION['flash_message'] = 'Display name is too long.';
+        $_SESSION['flash_type'] = 'error';
+    } elseif (mb_strlen($newContact) > 30) {
+        $_SESSION['flash_message'] = 'Phone number must be 30 characters or fewer.';
         $_SESSION['flash_type'] = 'error';
     } elseif ($newEmail === '' || !filter_var($newEmail, FILTER_VALIDATE_EMAIL)) {
         $_SESSION['flash_message'] = 'Please provide a valid email address.';
@@ -285,8 +313,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'updat
                     $_SESSION['flash_message'] = 'That email address is already in use by another account.';
                     $_SESSION['flash_type'] = 'error';
                 } else {
-                    $update = $pdo->prepare('UPDATE staff SET full_name = ?, email = ?, updated_at = CURRENT_TIMESTAMP WHERE staff_id = ?');
-                    $update->execute([$newName, $newEmail, (int) $staffRecord['staff_id']]);
+                    $update = $pdo->prepare('UPDATE staff SET full_name = ?, email = ?, contact = ?, updated_at = CURRENT_TIMESTAMP WHERE staff_id = ?');
+                    $update->execute([$newName, $newEmail, $newContact !== '' ? $newContact : null, (int) $staffRecord['staff_id']]);
                     $_SESSION['user_name'] = $newName;
                     $_SESSION['user_email'] = $newEmail;
                     $_SESSION['staff_email'] = $newEmail;
@@ -303,6 +331,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'updat
                 } else {
                     $update = $pdo->prepare('UPDATE users SET user_name = ?, email = ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?');
                     $update->execute([$newName, $newEmail, $userId]);
+                    $staffContactUpdate = $pdo->prepare('UPDATE staff SET contact = ?, updated_at = CURRENT_TIMESTAMP WHERE staff_id = ?');
+                    $staffContactUpdate->execute([$newContact !== '' ? $newContact : null, (int) $staffRecord['staff_id']]);
                     map_pump_log_action($pdo, $userId, 'Updated staff profile details', 5);
                     $_SESSION['user_name'] = $newName;
                     $_SESSION['flash_message'] = 'Profile details updated successfully.';
@@ -325,6 +355,7 @@ if ($isStandaloneStaff) {
         'user_id' => (int) $staffRecord['staff_id'],
         'user_name' => (string) ($staffRecord['full_name'] ?? ''),
         'email' => (string) ($staffRecord['email'] ?? ''),
+        'contact' => (string) ($staffRecord['contact'] ?? ''),
         'oauth_avatar_url' => '',
         'role_name' => 'Staff',
         'headquarter_name' => (string) ($staffRecord['headquarter_name'] ?? ''),
@@ -336,6 +367,7 @@ if ($isStandaloneStaff) {
     try {
         $stmt = $pdo->prepare(
         'SELECT u.user_id, u.user_name, u.email, u.oauth_avatar_url, u.status, u.role_id, u.business_role_id,
+            st.contact,
                 COALESCE(bas.headquarter_id, sbs.headquarter_id) AS headquarter_id, st.branch_id, u.created_at,
                 r.role_name, br.role_name AS business_role_name,
                 h.company_name AS headquarter_name,
@@ -365,6 +397,7 @@ if (!$user) {
 
 $displayName = trim((string) ($user['user_name'] ?? ''));
 $displayEmail = trim((string) ($user['email'] ?? ''));
+$displayContact = map_pump_staff_format_phone_number((string) ($user['contact'] ?? ''));
 $avatarPath = trim((string) ($user['oauth_avatar_url'] ?? ''));
 $staffId = $isStandaloneStaff
     ? (string) ($user['staff_code'] ?? 'ST-' . $user['user_id'])
@@ -622,6 +655,7 @@ $branchCode = trim((string) ($user['branch_code'] ?? '')) ?: 'N/A';
                     <div class="account-detail-row"><dt>Staff ID</dt><dd><code>#<?= htmlspecialchars($staffId) ?></code></dd></div>
                     <div class="account-detail-row"><dt>Display name</dt><dd><?= htmlspecialchars((string) ($displayName ?: 'Not set'), ENT_QUOTES, 'UTF-8') ?></dd></div>
                     <div class="account-detail-row"><dt>Email address</dt><dd><?= htmlspecialchars((string) ($displayEmail ?: 'Not set'), ENT_QUOTES, 'UTF-8') ?></dd></div>
+                    <div class="account-detail-row"><dt>Phone number</dt><dd><?= htmlspecialchars((string) ($displayContact ?: 'Not set'), ENT_QUOTES, 'UTF-8') ?></dd></div>
                     <div class="account-detail-row"><dt>Account role</dt><dd><?= htmlspecialchars($accountRole) ?></dd></div>
                 </dl>
                 <div class="account-assignment">
@@ -771,7 +805,7 @@ $branchCode = trim((string) ($user['branch_code'] ?? '')) ?: 'N/A';
                             <span class="staff-security-icon"><i class="bi bi-person-gear"></i></span>
                             <div>
                                 <h5 class="modal-title fw-bold text-white mb-0" id="editProfileModalLabel">Edit profile</h5>
-                                <p class="text-white-50 small mb-0">Update your account's display name and email address.</p>
+                                <p class="text-white-50 small mb-0">Update your account's display name, email address, and phone number.</p>
                             </div>
                         </div>
                         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
@@ -789,6 +823,13 @@ $branchCode = trim((string) ($user['branch_code'] ?? '')) ?: 'N/A';
                             <div class="input-group">
                                 <span class="input-group-text glass-input text-white-50 border-end-0"><i class="bi bi-envelope"></i></span>
                                 <input type="email" class="form-control glass-input border-start-0 text-white" id="profileEmail" name="email" value="<?= htmlspecialchars($displayEmail) ?>" maxlength="255" autocomplete="email" required>
+                            </div>
+                        </div>
+                        <div class="mt-3">
+                            <label for="profileContact" class="form-label text-white-50 small">Phone Number</label>
+                            <div class="input-group">
+                                <span class="input-group-text glass-input text-white-50 border-end-0"><i class="bi bi-telephone"></i></span>
+                                <input type="tel" class="form-control glass-input border-start-0 text-white" id="profileContact" name="contact" value="<?= htmlspecialchars($displayContact, ENT_QUOTES, 'UTF-8') ?>" placeholder="+95 9xxxxxxxxx" maxlength="30" autocomplete="tel">
                             </div>
                         </div>
                     </div>
