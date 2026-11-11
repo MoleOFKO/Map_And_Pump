@@ -198,17 +198,39 @@ function smtp_send_mail_via_phpmailer(string $to, string $subject, string $htmlB
 
 function smtp_send_mail(string $to, string $subject, string $htmlBody, string $textBody = ''): void
 {
-    $provider = mail_active_provider();
-    if ($provider === null) {
+    $preferredProvider = mail_active_provider();
+    if ($preferredProvider === null) {
         throw new RuntimeException('No email provider is configured. Configure Resend or SMTP credentials.');
     }
 
-    if ($provider === 'resend') {
-        resend_send_mail($to, $subject, $htmlBody, $textBody);
-        return;
+    $providers = [$preferredProvider];
+    $fallbackProvider = $preferredProvider === 'resend' ? 'smtp' : 'resend';
+    $fallbackConfigured = $fallbackProvider === 'resend'
+        ? mail_resend_is_configured()
+        : mail_smtp_is_configured();
+    if ($fallbackConfigured) {
+        $providers[] = $fallbackProvider;
     }
 
-    smtp_send_mail_via_phpmailer($to, $subject, $htmlBody, $textBody);
+    $lastError = null;
+    foreach ($providers as $provider) {
+        try {
+            if ($provider === 'resend') {
+                resend_send_mail($to, $subject, $htmlBody, $textBody);
+            } else {
+                smtp_send_mail_via_phpmailer($to, $subject, $htmlBody, $textBody);
+            }
+            if ($provider !== $preferredProvider) {
+                error_log(sprintf('[mailer] Email sent via %s after %s failed.', $provider, $preferredProvider));
+            }
+            return;
+        } catch (Throwable $error) {
+            $lastError = $error;
+            error_log(sprintf('[mailer] %s delivery failed: %s', $provider, $error->getMessage()));
+        }
+    }
+
+    throw new RuntimeException('Email delivery failed through all configured providers.', 0, $lastError);
 }
 
 function resend_send_mail(string $to, string $subject, string $htmlBody, string $textBody = ''): void

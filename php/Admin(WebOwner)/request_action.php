@@ -664,9 +664,13 @@ try {
     }
 
     $conn->commit();
+    $mailDeliveryFailed = false;
     foreach ($postCommitMailJobs as $mailJob) {
         try {
             $emailResult = mail_send_account_notice($recipientEmail, $mailJob['context']);
+            if (empty($emailResult['sent'])) {
+                $mailDeliveryFailed = true;
+            }
             $deliveryStatus = (string) ($emailResult['status'] ?? 'failed');
             $deliveryNote = substr((string) ($emailResult['note'] ?? 'Email delivery failed.'), 0, 255);
             $emailSubject = (string) ($emailResult['subject'] ?? $mailJob['subject']);
@@ -685,6 +689,7 @@ try {
             }
             $deliveryUpdate->close();
         } catch (Throwable $mailError) {
+            $mailDeliveryFailed = true;
             error_log('[Request registry] HQ registration email failed after approval: ' . $mailError->getMessage());
         }
     }
@@ -709,7 +714,11 @@ try {
             sprintf('License extension request %s was rejected by %s.', $target['reference_code'], $reviewerLabel)
         );
     } else {
-        request_flash('success', sprintf('Request %s was %s by %s.', $target['reference_code'], $newStatus, $reviewerLabel));
+        $flashMessage = sprintf('Request %s was %s by %s.', $target['reference_code'], $newStatus, $reviewerLabel);
+        if ($isHqRegistrationApproval && $mailDeliveryFailed) {
+            $flashMessage .= ' Email delivery failed; the company was still approved. Check the configured mail provider.';
+        }
+        request_flash($isHqRegistrationApproval && $mailDeliveryFailed ? 'warning' : 'success', $flashMessage);
     }
 } catch (Throwable $exception) {
     $conn->rollback();
