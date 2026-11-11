@@ -325,9 +325,9 @@ if ($headquarterId > 0 && $customerRoleId > 0) {
     $canLinkCustomer = (bool) $ownerCheck->fetchColumn();
 }
 $linkedCustomerCanSwitch = $linkedCustomer !== null
-    && in_array(strtolower(trim((string) ($linkedCustomer['status'] ?? ''))), ['active', 'approved', 'license_expired'], true);
+    && in_array(strtolower(trim((string) ($linkedCustomer['status'] ?? ''))), ['active', 'approved', 'enabled', 'ready', 'pending', 'license_expired'], true);
 $ownerCustomerCanSwitch = $ownerCustomer !== null
-    && in_array(strtolower(trim((string) ($ownerCustomer['status'] ?? ''))), ['active', 'approved', 'license_expired'], true);
+    && in_array(strtolower(trim((string) ($ownerCustomer['status'] ?? ''))), ['active', 'approved', 'enabled', 'ready', 'pending', 'license_expired'], true);
 $hasCustomerProfile = $ownerCustomerCanSwitch || $linkedCustomerCanSwitch;
 $linkedCustomerUnavailable = ($ownerCustomer !== null || $linkedCustomer !== null) && !$hasCustomerProfile;
 $canLinkCustomer = $canLinkCustomer && $linkedCustomer === null;

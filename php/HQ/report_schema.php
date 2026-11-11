@@ -7,7 +7,7 @@ function hq_report_ensure_scope_schema(PDO $pdo): void
             "SELECT COLUMN_NAME, IS_NULLABLE
              FROM INFORMATION_SCHEMA.COLUMNS
              WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'report'
-               AND COLUMN_NAME IN ('user_id', 'headquarter_id')"
+               AND COLUMN_NAME IN ('user_id', 'headquarter_id', 'status')"
         );
         return $columns->fetchAll(PDO::FETCH_KEY_PAIR);
     };
@@ -22,6 +22,16 @@ function hq_report_ensure_scope_schema(PDO $pdo): void
             $pdo->exec('ALTER TABLE report ADD COLUMN headquarter_id INT NULL');
         } catch (PDOException $e) {
             if (!isset($readColumns()['headquarter_id'])) {
+                throw $e;
+            }
+        }
+    }
+
+    if (!isset($columns['status'])) {
+        try {
+            $pdo->exec("ALTER TABLE report ADD COLUMN status VARCHAR(20) NOT NULL DEFAULT 'unread'");
+        } catch (PDOException $e) {
+            if (!isset($readColumns()['status'])) {
                 throw $e;
             }
         }

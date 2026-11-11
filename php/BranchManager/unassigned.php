@@ -1,6 +1,18 @@
 <?php
 require_once __DIR__ . '/_helpers.php';
 require_branch_manager(true);
+
+// TODO: Replace this with your actual database connection and query logic
+// Example logic to check if a corresponding customer account exists for this manager's email:
+$show_switch_account = false;
+if (isset($currentUser['email'])) {
+    // Assuming $db is your PDO connection instance available via helpers
+    $stmt = $db->prepare("SELECT COUNT(*) FROM customers WHERE email = ?");
+    $stmt->execute([$currentUser['email']]);
+    if ($stmt->fetchColumn() > 0) {
+        $show_switch_account = true;
+    }
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -91,6 +103,31 @@ require_branch_manager(true);
             font-size: 11px;
             font-weight: 500;
             letter-spacing: 0;
+        }
+
+        .topbar-actions {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .switch-account {
+            display: inline-flex;
+            align-items: center;
+            gap: 9px;
+            padding: 9px 13px;
+            border: 1px solid rgba(56, 189, 248, 0.25);
+            border-radius: 9px;
+            color: var(--sky-400);
+            font-size: 13px;
+            font-weight: 600;
+            transition: background 0.2s ease, border-color 0.2s ease;
+        }
+
+        .switch-account:hover,
+        .switch-account:focus-visible {
+            border-color: rgba(56, 189, 248, 0.5);
+            background: rgba(56, 189, 248, 0.08);
         }
 
         .sign-out {
@@ -253,10 +290,20 @@ require_branch_manager(true);
                     <small>Branch Manager Console</small>
                 </span>
             </div>
-            <a class="sign-out" href="/php/BranchManager/logout.php">
-                <i class="fa-solid fa-arrow-right-from-bracket" aria-hidden="true"></i>
-                Sign out
-            </a>
+            
+            <div class="topbar-actions">
+                <?php if (!empty($show_switch_account)): ?>
+                    <a class="switch-account" href="/php/Customer/switch-account.php">
+                        <i class="fa-solid fa-right-left" aria-hidden="true"></i>
+                        Switch to Customer
+                    </a>
+                <?php endif; ?>
+                
+                <a class="sign-out" href="/php/BranchManager/logout.php">
+                    <i class="fa-solid fa-arrow-right-from-bracket" aria-hidden="true"></i>
+                    Sign out
+                </a>
+            </div>
         </header>
 
         <main>
