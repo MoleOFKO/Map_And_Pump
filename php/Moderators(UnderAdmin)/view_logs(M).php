@@ -94,20 +94,21 @@ $flashType = (string) ($flash['type'] ?? '');
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&amp;display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
     <link rel="stylesheet" href="/css/Admin.css">
+    <link rel="stylesheet" href="/css/moderator_blue_theme.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
     <style>
         .mod-flash{border-radius:14px;background:rgba(10,22,44,.82);border:1px solid var(--glass-border);color:var(--text-primary)}
         body.background_color.light-mode .mod-flash{background:rgba(255,255,255,.92)}
     </style>
 </head>
-<body class="background_color" id="background_color">
+<body class="background_color admin-blue-page" id="background_color">
 <?php include __DIR__ . '/includes/moderator_navbar.php'; ?>
-<main class="container my-5">
+<main class="container my-5 admin-blue-shell">
     <?php if ($flash && $flashType): ?><div class="alert mod-flash alert-<?= moderator_escape($flashType) ?> mb-4"><i class="bi <?= $flashType === 'success' ? 'bi-check-circle-fill text-success' : 'bi-exclamation-triangle-fill text-danger' ?> me-2"></i><?= moderator_escape((string) ($flash['message'] ?? '')) ?></div><?php endif; ?>
     <?php if ($dbError): ?><div class="alert mod-flash alert-danger mb-4"><i class="bi bi-database-exclamation me-2"></i><?= moderator_escape($dbError) ?></div><?php endif; ?>
 
     <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3">
-        <div><span class="stat-chip mb-2"><i class="bi bi-terminal-split txt-neon-cyan"></i> Account Activity</span><h1 class="fw-bold m-0 h4 text-white mt-2">View Log Files</h1></div>
+        <div class="admin-blue-header flex-grow-1"><div class="companies-eyebrow">Account activity</div><h1 class="mb-0">View Log Files</h1><p class="admin-blue-description">Search the platform activity and security audit trail.</p></div>
 
     </div>
 

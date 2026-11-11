@@ -23,6 +23,8 @@ $flashType = (string) ($flash['type'] ?? '');
     <title>View/Manage Drivers — Map &amp; Pump</title>
     <link rel="icon" type="image/png" href="/images/Logo.png"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&amp;display=swap" rel="stylesheet"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"><link rel="stylesheet" href="/css/Admin.css"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/css/admin-blue-pages.css">
     <style>
         .mod-flash{border-radius:14px;background:rgba(10,22,44,.82);border:1px solid var(--glass-border);color:var(--text-primary)}
         body.background_color.light-mode .mod-flash{background:rgba(255,255,255,.92)}
@@ -40,13 +42,13 @@ $flashType = (string) ($flash['type'] ?? '');
         .hq-status-removed:before{background:#ff4d6a;box-shadow:0 0 8px #ff4d6a}
     </style>
 </head>
-<body class="background_color" id="background_color">
+<body class="background_color admin-blue-page" id="background_color">
 <?php include __DIR__ . '/includes/moderator_navbar.php'; ?>
-<main class="container my-5">
+<main class="container my-5 admin-blue-shell">
     <?php if ($flash && $flashType): ?><div class="alert mod-flash alert-<?= moderator_escape($flashType) ?> alert-dismissible fade show mb-4" role="alert"><i class="bi <?= $flashType === 'success' ? 'bi-check-circle-fill text-success' : 'bi-exclamation-triangle-fill text-danger' ?> me-2"></i><?= moderator_escape((string) ($flash['message'] ?? '')) ?><button type="button" class="btn-close btn-close-white" data-bs-dismiss="alert"></button></div><?php endif; ?>
     <?php if ($dbError): ?><div class="alert mod-flash alert-danger mb-4"><i class="bi bi-database-exclamation me-2"></i><?= moderator_escape($dbError) ?></div><?php endif; ?>
     <?php if (function_exists('expiry_render_page_banners')) { expiry_render_page_banners('moderator', true); } ?>
-    <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3"><div><span class="stat-chip mb-2"><i class="bi bi-person-vcard-fill txt-neon-cyan"></i> Driver Administration</span><h1 class="fw-bold m-0 h4 text-white mt-2">View/Manage Drivers</h1></div></div>
+    <div class="admin-blue-header d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3"><div><span class="stat-chip mb-2"><i class="bi bi-person-vcard-fill txt-neon-cyan"></i> Driver Administration</span><h1 class="fw-bold m-0 h4 text-white mt-2">View/Manage Drivers</h1><p class="admin-blue-description">Manage driver accounts, check license status, and review linked company details.</p></div></div>
     <div class="dashboard-card admin-filter-card mb-4"><form class="admin-filter-form" method="GET" action="view_users(M).php">
         <div class="filter-group filter-group--search"><label class="filter-label" for="modUserSearch">Search</label><div class="filter-search"><i class="bi bi-search filter-search-icon" aria-hidden="true"></i><input id="modUserSearch" type="search" class="form-control filter-control filter-input" placeholder="Search by name or email..." name="search" value="<?= moderator_escape($search) ?>"></div></div>
         <div class="filter-group"><label class="filter-label" for="modUserStatus">Status</label><div class="filter-select-wrap"><select id="modUserStatus" class="form-select filter-control filter-select" name="status" aria-label="Status"><option value="">All Status</option><?php foreach ($allowedStatuses as $option): ?><option value="<?= moderator_escape($option) ?>" <?= $status === $option ? 'selected' : '' ?>><?= moderator_escape(function_exists('admin_filter_label') ? admin_filter_label($option) : hq_status_label($option)) ?></option><?php endforeach; ?></select></div></div>

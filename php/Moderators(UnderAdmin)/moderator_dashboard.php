@@ -120,8 +120,11 @@ $updatedLabel = $updatedAt ? moderator_format_date($updatedAt) : 'Not available'
     <title>Moderator Dashboard — Map &amp; Pump</title>
     <link rel="icon" type="image/png" href="/images/Logo.png">
     <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
     <link rel="stylesheet" href="/css/Admin.css">
+    <link rel="stylesheet" href="/css/admin-blue-pages.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
     <style>
         .hq-flash { border-radius:14px; background:rgba(10,22,44,.82); border:1px solid var(--glass-border); color:var(--text-primary); }
@@ -143,10 +146,10 @@ $updatedLabel = $updatedAt ? moderator_format_date($updatedAt) : 'Not available'
         }
     </style>
 </head>
-<body class="background_color" id="background_color">
+<body class="background_color admin-blue-page" id="background_color">
 <?php include __DIR__ . '/includes/moderator_navbar.php'; ?>
 
-<main class="container my-5">
+<main class="container my-5 admin-blue-shell">
     <?php
     $hireFlash = '';
     if (session_status() === PHP_SESSION_ACTIVE && !empty($_SESSION['moderator_hire_flash'])) {
@@ -165,12 +168,13 @@ $updatedLabel = $updatedAt ? moderator_format_date($updatedAt) : 'Not available'
         </div>
     <?php endif; ?>
     <?php if (function_exists('expiry_render_page_banners')) { expiry_render_page_banners('moderator', true); } ?>
-    <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3">
+    <div class="admin-blue-header d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3">
         <div>
             <span class="stat-chip mb-2"><i class="bi bi-speedometer2 txt-neon-cyan"></i> Moderator Dashboard</span>
             <h1 class="fw-bold m-0 h4 text-white mt-2">Control Center Overview</h1>
+            <p class="admin-blue-description">Track platform activity, review queues, and license renewals.</p>
         </div>
-        <span class="stat-chip"><i class="bi bi-clock-history me-1"></i> Updated <?= moderator_escape($updatedLabel) ?></span>
+        <span class="admin-blue-updated"><i class="bi bi-clock-history me-1"></i> Updated <?= moderator_escape($updatedLabel) ?></span>
     </div>
 
     <?php
