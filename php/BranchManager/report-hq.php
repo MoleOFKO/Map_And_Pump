@@ -89,30 +89,10 @@ $stmt = $pdo->prepare("
 $stmt->execute([':u' => $user['user_id']]);
 $reports = $stmt->fetchAll();
 
-// -------- Load notifications --------
-$alerts = [];
-$has_unread = false;
-try {
-    $stmt = $pdo->prepare("
-        SELECT notif_id, title, body, created_at, is_read,
-               CASE
-                   WHEN TIMESTAMPDIFF(SECOND, created_at, NOW()) < 60 THEN CONCAT(TIMESTAMPDIFF(SECOND, created_at, NOW()), ' seconds ago')
-                   WHEN TIMESTAMPDIFF(MINUTE, created_at, NOW()) < 60 THEN CONCAT(TIMESTAMPDIFF(MINUTE, created_at, NOW()), ' minutes ago')
-                   WHEN TIMESTAMPDIFF(HOUR, created_at, NOW()) < 24 THEN CONCAT(TIMESTAMPDIFF(HOUR, created_at, NOW()), ' hours ago')
-                   ELSE DATE_FORMAT(created_at, '%Y-%m-%d')
-               END AS time_ago
-        FROM notifications
-        WHERE user_id = :u
-        ORDER BY created_at DESC
-    ");
-    $stmt->execute([':u' => $user['user_id']]);
-    $alerts = $stmt->fetchAll();
-
-    // Check for unread notifications
-    $has_unread = array_filter($alerts, fn($a) => empty($a['is_read']) || (int)$a['is_read'] === 0);
-} catch (Exception $e) {
-    error_log('Failed to load notifications: ' . $e->getMessage());
-}
+// -------- Load notifications (shared helpers, same as dashboard.php) --------
+$alerts       = notif_recent($pdo, (int)$user['user_id'], 5);
+$unread_count = notif_unread_count($pdo, (int)$user['user_id']);
+$has_unread   = $unread_count > 0;
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -216,12 +196,12 @@ try {
     right: 60px;
     width: 320px;
     max-height: 420px;
-    overflow-y: auto;
+    overflow: hidden;
     background: var(--navy-800);
     border: 1px solid rgba(255, 255, 255, 0.12);
     border-radius: 14px;
     box-shadow: 0 16px 32px rgba(0, 0, 0, 0.4);
-    padding: 14px 12px;
+    padding: 12px;
     z-index: 100;
     display: none;
     animation: fadeInDown 0.25s cubic-bezier(0.16, 1, 0.3, 1);
@@ -229,23 +209,37 @@ try {
   .notif-popup.show { display: block; }
   .notif-header { display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom:10px; margin-bottom:10px; }
   .notif-header h4 { font-size: 14px; font-weight:700; margin:0; }
-  .notif-header button { background: transparent; border: none; color: var(--sky-400); font-size: 11px; cursor: pointer; }
+  .notif-list {
+    max-height: 330px;
+    overflow-y: auto;
+    overflow-x: auto;
+    padding-right: 4px;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(56,189,248,0.35) transparent;
+  }
+  .notif-list::-webkit-scrollbar { width: 8px; height: 8px; }
+  .notif-list::-webkit-scrollbar-track { background: transparent; }
+  .notif-list::-webkit-scrollbar-thumb { background: rgba(56,189,248,0.35); border-radius: 999px; }
+  .notif-list::-webkit-scrollbar-thumb:hover { background: rgba(56,189,248,0.55); }
   .notif-item {
-    padding: 9px 8px; border-radius: 10px; display: flex; gap: 10px; align-items: flex-start; transition: background-color 0.2s; border: 1px solid transparent;
+    padding: 10px 8px; border-radius: 10px; display: flex; gap: 10px; align-items: flex-start; transition: background-color 0.2s; border: 1px solid transparent;
   }
   .notif-item:hover { background-color: rgba(255,255,255,0.04); }
-  .notif-item .icon {
-    width: 32px; height: 32px; border-radius: 10px; display:flex; align-items:center; justify-content:center; font-size:12px; flex-shrink:0;
-    background: rgba(148,163,184,0.12); color: var(--slate-200);
-  }
   .notif-item.unread { border-color: rgba(56,189,248,0.2); }
-  .notif-item.warning .icon { background: rgba(251,191,36,0.16); color: var(--amber-300); }
-  .notif-item.error .icon { background: rgba(248,113,113,0.16); color: var(--red-400); }
-  .notif-item.success .icon { background: rgba(52,211,153,0.14); color: var(--mint-400); }
-  .notif-item.info .icon { background: rgba(56,189,248,0.14); color: var(--sky-400); }
-  .notif-item .text b { display:block; font-size:12.5px; color:var(--slate-50); margin-bottom:2px; }
-  .notif-item .text span { color:var(--slate-400); font-size:11.5px; display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  .notif-item .time { font-size:10px; color:var(--slate-400); margin-top:4px; }
+  .notif-item-warning .icon,
+  .notif-item.error .icon,
+  .notif-item.warn .icon,
+  .notif-item .icon {
+    display: none;
+  }
+  .notif-item-body {
+    min-width: 0;
+    flex: 1;
+  }
+  .notif-item-body b { display:block; font-size:12.5px; color:var(--slate-50); margin-bottom:2px; }
+  .notif-item-body span { color:var(--slate-400); font-size:11.5px; display:block; white-space:normal; line-height:1.5; }
+  .notif-item-body .notif-time { font-size:10px; color:var(--slate-400); margin-top:4px; }
+  .notif-empty { text-align:center; padding:12px 0; color:var(--slate-400); font-size:12px; }
   @keyframes fadeInDown { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
 
   .avatar-chip{display:flex; align-items:center; gap:10px; font-size:13px; cursor: pointer; padding: 4px 8px; border-radius: 99px; transition: background 0.2s;}
@@ -465,22 +459,21 @@ try {
           </div>
           <div class="notif-list" id="notif-list">
             <?php if (!$alerts): ?>
-              <div class="notif-empty" style="text-align:center; padding:12px 0; color:var(--slate-400); font-size:12px;">No new notifications</div>
+              <div class="notif-empty">No new notifications</div>
             <?php else:
               foreach ($alerts as $a):
                 $meta = notif_ui_meta($a['type'], $a['title']);
-                $tone = $meta['tone'];
                 $icon = $meta['icon'];
+                $tone = $meta['tone'];
             ?>
-            <div class="notif-item <?= h($tone) ?>" data-notif-id="<?= (int)$a['notif_id'] ?>" data-link="<?= h($a['link'] ?? 'dashboard.php') ?>">
-              <div class="icon"><i class="fa-solid <?= h($icon) ?>"></i></div>
-              <div class="text">
-                <b><?= h($a['title']) ?></b>
-                <span><?= h($a['body']) ?></span>
-                <div class="time"><?= h($a['time_ago']) ?></div>
+              <div class="notif-item <?= h($tone) ?>" data-notif-id="<?= (int)$a['notif_id'] ?>" data-link="<?= h($a['link'] ?? 'dashboard.php') ?>" data-kind="<?= h($tone) ?>">
+                <div class="notif-item-body">
+                  <b><?= h($a['title']) ?></b>
+                  <span><?= h($a['body']) ?></span>
+                  <div class="notif-time"><?= h($a['time_ago']) ?></div>
+                </div>
               </div>
-            </div>
-          <?php endforeach; endif; ?>
+            <?php endforeach; endif; ?>
           </div>
         </div>
 

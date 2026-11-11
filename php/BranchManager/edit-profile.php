@@ -959,10 +959,6 @@ $has_unread   = $unread_count > 0;
         <div class="date" id="live-clock">--</div>
       </div>
       <div class="topbar-right">
-        <label class="staff-theme-control" title="Toggle light mode">
-          <input class="js-theme-toggle" type="checkbox" aria-label="Toggle light mode">
-          <span><i class="fa-solid fa-sun"></i></span>
-        </label>
         <div class="bell" id="notif-bell"><i class="fa-regular fa-bell"></i><?php if ($has_unread): ?><span class="ping" id="notif-ping"></span><?php endif; ?></div>
         <div class="notif-popup" id="notif-popup">
           <div class="notif-header">
@@ -987,6 +983,10 @@ $has_unread   = $unread_count > 0;
             <?php endforeach; endif; ?>
           </div>
         </div>
+        <label class="staff-theme-control" title="Toggle light mode">
+          <input class="js-theme-toggle" type="checkbox" aria-label="Toggle light mode">
+          <span><i class="fa-solid fa-sun"></i></span>
+        </label>
         <div class="avatar-chip">
           <?php if ($avatarUrl !== ''): ?>
             <img src="<?= htmlspecialchars($avatarUrl, ENT_QUOTES) ?>" alt="Profile Picture" style="width:36px;height:36px;border-radius:50%;object-fit:cover;border:1px solid rgba(255,255,255,0.12)">

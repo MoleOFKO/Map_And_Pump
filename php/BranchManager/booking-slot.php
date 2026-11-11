@@ -54,7 +54,7 @@ loyalty_countermeasures_schema_ready($pdo);
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!csrf_check($_POST['csrf'] ?? null)) json_out(['ok' => false, 'error' => 'CSRF failed'], 403);
     $action = $_POST['action'] ?? '';
-    $pumpSpecificActions = ['call_next', 'unable_to_fulfill', 'complete', 'cancel', 'pump_state'];
+    $pumpSpecificActions = ['call_next', 'complete', 'cancel', 'pump_state'];
 
     if (!$pumpsTableExists && in_array($action, $pumpSpecificActions, true)) {
         json_out(['ok' => false, 'error' => 'Pump tracking is unavailable for this station right now.'], 503);
@@ -144,13 +144,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 json_out(['ok' => false, 'error' => 'Please add a brief description for the selected reason.'], 422);
             }
             $details = $reason === 'Other' ? $reason_note : null;
+            $reasonDisplay = $reason === 'Other' ? $reason_note : $reason;
+            $reasonDisplay = trim($reasonDisplay);
 
             $pdo->beginTransaction();
-            $stmt = $pdo->prepare("SELECT bk.booking_id, bk.station_id, bk.status, bk.expire_at, p.pump_id, bk.qr_refrence_code
-                FROM booking bk INNER JOIN station_business_scope sbs ON sbs.station_id = bk.station_id
-                LEFT JOIN pumps p ON p.current_token = bk.qr_refrence_code AND p.branch_id = ?
-                WHERE bk.booking_id = ? AND sbs.branch_manager_user_id = ? LIMIT 1 FOR UPDATE");
-            $stmt->execute([$bid, $token_id, $user['user_id']]);
+            if ($pumpsTableExists) {
+                $stmt = $pdo->prepare("SELECT bk.booking_id, bk.station_id, bk.status, bk.expire_at, p.pump_id, bk.qr_refrence_code
+                    FROM booking bk INNER JOIN station_business_scope sbs ON sbs.station_id = bk.station_id
+                    LEFT JOIN pumps p ON p.current_token = bk.qr_refrence_code AND p.branch_id = ?
+                    WHERE bk.booking_id = ? AND sbs.branch_manager_user_id = ? LIMIT 1 FOR UPDATE");
+                $stmt->execute([$bid, $token_id, $user['user_id']]);
+            } else {
+                $stmt = $pdo->prepare("SELECT bk.booking_id, bk.station_id, bk.status, bk.expire_at, bk.qr_refrence_code
+                    FROM booking bk INNER JOIN station_business_scope sbs ON sbs.station_id = bk.station_id
+                    WHERE bk.booking_id = ? AND sbs.branch_manager_user_id = ? LIMIT 1 FOR UPDATE");
+                $stmt->execute([$token_id, $user['user_id']]);
+            }
             $unable = $stmt->fetch(PDO::FETCH_ASSOC);
             if (!$unable || !in_array((string)$unable['status'], ['notfilled','waiting','serving'], true)
                 || strtotime((string)$unable['expire_at']) <= time()) { $pdo->rollBack(); json_out(['ok' => false, 'error' => 'Booking is no longer active.'], 409); }
@@ -177,23 +186,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $cancelInsert->execute([
                     ':booking_id' => (int)$token_id,
                     ':user_id' => (int)$user['user_id'],
-                    ':reason_tags' => json_encode(['Unable To Fulfill'], JSON_UNESCAPED_UNICODE),
-                    ':details' => $details,
+                    ':reason_tags' => json_encode([$reason], JSON_UNESCAPED_UNICODE),
+                    ':details' => $reasonDisplay !== '' ? $reasonDisplay : $details,
                 ]);
             } catch (Throwable $cancelInsertError) {
                 error_log('Unable to record branch-manager cancellation reason: ' . $cancelInsertError->getMessage());
             }
 
-            $stmt = $pdo->prepare("UPDATE booking SET status = 'station_unable_to_fulfill' WHERE booking_id = ? AND status IN ('notfilled','waiting','serving')");
+            $stmt = $pdo->prepare("UPDATE booking SET status = 'unable_to_fulfill' WHERE booking_id = ? AND status IN ('notfilled','waiting','serving')");
             $stmt->execute([$token_id]);
             if ($stmt->rowCount() !== 1) { $pdo->rollBack(); json_out(['ok' => false, 'error' => 'Booking state changed while submitting the reason.'], 409); }
             map_pump_issue_shortfall_coupon($pdo, (int)$unable['booking_id'], 0.0);
-            if (!empty($unable['pump_id'])) {
+            if ($pumpsTableExists && !empty($unable['pump_id'])) {
                 $stmt = $pdo->prepare("UPDATE pumps SET status = 'idle', current_token = NULL WHERE pump_id = ?");
                 $stmt->execute([(int)$unable['pump_id']]);
             }
             $pdo->commit();
-            log_activity($pdo, $bid, 'user', $user['user_id'], $user['full_name'], "Marked token {$unable['qr_refrence_code']} as unable to fulfill: {$reason}");
+            log_activity($pdo, $bid, 'user', $user['user_id'], $user['full_name'], "Marked token {$unable['qr_refrence_code']} as unable to fulfill: {$reasonDisplay}");
             json_out(['ok' => true, 'message' => 'Closed and issued a full-value station coupon.']);
         }
 
@@ -558,18 +567,23 @@ try {
                COALESCE(bk.time_of_filled, bk.created_at) AS logged_at,
                bk.filled_gas,
                COALESCE(u.user_name, 'Customer') AS customer_name,
-               COALESCE(ot.oil_name, '') AS fuel_name
+               COALESCE(ot.oil_name, '') AS fuel_name,
+               COALESCE(bur.reason, '') AS unfulfillment_reason,
+               COALESCE(bur.details, '') AS unfulfillment_details
         FROM booking bk
         LEFT JOIN users u ON u.user_id = bk.user_id
         LEFT JOIN oil_types ot ON ot.oil_type_id = bk.oil_type_id
+        LEFT JOIN booking_unfulfillment_reason bur ON bur.booking_id = bk.booking_id
         WHERE bk.station_id = :branch_id
-          AND LOWER(COALESCE(bk.status, '')) IN (
-              'completed', 'cancelled', 'canceled', 'station_unable_to_fulfill', 'unable_to_fulfill',
-              'customer_cancelled', 'branch_cancelled', 'unable to fulfill'
+          AND TRIM(LOWER(COALESCE(bk.status, ''))) IN (
+              'completed', 'filled', 'cancelled', 'canceled', 'station_unable_to_fulfill', 
+              'unable_to_fulfill', 'customer_cancelled', 'branch_cancelled', 'unable to fulfill', 'done'
           )
     ";
     $historyParams = [':branch_id' => (int)$bid];
-    if ($historyStart !== '') {
+    
+    // Fallback date safety check so history isn't hidden if branch creation date is empty
+    if ($historyStart !== '' && ($branchCreatedDate === '' || $historyStart >= $branchCreatedDate)) {
         $historySql .= ' AND DATE(COALESCE(bk.time_of_filled, bk.created_at)) >= :start_date';
         $historyParams[':start_date'] = $historyStart;
     }
@@ -586,12 +600,19 @@ try {
     $history = [];
     foreach ($rawHistory as $row) {
         $status = strtolower(trim((string)($row['status'] ?? '')));
+        $unfulfillmentReason = trim((string)($row['unfulfillment_reason'] ?? ''));
+        $unfulfillmentDetails = trim((string)($row['unfulfillment_details'] ?? ''));
         if (in_array($status, ['unable_to_fulfill', 'unable to fulfill', 'station_unable_to_fulfill'], true)) {
-            $status = 'station_unable_to_fulfill';
+            $status = 'unable_to_fulfill';
         } elseif (in_array($status, ['canceled', 'cancelled', 'customer_cancelled', 'branch_cancelled'], true)) {
             $status = 'cancelled';
         } elseif (!in_array($status, ['completed'], true)) {
             continue;
+        }
+
+        $reasonText = '';
+        if ($status === 'unable_to_fulfill') {
+            $reasonText = $unfulfillmentDetails !== '' ? $unfulfillmentDetails : $unfulfillmentReason;
         }
 
         $history[] = [
@@ -601,6 +622,7 @@ try {
             'customer_name' => (string)($row['customer_name'] ?? 'Customer'),
             'fuel_name' => (string)($row['fuel_name'] ?? ''),
             'filled_gas' => $row['filled_gas'] !== null && $row['filled_gas'] !== '' ? (float)$row['filled_gas'] : null,
+            'reason_text' => $reasonText,
         ];
     }
 } catch (Throwable $e) {
@@ -957,197 +979,142 @@ try {
   .status-pill.st-unable { color: #fb923c; background: rgba(251,146,60,0.14); }
   .status-pill.st-canceled { color: #f87171; background: rgba(248,113,113,0.14); }
   .status-pill.st-neutral { color: var(--slate-400); background: rgba(139,150,173,0.14); }
-  .act-link.unable-btn { color: #ef4444; gap: 6px; padding: 4px 12px; border: 1px solid #ef4444; border-radius: 999px; background: transparent; }
-  .act-link.unable-btn:hover { color: #fff; background: #ef4444; }
-  .ufm-backdrop {
-    position: fixed; inset: 0; background: rgba(3,6,12,0.7);
-    display: none; align-items: center; justify-content: center;
-    z-index: 1100; padding: 20px;
-  }
-  .ufm-backdrop.show { display: flex; }
-  .ufm-dialog {
-    width: 100%; max-width: 440px;
-    background: linear-gradient(160deg, var(--navy-800), var(--navy-900));
-    border: 1px solid rgba(255,255,255,0.1); border-radius: 16px;
-    box-shadow: 0 20px 40px rgba(0,0,0,0.5); overflow: visible;
-  }
-  .ufm-head {
-    display: flex; justify-content: space-between; align-items: center;
-    padding: 16px 20px; border-bottom: 1px solid rgba(255,255,255,0.07);
-    font-weight: 700; font-size: 15px;
-  }
-  .ufm-x { background: none; border: none; color: var(--slate-400); font-size: 20px; line-height: 1; cursor: pointer; }
-  .ufm-x:hover { color: var(--slate-50); }
-  .ufm-body { padding: 18px 20px; }
-  .ufm-body > p { font-size: 13px; color: var(--slate-300); margin-bottom: 16px; }
-  .ufm-label { display: block; font-size: 12px; font-weight: 600; color: var(--slate-300); margin-bottom: 6px; }
-  .ufm-label .req { color: var(--red-400); }
-  .ufm-select { position: relative; margin-bottom: 16px; }
-  .ufm-trigger {
-    width: 100%; display: flex; justify-content: space-between; align-items: center;
-    padding: 10px 12px; background: var(--navy-950);
-    border: 1px solid rgba(255,255,255,0.12); border-radius: 10px;
-    color: var(--slate-50); font-size: 13.5px; text-align: left; cursor: pointer;
-  }
-  .ufm-trigger[aria-expanded="true"] { border-color: rgba(56,189,248,0.5); }
-  .ufm-trigger i { color: var(--slate-400); transition: transform 0.2s; }
-  .ufm-trigger[aria-expanded="true"] i { transform: rotate(180deg); }
-  .ufm-options {
-    list-style: none; margin: 0; padding: 4px;
-    position: absolute; left: 0; right: 0; top: calc(100% + 6px); z-index: 5;
-    background: var(--navy-950); border: 1px solid rgba(255,255,255,0.12); border-radius: 10px;
-    display: none;
-  }
-  .ufm-options.show { display: block; }
-  .ufm-options li { padding: 9px 10px; border-radius: 7px; font-size: 13.5px; color: var(--slate-300); cursor: pointer; }
-  .ufm-options li:hover { background: rgba(255,255,255,0.05); color: var(--slate-50); }
-  .ufm-options li.sel { color: var(--sky-400); }
-  .ufm-comment-wrap { margin-top: 4px; }
-  .ufm-comment {
-    width: 100%; min-height: 84px; resize: vertical;
-    background: var(--navy-950); border: 1px solid rgba(255,255,255,0.12); border-radius: 10px;
-    padding: 10px 12px; color: var(--slate-50); font-family: inherit; font-size: 13.5px;
-  }
-  .ufm-comment:focus { outline: none; border-color: rgba(56,189,248,0.5); }
-  .ufm-error { color: var(--red-400); font-size: 12px; margin-top: 6px; display: none; }
-  .ufm-error.show { display: block; }
-  .ufm-foot {
-    display: flex; justify-content: flex-end; gap: 10px;
-    padding: 14px 20px; border-top: 1px solid rgba(255,255,255,0.07);
-  }
-  .ufm-btn {
-    padding: 9px 18px; border-radius: 10px; font-size: 13px; font-weight: 600; cursor: pointer;
-    border: 1px solid rgba(255,255,255,0.12); background: transparent; color: var(--slate-300);
-  }
-  .ufm-btn:hover { color: var(--slate-50); }
-  .ufm-btn.primary { background: linear-gradient(135deg, var(--sky-400), var(--blue-700)); border-color: transparent; color: #fff; }
-  .ufm-btn:disabled { opacity: 0.6; cursor: wait; }
-  .queue-actions {
+  .status-cell {
     display: flex;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
-    flex-wrap: wrap;
-    gap: 12px 16px;
-    width: 100%;
-    min-height: 32px;
-    padding: 2px 0;
+    gap: 6px;
   }
-  /* ---------- Tabs (same pattern as manage-staff.php) ---------- */
-  .tabs{display:flex; gap:8px; margin-bottom:20px; border-bottom:1px solid rgba(255,255,255,0.08); flex-wrap:wrap;}
-  .tab-btn{
-    background:none; border:none; color:var(--slate-400); font-family:inherit; font-size:13.5px; font-weight:600;
-    padding:11px 4px; cursor:pointer; position:relative; margin-right:22px; transition: color 0.25s ease;
-  }
-  .tab-btn:hover{color: var(--slate-50);}
-  .tab-btn.active{color:var(--slate-50);}
-  .tab-btn.active::after{
-    content:""; position:absolute; left:0; right:0; bottom:-1px; height:2px; background:var(--amber-400); border-radius:2px;
-    animation: slideLine 0.25s ease-out;
-  }
-  @keyframes slideLine { from { transform: scaleX(0); } to { transform: scaleX(1); } }
-  .tab-panel{display:none;}
-  .tab-panel.active{ display:block; animation: panelFadeIn 0.3s ease forwards; }
-  @keyframes panelFadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
-
-  /* ---------- Booking history log ---------- */
-  .activity-row{
-    display:flex; gap: 14px; padding:13px 18px; border-bottom:1px solid rgba(255,255,255,0.05); font-size:13px;
-    transition: background 0.2s;
-  }
-  .activity-row:hover{background: rgba(255,255,255,0.01);}
-  .activity-row:last-child{border-bottom:none;}
-  .activity-row{white-space:nowrap; min-width:max-content; align-items:center;}
-  .activity-scroll {
-    overflow-x: auto; overflow-y: hidden; max-height: none;
-    scrollbar-width: thin; scrollbar-color: rgba(148, 163, 184, 0.45) transparent;
-  }
-  .activity-scroll.has-scroll { overflow-y: auto; }
-  .activity-scroll::-webkit-scrollbar { width: 8px; height: 8px; }
-  .activity-scroll::-webkit-scrollbar-track { background: transparent; }
-  .activity-scroll::-webkit-scrollbar-thumb {
-    background: rgba(148, 163, 184, 0.38); border-radius: 999px; border: 2px solid transparent; background-clip: content-box;
-  }
-  .activity-scroll::-webkit-scrollbar-thumb:hover { background: rgba(148, 163, 184, 0.62); }
-  .activity-row .t{font-size:11.5px; color:var(--slate-400); min-width:90px;}
-  .activity-row b{color:var(--slate-50);}
-
-  .history-head{display:flex; align-items:center; justify-content:space-between; gap:16px 24px; flex-wrap:nowrap; padding:20px 22px 0;}
-  .history-head > div:first-child{flex:1 1 0; min-width:0;}
-  .history-head h3{font-family:'Space Grotesk',sans-serif; font-size:17px; font-weight:700; margin:0 0 6px; color:var(--slate-50);}
-  .history-head p{font-size:13px; color:var(--slate-400); margin:0;}
-  .history-filter{display:flex; align-items:center; gap:10px; flex-wrap:nowrap; flex-shrink:0;}
-  @media (max-width: 900px){
-    .history-head{flex-wrap:wrap;}
-    .history-filter{flex-wrap:wrap;}
-  }
-  .history-filter label{font-size:12.5px; color:var(--slate-400); display:flex; align-items:center; gap:8px; margin:0;}
-  .history-filter input[type="date"]{
-    background: rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.1); border-radius:10px;
-    padding:8px 10px; color:var(--slate-50); font-family:inherit; font-size:13px; color-scheme: dark;
-  }
-  .history-filter input[type="date"]:focus{outline:none; border-color:var(--sky-400);}
-  .history-btn{border:none; border-radius:10px; padding:9px 18px; font-size:13px; font-weight:700; color:#fff; background:var(--blue-500); cursor:pointer; transition: background 0.2s;}
-  .history-btn:hover{background:var(--blue-700);}
-  .history-box{margin:18px 22px 22px; border:1px solid rgba(255,255,255,0.08); border-radius:14px; background:rgba(255,255,255,0.02); overflow:hidden;}
-  .history-empty{text-align:center; padding:22px; color:var(--slate-400); font-size:12.5px;}
-
-  .act-link{font-size:12px; color:var(--sky-400); font-weight:600; margin-right:0; transition: color 0.15s ease, opacity 0.2s; cursor: pointer; text-decoration: none; white-space: nowrap; display:inline-flex; align-items:center; justify-content:center;}
-
-  body.branch-manager-theme {
-    --navy-950:#070b14; --navy-900:#0b1220; --navy-800:#101a30; --navy-700:#16213f; --navy-600:#1a2438;
-    --blue-700:#1d4ed8; --blue-500:#2f6feb; --sky-400:#38bdf8;
-    --amber-400:#fbbf24; --amber-300:#fcd34d; --mint-400:#34d399; --red-400:#f87171;
-    --slate-50:#f8fafc; --slate-300:#c9d2e3; --slate-400:#8b96ad;
-    background: var(--navy-950); color: var(--slate-50);
-  }
-  body.branch-manager-theme.light-mode {
-    --navy-950:#f3f6fb; --navy-900:#ffffff; --navy-800:#f7f9fc; --navy-700:#edf3fb; --navy-600:#e5edf8;
-    --blue-700:#286be0; --blue-500:#3c82ff; --sky-400:#3f8cf5; --amber-400:#d98400; --amber-300:#e2a72d; --mint-400:#128e6b; --red-400:#cf3d3d;
-    --slate-50:#172337; --slate-300:#3c4d68; --slate-400:#58677e; background: var(--navy-950); color: var(--slate-50);
-  }
-  body.branch-manager-theme.light-mode .sidebar,
-  body.branch-manager-theme.light-mode .topbar,
-  body.branch-manager-theme.light-mode .panel,
-  body.branch-manager-theme.light-mode .queue-box,
-  body.branch-manager-theme.light-mode .history-box,
-  body.branch-manager-theme.light-mode .notif-popup,
-  body.branch-manager-theme.light-mode .bell,
-  body.branch-manager-theme.light-mode .side-branch,
-  body.branch-manager-theme.light-mode .avatar-chip,
-  body.branch-manager-theme.light-mode .stat-card,
-  body.branch-manager-theme.light-mode .modal-card {
-    background: var(--navy-900); border-color: rgba(17,24,39,0.12); color: var(--slate-50);
-  }
-  body.branch-manager-theme.light-mode .side-link,
-  body.branch-manager-theme.light-mode .side-branch span,
-  body.branch-manager-theme.light-mode .topbar .date,
-  body.branch-manager-theme.light-mode .notif-item-body span,
-  body.branch-manager-theme.light-mode .status-pill,
-  body.branch-manager-theme.light-mode .history-empty,
-  body.branch-manager-theme.light-mode .queue-row .pump,
-  body.branch-manager-theme.light-mode .history-filter label,
-  body.branch-manager-theme.light-mode .panel p,
-  body.branch-manager-theme.light-mode .act-link {
+  .status-reason {
+    display: block;
+    max-width: 220px;
+    white-space: normal;
+    word-break: break-word;
+    line-height: 1.5;
     color: var(--slate-300);
+    font-size: 11.5px;
+    text-align: left;
   }
-  body.branch-manager-theme.light-mode .side-link.active,
-  body.branch-manager-theme.light-mode .side-link:hover,
-  body.branch-manager-theme.light-mode .avatar-chip:hover,
-  body.branch-manager-theme.light-mode .bell:hover {
-    background: rgba(63, 140, 245, 0.10);
-    color: var(--slate-50);
+  .history-reason {
+    display: inline-block;
+    max-width: 420px;
+    white-space: normal;
+    word-break: break-word;
+    line-height: 1.55;
+    color: var(--slate-300);
+    margin-left: 6px;
   }
-  .staff-theme-control {
-    position: relative; display: grid; width: 28px; height: 32px; place-items: center; margin: 0; color: var(--slate-300); cursor: pointer;
+  .act-link.unable-btn { color: #ef4444; gap: 6px; padding: 4px 12px; border: 1px solid #ef4444; border-radius: 999px; background: transparent; }
+
+  /* ---------- Tabs ---------- */
+  .tabs{display:flex; gap:6px; border-bottom:1px solid rgba(255,255,255,0.08); margin-bottom:18px;}
+  .tab-btn{
+    background:transparent; border:none; border-bottom:2px solid transparent; margin-bottom:-1px;
+    color:var(--slate-400); font-size:14px; font-weight:600; padding:10px 18px; cursor:pointer;
+    transition: color 0.2s ease, border-color 0.2s ease;
   }
-  .staff-theme-control input { position: absolute; width: 1px; height: 1px; opacity: 0; }
-  .staff-theme-control span { font-size: 1.05rem; }
-  .staff-theme-control:focus-within span { outline: 2px solid var(--sky-400); outline-offset: 4px; border-radius: 3px; }
-  body.branch-manager-theme.light-mode .staff-theme-control { color: var(--slate-400); }
+  .tab-btn:hover{color:var(--slate-50);}
+  .tab-btn.active{color:var(--slate-50); border-bottom-color:var(--sky-400);}
+  .tab-panel{display:none;}
+  .tab-panel.active{display:block;}
+
+  /* ---------- Action links ---------- */
+  .act-link{display:inline-flex; align-items:center; font-size:12.5px; font-weight:600; cursor:pointer; transition: background 0.2s ease, color 0.2s ease;}
+  .act-link.unable-btn:hover{color:#fff; background:#ef4444;}
+
+  /* ---------- Booking history ---------- */
+  .history-head{display:flex; align-items:flex-end; justify-content:space-between; flex-wrap:wrap; gap:14px; padding:20px 22px 16px;}
+  .history-head h3{font-family:'Space Grotesk'; font-size:16px; font-weight:700; margin:0 0 4px;}
+  .history-head p{font-size:12.5px; color:var(--slate-400); margin:0;}
+  .history-filter{display:flex; align-items:center; flex-wrap:wrap; gap:10px;}
+  .history-filter label{display:flex; align-items:center; gap:8px; font-size:12px; font-weight:600; color:var(--slate-400);}
+  .history-filter input[type="date"]{
+    background:var(--navy-900); border:1px solid rgba(255,255,255,0.12); border-radius:8px; color:var(--slate-50);
+    padding:6px 10px; font-size:12.5px; font-family:inherit; color-scheme:dark; outline:none;
+  }
+  .history-filter input[type="date"]:focus{border-color:var(--sky-400);}
+  .history-btn{
+    background:transparent; border:1px solid rgba(255,255,255,0.15); border-radius:999px; color:var(--slate-300);
+    font-size:12.5px; font-weight:600; padding:6px 16px; cursor:pointer; transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+  }
+  .history-btn:hover{background:rgba(56,189,248,0.12); border-color:var(--sky-400); color:var(--slate-50);}
+  #history-apply{background:linear-gradient(135deg, var(--sky-400), var(--blue-700)); border-color:transparent; color:#fff;}
+  #history-apply:hover{filter:brightness(1.08);}
+  .history-box{margin:0 22px 22px; background:var(--navy-900); border:1px solid rgba(255,255,255,0.07); border-radius:14px; overflow:hidden;}
+  .activity-scroll{overflow-x:hidden; overflow-y:hidden; scrollbar-width:thin; scrollbar-color:rgba(148,163,184,0.45) transparent;}
+  .activity-scroll.has-scroll{overflow-y:auto;}
+  .activity-scroll::-webkit-scrollbar{width:8px; height:8px;}
+  .activity-scroll::-webkit-scrollbar-track{background:transparent;}
+  .activity-scroll::-webkit-scrollbar-thumb{background:rgba(148,163,184,0.38); border-radius:999px;}
+  .activity-row{padding:14px 18px; border-bottom:1px solid rgba(255,255,255,0.05); font-size:13.5px; line-height:1.55; transition: background 0.2s ease;}
+  .activity-row:hover{background:rgba(255,255,255,0.03);}
+  .activity-row .t{display:inline-block; min-width:128px; margin-right:10px; font-size:12px; color:var(--slate-400); font-variant-numeric:tabular-nums;}
+  .history-empty{text-align:center; padding:28px 16px; color:var(--slate-400); font-size:13px;}
+
+  /* ---------- Theme toggle ---------- */
+  .staff-theme-control{
+    position:relative; width:36px; height:36px; border-radius:50%; background:var(--navy-800);
+    border:1px solid rgba(255,255,255,0.08); color:var(--slate-300); cursor:pointer; flex-shrink:0;
+    display:flex; align-items:center; justify-content:center; transition: transform 0.2s, background-color 0.2s, color 0.2s;
+  }
+  .staff-theme-control:hover{background:var(--navy-700); color:var(--amber-300); transform:scale(1.05);}
+  .staff-theme-control input{position:absolute; inset:0; width:100%; height:100%; opacity:0; cursor:pointer; margin:0;}
+  .staff-theme-control span{display:flex; align-items:center; justify-content:center; font-size:15px; pointer-events:none;}
+  body.branch-manager-theme.light-mode .staff-theme-control{border-color:rgba(15,23,42,0.10);}
+
+  /* ---------- Unable-to-fulfill dialog ---------- */
+  .ufm-backdrop{position:fixed; inset:0; z-index:200; display:none; align-items:center; justify-content:center; padding:16px; background:rgba(3,7,18,0.65); backdrop-filter:blur(3px);}
+  .ufm-backdrop.show{display:flex;}
+  .ufm-dialog{
+    width:100%; max-width:440px; background:var(--navy-800); border:1px solid rgba(255,255,255,0.1);
+    border-radius:16px; box-shadow:0 24px 60px rgba(0,0,0,0.5); animation: fadeInDown 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .ufm-head{display:flex; align-items:center; justify-content:space-between; padding:16px 20px; border-bottom:1px solid rgba(255,255,255,0.08); font-family:'Space Grotesk'; font-size:15px; font-weight:700;}
+  .ufm-x{background:transparent; border:none; color:var(--slate-400); font-size:24px; line-height:1; cursor:pointer; padding:0 4px;}
+  .ufm-x:hover{color:var(--slate-50);}
+  .ufm-body{padding:20px;}
+  .ufm-body p{font-size:13px; color:var(--slate-300); margin-bottom:14px;}
+  .ufm-label{display:block; font-size:12px; font-weight:600; color:var(--slate-400); margin-bottom:6px;}
+  .ufm-label .req{color:var(--red-400);}
+  .ufm-select{position:relative;}
+  .ufm-trigger{
+    width:100%; display:flex; align-items:center; justify-content:space-between; gap:10px; text-align:left;
+    background:var(--navy-900); border:1px solid rgba(255,255,255,0.12); border-radius:10px; color:var(--slate-50);
+    padding:10px 14px; font-size:13.5px; cursor:pointer;
+  }
+  .ufm-trigger i{font-size:11px; color:var(--slate-400); transition: transform 0.2s ease;}
+  .ufm-trigger[aria-expanded="true"]{border-color:var(--sky-400);}
+  .ufm-trigger[aria-expanded="true"] i{transform:rotate(180deg);}
+  .ufm-options{
+    position:absolute; top:calc(100% + 6px); left:0; right:0; z-index:5; display:none; list-style:none; margin:0; padding:4px;
+    background:var(--navy-800); border:1px solid rgba(255,255,255,0.12); border-radius:10px; box-shadow:0 16px 32px rgba(0,0,0,0.4);
+  }
+  .ufm-options.show{display:block;}
+  .ufm-options li{padding:9px 12px; border-radius:8px; font-size:13.5px; color:var(--slate-300); cursor:pointer;}
+  .ufm-options li:hover{background:rgba(255,255,255,0.05);}
+  .ufm-options li.sel{color:var(--sky-400); font-weight:600;}
+  .ufm-comment-wrap{margin-top:16px;}
+  .ufm-comment-wrap[hidden]{display:none;}
+  .ufm-comment{
+    width:100%; min-height:90px; resize:vertical; background:var(--navy-900); border:1px solid rgba(255,255,255,0.12);
+    border-radius:10px; color:var(--slate-50); padding:10px 14px; font-size:13.5px; font-family:inherit; outline:none;
+  }
+  .ufm-comment:focus{border-color:var(--sky-400);}
+  .ufm-error{display:none; margin-top:6px; font-size:11.5px; color:var(--red-400);}
+  .ufm-error.show{display:block;}
+  .ufm-foot{display:flex; justify-content:flex-end; gap:10px; padding:14px 20px; border-top:1px solid rgba(255,255,255,0.08);}
+  .ufm-btn{background:transparent; border:1px solid rgba(255,255,255,0.15); border-radius:999px; color:var(--slate-300); font-size:13px; font-weight:600; padding:8px 22px; cursor:pointer; transition: background 0.2s ease, filter 0.2s ease;}
+  .ufm-btn:hover{background:rgba(255,255,255,0.06);}
+  .ufm-btn.primary{background:linear-gradient(135deg, var(--sky-400), var(--blue-700)); border-color:transparent; color:#fff;}
+  .ufm-btn:disabled{opacity:0.6; cursor:not-allowed;}
 
   /* ---------- Light mode refinements (light mode only; dark mode untouched) ---------- */
   body.branch-manager-theme.light-mode {
     color-scheme: light;
+    --navy-950:#f3f6fb; --navy-900:#ffffff; --navy-800:#ffffff; --navy-700:#eef3fb;
+    --blue-500:#3f8cf5; --sky-400:#0284c7; --amber-400:#d98400; --mint-400:#128e6b; --red-400:#cf3d3d;
+    --slate-50:#0f172a; --slate-300:#334155; --slate-400:#5b6b82;
     --amber-300:#c28a0a;
     --lm-line:rgba(15,23,42,0.10); --lm-line-soft:rgba(15,23,42,0.06); --lm-line-strong:rgba(15,23,42,0.18);
     --lm-hover:rgba(15,23,42,0.045);
@@ -1295,11 +1262,6 @@ try {
         <div class="date" id="live-clock">Wednesday · July 15, 2026 · 11:38 AM</div>
       </div>
       <div class="topbar-right">
-        <label class="staff-theme-control" title="Toggle light mode">
-          <input class="js-theme-toggle" type="checkbox" aria-label="Toggle light mode">
-          <span><i class="fa-solid fa-sun"></i></span>
-        </label>
-
         <div class="bell" id="notif-bell"><i class="fa-regular fa-bell"></i><?php if ($has_unread): ?><span class="ping" id="notif-ping"></span><?php endif; ?></div>
         
         <div class="notif-popup" id="notif-popup">
@@ -1325,7 +1287,12 @@ try {
             <?php endforeach; endif; ?>
           </div>
         </div>
-        
+
+        <label class="staff-theme-control" title="Toggle light mode">
+          <input class="js-theme-toggle" type="checkbox" aria-label="Toggle light mode">
+          <span><i class="fa-solid fa-sun"></i></span>
+        </label>
+
         <div class="avatar-chip">
           <?php if ($managerAvatarUrl !== ''): ?>
           <img src="<?= h($managerAvatarUrl) ?>" alt="Profile Picture" style="width:36px;height:36px;border-radius:50%;object-fit:cover;border:1px solid rgba(255,255,255,0.12)">
@@ -1408,7 +1375,7 @@ try {
                   <td>
                     <?php if ($q['status'] === 'serving'): ?>
                       <a class="act-link danger unable-btn btn-unable" data-token-id="<?= (int)$q['token_id'] ?>"><i class="fa-solid fa-triangle-exclamation"></i>Unable to fulfill</a>
-                    <?php elseif ($q['status'] === 'waiting'): ?>
+                    <?php elseif (in_array($q['status'], ['waiting', 'notfilled'], true)): ?>
                       <a class="act-link danger unable-btn btn-unable" data-token-id="<?= (int)$q['token_id'] ?>"><i class="fa-solid fa-triangle-exclamation"></i>Unable to fulfill</a>
                     <?php else: ?>
                       —
@@ -1446,6 +1413,7 @@ try {
             $hist_meta = [
                 'completed' => ['fa-circle-check',        'var(--mint-400)',  'completed'],
                 'cancelled' => ['fa-circle-xmark',        'var(--red-400)',   'was cancelled'],
+                'unable_to_fulfill' => ['fa-triangle-exclamation', 'var(--amber-400)', 'could not be fulfilled by the station'],
                 'station_unable_to_fulfill' => ['fa-triangle-exclamation', 'var(--amber-400)', 'could not be fulfilled by the station'],
             ];
             foreach ($history as $hrow):
@@ -1458,13 +1426,16 @@ try {
                 if (!empty($hrow['fuel_name'])) {
                     $extra = ' · ' . $hrow['fuel_name'] . $extra;
                 }
+                $reasonText = trim((string)($hrow['reason_text'] ?? ''));
             ?>
               <div class="activity-row" data-date="<?= h(date('Y-m-d', strtotime($hrow['logged_at']))) ?>">
                 <span class="t"><?= h(date('M j · h:i A', strtotime($hrow['logged_at']))) ?></span>
                   <i class="fa-solid <?= h($meta[0]) ?>" style="color:<?= $meta[1] ?>; margin-right:6px;"></i>
                   <b><?= h($hrow['customer_name'] ?: 'Customer') ?></b>
                   <span style="color:var(--slate-300);"> — Token <?= h($hrow['token_code']) ?> <?= h($meta[2]) ?><?= h($extra) ?></span>
-                </span>
+                  <?php if ($st === 'unable_to_fulfill' && $reasonText !== ''): ?>
+                    <span class="history-reason"><?= h($reasonText) ?></span>
+                  <?php endif; ?>
               </div>
             <?php endforeach; ?>
             <div class="history-empty" id="history-filter-empty" style="display:none;">No booking records for the selected date range.</div>
