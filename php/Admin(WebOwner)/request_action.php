@@ -79,6 +79,87 @@ try {
     if (strtolower((string) $target['status']) !== 'pending') {
         throw new RuntimeException('Only pending requests can be approved, rejected, or flagged.');
     }
+    $requestType = strtolower(trim((string) ($target['request_type'] ?? '')));
+    $duplicateDecision = strtolower(trim((string) ($_POST['duplicate_decision'] ?? '')));
+    $duplicateExistingHqId = filter_var($_POST['existing_headquarter_id'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+    $businessLicenseMatch = request_business_license_match_for_request($target);
+    $businessPairDecisions = ['approve_new_disable_existing', 'keep_existing_reject_new', 'accept_both', 'disable_both'];
+    if ($duplicateDecision !== '') {
+        if (!in_array($requestType, ['hq_registration', 'license_modification'], true)
+            || !in_array($duplicateDecision, $businessPairDecisions, true)
+            || !$businessLicenseMatch || !$duplicateExistingHqId
+            || (int) $businessLicenseMatch['headquarter_id'] !== (int) $duplicateExistingHqId) {
+            throw new RuntimeException('The selected business-license duplicate is no longer the first eligible match.');
+        }
+        $duplicateApprove = in_array($duplicateDecision, ['approve_new_disable_existing', 'accept_both'], true);
+        if ($action !== ($duplicateApprove ? 'approve' : 'reject')) {
+            throw new RuntimeException('The business-license decision does not match the requested action.');
+        }
+        if ($duplicateDecision !== 'accept_both' && trim($reason) === '') {
+            throw new RuntimeException('A reason is required when disabling a duplicate company account.');
+        }
+
+        $headquartersToDisable = [];
+        if (in_array($duplicateDecision, ['approve_new_disable_existing', 'disable_both'], true)) {
+            $headquartersToDisable[] = (int) $duplicateExistingHqId;
+        }
+        if ($duplicateDecision === 'disable_both' && (int) ($target['headquarter_id'] ?? 0) > 0) {
+            $headquartersToDisable[] = (int) $target['headquarter_id'];
+        } elseif ($requestType === 'hq_registration'
+            && in_array($duplicateDecision, ['keep_existing_reject_new', 'disable_both'], true)
+            && (int) ($target['headquarter_id'] ?? 0) > 0) {
+            $headquartersToDisable[] = (int) $target['headquarter_id'];
+        }
+        foreach (array_values(array_unique($headquartersToDisable)) as $disableHqId) {
+            $disableCompany = $conn->prepare("UPDATE headquarter SET status = 'disabled' WHERE headquarter_id = ?");
+            if (!$disableCompany) {
+                throw new RuntimeException('Could not prepare a duplicate company disable action.');
+            }
+            $disableCompany->bind_param('i', $disableHqId);
+            if (!$disableCompany->execute()) {
+                throw new RuntimeException('Could not disable the duplicate company account.');
+            }
+            $disableCompany->close();
+
+            $disableOwners = $conn->prepare(
+                "UPDATE users u SET u.status = 'disabled', u.updated_at = NOW()
+                 WHERE EXISTS (SELECT 1 FROM headquarter h WHERE h.headquarter_id = ? AND h.headquarters_owner_id = u.user_id)
+                    OR EXISTS (SELECT 1 FROM business_account_scope bas WHERE bas.headquarter_id = ? AND bas.user_id = u.user_id AND bas.business_role_id = 3)"
+            );
+            if (!$disableOwners) {
+                throw new RuntimeException('Could not prepare the duplicate company owner disable action.');
+            }
+            $disableOwners->bind_param('ii', $disableHqId, $disableHqId);
+            if (!$disableOwners->execute()) {
+                throw new RuntimeException('Could not disable the duplicate company owner account.');
+            }
+            $disableOwners->close();
+
+            $disableScopes = $conn->prepare("UPDATE business_account_scope SET status = 'disabled' WHERE headquarter_id = ? AND business_role_id = 3");
+            if ($disableScopes) {
+                $disableScopes->bind_param('i', $disableHqId);
+                $disableScopes->execute();
+                $disableScopes->close();
+            }
+            if (function_exists('hq_action_table_ready') && hq_action_table_ready()) {
+                $history = $conn->prepare(
+                    "INSERT INTO hq_account_actions
+                        (headquarter_id, action_type, reason, notification_status, notification_note)
+                     VALUES (?, 'suspend', ?, 'pending', 'Duplicate business-license review action.')"
+                );
+                if ($history) {
+                    $disableReason = $reason !== '' ? $reason : 'Company disabled because its business license duplicated an existing record.';
+                    $history->bind_param('is', $disableHqId, $disableReason);
+                    if (!$history->execute()) {
+                        throw new RuntimeException('Could not record the duplicate company action.');
+                    }
+                    $history->close();
+                }
+            }
+        }
+    } elseif ($action === 'approve' && $businessLicenseMatch) {
+        throw new RuntimeException('This request has a duplicate business license. Use Manage this account to decide the matching pair.');
+    }
     if ($action === 'approve' && strtolower((string) $target['request_type']) === 'hq_registration') {
         $registrationDetails = json_decode((string) ($target['request_details'] ?? ''), true);
         $requestedStations = is_array($registrationDetails)
@@ -184,6 +265,39 @@ try {
                 error_log('[Request registry] License extension update affected 0 rows for HQ #' . $headquarterId);
             }
             $hqLicenseUpdate->close();
+            if ((int) ($target['existing_user_id'] ?? 0) > 0) {
+                $ownerId = (int) $target['existing_user_id'];
+                $restoreOwner = $conn->prepare(
+                    "UPDATE users SET status = 'active', updated_at = NOW()
+                     WHERE user_id = ? AND LOWER(TRIM(status)) IN ('expired', 'pending')"
+                );
+                if (!$restoreOwner) {
+                    throw new RuntimeException('Could not restore the renewed company account.');
+                }
+                $restoreOwner->bind_param('i', $ownerId);
+                if (!$restoreOwner->execute()) {
+                    throw new RuntimeException('Could not restore the renewed company account.');
+                }
+                $restoreOwner->close();
+            }
+        } elseif ((int) ($target['existing_user_id'] ?? 0) > 0) {
+            $previousStatus = strtolower(trim((string) ($renewalDetails['previous_status'] ?? 'active')));
+            if (!in_array($previousStatus, ['active', 'approved', 'enabled', 'ready', 'expired'], true)) {
+                $previousStatus = 'active';
+            }
+            $ownerId = (int) $target['existing_user_id'];
+            $restoreOwner = $conn->prepare(
+                "UPDATE users SET status = ?, updated_at = NOW()
+                 WHERE user_id = ? AND LOWER(TRIM(status)) = 'pending'"
+            );
+            if (!$restoreOwner) {
+                throw new RuntimeException('Could not restore the company account after the renewal decision.');
+            }
+            $restoreOwner->bind_param('si', $previousStatus, $ownerId);
+            if (!$restoreOwner->execute()) {
+                throw new RuntimeException('Could not restore the company account after the renewal decision.');
+            }
+            $restoreOwner->close();
         }
     }
 

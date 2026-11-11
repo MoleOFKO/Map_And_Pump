@@ -7,6 +7,7 @@ require_once __DIR__ . '/../conn.php';
 require_once __DIR__ . '/../invitations_schema.php';
 require_once __DIR__ . '/../BranchManager/_helpers.php';
 require_once __DIR__ . '/license_expiry.php';
+require_once __DIR__ . '/license_access.php';
 
 try {
     map_pump_ensure_invitation_schema($pdo);
@@ -27,6 +28,12 @@ $licenseExpiryState = $userId
 
 if (empty($_SESSION['user_id'])) {
     header('Location: ../Login/login.php');
+    exit;
+}
+
+$licenseAccess = customer_license_access($pdo, $userId);
+if (!$licenseAccess['is_approved']) {
+    header('Location: license.php');
     exit;
 }
 

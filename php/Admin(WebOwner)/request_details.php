@@ -94,6 +94,7 @@ if (empty($_SESSION['payment_transfer_csrf'])) {
 
 $registrationDetails = json_decode((string) ($request['request_details'] ?? ''), true);
 $registrationDetails = is_array($registrationDetails) ? $registrationDetails : [];
+$businessLicenseConflict = request_business_license_match_for_request($request);
 
 echo json_encode([
     'success' => true,
@@ -140,6 +141,7 @@ echo json_encode([
         'business_license' => $request['business_license'],
         'business_license_image' => $request['business_license_image'],
         'business_license_expire_date' => $request['business_license_expire_date'],
+        'business_license_conflict' => $businessLicenseConflict,
         'receipt_type' => $request['receipt_type'],
         'receipt_image' => $request['receipt_image'],
         'registration_payment' => $registrationPayment,

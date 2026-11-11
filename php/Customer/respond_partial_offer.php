@@ -3,6 +3,7 @@ session_start();
 define('MAP_PUMP_JSON_RESPONSE', true);
 require __DIR__ . '/../conn.php';
 require_once __DIR__ . '/../booking_reservations.php';
+require_once __DIR__ . '/license_access.php';
 header('Content-Type: application/json');
 function partial_offer_reply(int $status, string $message): void
 {
@@ -16,6 +17,7 @@ $bookingId = (int)($_POST['booking_id'] ?? 0);
 $decision = (string)($_POST['decision'] ?? '');
 $sessionToken = (string)($_SESSION['booking_csrf_token'] ?? '');
 if ($userId <= 0) partial_offer_reply(401, 'Please sign in again.');
+if (!customer_license_access($pdo, $userId)['is_approved']) partial_offer_reply(403, 'Your driver license must be confirmed before using booking features.');
 if (!in_array($decision, ['accept', 'decline'], true) || $bookingId <= 0 || $sessionToken === ''
     || !hash_equals($sessionToken, (string)($_POST['csrf_token'] ?? ''))) partial_offer_reply(403, 'Refresh the page and try again.');
 map_pump_booking_configure_timezone($pdo);

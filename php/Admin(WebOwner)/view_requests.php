@@ -142,6 +142,10 @@ SQL;
 $paymentRows = in_array($requestType, ['', 'payment'], true)
     ? request_payment_verification_rows('admin', $search, $status, true)
     : [];
+foreach ($requestRows as &$requestRow) {
+    $requestRow['business_license_conflict'] = request_business_license_match_for_request($requestRow);
+}
+unset($requestRow);
 
 // Account verification is stored on users rather than system_requests. Keep it
 // available even when the separate system-request registry is unavailable.
@@ -446,7 +450,7 @@ $flashType = $flash['type'] ?? '';
                     <tr data-created-at="<?= (int) (strtotime((string) ($row['created_at'] ?? '')) ?: 0) ?>">
                         <td class="fw-bold txt-neon-cyan">#<?= hq_escape($row['reference_code']) ?></td>
                         <td><div class="fw-semibold text-white"><?= hq_escape($sender) ?></div><div class="text-white-50 small" style="font-size:.8rem;"><?= hq_escape($location) ?></div></td>
-                        <td><span class="badge rounded-pill bg-info bg-opacity-10 text-info border border-info border-opacity-25 px-2 py-1"><?= hq_escape(request_type_short_label($row['request_type'])) ?></span></td>
+                        <td><span class="badge rounded-pill bg-info bg-opacity-10 text-info border border-info border-opacity-25 px-2 py-1"><?= hq_escape(request_type_short_label($row['request_type'])) ?></span><?php if (!empty($row['business_license_conflict'])): ?><span class="badge bg-warning text-dark ms-1">Duplicate business license</span><?php endif; ?></td>
                         <td class="text-white-50"><?= hq_escape(request_date($row['created_at'])) ?></td>
                         <td><span class="request-status <?= request_status_class($rowStatus) ?>"><?= hq_escape(request_status_label($rowStatus)) ?></span><?php if (strtolower((string) $row['request_type']) === 'hq_registration'): ?><div class="mt-1"><span class="badge rounded-pill <?= $paymentState === 'received' ? 'bg-success' : ($paymentState === 'payer_reported_paid' ? 'bg-warning text-dark' : 'bg-secondary') ?>"><?= hq_escape(match ($paymentState) { 'received' => 'Payment received', 'payer_reported_paid' => 'Payment needs verification', 'rejected' => 'Payment not received', 'cancelled' => 'Payment cancelled', 'pending_payment' => 'Awaiting payer', default => 'Payment record missing' }) ?></span></div><?php endif; ?></td>
                         <td class="text-end"><div class="d-flex gap-2 justify-content-end">
@@ -563,6 +567,51 @@ $flashType = $flash['type'] ?? '';
                 const decisions = '<form action="license_conflict_action.php" method="POST" class="acct-section mt-3" data-license-conflict-form><input type="hidden" name="license_type" value="driver"><input type="hidden" name="record_id" value="' + escapeHtml(current.license_id) + '"><label class="form-label text-white-50 small" for="driver-license-decision">Decision for matching licenses</label><select class="form-select glass-select" id="driver-license-decision" name="decision" data-conflict-decision><option value="allow_all">Allow all matching licenses</option><option value="block_current">Block this license; allow the other matches</option><option value="block_all">Block all matching licenses</option></select><div class="mt-3" data-conflict-reason hidden><label class="form-label text-white-50 small" for="driver-license-reason">Reason required for blocking</label><textarea class="form-control glass-input" id="driver-license-reason" name="reason" rows="3" maxlength="2000" placeholder="Explain why the duplicate license record(s) are blocked."></textarea></div><button type="submit" class="btn btn-warning mt-3">Confirm license decision and notify affected drivers</button></form>';
                 return '<div class="alert alert-warning d-flex align-items-center justify-content-between gap-3 flex-wrap"><span><i class="bi bi-exclamation-triangle-fill me-2"></i>Same driver-license number found on ' + conflicts.length + ' other record(s). You can decide each matching set independently.</span><button type="button" class="btn btn-sm btn-outline-warning" data-license-compare-toggle aria-expanded="false"><i class="bi bi-layout-split me-1"></i>Compare</button></div><div data-license-comparison hidden><div class="row g-3">' + recordCard('Current · ACCT-' + current.user_id, current, true) + comparisons + '</div>' + decisions + '</div>';
             };
+            const configurePairDecisionForm = (form, licenseType, existingRecordId) => {
+                if (!form) return;
+                const existingIdInput = document.createElement('input');
+                existingIdInput.type = 'hidden';
+                existingIdInput.name = 'existing_record_id';
+                existingIdInput.value = String(existingRecordId || '');
+                form.appendChild(existingIdInput);
+                const select = form.querySelector('[data-conflict-decision]');
+                if (select) {
+                    select.innerHTML = '<option value="approve_new_disable_existing">Approve new request; disable existing account</option>' +
+                        '<option value="keep_existing_reject_new">Keep existing account; reject and disable new</option>' +
+                        '<option value="accept_both">Accept both accounts</option>' +
+                        '<option value="disable_both">Disable both accounts</option>';
+                    select.value = 'approve_new_disable_existing';
+                }
+                const reason = form.querySelector('textarea');
+                const syncReason = () => {
+                    const disableDecision = ['approve_new_disable_existing', 'keep_existing_reject_new', 'disable_both'].includes(select?.value || '');
+                    const reasonField = form.querySelector('[data-conflict-reason]');
+                    if (reasonField) reasonField.hidden = !disableDecision;
+                    if (reason) reason.required = disableDecision;
+                };
+                select?.addEventListener('change', syncReason);
+                syncReason();
+                const submit = form.querySelector('button[type="submit"]');
+                if (submit) submit.textContent = 'Confirm decision';
+                if (!form.querySelector('[data-conflict-cancel]')) {
+                    const cancel = document.createElement('button');
+                    cancel.type = 'button';
+                    cancel.className = 'btn btn-outline-secondary mt-3 ms-2';
+                    cancel.dataset.conflictCancel = 'true';
+                    cancel.textContent = 'Cancel';
+                    submit?.before(cancel);
+                    cancel.addEventListener('click', () => { form.hidden = true; });
+                }
+                form.hidden = true;
+            };
+            const revealPairDecision = (form) => {
+                const comparison = form?.closest('[data-license-comparison], [data-car-comparison]');
+                if (comparison) comparison.hidden = false;
+                if (form) {
+                    form.hidden = false;
+                    form.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                }
+            };
             const markUnavailableDocImages = (root) => root.querySelectorAll('img.acct-doc-thumb').forEach((image) => {
                 image.addEventListener('error', () => {
                     const card = image.closest('.acct-doc-card');
@@ -630,14 +679,41 @@ $flashType = $flash['type'] ?? '';
                         : 'Confirming receipt completes the company registration. No separate registration approval is needed.';
                     detailsBody.insertAdjacentHTML('afterbegin', '<div class="mb-3 p-3 rounded-3" style="background:rgba(255,193,7,.06);border:1px solid rgba(255,193,7,.25)"><div class="request-detail-label">Registration payment verification</div><div class="request-detail-value fw-semibold">' + escapeHtml(paymentLabels[payment.status] || payment.status) + '</div><div class="request-detail-value small mt-1">Amount: ' + escapeHtml(Number(payment.amount_mmk).toLocaleString()) + ' MMK · Method: ' + escapeHtml(payment.payment_method || 'Not provided') + '</div><div class="request-detail-value small mt-1">' + paymentReceipt + '</div><div class="small text-white-50 mt-2">A screenshot or payer declaration is evidence for review, not proof of received money. ' + registrationFlowNote + '</div>' + (payment.is_current_user_payer ? '<div class="small text-warning mt-2">You submitted this payment. Another reviewer must confirm it.</div>' : '') + '</div>');
                 }
+                const businessConflict = request.business_license_conflict || null;
                 if (String(request.status || '').toLowerCase() === 'pending') {
-                    setFooter(
-                        '<form action="request_action.php" method="POST" class="m-0 flex-grow-1"><input type="hidden" name="request_id" value="' + escapeHtml(request.request_id) + '"><input type="hidden" name="action" value="approve"><input type="hidden" name="return_to" value="view_requests.php"><button type="submit" class="request-action-btn request-action-btn--approve">Approve</button></form>' +
-                        '<button type="button" class="request-action-btn request-action-btn--reject js-modal-reject flex-grow-1">Reject</button>'
-                    );
-                    detailsFooter.querySelector('.js-modal-reject')?.addEventListener('click', () => rejectTarget('request', request.request_id, request.reference_code || request.request_id, request.sender_entity || request.sender_name || 'Unknown sender'));
+                    if (businessConflict && businessConflict.headquarter_id) {
+                        setFooter('<button type="button" class="request-action-btn request-action-btn--approve" data-business-dupe-manage><i class="bi bi-person-gear"></i>Manage this account</button>');
+                        detailsFooter.querySelector('[data-business-dupe-manage]')?.addEventListener('click', () => {
+                            const form = detailsBody.querySelector('[data-business-duplicate-form]');
+                            if (form) {
+                                form.hidden = false;
+                                form.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                            }
+                        });
+                    } else {
+                        setFooter(
+                            '<form action="request_action.php" method="POST" class="m-0 flex-grow-1"><input type="hidden" name="request_id" value="' + escapeHtml(request.request_id) + '"><input type="hidden" name="action" value="approve"><input type="hidden" name="return_to" value="view_requests.php"><button type="submit" class="request-action-btn request-action-btn--approve">Approve</button></form>' +
+                            '<button type="button" class="request-action-btn request-action-btn--reject js-modal-reject flex-grow-1">Reject</button>'
+                        );
+                        detailsFooter.querySelector('.js-modal-reject')?.addEventListener('click', () => rejectTarget('request', request.request_id, request.reference_code || request.request_id, request.sender_entity || request.sender_name || 'Unknown sender'));
+                    }
                 } else {
                     setFooter();
+                }
+
+                if (businessConflict && businessConflict.headquarter_id) {
+                    const businessForm = '<form action="request_action.php" method="POST" class="acct-section mt-3" data-business-duplicate-form hidden><input type="hidden" name="request_id" value="' + escapeHtml(request.request_id) + '"><input type="hidden" name="action" value="approve"><input type="hidden" name="return_to" value="view_requests.php"><input type="hidden" name="existing_headquarter_id" value="' + escapeHtml(businessConflict.headquarter_id) + '"><label class="form-label text-white-50 small" for="business-duplicate-decision">Duplicate company decision</label><select class="form-select glass-select" id="business-duplicate-decision" name="duplicate_decision"><option value="approve_new_disable_existing">Approve new request and disable the existing company</option><option value="keep_existing_reject_new">Keep the existing company and reject the new request</option><option value="accept_both">Accept both companies</option><option value="disable_both">Disable both companies</option></select><div class="mt-3" data-business-conflict-reason hidden><label class="form-label text-white-50 small" for="business-duplicate-reason">Reason required when disabling a duplicate company</label><textarea class="form-control glass-input" id="business-duplicate-reason" name="reason" rows="3" maxlength="2000" placeholder="Explain the duplicate-company decision."></textarea></div><button type="submit" class="btn btn-warning mt-3">Confirm decision</button></form>';
+                    detailsBody.insertAdjacentHTML('beforeend', businessForm);
+                    const decisionField = detailsBody.querySelector('[name="duplicate_decision"]');
+                    const reasonField = detailsBody.querySelector('[data-business-conflict-reason]');
+                    const syncBusinessDecision = () => {
+                        const disableChoice = ['approve_new_disable_existing', 'keep_existing_reject_new', 'disable_both'].includes(decisionField?.value || '');
+                        if (reasonField) reasonField.hidden = !disableChoice;
+                        const reasonInput = detailsBody.querySelector('#business-duplicate-reason');
+                        if (reasonInput) reasonInput.required = disableChoice;
+                    };
+                    decisionField?.addEventListener('change', syncBusinessDecision);
+                    syncBusinessDecision();
                 }
             };
 
@@ -714,6 +790,11 @@ $flashType = $flash['type'] ?? '';
                             : '';
 
                         detailsBody.innerHTML = profileHeader + accountInfoSection + verificationSection + licenseReviewWarning + licenseConflictMarkup(l, payload.license_conflicts || []) + licenseBlock + companyBlock;
+                        configurePairDecisionForm(
+                            detailsBody.querySelector('[data-license-conflict-form]'),
+                            'driver',
+                            payload.license_conflicts?.[0]?.license_id
+                        );
                         markUnavailableDocImages(detailsBody);
                         detailsBody.querySelector('[data-license-compare-toggle]')?.addEventListener('click', (event) => {
                             const button = event.currentTarget;
@@ -734,6 +815,12 @@ $flashType = $flash['type'] ?? '';
                         if (String(u.status || '').toLowerCase() === 'pending_verification') {
                             setFooter('<form action="account_review_action.php" method="POST" class="m-0"><input type="hidden" name="user_id" value="' + escapeHtml(u.user_id) + '"><input type="hidden" name="action" value="approve"><input type="hidden" name="return_to" value="view_requests.php"><button type="submit" class="request-action-btn request-action-btn--approve"><i class="bi bi-check-lg"></i>Approve</button></form><button type="button" class="request-action-btn request-action-btn--reject js-modal-reject"><i class="bi bi-x-lg"></i>Reject</button>');
                             detailsFooter.querySelector('.js-modal-reject').addEventListener('click', () => rejectTarget('account', u.user_id, label, u.user_name || u.email || 'Unknown user'));
+                        }
+                        if (String(u.status || '').toLowerCase() === 'pending_verification' && (payload.license_conflicts || []).length) {
+                            setFooter('<button type="button" class="request-action-btn request-action-btn--approve" data-manage-driver-duplicate><i class="bi bi-person-gear"></i>Manage this account</button>');
+                            detailsFooter.querySelector('[data-manage-driver-duplicate]')?.addEventListener('click', () => {
+                                revealPairDecision(detailsBody.querySelector('[data-license-conflict-form]'));
+                            });
                         }
                     } catch (error) {
                         detailsBody.innerHTML = '<div class="alert request-flash alert-danger"><i class="bi bi-exclamation-triangle me-2"></i>' + escapeHtml(error.message) + '</div>';
@@ -760,6 +847,11 @@ $flashType = $flash['type'] ?? '';
                         ? '<div class="alert alert-warning d-flex align-items-center justify-content-between gap-3 flex-wrap"><span><i class="bi bi-exclamation-triangle-fill me-2"></i>Same normalized plate found on ' + conflicts.length + ' other record(s).</span><button type="button" class="btn btn-sm btn-outline-warning" data-car-compare-toggle aria-expanded="false"><i class="bi bi-layout-split me-1"></i>Compare</button></div><div data-car-comparison hidden><div class="row g-3">' + card('Current · CAR-' + car.car_license_id, car, car.owners) + conflicts.map((match) => card('Matching record · CAR-' + match.car_license_id, match, match.user_id ? [{ user_id: match.user_id, user_name: match.user_name, email: match.email }] : [])).join('') + '</div>' + decisionForm + '</div>'
                         : '<div class="alert alert-success">No plate records match this search.</div>';
                     detailsBody.innerHTML = '<div class="acct-section">' + fieldRow('bi-hash', 'Plate number', escapeHtml(car.car_plate_number || '')) + fieldRow('bi-person', 'Driver account(s)', owners(car.owners)) + fieldRow('bi-calendar', 'Submitted', escapeHtml(formatDate(car.created_at))) + '</div>' + conflictMarkup;
+                    configurePairDecisionForm(
+                        detailsBody.querySelector('[data-conflict-decision-form]'),
+                        'car',
+                        conflicts[0]?.car_license_id
+                    );
                     detailsBody.querySelector('[data-car-compare-toggle]')?.addEventListener('click', (compareEvent) => {
                         const compareButton = compareEvent.currentTarget;
                         const comparison = detailsBody.querySelector('[data-car-comparison]');
@@ -782,6 +874,12 @@ $flashType = $flash['type'] ?? '';
                     setFooter(!isPendingCar
                         ? ''
                         : '<form action="car_license_review_action.php" method="POST" class="m-0"><input type="hidden" name="car_license_id" value="' + carId + '"><input type="hidden" name="action" value="approve"><input type="hidden" name="return_to" value="view_requests.php"><button type="submit" class="request-action-btn request-action-btn--approve">Approve</button></form><form action="car_license_review_action.php" method="POST" class="m-0"><input type="hidden" name="car_license_id" value="' + carId + '"><input type="hidden" name="action" value="reject"><input type="hidden" name="return_to" value="view_requests.php"><button type="submit" class="request-action-btn request-action-btn--reject">Reject</button></form>');
+                    if (isPendingCar && conflicts.length) {
+                        setFooter('<button type="button" class="request-action-btn request-action-btn--approve" data-manage-car-duplicate><i class="bi bi-person-gear"></i>Manage this account</button>');
+                        detailsFooter.querySelector('[data-manage-car-duplicate]')?.addEventListener('click', () => {
+                            revealPairDecision(detailsBody.querySelector('[data-conflict-decision-form]'));
+                        });
+                    }
                 } catch (error) {
                     detailsBody.innerHTML = '<div class="alert request-flash alert-danger"><i class="bi bi-exclamation-triangle me-2"></i>' + escapeHtml(error.message) + '</div>';
                 }

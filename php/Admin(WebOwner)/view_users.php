@@ -19,6 +19,12 @@ if (!in_array($expiryFilter, ['warning', 'expired', 'any'], true)) {
 $allowedStatuses = customer_account_status_options();
 $status = ($status !== '' && in_array($status, $allowedStatuses, true)) ? $status : '';
 $userRows = customer_account_rows($search, $status, $expiryFilter);
+$duplicateDriverIds = [];
+foreach ($userRows as $userRow) {
+    if ((int) ($userRow['license_conflict_count'] ?? 0) > 0) {
+        $duplicateDriverIds[] = (int) $userRow['user_id'];
+    }
+}
 $dbError = hq_db_available() ? null : hq_db_error_message();
 $flashType = (string) ($flash['type'] ?? '');
 ?>
@@ -97,6 +103,25 @@ $flashType = (string) ($flash['type'] ?? '');
 <script src="/js/Admin.js"></script>
 <script>
 document.addEventListener('DOMContentLoaded', () => {
+    const duplicateDriverIds = new Set(<?= json_encode($duplicateDriverIds, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>);
+    const applyDuplicateBadges = (root = document) => {
+        root.querySelectorAll('.js-view-user').forEach((button) => {
+            if (!duplicateDriverIds.has(Number(button.dataset.userId))) return;
+            const statusCell = button.closest('tr')?.children[4];
+            if (!statusCell || statusCell.querySelector('[data-duplicate-driver-badge]')) return;
+            const badge = document.createElement('span');
+            badge.className = 'badge bg-warning text-dark mt-1';
+            badge.dataset.duplicateDriverBadge = 'true';
+            badge.textContent = 'Duplicate license/NRC';
+            statusCell.appendChild(badge);
+        });
+    };
+    applyDuplicateBadges();
+    const userTableBody = document.querySelector('.user-table-scroll tbody');
+    if (userTableBody) {
+        new MutationObserver(() => applyDuplicateBadges(userTableBody)).observe(userTableBody, { childList: true, subtree: true });
+    }
+
     const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('userActionModal'));
     const actionTypeEl = document.getElementById('userActionType');
     const actionSubmitBtn = document.querySelector('#userActionModal button[type="submit"]');
@@ -152,6 +177,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const license = payload.license || null;
             const hq = payload.headquarter || null;
             const actions = payload.actions || [];
+            const conflicts = payload.license_conflicts || [];
 
             const profile =
                 '<div class="d-flex align-items-center gap-3 mb-4 pb-3 border-bottom border-white border-opacity-10">' +
@@ -211,7 +237,67 @@ document.addEventListener('DOMContentLoaded', () => {
                       '</tbody></table></div>'
                     : '<div class="text-white-50 py-3"><i class="bi bi-inbox me-1"></i>No action history.</div>');
 
-            detailsBody.innerHTML = expiryDetailAlert((license && license.license_last_valid_date) || '', 'license') + profile + accountGrid + licenseBlock + hqBlock + history;
+            let duplicateBlock = '';
+            if (conflicts.length) {
+                const existing = conflicts[0] || {};
+                duplicateBlock =
+                    '<div class="alert alert-warning d-flex align-items-center justify-content-between gap-3 flex-wrap mb-4"><span><i class="bi bi-exclamation-triangle-fill me-2"></i>Duplicate license number or NRC was found for this driver.</span></div>' +
+                    '<div class="row g-3 mb-4">' +
+                    '<div class="col-12 col-lg-6">' +
+                    '<div class="p-3 rounded-3 h-100" style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);">' +
+                    '<div class="mod-detail-label mb-2">Current driver</div>' +
+                    '<div class="mod-detail-value fw-semibold mb-2">' + esc(u.user_name || 'Name unavailable') + '</div>' +
+                    '<div class="mod-detail-value small text-white-50 mb-2">' + esc(u.email || 'Not provided') + '</div>' +
+                    '<div class="mod-detail-value small">License: ' + esc((license && license.license_number) || 'Not provided') + '</div>' +
+                    '<div class="mod-detail-value small mt-1">NRC: ' + esc((license && license.nrc_number) || 'Not provided') + '</div>' +
+                    '</div>' +
+                    '</div>' +
+                    '<div class="col-12 col-lg-6">' +
+                    '<div class="p-3 rounded-3 h-100" style="background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);">' +
+                    '<div class="mod-detail-label mb-2">Existing account</div>' +
+                    '<div class="mod-detail-value fw-semibold mb-2">' + esc(existing.user_name || 'Name unavailable') + '</div>' +
+                    '<div class="mod-detail-value small text-white-50 mb-2">' + esc(existing.email || 'Not provided') + '</div>' +
+                    '<div class="mod-detail-value small">License: ' + esc(existing.license_number || 'Not provided') + '</div>' +
+                    '<div class="mod-detail-value small mt-1">NRC: ' + esc(existing.nrc_number || 'Not provided') + '</div>' +
+                    '</div>' +
+                    '</div>' +
+                    '</div>' +
+                    '<form action="license_conflict_action.php" method="POST" class="p-3 rounded-3" style="background:rgba(255,193,7,.05);border:1px solid rgba(255,193,7,.25);">' +
+                    '<input type="hidden" name="license_type" value="driver">' +
+                    '<input type="hidden" name="record_id" value="' + esc(String((license && license.license_id) || u.license_id || '')) + '">' +
+                    '<input type="hidden" name="existing_record_id" value="' + esc(String(existing.license_id || '')) + '">' +
+                    '<label class="form-label text-white-50 small" for="duplicateDriverDecision">Duplicate decision</label>' +
+                    '<select class="form-select glass-select mb-3" id="duplicateDriverDecision" name="decision" data-user-duplicate-decision>' +
+                    '<option value="approve_new_disable_existing">Approve new driver and disable the existing account</option>' +
+                    '<option value="keep_existing_reject_new">Keep the existing account and reject this new request</option>' +
+                    '<option value="accept_both">Accept both accounts</option>' +
+                    '<option value="disable_both">Disable both accounts</option>' +
+                    '</select>' +
+                    '<div data-user-duplicate-reason hidden>' +
+                    '<label class="form-label text-white-50 small" for="duplicateDriverReason">Reason</label>' +
+                    '<textarea class="form-control glass-input" id="duplicateDriverReason" name="reason" rows="3" maxlength="2000" placeholder="Explain why the duplicate driver account needs this action."></textarea>' +
+                    '</div>' +
+                    '<div class="d-flex gap-2 mt-3"><button type="submit" class="btn btn-warning">Confirm decision</button><button type="button" class="btn btn-outline-secondary" data-user-duplicate-cancel>Cancel</button></div>' +
+                    '</form>';
+            }
+
+            detailsBody.innerHTML = expiryDetailAlert((license && license.license_last_valid_date) || '', 'license') + profile + accountGrid + duplicateBlock + licenseBlock + hqBlock + history;
+            const decisionField = detailsBody.querySelector('[data-user-duplicate-decision]');
+            const reasonField = detailsBody.querySelector('[data-user-duplicate-reason]');
+            if (decisionField) {
+                const sync = () => {
+                    const disableChoice = ['approve_new_disable_existing', 'keep_existing_reject_new', 'disable_both'].includes(decisionField.value || '');
+                    if (reasonField) reasonField.hidden = !disableChoice;
+                    const reasonInput = detailsBody.querySelector('#duplicateDriverReason');
+                    if (reasonInput) reasonInput.required = disableChoice;
+                };
+                decisionField.addEventListener('change', sync);
+                sync();
+            }
+            detailsBody.querySelector('[data-user-duplicate-cancel]')?.addEventListener('click', () => {
+                const form = detailsBody.querySelector('[action="license_conflict_action.php"]');
+                if (form) form.hidden = true;
+            });
         } catch (error) {
             detailsBody.innerHTML = '<div class="alert alert-danger">'+esc(error.message)+'</div>';
         }

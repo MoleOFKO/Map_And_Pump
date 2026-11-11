@@ -3,6 +3,7 @@ session_start();
 define('MAP_PUMP_JSON_RESPONSE', true);
 require __DIR__ . '/../conn.php';
 require_once __DIR__ . '/license_expiry.php';
+require_once __DIR__ . '/license_access.php';
 
 header('Content-Type: application/json');
 
@@ -43,6 +44,11 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 $userId = (int) ($_SESSION['user_id'] ?? 0);
 if ($userId <= 0) {
     booking_cancellation_response(401, 'Please sign in again to cancel this booking.');
+}
+
+$licenseAccess = customer_license_access($pdo, $userId);
+if (!$licenseAccess['is_approved']) {
+    booking_cancellation_response(403, 'Your driver license must be confirmed before using booking features.');
 }
 
 $licenseExpiryState = customer_sync_license_expiry($pdo, $userId);

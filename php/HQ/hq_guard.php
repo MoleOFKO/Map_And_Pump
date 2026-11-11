@@ -134,8 +134,7 @@ $licenseExpiry = trim((string) ($user['business_license_expire_date'] ?? ''));
 if ($licenseExpiry === '') {
     $licenseExpiry = trim((string) ($user['expire_at'] ?? ''));
 }
-$expiryTimestamp = $licenseExpiry !== '' ? strtotime($licenseExpiry) : false;
-if (!$hqAuth && $expiryTimestamp !== false && date('Y-m-d', $expiryTimestamp) < date('Y-m-d')
+if (!$hqAuth && map_pump_hq_license_past_grace_period($licenseExpiry)
     && in_array($userStatus, ['active', 'approved', 'enabled', 'ready'], true)) {
     try {
         $expireOwner = $pdo->prepare("UPDATE users SET status = 'expired', updated_at = NOW() WHERE user_id = ?");
@@ -147,27 +146,24 @@ if (!$hqAuth && $expiryTimestamp !== false && date('Y-m-d', $expiryTimestamp) < 
 }
 
 $_SESSION['user_status'] = $userStatus;
-$hqAccessRestricted = in_array($userStatus, ['expired', 'pending'], true) || $hqActivationPending;
+$hqAccessRestricted = $userStatus === 'expired' || $hqActivationPending;
 
 $hqLicenseExpired = false;
 $hqHeadquarterId = (int) ($user['headquarter_id'] ?? 0);
 if ($hqHeadquarterId > 0 && ($activeRoleId === 3 || strtolower(trim($activeRoleName)) === 'hq')) {
     try {
-        $hqStmt = $pdo->prepare('SELECT expire_at, service_expires_at FROM headquarter WHERE headquarter_id = ? LIMIT 1');
+        $hqStmt = $pdo->prepare('SELECT expire_at, business_license_expire_date, service_expires_at FROM headquarter WHERE headquarter_id = ? LIMIT 1');
         if ($hqStmt && $hqStmt->execute([$hqHeadquarterId])) {
             $hqRow = $hqStmt->fetch(PDO::FETCH_ASSOC);
             $serviceExpiry = trim((string) ($hqRow['service_expires_at'] ?? ''));
+            $businessLicenseExpiry = trim((string) ($hqRow['business_license_expire_date'] ?? ''));
+            if ($businessLicenseExpiry === '') {
+                $businessLicenseExpiry = trim((string) ($hqRow['expire_at'] ?? ''));
+            }
+            $hqLicenseExpired = map_pump_hq_license_past_grace_period($businessLicenseExpiry);
             if ($serviceExpiry !== '') {
                 $serviceExpiryDate = new DateTimeImmutable($serviceExpiry);
-                $hqLicenseExpired = $serviceExpiryDate < new DateTimeImmutable();
-            } else {
-                $expireAt = trim((string) ($hqRow['expire_at'] ?? ''));
-                if ($expireAt !== '') {
-                $expireDate = DateTimeImmutable::createFromFormat('!Y-m-d', $expireAt);
-                if ($expireDate && $expireDate->format('Y-m-d') === $expireAt) {
-                        $hqLicenseExpired = $expireDate < new DateTimeImmutable('today');
-                    }
-                }
+                $hqLicenseExpired = $hqLicenseExpired || $serviceExpiryDate < new DateTimeImmutable();
             }
         }
     } catch (Throwable $e) {
@@ -182,7 +178,7 @@ $hqPage = basename((string) ($_SERVER['PHP_SELF'] ?? ''));
 if ($hqActivationPending && !in_array($hqPage, ['index.php', 'profile.php'], true)) {
     hq_guard_redirect_top('/php/HQ/index.php', 'Your HQ is pending Admin or Moderator activation.');
 }
-if ($hqLicenseExpired && !in_array(basename((string) ($_SERVER['PHP_SELF'] ?? '')), ['profile.php', 'extend_period.php'], true)) {
+if ($hqLicenseExpired && !in_array(basename((string) ($_SERVER['PHP_SELF'] ?? '')), ['brand.php', 'profile.php', 'extend_period.php'], true)) {
     hq_guard_redirect_top('/php/HQ/profile.php', 'Your HQ service period or business license has expired. Access is limited until it is renewed.');
 }
 

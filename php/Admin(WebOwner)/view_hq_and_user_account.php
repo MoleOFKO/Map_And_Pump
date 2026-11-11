@@ -165,7 +165,7 @@ $flashContext = $flash['context'] ?? [];
     <title>View/Manage Companies — Map &amp; Pump</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&amp;display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
     <link rel="icon" type="image/png" href="/images/Logo.png">
     <link rel="stylesheet" href="/css/Admin.css">
@@ -204,12 +204,118 @@ $flashContext = $flash['context'] ?? [];
             max-height: min(60vh, 520px);
             overflow: auto;
         }
+
+        /* Page-local UI treatment; backend and shared JavaScript are unchanged. */
+        body.background_color {
+            --company-bg: #0c1421; --company-surface: #141f30; --company-raised: #192638;
+            --company-border: #29364a; --company-text: #edf3fb; --company-muted: #a7b5c9;
+            --company-accent: #5cd9cf; --company-warning: #f0c46a; --company-danger: #f18d9c;
+            background: var(--company-bg);
+        }
+        body.background_color.light-mode {
+            --company-bg: #f3f6fa; --company-surface: #ffffff; --company-raised: #f7f9fc;
+            --company-border: #dee5ee; --company-text: #182b42; --company-muted: #596b82;
+            --company-accent: #087f78; --company-warning: #96620a; --company-danger: #b43b51;
+        }
+        :is(.companies-shell, #accountActionModal, #hqDetailsModal) {
+            --text-primary: var(--company-text); --text-muted: var(--company-muted);
+            --glass-border: var(--company-border); --neon-cyan: var(--company-accent);
+            font-family: 'Poppins', system-ui, sans-serif; color: var(--company-text); font-size: 13px; line-height: 1.65;
+        }
+        .companies-shell { max-width: 1440px; padding-inline: clamp(18px,3vw,40px); margin-block: 36px !important; }
+        :is(.companies-shell, #accountActionModal, #hqDetailsModal) .text-white { color: var(--company-text) !important; }
+        :is(.companies-shell, #accountActionModal, #hqDetailsModal) .text-white-50 { color: var(--company-muted) !important; }
+        :is(.companies-shell, #accountActionModal, #hqDetailsModal) .txt-neon-cyan { color: var(--company-accent) !important; }
+        :is(.companies-shell, #accountActionModal, #hqDetailsModal) .text-danger { color: var(--company-danger) !important; }
+        :is(.companies-shell, #accountActionModal, #hqDetailsModal) .text-success { color: var(--company-accent) !important; }
+        .companies-header { border-bottom: 1px solid var(--company-border); padding-bottom: 24px; }
+        .companies-eyebrow { color: var(--company-accent); font-size: 10px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; }
+        .companies-header h1 { font-size: clamp(24px,3vw,32px); letter-spacing: -.035em; line-height: 1.3; }
+        .companies-header p { margin: 9px 0 0; color: var(--company-muted); font-size: 12px; max-width: 620px; }
+        .companies-header-note { color: var(--company-muted); padding: 8px 12px; border: 1px solid var(--company-border); border-radius: 8px; background: var(--company-surface); font-size: 11px; }
+        .companies-shell :is(.dashboard-card,.analytics-card) { background: var(--company-surface); border: 1px solid var(--company-border); border-radius: 12px; padding: 24px; box-shadow: 0 4px 16px rgba(0,0,0,.035); backdrop-filter: none; }
+        .companies-shell .admin-filter-card { padding: 20px 24px; }
+        .companies-filter-heading { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 600; margin-bottom: 16px; }
+        .companies-shell .admin-filter-form { display: grid; grid-template-columns: minmax(230px,2fr) repeat(3,minmax(140px,1fr)) auto; gap: 14px; align-items: end; }
+        .companies-shell .filter-group { min-width: 0; }
+        .companies-shell .filter-group:not(:has(input,select)) { display: none; }
+        .companies-shell :is(.filter-label,.filter-group label) { display: block; margin: 0 0 7px; color: var(--company-muted); font-size: 10px; font-weight: 500; }
+        .companies-shell .filter-search { position: relative; }
+        .companies-shell .filter-search-icon { position: absolute; left: 13px; top: 50%; transform: translateY(-50%); color: var(--company-muted); pointer-events: none; z-index: 1; }
+        .companies-shell .filter-input { padding-left: 36px !important; }
+        :is(.companies-shell, #accountActionModal) :is(.form-control,.form-select) { width: 100%; min-height: 44px; background-color: var(--company-raised); color: var(--company-text); border: 1px solid var(--company-border); border-radius: 8px; font-family: inherit; font-size: 12px; padding: 10px 12px; box-shadow: none; }
+        :is(.companies-shell, #accountActionModal) .form-select { padding-right: 34px; }
+        :is(.companies-shell, #accountActionModal) :is(.form-control,.form-select):focus { border-color: var(--company-accent); outline: 2px solid var(--company-accent); outline-offset: 2px; box-shadow: none; }
+        :is(.companies-shell, #accountActionModal) .form-control::placeholder { color: var(--company-muted); opacity: .85; }
+        :is(.companies-shell, #accountActionModal) select option { background: var(--company-surface); color: var(--company-text); }
+        body:not(.light-mode) :is(.companies-shell, #accountActionModal) .form-select { --bs-form-select-bg-img: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='%23a7b5c9' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='m2 5 6 6 6-6'/%3e%3c/svg%3e"); color-scheme: dark; }
+        .companies-shell .filter-actions { display: flex; gap: 8px; align-items: center; }
+        .companies-shell :is(.btn-clear-filters,.companies-apply) { min-height: 44px; padding: 10px 14px; border-radius: 8px; border: 1px solid var(--company-border); background: var(--company-raised); color: var(--company-text); font-size: 11px; font-weight: 500; white-space: nowrap; }
+        .companies-shell .companies-apply { background: #5cd9cf; border-color: #5cd9cf; color: #082e2b; }
+        .companies-shell .companies-apply:hover { background: #83e4dc; }
+        .companies-shell .btn-clear-filters:hover { border-color: var(--company-accent); }
+        .companies-directory-heading { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; justify-content: space-between; margin-bottom: 18px; }
+        .companies-directory-heading h2 { font-size: 16px; font-weight: 600; letter-spacing: -.025em; margin: 0; }
+        .companies-directory-heading p { color: var(--company-muted); font-size: 10px; margin: 0; }
+        .companies-scroll-hint { display: none; color: var(--company-muted); font-size: 10px; margin: 0 0 12px; }
+        .companies-shell .hq-table-scroll { max-height: min(68vh,640px); overflow: auto; border: 1px solid var(--company-border); border-radius: 9px; scrollbar-color: var(--company-border) var(--company-raised); }
+        .companies-shell .table-dark-custom { width: 100%; min-width: 1060px; --bs-table-bg: transparent; --bs-table-color: var(--company-text); --bs-table-border-color: var(--company-border); }
+        .companies-shell .table-dark-custom > :not(caption) > * > * { color: inherit; background: transparent; box-shadow: none; padding: 20px 16px; border-color: var(--company-border); }
+        .companies-shell .table-dark-custom thead th { position: sticky; top: 0; z-index: 2; background: var(--company-raised); color: var(--company-muted); padding-block: 13px; font-size: 9px; font-weight: 500; text-transform: uppercase; letter-spacing: .08em; white-space: nowrap; }
+        .companies-shell .table-dark-custom tbody { font-size: 11px; }
+        .companies-shell .table-dark-custom tbody tr:hover { background: var(--company-raised); }
+        .companies-shell .table-dark-custom tbody tr:last-child td { border-bottom: 0; }
+        .companies-shell .table-dark-custom td:first-child { width: 42%; min-width: 360px; }
+        .companies-shell .table-dark-custom td:nth-child(3) { min-width: 180px; }
+        .companies-shell .table-dark-custom td .small { font-size: 10px !important; margin-top: 3px; overflow-wrap: anywhere; }
+        .companies-shell .table-dark-custom td:first-child .fw-semibold { font-size: 12px; }
+        .companies-shell .company-avatar { width: 42px; height: 42px; flex-shrink: 0; font-size: 12px; color: var(--company-accent) !important; border: 1px solid var(--company-border); background: var(--company-raised); }
+        :is(.companies-shell, #hqDetailsModal) .hq-status { display: inline-flex; align-items: center; color: var(--company-text); font-size: 10px; padding: 4px 8px; border: 1px solid var(--company-border); border-radius: 6px; background: var(--company-raised); white-space: nowrap; }
+        :is(.companies-shell, #hqDetailsModal) .hq-status::before { width: 6px; height: 6px; box-shadow: none; flex-shrink: 0; }
+        :is(.companies-shell, #hqDetailsModal) .hq-status-active::before { background: var(--company-accent); }
+        :is(.companies-shell, #hqDetailsModal) .hq-status-pending::before { background: var(--company-warning); }
+        :is(.companies-shell, #hqDetailsModal) .hq-status-suspended::before { background: #e79452; }
+        :is(.companies-shell, #hqDetailsModal) .hq-status-removed::before { background: var(--company-danger); }
+        .companies-shell .stat-chip { display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--company-border); background: var(--company-raised); color: var(--company-muted); border-radius: 6px; padding: 4px 8px; font-size: 10px !important; font-variant-numeric: tabular-nums; }
+        .companies-shell .btn-action { display: inline-flex; align-items: center; justify-content: center; width: 38px; height: 38px; border: 1px solid var(--company-border); border-radius: 8px; color: var(--company-muted); background: var(--company-raised); text-decoration: none; }
+        .companies-shell .btn-action:hover { color: var(--company-accent); border-color: var(--company-accent); }
+        :is(.companies-shell, #accountActionModal, #hqDetailsModal) :is(a,button,[tabindex="0"]):focus-visible { outline: 3px solid var(--company-accent); outline-offset: 3px; }
+        :is(.companies-shell, #hqDetailsModal) .hq-flash { padding: 18px 20px; color: var(--company-text); background: var(--company-surface); border-color: var(--company-border); border-radius: 10px; }
+        :is(.companies-shell, #hqDetailsModal) .hq-flash.alert-danger { border-color: var(--company-danger); }
+        .companies-shell .hq-flash.alert-success { border-color: var(--company-accent); }
+        .companies-shell .hq-credential-box { background: var(--company-raised); border-color: var(--company-border); }
+        .companies-shell code { color: var(--company-accent); }
+        :is(#accountActionModal, #hqDetailsModal) .modal-content { background: var(--company-surface); color: var(--company-text); border: 1px solid var(--company-border); border-radius: 14px; box-shadow: 0 24px 100px rgba(0,0,0,.25); }
+        :is(#accountActionModal, #hqDetailsModal) :is(.modal-header,.modal-footer) { border-color: var(--company-border); padding: 20px 24px; }
+        :is(#accountActionModal, #hqDetailsModal) .modal-body { padding: 24px; }
+        :is(#accountActionModal, #hqDetailsModal) .modal-title { font-size: 17px; letter-spacing: -.025em; }
+        #accountActionModal .modal-content > form { min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+        #accountActionModal .modal-footer .btn { min-height: 42px; font-size: 12px; padding: 10px 16px; border-radius: 8px; }
+        #accountActionModal .btn-neon { background: #5cd9cf; border: 1px solid #5cd9cf; color: #082e2b; }
+        #accountActionModal .btn-neon:hover { background: #83e4dc; }
+        #accountActionModal .form-label { font-size: 11px; margin-bottom: 8px; }
+        #accountActionModal textarea { resize: vertical !important; }
+        #hqDetailsModal .hq-detail-label { color: var(--company-muted); font-size: 9px; font-weight: 500; }
+        #hqDetailsModal .hq-detail-value { color: var(--company-text); font-size: 12px; }
+        #hqDetailsBody .p-3.rounded-3 { background: var(--company-raised) !important; border-color: var(--company-border) !important; }
+        #hqDetailsBody .badge.rounded-pill { color: var(--company-accent) !important; background: var(--company-raised) !important; border-color: var(--company-border) !important; }
+        #hqDetailsBody .table-responsive { border: 1px solid var(--company-border); border-radius: 8px; }
+        #hqDetailsBody .hq-modal-table { min-width: 660px; --bs-table-bg: transparent; --bs-table-color: var(--company-text); --bs-table-border-color: var(--company-border); font-size: 11px; }
+        #hqDetailsBody .hq-modal-table th { background: var(--company-raised); color: var(--company-muted); font-size: 9px; font-weight: 500; padding: 12px 14px; }
+        #hqDetailsBody .hq-modal-table td { padding: 14px; }
+        #hqDetailsBody .hq-modal-table td .small { font-size: 10px; }
+        #hqDetailsBody .hq-modal-table tr:last-child td { border-bottom: 0; }
+        body.light-mode :is(.companies-shell, #accountActionModal, #hqDetailsModal) .btn-close-white { filter: none; }
+        .companies-footer { color: var(--company-muted) !important; font-family: 'Poppins',system-ui,sans-serif; font-size: 10px !important; margin-top: 0 !important; }
+        @media (max-width: 1199.98px) { .companies-shell .admin-filter-form { grid-template-columns: repeat(3,minmax(0,1fr)); } .companies-shell .filter-group--search { grid-column: span 2; } .companies-shell .filter-actions { justify-content: flex-end; } }
+        @media (max-width: 767.98px) { .companies-shell { margin-top: 24px !important; } .companies-shell :is(.dashboard-card,.analytics-card) { padding: 18px; } .companies-shell .admin-filter-form { grid-template-columns: repeat(2,minmax(0,1fr)); } .companies-shell .filter-group:has(#hqExpiryFilter) { grid-column: span 2; } .companies-shell .filter-actions { grid-column: span 2; } .companies-shell .filter-actions button { flex: 1; } .companies-scroll-hint { display: block; } :is(#accountActionModal, #hqDetailsModal) :is(.modal-body,.modal-header,.modal-footer) { padding: 18px; } }
+        @media (prefers-reduced-motion: reduce) { :is(.companies-shell, #accountActionModal, #hqDetailsModal) * { transition: none !important; animation: none !important; } }
     </style>
 </head>
 <body class="background_color" id="background_color">
 <?php $adminSection = 'view_hq'; include __DIR__ . '/admin_section_nav.php'; ?>
 
-    <main class="container my-5">
+    <main class="container my-5 companies-shell">
         <?php if ($flash && $flashType): ?>
             <div class="alert hq-flash alert-<?= hq_escape($flashType) ?> alert-dismissible fade show mb-4" role="alert">
                 <div class="d-flex gap-2 align-items-start">
@@ -231,12 +337,13 @@ $flashContext = $flash['context'] ?? [];
         <?php endif; ?>
 
         <?php if (function_exists('expiry_render_page_banners')) { expiry_render_page_banners('admin', true); } ?>
-        <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3">
+        <div class="companies-header d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3">
             <div>
-                <span class="stat-chip mb-2"><i class="bi bi-building-fill txt-neon-cyan"></i> Company Administration</span>
-                <h1 class="fw-bold m-0 h4 text-white mt-2">View/Manage Companies</h1>
-
+                <span class="companies-eyebrow">Map &amp; Pump / Company Administration</span>
+                <h1 class="fw-bold m-0 text-white mt-2">Companies</h1>
+                <p>Manage company accounts, review license status, and explore linked stations and users.</p>
             </div>
+            <span class="companies-header-note"><i class="bi bi-shield-check me-2" aria-hidden="true"></i>Company registry</span>
         </div>
 
         <?php if ($dbError): ?>
@@ -248,12 +355,13 @@ $flashContext = $flash['context'] ?? [];
         <div class="row g-4">
             <div class="col-12">
                 <div class="dashboard-card admin-filter-card">
+                    <div class="companies-filter-heading"><i class="bi bi-sliders txt-neon-cyan" aria-hidden="true"></i> Filter companies</div>
                     <form class="admin-filter-form" method="GET" action="view_hq_and_user_account.php">
                         <div class="filter-group filter-group--search">
                             <label class="filter-label" for="hqSearch">Search</label>
                             <div class="filter-search">
                                 <i class="bi bi-search filter-search-icon" aria-hidden="true"></i>
-                                <input id="hqSearch" type="search" class="form-control filter-control filter-input" placeholder="Search by company" name="search" value="<?= hq_escape($search) ?>">
+                                <input id="hqSearch" type="search" class="form-control filter-control filter-input" placeholder="Company or owner name" name="search" value="<?= hq_escape($search) ?>">
                             </div>
                         </div>
                         <div class="filter-group">
@@ -278,6 +386,7 @@ $flashContext = $flash['context'] ?? [];
                             <?= function_exists('expiry_filter_select_html') ? expiry_filter_select_html($expiryFilter, 'hqExpiryFilter', 'hq_escape') : '' ?>
                         </div>
                         <div class="filter-actions">
+                            <button type="submit" class="companies-apply">Apply filters</button>
                             <button type="button" class="btn-clear-filters js-clear-filters" title="Clear filters">Clear</button>
                         </div>
                     </form>
@@ -286,10 +395,12 @@ $flashContext = $flash['context'] ?? [];
 
             <div class="col-12">
                 <div class="analytics-card">
-                    <div class="table-responsive hq-table-scroll">
+                    <div class="companies-directory-heading"><h2>Company directory</h2><p>View details or manage an account using the row actions</p></div>
+                    <p class="companies-scroll-hint"><i class="bi bi-arrow-left-right me-1" aria-hidden="true"></i> Scroll across for status and account actions</p>
+                    <div class="table-responsive hq-table-scroll" role="region" aria-label="Company directory; scroll for more columns and rows" tabindex="0">
                         <table class="table table-dark-custom align-middle m-0">
                             <thead>
-                                <tr><th>Company &amp; Owner</th><th>Role</th><th>Location</th><th>Stations</th><th>Owner status</th><th class="text-end">Actions</th></tr>
+                                <tr><th scope="col">Company &amp; Owner</th><th scope="col">Role</th><th scope="col">Location</th><th scope="col">Stations</th><th scope="col">Owner status</th><th scope="col" class="text-end">Actions</th></tr>
                             </thead>
                             <tbody>
                                 <?php if (!$hqRows): ?>
@@ -309,7 +420,7 @@ $flashContext = $flash['context'] ?? [];
                                     <tr>
                                         <td>
                                             <div class="d-flex align-items-center gap-3">
-                                                <div class="rounded-3 d-flex align-items-center justify-content-center text-white fw-bold" style="width:44px;height:44px;background:rgba(0,244,255,.1);border:1px solid rgba(0,244,255,.28);flex-shrink:0;font-size:.85rem;color:var(--neon-cyan)!important;">
+                                                <div class="company-avatar rounded-3 d-flex align-items-center justify-content-center text-white fw-bold">
                                                     <?= hq_escape(hq_initials($companyName)) ?>
                                                 </div>
                                                 <div>
@@ -371,7 +482,7 @@ $flashContext = $flash['context'] ?? [];
     </div>
 
 
-    <footer class="text-white-50 text-center py-4 mt-5 small">&copy; 2026 Map &amp; Pump | All Rights Reserved</footer>
+    <footer class="companies-footer text-white-50 text-center py-4 mt-5 small">&copy; 2026 Map &amp; Pump | All Rights Reserved</footer>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script src="/js/Admin.js"></script>
     <script>

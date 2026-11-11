@@ -52,18 +52,20 @@ $conflictQuery = $conn->prepare(
     "SELECT c.car_license_id, c.car_plate_number, c.car_owner_name, c.vehicle_name,
             c.vehicle_type, c.chassis_number, c.location, c.issue_date,
             c.license_expire_date, c.status, c.car_license_front_image,
-             c.car_license_back_image,
-             (SELECT MIN(u.user_id) FROM user_car owner_link INNER JOIN users u ON u.user_id = owner_link.user_id
-              WHERE owner_link.car_id = c.car_license_id) AS user_id,
-             (SELECT u.user_name FROM user_car owner_link INNER JOIN users u ON u.user_id = owner_link.user_id
-              WHERE owner_link.car_id = c.car_license_id ORDER BY u.user_id LIMIT 1) AS user_name,
-             (SELECT u.email FROM user_car owner_link INNER JOIN users u ON u.user_id = owner_link.user_id
-              WHERE owner_link.car_id = c.car_license_id ORDER BY u.user_id LIMIT 1) AS email
+             c.car_license_back_image, owner.user_id, owner.user_name, owner.email
      FROM car_license c
+     INNER JOIN (
+         SELECT uc.car_id, MIN(u.user_id) AS user_id
+         FROM user_car uc INNER JOIN users u ON u.user_id = uc.user_id
+         WHERE LOWER(TRIM(COALESCE(u.status, ''))) NOT IN ('banned', 'disabled', 'suspended', 'removed', 'deleted')
+         GROUP BY uc.car_id
+     ) eligible_owner ON eligible_owner.car_id = c.car_license_id
+     INNER JOIN users owner ON owner.user_id = eligible_owner.user_id
      WHERE UPPER(REPLACE(REPLACE(REPLACE(TRIM(c.car_plate_number), '/', ''), ' ', ''), '-', '')) =
            UPPER(REPLACE(REPLACE(REPLACE(TRIM(?), '/', ''), ' ', ''), '-', ''))
        AND c.car_license_id <> ?
-     ORDER BY c.car_license_id DESC"
+     ORDER BY c.created_at ASC, c.car_license_id ASC
+     LIMIT 1"
 );
 $conflictQuery->bind_param('si', $car['car_plate_number'], $carId);
 $conflictQuery->execute();
