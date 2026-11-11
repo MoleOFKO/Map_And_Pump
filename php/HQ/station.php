@@ -206,8 +206,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 $tankSeedStmt = $pdo->prepare(
                     "INSERT INTO tanks
-                        (branch_id, fuel_code, fuel_name, oil_type_id, capacity_l, current_l, alert_pct, is_enabled)
-                     VALUES (?, ?, ?, ?, ?, 0, 25, 1)"
+                        (branch_id, oil_type_id, fuel_price, capacity_l, current_l, alert_pct, is_enabled)
+                     VALUES (?, ?, '0', ?, 0, 25, 1)"
                 );
                 $oilTypeStmt = $pdo->prepare('SELECT oil_type_id FROM oil_types WHERE oil_name = ? LIMIT 1');
                 $tankSeeds = [
@@ -224,8 +224,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                     $tankSeedStmt->execute([
                         $stationId,
-                        $tankSeed[0],
-                        $tankSeed[1],
                         (int) $oilTypeId,
                         $tankSeed[2],
                     ]);
