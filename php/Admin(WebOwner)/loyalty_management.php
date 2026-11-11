@@ -514,7 +514,7 @@ $redemptionValues = array_values($redemptions ?? []);
             <div class="col-md-4"><label class="form-label" for="payout-month">Month</label><input class="form-control" id="payout-month" name="payout_month" type="month" value="<?= hq_escape(loyalty_current_year_month()) ?>" required></div>
             <div class="col-md-4"><label class="form-label" for="payout-amount">Amount (MMK)</label><input class="form-control" id="payout-amount" name="payout_amount" type="number" min="0.01" step="0.01" value="<?= number_format($selectedHeadquarterAvailable, 2, '.', '') ?>" max="<?= number_format($selectedHeadquarterAvailable, 2, '.', '') ?>" required></div>
             <div class="col-md-8"><label class="form-label" for="payout-note">Reference <span class="loyalty-optional">Optional</span></label><input class="form-control" id="payout-note" name="payout_note" maxlength="500"></div>
-            <div class="col-md-4 d-flex align-items-end"><button class="btn btn-success w-100" type="submit" <?= $selectedHeadquarterAvailable <= 0 ? 'disabled' : '' ?>><i class="bi bi-send me-1" aria-hidden="true"></i>Send for confirm</button></div>
+            <div class="col-md-4 d-flex align-items-end"><button class="btn btn-success w-100" id="send-payout-request" type="submit" <?= $selectedHeadquarterAvailable <= 0 ? 'disabled' : '' ?>><i class="bi bi-send me-1" aria-hidden="true"></i>Send for confirm</button></div>
             <div class="col-md-12"><span class="loyalty-payout-balance">Due: <strong id="selected-company-balance"><?= number_format($selectedHeadquarterBalance, 2) ?> MMK</strong> · Available to request: <strong id="selected-company-available"><?= number_format($selectedHeadquarterAvailable, 2) ?> MMK</strong></span></div>
         </form>
         <div class="loyalty-history-heading mt-4"><h3 class="h6 mb-0">Payment requests</h3></div>
@@ -560,6 +560,7 @@ $redemptionValues = array_values($redemptions ?? []);
     const amount = document.getElementById('payout-amount');
     const balanceLabel = document.getElementById('selected-company-balance');
     const availableLabel = document.getElementById('selected-company-available');
+    const sendButton = document.getElementById('send-payout-request');
     if (!company || !amount || !balanceLabel) return;
     const fmt = (n) => n.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
     const updateCompanyBalance = () => {
@@ -568,20 +569,12 @@ $redemptionValues = array_values($redemptions ?? []);
         const available = Number(opt?.dataset.available || 0);
         amount.max = available.toFixed(2);
         amount.value = available > 0 ? available.toFixed(2) : '';
+        if (sendButton) sendButton.disabled = available <= 0;
         balanceLabel.textContent = `${fmt(balance)} MMK`;
         if (availableLabel) availableLabel.textContent = `${fmt(available)} MMK`;
     };
     company.addEventListener('change', updateCompanyBalance);
     updateCompanyBalance();
-
-    company.form?.addEventListener('submit', (event) => {
-        const companyName = company.selectedOptions[0]?.textContent?.trim() || 'this company';
-        const paidAmount = Number(amount.value || 0);
-        const formattedAmount = paidAmount.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
-        if (!window.confirm(`Send ${formattedAmount} MMK payment verification to ${companyName}?`)) {
-            event.preventDefault();
-        }
-    });
 })();
 </script>
 </body>
