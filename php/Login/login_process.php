@@ -38,6 +38,50 @@ if (!filter_var($email, FILTER_VALIDATE_EMAIL) || $password === '') {
 try {
     map_pump_cleanup_due_account_deletions($pdo);
 
+    $hqLoginStmt = $pdo->prepare(
+        'SELECT headquarter_id, company_name, headquarter_email, headquarter_password, status
+         FROM headquarter
+         WHERE LOWER(TRIM(headquarter_email)) = LOWER(TRIM(?))
+         ORDER BY headquarter_id DESC
+         LIMIT 1'
+    );
+    $hqLoginStmt->execute([$email]);
+    $hqAccount = $hqLoginStmt->fetch(PDO::FETCH_ASSOC);
+    if ($hqAccount && trim((string) ($hqAccount['headquarter_password'] ?? '')) !== ''
+        && password_verify($password, (string) $hqAccount['headquarter_password'])) {
+        $hqStatus = strtolower(trim((string) ($hqAccount['status'] ?? '')));
+        if (in_array($hqStatus, ['disabled', 'rejected', 'suspended', 'removed'], true)) {
+            auth_redirect_to_login('This company account is disabled. Please contact support.', $email);
+        }
+
+        session_regenerate_id(true);
+        $_SESSION['is_logged_in'] = true;
+        $_SESSION['hq_auth'] = true;
+        $_SESSION['user_id'] = 0;
+        $_SESSION['user_public_id'] = '';
+        $_SESSION['user_name'] = (string) ($hqAccount['company_name'] ?? 'Company');
+        $_SESSION['user_email'] = (string) $hqAccount['headquarter_email'];
+        $_SESSION['oauth_avatar_url'] = '';
+        $_SESSION['user_status'] = 'active';
+        $_SESSION['role_id'] = 3;
+        $_SESSION['role_name'] = 'HQ';
+        $_SESSION['business_role_id'] = 3;
+        $_SESSION['business_role_name'] = 'HQ';
+        $_SESSION['current_role_id'] = 3;
+        $_SESSION['current_role_name'] = 'HQ';
+        $_SESSION['headquarter_id'] = (int) $hqAccount['headquarter_id'];
+        $_SESSION['branch_id'] = 0;
+        $_SESSION['has_business'] = true;
+        $_SESSION['active_profile_mode'] = 'business';
+        $_SESSION['remember_me'] = $remember;
+        $_SESSION['last_login_at'] = date('Y-m-d H:i:s');
+        unset($_SESSION['standalone_staff_id'], $_SESSION['staff_id']);
+        map_pump_set_remembered_email((string) $hqAccount['headquarter_email'], $remember);
+
+        header('Location: ../HQ/index.php');
+        exit;
+    }
+
     $staffLoginStmt = $pdo->prepare(
         'SELECT staff_id, user_id, branch_id, full_name, email, staff_password, contact, staff_code, is_active
          FROM staff
@@ -202,6 +246,7 @@ try {
         }
 
         $_SESSION['is_logged_in'] = true;
+        unset($_SESSION['hq_auth']);
         unset($_SESSION['standalone_staff_id'], $_SESSION['staff_id']);
         $_SESSION['user_id'] = (int) $user['user_id'];
         $_SESSION['user_public_id'] = (string) ($user['user_public_id'] ?? '');

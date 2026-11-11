@@ -90,7 +90,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 (int) $transferId,
                 'pending_payment',
                 'cancelled',
-                $userId,
+                $userId > 0 ? $userId : null,
                 strtolower((string) $hq['headquarter_email']),
                 'HQ payer cancelled the unreported service extension payment request.'
             );
@@ -238,10 +238,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $receipt->bindValue(3, (string) $mime);
             $receipt->bindValue(4, (int) $file['size'], PDO::PARAM_INT);
             $receipt->bindValue(5, file_get_contents((string) $file['tmp_name']), PDO::PARAM_LOB);
-            $receipt->bindValue(6, $userId, PDO::PARAM_INT);
+            $receipt->bindValue(6, $userId > 0 ? $userId : null, $userId > 0 ? PDO::PARAM_INT : PDO::PARAM_NULL);
             $receipt->bindValue(7, (string) $hq['headquarter_email']);
             $receipt->execute();
-            payment_transfer_record_event($pdo, $transferId, 'pending_payment', 'payer_reported_paid', $userId, (string) $hq['headquarter_email'], 'HQ owner submitted an extension payment method and screenshot for staff review.');
+            payment_transfer_record_event($pdo, $transferId, 'pending_payment', 'payer_reported_paid', $userId > 0 ? $userId : null, (string) $hq['headquarter_email'], 'HQ owner submitted an extension payment method and screenshot for staff review.');
             $pdo->commit();
             payment_transfer_send_notices($pdo, $transferId, 'recipient', 'payer_reported_paid');
             $message = 'Payment submitted. Your station package and service period update after Admin or Moderator review.';

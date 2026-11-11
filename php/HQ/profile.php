@@ -5,7 +5,7 @@ require_once __DIR__ . '/../account_deletion.php';
 require_once __DIR__ . '/../profile_avatar.php';
 require_once __DIR__ . '/../imgbb_image_host.php';
 
-if (empty($_SESSION['user_id'])) {
+if (empty($_SESSION['user_id']) && empty($_SESSION['hq_auth'])) {
     $loginUrl = '../Login/login.php';
     echo '<script>window.top.location.replace(' . json_encode($loginUrl) . ');</script>';
     echo '<noscript><meta http-equiv="refresh" content="0;url=' . htmlspecialchars($loginUrl, ENT_QUOTES, 'UTF-8') . '"></noscript>';
@@ -13,6 +13,7 @@ if (empty($_SESSION['user_id'])) {
 }
 
 $userId = (int) $_SESSION['user_id'];
+$isHqAuth = !empty($_SESSION['hq_auth']);
 if (empty($_SESSION['hq_customer_link_csrf'])) {
     $_SESSION['hq_customer_link_csrf'] = bin2hex(random_bytes(32));
 }
@@ -68,30 +69,44 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 exit;
             }
 
-            $emailCheck = $pdo->prepare('SELECT user_id FROM users WHERE LOWER(email) = LOWER(?) AND user_id <> ? LIMIT 1');
-            $emailCheck->execute([$email, $userId]);
+            $emailCheck = $isHqAuth
+                ? $pdo->prepare('SELECT headquarter_id FROM headquarter WHERE LOWER(headquarter_email) = LOWER(?) AND headquarter_id <> ? LIMIT 1')
+                : $pdo->prepare('SELECT user_id FROM users WHERE LOWER(email) = LOWER(?) AND user_id <> ? LIMIT 1');
+            $emailCheck->execute([$email, $isHqAuth ? (int) ($_SESSION['headquarter_id'] ?? 0) : $userId]);
             if ($emailCheck->fetchColumn()) {
                 http_response_code(422);
                 echo json_encode(['ok' => false, 'message' => 'That email address is already in use.']);
                 exit;
             }
 
-            $update = $pdo->prepare(
-                'UPDATE users SET user_name = ?, email = ?, updated_at = NOW() WHERE user_id = ?'
-            );
-            $update->execute([$name, $email, $userId]);
+            if ($isHqAuth) {
+                $update = $pdo->prepare(
+                    'UPDATE headquarter SET company_name = ?, headquarter_email = ? WHERE headquarter_id = ?'
+                );
+                $update->execute([$name, $email, (int) ($_SESSION['headquarter_id'] ?? 0)]);
+            } else {
+                $update = $pdo->prepare('UPDATE users SET user_name = ?, email = ?, updated_at = NOW() WHERE user_id = ?');
+                $update->execute([$name, $email, $userId]);
+            }
             $_SESSION['user_name'] = $name;
             $_SESSION['user_email'] = $email;
-
-            $avatarStmt = $pdo->prepare('SELECT oauth_avatar_url FROM users WHERE user_id = ? LIMIT 1');
-            $avatarStmt->execute([$userId]);
-            $avatarUrl = map_pump_profile_avatar_url((string)$avatarStmt->fetchColumn(), '');
-
+            if ($isHqAuth) {
+                $avatarUrl = '';
+            } else {
+                $avatarStmt = $pdo->prepare('SELECT oauth_avatar_url FROM users WHERE user_id = ? LIMIT 1');
+                $avatarStmt->execute([$userId]);
+                $avatarUrl = map_pump_profile_avatar_url((string) $avatarStmt->fetchColumn(), '');
+            }
             echo json_encode(['ok' => true, 'message' => 'Profile details updated successfully.', 'name' => $name, 'email' => $email, 'avatar_url' => $avatarUrl]);
             exit;
         }
 
         if ($action === 'update_avatar') {
+            if (!empty($_SESSION['hq_auth'])) {
+                http_response_code(422);
+                echo json_encode(['ok' => false, 'message' => 'Profile pictures are not available for HQ-only accounts.']);
+                exit;
+            }
             $upload = $_FILES['profile_avatar'] ?? null;
             if (!$upload || ($upload['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
                 http_response_code(422);
@@ -184,8 +199,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 exit;
             }
 
-            $passwordQuery = $pdo->prepare('SELECT hashed_password FROM users WHERE user_id = ? LIMIT 1');
-            $passwordQuery->execute([$userId]);
+            $hqId = (int) ($_SESSION['headquarter_id'] ?? 0);
+            $isHqAuth = !empty($_SESSION['hq_auth']);
+            $passwordQuery = $pdo->prepare(
+                $isHqAuth
+                    ? 'SELECT headquarter_password AS hashed_password FROM headquarter WHERE headquarter_id = ? LIMIT 1'
+                    : 'SELECT hashed_password FROM users WHERE user_id = ? LIMIT 1'
+            );
+            $passwordQuery->execute([$isHqAuth ? $hqId : $userId]);
             $account = $passwordQuery->fetch(PDO::FETCH_ASSOC);
 
             if (!$account || !password_verify($currentPassword, (string) $account['hashed_password'])) {
@@ -196,9 +217,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             $newHash = password_hash($newPassword, PASSWORD_DEFAULT);
             $update = $pdo->prepare(
-                'UPDATE users SET hashed_password = ?, updated_at = NOW() WHERE user_id = ?'
+                $isHqAuth
+                    ? 'UPDATE headquarter SET headquarter_password = ? WHERE headquarter_id = ?'
+                    : 'UPDATE users SET hashed_password = ?, updated_at = NOW() WHERE user_id = ?'
             );
-            $update->execute([$newHash, $userId]);
+            $update->execute([$newHash, $isHqAuth ? $hqId : $userId]);
 
             echo json_encode(['ok' => true, 'message' => 'Password changed successfully.']);
             exit;
@@ -214,14 +237,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     exit;
 }
 
-$stmt = $pdo->prepare(
-    'SELECT user_id, user_name, email, oauth_avatar_url, role_id, business_role_id
-     FROM users
-     WHERE user_id = ?
-     LIMIT 1'
-);
-$stmt->execute([$userId]);
-$user = $stmt->fetch(PDO::FETCH_ASSOC);
+if ($isHqAuth) {
+    $stmt = $pdo->prepare(
+        "SELECT headquarter_id AS user_id, company_name AS user_name, headquarter_email AS email,
+                NULL AS oauth_avatar_url, 3 AS role_id, 3 AS business_role_id
+         FROM headquarter WHERE headquarter_id = ? LIMIT 1"
+    );
+    $stmt->execute([(int) ($_SESSION['headquarter_id'] ?? 0)]);
+} else {
+    $stmt = $pdo->prepare(
+        'SELECT user_id, user_name, email, oauth_avatar_url, role_id, business_role_id
+         FROM users WHERE user_id = ? LIMIT 1'
+    );
+    $stmt->execute([$userId]);
+}
+$user = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
 $deletionContext = map_pump_hq_owner_context($pdo, $userId);
 $deletionPending = ($deletionContext['status'] ?? '') === 'pending_deletion';
 $deletionScheduledFor = (string) ($deletionContext['account_deletion_scheduled_for'] ?? '');
@@ -243,14 +273,19 @@ if ($headquarterId > 0 && $customerRoleId > 0) {
          INNER JOIN business_account_scope bas ON bas.headquarter_id = h.headquarter_id
              AND bas.business_role_id = ?
          INNER JOIN users u ON u.user_id = bas.user_id
-         WHERE h.headquarter_id = ? AND h.headquarters_owner_id = ?
+         WHERE h.headquarter_id = ? AND (? = 1 OR h.headquarters_owner_id = ?)
            AND u.role_id = ?
          LIMIT 1'
     );
-    $customerLinkStmt->execute([$customerRoleId, $headquarterId, $userId, $customerRoleId]);
+    $customerLinkStmt->execute([$customerRoleId, $headquarterId, $isHqAuth ? 1 : 0, $userId, $customerRoleId]);
     $linkedCustomer = $customerLinkStmt->fetch(PDO::FETCH_ASSOC) ?: null;
-    $ownerCheck = $pdo->prepare('SELECT 1 FROM headquarter WHERE headquarter_id = ? AND headquarters_owner_id = ? LIMIT 1');
-    $ownerCheck->execute([$headquarterId, $userId]);
+    if ($isHqAuth) {
+        $ownerCheck = $pdo->prepare('SELECT 1 FROM headquarter WHERE headquarter_id = ? AND headquarters_owner_id IS NULL LIMIT 1');
+        $ownerCheck->execute([$headquarterId]);
+    } else {
+        $ownerCheck = $pdo->prepare('SELECT 1 FROM headquarter WHERE headquarter_id = ? AND headquarters_owner_id = ? LIMIT 1');
+        $ownerCheck->execute([$headquarterId, $userId]);
+    }
     $canLinkCustomer = (bool) $ownerCheck->fetchColumn();
 }
 $linkedCustomerCanSwitch = $linkedCustomer !== null

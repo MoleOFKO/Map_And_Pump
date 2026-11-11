@@ -46,6 +46,14 @@ global $conn;
 $postCommitMailJobs = [];
 
 try {
+    if ($action === 'approve') {
+        $requestTypeQuery = $pdo->prepare('SELECT request_type FROM system_requests WHERE request_id = ? LIMIT 1');
+        $requestTypeQuery->execute([$requestId]);
+        if (strtolower(trim((string) $requestTypeQuery->fetchColumn())) === 'hq_registration') {
+            hq_password_setup_ensure_schema($pdo);
+        }
+    }
+
     $conn->begin_transaction();
 
     $targetQuery = $conn->prepare(
@@ -332,12 +340,6 @@ try {
             $coverage->close();
         }
 
-        // Link the provided customer account, or provision a login using the
-        // company email when no owner email was supplied.
-        $hqRoleId = hq_hq_role_id();
-        if ($hqRoleId !== 3) {
-            throw new RuntimeException('The company account role must use role ID 3.');
-        }
         $ownerEmail = strtolower(trim((string) ($target['headquarter_owner_email'] ?? '')));
         if ($ownerEmail === '') {
             $ownerEmail = strtolower(trim((string) ($target['headquarter_email'] ?? '')));
@@ -345,102 +347,22 @@ try {
         if (!filter_var($ownerEmail, FILTER_VALIDATE_EMAIL)) {
             throw new RuntimeException('The approved company has no valid owner or company email address.');
         }
-        $ownerName = trim((string) ($target['sender_name'] ?: $target['sender_entity']));
-        $ownerName = $ownerName !== '' ? $ownerName : $companyName;
-        $ownerLookup = $conn->prepare(
-            'SELECT u.user_id, u.email, u.role_id, u.business_role_id,
-                EXISTS (SELECT 1 FROM business_account_scope bas WHERE bas.user_id = u.user_id AND bas.headquarter_id IS NOT NULL) AS has_hq_scope,
-                EXISTS (SELECT 1 FROM headquarter owned_hq WHERE owned_hq.headquarters_owner_id = u.user_id) AS owns_hq
-             FROM users u WHERE LOWER(TRIM(u.email)) = LOWER(?) LIMIT 1 FOR UPDATE'
-        );
-        if (!$ownerLookup) {
-            throw new RuntimeException('Could not look up the company owner account.');
-        }
-        $ownerLookup->bind_param('s', $ownerEmail);
-        $ownerLookup->execute();
-        $existingOwner = $ownerLookup->get_result()?->fetch_assoc();
-        $ownerLookup->close();
-        $registrantUserId = (int) ($target['existing_user_id'] ?? 0);
-        if ($existingOwner) {
-            $createdOwnerUserId = (int) $existingOwner['user_id'];
-            if ((int) ($existingOwner['role_id'] ?? 0) !== 6
-                || (int) ($existingOwner['business_role_id'] ?? 0) > 0
-                || (int) ($existingOwner['has_hq_scope'] ?? 0) === 1
-                || (int) ($existingOwner['owns_hq'] ?? 0) === 1
-                || ($registrantUserId > 0 && $registrantUserId !== $createdOwnerUserId)) {
-                throw new RuntimeException('The selected owner account is no longer eligible for company linking.');
-            }
-            $ownerUpdate = $conn->prepare(
-                     'UPDATE users SET business_role_id = ?, updated_at = NOW()
-                 WHERE user_id = ? AND role_id = 6
-                   AND (business_role_id IS NULL OR business_role_id = 0)
-                         AND NOT EXISTS (SELECT 1 FROM business_account_scope bas WHERE bas.user_id = users.user_id AND bas.headquarter_id IS NOT NULL)
-                         AND NOT EXISTS (SELECT 1 FROM headquarter owned_hq WHERE owned_hq.headquarters_owner_id = users.user_id)'
-            );
-            if (!$ownerUpdate) {
-                throw new RuntimeException('Could not prepare the Driver-to-Company account link.');
-            }
-            $ownerUpdate->bind_param('ii', $hqRoleId, $createdOwnerUserId);
-            if (!$ownerUpdate->execute() || $ownerUpdate->affected_rows !== 1) {
-                throw new RuntimeException('Could not link the driver account to the approved company.');
-            }
-            $ownerUpdate->close();
-        } else {
-            if ($registrantUserId > 0) {
-            throw new RuntimeException('The company owner account email no longer matches the registration account.');
-            }
-            $ownerUserName = hq_unique_username($ownerName, $ownerEmail);
-            $ownerInsert = $conn->prepare(
-                "INSERT INTO users (user_name, email, hashed_password, role_id, business_role_id, current_role_id, status, created_at, updated_at)
-                 VALUES (?, ?, NULL, ?, ?, ?, 'active', NOW(), NOW())"
-            );
-            if (!$ownerInsert) {
-                throw new RuntimeException('Could not prepare the company owner account.');
-            }
-            $ownerInsert->bind_param('ssiii', $ownerUserName, $ownerEmail, $hqRoleId, $hqRoleId, $hqRoleId);
-            if (!$ownerInsert->execute()) {
-                throw new RuntimeException('Could not create the company owner account.');
-            }
-            $createdOwnerUserId = (int) $ownerInsert->insert_id;
-            $ownerInsert->close();
-        }
-
-        $createdOwnerSetupUrl = account_password_setup_create_link($conn, $createdOwnerUserId);
+        $createdOwnerSetupUrl = hq_password_setup_create_link($pdo, (int) $createdHeadquarterId);
         $createdOwnerEmail = $ownerEmail;
 
         $hqOwnerUpdate = $conn->prepare(
             'UPDATE headquarter
-             SET headquarters_owner_id = ?, created_at = created_at, expire_at = ?, business_license_expire_date = ?
+             SET headquarters_owner_id = NULL, created_at = created_at, expire_at = ?, business_license_expire_date = ?
              WHERE headquarter_id = ?'
         );
         if (!$hqOwnerUpdate) {
-            throw new RuntimeException('Could not link the company owner.');
+            throw new RuntimeException('Could not update the approved company record.');
         }
-        $hqOwnerUpdate->bind_param('issi', $createdOwnerUserId, $licenseExpiryTs, $licenseExpiryDate, $createdHeadquarterId);
+        $hqOwnerUpdate->bind_param('ssi', $licenseExpiryTs, $licenseExpiryDate, $createdHeadquarterId);
         if (!$hqOwnerUpdate->execute()) {
-            throw new RuntimeException('Could not link the company owner.');
+            throw new RuntimeException('Could not update the approved company record.');
         }
         $hqOwnerUpdate->close();
-
-        $ownerScope = $conn->prepare(
-            "INSERT INTO business_account_scope
-                (user_id, business_role_id, headquarter_id, branch_manager_user_id, station_id, status)
-             VALUES (?, ?, ?, NULL, NULL, 'pending')
-             ON DUPLICATE KEY UPDATE
-                business_role_id = VALUES(business_role_id),
-                headquarter_id = VALUES(headquarter_id),
-                branch_manager_user_id = NULL,
-                station_id = NULL,
-                 status = 'pending'"
-        );
-        if (!$ownerScope) {
-            throw new RuntimeException('Could not prepare the company owner business-role link.');
-        }
-        $ownerScope->bind_param('iii', $createdOwnerUserId, $hqRoleId, $createdHeadquarterId);
-        if (!$ownerScope->execute()) {
-            throw new RuntimeException('Could not save the company owner business-role link.');
-        }
-        $ownerScope->close();
 
         $requestHqUpdate = $conn->prepare('UPDATE system_requests SET headquarter_id = ? WHERE request_id = ?');
         if (!$requestHqUpdate) {
@@ -470,7 +392,9 @@ try {
     $reviewerLabel = $reviewerRoleName === 'moderator' ? 'Moderator' : 'Administrator';
     $reviewReason = $action === 'approve' ? ('Approved by ' . $reviewerLabel . '.') : $reason;
     $reviewerId = (int) $reviewer['user_id'];
-    $recipientUserId = $createdOwnerUserId ?? (!empty($target['existing_user_id']) ? (int) $target['existing_user_id'] : null);
+    $recipientUserId = $requestType === 'hq_registration'
+        ? null
+        : ($createdOwnerUserId ?? (!empty($target['existing_user_id']) ? (int) $target['existing_user_id'] : null));
     $recipientEmail = $createdOwnerEmail ?? trim((string) ($target['user_email'] ?: $target['sender_email']));
 
     $requestUpdate = $conn->prepare(

@@ -3,6 +3,7 @@ require_once __DIR__ . '/session_helper.php';
 map_pump_configure_session();
 session_start();
 require_once __DIR__ . '/../conn.php';
+require_once __DIR__ . '/account_password_setup.php';
 
 header('Cache-Control: no-store, private');
 header('Referrer-Policy: no-referrer');
@@ -13,27 +14,44 @@ if (empty($_SESSION['account_password_setup_csrf'])) {
 
 function account_password_setup_find_token(PDO $pdo, string $tokenHash, bool $lock = false): array
 {
-  try {
     $lockClause = $lock ? ' FOR UPDATE' : '';
-    $stmt = $pdo->prepare(
-      "SELECT t.user_id, u.email, u.user_name, u.business_role_id,
-          manager_branch.branch_id AS manager_branch_id,
-          COALESCE(business_role.role_name, primary_role.role_name, 'Account') AS account_role,
-          'account_password_setup_tokens' AS token_table
-       FROM account_password_setup_tokens t
-       INNER JOIN users u ON u.user_id = t.user_id
-       LEFT JOIN branches manager_branch
-         ON manager_branch.manager_user_id = u.user_id
-       LEFT JOIN roles business_role ON business_role.role_id = u.business_role_id
-       LEFT JOIN roles primary_role ON primary_role.role_id = u.role_id
-       WHERE t.token_hash = ? AND t.used_at IS NULL AND t.expires_at > NOW()
-       LIMIT 1{$lockClause}"
-    );
-    $stmt->execute([$tokenHash]);
-    return $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
-  } catch (Throwable $exception) {
-    error_log('[Account password setup] Token table lookup failed: ' . $exception->getMessage());
-    return [];
+    try {
+        $stmt = $pdo->prepare(
+            "SELECT t.user_id, u.email, u.user_name, u.business_role_id,
+                manager_branch.branch_id AS manager_branch_id,
+                COALESCE(business_role.role_name, primary_role.role_name, 'Account') AS account_role,
+                'account_password_setup_tokens' AS token_table
+             FROM account_password_setup_tokens t
+             INNER JOIN users u ON u.user_id = t.user_id
+             LEFT JOIN branches manager_branch ON manager_branch.manager_user_id = u.user_id
+             LEFT JOIN roles business_role ON business_role.role_id = u.business_role_id
+             LEFT JOIN roles primary_role ON primary_role.role_id = u.role_id
+             WHERE t.token_hash = ? AND t.used_at IS NULL AND t.expires_at > NOW()
+             LIMIT 1{$lockClause}"
+        );
+        $stmt->execute([$tokenHash]);
+        $account = $stmt->fetch(PDO::FETCH_ASSOC);
+        if ($account) {
+            return $account;
+        }
+    } catch (Throwable $exception) {
+        error_log('[Account password setup] User token lookup failed: ' . $exception->getMessage());
+    }
+
+    try {
+        $stmt = $pdo->prepare(
+            "SELECT t.headquarter_id, h.headquarter_email AS email, h.company_name AS user_name,
+                    'Company' AS account_role, 'hq_password_setup_tokens' AS token_table
+             FROM hq_password_setup_tokens t
+             INNER JOIN headquarter h ON h.headquarter_id = t.headquarter_id
+             WHERE t.token_hash = ? AND t.used_at IS NULL AND t.expires_at > NOW()
+             LIMIT 1{$lockClause}"
+        );
+        $stmt->execute([$tokenHash]);
+        return $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
+    } catch (Throwable $exception) {
+        error_log('[Account password setup] HQ token lookup failed: ' . $exception->getMessage());
+        return [];
     }
 }
 
@@ -68,7 +86,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
 
                 $passwordHash = password_hash($newPassword, PASSWORD_DEFAULT);
-                if ((int) ($lockedAccount['business_role_id'] ?? 0) === 4) {
+                if (($lockedAccount['token_table'] ?? '') === 'hq_password_setup_tokens') {
+                    $passwordUpdate = $pdo->prepare(
+                        'UPDATE headquarter SET headquarter_password = ? WHERE headquarter_id = ?'
+                    );
+                    $passwordUpdate->execute([$passwordHash, (int) $lockedAccount['headquarter_id']]);
+                    if ($passwordUpdate->rowCount() !== 1) {
+                        throw new RuntimeException('The company account could not be found.');
+                    }
+                } elseif ((int) ($lockedAccount['business_role_id'] ?? 0) === 4) {
                     $branchId = (int) ($lockedAccount['manager_branch_id'] ?? 0);
                     if ($branchId <= 0) {
                         throw new RuntimeException('A station must be assigned before setting a branch manager password.');
@@ -85,9 +111,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $passwordUpdate->execute([$passwordHash, (int) $lockedAccount['user_id']]);
                 }
 
-                $tokenTable = $lockedAccount['token_table'] === 'account_password_setup_tokens'
-                    ? $lockedAccount['token_table']
-                    : '';
+                $tokenTable = in_array(
+                    (string) ($lockedAccount['token_table'] ?? ''),
+                    ['account_password_setup_tokens', 'hq_password_setup_tokens'],
+                    true
+                ) ? $lockedAccount['token_table'] : '';
                 if ($tokenTable === '') {
                     throw new RuntimeException('The password setup token could not be validated.');
                 }

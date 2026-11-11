@@ -28,7 +28,7 @@ try {
         $action = (string) ($_POST['action'] ?? '');
         $payoutId = filter_var($_POST['payout_id'] ?? null, FILTER_VALIDATE_INT);
         $userId = (int) ($_SESSION['user_id'] ?? 0);
-        if ($payoutId === false || $payoutId <= 0 || $userId <= 0) {
+        if ($payoutId === false || $payoutId <= 0 || ($userId <= 0 && empty($_SESSION['hq_auth']))) {
             throw new RuntimeException('Choose a valid payment request.');
         }
 
@@ -77,7 +77,7 @@ try {
                  SET status = 'confirmed', confirmed_by_user_id = ?, confirmed_at = CURRENT_TIMESTAMP
                  WHERE payout_id = ? AND status = 'pending'"
             );
-            $upd->execute([$userId, $payoutId]);
+            $upd->execute([$userId > 0 ? $userId : null, $payoutId]);
             if ($upd->rowCount() !== 1) {
                 throw new RuntimeException('Could not confirm this payment request.');
             }
@@ -89,7 +89,7 @@ try {
                  SET status = 'rejected', confirmed_by_user_id = ?, confirmed_at = CURRENT_TIMESTAMP
                  WHERE payout_id = ? AND status = 'pending'"
             );
-            $upd->execute([$userId, $payoutId]);
+            $upd->execute([$userId > 0 ? $userId : null, $payoutId]);
             if ($upd->rowCount() !== 1) {
                 throw new RuntimeException('Could not reject this payment request.');
             }
