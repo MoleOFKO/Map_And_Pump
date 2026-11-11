@@ -743,7 +743,7 @@ if (!empty($feedbackIds)) {
                   <td>
                     <div class="cust-name">
                       <div class="mini-avatar"><?= h(initials($c['full_name'])) ?></div>
-                      <div><b><?= h($c['full_name']) ?></b><span>ID: <?= h($c['customer_code']) ?></span></div>
+                      <div><b><?= h(privacy_mask_name((string) $c['full_name'])) ?></b><span>ID: <?= h($c['customer_code']) ?></span></div>
                     </div>
                   </td>
                   <td><?= $totalVisits ?></td>
@@ -801,7 +801,7 @@ if (!empty($feedbackIds)) {
                 $feedbackTierCode = 'regular';
             }
             $feedbackTierLabel = ucfirst($feedbackTierCode) . ' Tier';
-            $feedbackName = $f['full_name'] ?: 'Anonymous';
+            $feedbackName = privacy_mask_name((string) ($f['full_name'] ?: 'Anonymous'));
             
             $fId = (int)$f['feedback_id'];
             $cardReplies = $repliesByFeedback[$fId] ?? [];

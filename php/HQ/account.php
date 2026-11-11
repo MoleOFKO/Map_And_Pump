@@ -3,6 +3,7 @@ require_once __DIR__ . '/hq_guard.php';
 require_once __DIR__ . '/../conn.php';
 require_once __DIR__ . '/../business_scope.php';
 require_once __DIR__ . '/../invitations_schema.php';
+require_once __DIR__ . '/../shared/privacy_display.php';
 
 try {
     map_pump_ensure_invitation_schema($pdo);
@@ -445,8 +446,8 @@ $status = strtolower((string)($manager['status'] ?? ''));
                                     $stationText . ' ' .
                                     $statusLabel
                                 )), ENT_QUOTES) ?>">
-                                <td style="padding: 12px 8px;"><?= htmlspecialchars($manager['user_name'] ?? 'N/A') ?></td>
-                                <td style="padding: 12px 8px;"><?= htmlspecialchars($manager['email'] ?? 'N/A') ?></td>
+                                <td style="padding: 12px 8px;"><?= htmlspecialchars(privacy_mask_name((string) ($manager['user_name'] ?? 'N/A')), ENT_QUOTES, 'UTF-8') ?></td>
+                                <td style="padding: 12px 8px;"><?= htmlspecialchars(privacy_mask_email((string) ($manager['email'] ?? 'N/A')), ENT_QUOTES, 'UTF-8') ?></td>
                                 <td style="padding: 12px 8px;"><?= htmlspecialchars($stationText) ?></td>
                                 <td style="padding: 12px 8px;"><span style="color: <?= htmlspecialchars($statusColor) ?>; font-weight: bold;"><?= htmlspecialchars($statusLabel) ?></span></td>
                                 <td style="padding: 12px 8px; text-align: right;">
@@ -481,8 +482,8 @@ endforeach; ?>
                                                     $staffStationText . ' ' .
                                                     $staffStatusLabel
                                                 )), ENT_QUOTES) ?>">
-                                                    <td style="padding: 12px 8px;"><?= htmlspecialchars($staffAccount['user_name'] ?? 'N/A', ENT_QUOTES, 'UTF-8') ?></td>
-                                                    <td style="padding: 12px 8px;"><?= htmlspecialchars($staffAccount['email'] ?? 'N/A', ENT_QUOTES, 'UTF-8') ?></td>
+                                                    <td style="padding: 12px 8px;"><?= htmlspecialchars(privacy_mask_name((string) ($staffAccount['user_name'] ?? 'N/A')), ENT_QUOTES, 'UTF-8') ?></td>
+                                                    <td style="padding: 12px 8px;"><?= htmlspecialchars(privacy_mask_email((string) ($staffAccount['email'] ?? 'N/A')), ENT_QUOTES, 'UTF-8') ?></td>
                                                     <td style="padding: 12px 8px;"><?= htmlspecialchars($staffStationText, ENT_QUOTES, 'UTF-8') ?></td>
                                                     <td style="padding: 12px 8px;"><span style="color: <?= htmlspecialchars($staffStatusColor, ENT_QUOTES, 'UTF-8') ?>; font-weight: bold;"><?= htmlspecialchars($staffStatusLabel, ENT_QUOTES, 'UTF-8') ?></span></td>
                                                     <td style="padding: 12px 8px; text-align: right;"><span class="text-muted">Managed by branch manager</span></td>

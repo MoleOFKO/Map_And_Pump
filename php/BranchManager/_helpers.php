@@ -10,6 +10,7 @@ if (session_status() === PHP_SESSION_NONE) {
 
 require_once __DIR__ . '/../conn.php';   // provides $pdo and $conn
 require_once __DIR__ . '/../profile_avatar.php';
+require_once __DIR__ . '/../shared/privacy_display.php';
 
 // -------- Auth guard --------
 // Redirects to login if the current visitor is not signed in as a branch manager.

@@ -432,7 +432,7 @@ $redemptionValues = array_values($redemptions ?? []);
     <?php if (isset($tierRules, $redemptions, $pointsRate)): ?>
     <section class="row g-3 loyalty-summary mb-4" aria-label="Loyalty and billing summary">
         <div class="col-md-4"><article class="loyalty-metric-card"><div><span>Budget this month</span><strong><?= number_format($monthlyBudget, 2) ?><small>MMK</small></strong></div><i class="bi bi-calendar2-check" aria-hidden="true"></i></article></div>
-        <div class="col-md-4"><article class="loyalty-metric-card"><div><span>Discounts given</span><strong><?= number_format($spentThisMonth, 2) ?><small>MMK</small></strong></div><i class="bi bi-receipt" aria-hidden="true"></i></article></div>
+        <div class="col-md-4"><article class="loyalty-metric-card"><div><span>Refunded to Companies</span><strong><?= number_format($spentThisMonth, 2) ?><small>MMK</small></strong></div><i class="bi bi-receipt" aria-hidden="true"></i></article></div>
         <div class="col-md-4"><article class="loyalty-metric-card"><div><span>Owed to companies</span><strong><?= number_format($companyTotalBalance, 2) ?><small>MMK</small></strong></div><i class="bi bi-wallet2" aria-hidden="true"></i></article></div>
     </section>
 
@@ -460,7 +460,7 @@ $redemptionValues = array_values($redemptions ?? []);
                     <div class="row g-3">
                         <div class="col-md-4">
                             <label class="form-label" for="points-per-liter">Points per liter</label>
-                            <input class="form-control" id="points-per-liter" name="points_per_liter" type="number" min="0" max="1000" step="0.01" value="<?= hq_escape($pointsRate) ?>" required>
+                            <input class="form-control" id="points-per-liter" name="points_per_liter" type="number" min="0" max="1000" step="0.01" value="<?= hq_escape(rtrim(rtrim(number_format((float) $pointsRate, 4, '.', ''), '0'), '.')) ?>" required>
                         </div>
                         <div class="col-md-4">
                             <label class="form-label" for="registration-fee">Registration fee (MMK)</label>
@@ -530,7 +530,7 @@ $redemptionValues = array_values($redemptions ?? []);
         <div class="loyalty-section-heading"><span class="loyalty-section-icon"><i class="bi bi-wallet2" aria-hidden="true"></i></span><div><h2 class="h5 mb-0">Amounts due</h2></div></div>
         <div class="table-responsive mb-4">
             <table class="table loyalty-table align-middle">
-                <thead><tr><th>Company</th><th class="text-end">Discounted</th></tr></thead>
+                <thead><tr><th>Company</th><th class="text-end">Owned</th></tr></thead>
                 <tbody>
                 <?php foreach ($companyAccounts as $account): ?>
                     <tr>

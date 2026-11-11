@@ -363,13 +363,13 @@ $flashType = (string) ($flash['type'] ?? '');
                     $roleName = (string) ($row['role_name'] ?? '');
                     ?>
                     <tr>
-                        <td><div class="d-flex align-items-center gap-3"><div class="rounded-circle d-flex align-items-center justify-content-center text-white" style="width:42px;height:42px;background:rgba(0,244,255,.1);border:1px solid rgba(0,244,255,.3);flex-shrink:0;"><i class="bi bi-person-badge txt-neon-cyan"></i></div><div><div class="fw-semibold text-white"><?= hq_escape((string) $row['user_name']) ?></div><div class="text-white-50 small">Account ID <?= (int) $row['user_id'] ?></div></div></div></td>
-                        <td class="text-white-50"><?= hq_escape((string) $row['email']) ?></td>
+                        <td><div class="d-flex align-items-center gap-3"><div class="rounded-circle d-flex align-items-center justify-content-center text-white" style="width:42px;height:42px;background:rgba(0,244,255,.1);border:1px solid rgba(0,244,255,.3);flex-shrink:0;"><i class="bi bi-person-badge txt-neon-cyan"></i></div><div><div class="fw-semibold text-white"><?= hq_escape(privacy_mask_name((string) $row['user_name'])) ?></div><div class="text-white-50 small">Account ID <?= (int) $row['user_id'] ?></div></div></div></td>
+                        <td class="text-white-50"><?= hq_escape(privacy_mask_email((string) $row['email'])) ?></td>
                         <td><span class="moderator-role <?= hq_escape(moderator_role_class($roleName)) ?>"><?= hq_escape(moderator_role_label($roleName)) ?></span></td>
                         <td class="text-white-50"><?= hq_escape(hq_date((string) ($row['updated_at'] ?? ''))) ?></td>
                         <td><span class="moderator-status <?= hq_escape(moderator_status_class($status)) ?>"><?= hq_escape(moderator_status_label($status)) ?></span></td>
                         <td class="text-end"><div class="d-flex gap-2 justify-content-end">
-                            <button type="button" class="btn-action btn-action-danger js-status-moderator" title="Update account status" aria-label="Update status for <?= hq_escape((string) $row['user_name']) ?>" data-bs-toggle="modal" data-bs-target="#statusAdminModal" data-user-id="<?= (int) $row['user_id'] ?>" data-user-name="<?= hq_escape((string) $row['user_name']) ?>" data-status="<?= hq_escape($status) ?>"><i class="bi bi-person-x-fill"></i></button>
+                            <button type="button" class="btn-action btn-action-danger js-status-moderator" title="Update account status" aria-label="Update status for <?= hq_escape(privacy_mask_name((string) $row['user_name'])) ?>" data-bs-toggle="modal" data-bs-target="#statusAdminModal" data-user-id="<?= (int) $row['user_id'] ?>" data-user-name="<?= hq_escape(privacy_mask_name((string) $row['user_name'])) ?>" data-status="<?= hq_escape($status) ?>"><i class="bi bi-person-x-fill"></i></button>
                         </div></td>
                     </tr>
                 <?php endforeach; ?>
@@ -509,6 +509,19 @@ $flashType = (string) ($flash['type'] ?? '');
                     .replace(/'/g, '&#39;');
             }
 
+            function maskEmail(value) {
+                const email = String(value ?? '').trim();
+                const separator = email.indexOf('@');
+                if (separator < 1) return email;
+                const local = email.slice(0, separator);
+                const visible = local.slice(0, 2);
+                return `${visible}${'*'.repeat(Math.max(1, local.length - visible.length))}${email.slice(separator)}`;
+            }
+
+            function maskName(value) {
+                return String(value ?? '').replace(/[\p{L}\p{N}][\p{L}\p{N}'’.-]*/gu, (word) => `${word.slice(0, 1)}${'*'.repeat(Math.max(1, word.length - 1))}`);
+            }
+
             function setMode(mode) {
                 const isHire = mode === 'hire';
                 createForm?.classList.toggle('d-none', isHire);
@@ -534,7 +547,7 @@ $flashType = (string) ($flash['type'] ?? '');
                 if (!user || !targetInput) return;
                 targetInput.value = String(user.user_id || '');
                 if (selectedLabel) {
-                    selectedLabel.textContent = `${user.user_name || 'Account'} · ${user.email || ''} (${displayAccountRole(user.role_name)})`;
+                    selectedLabel.textContent = `${maskName(user.user_name || 'Account')} · ${maskEmail(user.email || '')} (${displayAccountRole(user.role_name)})`;
                 }
                 selectedChip?.classList.add('show');
                 resultsBox?.querySelectorAll('tbody tr').forEach((row) => row.classList.toggle('is-selected', row.dataset.userId === String(user.user_id)));
@@ -561,7 +574,7 @@ $flashType = (string) ($flash['type'] ?? '');
                     tr.dataset.userId = String(row.user_id || '');
                     if (targetInput?.value === String(row.user_id)) tr.classList.add('is-selected');
                     const displayRole = displayAccountRole(row.role_name);
-                    tr.innerHTML = `<td><div class="d-flex align-items-center gap-3"><div class="rounded-3 d-flex align-items-center justify-content-center fw-bold" style="width:44px;height:44px;background:rgba(0,244,255,.1);border:1px solid rgba(0,244,255,.28);color:var(--neon-cyan)">${escapeHtml(row.initials || 'A')}</div><div><div class="fw-semibold text-white">${escapeHtml(row.user_name || 'Name unavailable')}</div><div class="text-white-50 small">Account ID: ${escapeHtml(row.user_id || '')}</div></div></div></td><td class="text-white-50">${escapeHtml(row.email || 'Not provided')}</td><td class="text-white-50">${escapeHtml(row.hq_name || 'Not linked')}</td><td class="text-white-50">${escapeHtml(displayRole)}</td>`;
+                    tr.innerHTML = `<td><div class="d-flex align-items-center gap-3"><div class="rounded-3 d-flex align-items-center justify-content-center fw-bold" style="width:44px;height:44px;background:rgba(0,244,255,.1);border:1px solid rgba(0,244,255,.28);color:var(--neon-cyan)">${escapeHtml(row.initials || 'A')}</div><div><div class="fw-semibold text-white">${escapeHtml(maskName(row.user_name || 'Name unavailable'))}</div><div class="text-white-50 small">Account ID: ${escapeHtml(row.user_id || '')}</div></div></div></td><td class="text-white-50">${escapeHtml(maskEmail(row.email || 'Not provided'))}</td><td class="text-white-50">${escapeHtml(row.hq_name || 'Not linked')}</td><td class="text-white-50">${escapeHtml(displayRole)}</td>`;
                     tr.addEventListener('click', () => selectHireTarget(row));
                     accountsBody.appendChild(tr);
                 });

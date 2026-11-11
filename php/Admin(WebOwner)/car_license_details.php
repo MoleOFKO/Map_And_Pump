@@ -92,7 +92,7 @@ while ($conflictResult && ($match = $conflictResult->fetch_assoc())) {
 }
 $conflictQuery->close();
 
-echo json_encode([
+echo json_encode(privacy_mask_sensitive_data([
     'success' => true,
     'car' => [
         'car_license_id' => (int) $car['car_license_id'],
@@ -111,4 +111,4 @@ echo json_encode([
         'owners' => $owners,
     ],
     'conflicts' => $conflicts,
-]);
+]), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);

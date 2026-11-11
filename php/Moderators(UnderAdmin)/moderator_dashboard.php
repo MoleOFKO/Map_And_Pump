@@ -194,12 +194,12 @@ $updatedLabel = $updatedAt ? moderator_format_date($updatedAt) : 'Not available'
     };
     $addPriorityTask('Inbound requests awaiting review', (int) $requestSummary['pending'], 'Awaiting review', 'view_requests(M).php?status=pending', 'bi-inbox');
     $addPriorityTask('Driver account verifications', $pendingAccounts, 'Awaiting verification', 'view_requests(M).php?type=account&status=pending', 'bi-person-vcard');
-    $addPriorityTask('Vehicle license reviews', $pendingCarLicenseReviewCount, 'Awaiting review', 'view_requests(M).php?type=account&status=pending', 'bi-car-front');
+    $addPriorityTask('Vehicle license reviews', $pendingCarLicenseReviewCount, 'Awaiting review', 'view_requests(M).php?type=car_license&status=pending', 'bi-car-front');
     $addPriorityTask('Payment confirmations to verify', $pendingPaymentReviewCount, 'Awaiting verification', 'view_requests(M).php?type=payment&status=pending', 'bi-cash-coin');
     $addPriorityTask('Company licenses expiring soon', (int) ($expiryPayload['warning_hq'] ?? 0), 'Due within 10 days', 'view_hq_and_user_account(M).php?expiry=warning', 'bi-building');
     $addPriorityTask('Driver licenses expiring soon', (int) ($expiryPayload['warning_users'] ?? 0), 'Due within 10 days', 'view_users(M).php?expiry=warning', 'bi-person-vcard');
     $addPriorityTask('Expired company licenses', (int) ($expiryPayload['expired_hq'] ?? 0), 'Renewal follow-up', 'view_hq_and_user_account(M).php?expiry=expired', 'bi-building-exclamation');
-    $addPriorityTask('Expired driver licenses', (int) ($expiryPayload['expired_users'] ?? 0), 'Renewal follow-up', 'view_users(M).php?expiry=expired', 'bi-person-x');
+    $addPriorityTask('Expired driver licenses', (int) ($expiryPayload['expired_users_all_statuses'] ?? $expiryPayload['expired_users'] ?? 0), 'Renewal follow-up', 'view_users(M).php?expiry=expired', 'bi-person-x');
     ?>
     <div class="row g-3 mb-3">
         <div class="col-12 col-sm-6 col-xl-3">
@@ -250,7 +250,7 @@ $updatedLabel = $updatedAt ? moderator_format_date($updatedAt) : 'Not available'
                     <div class="d-flex align-items-center justify-content-between gap-3">
                         <div>
                             <p class="mb-0 metric-label text-danger">Expired driver licenses</p>
-                            <h3 class="metric-value text-white mb-0"><?= (int) ($expiryPayload['expired_users'] ?? 0) ?></h3>
+                            <h3 class="metric-value text-white mb-0"><?= (int) ($expiryPayload['expired_users_all_statuses'] ?? $expiryPayload['expired_users'] ?? 0) ?></h3>
                         </div>
                         <span class="text-danger fs-3"><i class="bi bi-person-x"></i></span>
                     </div>
