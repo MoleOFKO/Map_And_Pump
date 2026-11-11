@@ -133,7 +133,7 @@ $reportTotal = $reportHqCount + $reportStationCount + $reportOtherCount;
 if ($reportTotal > 0) {
     $reportHqPct = round($reportHqCount / $reportTotal * 100, 2);
     $reportStationPct = round(($reportHqCount + $reportStationCount) / $reportTotal * 100, 2);
-    $reportPieStyle = "background:conic-gradient(var(--neon-cyan) 0 {$reportHqPct}%, var(--neon-blue) {$reportHqPct}% {$reportStationPct}%, #5c91f5 {$reportStationPct}% 100%);";
+    $reportPieStyle = "background:conic-gradient(var(--report-hq-color) 0 {$reportHqPct}%, var(--report-station-color) {$reportHqPct}% {$reportStationPct}%, var(--report-other-color) {$reportStationPct}% 100%);";
 } else {
     $reportHqPct = 0;
     $reportStationPct = 0;
@@ -170,6 +170,9 @@ body.background_color {
     --dash-danger: #ff9aab;
     --neon-cyan: var(--dash-accent);
     --neon-blue: var(--dash-blue);
+    --report-hq-color: #4eaaa5;
+    --report-station-color: #648bd2;
+    --report-other-color: #a47b44;
     background: radial-gradient(ellipse at 90% 0%, rgba(45, 80, 155, .13), transparent 48%), var(--dash-bg);
     color: var(--dash-text);
 }
@@ -184,6 +187,9 @@ body.background_color.light-mode {
     --dash-blue: #3267b2;
     --dash-warning: #865b08;
     --dash-danger: #b0354c;
+    --report-hq-color: #176f6b;
+    --report-station-color: #315da8;
+    --report-other-color: #80541f;
 }
 .dashboard-shell {
     max-width: 1480px;
@@ -250,8 +256,9 @@ body.background_color.light-mode {
 .dashboard-shell .chart-legend li { display: grid; grid-template-columns: 8px minmax(0,1fr) auto; gap: 9px; align-items: center; }
 .dashboard-shell .chart-legend strong { color: var(--dash-text); font-weight: 600; font-variant-numeric: tabular-nums; }
 .dashboard-shell .legend-dot { display: block; width: 8px; height: 8px; border-radius: 50%; }
-.dashboard-shell .report-pie + .pie-panel-text .bg-info { background: var(--dash-accent) !important; }
-.dashboard-shell .report-pie + .pie-panel-text .bg-primary { background: var(--dash-blue) !important; }
+.dashboard-shell .report-pie + .pie-panel-text .bg-info { background: var(--report-hq-color) !important; }
+.dashboard-shell .report-pie + .pie-panel-text .bg-primary { background: var(--report-station-color) !important; }
+.dashboard-shell .report-pie + .pie-panel-text .report-other-dot { background: var(--report-other-color); }
 .dashboard-shell .summary-card { min-height: 205px; transition: border-color .2s, background .2s; }
 .dashboard-shell .dashboard-summary-link { display: block; height: 100%; color: inherit; text-decoration: none; }
 .dashboard-shell .dashboard-summary-link:hover .summary-card { background: var(--dash-raised); border-color: var(--dash-accent); }
@@ -530,7 +537,7 @@ body.light-mode .dashboard-shell .summary-stat-grid span[data-live-request-count
                                 <ul class="chart-legend list-unstyled m-0">
                                     <li><span class="legend-dot bg-info"></span><span>Company Performance</span><strong><?= $reportHqCount ?></strong></li>
                                     <li><span class="legend-dot bg-primary"></span><span>Station Logs</span><strong><?= $reportStationCount ?></strong></li>
-                                    <li><span class="legend-dot" style="background:#5c91f5;"></span><span>Requests/System</span><strong><?= $reportOtherCount ?></strong></li>
+                                    <li><span class="legend-dot report-other-dot"></span><span>Requests/System</span><strong><?= $reportOtherCount ?></strong></li>
                                 </ul>
                             </div>
                         </div>
