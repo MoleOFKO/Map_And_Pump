@@ -40,6 +40,10 @@ function resolveImageUrl(?string $imagePath, string $fallback): string
 
     $imagePath = str_replace('\\', '/', $imagePath);
 
+    if (str_starts_with($imagePath, '/php/HQ/uploads/')) {
+        return './' . substr($imagePath, strlen('/php/HQ/'));
+    }
+
     if (preg_match('#^(https?:)?//#i', $imagePath) || str_starts_with($imagePath, 'data:')) {
         return $imagePath;
     }
@@ -51,7 +55,7 @@ function resolveImageUrl(?string $imagePath, string $fallback): string
     $imagePath = ltrim(preg_replace('#^/?php/HQ/#', '', $imagePath), '/');
 
     if (str_starts_with($imagePath, 'uploads/')) {
-        return '/php/HQ/' . $imagePath;
+        return './' . $imagePath;
     }
 
     if (str_starts_with($imagePath, '../') || str_starts_with($imagePath, './')) {
@@ -115,10 +119,10 @@ if ($userHqRow) {
     if (!empty($userHqRow['email'])) {
         $user_email_display = htmlspecialchars((string) $userHqRow['email'], ENT_QUOTES, 'UTF-8');
     }
-    if (!empty($userHqRow['has_profile_avatar'])) {
-        $user_avatar = '/php/HQ/profile_image.php';
-    } elseif (!empty($userHqRow['oauth_avatar_url'])) {
+    if (!empty($userHqRow['oauth_avatar_url'])) {
         $user_avatar = resolveImageUrl($userHqRow['oauth_avatar_url'], '');
+    } elseif (!empty($userHqRow['has_profile_avatar'])) {
+        $user_avatar = 'profile_image.php';
     }
 
     // Set Brand Details from database
@@ -336,7 +340,7 @@ echo $user_display_name; ?></p>
 echo $user_email_display; ?></p>
                             </div>
                         </div>
-                        <button type="button" class="edit-profile-btn" onclick="routeTo('profile.php'); closeUserDropdown();">Edit Profile</button>
+                        <a class="edit-profile-btn" href="profile.php" target="viewport" onclick="document.getElementById('currentPageLabel').textContent = 'Profile'; closeUserDropdown();">Edit Profile</a>
                     </div>
                 </div>
             </div>
@@ -346,7 +350,7 @@ echo $user_email_display; ?></p>
                     Your business license <?= $userStatus === 'expired' ? 'has expired' : 'renewal is awaiting admin approval' ?>. Access to HQ operations is paused until the license is approved.
                 </div>
             <?php endif; ?>
-            <iframe title="HQ workspace content" id="viewport" class="content-frame" src="<?= htmlspecialchars($hqAccessRestricted ? 'brand.php' : ($extensionPaymentSubmitted ? $extensionReturnTo : 'dashboard.php'), ENT_QUOTES, 'UTF-8') ?>"></iframe>
+            <iframe title="HQ workspace content" id="viewport" name="viewport" class="content-frame" src="<?= htmlspecialchars($hqAccessRestricted ? 'brand.php' : ($extensionPaymentSubmitted ? $extensionReturnTo : 'dashboard.php'), ENT_QUOTES, 'UTF-8') ?>"></iframe>
         </main>
     </div>
 
@@ -463,6 +467,15 @@ echo $user_email_display; ?></p>
         }
     });
 
+    const fallbackAvatar = <?= json_encode(map_pump_profile_initial_svg($user_display_name, 'H'), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
+    function setAvatarFallback(image) {
+        image.onerror = function () {
+            image.onerror = null;
+            image.src = fallbackAvatar;
+        };
+    }
+    document.querySelectorAll('img.user-avatar-small, img.user-avatar-large').forEach(setAvatarFallback);
+
     window.addEventListener('message', function (event) {
         if (event.origin !== window.location.origin || event.data?.type !== 'map-pump-profile-updated') return;
 
@@ -487,6 +500,7 @@ echo $user_email_display; ?></p>
                 }
                 
                 image.className = currentAvatar.className.replace('user-avatar-initial', '').trim();
+                setAvatarFallback(image);
                 image.src = profile.avatarUrl;
                 
                 if (currentAvatar !== image) {

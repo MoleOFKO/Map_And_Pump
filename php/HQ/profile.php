@@ -192,7 +192,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 throw new RuntimeException('The profile picture folder could not be created.');
             }
             $imagePath = $uploadDir . DIRECTORY_SEPARATOR . $fileName;
-            $imageUrl = '/php/HQ/uploads/profile/' . $fileName;
+            $imageUrl = './uploads/profile/' . $fileName;
             if (file_put_contents($imagePath, $imageData, LOCK_EX) !== strlen($imageData)) {
                 if (is_file($imagePath)) {
                     unlink($imagePath);
@@ -245,7 +245,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 throw $exception;
             }
 
-            $avatarUrl = '/php/HQ/profile_image.php';
+            $avatarUrl = $imageUrl;
             $_SESSION['oauth_avatar_url'] = $avatarUrl;
 
             echo json_encode(['ok' => true, 'message' => 'Profile picture updated successfully.', 'avatar_url' => $avatarUrl]);
@@ -348,9 +348,16 @@ $deletionScheduledFor = (string) ($deletionContext['account_deletion_scheduled_f
 
 $profileName = !empty($user['user_name']) ? $user['user_name'] : 'Unknown User';
 $profileEmail = !empty($user['email']) ? $user['email'] : '';
-$profileImage = !empty($user['has_profile_avatar'])
-    ? '/php/HQ/profile_image.php'
-    : map_pump_profile_avatar_url((string) ($user['oauth_avatar_url'] ?? ''), '');
+$storedProfileImage = str_replace('\\', '/', (string) ($user['oauth_avatar_url'] ?? ''));
+if (str_starts_with($storedProfileImage, '/php/HQ/uploads/')) {
+    $storedProfileImage = './' . substr($storedProfileImage, strlen('/php/HQ/'));
+} elseif (str_starts_with($storedProfileImage, 'uploads/')) {
+    $storedProfileImage = './' . $storedProfileImage;
+}
+$profileImage = map_pump_profile_avatar_url(
+    $storedProfileImage,
+    !empty($user['has_profile_avatar']) ? 'profile_image.php' : ''
+);
 $profileInitial = map_pump_profile_initial($profileName, 'H');
 $profileFallbackUrl = map_pump_profile_initial_svg($profileName, 'H');
 $customerRoleStmt = $pdo->query("SELECT role_id FROM roles WHERE LOWER(TRIM(role_name)) = 'customer' LIMIT 1");
@@ -502,6 +509,40 @@ $canLinkCustomer = $canLinkCustomer && $linkedCustomer === null;
             margin: 0;
         }
 
+        .password-field-wrap {
+            position: relative;
+        }
+
+        .password-field-wrap .form-control {
+            padding-right: 2.75rem;
+        }
+
+        .password-field-toggle {
+            position: absolute;
+            top: 50%;
+            right: 0.75rem;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0.25rem;
+            border: 0;
+            background: transparent;
+            color: var(--slate-300);
+            cursor: pointer;
+            transform: translateY(-50%);
+        }
+
+        .password-field-toggle:hover,
+        .password-field-toggle:focus-visible {
+            color: var(--slate-50);
+        }
+
+        .password-field-toggle:focus-visible {
+            outline: 2px solid #38bdf8;
+            outline-offset: 2px;
+            border-radius: 4px;
+        }
+
         .password-modal-close {
             min-width: 0 !important;
             padding: 2px 8px !important;
@@ -568,7 +609,7 @@ $canLinkCustomer = $canLinkCustomer && $linkedCustomer === null;
                         <?php if (!empty($profileImage)): ?>
                             <img id="profilePreview" src="<?= htmlspecialchars($profileImage, ENT_QUOTES, 'UTF-8') ?>" alt="Profile Picture" class="rounded-circle img-thumbnail mb-3" style="width: 130px; height: 130px; object-fit: cover; background-color: #fff;">
                         <?php else: ?>
-                            <img id="profilePreview" src="data:image/svg+xml;utf8,<?= rawurlencode($profileFallbackUrl) ?>" alt="Profile Picture" class="rounded-circle img-thumbnail mb-3" style="width: 130px; height: 130px; object-fit: cover; background-color: #fff;">
+                            <img id="profilePreview" src="<?= htmlspecialchars($profileFallbackUrl, ENT_QUOTES, 'UTF-8') ?>" alt="Profile Picture" class="rounded-circle img-thumbnail mb-3" style="width: 130px; height: 130px; object-fit: cover; background-color: #fff;">
                         <?php endif; ?>
                         <div>
                             <label for="profilePictureInput" class="btn btn-sm btn-outline-secondary text-white">Change Profile Picture</label>
@@ -687,15 +728,30 @@ $canLinkCustomer = $canLinkCustomer && $linkedCustomer === null;
             <form onsubmit="savePassword(event)">
                 <div class="mb-3">
                     <label for="currentPassword" class="form-label">Current Password</label>
-                    <input type="password" class="form-control" id="currentPassword" name="current_password" required>
+                    <div class="password-field-wrap">
+                        <input type="password" class="form-control" id="currentPassword" name="current_password" autocomplete="current-password" required>
+                        <button type="button" class="password-field-toggle" data-password-target="currentPassword" aria-label="Show current password" aria-pressed="false">
+                            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                        </button>
+                    </div>
                 </div>
                 <div class="mb-3">
                     <label for="newPassword" class="form-label">New Password</label>
-                    <input type="password" class="form-control" id="newPassword" name="new_password" required>
+                    <div class="password-field-wrap">
+                        <input type="password" class="form-control" id="newPassword" name="new_password" autocomplete="new-password" required>
+                        <button type="button" class="password-field-toggle" data-password-target="newPassword" aria-label="Show new password" aria-pressed="false">
+                            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                        </button>
+                    </div>
                 </div>
                 <div class="mb-3">
                     <label for="confirmPassword" class="form-label">Confirm New Password</label>
-                    <input type="password" class="form-control" id="confirmPassword" name="confirm_password" required>
+                    <div class="password-field-wrap">
+                        <input type="password" class="form-control" id="confirmPassword" name="confirm_password" autocomplete="new-password" required>
+                        <button type="button" class="password-field-toggle" data-password-target="confirmPassword" aria-label="Show password confirmation" aria-pressed="false">
+                            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                        </button>
+                    </div>
                 </div>
 
                 <div class="password-modal-actions">
@@ -731,11 +787,21 @@ $canLinkCustomer = $canLinkCustomer && $linkedCustomer === null;
                 </div>
                 <div class="mb-3">
                     <label class="form-label" for="linkCustomerPassword">Password</label>
-                    <input class="form-control" id="linkCustomerPassword" name="password" type="password" minlength="8" maxlength="15" autocomplete="new-password" required>
+                    <div class="password-field-wrap">
+                        <input class="form-control" id="linkCustomerPassword" name="password" type="password" minlength="8" maxlength="15" autocomplete="new-password" required>
+                        <button type="button" class="password-field-toggle" data-password-target="linkCustomerPassword" aria-label="Show new customer password" aria-pressed="false">
+                            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                        </button>
+                    </div>
                 </div>
                 <div class="mb-3">
                     <label class="form-label" for="linkCustomerConfirmPassword">Confirm password</label>
-                    <input class="form-control" id="linkCustomerConfirmPassword" name="confirm_password" type="password" minlength="8" maxlength="15" autocomplete="new-password" required>
+                    <div class="password-field-wrap">
+                        <input class="form-control" id="linkCustomerConfirmPassword" name="confirm_password" type="password" minlength="8" maxlength="15" autocomplete="new-password" required>
+                        <button type="button" class="password-field-toggle" data-password-target="linkCustomerConfirmPassword" aria-label="Show new customer password confirmation" aria-pressed="false">
+                            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                        </button>
+                    </div>
                 </div>
                 <div class="form-check mb-3">
                     <input class="form-check-input" id="linkCustomerPrivacyAck" name="test_data_acknowledgement" type="checkbox" value="yes" required>
@@ -775,10 +841,39 @@ $canLinkCustomer = $canLinkCustomer && $linkedCustomer === null;
     <script>
         const serverName = <?= json_encode($profileName, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
         const serverEmail = <?= json_encode($profileEmail, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
-        const serverImage = <?= json_encode(!empty($profileImage) ? $profileImage : ('data:image/svg+xml;utf8,' . rawurlencode($profileFallbackUrl)), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
+        const serverImage = <?= json_encode(!empty($profileImage) ? $profileImage : $profileFallbackUrl, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
 
         window.addEventListener('DOMContentLoaded', () => {
-            document.getElementById('profilePreview').src = serverImage;
+            const preview = document.getElementById('profilePreview');
+            preview.onerror = () => {
+                preview.onerror = null;
+                preview.src = <?= json_encode($profileFallbackUrl, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
+            };
+            preview.src = serverImage;
+        });
+
+        document.querySelectorAll('#passwordModal .password-field-toggle, #newCustomerAccountForm .password-field-toggle').forEach((toggle) => {
+            toggle.addEventListener('click', () => {
+                const passwordInput = document.getElementById(toggle.dataset.passwordTarget);
+                if (!passwordInput) return;
+
+                const isVisible = passwordInput.type === 'password';
+                passwordInput.type = isVisible ? 'text' : 'password';
+                toggle.setAttribute('aria-pressed', String(isVisible));
+                toggle.setAttribute('aria-label', (isVisible ? 'Hide ' : 'Show ')
+                    + (passwordInput.id === 'currentPassword'
+                        ? 'current password'
+                        : passwordInput.id === 'newPassword'
+                            ? 'new password'
+                            : passwordInput.id === 'linkCustomerPassword'
+                                ? 'new customer password'
+                                : passwordInput.id === 'linkCustomerConfirmPassword'
+                                    ? 'new customer password confirmation'
+                            : 'password confirmation'));
+                toggle.innerHTML = isVisible
+                    ? '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3l18 18"></path><path d="M10.6 10.6a2 2 0 002.8 2.8"></path><path d="M9.9 5.2A11 11 0 0112 5c7 0 11 7 11 7a17 17 0 01-4 4.8"></path><path d="M6.2 6.2C3.5 8 1 12 1 12s4 7 11 7a10.7 10.7 0 004.1-.8"></path></svg>'
+                    : '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>';
+            });
         });
 
         window.previewImage = async function(event) {
@@ -817,12 +912,12 @@ $canLinkCustomer = $canLinkCustomer && $linkedCustomer === null;
                     throw new Error(result?.message || `Profile picture upload failed (${response.status}).`);
                 }
 
-                const avatarEndpoint = '/php/HQ/profile_image.php?v=' + Date.now();
-                preview.src = avatarEndpoint;
+                const avatarUrl = result.avatar_url || 'profile_image.php';
+                preview.src = avatarUrl + (avatarUrl.includes('?') ? '&' : '?') + 'v=' + Date.now();
 
                 status.className = 'small mt-2 text-success';
                 status.textContent = result.message || 'Profile picture updated successfully.';
-                notifyParentProfileChange({ avatarUrl: avatarEndpoint });
+                notifyParentProfileChange({ avatarUrl: preview.src });
             } catch (error) {
                 status.className = 'small mt-2 text-danger';
                 status.textContent = error.message || 'Profile picture could not be saved.';
