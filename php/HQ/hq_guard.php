@@ -1,4 +1,7 @@
 <?php
+require_once __DIR__ . '/../Login/session_helper.php';
+map_pump_configure_session();
+
 if (session_status() !== PHP_SESSION_ACTIVE) {
     session_start();
 }
