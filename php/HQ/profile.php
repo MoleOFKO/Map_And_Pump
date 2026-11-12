@@ -644,9 +644,9 @@ $canLinkCustomer = $canLinkCustomer && $linkedCustomer === null;
                 </div>
 
                 <!-- Account Interface Switcher Card -->
-                <div class="card p-4 text-center">
+                <div class="card p-4 text-center" id="customerSwitcherCard" data-switch-csrf="<?= $isHqAuth ? htmlspecialchars((string) ($_SESSION['hq_switch_csrf'] ?? ''), ENT_QUOTES, 'UTF-8') : '' ?>">
                     <h3 class="mb-3">Account Interface Switcher</h3>
-                    <p class="subtitle mb-4">Link a customer account to this HQ to switch between the two profiles.</p>
+                    <p class="subtitle mb-4" id="customerSwitcherDescription"><?= $hasCustomerProfile ? 'Switch between your HQ and linked customer profile.' : 'Link a customer account to this HQ to switch between the two profiles.' ?></p>
                     <?php if ($hasCustomerProfile): ?>
                         <form action="../account_switch.php" method="POST" target="_top">
                             <input type="hidden" name="mode" value="customer">
@@ -1058,6 +1058,46 @@ $canLinkCustomer = $canLinkCustomer && $linkedCustomer === null;
             status.className = `alert ${ok ? 'alert-success' : 'alert-danger'}`;
         }
 
+        function showCustomerSwitchButton() {
+            const card = document.getElementById('customerSwitcherCard');
+            if (!card) return;
+
+            const form = document.createElement('form');
+            form.action = '../account_switch.php';
+            form.method = 'POST';
+            form.target = '_top';
+
+            const mode = document.createElement('input');
+            mode.type = 'hidden';
+            mode.name = 'mode';
+            mode.value = 'customer';
+            form.appendChild(mode);
+
+            const csrfToken = card.dataset.switchCsrf;
+            if (csrfToken) {
+                const csrf = document.createElement('input');
+                csrf.type = 'hidden';
+                csrf.name = 'csrf_token';
+                csrf.value = csrfToken;
+                form.appendChild(csrf);
+            }
+
+            const button = document.createElement('button');
+            button.type = 'submit';
+            button.className = 'btn btn-outline-primary w-100';
+            button.textContent = 'Switch to Customer Profile';
+            form.appendChild(button);
+
+            const previousControl = card.querySelector('button[onclick="openCustomerLinkModal()"]');
+            if (previousControl) {
+                previousControl.replaceWith(form);
+            }
+            const description = document.getElementById('customerSwitcherDescription');
+            if (description) {
+                description.textContent = 'Switch between your HQ and linked customer profile.';
+            }
+        }
+
         function showCustomerLinkOptions() {
             document.getElementById('customerLinkOptions')?.classList.remove('d-none');
             document.getElementById('newCustomerAccountForm')?.classList.add('d-none');
@@ -1124,7 +1164,8 @@ $canLinkCustomer = $canLinkCustomer && $linkedCustomer === null;
             try {
                 const result = await sendCustomerLinkRequest(event.currentTarget, 'verify_code');
                 showCustomerLinkStatus(result.message, true);
-                window.location.reload();
+                showCustomerSwitchButton();
+                closeCustomerLinkModal();
             } catch (error) {
                 showCustomerLinkStatus(error.message);
             }
