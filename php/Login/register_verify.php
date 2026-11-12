@@ -138,7 +138,6 @@ try {
         $updateParams[] = $legacyUserId;
         $pdo->prepare($updateSql)->execute($updateParams);
         $userId = $legacyUserId;
-        map_pump_account_identity_ensure($pdo, 'user', $userId);
     } else {
         $existingStmt = $pdo->prepare('SELECT user_id FROM users WHERE LOWER(email) = LOWER(?) LIMIT 1 FOR UPDATE');
         $existingStmt->execute([$email]);
@@ -158,7 +157,6 @@ try {
         $insertParams[] = 'active';
         $pdo->prepare($insertSql)->execute($insertParams);
         $userId = (int) $pdo->lastInsertId();
-        map_pump_account_identity_ensure($pdo, 'user', $userId);
     }
 
     $stmt = $pdo->prepare(
