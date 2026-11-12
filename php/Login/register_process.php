@@ -96,14 +96,6 @@ function register_validate_email_domain(string $domain): bool
     return true;
 }
 
-function customer_role_id(PDO $pdo): int
-{
-    $stmt = $pdo->prepare("SELECT role_id FROM roles WHERE LOWER(role_name) = 'customer' LIMIT 1");
-    $stmt->execute();
-    $roleId = $stmt->fetchColumn();
-    return $roleId ? (int) $roleId : 6;
-}
-
 function register_mail_setup_message(Throwable $error): string
 {
     $message = strtolower($error->getMessage());
@@ -267,57 +259,35 @@ try {
         }
     }
 
-    $roleId = customer_role_id($pdo);
     $passwordHash = password_hash($password, PASSWORD_DEFAULT);
-    $hasCurrentRole = map_pump_current_role_column_ready($pdo);
-    $userId = 0;
-
-    if ($existingUser) {
-        $userId = (int) $existingUser['user_id'];
-        $updateSql = $hasCurrentRole
-            ? 'UPDATE users SET user_name = ?, hashed_password = ?, role_id = ?, current_role_id = ?, status = ?, updated_at = NOW() WHERE user_id = ?'
-            : 'UPDATE users SET user_name = ?, hashed_password = ?, role_id = ?, status = ?, updated_at = NOW() WHERE user_id = ?';
-        $update = $pdo->prepare($updateSql);
-        $updateParams = [$username, $passwordHash, $roleId];
-        if ($hasCurrentRole) {
-            $updateParams[] = $roleId;
-        }
-        $updateParams[] = 'email_verification_pending';
-        $updateParams[] = $userId;
-        $update->execute($updateParams);
-    } else {
-        $insertSql = $hasCurrentRole
-            ? 'INSERT INTO users (user_name, email, hashed_password, role_id, current_role_id, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())'
-            : 'INSERT INTO users (user_name, email, hashed_password, role_id, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, NOW(), NOW())';
-        $insert = $pdo->prepare($insertSql);
-        $insertParams = [$username, $email, $passwordHash, $roleId];
-        if ($hasCurrentRole) {
-            $insertParams[] = $roleId;
-        }
-        $insertParams[] = 'email_verification_pending';
-        $insert->execute($insertParams);
-        $userId = (int) $pdo->lastInsertId();
-    }
-    map_pump_account_identity_ensure($pdo, 'user', $userId);
-
     $code = (string) random_int(100000, 999999);
-    $_SESSION['pending_registration'] = [
-        'user_id' => $userId,
-        'email' => $email,
-        'code_hash' => password_hash($code, PASSWORD_DEFAULT),
-        'expires_at' => time() + 600,
-        'attempts' => 0,
-        'last_sent_at' => time(),
-    ];
-    if ($staffLinkContext !== null) {
-        $_SESSION['pending_staff_link'] = $staffLinkContext + [
-            'user_id' => $userId,
-            'email' => $email,
-        ];
-    }
-
     try {
         send_registration_code($email, $code);
+
+        $pendingRegistration = [
+            'user_name' => $username,
+            'email' => $email,
+            'password_hash' => $passwordHash,
+            'code_hash' => password_hash($code, PASSWORD_DEFAULT),
+            'expires_at' => time() + 600,
+            'attempts' => 0,
+            'last_sent_at' => time(),
+        ];
+        if ($existingUser) {
+            $pendingRegistration['user_id'] = (int) $existingUser['user_id'];
+        }
+        $_SESSION['pending_registration'] = $pendingRegistration;
+
+        if ($staffLinkContext !== null) {
+            $pendingStaffLink = $staffLinkContext + ['email' => $email];
+            if ($existingUser) {
+                $pendingStaffLink['user_id'] = (int) $existingUser['user_id'];
+            }
+            $_SESSION['pending_staff_link'] = $pendingStaffLink;
+        } else {
+            unset($_SESSION['pending_staff_link']);
+        }
+
         register_json(true, 'We sent a verification code to your email.');
     } catch (Throwable $mailError) {
         error_log('Registration email failed: ' . $mailError->getMessage() . ' [' . get_class($mailError) . ']');

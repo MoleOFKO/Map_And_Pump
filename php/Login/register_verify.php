@@ -54,12 +54,23 @@ if (empty($_SESSION['registration_csrf']) || !hash_equals((string) $_SESSION['re
 }
 
 $pending = $_SESSION['pending_registration'] ?? null;
-if (!is_array($pending) || empty($pending['user_id'])) {
+if (!is_array($pending)) {
+    verify_json(false, 'Your verification session expired. Please register again.');
+}
+
+$email = strtolower(trim((string) ($pending['email'] ?? '')));
+$userName = trim((string) ($pending['user_name'] ?? ''));
+$passwordHash = (string) ($pending['password_hash'] ?? '');
+$legacyUserId = (int) ($pending['user_id'] ?? 0);
+if ($email === ''
+    || empty($pending['code_hash'])
+    || ($legacyUserId <= 0 && ($userName === '' || $passwordHash === ''))) {
+    unset($_SESSION['pending_registration'], $_SESSION['pending_staff_link']);
     verify_json(false, 'Your verification session expired. Please register again.');
 }
 
 if ((int) ($pending['expires_at'] ?? 0) < time()) {
-    unset($_SESSION['pending_registration']);
+    unset($_SESSION['pending_registration'], $_SESSION['pending_staff_link']);
     verify_json(false, 'The verification code expired. Please register again.');
 }
 
@@ -72,7 +83,7 @@ $pending['attempts'] = (int) ($pending['attempts'] ?? 0) + 1;
 $_SESSION['pending_registration'] = $pending;
 
 if ($pending['attempts'] > 5) {
-    unset($_SESSION['pending_registration']);
+    unset($_SESSION['pending_registration'], $_SESSION['pending_staff_link']);
     verify_json(false, 'Too many wrong attempts. Please register again.');
 }
 
@@ -81,11 +92,75 @@ if (!password_verify($code, (string) ($pending['code_hash'] ?? ''))) {
 }
 
 try {
-    $userId = (int) $pending['user_id'];
-    $email = (string) ($pending['email'] ?? '');
-
     $hasCurrentRole = map_pump_current_role_column_ready($pdo);
+    $roleId = customer_role_id($pdo);
     $currentRoleSelect = $hasCurrentRole ? 'current_role_id,' : 'NULL AS current_role_id,';
+    $pdo->beginTransaction();
+
+    if ($legacyUserId > 0) {
+        $existingStmt = $pdo->prepare(
+            'SELECT user_id, status, license_id FROM users WHERE user_id = ? AND LOWER(email) = LOWER(?) LIMIT 1 FOR UPDATE'
+        );
+        $existingStmt->execute([$legacyUserId, $email]);
+        $existingUser = $existingStmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$existingUser) {
+            $pdo->rollBack();
+            unset($_SESSION['pending_registration'], $_SESSION['pending_staff_link']);
+            verify_json(false, 'Your verification session expired. Please register again.');
+        }
+
+        if (!in_array(strtolower(trim((string) ($existingUser['status'] ?? ''))), ['email_verification_pending', 'pending_verification'], true)
+            || !empty($existingUser['license_id'])) {
+            $pdo->rollBack();
+            unset($_SESSION['pending_registration'], $_SESSION['pending_staff_link']);
+            verify_json(false, 'That email is already registered. Please log in instead.');
+        }
+
+        if ($userName !== '' && $passwordHash !== '') {
+            $updateSql = $hasCurrentRole
+                ? 'UPDATE users SET user_name = ?, hashed_password = ?, role_id = ?, current_role_id = ?, status = ?, updated_at = NOW() WHERE user_id = ?'
+                : 'UPDATE users SET user_name = ?, hashed_password = ?, role_id = ?, status = ?, updated_at = NOW() WHERE user_id = ?';
+            $updateParams = [$userName, $passwordHash, $roleId];
+            if ($hasCurrentRole) {
+                $updateParams[] = $roleId;
+            }
+        } else {
+            $updateSql = $hasCurrentRole
+                ? 'UPDATE users SET role_id = ?, current_role_id = ?, status = ?, updated_at = NOW() WHERE user_id = ?'
+                : 'UPDATE users SET role_id = ?, status = ?, updated_at = NOW() WHERE user_id = ?';
+            $updateParams = [$roleId];
+            if ($hasCurrentRole) {
+                $updateParams[] = $roleId;
+            }
+        }
+        $updateParams[] = 'active';
+        $updateParams[] = $legacyUserId;
+        $pdo->prepare($updateSql)->execute($updateParams);
+        $userId = $legacyUserId;
+        map_pump_account_identity_ensure($pdo, 'user', $userId);
+    } else {
+        $existingStmt = $pdo->prepare('SELECT user_id FROM users WHERE LOWER(email) = LOWER(?) LIMIT 1 FOR UPDATE');
+        $existingStmt->execute([$email]);
+        if ($existingStmt->fetchColumn()) {
+            $pdo->rollBack();
+            unset($_SESSION['pending_registration'], $_SESSION['pending_staff_link']);
+            verify_json(false, 'That email is already registered. Please log in instead.');
+        }
+
+        $insertSql = $hasCurrentRole
+            ? 'INSERT INTO users (user_name, email, hashed_password, role_id, current_role_id, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())'
+            : 'INSERT INTO users (user_name, email, hashed_password, role_id, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, NOW(), NOW())';
+        $insertParams = [$userName, $email, $passwordHash, $roleId];
+        if ($hasCurrentRole) {
+            $insertParams[] = $roleId;
+        }
+        $insertParams[] = 'active';
+        $pdo->prepare($insertSql)->execute($insertParams);
+        $userId = (int) $pdo->lastInsertId();
+        map_pump_account_identity_ensure($pdo, 'user', $userId);
+    }
+
     $stmt = $pdo->prepare(
         "SELECT user_id, user_public_id, user_name, email, role_id, business_role_id,
             license_id, {$currentRoleSelect} status
@@ -95,24 +170,19 @@ try {
     );
     $stmt->execute([$userId, $email]);
     $user = $stmt->fetch(PDO::FETCH_ASSOC);
-
     if (!$user) {
-        unset($_SESSION['pending_registration']);
-        verify_json(false, 'Your verification session expired. Please register again.');
-    }
-
-    if (!in_array(strtolower(trim((string) ($user['status'] ?? ''))), ['email_verification_pending', 'pending_verification'], true)) {
-        unset($_SESSION['pending_registration']);
-        verify_json(false, 'That email is already registered. Please log in instead.');
+        throw new RuntimeException('The verified user account could not be loaded.');
     }
 
     $pendingStaffLink = $_SESSION['pending_staff_link'] ?? null;
     if (is_array($pendingStaffLink)) {
-        if ((int) ($pendingStaffLink['user_id'] ?? 0) !== $userId) {
+        $pendingStaffUserId = (int) ($pendingStaffLink['user_id'] ?? 0);
+        if (($pendingStaffUserId > 0 && $pendingStaffUserId !== $userId)
+            || strtolower(trim((string) ($pendingStaffLink['email'] ?? $email))) !== $email) {
+            $pdo->rollBack();
             verify_json(false, 'The staff account link does not match this registration. Please restart the process.');
         }
 
-        $pdo->beginTransaction();
         $staffStmt = $pdo->prepare('SELECT staff_id, branch_id FROM staff WHERE staff_id = ? AND user_id IS NULL AND is_active = 1 LIMIT 1 FOR UPDATE');
         $staffStmt->execute([(int) ($pendingStaffLink['staff_id'] ?? 0)]);
         $staffRecord = $staffStmt->fetch(PDO::FETCH_ASSOC);
@@ -197,7 +267,6 @@ try {
         ]);
     }
 
-    $roleId = customer_role_id($pdo);
     $updateSql = $hasCurrentRole
         ? 'UPDATE users SET role_id = ?, current_role_id = ?, status = ?, updated_at = NOW() WHERE user_id = ?'
         : 'UPDATE users SET role_id = ?, status = ?, updated_at = NOW() WHERE user_id = ?';
@@ -211,6 +280,7 @@ try {
     $update->execute($updateParams);
     $lastLoginUpdate = $pdo->prepare('UPDATE users SET last_login_at = NOW(), updated_at = NOW() WHERE user_id = ?');
     $lastLoginUpdate->execute([$userId]);
+    $pdo->commit();
 
     mail_send_account_notice($email, [
         'kind' => 'account',
