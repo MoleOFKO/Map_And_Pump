@@ -17,6 +17,8 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
 require_once __DIR__ . '/../profile_avatar.php';
 require_once __DIR__ . '/_helpers.php';
 require_once __DIR__ . '/../conn.php';
+require_once __DIR__ . '/../business_scope.php';
+require_once __DIR__ . '/../HQ/report_schema.php';
 require_once __DIR__ . '/../Login/mailer.php';
 require_once __DIR__ . '/../Login/mail_templates.php';
 require_branch_manager();
@@ -444,318 +446,69 @@ function map_pump_existing_customer_invitation(PDO $pdo, int $branchId, string $
 // -------- POST action router --------
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!csrf_check($_POST['csrf'] ?? null)) json_out(['ok' => false, 'error' => 'CSRF failed'], 403);
-    $action = $_POST['action'] ?? '';
 
-    try {
-        if ($action === 'add') {
-            $email = trim((string)($_POST['email'] ?? ''));
-            $hireMessage = trim((string)($_POST['hire_message'] ?? ''));
-            $accountType = strtolower(trim((string)($_POST['account_type'] ?? 'customer')));
-            $password = (string)($_POST['password'] ?? '');
-            $confirmPassword = (string)($_POST['confirm_password'] ?? '');
-
-            if (!in_array($accountType, ['standalone', 'customer'], true)) {
-              json_out(['ok' => false, 'error' => 'Choose an existing customer account or create a new staff account.']);
+    $action = (string) ($_POST['action'] ?? '');
+    if ($action === 'report_status') {
+        try {
+            $reportId = (int) ($_POST['report_id'] ?? 0);
+            $status = strtolower((string) ($_POST['status'] ?? ''));
+            if ($reportId <= 0 || !in_array($status, ['read', 'unread'], true)) {
+                json_out(['ok' => false, 'error' => 'Invalid report status request.'], 400);
             }
 
-            if ($email === '') {
-                json_out(['ok' => false, 'error' => 'Email address is required.']);
-            }
-            if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-                json_out(['ok' => false, 'error' => 'Invalid email address']);
-            }
-            if ($hireMessage === '') {
-                json_out(['ok' => false, 'error' => 'Please add a hire message before sending the invite.']);
-            }
+            hq_report_ensure_scope_schema($pdo);
+            $stmt = $pdo->prepare(
+                'UPDATE report r
+                 INNER JOIN staff s ON s.user_id = r.user_id
+                 SET r.status = :status
+                 WHERE r.report_id = :report_id
+                   AND r.role_id = 5
+                   AND s.branch_id = :branch_id'
+            );
+            $stmt->execute([
+                ':status' => $status,
+                ':report_id' => $reportId,
+                ':branch_id' => $bid,
+            ]);
 
-            if ($accountType === 'standalone') {
-                if ($password === '' || $confirmPassword === '') {
-                    json_out(['ok' => false, 'error' => 'Please provide and confirm a staff password.']);
-                }
-                if ($password !== $confirmPassword) {
-                    json_out(['ok' => false, 'error' => 'The password and confirmation do not match.']);
-                }
-                if (!preg_match('/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,15}$/', $password)) {
-                    json_out(['ok' => false, 'error' => 'Use 8-15 characters with upper and lower case letters, a number, and a symbol.']);
-                }
-                $existingUser = $pdo->prepare('SELECT user_id FROM users WHERE LOWER(TRIM(email)) = LOWER(TRIM(?)) LIMIT 1');
-                $existingUser->execute([$email]);
-                if ($existingUser->fetchColumn()) {
-                  json_out(['ok' => false, 'error' => 'This email already has an account. Choose Link Existing Account instead.']);
-                }
-                if (staff_email_in_use($pdo, $email)) {
-                    json_out(['ok' => false, 'error' => 'This email is already in use by another staff account.']);
-                }
+            if ($stmt->rowCount() === 0) {
+                json_out(['ok' => false, 'error' => 'Report not found in this branch.'], 404);
             }
 
-            try {
-                $pdo->beginTransaction();
-                if ($accountType === 'standalone') {
-                    $fullName = trim((string)($_POST['full_name'] ?? ''));
-                    $contact = trim((string)($_POST['contact'] ?? ''));
-                    $contact = $contact === '' ? null : $contact;
-                    if ($fullName === '') {
-                        $pdo->rollBack();
-                        json_out(['ok' => false, 'error' => 'Full name is required for standalone staff accounts.']);
-                    }
-
-                    $staffCode = next_available_staff_code($pdo, $bid);
-                    $hash = password_hash($password, PASSWORD_DEFAULT);
-                    $insert = $pdo->prepare(
-                        "INSERT INTO staff (branch_id, full_name, email, staff_password, contact, staff_code, user_id, is_active, hired_at, created_at, updated_at)
-                         VALUES (:branch_id, :full_name, :email, :staff_password, :contact, :staff_code, NULL, 1, CURDATE(), NOW(), NOW())"
-                    );
-                    $insert->execute([
-                        ':branch_id' => $bid,
-                        ':full_name' => $fullName,
-                        ':email' => $email,
-                        ':staff_password' => $hash,
-                        ':contact' => $contact,
-                        ':staff_code' => $staffCode,
-                    ]);
-
-                    $staffId = (int) $pdo->lastInsertId();
-                    map_pump_account_identity_ensure($pdo, 'staff', $staffId);
-                    $companyName = map_pump_branch_company_name($pdo, $bid);
-                    $roleName = 'Staff';
-                    $loginLink = ((isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http') . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost') . '/php/Login/login.php';
-                    $body = '<p>Hello ' . htmlspecialchars($fullName, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') . ',</p>'
-                        . '<p>You have been invited to join <strong>' . htmlspecialchars($companyName, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') . '</strong> as a <strong>' . htmlspecialchars($roleName, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') . '</strong>.</p>'
-                        . '<p>Your email: <strong>' . htmlspecialchars($email, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') . '</strong></p>'
-                        . '<p>Your password: <strong>' . htmlspecialchars($password, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') . '</strong></p>'
-                        . '<p style="margin: 24px 0;">'
-                        . '<a href="' . htmlspecialchars($loginLink, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') . '" style="display:inline-block;background-color:#0d6efd;color:#ffffff;text-decoration:none;padding:12px 24px;border-radius:6px;font-weight:600;">Login to Map & Pump</a>'
-                        . '</p>'
-                        . '<p>After signing in, you can use your existing email and password to access your staff account.</p>';
-                    $subject = 'Invitation to join ' . $companyName . ' as a ' . $roleName;
-                    $emailSent = map_pump_send_staff_invitation_email($email, $subject, $body);
-                    $notificationMessage = $emailSent ? 'Standalone staff account created and login instructions sent.' : 'Standalone staff account created. Email delivery could not be completed; share the password securely with the staff member.';
-                    $pdo->commit();
-                    log_activity($pdo, $bid, 'user', $user['user_id'], $user['full_name'], 'Created standalone staff account: ' . $fullName . ' (' . $staffCode . ')');
-                    json_out(['ok' => true, 'message' => $notificationMessage, 'staff_id' => $staffId]);
-                }
-
-                $result = map_pump_existing_customer_invitation($pdo, $bid, $email, $hireMessage, (int) $user['user_id']);
-                $pdo->commit();
-
-                log_activity($pdo, $bid, 'user', $user['user_id'], $user['full_name'], 'Sent staff invitation to ' . $email);
-                json_out([
-                    'ok' => true,
-                    'message' => 'Staff invite sent successfully.',
-                    'invitation_id' => (int) ($result['invitation_id'] ?? 0),
-                ]);
-            } catch (Throwable $e) {
-                if ($pdo->inTransaction()) {
-                    $pdo->rollBack();
-                }
-                json_out(['ok' => false, 'error' => $e->getMessage()], 400);
-            }
+            json_out(['ok' => true, 'status' => $status]);
+        } catch (Throwable $e) {
+            error_log('Unable to update staff report status: ' . $e->getMessage());
+            json_out(['ok' => false, 'error' => 'Unable to update the report.'], 500);
         }
+    }
 
-        if ($action === 'edit') {
-            $sid       = (int)($_POST['staff_id'] ?? 0);
-            $full_name = trim($_POST['full_name'] ?? '');
-            $email     = trim($_POST['email'] ?? '');
-            $contact   = trim($_POST['contact'] ?? '');
-
-            if ($full_name === '') json_out(['ok' => false, 'error' => 'Name required']);
-            if ($email !== '' && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
-                json_out(['ok' => false, 'error' => 'Invalid email address']);
+    if ($action === 'report_delete') {
+        try {
+            $reportId = (int) ($_POST['report_id'] ?? 0);
+            if ($reportId <= 0) {
+                json_out(['ok' => false, 'error' => 'Invalid report id.'], 400);
             }
 
-            $staffRow = $pdo->prepare("SELECT staff_code, user_id, email FROM staff WHERE staff_id = :sid AND branch_id = :b LIMIT 1");
-            $staffRow->execute([':sid' => $sid, ':b' => $bid]);
-            $staffData = $staffRow->fetch(PDO::FETCH_ASSOC);
-            if (!$staffData) {
-                json_out(['ok' => false, 'error' => 'Staff record not found.']);
+            $stmt = $pdo->prepare(
+                'DELETE r FROM report r
+                 INNER JOIN staff s ON s.user_id = r.user_id
+                 WHERE r.report_id = :report_id
+                   AND r.role_id = 5
+                   AND s.branch_id = :branch_id'
+            );
+            $stmt->execute([':report_id' => $reportId, ':branch_id' => $bid]);
+            if ($stmt->rowCount() === 0) {
+                json_out(['ok' => false, 'error' => 'Report not found in this branch.'], 404);
             }
 
-            if ($email !== '' && staff_email_in_use($pdo, $email, null, $sid)) {
-                json_out(['ok' => false, 'error' => 'This email is already in use by another staff record.']);
-            }
-            if (!preg_match('/^\d{11}$/', $contact)) {
-                json_out(['ok' => false, 'error' => 'Phone number must be exactly 11 digits and contain only numbers.']);
-            }
-            if (staff_name_in_use($pdo, $full_name, $sid)) {
-                json_out(['ok' => false, 'error' => 'A staff member with the same name already exists in this branch.']);
-            }
-            if (staff_contact_in_use($pdo, $contact, $sid)) {
-                json_out(['ok' => false, 'error' => 'A staff member with the same phone number already exists in this branch.']);
-            }
-
-            $setClauses = ['full_name = :n', 'contact = :p'];
-            $params = [':n' => $full_name, ':p' => $contact, ':sid' => $sid, ':b' => $bid];
-            if (staff_has_column($pdo, 'email')) {
-                $setClauses[] = 'email = :e';
-                $params[':e'] = $email;
-            }
-            if (staff_has_column($pdo, 'updated_at')) {
-                $setClauses[] = 'updated_at = NOW()';
-            }
-
-            $sql = 'UPDATE staff SET ' . implode(', ', $setClauses) . ' WHERE staff_id = :sid AND branch_id = :b';
-            $stmt = $pdo->prepare($sql);
-            $stmt->execute($params);
-
-            log_activity($pdo, $bid, 'user', $user['user_id'], $user['full_name'], "Edited staff #{$sid}");
-            json_out(['ok' => true, 'staff_code' => $staffData['staff_code'] ?? '']);
-        }
-
-        if ($action === 'delete') {
-            $sid = (int)($_POST['staff_id'] ?? 0);
-
-            $pdo->beginTransaction();
-            $stmt = $pdo->prepare("SELECT staff_id, user_id, full_name, staff_code FROM staff WHERE staff_id = :sid AND branch_id = :branch_id FOR UPDATE");
-            $stmt->execute([':sid' => $sid, ':branch_id' => $bid]);
-            $target = $stmt->fetch(PDO::FETCH_ASSOC);
-            if (!$target) {
-                $pdo->rollBack();
-                json_out(['ok' => false, 'error' => 'That staff account is not available in your branch.'], 404);
-            }
-
-            if (!empty($target['user_id'])) {
-                $customerRoleId = map_pump_customer_role_id($pdo);
-                $updateUserRole = $pdo->prepare("UPDATE users SET business_role_id = :role_id, current_role_id = :role_id WHERE user_id = :user_id");
-                $updateUserRole->execute([':role_id' => $customerRoleId, ':user_id' => (int)$target['user_id']]);
-            }
-
-            $delete = $pdo->prepare("DELETE FROM staff WHERE staff_id = :sid AND branch_id = :branch_id");
-            $delete->execute([':sid' => $sid, ':branch_id' => $bid]);
-            if ($delete->rowCount() !== 1) {
-                $pdo->rollBack();
-                json_out(['ok' => false, 'error' => 'The staff account could not be deleted. Please refresh and try again.'], 409);
-            }
-            $pdo->commit();
-
-            $staffLabel = "{$target['full_name']} ({$target['staff_code']})";
-            log_activity($pdo, $bid, 'user', $user['user_id'], $user['full_name'], "Deleted staff account: {$staffLabel}");
             json_out(['ok' => true]);
+        } catch (Throwable $e) {
+            error_log('Unable to delete staff report: ' . $e->getMessage());
+            json_out(['ok' => false, 'error' => 'Unable to delete the report.'], 500);
         }
-
-        if ($action === 'activate' || $action === 'disable') {
-            $sid = (int)($_POST['staff_id'] ?? 0);
-            $targetAction = $action === 'activate' ? 'activate' : 'disable';
-            $staffRoleId = map_pump_staff_role_id($pdo);
-            $customerRoleId = map_pump_customer_role_id($pdo);
-            if ($staffRoleId <= 0) {
-                json_out(['ok' => false, 'error' => 'The staff role is not configured for this system.'], 409);
-            }
-
-            $pdo->beginTransaction();
-            $targetStmt = $pdo->prepare(
-                'SELECT s.staff_id, s.user_id, s.branch_id, s.full_name, s.staff_code, s.email, s.is_active
-                 FROM staff s
-                 WHERE s.staff_id = :sid AND s.branch_id = :branch_id
-                 FOR UPDATE'
-            );
-            $targetStmt->execute([':sid' => $sid, ':branch_id' => $bid]);
-            $target = $targetStmt->fetch(PDO::FETCH_ASSOC);
-            if (!$target) {
-                $pdo->rollBack();
-                json_out(['ok' => false, 'error' => 'That staff member is not available in your branch.'], 404);
-            }
-
-            $userId = (int)($target['user_id'] ?? 0);
-            $targetEmail = trim((string)($target['email'] ?? ''));
-            if ($userId > 0) {
-                $newRoleId = $targetAction === 'activate' ? $staffRoleId : $customerRoleId;
-                $userRoleUpdate = $pdo->prepare(
-                    'UPDATE users
-                     SET business_role_id = :business_role_id,
-                         current_role_id = :current_role_id,
-                         updated_at = NOW()
-                     WHERE user_id = :user_id'
-                );
-                $userRoleUpdate->execute([
-                    ':business_role_id' => $newRoleId,
-                    ':current_role_id' => $newRoleId,
-                    ':user_id' => $userId,
-                ]);
-            }
-
-            $statusColumn = staff_has_column($pdo, 'status') ? 'status' : 'is_active';
-            $statusSql = $statusColumn === 'status'
-                ? 'UPDATE staff SET status = :status_value, updated_at = NOW() WHERE staff_id = :sid AND branch_id = :branch_id'
-                : 'UPDATE staff SET is_active = :is_active, updated_at = NOW() WHERE staff_id = :sid AND branch_id = :branch_id';
-            $statusParams = [':sid' => $sid, ':branch_id' => $bid];
-            if ($statusColumn === 'status') {
-                $statusParams[':status_value'] = $targetAction === 'activate' ? 'active' : 'disabled';
-            } else {
-                $statusParams[':is_active'] = $targetAction === 'activate' ? 1 : 0;
-            }
-            $statusStmt = $pdo->prepare($statusSql);
-            $statusStmt->execute($statusParams);
-
-            $expectedStatusValue = $targetAction === 'activate'
-                ? ($statusColumn === 'status' ? 'active' : 1)
-                : ($statusColumn === 'status' ? 'disabled' : 0);
-            $actualStatusSql = $statusColumn === 'status'
-                ? 'SELECT status FROM staff WHERE staff_id = :sid AND branch_id = :branch_id LIMIT 1'
-                : 'SELECT is_active FROM staff WHERE staff_id = :sid AND branch_id = :branch_id LIMIT 1';
-            $actualStatusStmt = $pdo->prepare($actualStatusSql);
-            $actualStatusStmt->execute([':sid' => $sid, ':branch_id' => $bid]);
-            $actualStatusValue = $actualStatusStmt->fetchColumn();
-            if ((string) $actualStatusValue !== (string) $expectedStatusValue) {
-                error_log(sprintf(
-                    '[manage-staff] status-toggle failed for staff_id=%d action=%s expected=%s actual=%s rowcount=%d',
-                    $sid,
-                    $targetAction,
-                    var_export($expectedStatusValue, true),
-                    var_export($actualStatusValue, true),
-                    $statusStmt->rowCount()
-                ));
-                $pdo->rollBack();
-                json_out(['ok' => false, 'error' => 'Unable to update the staff status for this branch.'], 409);
-            }
-
-            $targetUserEmail = $targetEmail !== '' ? $targetEmail : '';
-            if ($targetUserEmail === '') {
-                $targetUserEmailSql = $pdo->prepare('SELECT email FROM users WHERE user_id = :user_id LIMIT 1');
-                $targetUserEmailSql->execute([':user_id' => $userId]);
-                $targetUserEmail = trim((string) $targetUserEmailSql->fetchColumn());
-            }
-            error_log(sprintf(
-                '[manage-staff:%s] about_to_create_notification recipient_user_id=%d staff_id=%d targetUserEmail=%s',
-                $targetAction,
-                $userId,
-                $sid,
-                $targetUserEmail !== '' ? $targetUserEmail : 'EMPTY'
-            ));
-
-            $notificationId = staff_status_notification_create(
-                $pdo,
-                $userId,
-                $sid,
-                $targetAction,
-                $targetUserEmail
-            );
-            error_log(sprintf(
-                '[manage-staff:%s] notification_created notification_id=%d recipient_user_id=%d staff_id=%d',
-                $targetAction,
-                $notificationId,
-                $userId,
-                $sid
-            ));
-            if ($notificationId <= 0) {
-                $pdo->rollBack();
-                json_out(['ok' => false, 'error' => 'Unable to record the staff status notification.'], 409);
-            }
-
-            $pdo->commit();
-            log_activity($pdo, $bid, 'user', $user['user_id'], $user['full_name'], ($targetAction === 'activate' ? 'Activated' : 'Disabled') . " staff #{$sid}");
-            json_out(['ok' => true, 'status' => $targetAction === 'activate' ? 'active' : 'disabled', 'notification_id' => $notificationId]);
-        }
-
-        json_out(['ok' => false, 'error' => 'Unknown action'], 400);
-    } catch (PDOException $e) {
-      if ($pdo->inTransaction()) {
-        $pdo->rollBack();
-      }
-        json_out(['ok' => false, 'error' => $e->getMessage()], 500);
     }
 }
 
-// -------- Staff log viewer (modal) --------
 if (isset($_GET['ajax']) && $_GET['ajax'] === 'staff_logs') {
     header('Content-Type: application/json');
     $logStaffId = (int) ($_GET['staff_id'] ?? 0);
@@ -966,6 +719,84 @@ try {
 } catch (Throwable $e) {
     $activities = [];
     error_log('Unable to load staff activity log: ' . $e->getMessage());
+}
+
+$staffReports = [];
+$reportStartDate = trim((string) ($_GET['report_start_date'] ?? ''));
+$reportEndDate = trim((string) ($_GET['report_end_date'] ?? ''));
+$reportDateValidator = static function (string $date): bool {
+    $dt = DateTime::createFromFormat('Y-m-d', $date);
+    return $dt && $dt->format('Y-m-d') === $date;
+};
+$todayDate = (new DateTimeImmutable('now'))->format('Y-m-d');
+if (!$reportDateValidator($reportStartDate)) {
+    $reportStartDate = $branchCreatedDate !== '' ? $branchCreatedDate : '';
+}
+if (!$reportDateValidator($reportEndDate)) {
+    $reportEndDate = $todayDate;
+}
+if ($branchCreatedDate !== '' && $reportStartDate < $branchCreatedDate) {
+    $reportStartDate = $branchCreatedDate;
+}
+if ($reportEndDate > $todayDate) {
+    $reportEndDate = $todayDate;
+}
+if ($reportStartDate > $reportEndDate) {
+    $reportStartDate = $branchCreatedDate !== '' ? $branchCreatedDate : $reportEndDate;
+}
+
+try {
+    hq_report_ensure_scope_schema($pdo);
+    $reportSql =
+        'SELECT r.report_id,
+                r.user_id,
+                r.importance,
+                r.short_summery,
+                r.message,
+                COALESCE(NULLIF(r.status, ""), "unread") AS report_status,
+                r.created_at,
+                COALESCE(u.user_name, s.full_name, "Staff Member") AS reporter_name
+         FROM report r
+         INNER JOIN staff s ON s.user_id = r.user_id
+         LEFT JOIN users u ON u.user_id = r.user_id
+         WHERE r.role_id = 5
+           AND s.branch_id = :branch_id';
+    $reportParams = [':branch_id' => $bid];
+    if ($reportStartDate !== '') {
+        $reportSql .= ' AND DATE(r.created_at) >= :start_date';
+        $reportParams[':start_date'] = $reportStartDate;
+    }
+    if ($reportEndDate !== '') {
+        $reportSql .= ' AND DATE(r.created_at) <= :end_date';
+        $reportParams[':end_date'] = $reportEndDate;
+    }
+    $reportSql .= ' ORDER BY r.created_at DESC, r.report_id DESC';
+    $reportStmt = $pdo->prepare($reportSql);
+    $reportStmt->execute($reportParams);
+    $rawStaffReports = $reportStmt->fetchAll(PDO::FETCH_ASSOC);
+
+    foreach ($rawStaffReports as $reportRow) {
+        $reportStatus = strtolower((string) ($reportRow['report_status'] ?? 'unread'));
+        if (!in_array($reportStatus, ['read', 'unread'], true)) {
+            $reportStatus = 'unread';
+        }
+        $reportImportance = strtolower(trim((string) ($reportRow['importance'] ?? 'medium')));
+        if (!in_array($reportImportance, ['low', 'medium', 'high'], true)) {
+            $reportImportance = 'medium';
+        }
+        $staffReports[] = [
+            'id' => (int) ($reportRow['report_id'] ?? 0),
+            'user' => (string) ($reportRow['reporter_name'] ?? 'Staff Member'),
+            'date' => (string) ($reportRow['created_at'] ?? ''),
+            'importance' => $reportImportance,
+            'summary' => (string) ($reportRow['short_summery'] ?? 'Staff report'),
+            'description' => (string) ($reportRow['message'] ?? ''),
+            'is_read' => $reportStatus === 'read',
+        ];
+    }
+} catch (Throwable $e) {
+    $staffReports = [];
+    error_log('Unable to load staff reports: ' . $e->getMessage());
 }
 ?>
 <!DOCTYPE html>
@@ -1932,15 +1763,15 @@ try {
                   $staff_contact = trim((string) ($s['phone_number'] ?? ''));
                   $on = (int)$s['is_active'] === 1;
                 ?>
-                <tr data-id="<?= (int)$s['staff_id'] ?>" data-name="<?= h((string) ($s['full_name'] ?? '')) ?>" data-email="<?= h($staff_email) ?>" data-contact="<?= h($staff_contact) ?>" data-search="<?= h(strtolower(trim((string) ($s['full_name'] ?? '') . ' ' . $staff_email . ' ' . (string) ($s['staff_code'] ?? '')))) ?>">
+                <tr data-id="<?= (int)$s['staff_id'] ?>">
                   <td>
                     <div class="staff-name">
                       <div class="mini-avatar"><?= h(initials($s['full_name'])) ?></div>
-                      <div><b><?= h(privacy_mask_name((string) $s['full_name'])) ?></b><span>ID: <?= h($s['staff_code']) ?></span></div>
+                      <div><b><?= h($s['full_name']) ?></b><span>ID: <?= h($s['staff_code']) ?></span></div>
                     </div>
                   </td>
-                  <td><?= $staff_email !== '' ? h(privacy_mask_email($staff_email)) : '<span style="color:var(--slate-400);">—</span>' ?></td>
-                  <td><?= $staff_contact !== '' ? h(privacy_mask_phone($staff_contact)) : ' - ' ?></td>
+                  <td><?= $staff_email !== '' ? h($staff_email) : '<span style="color:var(--slate-400);">—</span>' ?></td>
+                  <td><?= $staff_contact !== '' ? h($staff_contact) : ' - ' ?></td>
                   <td>
                     <span class="status-pill <?= $on ? 'on' : 'off' ?>">
                       <span class="d"></span>
@@ -1949,13 +1780,13 @@ try {
                   </td>
                   <td class="staff-action-cell">
                     <div class="staff-actions-wrap">
-                      <button type="button" class="staff-action-btn view-btn view-action" data-id="<?= (int)$s['staff_id'] ?>" data-name="<?= h(privacy_mask_name((string) $s['full_name'])) ?>" data-code="<?= h($s['staff_code']) ?>" title="View staff logs" aria-label="View staff logs">View Logs</button>
+                      <button type="button" class="staff-action-btn view-btn view-action" data-id="<?= (int)$s['staff_id'] ?>" data-name="<?= h($s['full_name']) ?>" data-code="<?= h($s['staff_code']) ?>" title="View staff logs" aria-label="View staff logs">View Logs</button>
                       <?php if ($on): ?>
                         <button type="button" class="staff-action-btn toggle-btn active" data-action="disable" data-id="<?= (int)$s['staff_id'] ?>" title="Disable staff account" aria-label="Disable staff account">Disable</button>
                       <?php else: ?>
                         <button type="button" class="staff-action-btn toggle-btn activate" data-action="activate" data-id="<?= (int)$s['staff_id'] ?>" title="Activate staff account" aria-label="Activate staff account">Activate</button>
                       <?php endif; ?>
-                      <button type="button" class="staff-action-btn delete-btn delete-action" data-id="<?= (int)$s['staff_id'] ?>" data-name="<?= h(privacy_mask_name((string) $s['full_name'])) ?>" data-code="<?= h($s['staff_code']) ?>" title="Delete staff member" aria-label="Delete staff member">Delete</button>
+                      <button type="button" class="staff-action-btn delete-btn delete-action" data-id="<?= (int)$s['staff_id'] ?>" data-name="<?= h($s['full_name']) ?>" data-code="<?= h($s['staff_code']) ?>" title="Delete staff member" aria-label="Delete staff member">Delete</button>
                     </div>
                   </td>
                 </tr>
@@ -2008,18 +1839,6 @@ try {
               <thead><tr><th>User</th><th>Date</th><th>Importance</th><th>Short Summary</th><th>Status</th><th>Action</th></tr></thead>
               <tbody>
                 <?php
-                /* PREVIEW DATA ONLY - replace with the real staff reports query. */
-                $staffReports = [
-                  ['id'=>1,'user'=>'Aung Ko Latt','date'=>'2026-11-11 13:51:49','importance'=>'high','summary'=>'Pump 3 nozzle leaking','description'=>"Pump 3 nozzle has been leaking since the morning shift.\nPlease send a technician before the evening rush.",'is_read'=>0],
-                  ['id'=>2,'user'=>'Su Su Hlaing','date'=>'2026-11-11 06:58:25','importance'=>'medium','summary'=>'Cash drawer short by 5,000 MMK','description'=>'Cash drawer was short by 5,000 MMK at the end of the night shift. Receipts were rechecked twice.','is_read'=>0],
-                  ['id'=>3,'user'=>'Min Thu','date'=>'2026-11-10 21:12:03','importance'=>'low','summary'=>'Restroom supplies running low','description'=>'Soap and tissue stock is running low. Needs a refill by the weekend.','is_read'=>1],
-                  ['id'=>4,'user'=>'Aung Ko Latt','date'=>'2026-11-10 09:30:41','importance'=>'medium','summary'=>'Delivery truck arrived 2 hours late','description'=>'The fuel delivery truck arrived two hours late. Pumps 1 and 2 were offline for about 40 minutes.','is_read'=>1],
-                  ['id'=>5,'user'=>'Su Su Hlaing','date'=>'2026-11-09 18:05:12','importance'=>'high','summary'=>'Customer complaint about fuel quality on pump 2 that needs a follow up with the supplier this week','description'=>'A customer complained about fuel quality from pump 2. Please follow up with the supplier.','is_read'=>0],
-                  ['id'=>6,'user'=>'Min Thu','date'=>'2026-11-09 08:44:30','importance'=>'low','summary'=>'Broken light at entrance','description'=>'The entrance light is broken.','is_read'=>1],
-                  ['id'=>7,'user'=>'Aung Ko Latt','date'=>'2026-11-08 20:15:00','importance'=>'medium','summary'=>'POS printer paper jam','description'=>'The POS printer jams often.','is_read'=>0],
-                  ['id'=>8,'user'=>'Su Su Hlaing','date'=>'2026-11-08 07:20:09','importance'=>'low','summary'=>'Uniform request','description'=>'Requesting two new uniforms.','is_read'=>1],
-                  ['id'=>9,'user'=>'Min Thu','date'=>'2026-11-07 15:02:44','importance'=>'medium','summary'=>'Tank 2 level sensor reading wrong','description'=>'Tank 2 sensor shows a lower level than the dipstick.','is_read'=>0],
-                ];
                 foreach ($staffReports as $r):
                   $rRead = (int)$r['is_read'] === 1;
                 ?>
@@ -2363,7 +2182,7 @@ try {
     searchInput.addEventListener('input', () => {
       const query = searchInput.value.toLowerCase().trim();
       directoryRows().forEach(row => {
-        const rowText = (row.dataset.search || row.textContent).toLowerCase();
+        const rowText = row.textContent.toLowerCase();
         const matchesSearch = query === '' || rowText.includes(query);
         row.style.display = matchesSearch ? '' : 'none';
       });
@@ -2558,34 +2377,6 @@ try {
         .replace(/'/g, '&#39;');
     }
 
-    function maskEmail(value) {
-      const email = String(value ?? '').trim();
-      const separator = email.indexOf('@');
-      if (separator < 1) return email;
-      const local = email.slice(0, separator);
-      const visible = local.slice(0, 2);
-      return `${visible}${'*'.repeat(Math.max(1, local.length - visible.length))}${email.slice(separator)}`;
-    }
-
-    function maskPhone(value) {
-      const phone = String(value ?? '').trim();
-      const digits = Array.from(phone).filter((character) => /\d/.test(character)).length;
-      if (!digits) return phone;
-      let seen = 0;
-      const preserveAfter = Math.max(0, digits - 2);
-      return Array.from(phone).map((character) => {
-        if (/\d/.test(character)) return seen++ >= preserveAfter ? character : '*';
-        return '*';
-      }).join('');
-    }
-
-    function maskName(value) {
-      return String(value ?? '').replace(/[\p{L}\p{N}][\p{L}\p{N}'’.-]*/gu, (word) => {
-        const characters = Array.from(word);
-        return `${characters[0]}${'*'.repeat(Math.max(1, characters.length - 1))}`;
-      });
-    }
-
     function getInitials(name) {
       if (!name) return '';
       const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -2628,17 +2419,14 @@ try {
             const email = (s.email || '').trim();
             const safeName = escapeHtml(s.full_name || '');
             const safeCode = escapeHtml(s.staff_code || '');
-            const safeEmail = escapeHtml(email ? maskEmail(email) : '');
-            const safeContact = escapeHtml(s.contact ? maskPhone(s.contact) : '');
-            const safeNameDisplay = escapeHtml(maskName(s.full_name || ''));
-            const safeSearch = escapeHtml([s.full_name || '', email, s.staff_code || ''].join(' ').toLowerCase());
-            const safeRawContact = escapeHtml(s.contact || '');
+            const safeEmail = escapeHtml(email || '');
+            const safeContact = escapeHtml(s.contact || '');
             return `
-              <tr data-id="${s.staff_id}" data-name="${safeName}" data-email="${escapeHtml(email)}" data-contact="${safeRawContact}" data-search="${safeSearch}">
+              <tr data-id="${s.staff_id}">
                 <td>
                   <div class="staff-name">
                     <div class="mini-avatar">${escapeHtml(getInitials(s.full_name || ''))}</div>
-                    <div><b>${safeNameDisplay}</b><span>ID: ${safeCode}</span></div>
+                    <div><b>${safeName}</b><span>ID: ${safeCode}</span></div>
                   </div>
                 </td>
                 <td>${email ? safeEmail : '<span style="color:var(--slate-400);">â€”</span>'}</td>
@@ -2651,13 +2439,13 @@ try {
                 </td>
                 <td class="staff-action-cell">
                   <div class="staff-actions-wrap">
-                    <button type="button" class="staff-action-btn view-btn view-action" data-id="${s.staff_id}" data-name="${escapeHtml(maskName(s.full_name || ''))}" data-code="${safeCode}" title="View staff logs" aria-label="View staff logs">View Logs</button>
+                    <button type="button" class="staff-action-btn view-btn view-action" data-id="${s.staff_id}" data-name="${safeName}" data-code="${safeCode}" title="View staff logs" aria-label="View staff logs">View Logs</button>
                     ${isActive ? `
                       <button type="button" class="staff-action-btn toggle-btn active" data-action="disable" data-id="${s.staff_id}" title="Disable staff account" aria-label="Disable staff account">Disable</button>
                     ` : `
                       <button type="button" class="staff-action-btn toggle-btn activate" data-action="activate" data-id="${s.staff_id}" title="Activate staff account" aria-label="Activate staff account">Activate</button>
                     `}
-                    <button type="button" class="staff-action-btn delete-btn delete-action" data-id="${s.staff_id}" data-name="${escapeHtml(maskName(s.full_name || ''))}" data-code="${safeCode}" title="Delete staff member" aria-label="Delete staff member">Delete</button>
+                    <button type="button" class="staff-action-btn delete-btn delete-action" data-id="${s.staff_id}" data-name="${safeName}" data-code="${safeCode}" title="Delete staff member" aria-label="Delete staff member">Delete</button>
                   </div>
                 </td>
               </tr>
@@ -2766,9 +2554,9 @@ try {
       const row = getStaffRowById(staffId);
       if (!row) return;
 
-      const name = row.dataset.name || row.querySelector('.staff-name b')?.textContent.trim() || '';
-      const email = row.dataset.email || '';
-      const contact = row.dataset.contact || '';
+      const name = row.querySelector('.staff-name b')?.textContent.trim() || '';
+      const email = row.cells[1]?.textContent.trim() || '';
+      const contact = row.cells[2]?.textContent.trim() || '';
 
       editTargetRow = row;
       document.getElementById('staff-form-action').value = 'edit';
