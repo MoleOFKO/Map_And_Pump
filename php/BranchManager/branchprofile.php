@@ -5,6 +5,7 @@
  */
 require_once __DIR__ . '/_helpers.php';
 require_once __DIR__ . '/../conn.php';
+require_once __DIR__ . '/../account_identity.php';
 if (!function_exists('map_pump_user_avatar_url')) {
     require_once __DIR__ . '/../profile_avatar.php';
 }

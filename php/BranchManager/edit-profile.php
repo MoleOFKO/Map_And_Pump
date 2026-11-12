@@ -57,226 +57,228 @@ function branch_manager_link_update_target(PDO $pdo, int $branchId, int $current
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && in_array((string) $_POST['action'], ['send_existing_code', 'start_new_registration', 'verify_code'], true)) {
-    try {
-        $linkAction = (string) $_POST['action'];
-        $csrfToken = (string) ($_POST['csrf'] ?? '');
-        if (!csrf_check($csrfToken)) {
-            branch_manager_link_json(false, 'Your session expired. Refresh the page and try again.', 403);
-        }
-
-        $managerUserId = (int) ($_SESSION['user_id'] ?? 0);
-        if ($managerUserId <= 0) {
-            branch_manager_link_json(false, 'Please sign in again before linking an account.', 401);
-        }
-
-        $branchId = branch_manager_link_current_branch_id($pdo, $managerUserId);
-        if ($branchId <= 0) {
-            branch_manager_link_json(false, 'No branch is currently assigned to this manager account.', 409);
-        }
-
-        $customerRoleId = branch_manager_link_customer_role_id($pdo);
-        if ($customerRoleId <= 0) {
-            branch_manager_link_json(false, 'The Customer role is not available.', 503);
-        }
-
-        $now = time();
-        $pending = $_SESSION['branch_manager_link_otp'] ?? null;
-
-        if ($linkAction === 'send_existing_code') {
-            $email = strtolower(trim((string) ($_POST['email'] ?? '')));
-            if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-                branch_manager_link_json(false, 'Enter a valid customer email address.', 422);
-            }
-            if (is_array($pending) && (int) ($pending['last_sent_at'] ?? 0) > $now - 60) {
-                branch_manager_link_json(false, 'Please wait one minute before requesting another code.', 429);
-            }
-
-            $accountStmt = $pdo->prepare(
-                "SELECT u.user_id
-                 FROM users u
-                 WHERE LOWER(TRIM(u.email)) = ?
-                   AND u.role_id = ?
-                   AND LOWER(TRIM(COALESCE(u.status, ''))) IN ('active', 'approved', 'license_expired')
-                   AND u.user_id <> ?
-                   AND NOT EXISTS (
-                       SELECT 1 FROM branches b WHERE b.manager_user_id = u.user_id
-                   )
-                 LIMIT 1"
-            );
-            $accountStmt->execute([$email, $customerRoleId, $managerUserId]);
-            $targetUserId = (int) ($accountStmt->fetchColumn() ?: 0);
-            if ($targetUserId <= 0) {
-                branch_manager_link_json(false, 'No eligible customer account was found for that email.', 404);
-            }
-
-            $code = (string) random_int(100000, 999999);
-            send_registration_code($email, $code);
-            $_SESSION['branch_manager_link_otp'] = [
-                'kind' => 'existing',
-                'branch_id' => $branchId,
-                'manager_user_id' => $managerUserId,
-                'user_id' => $targetUserId,
-                'email' => $email,
-                'code_hash' => password_hash($code, PASSWORD_DEFAULT),
-                'expires_at' => $now + 600,
-                'attempts' => 0,
-                'last_sent_at' => $now,
-            ];
-            branch_manager_link_json(true, 'A 6-digit verification code was sent to that customer account email.');
-        }
-
-        if ($linkAction === 'start_new_registration') {
-            $username = trim((string) ($_POST['username'] ?? ''));
-            $email = strtolower(trim((string) ($_POST['email'] ?? '')));
-            $password = (string) ($_POST['password'] ?? '');
-            $confirmPassword = (string) ($_POST['confirm_password'] ?? '');
-            $acknowledge = (string) ($_POST['test_data_acknowledgement'] ?? '');
-
-            if ($username === '' || strlen($username) > 225) {
-                branch_manager_link_json(false, 'Enter a username no longer than 225 characters.', 422);
-            }
-            if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-                branch_manager_link_json(false, 'Enter a valid email address.', 422);
-            }
-            if ($password !== $confirmPassword) {
-                branch_manager_link_json(false, 'Passwords do not match.', 422);
-            }
-            if (strlen($password) < 8 || strlen($password) > 15 || !preg_match('/[a-z]/', $password) || !preg_match('/[A-Z]/', $password) || !preg_match('/\d/', $password) || !preg_match('/[^a-zA-Z0-9]/', $password)) {
-                branch_manager_link_json(false, 'Password must be 8 to 15 characters and include upper/lowercase letters, a number, and a symbol.', 422);
-            }
-            if ($acknowledge !== 'yes') {
-                branch_manager_link_json(false, 'Confirm the demo privacy notice to continue.', 422);
-            }
-            if (is_array($pending) && (int) ($pending['last_sent_at'] ?? 0) > $now - 60) {
-                branch_manager_link_json(false, 'Please wait one minute before requesting another code.', 429);
-            }
-
-            $dupeStmt = $pdo->prepare('SELECT 1 FROM users WHERE LOWER(TRIM(email)) = ? LIMIT 1');
-            $dupeStmt->execute([$email]);
-            if ($dupeStmt->fetchColumn()) {
-                branch_manager_link_json(false, 'That email is already registered. Link the existing account instead.', 409);
-            }
-
-            $code = (string) random_int(100000, 999999);
-            send_registration_code($email, $code);
-            $_SESSION['branch_manager_link_otp'] = [
-                'kind' => 'new',
-                'branch_id' => $branchId,
-                'manager_user_id' => $managerUserId,
-                'username' => $username,
-                'email' => $email,
-                'password_hash' => password_hash($password, PASSWORD_DEFAULT),
-                'code_hash' => password_hash($code, PASSWORD_DEFAULT),
-                'expires_at' => $now + 600,
-                'attempts' => 0,
-                'last_sent_at' => $now,
-            ];
-            branch_manager_link_json(true, 'A 6-digit verification code was sent. Enter it to create and link the customer account.');
-        }
-
-        if ($linkAction === 'verify_code') {
-            if (!is_array($pending) || (int) ($pending['branch_id'] ?? 0) !== $branchId || (int) ($pending['manager_user_id'] ?? 0) !== $managerUserId || (int) ($pending['expires_at'] ?? 0) < $now) {
-                unset($_SESSION['branch_manager_link_otp']);
-                branch_manager_link_json(false, 'The verification code expired. Request a new code.', 422);
-            }
-
-            $pending['attempts'] = (int) ($pending['attempts'] ?? 0) + 1;
-            if ($pending['attempts'] > 5) {
-                unset($_SESSION['branch_manager_link_otp']);
-                branch_manager_link_json(false, 'Too many incorrect attempts. Request a new code.', 429);
-            }
-            $_SESSION['branch_manager_link_otp'] = $pending;
-
-            $code = preg_replace('/\D+/', '', (string) ($_POST['code'] ?? ''));
-            if (strlen($code) !== 6 || !password_verify($code, (string) ($pending['code_hash'] ?? ''))) {
-                branch_manager_link_json(false, 'The verification code is incorrect.', 422);
-            }
-
-            $pdo->beginTransaction();
-            try {
-                $ownerCheck = $pdo->prepare('SELECT 1 FROM branches WHERE branch_id = ? AND manager_user_id = ? FOR UPDATE');
-                $ownerCheck->execute([$branchId, $managerUserId]);
-                if (!$ownerCheck->fetchColumn()) {
-                    throw new RuntimeException('The branch owner changed before the account could be linked.');
-                }
-
-                $targetUserId = 0;
-                if (($pending['kind'] ?? '') === 'existing') {
-                    $targetStmt = $pdo->prepare(
-                        "SELECT u.user_id
-                         FROM users u
-                         WHERE u.user_id = ?
-                           AND u.role_id = ?
-                           AND LOWER(TRIM(COALESCE(u.status, ''))) IN ('active', 'approved', 'license_expired')
-                           AND u.user_id <> ?
-                           AND NOT EXISTS (SELECT 1 FROM branches b WHERE b.manager_user_id = u.user_id)
-                         FOR UPDATE"
-                    );
-                    $targetStmt->execute([(int) ($pending['user_id'] ?? 0), $customerRoleId, $managerUserId]);
-                    $targetUserId = (int) ($targetStmt->fetchColumn() ?: 0);
-                    if ($targetUserId <= 0) {
-                        throw new RuntimeException('The customer account is no longer eligible to link.');
-                    }
-                } elseif (($pending['kind'] ?? '') === 'new') {
-                    $duplicate = $pdo->prepare('SELECT 1 FROM users WHERE LOWER(TRIM(email)) = ? LIMIT 1 FOR UPDATE');
-                    $duplicate->execute([(string) ($pending['email'] ?? '')]);
-                    if ($duplicate->fetchColumn()) {
-                        throw new RuntimeException('That email was registered while verification was in progress. Link the existing account instead.');
-                    }
-
-                    $hasCurrentRole = map_pump_current_role_column_ready($pdo);
-                    $insertSql = $hasCurrentRole
-                        ? 'INSERT INTO users (user_name, email, hashed_password, role_id, current_role_id, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, "active", NOW(), NOW())'
-                        : 'INSERT INTO users (user_name, email, hashed_password, role_id, status, created_at, updated_at) VALUES (?, ?, ?, ?, "active", NOW(), NOW())';
-                    $insert = $pdo->prepare($insertSql);
-                    $insertParams = [(string) $pending['username'], (string) $pending['email'], (string) $pending['password_hash'], $customerRoleId];
-                    if ($hasCurrentRole) {
-                        $insertParams[] = $customerRoleId;
-                    }
-                    $insert->execute($insertParams);
-                    $targetUserId = (int) $pdo->lastInsertId();
-                    map_pump_account_identity_ensure($pdo, 'user', $targetUserId);
-                } else {
-                    throw new RuntimeException('The link request is invalid.');
-                }
-
-                branch_manager_link_update_target($pdo, $branchId, $managerUserId, $targetUserId);
-                $pdo->commit();
-                unset($_SESSION['branch_manager_link_otp']);
-
-                if (($pending['kind'] ?? '') === 'new') {
-                    try {
-                        if (function_exists('mail_send_account_notice')) {
-                            mail_send_account_notice((string) $pending['email'], [
-                                'kind' => 'account',
-                                'action' => 'created',
-                                'account_label' => (string) $pending['username'],
-                                'effect' => 'Your Map & Pump customer account was created and linked to your branch manager account.',
-                            ]);
-                        }
-                    } catch (Throwable $mailError) {
-                        error_log('Branch manager linked customer welcome email failed: ' . $mailError->getMessage());
-                    }
-                }
-
-                branch_manager_link_json(true, 'Customer account linked successfully.');
-            } catch (Throwable $e) {
-                $pdo->rollBack();
-                throw $e;
-            }
-        }
-
-        branch_manager_link_json(false, 'Unsupported account link request.', 400);
-    } catch (Throwable $linkError) {
-        if ($pdo->inTransaction()) {
-            $pdo->rollBack();
-        }
-        error_log('Branch manager customer account linking failed: ' . $linkError->getMessage());
-        branch_manager_link_json(false, $linkError instanceof RuntimeException ? $linkError->getMessage() : 'The customer account could not be linked. Please try again.', 500);
+    $linkAction = (string) $_POST['action'];
+    $csrfToken = (string) ($_POST['csrf'] ?? '');
+    if (!csrf_check($csrfToken)) {
+        branch_manager_link_json(false, 'Your session expired. Refresh the page and try again.', 403);
     }
+
+    $managerUserId = (int) ($_SESSION['user_id'] ?? 0);
+    if ($managerUserId <= 0) {
+        branch_manager_link_json(false, 'Please sign in again before linking an account.', 401);
+    }
+
+    $branchId = branch_manager_link_current_branch_id($pdo, $managerUserId);
+    if ($branchId <= 0) {
+        branch_manager_link_json(false, 'No branch is currently assigned to this manager account.', 409);
+    }
+
+    $customerRoleId = branch_manager_link_customer_role_id($pdo);
+    if ($customerRoleId <= 0) {
+        branch_manager_link_json(false, 'The Customer role is not available.', 503);
+    }
+
+    $now = time();
+    $pending = $_SESSION['branch_manager_link_otp'] ?? null;
+
+    if ($linkAction === 'send_existing_code') {
+        $email = strtolower(trim((string) ($_POST['email'] ?? '')));
+        if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            branch_manager_link_json(false, 'Enter a valid customer email address.', 422);
+        }
+        if (is_array($pending) && (int) ($pending['last_sent_at'] ?? 0) > $now - 60) {
+            branch_manager_link_json(false, 'Please wait one minute before requesting another code.', 429);
+        }
+
+        $accountStmt = $pdo->prepare(
+            "SELECT u.user_id
+             FROM users u
+             WHERE LOWER(TRIM(u.email)) = ?
+               AND u.role_id = ?
+               AND LOWER(TRIM(COALESCE(u.status, ''))) IN ('active', 'approved', 'license_expired')
+               AND u.user_id <> ?
+               AND NOT EXISTS (
+                   SELECT 1 FROM branches b WHERE b.manager_user_id = u.user_id
+               )
+             LIMIT 1"
+        );
+        $accountStmt->execute([$email, $customerRoleId, $managerUserId]);
+        $targetUserId = (int) ($accountStmt->fetchColumn() ?: 0);
+        if ($targetUserId <= 0) {
+            branch_manager_link_json(false, 'No eligible customer account was found for that email.', 404);
+        }
+
+        $code = (string) random_int(100000, 999999);
+        send_registration_code($email, $code);
+        $_SESSION['branch_manager_link_otp'] = [
+            'kind' => 'existing',
+            'branch_id' => $branchId,
+            'manager_user_id' => $managerUserId,
+            'user_id' => $targetUserId,
+            'email' => $email,
+            'code_hash' => password_hash($code, PASSWORD_DEFAULT),
+            'expires_at' => $now + 600,
+            'attempts' => 0,
+            'last_sent_at' => $now,
+        ];
+        branch_manager_link_json(true, 'A 6-digit verification code was sent to that customer account email.');
+    }
+
+    if ($linkAction === 'start_new_registration') {
+        $username = trim((string) ($_POST['username'] ?? ''));
+        $email = strtolower(trim((string) ($_POST['email'] ?? '')));
+        $password = (string) ($_POST['password'] ?? '');
+        $confirmPassword = (string) ($_POST['confirm_password'] ?? '');
+        $acknowledge = (string) ($_POST['test_data_acknowledgement'] ?? '');
+
+        if ($username === '' || strlen($username) > 225) {
+            branch_manager_link_json(false, 'Enter a username no longer than 225 characters.', 422);
+        }
+        if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            branch_manager_link_json(false, 'Enter a valid email address.', 422);
+        }
+        if ($password !== $confirmPassword) {
+            branch_manager_link_json(false, 'Passwords do not match.', 422);
+        }
+        if (strlen($password) < 8 || strlen($password) > 15 || !preg_match('/[a-z]/', $password) || !preg_match('/[A-Z]/', $password) || !preg_match('/\d/', $password) || !preg_match('/[^a-zA-Z0-9]/', $password)) {
+            branch_manager_link_json(false, 'Password must be 8 to 15 characters and include upper/lowercase letters, a number, and a symbol.', 422);
+        }
+        if ($acknowledge !== 'yes') {
+            branch_manager_link_json(false, 'Confirm the demo privacy notice to continue.', 422);
+        }
+        if (is_array($pending) && (int) ($pending['last_sent_at'] ?? 0) > $now - 60) {
+            branch_manager_link_json(false, 'Please wait one minute before requesting another code.', 429);
+        }
+
+        $dupeStmt = $pdo->prepare('SELECT 1 FROM users WHERE LOWER(TRIM(email)) = ? LIMIT 1');
+        $dupeStmt->execute([$email]);
+        if ($dupeStmt->fetchColumn()) {
+            branch_manager_link_json(false, 'That email is already registered. Link the existing account instead.', 409);
+        }
+
+        $code = (string) random_int(100000, 999999);
+        send_registration_code($email, $code);
+        $_SESSION['branch_manager_link_otp'] = [
+            'kind' => 'new',
+            'branch_id' => $branchId,
+            'manager_user_id' => $managerUserId,
+            'username' => $username,
+            'email' => $email,
+            'password_hash' => password_hash($password, PASSWORD_DEFAULT),
+            'code_hash' => password_hash($code, PASSWORD_DEFAULT),
+            'expires_at' => $now + 600,
+            'attempts' => 0,
+            'last_sent_at' => $now,
+        ];
+        branch_manager_link_json(true, 'A 6-digit verification code was sent. Enter it to create and link the customer account.');
+    }
+
+    if ($linkAction === 'verify_code') {
+        if (!is_array($pending) || (int) ($pending['branch_id'] ?? 0) !== $branchId || (int) ($pending['manager_user_id'] ?? 0) !== $managerUserId || (int) ($pending['expires_at'] ?? 0) < $now) {
+            unset($_SESSION['branch_manager_link_otp']);
+            branch_manager_link_json(false, 'The verification code expired. Request a new code.', 422);
+        }
+
+        $pending['attempts'] = (int) ($pending['attempts'] ?? 0) + 1;
+        if ($pending['attempts'] > 5) {
+            unset($_SESSION['branch_manager_link_otp']);
+            branch_manager_link_json(false, 'Too many incorrect attempts. Request a new code.', 429);
+        }
+        $_SESSION['branch_manager_link_otp'] = $pending;
+
+        $code = preg_replace('/\D+/', '', (string) ($_POST['code'] ?? ''));
+        if (strlen($code) !== 6 || !password_verify($code, (string) ($pending['code_hash'] ?? ''))) {
+            branch_manager_link_json(false, 'The verification code is incorrect.', 422);
+        }
+
+        $pdo->beginTransaction();
+        try {
+            $ownerCheck = $pdo->prepare('SELECT 1 FROM branches WHERE branch_id = ? AND manager_user_id = ? FOR UPDATE');
+            $ownerCheck->execute([$branchId, $managerUserId]);
+            if (!$ownerCheck->fetchColumn()) {
+                throw new RuntimeException('The branch owner changed before the account could be linked.');
+            }
+
+            $targetUserId = 0;
+            if (($pending['kind'] ?? '') === 'existing') {
+                $targetStmt = $pdo->prepare(
+                    "SELECT u.user_id
+                     FROM users u
+                     WHERE u.user_id = ?
+                       AND u.role_id = ?
+                       AND LOWER(TRIM(COALESCE(u.status, ''))) IN ('active', 'approved', 'license_expired')
+                       AND u.user_id <> ?
+                       AND NOT EXISTS (SELECT 1 FROM branches b WHERE b.manager_user_id = u.user_id)
+                     FOR UPDATE"
+                );
+                $targetStmt->execute([(int) ($pending['user_id'] ?? 0), $customerRoleId, $managerUserId]);
+                $targetUserId = (int) ($targetStmt->fetchColumn() ?: 0);
+                if ($targetUserId <= 0) {
+                    throw new RuntimeException('The customer account is no longer eligible to link.');
+                }
+            } elseif (($pending['kind'] ?? '') === 'new') {
+                $duplicate = $pdo->prepare('SELECT 1 FROM users WHERE LOWER(TRIM(email)) = ? LIMIT 1 FOR UPDATE');
+                $duplicate->execute([(string) ($pending['email'] ?? '')]);
+                if ($duplicate->fetchColumn()) {
+                    throw new RuntimeException('That email was registered while verification was in progress. Link the existing account instead.');
+                }
+
+                $hasCurrentRole = map_pump_current_role_column_ready($pdo);
+                $insertSql = $hasCurrentRole
+                    ? 'INSERT INTO users (user_name, email, hashed_password, role_id, current_role_id, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, "active", NOW(), NOW())'
+                    : 'INSERT INTO users (user_name, email, hashed_password, role_id, status, created_at, updated_at) VALUES (?, ?, ?, ?, "active", NOW(), NOW())';
+                $insert = $pdo->prepare($insertSql);
+                $insertParams = [(string) $pending['username'], (string) $pending['email'], (string) $pending['password_hash'], $customerRoleId];
+                if ($hasCurrentRole) {
+                    $insertParams[] = $customerRoleId;
+                }
+                $insert->execute($insertParams);
+                $targetUserId = (int) $pdo->lastInsertId();
+                map_pump_account_identity_ensure($pdo, 'user', $targetUserId);
+            } else {
+                throw new RuntimeException('The link request is invalid.');
+            }
+
+            branch_manager_link_update_target($pdo, $branchId, $managerUserId, $targetUserId);
+            $pdo->commit();
+            unset($_SESSION['branch_manager_link_otp']);
+            // TODO(backend): temporary flag so the button flips to "Switch Account" after linking.
+            // Replace with a real DB lookup (see $linkedCustomerUserId below).
+            $_SESSION['branch_manager_linked_customer_id'] = $targetUserId;
+
+            if (($pending['kind'] ?? '') === 'new') {
+                try {
+                    if (function_exists('mail_send_account_notice')) {
+                        mail_send_account_notice((string) $pending['email'], [
+                            'kind' => 'account',
+                            'action' => 'created',
+                            'account_label' => (string) $pending['username'],
+                            'effect' => 'Your Map & Pump customer account was created and linked to your branch manager account.',
+                        ]);
+                    }
+                } catch (Throwable $mailError) {
+                    error_log('Branch manager linked customer welcome email failed: ' . $mailError->getMessage());
+                }
+            }
+
+            branch_manager_link_json(true, 'Customer account linked successfully.');
+        } catch (Throwable $e) {
+            $pdo->rollBack();
+            throw $e;
+        }
+    }
+
+    branch_manager_link_json(false, 'Unsupported account link request.', 400);
 }
+
 $message = '';
 $message_type = '';
+
+// TODO(backend): load the customer user_id linked to this branch manager from the DB (0 = none).
+// The Account Interface Switcher card shows "Switch Account" when this is > 0,
+// otherwise "Link to Customer Account".
+$linkedCustomerUserId = (int) ($_SESSION['branch_manager_linked_customer_id'] ?? 0);
+$hasLinkedCustomer = $linkedCustomerUserId > 0;
 
 // ------- Avatar upload endpoint (multipart) --------
 // Handled separately so we can respond as JSON to the client-side uploader.
@@ -742,6 +744,7 @@ $has_unread   = $unread_count > 0;
     .account-modal-actions{display:flex; gap:12px; margin-top:22px;}
     .account-modal-actions .account-btn:last-child{flex:1;}
     .account-modal [hidden],.account-management [hidden]{display:none!important;}
+    #switch-feedback{margin:12px 0 0; font-size:12px;}
     @media(max-width:1050px){.account-management .layout-2col{grid-template-columns:minmax(0,1fr);} .account-sidecards{display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:20px;}}
     @media(max-width:600px){.account-sidecards{grid-template-columns:1fr;} .account-management .panel{padding:20px;} .account-modal{padding:12px;} .account-modal .modal-card-custom{padding:22px; max-height:calc(100dvh - 24px);} .account-modal .account-modal-header h3{font-size:20px;}}
 
@@ -1063,8 +1066,12 @@ $has_unread   = $unread_count > 0;
           </section>
           <section class="panel account-sidecard">
             <h3>Account Interface Switcher</h3>
-            <p>Link a customer account to this Branch Manager account to switch between the two profiles.</p>
-            <button type="button" class="account-btn outline full-width" id="switch-account-btn"><i class="fa-solid fa-link" aria-hidden="true"></i> Link to Customer Account</button>
+            <p id="switcher-description-unlinked"<?= $hasLinkedCustomer ? ' hidden' : '' ?>>Link a customer account to this Branch Manager account to switch between the two profiles.</p>
+            <p id="switcher-description-linked"<?= $hasLinkedCustomer ? '' : ' hidden' ?>>Your customer account is linked. Switch to it anytime to use the customer interface.</p>
+            <!-- Two buttons share this one slot; only one is visible at a time. -->
+            <button type="button" class="account-btn outline full-width" id="switch-account-btn"<?= $hasLinkedCustomer ? ' hidden' : '' ?>><i class="fa-solid fa-link" aria-hidden="true"></i> Link to Customer Account</button>
+            <button type="button" class="account-btn outline full-width" id="switch-to-customer-btn"<?= $hasLinkedCustomer ? '' : ' hidden' ?>><i class="fa-solid fa-repeat" aria-hidden="true"></i> Switch Account</button>
+            <p class="account-feedback text-danger" id="switch-feedback" role="alert" hidden></p>
           </section>
         </div>
       </div>
@@ -1257,26 +1264,7 @@ $has_unread   = $unread_count > 0;
         body: data,
         credentials: 'same-origin'
       });
-
-      let result = null;
-      const contentType = response.headers.get('content-type') || '';
-      if (contentType.includes('application/json')) {
-        result = await response.json();
-      } else {
-        const text = await response.text();
-        let parsedText = text.trim();
-        if (parsedText.startsWith('{') || parsedText.startsWith('[')) {
-          try {
-            result = JSON.parse(parsedText);
-          } catch (e) {
-            result = null;
-          }
-        }
-        if (!result) {
-          throw new Error('The customer account could not be linked. Please try again.');
-        }
-      }
-
+      const result = await response.json();
       if (!response.ok || !result.ok) {
         throw new Error(result.message || 'The customer account could not be linked.');
       }
@@ -1359,6 +1347,27 @@ $has_unread   = $unread_count > 0;
     document.getElementById('switch-account-btn')?.addEventListener('click', (e) => {
       openAccountModal(switchModal, e.currentTarget);
       setLinkStep('choice');
+    });
+    document.getElementById('switch-to-customer-btn')?.addEventListener('click', async (e) => {
+      const btn = e.currentTarget;
+      const feedback = document.getElementById('switch-feedback');
+      feedback.hidden = true;
+      btn.disabled = true;
+      try {
+        // TODO(backend): implement action 'switch_to_customer' in edit-profile.php.
+        // Expected JSON: { ok: true, redirect: "/customer/dashboard.php" }
+        const data = new FormData();
+        data.set('action', 'switch_to_customer');
+        data.set('csrf', csrfToken);
+        const response = await fetch('edit-profile.php', { method: 'POST', body: data, credentials: 'same-origin' });
+        const result = await response.json();
+        if (!response.ok || !result.ok) throw new Error(result.message || 'Could not switch accounts.');
+        window.location.href = result.redirect;
+      } catch (error) {
+        feedback.textContent = error.message;
+        feedback.hidden = false;
+        btn.disabled = false;
+      }
     });
     document.getElementById('change-password-btn')?.addEventListener('click', (e) => openAccountModal(passwordModal, e.currentTarget));
     document.getElementById('link-create-btn')?.addEventListener('click', () => setLinkStep('create'));
