@@ -803,7 +803,16 @@ $canLinkCustomer = $canLinkCustomer && $linkedCustomer === null;
                     credentials: 'same-origin',
                     headers: { Accept: 'application/json' }
                 });
-                const result = await response.json().catch(() => null);
+                const responseText = await response.text();
+                let result = null;
+                try {
+                    result = JSON.parse(responseText);
+                } catch {
+                    if (response.redirected || response.url.includes('/Login/login.php')) {
+                        throw new Error('Your session has expired. Please sign in again.');
+                    }
+                    throw new Error(`The server returned an unexpected response while saving the profile picture (HTTP ${response.status}).`);
+                }
                 if (!response.ok || !result?.ok) {
                     throw new Error(result?.message || `Profile picture upload failed (${response.status}).`);
                 }
