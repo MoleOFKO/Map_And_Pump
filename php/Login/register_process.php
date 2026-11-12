@@ -4,13 +4,18 @@ ini_set('display_errors', '0');
 header('Content-Type: application/json; charset=utf-8');
 
 ob_start();
+$registerResponseSent = false;
 set_error_handler(function (int $severity, string $message, string $file, int $line) {
     if (!(error_reporting() & $severity)) {
         return false;
     }
     throw new ErrorException($message, 0, $severity, $file, $line);
 });
-register_shutdown_function(function () {
+register_shutdown_function(function () use (&$registerResponseSent) {
+    if ($registerResponseSent) {
+        return;
+    }
+
     $error = error_get_last();
     if ($error !== null && in_array($error['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR], true)) {
         if (!headers_sent()) {
@@ -35,6 +40,33 @@ function register_json(bool $ok, string $message, array $extra = []): never
     echo json_encode(['ok' => $ok, 'message' => $message] + $extra);
     exit;
 }
+
+function register_json_early(bool $ok, string $message, array $extra = []): void
+{
+    global $registerResponseSent;
+
+    if (session_status() === PHP_SESSION_ACTIVE) {
+        @session_write_close();
+    }
+
+    while (ob_get_level() > 0) {
+        @ob_end_clean();
+    }
+
+    $registerResponseSent = true;
+    http_response_code(202);
+    header('Content-Type: application/json; charset=utf-8');
+    echo json_encode(['ok' => $ok, 'message' => $message] + $extra);
+
+    if (function_exists('fastcgi_finish_request')) {
+        fastcgi_finish_request();
+    } else {
+        flush();
+    }
+
+    ignore_user_abort(true);
+}
+
 function register_validate_email_domain(string $domain): bool
 {
     $domain = strtolower(trim($domain));
@@ -316,11 +348,10 @@ try {
     }
 
     try {
+        register_json_early(true, 'Registration started. Your verification email is being sent.');
         send_registration_code($email, $code);
-        register_json(true, 'We sent a verification code to your email.');
     } catch (Throwable $mailError) {
         error_log('Registration email failed: ' . $mailError->getMessage() . ' [' . get_class($mailError) . ']');
-        register_json(false, register_mail_setup_message($mailError));
     }
 } catch (Throwable $e) {
     error_log('Registration code failed: ' . $e->getMessage() . ' [' . get_class($e) . ']');
