@@ -503,7 +503,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         ':staff_password' => password_hash($password, PASSWORD_DEFAULT),
                     ]);
 
-                    json_out(['ok' => true, 'message' => 'Staff account created successfully.']);
+                    $companyName = map_pump_branch_company_name($pdo, $bid);
+                    $emailNotice = mail_send_account_notice($email, [
+                        'kind' => 'hq_invitation',
+                        'company_name' => $companyName,
+                        'role_name' => 'Staff',
+                        'station_name' => (string) ($branch['branch_name'] ?? 'Branch'),
+                        'account_active' => true,
+                    ]);
+
+                    json_out([
+                        'ok' => true,
+                        'message' => 'Staff account created successfully.',
+                        'email_status' => (string) ($emailNotice['status'] ?? 'failed'),
+                    ]);
                 }
 
                 $hireMessage = trim((string) ($_POST['hire_message'] ?? 'You have been invited to join as a staff member.'));
@@ -624,40 +637,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ':branch_id' => $bid,
             ]);
 
-            if ($stmt->rowCount() === 0) {
-                json_out(['ok' => false, 'error' => 'Report not found in this branch.'], 404);
-            }
-
             json_out(['ok' => true, 'status' => $status]);
         } catch (Throwable $e) {
-            error_log('Unable to update staff report status: ' . $e->getMessage());
-            json_out(['ok' => false, 'error' => 'Unable to update the report.'], 500);
-        }
-    }
-
-    if ($action === 'report_delete') {
-        try {
-            $reportId = (int) ($_POST['report_id'] ?? 0);
-            if ($reportId <= 0) {
-                json_out(['ok' => false, 'error' => 'Invalid report id.'], 400);
-            }
-
-            $stmt = $pdo->prepare(
-                'DELETE r FROM report r
-                 INNER JOIN staff s ON s.user_id = r.user_id
-                 WHERE r.report_id = :report_id
-                   AND r.role_id = 5
-                   AND s.branch_id = :branch_id'
-            );
-            $stmt->execute([':report_id' => $reportId, ':branch_id' => $bid]);
-            if ($stmt->rowCount() === 0) {
-                json_out(['ok' => false, 'error' => 'Report not found in this branch.'], 404);
-            }
-
-            json_out(['ok' => true]);
-        } catch (Throwable $e) {
-            error_log('Unable to delete staff report: ' . $e->getMessage());
-            json_out(['ok' => false, 'error' => 'Unable to delete the report.'], 500);
+            error_log('Staff report status update failed: ' . $e->getMessage());
+            json_out(['ok' => false, 'error' => $e->getMessage() ?: 'Unable to update report status.'], 500);
         }
     }
 }
@@ -858,11 +841,11 @@ try {
          WHERE s.branch_id = :branch_id";
     $activityParams = [':branch_id' => $bid];
     if ($activityStart !== '') {
-        $activitySql .= ' AND DATE(l.created_at) >= :start_date';
+        $activitySql += ' AND DATE(l.created_at) >= :start_date';
         $activityParams[':start_date'] = $activityStart;
     }
     if ($activityEnd !== '') {
-        $activitySql .= ' AND DATE(l.created_at) <= :end_date';
+        $activitySql += ' AND DATE(l.created_at) <= :end_date';
         $activityParams[':end_date'] = $activityEnd;
     }
     $activitySql .= ' ORDER BY l.created_at DESC, l.log_id DESC';
