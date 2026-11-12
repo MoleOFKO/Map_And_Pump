@@ -144,6 +144,65 @@ $updatedLabel = $updatedAt ? moderator_format_date($updatedAt) : 'Not available'
             outline-offset: 3px;
             border-radius: 16px;
         }
+        /* Match admin dashboard License watch section layout */
+        .dashboard-section-heading {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: baseline;
+            justify-content: space-between;
+            gap: 8px;
+            margin: 26px 0 14px;
+        }
+        .dashboard-section-heading h2 {
+            font-size: 16px;
+            font-weight: 600;
+            margin: 0;
+            color: var(--text-primary, #fff);
+        }
+        .dashboard-section-heading p {
+            color: var(--text-muted, rgba(255,255,255,.55));
+            font-size: 12px;
+            margin: 0;
+        }
+        .license-metrics {
+            --bs-gutter-x: 0;
+            --bs-gutter-y: 0;
+            border: 1px solid var(--glass-border, rgba(0,180,255,.18));
+            border-radius: 14px;
+            overflow: hidden;
+            background: rgba(10,22,44,.55);
+        }
+        body.background_color.light-mode .license-metrics {
+            background: rgba(255,255,255,.72);
+        }
+        .license-metrics > div + div {
+            border-left: 1px solid var(--glass-border, rgba(0,180,255,.18));
+        }
+        .license-metrics .metric-card {
+            border: 0;
+            border-radius: 0;
+            min-height: 152px;
+            padding: 20px !important;
+            background: transparent;
+            box-shadow: none;
+        }
+        .license-metrics a.metric-card-link:hover .metric-card,
+        .license-metrics a.metric-card-link:focus .metric-card {
+            transform: none;
+            box-shadow: none;
+            background: rgba(0,180,255,.06);
+        }
+        .license-metrics .metric-label { font-size: 12px; }
+        .license-metrics .metric-value { font-size: 28px; }
+        .license-metrics .metric-card .small { font-size: 11px; }
+        @media (max-width: 1199.98px) {
+            .license-metrics > div:nth-child(3) { border-left: 0; }
+            .license-metrics > div:nth-child(n+3) { border-top: 1px solid var(--glass-border, rgba(0,180,255,.18)); }
+        }
+        @media (max-width: 575.98px) {
+            .license-metrics > div + div { border-left: 0; border-top: 1px solid var(--glass-border, rgba(0,180,255,.18)); }
+            .license-metrics .metric-card { min-height: 125px; }
+        }
     </style>
 </head>
 <body class="background_color admin-blue-page" id="background_color">
@@ -201,65 +260,7 @@ $updatedLabel = $updatedAt ? moderator_format_date($updatedAt) : 'Not available'
     $addPriorityTask('Expired company licenses', (int) ($expiryPayload['expired_hq'] ?? 0), 'Renewal follow-up', 'view_hq_and_user_account(M).php?expiry=expired', 'bi-building-exclamation');
     $addPriorityTask('Expired driver licenses', (int) ($expiryPayload['expired_users_all_statuses'] ?? $expiryPayload['expired_users'] ?? 0), 'Renewal follow-up', 'view_users(M).php?expiry=expired', 'bi-person-x');
     ?>
-    <div class="row g-3 mb-3">
-        <div class="col-12 col-sm-6 col-xl-3">
-            <a href="view_hq_and_user_account(M).php?expiry=warning" class="metric-card-link" title="Company licenses expiring within 10 days">
-                <div class="analytics-card metric-card py-3">
-                    <div class="d-flex align-items-center justify-content-between gap-3">
-                        <div>
-                            <p class="mb-0 metric-label text-warning">Company licenses expiring soon</p>
-                            <h3 class="metric-value text-white mb-0"><?= (int) ($expiryPayload['warning_hq'] ?? 0) ?></h3>
-                        </div>
-                        <span class="text-warning fs-3"><i class="bi bi-building"></i></span>
-                    </div>
-                    <p class="text-white-50 small mb-0 mt-2">Business licenses due within 10 days</p>
-                </div>
-            </a>
-        </div>
-        <div class="col-12 col-sm-6 col-xl-3">
-            <a href="view_users(M).php?expiry=warning" class="metric-card-link" title="Driver licenses expiring within 10 days">
-                <div class="analytics-card metric-card py-3">
-                    <div class="d-flex align-items-center justify-content-between gap-3">
-                        <div>
-                            <p class="mb-0 metric-label text-warning">Driver licenses expiring soon</p>
-                            <h3 class="metric-value text-white mb-0"><?= (int) ($expiryPayload['warning_users'] ?? 0) ?></h3>
-                        </div>
-                        <span class="text-warning fs-3"><i class="bi bi-person-vcard"></i></span>
-                    </div>
-                    <p class="text-white-50 small mb-0 mt-2">Driver licenses due within 10 days</p>
-                </div>
-            </a>
-        </div>
-        <div class="col-12 col-sm-6 col-xl-3">
-            <a href="view_hq_and_user_account(M).php?expiry=expired" class="metric-card-link" title="Companies with expired business licenses">
-                <div class="analytics-card metric-card py-3">
-                    <div class="d-flex align-items-center justify-content-between gap-3">
-                        <div>
-                            <p class="mb-0 metric-label text-danger">Expired company licenses</p>
-                            <h3 class="metric-value text-white mb-0"><?= (int) ($expiryPayload['expired_hq'] ?? 0) ?></h3>
-                        </div>
-                        <span class="text-danger fs-3"><i class="bi bi-building-exclamation"></i></span>
-                    </div>
-                    <p class="text-white-50 small mb-0 mt-2">Business licenses past their expiry date</p>
-                </div>
-            </a>
-        </div>
-        <div class="col-12 col-sm-6 col-xl-3">
-            <a href="view_users(M).php?expiry=expired" class="metric-card-link" title="Driver accounts with expired licenses">
-                <div class="analytics-card metric-card py-3">
-                    <div class="d-flex align-items-center justify-content-between gap-3">
-                        <div>
-                            <p class="mb-0 metric-label text-danger">Expired driver licenses</p>
-                            <h3 class="metric-value text-white mb-0"><?= (int) ($expiryPayload['expired_users_all_statuses'] ?? $expiryPayload['expired_users'] ?? 0) ?></h3>
-                        </div>
-                        <span class="text-danger fs-3"><i class="bi bi-person-x"></i></span>
-                    </div>
-                    <p class="text-white-50 small mb-0 mt-2">Driver licenses past their expiry date</p>
-                </div>
-            </a>
-        </div>
-    </div>
-
+    <?php /* Top metric cards — same layout as admin (Loyalty & Billing is admin-only; Database Status fills that slot). */ ?>
     <div class="row g-3 mb-4">
         <div class="col-12 col-sm-6 col-xl-3">
             <a href="view_hq_and_user_account(M).php" class="metric-card-link" title="Open View/Manage Companies" aria-label="Open View/Manage Companies">
@@ -313,6 +314,70 @@ $updatedLabel = $updatedAt ? moderator_format_date($updatedAt) : 'Not available'
                         </div>
                         <span class="<?= $dbOnline ? 'text-success' : 'text-danger' ?> fs-2"><i class="bi bi-database-check"></i></span>
                     </div>
+                    <p class="text-white-50 small mb-0 mt-2">Audit logs and platform connectivity</p>
+                </div>
+            </a>
+        </div>
+    </div>
+
+    <div class="dashboard-section-heading">
+        <h2>License watch</h2>
+        <p>Upcoming renewals and expired licenses</p>
+    </div>
+    <div class="row g-3 mb-4 license-metrics">
+        <div class="col-12 col-sm-6 col-xl-3">
+            <a href="view_hq_and_user_account(M).php?expiry=warning" class="metric-card-link" title="View company licenses expiring soon">
+                <div class="analytics-card metric-card py-3">
+                    <div class="d-flex align-items-center justify-content-between gap-3">
+                        <div>
+                            <p class="mb-0 metric-label text-warning">Company Licenses Expiring Soon</p>
+                            <h3 class="metric-value text-white mb-0"><?= (int) ($expiryPayload['warning_hq'] ?? 0) ?></h3>
+                        </div>
+                        <span class="text-warning fs-3"><i class="bi bi-building"></i></span>
+                    </div>
+                    <p class="text-white-50 small mb-0 mt-2">Business licenses expiring within 10 days</p>
+                </div>
+            </a>
+        </div>
+        <div class="col-12 col-sm-6 col-xl-3">
+            <a href="view_users(M).php?expiry=warning" class="metric-card-link" title="View driver licenses expiring soon">
+                <div class="analytics-card metric-card py-3">
+                    <div class="d-flex align-items-center justify-content-between gap-3">
+                        <div>
+                            <p class="mb-0 metric-label text-warning">Driver Licenses Expiring Soon</p>
+                            <h3 class="metric-value text-white mb-0"><?= (int) ($expiryPayload['warning_users'] ?? 0) ?></h3>
+                        </div>
+                        <span class="text-warning fs-3"><i class="bi bi-person-vcard"></i></span>
+                    </div>
+                    <p class="text-white-50 small mb-0 mt-2">Driver licenses expiring within 10 days</p>
+                </div>
+            </a>
+        </div>
+        <div class="col-12 col-sm-6 col-xl-3">
+            <a href="view_hq_and_user_account(M).php?expiry=expired" class="metric-card-link" title="View companies with expired licenses">
+                <div class="analytics-card metric-card py-3">
+                    <div class="d-flex align-items-center justify-content-between gap-3">
+                        <div>
+                            <p class="mb-0 metric-label text-danger">Expired Company Licenses</p>
+                            <h3 class="metric-value text-white mb-0"><?= (int) ($expiryPayload['expired_hq'] ?? 0) ?></h3>
+                        </div>
+                        <span class="text-danger fs-3"><i class="bi bi-building-exclamation"></i></span>
+                    </div>
+                    <p class="text-white-50 small mb-0 mt-2">Company business licenses past their expiry date</p>
+                </div>
+            </a>
+        </div>
+        <div class="col-12 col-sm-6 col-xl-3">
+            <a href="view_users(M).php?expiry=expired" class="metric-card-link" title="View drivers with expired licenses">
+                <div class="analytics-card metric-card py-3">
+                    <div class="d-flex align-items-center justify-content-between gap-3">
+                        <div>
+                            <p class="mb-0 metric-label text-danger">Expired Driver Licenses</p>
+                            <h3 class="metric-value text-white mb-0"><?= (int) ($expiryPayload['expired_users_all_statuses'] ?? $expiryPayload['expired_users'] ?? 0) ?></h3>
+                        </div>
+                        <span class="text-danger fs-3"><i class="bi bi-person-x"></i></span>
+                    </div>
+                    <p class="text-white-50 small mb-0 mt-2">Drivers with licenses past their expiry date</p>
                 </div>
             </a>
         </div>
