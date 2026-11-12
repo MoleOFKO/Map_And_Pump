@@ -158,18 +158,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if (!empty($changeList)) {
             $reportData = map_pump_branch_profile_report_data($user, $branch, $changeList);
-          $accountId = map_pump_account_identity_ensure($pdo, 'user', (int) $user['user_id']);
-            $insertReport = $pdo->prepare(
-            "INSERT INTO report (user_id, submitted_by_account_id, role_id, importance, short_summery, message, created_at)
-             VALUES (:user_id, :account_id, 4, :importance, :short_summery, :message, NOW())"
-            );
-            $insertReport->execute([
-                ':user_id' => $user['user_id'],
-            ':account_id' => $accountId,
-                ':importance' => $reportData['importance'],
-                ':short_summery' => $reportData['short_summery'],
-                ':message' => $reportData['message'],
-            ]);
+            $reportColumns = $pdo->query(
+                "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'report'"
+            )->fetchAll(PDO::FETCH_COLUMN);
+            $hasSubmittedByAccount = in_array('submitted_by_account_id', $reportColumns, true);
+
+            if ($hasSubmittedByAccount) {
+                $accountId = map_pump_account_identity_ensure($pdo, 'user', (int) $user['user_id']);
+                $insertReport = $pdo->prepare(
+                    "INSERT INTO report (user_id, submitted_by_account_id, role_id, importance, short_summery, message, created_at)
+                     VALUES (:user_id, :account_id, 4, :importance, :short_summery, :message, NOW())"
+                );
+                $insertReport->execute([
+                    ':user_id' => $user['user_id'],
+                    ':account_id' => $accountId,
+                    ':importance' => $reportData['importance'],
+                    ':short_summery' => $reportData['short_summery'],
+                    ':message' => $reportData['message'],
+                ]);
+            } else {
+                $insertReport = $pdo->prepare(
+                    "INSERT INTO report (user_id, role_id, importance, short_summery, message, created_at)
+                     VALUES (:user_id, 4, :importance, :short_summery, :message, NOW())"
+                );
+                $insertReport->execute([
+                    ':user_id' => $user['user_id'],
+                    ':importance' => $reportData['importance'],
+                    ':short_summery' => $reportData['short_summery'],
+                    ':message' => $reportData['message'],
+                ]);
+            }
             $report_id = (int)$pdo->lastInsertId();
 
             // Notify HQ recipients (non-fatal: report is already saved).

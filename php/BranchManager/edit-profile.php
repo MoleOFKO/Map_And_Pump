@@ -264,11 +264,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && in_array
             branch_manager_link_json(true, 'Customer account linked successfully.');
         } catch (Throwable $e) {
             $pdo->rollBack();
-            throw $e;
+            error_log('Branch manager account link failed: ' . $e->getMessage());
+            branch_manager_link_json(false, $e->getMessage() ?: 'The customer account could not be linked.', 500);
         }
     }
 
-    branch_manager_link_json(false, 'Unsupported account link request.', 400);
+    // If something unexpected escapes before JSON is returned, keep the AJAX response JSON-safe.
+    try {
+        branch_manager_link_json(false, 'Unsupported account link request.', 400);
+    } catch (Throwable $e) {
+        branch_manager_link_json(false, 'The request could not be processed.', 400);
+    }
 }
 
 $message = '';
