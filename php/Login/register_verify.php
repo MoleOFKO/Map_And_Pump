@@ -171,7 +171,9 @@ try {
     $stmt->execute([$userId, $email]);
     $user = $stmt->fetch(PDO::FETCH_ASSOC);
     if (!$user) {
-        throw new RuntimeException('The verified user account could not be loaded.');
+        $pdo->rollBack();
+        unset($_SESSION['pending_registration'], $_SESSION['pending_staff_link']);
+        verify_json(false, 'Your verification session expired. Please register again.');
     }
 
     $pendingStaffLink = $_SESSION['pending_staff_link'] ?? null;
