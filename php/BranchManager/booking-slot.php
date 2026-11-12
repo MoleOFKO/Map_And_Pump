@@ -960,25 +960,6 @@ try {
   }
   #queue-scroll::-webkit-scrollbar-thumb:hover { background: rgba(148, 163, 184, 0.62); }
   #queue-scroll.has-scroll #queue-table thead th { position: sticky; top: 0; z-index: 2; background: #0f1a30; }
-  .status-pill {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 4px 10px;
-    border-radius: 999px;
-    font-size: 12px;
-    font-weight: 700;
-    line-height: 1.4;
-    white-space: nowrap;
-    background: rgba(139,150,173,0.14);
-    color: var(--slate-400);
-  }
-  .status-pill .d { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
-  .status-pill.st-complete { color: #34d399; background: rgba(52,211,153,0.14); }
-  .status-pill.st-waiting { color: #60a5fa; background: rgba(96,165,250,0.14); }
-  .status-pill.st-unable { color: #fb923c; background: rgba(251,146,60,0.14); }
-  .status-pill.st-canceled { color: #f87171; background: rgba(248,113,113,0.14); }
-  .status-pill.st-neutral { color: var(--slate-400); background: rgba(139,150,173,0.14); }
   .status-cell {
     display: flex;
     flex-direction: column;
@@ -1178,13 +1159,6 @@ try {
   body.branch-manager-theme.light-mode .table-custom tbody tr:hover td { background:var(--lm-hover); }
   body.branch-manager-theme.light-mode #queue-scroll.has-scroll #queue-table thead th { background:#fff; }
 
-  /* Status pills (base light-mode rule would otherwise flatten them all to grey) */
-  body.branch-manager-theme.light-mode .status-pill { background:rgba(88,103,126,0.12); color:var(--slate-400); }
-  body.branch-manager-theme.light-mode .status-pill.st-complete { color:#0b7a5a; background:rgba(18,142,107,0.13); }
-  body.branch-manager-theme.light-mode .status-pill.st-waiting { color:#1d5fd1; background:rgba(60,130,255,0.13); }
-  body.branch-manager-theme.light-mode .status-pill.st-unable { color:#b45309; background:rgba(217,119,6,0.14); }
-  body.branch-manager-theme.light-mode .status-pill.st-canceled { color:#c53030; background:rgba(207,61,61,0.12); }
-  body.branch-manager-theme.light-mode .status-pill.st-neutral { color:var(--slate-400); background:rgba(88,103,126,0.12); }
   body.branch-manager-theme.light-mode .act-link.unable-btn { color:#c53030; border-color:#c53030; background:transparent; }
   body.branch-manager-theme.light-mode .act-link.unable-btn:hover { color:#fff; background:#c53030; }
 
@@ -1240,10 +1214,10 @@ try {
     </div>
 
     <nav class="side-nav">
-      <a href="dashboard.php" class="side-link"><span class="ic"><i class="fa-solid fa-house"></i></span> Dashboard</a>
+      <a href="dashboard.php" class="side-link active"><span class="ic"><i class="fa-solid fa-house"></i></span> Dashboard</a>
       <a href="manage-staff.php" class="side-link"><span class="ic"><i class="fa-solid fa-users"></i></span> Manage Staff</a>
-      <a href="manage-oil.php" class="side-link"><span class="ic"><i class="fa-solid fa-gas-pump"></i></span> Manage Oil Stock</a>
-      <a href="booking-slot.php" class="side-link active"><span class="ic"><i class="fa-solid fa-ticket"></i></span> Monitor Booking Slot</a>
+      <a href="manage-oil.php" class="side-link"><span class="ic"><i class="fa-solid fa-gas-pump"></i></span> Manage Fuel Stock</a>
+      <a href="booking-slot.php" class="side-link"><span class="ic"><i class="fa-solid fa-ticket"></i></span> Monitor Booking Slot</a>
       <a href="view-customers.php" class="side-link"><span class="ic"><i class="fa-solid fa-address-book"></i></span> View Customers</a>
       <a href="report-hq.php" class="side-link"><span class="ic"><i class="fa-solid fa-paper-plane"></i></span> Report to HQ</a>
       <a href="branchprofile.php" class="side-link"><span class="ic"><i class="fa-solid fa-building"></i></span> Branch Profile</a>
@@ -1349,29 +1323,24 @@ try {
           <table class="table table-custom" id="queue-table">
             <thead>
               <tr>
-                <th style="width:20%">Token</th>
-                <th style="width:20%">Requested Time</th>
-                <th style="width:20%">Expire Time</th>
-                <th style="width:20%">Status</th>
-                <th style="width:20%">Actions</th>
+                <th style="width:25%">Token</th>
+                <th style="width:25%">Requested Time</th>
+                <th style="width:25%">Expire Time</th>
+                <th style="width:25%">Actions</th>
               </tr>
             </thead>
             <tbody>
               <?php
-              $stat_map = ['waiting' => 'waiting', 'serving' => 'serving', 'completed' => 'done', 'cancelled' => 'done'];
-              $stat_label = ['waiting' => 'Waiting', 'serving' => 'Serving', 'completed' => 'Completed', 'cancelled' => 'Cancelled', 'station_unable_to_fulfill' => 'Unable to Fulfill'];
-              $stat_class = ['waiting' => 'st-waiting', 'completed' => 'st-complete', 'cancelled' => 'st-canceled', 'station_unable_to_fulfill' => 'st-unable'];
               // find first idle pump for "Call Next" default target
               $default_pump = null;
               foreach ($pumps as $p) { if ($p['status'] === 'idle') { $default_pump = $p; break; } }
               if (!$queue): ?>
-                <tr><td colspan="5" style="text-align:center; color:var(--slate-400); padding:22px;">Queue is empty.</td></tr>
+                <tr><td colspan="4" style="text-align:center; color:var(--slate-400); padding:22px;">Queue is empty.</td></tr>
               <?php else: foreach ($queue as $q): ?>
                 <tr id="row-<?= h($q['token_code']) ?>" data-token-id="<?= (int)$q['token_id'] ?>">
                   <td class="tok-cell"><?= h($q['token_code']) ?></td>
                   <td><?= h(date('h:i A', strtotime($q['requested_at']))) ?></td>
                   <td><?= $q['estimated_at'] ? h(date('h:i A', strtotime($q['estimated_at']))) : '—' ?></td>
-                  <td><span class="status-pill <?= h($stat_class[$q['status']] ?? 'st-neutral') ?>"><span class="d"></span><?= h($stat_label[$q['status']] ?? ucfirst((string)$q['status'])) ?></span></td>
                   <td>
                     <?php if ($q['status'] === 'serving'): ?>
                       <a class="act-link danger unable-btn btn-unable" data-token-id="<?= (int)$q['token_id'] ?>"><i class="fa-solid fa-triangle-exclamation"></i>Unable to fulfill</a>
