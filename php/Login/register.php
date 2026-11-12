@@ -55,7 +55,6 @@ $registrationCsrf = $_SESSION['registration_csrf'];
   .pbar { height: 4px; border-radius: 99px; overflow: hidden; transition: background-color .25s ease; }
   .mini-popup { box-shadow: 0 16px 40px rgba(0, 0, 0, .45); border-radius: 14px; }
   .step-icon-badge { box-shadow: 0 0 0 6px rgba(14, 165, 233, .08); }
-  .success-badge { box-shadow: 0 0 0 6px rgba(34, 197, 94, .1); }
   .pw-popover, .strength-label { letter-spacing: .02em; }
   @media (max-width: 480px) {
     .main-card { border-radius: 18px; }
@@ -454,30 +453,13 @@ $registrationCsrf = $_SESSION['registration_csrf'];
           </div>
 
           <div class="login-btn-wrapper">
-            <button type="button" class="submit-btn full-width-btn" id="to-step-3">Confirm</button>
+            <button type="button" class="submit-btn full-width-btn" id="verify-registration">Confirm</button>
           </div>
 
           <div class="register-prompt">
             <a href="#" id="back-to-step-1" class="register-link">Back to registration</a>
           </div>
         </form>
-      </div>
-
-      <!-- STEP 3: Success State -->
-      <div class="auth-step" id="step-3">
-        <div class="step-icon-badge success-badge">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M20 6L9 17l-5-5"></path>
-          </svg>
-        </div>
-        <div class="header text-center">
-          <h1 class="title">Registration complete!</h1>
-          <p class="step-subtitle">Your account has been created successfully. You can now log in.</p>
-        </div>
-
-        <div class="login-btn-wrapper" style="margin-top: 30px;">
-          <a href="login.php" class="submit-btn full-width-btn" style="text-decoration: none;">Go to login</a>
-        </div>
       </div>
 
     </div>
@@ -549,10 +531,9 @@ $registrationCsrf = $_SESSION['registration_csrf'];
 
     const step1 = document.getElementById('step-1');
     const step2 = document.getElementById('step-2');
-    const step3 = document.getElementById('step-3');
 
     const toStep2 = document.getElementById('to-step-2');
-    const toStep3 = document.getElementById('to-step-3');
+    const verifyRegistration = document.getElementById('verify-registration');
     const backToStep1 = document.getElementById('back-to-step-1');
     const resendLink = document.getElementById('click-resend');
     const registerStatus = document.getElementById('register-status');
@@ -734,7 +715,7 @@ $registrationCsrf = $_SESSION['registration_csrf'];
       step1.classList.add('active');
     });
 
-    toStep3.addEventListener('click', async function() {
+    verifyRegistration.addEventListener('click', async function() {
       const code = Array.from(document.querySelectorAll('.otp-digit')).map((digit) => digit.value.trim()).join('');
       if (!/^\d{6}$/.test(code)) {
         showStatus(verifyStatus, 'Please enter the 6-digit code.');
@@ -742,7 +723,7 @@ $registrationCsrf = $_SESSION['registration_csrf'];
       }
 
       showStatus(verifyStatus, '');
-      setButtonLoading(toStep3, true);
+      setButtonLoading(verifyRegistration, true);
 
       try {
         const data = new FormData();
@@ -760,12 +741,11 @@ $registrationCsrf = $_SESSION['registration_csrf'];
           return;
         }
 
-        step2.classList.remove('active');
-        step3.classList.add('active');
+        window.location.href = 'login.php';
       } catch (error) {
         showStatus(verifyStatus, 'Could not contact the server. Please try again.');
       } finally {
-        setButtonLoading(toStep3, false);
+        setButtonLoading(verifyRegistration, false);
       }
     });
 
