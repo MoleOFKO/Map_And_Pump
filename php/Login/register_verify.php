@@ -101,7 +101,7 @@ try {
         verify_json(false, 'Your verification session expired. Please register again.');
     }
 
-    if (strtolower((string) ($user['status'] ?? '')) !== 'pending_verification') {
+    if (!in_array(strtolower(trim((string) ($user['status'] ?? ''))), ['email_verification_pending', 'pending_verification'], true)) {
         unset($_SESSION['pending_registration']);
         verify_json(false, 'That email is already registered. Please log in instead.');
     }

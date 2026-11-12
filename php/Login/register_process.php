@@ -233,7 +233,7 @@ $_SESSION['registration_rate'] = [
 ];
 
 try {
-    $stmt = $pdo->prepare('SELECT user_id, status FROM users WHERE LOWER(email) = LOWER(?) LIMIT 1');
+    $stmt = $pdo->prepare('SELECT user_id, status, license_id FROM users WHERE LOWER(email) = LOWER(?) LIMIT 1');
     $stmt->execute([$email]);
     $existingUser = $stmt->fetch(PDO::FETCH_ASSOC);
 
@@ -249,13 +249,21 @@ try {
         $canResumePending = is_array($pendingLink)
             && (int) ($pendingLink['staff_id'] ?? 0) === $staffLinkContext['staff_id']
             && (int) ($pendingLink['user_id'] ?? 0) === (int) ($existingUser['user_id'] ?? 0);
-        if ($existingUser && (strtolower((string) ($existingUser['status'] ?? '')) !== 'pending_verification' || !$canResumePending)) {
+        $existingStatus = strtolower(trim((string) ($existingUser['status'] ?? '')));
+        $canVerifyEmail = in_array($existingStatus, ['email_verification_pending', 'pending_verification'], true)
+            && empty($existingUser['license_id']);
+        if ($existingUser && (!$canVerifyEmail || !$canResumePending)) {
             register_json(false, 'That email is already registered. Choose the existing-account tab instead.');
         }
     }
 
-    if ($existingUser && strtolower((string) ($existingUser['status'] ?? '')) !== 'pending_verification') {
-        register_json(false, 'That email is already registered. Please log in instead.');
+    if ($existingUser) {
+        $existingStatus = strtolower(trim((string) ($existingUser['status'] ?? '')));
+        $canVerifyEmail = in_array($existingStatus, ['email_verification_pending', 'pending_verification'], true)
+            && empty($existingUser['license_id']);
+        if (!$canVerifyEmail) {
+            register_json(false, 'That email is already registered. Please log in instead.');
+        }
     }
 
     $roleId = customer_role_id($pdo);
@@ -273,7 +281,7 @@ try {
         if ($hasCurrentRole) {
             $updateParams[] = $roleId;
         }
-        $updateParams[] = 'pending_verification';
+        $updateParams[] = 'email_verification_pending';
         $updateParams[] = $userId;
         $update->execute($updateParams);
     } else {
@@ -285,7 +293,7 @@ try {
         if ($hasCurrentRole) {
             $insertParams[] = $roleId;
         }
-        $insertParams[] = 'pending_verification';
+        $insertParams[] = 'email_verification_pending';
         $insert->execute($insertParams);
         $userId = (int) $pdo->lastInsertId();
     }

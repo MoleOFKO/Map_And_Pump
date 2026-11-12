@@ -41,7 +41,7 @@ try {
     $conn->begin_transaction();
 
     $targetQuery = $conn->prepare(
-        'SELECT u.user_id, u.user_name, u.email, u.status, u.license_id, l.status AS license_status
+        'SELECT u.user_id, u.user_name, u.email, u.license_id, l.status AS license_status
          FROM users u
          LEFT JOIN user_license l ON l.license_id = u.license_id
          WHERE u.user_id = ?
@@ -58,54 +58,42 @@ try {
     if (!$target) {
         throw new RuntimeException('That account could not be found.');
     }
-    if (strtolower(trim((string) $target['status'])) !== 'pending_verification') {
-        throw new RuntimeException('Only pending verification accounts can be approved or rejected.');
+    $licenseId = (int) ($target['license_id'] ?? 0);
+    if ($licenseId <= 0 || strtolower(trim((string) ($target['license_status'] ?? ''))) !== 'pending') {
+        throw new RuntimeException('Only a pending driver license can be approved or rejected.');
     }
-    if (strtolower(trim((string) ($target['license_status'] ?? ''))) !== 'pending') {
-        throw new RuntimeException('Only accounts with a pending driver license can be approved or rejected.');
-    }
-    if (!empty($target['license_id']) && duplicate_license_record_count('driver', (int) $target['license_id']) !== 0) {
+    if (duplicate_license_record_count('driver', $licenseId) !== 0) {
         throw new RuntimeException('This account has a duplicate driver license. Use Compare to record the decision and notify every affected customer.');
     }
 
     $newStatus = $action === 'approve' ? 'approved' : 'rejected';
-    $update = $conn->prepare('UPDATE users SET status = ?, updated_at = NOW() WHERE user_id = ?');
+    $update = $conn->prepare('UPDATE user_license SET status = ?, updated_at = NOW() WHERE license_id = ? AND status = \'pending\'');
     if (!$update) {
-        throw new RuntimeException('Could not prepare the account status update.');
+        throw new RuntimeException('Could not prepare the driver-license status update.');
     }
-    $update->bind_param('si', $newStatus, $userId);
+    $update->bind_param('si', $newStatus, $licenseId);
     if (!$update->execute()) {
-        throw new RuntimeException('Could not update the account status.');
+        throw new RuntimeException('Could not update the driver-license status.');
+    }
+    if ($update->affected_rows !== 1) {
+        $update->close();
+        throw new RuntimeException('The driver license is no longer pending review. Refresh and try again.');
     }
     $update->close();
 
-    if (!empty($target['license_id']) && user_account_column_exists('user_license', 'status')) {
-        $licenseStatus = $action === 'approve' ? 'approved' : 'rejected';
-        $licenseUpdate = $conn->prepare('UPDATE user_license SET status = ?, updated_at = NOW() WHERE license_id = ?');
-        if (!$licenseUpdate) {
-            throw new RuntimeException('Could not prepare the license status update.');
-        }
-        $licenseId = (int) $target['license_id'];
-        $licenseUpdate->bind_param('si', $licenseStatus, $licenseId);
-        if (!$licenseUpdate->execute()) {
-            throw new RuntimeException('Could not update the driver license status.');
-        }
-        $licenseUpdate->close();
-    }
-
     $notification = request_send_notification((string) $target['email'], '', '', [
-        'kind' => 'verification',
+        'kind' => 'request',
         'action' => $action === 'approve' ? 'approve' : 'reject',
         'account_label' => (string) ($target['user_name'] ?? ''),
         'reason' => $action === 'approve' ? '' : $reason,
         'effect' => $action === 'approve'
-            ? 'Your account verification was approved. You may use the account under the project Terms of Service.'
-            : 'Your account verification was not approved. You may correct the submission and try again if the project allows it.',
+            ? 'Your driver license was approved. Your customer account remains active.'
+            : 'Your driver license was rejected. Your customer account remains active; correct the license details and submit it again.',
     ]);
-    $notificationSubject = (string) ($notification['subject'] ?? ('Map & Pump account verification: ' . ucfirst($newStatus)));
+    $notificationSubject = (string) ($notification['subject'] ?? ('Map & Pump driver-license review: ' . ucfirst($newStatus)));
     $notificationMessage = $action === 'approve'
-        ? 'Your Map & Pump account verification has been approved. You can now use the account.'
-        : "Your Map & Pump account verification was rejected.\n\nReason:\n" . $reason;
+        ? 'Your driver license has been approved. Your customer account remains active.'
+        : "Your driver license was rejected. Your customer account remains active.\n\nReason:\n" . $reason;
 
     // Account verification is not represented by a system_requests row, so request_id is intentionally NULL.
     $notificationInsert = $conn->prepare(
@@ -117,7 +105,7 @@ try {
         throw new RuntimeException('Could not prepare the account notification record.');
     }
     $accountRequestId = null;
-    $notificationType = 'account_' . $newStatus;
+    $notificationType = 'driver_license_' . $newStatus;
     $notificationStatus = (string) ($notification['status'] ?? 'not_configured');
     $notificationNote = (string) ($notification['note'] ?? 'Notification delivery was not configured.');
     $notificationInsert->bind_param(
@@ -137,7 +125,7 @@ try {
     $notificationInsert->close();
 
     $logVerb = $action === 'approve' ? 'Approved' : 'Rejected';
-    admin_record_log((int) $adminUser['user_id'], $logVerb . ' pending account #' . $userId . ' (' . $target['user_name'] . ').');
+    admin_record_log((int) $adminUser['user_id'], $logVerb . ' driver license #' . $licenseId . ' for user #' . $userId . ' (' . $target['user_name'] . ').');
     $conn->commit();
 
     $actionLabel = $action === 'approve' ? 'approval' : 'rejection';
