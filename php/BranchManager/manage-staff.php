@@ -448,6 +448,159 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!csrf_check($_POST['csrf'] ?? null)) json_out(['ok' => false, 'error' => 'CSRF failed'], 403);
 
     $action = (string) ($_POST['action'] ?? '');
+
+    if (in_array($action, ['add', 'edit', 'delete', 'activate', 'disable'], true)) {
+        try {
+            if ($action === 'add') {
+                $accountType = strtolower(trim((string) ($_POST['account_type'] ?? 'customer')));
+                $email = strtolower(trim((string) ($_POST['email'] ?? '')));
+                $fullName = trim((string) ($_POST['full_name'] ?? ''));
+                $contact = trim((string) ($_POST['contact'] ?? ''));
+
+                if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                    json_out(['ok' => false, 'error' => 'A valid email address is required.'], 422);
+                }
+
+                if ($accountType === 'standalone') {
+                    if ($fullName === '') {
+                        json_out(['ok' => false, 'error' => 'Full name is required for a standalone staff account.'], 422);
+                    }
+
+                    $password = (string) ($_POST['password'] ?? '');
+                    $confirmPassword = (string) ($_POST['confirm_password'] ?? '');
+                    if ($password === '' || $password !== $confirmPassword) {
+                        json_out(['ok' => false, 'error' => 'Please enter and confirm a valid password.'], 422);
+                    }
+                    if (strlen($password) < 8 || strlen($password) > 15
+                        || !preg_match('/[a-z]/', $password)
+                        || !preg_match('/[A-Z]/', $password)
+                        || !preg_match('/\d/', $password)
+                        || !preg_match('/[^a-zA-Z0-9]/', $password)) {
+                        json_out(['ok' => false, 'error' => 'Use 8-15 characters with uppercase and lowercase letters, a number, and a symbol.'], 422);
+                    }
+
+                    if (staff_email_in_use($pdo, $email)) {
+                        json_out(['ok' => false, 'error' => 'This email is already assigned to a staff member.'], 409);
+                    }
+
+                    $userExist = $pdo->prepare('SELECT user_id FROM users WHERE LOWER(TRIM(email)) = LOWER(TRIM(:email)) LIMIT 1');
+                    $userExist->execute([':email' => $email]);
+                    if ($userExist->fetchColumn()) {
+                        json_out(['ok' => false, 'error' => 'This email is already registered to a user account. Use the Link Existing Account option instead.'], 409);
+                    }
+
+                    $code = next_available_staff_code($pdo, $bid);
+                    $insert = $pdo->prepare(
+                        'INSERT INTO staff (branch_id, staff_code, full_name, email, contact, staff_password, is_active, created_at, updated_at)
+                         VALUES (:branch_id, :staff_code, :full_name, :email, :contact, :staff_password, 1, NOW(), NOW())'
+                    );
+                    $insert->execute([
+                        ':branch_id' => $bid,
+                        ':staff_code' => $code,
+                        ':full_name' => $fullName,
+                        ':email' => $email,
+                        ':contact' => $contact,
+                        ':staff_password' => password_hash($password, PASSWORD_DEFAULT),
+                    ]);
+
+                    json_out(['ok' => true, 'message' => 'Staff account created successfully.']);
+                }
+
+                $hireMessage = trim((string) ($_POST['hire_message'] ?? 'You have been invited to join as a staff member.'));
+                if ($hireMessage === '') {
+                    json_out(['ok' => false, 'error' => 'Please add a hire message before sending the invite.'], 422);
+                }
+
+                $result = map_pump_existing_customer_invitation($pdo, $bid, $email, $hireMessage, (int) ($user['user_id'] ?? 0));
+                json_out(['ok' => true, 'message' => 'Staff invite sent successfully.', 'invitation_id' => (int) ($result['invitation_id'] ?? 0)]);
+            }
+
+            if ($action === 'edit') {
+                $staffId = (int) ($_POST['staff_id'] ?? 0);
+                $fullName = trim((string) ($_POST['full_name'] ?? ''));
+                $contact = trim((string) ($_POST['contact'] ?? ''));
+                $email = strtolower(trim((string) ($_POST['email'] ?? '')));
+
+                if ($staffId <= 0) {
+                    json_out(['ok' => false, 'error' => 'Invalid staff record.'], 400);
+                }
+                if ($fullName === '') {
+                    json_out(['ok' => false, 'error' => 'Full name is required.'], 422);
+                }
+                if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                    json_out(['ok' => false, 'error' => 'A valid email address is required.'], 422);
+                }
+
+                $row = $pdo->prepare('SELECT staff_id, email FROM staff WHERE staff_id = :staff_id AND branch_id = :branch_id LIMIT 1');
+                $row->execute([':staff_id' => $staffId, ':branch_id' => $bid]);
+                $staffRow = $row->fetch(PDO::FETCH_ASSOC);
+                if (!$staffRow) {
+                    json_out(['ok' => false, 'error' => 'Staff member not found in this branch.'], 404);
+                }
+
+                $dup = $pdo->prepare('SELECT staff_id FROM staff WHERE branch_id = :branch_id AND LOWER(TRIM(email)) = LOWER(TRIM(:email)) AND staff_id != :staff_id LIMIT 1');
+                $dup->execute([':branch_id' => $bid, ':email' => $email, ':staff_id' => $staffId]);
+                if ($dup->fetchColumn()) {
+                    json_out(['ok' => false, 'error' => 'Another staff member already uses this email.'], 409);
+                }
+
+                $stmt = $pdo->prepare('UPDATE staff SET full_name = :full_name, contact = :contact, email = :email, updated_at = NOW() WHERE staff_id = :staff_id AND branch_id = :branch_id');
+                $stmt->execute([
+                    ':full_name' => $fullName,
+                    ':contact' => $contact,
+                    ':email' => $email,
+                    ':staff_id' => $staffId,
+                    ':branch_id' => $bid,
+                ]);
+
+                json_out(['ok' => true, 'message' => 'Staff member updated successfully.']);
+            }
+
+            if ($action === 'delete') {
+                $staffId = (int) ($_POST['staff_id'] ?? 0);
+                if ($staffId <= 0) {
+                    json_out(['ok' => false, 'error' => 'Invalid staff id.'], 400);
+                }
+
+                $stmt = $pdo->prepare('DELETE FROM staff WHERE staff_id = :staff_id AND branch_id = :branch_id');
+                $stmt->execute([':staff_id' => $staffId, ':branch_id' => $bid]);
+                if ($stmt->rowCount() === 0) {
+                    json_out(['ok' => false, 'error' => 'Staff member not found in this branch.'], 404);
+                }
+
+                json_out(['ok' => true, 'message' => 'Staff member deleted.']);
+            }
+
+            if (in_array($action, ['activate', 'disable'], true)) {
+                $staffId = (int) ($_POST['staff_id'] ?? 0);
+                if ($staffId <= 0) {
+                    json_out(['ok' => false, 'error' => 'Invalid staff id.'], 400);
+                }
+
+                $row = $pdo->prepare('SELECT staff_id, user_id, email, is_active FROM staff WHERE staff_id = :staff_id AND branch_id = :branch_id LIMIT 1');
+                $row->execute([':staff_id' => $staffId, ':branch_id' => $bid]);
+                $staffRow = $row->fetch(PDO::FETCH_ASSOC);
+                if (!$staffRow) {
+                    json_out(['ok' => false, 'error' => 'Staff member not found in this branch.'], 404);
+                }
+
+                $enabled = $action === 'activate' ? 1 : 0;
+                $stmt = $pdo->prepare('UPDATE staff SET is_active = :is_active, updated_at = NOW() WHERE staff_id = :staff_id AND branch_id = :branch_id');
+                $stmt->execute([':is_active' => $enabled, ':staff_id' => $staffId, ':branch_id' => $bid]);
+
+                $recipientUserId = (int) ($staffRow['user_id'] ?? 0);
+                if ($recipientUserId > 0 || trim((string) ($staffRow['email'] ?? '')) !== '') {
+                    staff_status_notification_create($pdo, $recipientUserId, $staffId, $action, (string) ($staffRow['email'] ?? ''));
+                }
+
+                json_out(['ok' => true, 'enabled' => $enabled]);
+            }
+        } catch (Throwable $e) {
+            error_log('Staff management action failed: ' . $e->getMessage());
+            json_out(['ok' => false, 'error' => $e->getMessage() ?: 'Unable to save staff at this time.'], 500);
+        }
+    }
+
     if ($action === 'report_status') {
         try {
             $reportId = (int) ($_POST['report_id'] ?? 0);
@@ -1661,9 +1814,9 @@ try {
     </div>
 
     <nav class="side-nav">
-      <a href="dashboard.php" class="side-link"><span class="ic"><i class="fa-solid fa-house"></i></span> Dashboard</a>
-      <a href="manage-staff.php" class="side-link active"><span class="ic"><i class="fa-solid fa-users"></i></span> Manage Staff</a>
-      <a href="manage-oil.php" class="side-link"><span class="ic"><i class="fa-solid fa-gas-pump"></i></span> Manage Oil Stock</a>
+      <a href="dashboard.php" class="side-link active"><span class="ic"><i class="fa-solid fa-house"></i></span> Dashboard</a>
+      <a href="manage-staff.php" class="side-link"><span class="ic"><i class="fa-solid fa-users"></i></span> Manage Staff</a>
+      <a href="manage-oil.php" class="side-link"><span class="ic"><i class="fa-solid fa-gas-pump"></i></span> Manage Fuel Stock</a>
       <a href="booking-slot.php" class="side-link"><span class="ic"><i class="fa-solid fa-ticket"></i></span> Monitor Booking Slot</a>
       <a href="view-customers.php" class="side-link"><span class="ic"><i class="fa-solid fa-address-book"></i></span> View Customers</a>
       <a href="report-hq.php" class="side-link"><span class="ic"><i class="fa-solid fa-paper-plane"></i></span> Report to HQ</a>

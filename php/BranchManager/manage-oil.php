@@ -33,6 +33,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     try {
         switch ($action) {
+            case 'get_fuel_type':
+                $tankId = (int)($_POST['tank_id'] ?? 0);
+                if ($tankId <= 0) {
+                    json_out(['ok' => false, 'error' => 'Invalid tank id.'], 400);
+                }
+
+                $stmt = $pdo->prepare('SELECT tank_id, fuel_price FROM tanks WHERE tank_id = :tank_id AND branch_id = :branch_id LIMIT 1');
+                $stmt->execute([':tank_id' => $tankId, ':branch_id' => $branchId]);
+                $tank = $stmt->fetch(PDO::FETCH_ASSOC);
+                if (!$tank) {
+                    json_out(['ok' => false, 'error' => 'Fuel record not found in this branch.'], 404);
+                }
+
+                json_out([
+                    'ok' => true,
+                    'fuel' => [
+                        'tank_id' => (int)($tank['tank_id'] ?? 0),
+                        'fuel_price' => (string)($tank['fuel_price'] ?? '0'),
+                    ],
+                ]);
+                break;
+
             case 'save_limits':
                 foreach ($_POST as $key => $value) {
                     if (strpos($key, 'alert_fuel_') !== 0 && strpos($key, 'alert_tank_') !== 0) continue;
@@ -95,9 +117,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $tankId = (int)($_POST['tank_id'] ?? 0);
                 $fuelName = trim((string)($_POST['fuel_name'] ?? ''));
                 $capacityL = max(1, (int)($_POST['capacity_l'] ?? 0));
+                $fuelPriceRaw = trim((string)($_POST['fuel_price'] ?? ''));
                 if ($tankId <= 0 || $fuelName === '') {
                     json_out(['ok' => false, 'error' => 'Invalid fuel record.'], 400);
                 }
+                if ($fuelPriceRaw === '' || !is_numeric($fuelPriceRaw) || (float)$fuelPriceRaw < 0) {
+                    json_out(['ok' => false, 'error' => 'Please enter a valid price.'], 400);
+                }
+                $fuelPrice = (string)round((float)$fuelPriceRaw, 2);
 
                 $tankStmt = $pdo->prepare('SELECT tank_id, oil_type_id FROM tanks WHERE tank_id = :tank_id AND branch_id = :branch_id LIMIT 1');
                 $tankStmt->execute([':tank_id' => $tankId, ':branch_id' => $branchId]);
@@ -121,9 +148,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
 
                 if (!$nameChanged) {
-                    $updTank = $pdo->prepare('UPDATE tanks SET capacity_l = :capacity_l WHERE tank_id = :tank_id AND branch_id = :branch_id');
+                    $updTank = $pdo->prepare('UPDATE tanks SET capacity_l = :capacity_l, fuel_price = :fuel_price WHERE tank_id = :tank_id AND branch_id = :branch_id');
                     $updTank->execute([
                         ':capacity_l' => $capacityL,
+                        ':fuel_price' => $fuelPrice,
                         ':tank_id' => $tankId,
                         ':branch_id' => $branchId,
                     ]);
@@ -149,10 +177,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $ins->execute([':name' => $fuelName]);
                     $newOilTypeId = (int)$pdo->lastInsertId();
 
-                    $updTank = $pdo->prepare('UPDATE tanks SET oil_type_id = :new_oil_type_id, capacity_l = :capacity_l WHERE tank_id = :tank_id AND branch_id = :branch_id');
+                    $updTank = $pdo->prepare('UPDATE tanks SET oil_type_id = :new_oil_type_id, capacity_l = :capacity_l, fuel_price = :fuel_price WHERE tank_id = :tank_id AND branch_id = :branch_id');
                     $updTank->execute([
                         ':new_oil_type_id' => $newOilTypeId,
                         ':capacity_l' => $capacityL,
+                        ':fuel_price' => $fuelPrice,
                         ':tank_id' => $tankId,
                         ':branch_id' => $branchId,
                     ]);
@@ -309,7 +338,7 @@ foreach ($defaultFuels as $defaultName) {
     }
 }
 $stmt = $pdo->prepare(
-    'SELECT t.tank_id, t.branch_id, t.oil_type_id, t.capacity_l, t.current_l, t.alert_pct, t.is_enabled,
+    'SELECT t.tank_id, t.branch_id, t.oil_type_id, t.capacity_l, t.fuel_price, t.current_l, t.alert_pct, t.is_enabled,
             COALESCE(ot.oil_name, CONCAT("Fuel ", t.tank_id)) AS fuel_name
      FROM tanks t
      LEFT JOIN oil_types ot ON ot.oil_type_id = t.oil_type_id
@@ -1122,7 +1151,7 @@ body[unresolved] {opacity: 0; display: block; overflow: hidden; position: relati
   /* Notifications popup */
   body.branch-manager-theme.light-mode .notif-popup {
     --slate-50:#0f172a; --slate-300:#334155; --slate-400:#5b6b82;
-    border-color:rgba(15,23,42,0.16); box-shadow:0 18px 40px -14px rgba(15,23,42,0.28);
+    border-color:rgba(15,23,42,0.09); box-shadow:0 18px 40px -14px rgba(15,23,42,0.28);
   }
   body.branch-manager-theme.light-mode .notif-header { border-bottom-color:rgba(15,23,42,0.09); }
   body.branch-manager-theme.light-mode .notif-item { border-bottom-color:transparent; }
@@ -1361,8 +1390,9 @@ body[unresolved] {opacity: 0; display: block; overflow: hidden; position: relati
             <thead>
               <tr>
                 <th style="width:30%;">Name</th>
-                <th style="width:38%;">Stock Level</th>
-                <th style="width:32%; text-align:right;">Action</th>
+                <th style="width:24%;">Stock Level</th>
+                <th style="width:18%;">Price</th>
+                <th style="width:28%; text-align:right;">Action</th>
               </tr>
             </thead>
             <tbody id="fuel-table-tbody">
@@ -1370,13 +1400,15 @@ body[unresolved] {opacity: 0; display: block; overflow: hidden; position: relati
                 $statusColor = ['ok' => 'var(--mint-400)', 'mid' => 'var(--amber-300)', 'low' => 'var(--red-400)'][$tank['status_class'] ?? 'ok'] ?? 'var(--mint-400)';
                 $remainingText = number_format((float)$tank['current_l'], 2, '.', ',') . ' / ' . number_format((int)$tank['capacity_l'], 0, '.', ',') . ' L remaining';
                 $enabled = !empty($tank['is_enabled']);
+                $fuelPrice = (float)($tank['fuel_price'] ?? 0);
               ?>
                 <tr data-tank-id="<?= (int)$tank['tank_id'] ?>" data-fuel-code="fuel_<?= (int)$tank['tank_id'] ?>">
                   <td class="fuel-name-cell"><?= htmlspecialchars($tank['fuel_name']) ?></td>
                   <td class="fuel-stock-meta"><span style="color:<?= $statusColor ?>; font-weight:700; margin-right:6px;"> </span><?= $remainingText ?></td>
+                  <td class="fuel-stock-meta fuel-price-cell"><?= number_format($fuelPrice, 2, '.', ',') ?></td>
                   <td class="fuel-action-cell">
                     <div class="fuel-actions">
-                      <button type="button" class="fuel-row-btn edit-btn edit-action" data-action="edit" data-id="<?= (int)$tank['tank_id'] ?>" data-fuel="fuel_<?= (int)$tank['tank_id'] ?>" data-name="<?= htmlspecialchars($tank['fuel_name'], ENT_QUOTES, 'UTF-8') ?>" data-capacity="<?= (int)$tank['capacity_l'] ?>" title="Edit fuel" aria-label="Edit fuel">
+                      <button type="button" class="fuel-row-btn edit-btn edit-action" data-action="edit" data-id="<?= (int)$tank['tank_id'] ?>" data-fuel="fuel_<?= (int)$tank['tank_id'] ?>" data-name="<?= htmlspecialchars($tank['fuel_name'], ENT_QUOTES, 'UTF-8') ?>" data-capacity="<?= (int)$tank['capacity_l'] ?>" data-price="<?= htmlspecialchars((string)($tank['fuel_price'] ?? '0'), ENT_QUOTES, 'UTF-8') ?>" title="Edit fuel" aria-label="Edit fuel">
                         Edit
                       </button>
                       <button type="button" class="fuel-row-btn toggle-btn <?= $enabled ? 'on' : 'off' ?>" data-action="toggle" data-id="<?= (int)$tank['tank_id'] ?>" data-fuel="fuel_<?= (int)$tank['tank_id'] ?>" data-enabled="<?= (int)$enabled ?>" title="<?= $enabled ? 'Disable fuel' : 'Enable fuel' ?>" aria-label="<?= $enabled ? 'Disable fuel' : 'Enable fuel' ?>">
@@ -1536,6 +1568,11 @@ body[unresolved] {opacity: 0; display: block; overflow: hidden; position: relati
       <div class="form-group">
         <label for="edit-fuel-capacity">Tank Capacity (Liters)</label>
         <input type="number" id="edit-fuel-capacity" name="capacity_l" class="form-control-custom" min="1" max="200000" required="">
+      </div>
+
+      <div class="form-group">
+        <label for="edit-fuel-price">Price</label>
+        <input type="number" id="edit-fuel-price" name="fuel_price" class="form-control-custom" min="0" step="0.01" required="">
       </div>
 
       <div class="modal-actions">
@@ -1820,13 +1857,37 @@ body[unresolved] {opacity: 0; display: block; overflow: hidden; position: relati
       document.getElementById('edit-fuel-code').value = fuelCode;
       document.getElementById('edit-fuel-name').value = name;
       document.getElementById('edit-fuel-capacity').value = capacity;
+
+      refreshFuelPriceForEdit(button);
       editFuelModal.classList.add('active');
     }
 
-    const closeEditFuelModal = () => editFuelModal && editFuelModal.classList.remove('active');
-    if (editFuelCloseBtn) editFuelCloseBtn.addEventListener('click', closeEditFuelModal);
-    if (editFuelCancelBtn) editFuelCancelBtn.addEventListener('click', closeEditFuelModal);
-    if (editFuelModal) editFuelModal.addEventListener('click', (e) => { if (e.target === editFuelModal) closeEditFuelModal(); });
+    async function refreshFuelPriceForEdit(button) {
+      const tankId = button?.dataset?.id || '';
+      if (!tankId) return;
+
+      const formData = new FormData();
+      formData.append('action', 'get_fuel_type');
+      formData.append('tank_id', String(tankId));
+      formData.append('csrf', getCsrfToken());
+
+      try {
+        const res = await fetch('manage-oil.php', { method: 'POST', body: formData });
+        const data = await res.json();
+        if (!data.ok || !data.fuel || data.fuel.fuel_price === undefined) {
+          return;
+        }
+
+        const latestPrice = String(data.fuel.fuel_price);
+        button.dataset.price = latestPrice;
+        const priceInput = document.getElementById('edit-fuel-price');
+        if (priceInput) {
+          priceInput.value = latestPrice;
+        }
+      } catch (err) {
+        console.error('Failed to fetch latest fuel price:', err);
+      }
+    }
 
     if (editFuelForm) {
       editFuelForm.addEventListener('submit', async (event) => {
@@ -1841,9 +1902,24 @@ body[unresolved] {opacity: 0; display: block; overflow: hidden; position: relati
             showToast('Edit fuel type failed: ' + (data.error || 'unknown'), 'error');
             return;
           }
+
+          const tankId = String(formData.get('tank_id') || '');
+          const row = document.querySelector(`tr[data-tank-id="${CSS.escape(tankId)}"]`);
+          const newPrice = String(formData.get('fuel_price') || '0');
+          if (row) {
+            const priceCell = row.querySelector('.fuel-price-cell');
+            if (priceCell) {
+              priceCell.textContent = Number(newPrice).toFixed(2);
+            }
+            const editBtn = row.querySelector('.edit-btn');
+            if (editBtn) {
+              editBtn.dataset.price = newPrice;
+            }
+          }
+
           closeEditFuelModal();
           sessionStorage.setItem('oil_toast_msg', 'Successfully Edited.');
-          window.location.reload();
+          // Keep the current page in sync without a full reload so the Price cell updates immediately.
         } catch (err) {
           showToast('Network error: ' + err.message, 'error');
         }
@@ -1851,7 +1927,9 @@ body[unresolved] {opacity: 0; display: block; overflow: hidden; position: relati
     }
 
     document.querySelectorAll('.edit-action').forEach((btn) => {
-      btn.addEventListener('click', () => openEditFuelModal(btn));
+      btn.addEventListener('click', async () => {
+        await openEditFuelModal(btn);
+      });
     });
 
     document.querySelectorAll('.toggle-btn').forEach((btn) => {
