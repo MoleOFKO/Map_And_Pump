@@ -114,10 +114,42 @@ $flashType = (string) ($flash['type'] ?? '');
     <link rel="icon" type="image/png" href="/images/Logo.png">
     <link rel="stylesheet" href="/css/Admin.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
-    <style>.report-scope{display:inline-flex;border-radius:999px;padding:.35rem .7rem;font-size:.72rem;font-weight:700;background:rgba(0,244,255,.08);color:var(--neon-cyan);border:1px solid rgba(0,244,255,.24)}.report-message{max-width:460px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.report-detail-modal .modal-header{border-bottom-color:rgba(0,244,255,.16);background:linear-gradient(120deg,rgba(0,244,255,.09),rgba(37,99,235,.035) 58%,transparent)}.report-detail-modal .modal-footer{border-top-color:rgba(255,255,255,.09);background:rgba(4,13,30,.34)}.report-detail-hero{padding:1rem 1.1rem;border:1px solid rgba(0,244,255,.2);border-radius:15px;background:linear-gradient(135deg,rgba(0,244,255,.1),rgba(27,228,148,.035))}.report-detail-label{color:var(--text-muted);font-size:.7rem;letter-spacing:.08em;text-transform:uppercase}.report-detail-value{color:var(--text-primary);word-break:break-word;white-space:pre-wrap}.report-detail-card{height:100%;padding:.85rem .9rem;border:1px solid rgba(255,255,255,.1);border-radius:12px;background:rgba(255,255,255,.025)}.report-detail-content{padding:1rem;border:1px solid rgba(0,244,255,.18);border-radius:12px;background:rgba(0,244,255,.045);line-height:1.55;white-space:pre-wrap;word-break:break-word}body.background_color.light-mode .report-detail-modal .modal-header{background:linear-gradient(120deg,rgba(0,164,180,.1),rgba(37,99,235,.04) 58%,transparent)}body.background_color.light-mode .report-detail-modal .modal-footer,body.background_color.light-mode .report-detail-card{background:rgba(255,255,255,.62)}
-        .report-detail-content{max-height:min(32vh,260px);overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:rgba(0,244,255,.45) rgba(4,12,28,.9)}
+    <style>
+        .report-scope{display:inline-flex;border-radius:999px;padding:.35rem .7rem;font-size:.72rem;font-weight:700;background:rgba(0,244,255,.08);color:var(--neon-cyan);border:1px solid rgba(0,244,255,.24)}
+        .report-message{max-width:460px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+        .report-detail-modal .modal-dialog{max-width:min(920px,96vw)}
+        .report-detail-modal .modal-content{border:1px solid rgba(0,244,255,.16);border-radius:18px;overflow:hidden;background:rgba(8,16,30,.96);box-shadow:0 24px 60px rgba(0,0,0,.45)}
+        .report-detail-modal .modal-header{border-bottom:1px solid rgba(0,244,255,.14);background:linear-gradient(120deg,rgba(0,244,255,.1),rgba(37,99,235,.04) 55%,transparent);padding:1rem 1.25rem}
+        .report-detail-modal .modal-body{padding:1.25rem 1.35rem 1.4rem}
+        .report-detail-modal .modal-footer{border-top:1px solid rgba(255,255,255,.08);background:rgba(4,13,30,.45);padding:.9rem 1.25rem;gap:.65rem}
+        .report-detail-hero{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:1rem;padding:1.15rem 1.2rem;border:1px solid rgba(0,244,255,.22);border-radius:16px;background:linear-gradient(135deg,rgba(0,244,255,.11),rgba(27,228,148,.04) 55%,rgba(8,16,30,.2))}
+        .report-detail-hero-main{min-width:0;flex:1 1 240px}
+        .report-detail-hero-meta{display:flex;flex-wrap:wrap;gap:.45rem;justify-content:flex-end;align-content:flex-start}
+        .report-detail-chip{display:inline-flex;align-items:center;gap:.35rem;padding:.35rem .7rem;border-radius:999px;border:1px solid rgba(0,244,255,.22);background:rgba(0,244,255,.08);color:var(--neon-cyan);font-size:.72rem;font-weight:600;white-space:nowrap}
+        .report-detail-chip.is-muted{color:var(--text-muted);border-color:rgba(255,255,255,.12);background:rgba(255,255,255,.04)}
+        .report-detail-label{color:var(--text-muted);font-size:.68rem;letter-spacing:.08em;text-transform:uppercase;font-weight:600}
+        .report-detail-value{color:var(--text-primary);word-break:break-word;overflow-wrap:anywhere;line-height:1.45}
+        .report-detail-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.85rem;margin:1.15rem 0 1.25rem}
+        .report-detail-card{display:flex;flex-direction:column;gap:.35rem;min-height:92px;padding:.95rem 1rem;border:1px solid rgba(255,255,255,.1);border-radius:14px;background:rgba(255,255,255,.03)}
+        .report-detail-section{margin-top:.25rem}
+        .report-detail-section + .report-detail-section{margin-top:1rem}
+        .report-detail-section-head{display:flex;align-items:center;justify-content:space-between;gap:.75rem;margin-bottom:.55rem}
+        .report-detail-content{max-height:min(36vh,300px);overflow-y:auto;padding:1rem 1.05rem;border:1px solid rgba(0,244,255,.16);border-radius:14px;background:rgba(0,244,255,.04);line-height:1.6;white-space:pre-wrap;word-break:break-word;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:rgba(0,244,255,.4) rgba(4,12,28,.85)}
         .report-detail-content::-webkit-scrollbar{width:8px}
         .report-detail-content::-webkit-scrollbar-thumb{background:rgba(0,244,255,.35);border-radius:999px}
+        @media (max-width:991.98px){.report-detail-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+        @media (max-width:575.98px){
+            .report-detail-grid{grid-template-columns:minmax(0,1fr)}
+            .report-detail-hero{padding:1rem}
+            .report-detail-hero-meta{justify-content:flex-start}
+            .report-detail-card{min-height:0}
+        }
+        body.background_color.light-mode .report-detail-modal .modal-content{background:#fff;box-shadow:0 18px 48px rgba(23,43,64,.14)}
+        body.background_color.light-mode .report-detail-modal .modal-header{background:linear-gradient(120deg,rgba(0,164,180,.1),rgba(37,99,235,.04) 58%,transparent)}
+        body.background_color.light-mode .report-detail-modal .modal-footer,
+        body.background_color.light-mode .report-detail-card{background:rgba(255,255,255,.9)}
+        body.background_color.light-mode .report-detail-hero{background:linear-gradient(135deg,rgba(40,94,199,.08),rgba(255,255,255,.7))}
+        body.background_color.light-mode .report-detail-content{background:rgba(40,94,199,.04);border-color:rgba(40,94,199,.14)}
         .report-flash{border-radius:14px;background:rgba(10,22,44,.82);border:1px solid var(--glass-border);color:var(--text-primary)}
         body.background_color.light-mode .report-flash{background:rgba(255,255,255,.92)}
         .report-table-scroll{max-height:min(60vh,520px);overflow:auto}
@@ -311,9 +343,10 @@ $flashType = (string) ($flash['type'] ?? '');
         }
         body.admin-blue-page .modal .modal-content {
             border: 1px solid var(--ab-border);
-            border-radius: 14px;
+            border-radius: 18px;
             background: var(--ab-surface) !important;
             color: var(--ab-text);
+            box-shadow: 0 22px 50px rgba(0,0,0,.28);
         }
         body.admin-blue-page .modal :is(.modal-header,.modal-footer) {
             border-color: var(--ab-border);
@@ -322,11 +355,27 @@ $flashType = (string) ($flash['type'] ?? '');
         body.admin-blue-page .modal .modal-title,
         body.admin-blue-page .modal .text-white { color: var(--ab-text) !important; }
         body.admin-blue-page .modal .text-white-50 { color: var(--ab-muted) !important; }
-        body.admin-blue-page .modal :is(.report-detail-hero,.report-detail-card,.report-detail-content) {
+        body.admin-blue-page .modal .report-detail-hero {
+            border-color: rgba(121,170,255,.28);
+            border-radius: 16px;
+            background: linear-gradient(135deg, rgba(121,170,255,.12), var(--ab-raised) 70%);
+            color: var(--ab-text);
+        }
+        body.admin-blue-page .modal :is(.report-detail-card,.report-detail-content) {
             border-color: var(--ab-border);
-            border-radius: 10px;
+            border-radius: 14px;
             background: var(--ab-raised);
             color: var(--ab-text);
+        }
+        body.admin-blue-page .modal .report-detail-chip {
+            border-color: rgba(121,170,255,.28);
+            background: rgba(121,170,255,.1);
+            color: var(--ab-accent);
+        }
+        body.admin-blue-page .modal .report-detail-chip.is-muted {
+            border-color: var(--ab-border);
+            background: var(--ab-raised);
+            color: var(--ab-muted);
         }
         body.admin-blue-page .modal .report-detail-label { color: var(--ab-muted); }
         body.admin-blue-page footer { color: var(--ab-muted) !important; font: 11px/1.6 'Poppins',system-ui,sans-serif; }
@@ -378,7 +427,8 @@ $flashType = (string) ($flash['type'] ?? '');
         const formatDate = (value) => value ? new Date(String(value).replace(' ', 'T')).toLocaleString() : 'Not available';
         const scopeLabel = (scope) => ({hq_performance:'Company Performance',stations:'Stations',requests:'Requests',audit_logs:'Audit Logs',system:'System'}[String(scope || '').toLowerCase()] || 'System');
         const formatLabel = (format) => ({pdf:'Print / PDF',csv:'CSV',record:'Database Record'}[String(format || '').toLowerCase()] || 'Database Record');
-        const card = (label, value) => '<div class="report-detail-card"><div class="report-detail-label mb-1">' + escapeHtml(label) + '</div><div class="report-detail-value">' + value + '</div></div>';
+        const card = (label, value) => '<div class="report-detail-card"><div class="report-detail-label">' + escapeHtml(label) + '</div><div class="report-detail-value">' + value + '</div></div>';
+        const chip = (label, muted) => '<span class="report-detail-chip' + (muted ? ' is-muted' : '') + '">' + escapeHtml(label) + '</span>';
 
         document.addEventListener('click', async (event) => {
             const button = event.target.closest('.js-view-report');
@@ -393,17 +443,41 @@ $flashType = (string) ($flash['type'] ?? '');
                     const report = payload.report || {};
                     const metadata = payload.metadata || {};
                     const dateRange = metadata.start_date && metadata.end_date ? metadata.start_date + ' – ' + metadata.end_date : formatDate(report.created_at);
+                    const summaryText = String(metadata.summary || '').trim();
+                    const messageText = String(report.message || '').trim();
+                    const showRawMessage = messageText !== '' && messageText !== summaryText;
                     title.innerHTML = '<i class="bi bi-file-earmark-bar-graph-fill txt-neon-cyan me-2"></i>' + escapeHtml(report.title || 'Report Details');
-                    body.innerHTML = '<div class="report-detail-hero mb-4"><div class="report-detail-label mb-1">Database report · #' + escapeHtml(report.report_id) + '</div><div class="fw-bold text-white fs-5 text-break">' + escapeHtml(report.title || 'Untitled report') + '</div><div class="text-white-50 small mt-1">Created ' + escapeHtml(formatDate(report.created_at)) + '</div></div>' +
-                        '<div class="row g-3 mb-4">' +
-                        '<div class="col-12 col-md-4">' + card('Scope', escapeHtml(scopeLabel(metadata.scope))) + '</div>' +
-                        '<div class="col-12 col-md-4">' + card('Format', escapeHtml(formatLabel(metadata.format))) + '</div>' +
-                        '<div class="col-12 col-md-4">' + card('Importance', escapeHtml(report.importance || 'Normal')) + '</div>' +
-                        '<div class="col-12 col-md-6">' + card('Generated by', escapeHtml(report.author || 'System') + '<div class="text-white-50 small mt-1">' + escapeHtml(report.role_name || 'Admin') + '</div>') + '</div>' +
-                        '<div class="col-12 col-md-6">' + card('Date range', escapeHtml(dateRange)) + '</div>' +
+                    body.innerHTML =
+                        '<div class="report-detail-hero">' +
+                            '<div class="report-detail-hero-main">' +
+                                '<div class="report-detail-label mb-1">Report #' + escapeHtml(report.report_id) + '</div>' +
+                                '<div class="fw-semibold text-white fs-5 text-break">' + escapeHtml(report.title || 'Untitled report') + '</div>' +
+                                '<div class="text-white-50 small mt-2"><i class="bi bi-clock-history me-1"></i>Created ' + escapeHtml(formatDate(report.created_at)) + '</div>' +
+                            '</div>' +
+                            '<div class="report-detail-hero-meta">' +
+                                chip(scopeLabel(metadata.scope)) +
+                                chip(formatLabel(metadata.format), true) +
+                                chip(report.importance || 'Normal', true) +
+                            '</div>' +
                         '</div>' +
-                        '<div class="report-detail-label mb-2">Report summary</div><div class="report-detail-content mb-4">' + escapeHtml(metadata.summary || report.message || 'No summary was stored.') + '</div>' +
-                        '<div class="report-detail-label mb-2">Stored database message</div><div class="report-detail-content">' + escapeHtml(report.message || 'No message was stored.') + '</div>';
+                        '<div class="report-detail-grid">' +
+                            card('Scope', escapeHtml(scopeLabel(metadata.scope))) +
+                            card('Format', escapeHtml(formatLabel(metadata.format))) +
+                            card('Importance', escapeHtml(report.importance || 'Normal')) +
+                            card('Generated by', escapeHtml(report.author || 'System') + '<div class="text-white-50 small mt-1">' + escapeHtml(report.role_name || 'Admin') + '</div>') +
+                            card('Date range', escapeHtml(dateRange)) +
+                            card('Report ID', '#' + escapeHtml(report.report_id)) +
+                        '</div>' +
+                        '<div class="report-detail-section">' +
+                            '<div class="report-detail-section-head"><div class="report-detail-label mb-0">Report summary</div></div>' +
+                            '<div class="report-detail-content">' + escapeHtml(summaryText || messageText || 'No summary was stored.') + '</div>' +
+                        '</div>' +
+                        (showRawMessage
+                            ? ('<div class="report-detail-section">' +
+                                '<div class="report-detail-section-head"><div class="report-detail-label mb-0">Stored database message</div></div>' +
+                                '<div class="report-detail-content">' + escapeHtml(messageText) + '</div>' +
+                               '</div>')
+                            : '');
                     const footer = document.getElementById('reportDetailsFooter');
                     if (footer) {
                         footer.innerHTML = '<a class="btn btn-neon" href="report_action.php?action=download&report_id=' + encodeURIComponent(report.report_id) + '"><i class="bi bi-download me-1"></i>Download</a>' +
