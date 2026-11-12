@@ -1,7 +1,8 @@
 <?php
+require_once __DIR__ . '/Login/session_helper.php';
+map_pump_configure_session();
 session_start();
 
-require_once __DIR__ . '/Login/session_helper.php';
 require_once __DIR__ . '/conn.php';
 require_once __DIR__ . '/Customer/license_access.php';
 require_once __DIR__ . '/Customer/license_expiry.php';

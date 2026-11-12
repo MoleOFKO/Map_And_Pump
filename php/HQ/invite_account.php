@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/hq_guard.php';
 require_once __DIR__ . '/../conn.php';
+require_once __DIR__ . '/../account_identity.php';
 require_once __DIR__ . '/../business_scope.php';
 require_once __DIR__ . '/../invitations_schema.php';
 require_once __DIR__ . '/../Login/mail_templates.php';
