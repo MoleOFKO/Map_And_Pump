@@ -90,6 +90,13 @@ function customer_account_rows(string $search = '', string $status = '', string 
     $params = [];
     $types = '';
 
+    // Hide incomplete registration shells from Drivers:
+    // - email_verification_pending: waiting for email code (or failed mail)
+    // - pending_verification with no license: legacy empty shells
+    // Real reviewable accounts always have a license_id after save_license.php.
+    $where[] = "(LOWER(TRIM(COALESCE(u.status, ''))) NOT IN ('email_verification_pending', 'pending_verification')
+        OR (u.license_id IS NOT NULL AND u.license_id > 0))";
+
     if ($search !== '') {
         $where[] = '(LOWER(u.user_name) LIKE ? OR LOWER(u.email) LIKE ? OR LOWER(COALESCE(h.company_name, \'\')) LIKE ?)';
         $like = '%' . strtolower($search) . '%';
@@ -343,15 +350,16 @@ function pending_account_rows(string $search = '', string $status = 'pending'): 
     }
 
     $status = strtolower(trim($status));
-    $licenseStatusValues = match ($status) {
-        'approved' => ['approved', 'active'],
-        'reject' => ['rejected'],
-        default => ['pending'],
+    [$accountStatusValues, $licenseStatusValues] = match ($status) {
+        'approved' => [['approved', 'active'], ['approved', 'active']],
+        'reject' => [['rejected'], ['rejected']],
+        default => [['pending_verification'], ['pending']],
     };
     $where = [
+        'LOWER(TRIM(u.status)) IN (' . implode(',', array_fill(0, count($accountStatusValues), '?')) . ')',
         'LOWER(TRIM(l.status)) IN (' . implode(',', array_fill(0, count($licenseStatusValues), '?')) . ')',
     ];
-    $params = $licenseStatusValues;
+    $params = array_merge($accountStatusValues, $licenseStatusValues);
     $types = str_repeat('s', count($params));
     if ($search !== '') {
         $where[] = '(LOWER(u.user_name) LIKE ? OR LOWER(u.email) LIKE ? OR LOWER(COALESCE(h.company_name, \'\')) LIKE ? OR LOWER(COALESCE(l.license_number, \'\')) LIKE ? OR LOWER(COALESCE(l.license_name, \'\')) LIKE ?)';
@@ -631,7 +639,8 @@ function pending_account_count(): int
         "SELECT COUNT(*) AS total
          FROM users u
          INNER JOIN user_license l ON l.license_id = u.license_id
-                 WHERE LOWER(TRIM(l.status)) = 'pending'"
+         WHERE LOWER(TRIM(u.status)) = 'pending_verification'
+           AND LOWER(TRIM(l.status)) = 'pending'"
     );
 
     return $query ? (int) ($query->fetch_assoc()['total'] ?? 0) : 0;

@@ -104,6 +104,65 @@ function customer_role_id(PDO $pdo): int
     return $roleId ? (int) $roleId : 6;
 }
 
+/**
+ * Remove an incomplete registration shell when the verification email never sent.
+ * Safe only for email-pending statuses with no driver license — never touches
+ * real accounts or license-review rows.
+ */
+function register_discard_incomplete_registration(PDO $pdo, int $userId): void
+{
+    if ($userId <= 0) {
+        return;
+    }
+
+    try {
+        $lookup = $pdo->prepare(
+            "SELECT user_id, status, license_id
+             FROM users
+             WHERE user_id = ?
+             LIMIT 1"
+        );
+        $lookup->execute([$userId]);
+        $row = $lookup->fetch(PDO::FETCH_ASSOC);
+        if (!$row) {
+            return;
+        }
+
+        $status = strtolower(trim((string) ($row['status'] ?? '')));
+        $licenseId = (int) ($row['license_id'] ?? 0);
+        $isEmailPending = in_array($status, ['email_verification_pending', 'pending_verification'], true);
+        if (!$isEmailPending || $licenseId > 0) {
+            return;
+        }
+
+        $pdo->beginTransaction();
+        try {
+            try {
+                $pdo->prepare('DELETE FROM accounts WHERE user_id = ?')->execute([$userId]);
+            } catch (Throwable $ignored) {
+            }
+            try {
+                $pdo->prepare('DELETE FROM business_account_scope WHERE user_id = ?')->execute([$userId]);
+            } catch (Throwable $ignored) {
+            }
+            $pdo->prepare(
+                "DELETE FROM users
+                 WHERE user_id = ?
+                   AND LOWER(TRIM(status)) IN ('email_verification_pending', 'pending_verification')
+                   AND (license_id IS NULL OR license_id = 0)"
+            )->execute([$userId]);
+            $pdo->commit();
+        } catch (Throwable $inner) {
+            if ($pdo->inTransaction()) {
+                $pdo->rollBack();
+            }
+            error_log('register_discard_incomplete_registration failed: ' . $inner->getMessage());
+        }
+    } catch (Throwable $e) {
+        error_log('register_discard_incomplete_registration lookup failed: ' . $e->getMessage());
+    }
+}
+
 function register_mail_setup_message(Throwable $error): string
 {
     $message = strtolower($error->getMessage());
@@ -233,6 +292,7 @@ $_SESSION['registration_rate'] = [
     'attempts' => $attempts + 1,
 ];
 
+$userId = 0;
 try {
     $stmt = $pdo->prepare('SELECT user_id, status, license_id FROM users WHERE LOWER(email) = LOWER(?) LIMIT 1');
     $stmt->execute([$email]);
@@ -270,7 +330,6 @@ try {
     $roleId = customer_role_id($pdo);
     $passwordHash = password_hash($password, PASSWORD_DEFAULT);
     $hasCurrentRole = map_pump_current_role_column_ready($pdo);
-    $userId = 0;
 
     if ($existingUser) {
         $userId = (int) $existingUser['user_id'];
@@ -321,9 +380,17 @@ try {
         register_json(true, 'We sent a verification code to your email.');
     } catch (Throwable $mailError) {
         error_log('Registration email failed: ' . $mailError->getMessage() . ' [' . get_class($mailError) . ']');
+        // Remove the incomplete shell so failed mail does not leave empty rows
+        // in View/Manage Drivers, then tell the user why registration failed.
+        register_discard_incomplete_registration($pdo, $userId);
+        unset($_SESSION['pending_registration'], $_SESSION['pending_staff_link']);
         register_json(false, register_mail_setup_message($mailError));
     }
 } catch (Throwable $e) {
     error_log('Registration code failed: ' . $e->getMessage() . ' [' . get_class($e) . ']');
+    if ($userId > 0) {
+        register_discard_incomplete_registration($pdo, $userId);
+        unset($_SESSION['pending_registration'], $_SESSION['pending_staff_link']);
+    }
     register_json(false, 'Could not start registration. Please try again.');
 }
