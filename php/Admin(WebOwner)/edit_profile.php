@@ -187,7 +187,57 @@ if ($hasCustomerProfile) {
             background: rgba(121,170,255,.1) !important;
             color: var(--ab-accent) !important;
         }
+        .admin-blue-page .admin-blue-shell .form-label{display:block;width:100%;margin-bottom:.5rem}
+        .admin-blue-page .admin-blue-shell .form-control{display:block;width:100%;min-width:0}
+        .profile-settings-card { padding:clamp(24px,3vw,36px)!important; }
+        .profile-settings-heading { display:flex; align-items:center; gap:12px; margin-bottom:28px; color:var(--ab-text); font-size:22px; font-weight:600; letter-spacing:-.025em; }
+        .profile-settings-heading i { display:grid; place-items:center; width:38px; height:38px; border:1px solid var(--ab-border); border-radius:10px; background:var(--ab-raised); color:var(--ab-accent); font-size:17px; }
+        .profile-settings-form { display:grid; gap:24px; }
+        .profile-settings-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:20px 24px; }
+        .profile-field { min-width:0; }
+        .profile-field--full { grid-column:1 / -1; }
+        .profile-field label { display:flex; align-items:center; gap:4px; margin:0 0 8px; color:var(--ab-muted); font-size:12px; font-weight:500; }
+        .profile-field .form-control { width:100%; min-height:50px; padding:12px 14px; border-radius:10px; font-size:14px; }
+        .profile-field .form-control:disabled { border-color:var(--ab-border); background:rgba(24,37,55,.55); color:var(--ab-muted); opacity:.7; }
+        .profile-field-note { margin:7px 0 0; color:var(--ab-muted); font-size:11px; }
+        .profile-form-actions { display:flex; justify-content:flex-end; padding-top:4px; border-top:1px solid var(--ab-border); }
+        .profile-form-actions .btn { min-width:210px; min-height:48px; font-size:13px!important; }
+        .profile-settings-card .pw-strength-bar { margin-top:10px; }
+        .profile-security-card { display:flex; align-items:center; justify-content:space-between; gap:20px; }
+        .profile-security-copy { min-width:0; }
+        .profile-security-copy p { margin:0; color:var(--ab-muted); font-size:13px; }
+        .profile-security-card .btn { flex:0 0 auto; min-width:170px; min-height:48px; }
+        .profile-overview-card .profile-avatar-container { width:112px; height:112px; }
+        #changePasswordModal .modal-content {
+            border:1px solid var(--ab-border);
+            border-radius:16px;
+            background:var(--ab-surface);
+            color:var(--ab-text);
+        }
+        #changePasswordModal .modal-header,
+        #changePasswordModal .modal-footer {
+            border-color:var(--ab-border);
+            background:var(--ab-surface);
+        }
+        #changePasswordModal .modal-title { color:var(--ab-text); font-size:1.15rem; font-weight:600; }
+        #changePasswordModal .companies-eyebrow {
+            color:var(--ab-accent);
+            font-size:11px;
+            font-weight:600;
+            letter-spacing:.12em;
+            text-transform:uppercase;
+        }
         .admin-blue-page footer { color: var(--ab-muted) !important; font: 11px/1.6 'Poppins',system-ui,sans-serif; }
+        @media (min-width:992px) { .profile-settings-column > .profile-settings-card { flex:1 1 0; } }
+        @media (max-width:575.98px) {
+            .profile-settings-card { padding:22px!important; }
+            .profile-settings-grid { grid-template-columns:1fr; gap:18px; }
+            .profile-field--full { grid-column:auto; }
+            .profile-form-actions .btn { width:100%; }
+            .profile-settings-heading { margin-bottom:22px; font-size:20px; }
+            .profile-security-card { align-items:stretch; flex-direction:column; }
+            .profile-security-card .btn { width:100%; }
+        }
         @media (max-width: 767.98px) {
             .admin-blue-page .admin-blue-shell { margin-top: 22px !important; }
         }
@@ -196,13 +246,13 @@ if ($hasCustomerProfile) {
 <body class="background_color admin-blue-page" id="background_color">
 <?php $adminSection = 'profile'; include __DIR__ . '/admin_section_nav.php'; ?>
 
-    <main class="container my-5 admin-blue-shell">
+    <main class="container my-5 admin-blue-shell" style="max-width:1140px;">
         <div class="admin-blue-header mb-4">
-            <span class="stat-chip mb-2"><i class="bi bi-person-badge-fill txt-neon-cyan"></i> Account Settings</span>
-            <h1 class="fw-bold m-0 h4 text-white mt-2">Edit Profile Details</h1>
-            <p class="admin-blue-description">Manage your profile information, password, and account security.</p>
+            <span class="stat-chip mb-2">Account settings</span>
+            <h1 class="fw-bold m-0 text-white mt-2">Edit Profile Details</h1>
+            <p class="admin-blue-description">Update your admin profile, avatar, and sign-in credentials.</p>
         </div>
-        
+
         <?php if ($flash): ?>
             <div class="alert profile-flash alert-<?= hq_escape((string) ($flash['type'] ?? 'info')) ?> alert-dismissible fade show mb-4" role="alert">
                 <i class="bi <?= (($flash['type'] ?? '') === 'success') ? 'bi-check-circle-fill text-success' : 'bi-exclamation-triangle-fill text-danger' ?> me-2"></i><?= hq_escape((string) ($flash['message'] ?? '')) ?>
@@ -215,15 +265,15 @@ if ($hasCustomerProfile) {
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="alert" aria-label="Close"></button>
             </div>
         <?php endif; ?>
-        <?php if (!$user): ?><div class="alert alert-danger border-0">The live admin account could not be loaded.</div><?php else: ?>
-        
+        <?php if (!$user): ?>
+            <div class="alert alert-danger border-0">The live admin account could not be loaded.</div>
+        <?php else: ?>
+
         <div class="row g-4">
-            
-            <!-- Profile overview and personal information -->
+
+            <!-- Profile overview -->
             <div class="col-12 col-lg-6">
-                
-                <!-- Profile Avatar & Details Card -->
-                <div class="dashboard-card p-4 h-100">
+                <div class="dashboard-card profile-overview-card p-4 h-100">
                     <div class="text-center pb-4 border-bottom border-white border-opacity-10">
                         <form action="update_avatar_action.php" method="POST" enctype="multipart/form-data" id="avatarForm">
                             <div class="profile-avatar-container mb-3 mx-auto">
@@ -250,49 +300,54 @@ if ($hasCustomerProfile) {
                         </div>
                     </div>
                 </div>
-
             </div>
 
+            <!-- Personal information -->
             <div class="col-12 col-lg-6">
-                <div class="dashboard-card p-4 h-100">
-                    <h5 class="fw-bold text-white mb-4"><i class="bi bi-sliders txt-neon-cyan me-2"></i>Personal Information</h5>
-                    <form action="update_profile_action.php" method="POST">
-                        <div class="row g-3">
-                            <div class="col-12">
-                                <label class="form-label text-white-50 small" for="profileUserName">Username / Display Name <span class="text-danger">*</span></label>
-                                <input id="profileUserName" type="text" name="user_name" class="form-control glass-input" value="<?= hq_escape((string) $user['user_name']) ?>" maxlength="225" required>
+                <div class="dashboard-card profile-settings-card profile-settings-card--personal h-100">
+                    <h2 class="profile-settings-heading"><i class="bi bi-sliders"></i>Personal Information</h2>
+                    <form action="update_profile_action.php" method="POST" class="profile-settings-form">
+                        <div class="profile-settings-grid">
+                            <div class="profile-field">
+                                <label for="profileFullName">Full Name <span class="text-danger">*</span></label>
+                                <input id="profileFullName" type="text" name="user_name" class="form-control glass-input" value="<?= hq_escape((string) $user['user_name']) ?>" maxlength="225" required>
                             </div>
-                            <div class="col-12">
-                                <label class="form-label text-white-50 small" for="profileEmail">Registered Email Address <span class="text-danger">*</span></label>
+                            <div class="profile-field">
+                                <label for="profileUsername">Username</label>
+                                <input id="profileUsername" type="text" class="form-control glass-input" value="<?= hq_escape((string) $user['user_name']) ?>" disabled>
+                                <p class="profile-field-note">Display name above is used as your public username.</p>
+                            </div>
+                            <div class="profile-field profile-field--full">
+                                <label for="profileEmail">Registered Email Address <span class="text-danger">*</span></label>
                                 <input id="profileEmail" type="email" name="email" class="form-control glass-input" value="<?= hq_escape((string) $user['email']) ?>" maxlength="255" required>
                             </div>
-                            <div class="col-12 text-end mt-3">
-                                <button type="submit" class="btn btn-neon px-4">Save Profile Changes</button>
-                            </div>
+                        </div>
+                        <div class="profile-form-actions">
+                            <button type="submit" class="btn btn-neon px-4">Save Profile Changes</button>
                         </div>
                     </form>
                 </div>
             </div>
 
-            <!-- Compact linked driver profile beside Security & Password -->
-            <div class="col-12 col-lg-5">
-                <div class="dashboard-card p-4 h-100">
-                    <h6 class="fw-bold text-white mb-3"><i class="bi bi-fuel-pump txt-neon-cyan me-2"></i>Driver Gas Profile</h6>
+            <!-- Driver profile switch -->
+            <div class="col-12 col-lg-6">
+                <div class="dashboard-card p-4 h-100" style="border-color:rgba(121,170,255,.22);background:rgba(121,170,255,.04)!important;">
+                    <h6 class="fw-bold text-white mb-2"><i class="bi bi-fuel-pump txt-neon-cyan me-2"></i>Driver Gas Profile</h6>
                     <?php if ($hasCustomerProfile): ?>
                         <div class="small text-white-50 mb-2">
                             <span class="text-white fw-semibold"><?= hq_escape((string) $user['user_name']) ?></span>
                             <span class="d-block"><?= hq_escape(privacy_mask_email((string) $user['email'])) ?></span>
                         </div>
                         <?php if ($customerVehicle): ?>
+                            <?php
+                            $vehicleDescription = trim(implode(' / ', array_filter([
+                                trim((string) ($customerVehicle['vehicle_name'] ?? '')),
+                                trim((string) ($customerVehicle['vehicle_type'] ?? '')),
+                            ])));
+                            ?>
                             <div class="small text-white-50 mb-3">
                                 <i class="bi bi-car-front me-1 txt-neon-cyan"></i>
                                 <?= hq_escape(privacy_mask_identifier((string) $customerVehicle['car_plate_number'])) ?>
-                                <?php
-                                $vehicleDescription = trim(implode(' / ', array_filter([
-                                    trim((string) ($customerVehicle['vehicle_name'] ?? '')),
-                                    trim((string) ($customerVehicle['vehicle_type'] ?? '')),
-                                ])));
-                                ?>
                                 <?php if ($vehicleDescription !== ''): ?> <span class="text-white-50">· <?= hq_escape($vehicleDescription) ?></span><?php endif; ?>
                             </div>
                         <?php elseif ($customerVehicleLoadError): ?>
@@ -303,7 +358,7 @@ if ($hasCustomerProfile) {
                     <?php else: ?>
                         <p class="small text-white-50 mb-3">No driver profile is linked to this account.</p>
                     <?php endif; ?>
-                    <form action="../account_switch.php" method="POST" class="m-0">
+                    <form action="../account_switch.php" method="POST" class="m-0 mt-3">
                         <input type="hidden" name="mode" value="customer">
                         <button type="submit" class="btn btn-outline-info btn-sm rounded-3 w-100 fw-bold">
                             <i class="bi bi-arrow-left-right me-1"></i>Switch to Driver Profile
@@ -312,58 +367,92 @@ if ($hasCustomerProfile) {
                 </div>
             </div>
 
-            <div class="col-12 col-lg-7">
-                <div class="dashboard-card p-4">
-                    <h5 class="fw-bold text-white mb-4"><i class="bi bi-shield-lock-fill txt-neon-cyan me-2"></i>Security &amp; Password</h5>
-                    <form action="update_password_action.php" method="POST" id="passwordForm">
-                        <div class="row g-3">
-                            <div class="col-12">
-                                <label class="form-label text-white-50 small" for="currentPassword">Current Password <span class="text-danger">*</span></label>
-                                <input id="currentPassword" type="password" name="current_password" class="form-control glass-input" required autocomplete="current-password">
-                            </div>
-                            <div class="col-12 col-sm-6">
-                                <label class="form-label text-white-50 small" for="newPasswordInput">New Password <span class="text-danger">*</span></label>
-                                <input id="newPasswordInput" type="password" name="new_password" class="form-control glass-input" minlength="8" maxlength="72" required autocomplete="new-password">
-                                <div class="pw-strength-bar"><div class="pw-strength-fill" id="pwStrengthFill"></div></div>
-                                <div class="pw-strength-label" id="pwStrengthLabel"></div>
-                            </div>
-                            <div class="col-12 col-sm-6">
-                                <label class="form-label text-white-50 small" for="confirmPassword">Confirm New Password <span class="text-danger">*</span></label>
-                                <input id="confirmPassword" type="password" name="confirm_password" class="form-control glass-input" minlength="8" maxlength="72" required autocomplete="new-password">
-                            </div>
-                            <div class="col-12">
-                                <p class="text-white-50 small mb-0"><i class="bi bi-info-circle txt-neon-cyan me-1"></i>Use 8–72 characters with upper &amp; lowercase letters, a number, and a symbol.</p>
-                                <div id="passwordMatchHint" class="small mt-1" aria-live="polite"></div>
-                            </div>
-                            <div class="col-12 text-end mt-3">
-                                <button type="submit" class="btn btn-neon px-4" id="passwordSubmitBtn">Update Password</button>
-                            </div>
+            <!-- Security -->
+            <div class="col-12 col-lg-6">
+                <div class="dashboard-card profile-settings-card h-100">
+                    <div class="profile-security-card">
+                        <div class="profile-security-copy">
+                            <h2 class="profile-settings-heading mb-2"><i class="bi bi-shield-lock-fill"></i>Security &amp; Password</h2>
+                            <p>Use a strong, unique password to keep your admin account protected.</p>
                         </div>
-                    </form>
+                        <button type="button" class="btn btn-neon" data-bs-toggle="modal" data-bs-target="#changePasswordModal"><i class="bi bi-key-fill me-1"></i>Change Password</button>
+                    </div>
                 </div>
-
             </div>
 
+            <!-- Delete account -->
             <div class="col-12">
                 <div class="dashboard-card p-4 border border-danger border-opacity-25" style="background:rgba(255,77,106,.045)!important;">
                     <h6 class="fw-bold text-danger mb-2"><i class="bi bi-exclamation-triangle-fill me-2"></i>Delete Account</h6>
                     <p class="text-white-50 small">This deactivates your own Admin account and signs you out. Type <code>DELETE</code> to confirm. The last active Admin account cannot be deactivated.</p>
                     <form action="/php/account_self_delete.php" method="POST" class="row g-3 align-items-end">
                         <input type="hidden" name="return_to" value="/php/Admin(WebOwner)/edit_profile.php">
-                        <div class="col-12 col-md-5"><label class="form-label text-white-50 small">Confirmation</label><input class="form-control glass-input" name="confirmation" autocomplete="off" placeholder="Type DELETE" required></div>
-                        <div class="col-12 col-md-4"><label class="form-check text-white-50 small mb-0"><input class="form-check-input" type="checkbox" name="confirm_deletion" value="yes" required> I understand this disables my account.</label></div>
-                        <div class="col-12 col-md-3 text-md-end"><button class="btn btn-outline-danger w-100" type="submit">Deactivate Account</button></div>
+                        <div class="col-12 col-md-5">
+                            <label class="form-label text-white-50 small">Confirmation</label>
+                            <input class="form-control glass-input" name="confirmation" autocomplete="off" placeholder="Type DELETE" required>
+                        </div>
+                        <div class="col-12 col-md-4">
+                            <label class="form-check text-white-50 small mb-0">
+                                <input class="form-check-input" type="checkbox" name="confirm_deletion" value="yes" required>
+                                I understand this disables my account.
+                            </label>
+                        </div>
+                        <div class="col-12 col-md-3 text-md-end">
+                            <button class="btn btn-outline-danger w-100" type="submit">Deactivate Account</button>
+                        </div>
                     </form>
                 </div>
             </div>
 
         </div>
-        
         <?php endif; ?>
     </main>
 
+    <div class="modal fade" id="changePasswordModal" tabindex="-1" aria-labelledby="changePasswordModalTitle" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <div>
+                        <div class="companies-eyebrow mb-1">Account security</div>
+                        <h2 class="modal-title" id="changePasswordModalTitle">Change Password</h2>
+                    </div>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <form action="update_password_action.php" method="POST" id="passwordForm">
+                    <div class="modal-body">
+                        <p class="text-white-50 small mb-4">Confirm your current password, then choose a new password with at least 8 characters.</p>
+                        <div class="profile-settings-grid">
+                            <div class="profile-field profile-field--full">
+                                <label for="currentPassword">Current Password <span class="text-danger">*</span></label>
+                                <input id="currentPassword" type="password" name="current_password" class="form-control glass-input" placeholder="Enter your current password" required autocomplete="current-password">
+                            </div>
+                            <div class="profile-field">
+                                <label for="newPasswordInput">New Password <span class="text-danger">*</span></label>
+                                <input id="newPasswordInput" type="password" name="new_password" class="form-control glass-input" placeholder="Min. 8 characters" minlength="8" maxlength="72" required autocomplete="new-password">
+                                <div class="pw-strength-bar"><div class="pw-strength-fill" id="pwStrengthFill"></div></div>
+                                <div class="pw-strength-label" id="pwStrengthLabel"></div>
+                            </div>
+                            <div class="profile-field">
+                                <label for="confirmPassword">Confirm New Password <span class="text-danger">*</span></label>
+                                <input id="confirmPassword" type="password" name="confirm_password" class="form-control glass-input" placeholder="Repeat new password" minlength="8" maxlength="72" required autocomplete="new-password">
+                                <div id="passwordMatchHint" class="small mt-1" aria-live="polite"></div>
+                            </div>
+                        </div>
+                        <p class="text-white-50 small mt-3 mb-0"><i class="bi bi-info-circle txt-neon-cyan me-1"></i>Use 8–72 characters with upper &amp; lowercase letters, a number, and a symbol.</p>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-neon"><i class="bi bi-shield-check me-1"></i>Update Password</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
     <footer class="text-white-50 text-center py-4 mt-5 small">&copy; 2026 Map &amp; Pump | All Rights Reserved</footer>
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script><script src="/js/Admin.js"></script><script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="/js/Admin.js"></script>
+    <script>
         document.getElementById('avatarInput')?.addEventListener('change', (event) => {
             const file = event.target.files?.[0];
             if (!file) return;
