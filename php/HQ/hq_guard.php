@@ -17,6 +17,19 @@ function hq_guard_redirect_top(string $url, string $message = ''): void
         $_SESSION['login_error'] = $message;
     }
 
+    $accept = strtolower((string) ($_SERVER['HTTP_ACCEPT'] ?? ''));
+    $isJsonRequest = str_contains($accept, 'application/json')
+        || strtolower((string) ($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '')) === 'xmlhttprequest';
+    if ($isJsonRequest) {
+        http_response_code(401);
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode([
+            'ok' => false,
+            'message' => $message !== '' ? $message : 'Your session has expired. Please sign in again.',
+        ]);
+        exit;
+    }
+
     echo '<script>window.top.location.replace(' . json_encode($url) . ');</script>';
     echo '<noscript><meta http-equiv="refresh" content="0;url=' . htmlspecialchars($url, ENT_QUOTES, 'UTF-8') . '"></noscript>';
     exit;
