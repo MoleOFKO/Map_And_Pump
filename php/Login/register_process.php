@@ -4,13 +4,18 @@ ini_set('display_errors', '0');
 header('Content-Type: application/json; charset=utf-8');
 
 ob_start();
+$registerResponseSent = false;
 set_error_handler(function (int $severity, string $message, string $file, int $line) {
     if (!(error_reporting() & $severity)) {
         return false;
     }
     throw new ErrorException($message, 0, $severity, $file, $line);
 });
-register_shutdown_function(function () {
+register_shutdown_function(function () use (&$registerResponseSent) {
+    if ($registerResponseSent) {
+        return;
+    }
+
     $error = error_get_last();
     if ($error !== null && in_array($error['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR], true)) {
         if (!headers_sent()) {
@@ -35,6 +40,33 @@ function register_json(bool $ok, string $message, array $extra = []): never
     echo json_encode(['ok' => $ok, 'message' => $message] + $extra);
     exit;
 }
+
+function register_json_early(bool $ok, string $message, array $extra = []): void
+{
+    global $registerResponseSent;
+
+    if (session_status() === PHP_SESSION_ACTIVE) {
+        @session_write_close();
+    }
+
+    while (ob_get_level() > 0) {
+        @ob_end_clean();
+    }
+
+    $registerResponseSent = true;
+    http_response_code(202);
+    header('Content-Type: application/json; charset=utf-8');
+    echo json_encode(['ok' => $ok, 'message' => $message] + $extra);
+
+    if (function_exists('fastcgi_finish_request')) {
+        fastcgi_finish_request();
+    } else {
+        flush();
+    }
+
+    ignore_user_abort(true);
+}
+
 function register_validate_email_domain(string $domain): bool
 {
     $domain = strtolower(trim($domain));
@@ -233,7 +265,7 @@ $_SESSION['registration_rate'] = [
 ];
 
 try {
-    $stmt = $pdo->prepare('SELECT user_id, status FROM users WHERE LOWER(email) = LOWER(?) LIMIT 1');
+    $stmt = $pdo->prepare('SELECT user_id, status, license_id FROM users WHERE LOWER(email) = LOWER(?) LIMIT 1');
     $stmt->execute([$email]);
     $existingUser = $stmt->fetch(PDO::FETCH_ASSOC);
 
@@ -249,13 +281,21 @@ try {
         $canResumePending = is_array($pendingLink)
             && (int) ($pendingLink['staff_id'] ?? 0) === $staffLinkContext['staff_id']
             && (int) ($pendingLink['user_id'] ?? 0) === (int) ($existingUser['user_id'] ?? 0);
-        if ($existingUser && (strtolower((string) ($existingUser['status'] ?? '')) !== 'pending_verification' || !$canResumePending)) {
+        $existingStatus = strtolower(trim((string) ($existingUser['status'] ?? '')));
+        $canVerifyEmail = in_array($existingStatus, ['email_verification_pending', 'pending_verification'], true)
+            && empty($existingUser['license_id']);
+        if ($existingUser && (!$canVerifyEmail || !$canResumePending)) {
             register_json(false, 'That email is already registered. Choose the existing-account tab instead.');
         }
     }
 
-    if ($existingUser && strtolower((string) ($existingUser['status'] ?? '')) !== 'pending_verification') {
-        register_json(false, 'That email is already registered. Please log in instead.');
+    if ($existingUser) {
+        $existingStatus = strtolower(trim((string) ($existingUser['status'] ?? '')));
+        $canVerifyEmail = in_array($existingStatus, ['email_verification_pending', 'pending_verification'], true)
+            && empty($existingUser['license_id']);
+        if (!$canVerifyEmail) {
+            register_json(false, 'That email is already registered. Please log in instead.');
+        }
     }
 
     $roleId = customer_role_id($pdo);
@@ -273,7 +313,7 @@ try {
         if ($hasCurrentRole) {
             $updateParams[] = $roleId;
         }
-        $updateParams[] = 'pending_verification';
+        $updateParams[] = 'email_verification_pending';
         $updateParams[] = $userId;
         $update->execute($updateParams);
     } else {
@@ -285,7 +325,7 @@ try {
         if ($hasCurrentRole) {
             $insertParams[] = $roleId;
         }
-        $insertParams[] = 'pending_verification';
+        $insertParams[] = 'email_verification_pending';
         $insert->execute($insertParams);
         $userId = (int) $pdo->lastInsertId();
     }
@@ -308,11 +348,10 @@ try {
     }
 
     try {
+        register_json_early(true, 'Registration started. Your verification email is being sent.');
         send_registration_code($email, $code);
-        register_json(true, 'We sent a verification code to your email.');
     } catch (Throwable $mailError) {
         error_log('Registration email failed: ' . $mailError->getMessage() . ' [' . get_class($mailError) . ']');
-        register_json(false, register_mail_setup_message($mailError));
     }
 } catch (Throwable $e) {
     error_log('Registration code failed: ' . $e->getMessage() . ' [' . get_class($e) . ']');

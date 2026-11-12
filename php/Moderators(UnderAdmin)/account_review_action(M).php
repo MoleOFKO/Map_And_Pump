@@ -36,8 +36,9 @@ try {
     $conn->begin_transaction();
 
     $targetQuery = $conn->prepare(
-        'SELECT u.user_id, u.user_name, u.email, u.status, u.license_id
+        'SELECT u.user_id, u.user_name, u.email, u.license_id, l.status AS license_status
          FROM users u
+         LEFT JOIN user_license l ON l.license_id = u.license_id
          WHERE u.user_id = ?
          FOR UPDATE'
     );
@@ -52,21 +53,26 @@ try {
     if (!$target) {
         throw new RuntimeException('That account could not be found.');
     }
-    if (strtolower(trim((string) $target['status'])) !== 'pending_verification') {
-        throw new RuntimeException('Only pending verification accounts can be approved or rejected.');
+    $licenseId = (int) ($target['license_id'] ?? 0);
+    if ($licenseId <= 0 || strtolower(trim((string) ($target['license_status'] ?? ''))) !== 'pending') {
+        throw new RuntimeException('Only a pending driver license can be approved or rejected.');
     }
-    if (!empty($target['license_id']) && duplicate_license_record_count('driver', (int) $target['license_id']) !== 0) {
+    if (duplicate_license_record_count('driver', $licenseId) !== 0) {
         throw new RuntimeException('This account has a duplicate driver license. Use Compare to record the decision and notify every affected customer.');
     }
 
     $newStatus = $action === 'approve' ? 'approved' : 'rejected';
-    $update = $conn->prepare('UPDATE users SET status = ?, updated_at = NOW() WHERE user_id = ?');
+    $update = $conn->prepare('UPDATE user_license SET status = ?, updated_at = NOW() WHERE license_id = ? AND status = \'pending\'');
     if (!$update) {
-        throw new RuntimeException('Could not prepare the account status update.');
+        throw new RuntimeException('Could not prepare the driver-license status update.');
     }
-    $update->bind_param('si', $newStatus, $userId);
+    $update->bind_param('si', $newStatus, $licenseId);
     if (!$update->execute()) {
-        throw new RuntimeException('Could not update the account status.');
+        throw new RuntimeException('Could not update the driver-license status.');
+    }
+    if ($update->affected_rows !== 1) {
+        $update->close();
+        throw new RuntimeException('The driver license is no longer pending review. Refresh and try again.');
     }
     $update->close();
 
@@ -131,7 +137,7 @@ try {
     admin_record_log((int) $moderatorUser['user_id'], $logVerb . ' pending account #' . $userId . ' (' . $target['user_name'] . ').');
     $conn->commit();
 
-    request_flash('success', 'Account ACCT-' . $userId . ' was ' . $newStatus . '.');
+    request_flash('success', 'Driver license #' . $licenseId . ' was ' . $newStatus . '. The user account was not changed.');
 } catch (Throwable $exception) {
     $conn->rollback();
     error_log('[Moderator account review] Review failed: ' . $exception->getMessage());
