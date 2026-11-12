@@ -1,4 +1,6 @@
 <?php
+require_once __DIR__ . '/../Login/session_helper.php';
+map_pump_configure_session();
 session_start();
 
 if (empty($_SESSION['is_logged_in']) || (empty($_SESSION['user_id']) && empty($_SESSION['hq_auth']))) {
