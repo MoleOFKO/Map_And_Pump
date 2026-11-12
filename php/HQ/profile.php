@@ -482,6 +482,14 @@ $canLinkCustomer = $canLinkCustomer && $linkedCustomer === null;
             box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
         }
 
+        .customer-link-modal-content {
+            box-sizing: border-box;
+            max-height: calc(100vh - 40px);
+            max-height: calc(100dvh - 40px);
+            overflow-y: auto;
+            overscroll-behavior: contain;
+        }
+
         .password-modal-header {
             display: flex;
             align-items: center;
@@ -700,7 +708,7 @@ $canLinkCustomer = $canLinkCustomer && $linkedCustomer === null;
 
     <?php if ($canLinkCustomer && !$hasCustomerProfile): ?>
     <div class="password-modal-overlay" id="customerLinkModal" role="dialog" aria-modal="true" aria-labelledby="customerLinkModalTitle" aria-hidden="true">
-        <div class="password-modal" role="document">
+        <div class="password-modal customer-link-modal-content" role="document">
             <div class="password-modal-header">
                 <h2 id="customerLinkModalTitle">Link a Customer Account</h2>
                 <button type="button" class="password-modal-close" aria-label="Close" onclick="closeCustomerLinkModal()">&times;</button>
