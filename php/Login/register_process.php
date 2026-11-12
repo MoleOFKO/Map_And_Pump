@@ -42,6 +42,16 @@ function register_validate_email_domain(string $domain): bool
         return false;
     }
 
+    // Avoid blocking valid sign-ups when the runtime cannot reach public DNS or
+    // outbound network checks are disabled by the hosting environment.
+    // FILTER_VALIDATE_EMAIL already enforces the core address format, so this
+    // function only needs a minimal host check and should not reject a valid
+    // address solely because MX resolution failed.
+    $looksLikeDomain = preg_match('/^(?:localhost|(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9-]{2,63})$/i', $domain) === 1;
+    if (!$looksLikeDomain) {
+        return false;
+    }
+
     if (function_exists('dns_get_record')) {
         $mxRecords = @dns_get_record($domain, DNS_MX);
         if (is_array($mxRecords) && !empty($mxRecords)) {
@@ -81,7 +91,8 @@ function register_validate_email_domain(string $domain): bool
         }
     }
 
-    return false;
+    // If DNS is unreachable or blocked, do not reject a valid-looking address.
+    return true;
 }
 
 function customer_role_id(PDO $pdo): int
