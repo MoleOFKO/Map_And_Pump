@@ -353,7 +353,7 @@ function pending_account_rows(string $search = '', string $status = 'pending'): 
     [$accountStatusValues, $licenseStatusValues] = match ($status) {
         'approved' => [['approved', 'active'], ['approved', 'active']],
         'reject' => [['rejected'], ['rejected']],
-        default => [['pending_verification'], ['pending']],
+        default => [['pending_verification', 'active', 'approved'], ['pending']],
     };
     $where = [
         'LOWER(TRIM(u.status)) IN (' . implode(',', array_fill(0, count($accountStatusValues), '?')) . ')',
@@ -639,7 +639,7 @@ function pending_account_count(): int
         "SELECT COUNT(*) AS total
          FROM users u
          INNER JOIN user_license l ON l.license_id = u.license_id
-         WHERE LOWER(TRIM(u.status)) = 'pending_verification'
+                 WHERE LOWER(TRIM(u.status)) IN ('pending_verification', 'active', 'approved')
            AND LOWER(TRIM(l.status)) = 'pending'"
     );
 
