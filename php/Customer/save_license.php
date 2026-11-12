@@ -308,12 +308,9 @@ try {
             throw new RuntimeException('License record was created but its ID could not be read.');
         }
 
-        $update = $pdo->prepare("UPDATE users SET license_id = ?, status = 'pending_verification', updated_at = NOW() WHERE user_id = ?");
+        $update = $pdo->prepare('UPDATE users SET license_id = ?, updated_at = NOW() WHERE user_id = ?');
         $update->execute([$licenseId, $userId]);
     }
-
-    $markPending = $pdo->prepare("UPDATE users SET status = 'pending_verification', updated_at = NOW() WHERE user_id = ?");
-    $markPending->execute([$userId]);
 
     $pdo->commit();
     $_SESSION['license_id'] = $licenseId;
