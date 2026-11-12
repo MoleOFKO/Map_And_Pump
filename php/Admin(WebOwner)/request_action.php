@@ -51,6 +51,9 @@ try {
         $requestTypeQuery->execute([$requestId]);
         if (strtolower(trim((string) $requestTypeQuery->fetchColumn())) === 'hq_registration') {
             hq_password_setup_ensure_schema($pdo);
+            if (!payment_transfer_schema_ready($pdo)) {
+                throw new RuntimeException('Company registration payment tracking is unavailable.');
+            }
         }
     }
 
@@ -169,12 +172,39 @@ try {
             ? (int) ($registrationDetails['requested_service_months'] ?? 1)
             : 1;
         $extraStationCount = max(0, $requestedStations - BILLING_HQ_INCLUDED_STATION_SLOTS);
-        // Request approval activates the company and included stations. Payment
-        // records remain separate and are never treated as received here.
+        // Request approval does not mark payment received; only a confirmed
+        // registration payment can grant the requested extra-station capacity.
         $paymentRow = null;
         if ($requestedStations < BILLING_HQ_INCLUDED_STATION_SLOTS || $requestedStations > 60
             || $requestedMonths < 1 || $requestedMonths > 24) {
             throw new RuntimeException('The requested station count or service period is invalid.');
+        }
+        $paymentLookup = $conn->prepare(
+            "SELECT payment_transfer_id, status, amount_mmk, quantity, term_months, service_start_month
+             FROM payment_transfers
+             WHERE request_id = ? AND payment_type = 'hq_registration' AND status = 'received'
+             ORDER BY payment_transfer_id DESC
+             LIMIT 1
+             FOR UPDATE"
+        );
+        if (!$paymentLookup) {
+            throw new RuntimeException('Could not verify the company registration payment.');
+        }
+        $paymentLookup->bind_param('i', $requestId);
+        if (!$paymentLookup->execute()) {
+            throw new RuntimeException('Could not verify the company registration payment.');
+        }
+        $paymentRow = $paymentLookup->get_result()?->fetch_assoc() ?: null;
+        $paymentLookup->close();
+        if ($paymentRow !== null) {
+            $expectedAmount = isset($registrationDetails['registration_amount_mmk'])
+                ? (float) $registrationDetails['registration_amount_mmk']
+                : null;
+            if ((int) ($paymentRow['quantity'] ?? 0) !== $requestedStations
+                || (int) ($paymentRow['term_months'] ?? 0) !== $requestedMonths
+                || ($expectedAmount !== null && abs((float) $paymentRow['amount_mmk'] - $expectedAmount) > 0.01)) {
+                throw new RuntimeException('The confirmed payment does not match the requested company registration package.');
+            }
         }
     }
 
