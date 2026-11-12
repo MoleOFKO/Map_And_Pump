@@ -1007,12 +1007,16 @@ body.background_color.admin-blue-page:is(.light-mode,[data-theme="light"]) {
                         const roleNameSource = String(u.role_name || '');
                         const normalizedRoleName = roleNameSource.trim().toLowerCase();
                         const roleName = escapeHtml(['customer', 'driver'].includes(normalizedRoleName) ? 'Driver' : (['hq', 'headquarter', 'headquarters', 'company'].includes(normalizedRoleName) ? 'Company' : (roleNameSource || 'Account')));
-                        const isPending = String((u.status || 'pending')).toLowerCase() !== 'approved';
-                        const profileHeader = '<div class="acct-profile-header"><div class="acct-avatar">' + escapeHtml(initialsOf(u.user_name || u.email || 'U')) + '</div><div class="acct-profile-meta"><div class="acct-profile-name">' + escapeHtml(u.user_name || 'Name unavailable') + '</div><div class="acct-profile-sub"><i class="bi bi-envelope me-1"></i>' + escapeHtml(u.email || 'Not provided on file') + '</div><div class="d-flex gap-2 flex-wrap mt-2"><span class="acct-badge acct-badge-role"><i class="bi bi-person-badge"></i>' + roleName + '</span>' + (isPending ? '<span class="acct-badge acct-badge-pending"><i class="bi bi-hourglass-split"></i>Pending Verification</span>' : '') + '</div></div></div>';
+                        const isPendingAccount = String(u.status || '').toLowerCase() === 'pending_verification';
+                        const isPendingLicense = String((l && l.status) || '').toLowerCase() === 'pending';
+                        const reviewBadge = isPendingLicense
+                            ? '<span class="acct-badge acct-badge-pending"><i class="bi bi-hourglass-split"></i>Driver License Review</span>'
+                            : (isPendingAccount ? '<span class="acct-badge acct-badge-pending"><i class="bi bi-hourglass-split"></i>Account Verification</span>' : '');
+                        const profileHeader = '<div class="acct-profile-header"><div class="acct-avatar">' + escapeHtml(initialsOf(u.user_name || u.email || 'U')) + '</div><div class="acct-profile-meta"><div class="acct-profile-name">' + escapeHtml(u.user_name || 'Name unavailable') + '</div><div class="acct-profile-sub"><i class="bi bi-envelope me-1"></i>' + escapeHtml(u.email || 'Not provided on file') + '</div><div class="d-flex gap-2 flex-wrap mt-2"><span class="acct-badge acct-badge-role"><i class="bi bi-person-badge"></i>' + roleName + '</span>' + reviewBadge + '</div></div></div>';
 
                         const accountInfoSection = '<div class="acct-section"><div class="acct-section-title"><i class="bi bi-person-vcard"></i>Account Info</div>' + fieldRow('bi-person', 'Full Name', escapeHtml(u.user_name || 'Not available')) + fieldRow('bi-envelope-at', 'Email', escapeHtml(u.email || 'Not available')) + fieldRow('bi-shield-lock', 'Role', '#' + escapeHtml(u.role_id || '') + ' &middot; ' + roleName) + fieldRow('bi-calendar3', 'Submitted', escapeHtml(formatDate(u.created_at))) + '</div>';
 
-                        const verificationSection = '<div class="acct-section"><div class="acct-section-title"><i class="bi bi-patch-check"></i>Verification Status</div>' + fieldRow('bi-person-check', 'Account Status', '<span class="request-status request-status-pending">Pending Verification</span>') + fieldRow('bi-card-checklist', 'License Status', '<span class="request-status ' + statusClass((l && l.status) || 'pending') + '">' + escapeHtml(statusLabel((l && l.status) || 'pending')) + '</span>') + '</div>';
+                        const verificationSection = '<div class="acct-section"><div class="acct-section-title"><i class="bi bi-patch-check"></i>Verification Status</div>' + fieldRow('bi-person-check', 'Account Status', escapeHtml(u.status || 'Unknown')) + fieldRow('bi-card-checklist', 'License Status', '<span class="request-status ' + statusClass((l && l.status) || 'pending') + '">' + escapeHtml(statusLabel((l && l.status) || 'pending')) + '</span>') + '</div>';
 
                         // Request review: only fields needed to approve/reject. NRC, DOB, blood type, phone never shown.
                         const licenseBlock = l ? '<div class="acct-section"><div class="acct-section-title"><i class="bi bi-card-heading"></i>Driver License Details</div><div class="row g-3">' +
@@ -1055,11 +1059,11 @@ body.background_color.admin-blue-page:is(.light-mode,[data-theme="light"]) {
                             if (reasonField) reasonField.hidden = !blocking;
                             if (reasonInput) reasonInput.required = blocking;
                         });
-                        if (String(u.status || '').toLowerCase() === 'pending_verification') {
+                        if (isPendingLicense) {
                             setFooter('<form action="account_review_action.php" method="POST" class="m-0"><input type="hidden" name="user_id" value="' + escapeHtml(u.user_id) + '"><input type="hidden" name="action" value="approve"><input type="hidden" name="return_to" value="view_requests.php"><button type="submit" class="request-action-btn request-action-btn--approve"><i class="bi bi-check-lg"></i>Approve</button></form><button type="button" class="request-action-btn request-action-btn--reject js-modal-reject"><i class="bi bi-x-lg"></i>Reject</button>');
                             detailsFooter.querySelector('.js-modal-reject').addEventListener('click', () => rejectTarget('account', u.user_id, label, u.user_name || u.email || 'Unknown user'));
                         }
-                        if (String(u.status || '').toLowerCase() === 'pending_verification' && (payload.license_conflicts || []).length) {
+                        if (isPendingLicense && (payload.license_conflicts || []).length) {
                             setFooter('<button type="button" class="request-action-btn request-action-btn--approve" data-manage-driver-duplicate><i class="bi bi-person-gear"></i>Manage this account</button>');
                             detailsFooter.querySelector('[data-manage-driver-duplicate]')?.addEventListener('click', () => {
                                 revealPairDecision(detailsBody.querySelector('[data-license-conflict-form]'));

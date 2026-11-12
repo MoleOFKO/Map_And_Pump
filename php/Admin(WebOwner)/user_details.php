@@ -41,8 +41,11 @@ $licenseFaceImageSelect = user_account_column_exists('user_license', 'face_image
     : 'NULL AS face_image';
 $customerRoleId = customer_role_id();
 $roleIdSql = $reviewerContext ? $roleIdSql : (string) $customerRoleId;
+$pendingLicenseScope = user_account_column_exists('user_license', 'status')
+    ? "OR (LOWER(TRIM(u.status)) IN ('active', 'approved') AND LOWER(TRIM(l.status)) = 'pending')"
+    : '';
 $scopeCondition = $requestContext
-    ? "AND LOWER(TRIM(u.status)) = 'pending_verification'"
+    ? "AND (LOWER(TRIM(u.status)) = 'pending_verification' {$pendingLicenseScope})"
     : 'AND ' . customer_account_role_guard_sql($customerRoleId);
 $statement = $conn->prepare(
     "SELECT u.user_id, {$publicIdSelect}, u.user_name, u.email, u.status, u.created_at, u.updated_at, {$lastLoginSelect},
