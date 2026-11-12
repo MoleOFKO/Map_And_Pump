@@ -848,7 +848,7 @@ try {
         $activitySql += ' AND DATE(l.created_at) <= :end_date';
         $activityParams[':end_date'] = $activityEnd;
     }
-    $activitySql .= ' ORDER BY l.created_at DESC, l.log_id DESC';
+    $activitySql += ' ORDER BY l.created_at DESC, l.log_id DESC';
     $activityStmt = $pdo->prepare($activitySql);
     $activityStmt->execute($activityParams);
     $activities = $activityStmt->fetchAll(PDO::FETCH_ASSOC);
@@ -2923,8 +2923,20 @@ try {
 
       try {
         const res = await fetch('manage-staff.php', { method: 'POST', body: fd });
-        const data = await res.json();
-        if (!data.ok) {
+        const raw = await res.text();
+
+        let data = {};
+        if (raw) {
+          try {
+            data = JSON.parse(raw);
+          } catch (parseErr) {
+            console.error('Staff save returned non-JSON response:', parseErr, raw.slice(0, 300));
+            showStaffFormFeedback('The save was interrupted. Please try again.', 'error');
+            return;
+          }
+        }
+
+        if (!res.ok || !data.ok) {
           showStaffFormFeedback(data.error || 'Unable to save staff at this time.', 'error');
           return;
         }
