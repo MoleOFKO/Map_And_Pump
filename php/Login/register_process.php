@@ -206,6 +206,10 @@ if (!preg_match('/[a-z]/', $password) || !preg_match('/[A-Z]/', $password) || !p
     register_json(false, 'Password must include upper/lowercase letters, a number, and a symbol.');
 }
 
+if (mail_active_provider() === null) {
+    register_json(false, 'Email delivery is not configured on this server yet. Set SMTP_USERNAME and SMTP_PASSWORD (or configure Resend) and redeploy before creating an account.');
+}
+
 $previousPending = $_SESSION['pending_registration'] ?? null;
 if (is_array($previousPending)
     && strtolower((string) ($previousPending['email'] ?? '')) === $email
