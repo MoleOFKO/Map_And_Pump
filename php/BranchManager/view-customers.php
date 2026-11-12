@@ -398,7 +398,6 @@ if (!empty($feedbackIds)) {
   .rating-filter.active{color:var(--sky-400); background:rgba(56,189,248,0.1); border-color:var(--sky-400);}
   .feedback-search{margin-left:auto; flex:1; max-width:300px; min-width:220px;}
   .feedback-empty{grid-column:1/-1; text-align:center; color:var(--slate-400); padding:22px;}
-  .feedback-grid [hidden]{display:none !important;}
   /* Same numbered pagination as manage-oil.php's All Fuel Types grid. */
   .pg-controls {
     display: flex; align-items: center; justify-content: center;
@@ -635,14 +634,14 @@ if (!empty($feedbackIds)) {
     </div>
 
     <nav class="side-nav">
-      <a href="dashboard.php" class="side-link active"><span class="ic"><i class="fa-solid fa-house"></i></span> Dashboard</a>
-      <a href="manage-staff.php" class="side-link"><span class="ic"><i class="fa-solid fa-users"></i></span> Manage Staff</a>
-      <a href="manage-oil.php" class="side-link"><span class="ic"><i class="fa-solid fa-gas-pump"></i></span> Manage Fuel Stock</a>
-      <a href="booking-slot.php" class="side-link"><span class="ic"><i class="fa-solid fa-ticket"></i></span> Monitor Booking Slot</a>
-      <a href="view-customers.php" class="side-link"><span class="ic"><i class="fa-solid fa-address-book"></i></span> View Customers</a>
-      <a href="report-hq.php" class="side-link"><span class="ic"><i class="fa-solid fa-paper-plane"></i></span> Report to HQ</a>
-      <a href="branchprofile.php" class="side-link"><span class="ic"><i class="fa-solid fa-building"></i></span> Branch Profile</a>
-      <a href="edit-profile.php" class="side-link"><span class="ic"><i class="fa-solid fa-gear"></i></span> Edit Profile</a>
+      <a href="dashboard.php" class="<?= basename($_SERVER['PHP_SELF']) === 'dashboard.php' ? 'side-link active' : 'side-link' ?>"><span class="ic"><i class="fa-solid fa-house"></i></span> Dashboard</a>
+      <a href="manage-staff.php" class="<?= basename($_SERVER['PHP_SELF']) === 'manage-staff.php' ? 'side-link active' : 'side-link' ?>"><span class="ic"><i class="fa-solid fa-users"></i></span> Manage Staff</a>
+      <a href="manage-oil.php" class="<?= basename($_SERVER['PHP_SELF']) === 'manage-oil.php' ? 'side-link active' : 'side-link' ?>"><span class="ic"><i class="fa-solid fa-gas-pump"></i></span> Manage Fuel Stock</a>
+      <a href="booking-slot.php" class="<?= basename($_SERVER['PHP_SELF']) === 'booking-slot.php' ? 'side-link active' : 'side-link' ?>"><span class="ic"><i class="fa-solid fa-ticket"></i></span> Monitor Booking Slot</a>
+      <a href="view-customers.php" class="<?= basename($_SERVER['PHP_SELF']) === 'view-customers.php' ? 'side-link active' : 'side-link' ?>"><span class="ic"><i class="fa-solid fa-address-book"></i></span> View Customers</a>
+      <a href="report-hq.php" class="<?= basename($_SERVER['PHP_SELF']) === 'report-hq.php' ? 'side-link active' : 'side-link' ?>"><span class="ic"><i class="fa-solid fa-paper-plane"></i></span> Report to HQ</a>
+      <a href="branchprofile.php" class="<?= basename($_SERVER['PHP_SELF']) === 'branchprofile.php' ? 'side-link active' : 'side-link' ?>"><span class="ic"><i class="fa-solid fa-building"></i></span> Branch Profile</a>
+      <a href="edit-profile.php" class="<?= basename($_SERVER['PHP_SELF']) === 'edit-profile.php' ? 'side-link active' : 'side-link' ?>"><span class="ic"><i class="fa-solid fa-gear"></i></span> Edit Profile</a>
     </nav>
 
     <a href="../Login/logout.php" class="side-logout"><span class="ic"><i class="fa-solid fa-right-from-bracket"></i></span> Log Out</a>
